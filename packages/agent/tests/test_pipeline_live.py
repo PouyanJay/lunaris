@@ -35,8 +35,8 @@ async def test_live_pipeline_builds_authors_and_gates(tmp_path: Path) -> None:
     # Act — the full pathway against live Claude
     course = await orchestrator.run("how merge sort works", course_id="live-1", run_id="run-live-1")
 
-    # Assert — graph is a valid, goal-last DAG
-    assert course.status is CourseStatus.REVIEW
+    # Assert — graph is a valid, goal-last DAG; the critic published it
+    assert course.status is CourseStatus.PUBLISHED
     assert len(course.graph.nodes) >= 3
     assert course.graph.is_acyclic
     pos = {kc_id: i for i, kc_id in enumerate(course.graph.topo_order)}

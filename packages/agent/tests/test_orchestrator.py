@@ -108,8 +108,8 @@ async def test_full_pipeline_authors_and_verifies_with_publish_gate(
     course = await orchestrator.run("binary search", course_id="c1", run_id="run-7")
     clear_correlation()
 
-    # Assert — full pathway reached REVIEW; lessons authored; claims verified + cited
-    assert course.status is CourseStatus.REVIEW
+    # Assert — full pathway passed the critic and PUBLISHED; lessons authored; claims cited
+    assert course.status is CourseStatus.PUBLISHED
     assert all(m.lessons for m in course.modules)
     supported = [
         c for m in course.modules for lsn in m.lessons for c in lsn.segments.demonstrate.claims

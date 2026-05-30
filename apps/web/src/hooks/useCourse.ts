@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { CourseLoadError, loadCourse } from "../lib/loadCourse";
+import { CourseLoadError, resolveCourse } from "../lib/loadCourse";
 import type { Course } from "../types/course";
 
 export type CourseState =
@@ -12,7 +12,7 @@ const MIN_VISIBLE_MS = 250; // keep the skeleton up briefly so a fast load doesn
 
 /** Loads the course-object, exposing a single state machine for the four data states and a
  *  reload action. Aborts in-flight requests on unmount / reload. */
-export function useCourse(url?: string): { state: CourseState; reload: () => void } {
+export function useCourse(): { state: CourseState; reload: () => void } {
   const [state, setState] = useState<CourseState>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
@@ -25,7 +25,7 @@ export function useCourse(url?: string): { state: CourseState; reload: () => voi
     const controller = new AbortController();
     const startedAt = Date.now();
 
-    loadCourse(url, controller.signal)
+    resolveCourse(controller.signal)
       .then(async (course) => {
         const elapsed = Date.now() - startedAt;
         if (elapsed < MIN_VISIBLE_MS) {
@@ -43,7 +43,7 @@ export function useCourse(url?: string): { state: CourseState; reload: () => voi
       });
 
     return () => controller.abort();
-  }, [url, attempt]);
+  }, [attempt]);
 
   return { state, reload };
 }

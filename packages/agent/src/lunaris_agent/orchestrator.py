@@ -5,6 +5,7 @@ from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import Course, CourseStatus
 
+from .critic import ICritic, MinimalCritic
 from .lesson_claims import iter_claims
 from .subagents.concept_extractor import IConceptExtractor
 from .subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
@@ -30,6 +31,7 @@ class Orchestrator:
         architect: ICurriculumArchitect,
         author: IModuleAuthor,
         verifier: Verifier,
+        critic: ICritic | None = None,
         curriculum_assembler: CurriculumAssembler | None = None,
         lesson_assembler: LessonAssembler | None = None,
     ) -> None:
@@ -39,6 +41,7 @@ class Orchestrator:
         self._architect = architect
         self._author = author
         self._verifier = verifier
+        self._critic = critic or MinimalCritic()
         self._curriculum_assembler = curriculum_assembler or CurriculumAssembler()
         self._lesson_assembler = lesson_assembler or LessonAssembler()
 
@@ -74,6 +77,14 @@ class Orchestrator:
         course.provenance = citations
 
         course.status = CourseStatus.REVIEW
+        issues = self._critic.review(course)
+        if issues:
+            logger.warning(
+                "critic_flagged", course_id=course_id, issue_count=len(issues), issues=issues
+            )
+        else:
+            course.status = CourseStatus.PUBLISHED
+
         self._store.save(course)
         logger.info(
             "course_run_completed",
@@ -83,5 +94,6 @@ class Orchestrator:
             module_count=len(course.modules),
             claim_count=len(claims),
             citation_count=len(citations),
+            critic_issues=len(issues),
         )
         return course
