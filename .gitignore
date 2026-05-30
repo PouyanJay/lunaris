@@ -153,6 +153,9 @@ activemq-data/
 # Generated course-object store (API/orchestrator runtime artifact)
 .courses/
 
+# Makefile background-process state (PIDs + captured logs)
+.run-state/
+
 # Environments
 .env
 .envrc
