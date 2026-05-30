@@ -1,0 +1,132 @@
+.center {
+  height: 100%;
+  display: grid;
+  place-items: start center;
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+
+.panel {
+  width: 100%;
+  max-width: 560px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pipeline {
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.muted {
+  padding: var(--space-4) var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* Secret fields — hairline-divided rows, not floating cards. */
+.fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+}
+.field + .field {
+  border-top: var(--border-width) solid var(--border);
+}
+
+.fieldHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.input::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+}
+
+.input:hover {
+  border-color: var(--text-muted);
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.ok {
+  font-size: var(--text-xs);
+  color: var(--success);
+}
+
+.error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  padding: var(--space-2) var(--space-5);
+}
+
+.note {
+  padding: var(--space-3) var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+}

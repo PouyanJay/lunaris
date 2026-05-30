@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { AppFrame } from "./components/AppFrame";
 import { BuildProgress } from "./components/build/BuildProgress";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
@@ -5,6 +7,7 @@ import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
+import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { TopicForm } from "./components/TopicForm";
 import { useCourse } from "./hooks/useCourse";
@@ -74,10 +77,25 @@ function SeedApp() {
 /** Live surface: name a topic, watch the pipeline build it, then explore the result. */
 function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state, generate, reset } = useCourseStream(apiBaseUrl);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  if (settingsOpen) {
+    return (
+      <AppFrame title="Settings">
+        <SettingsPanel apiBaseUrl={apiBaseUrl} onClose={() => setSettingsOpen(false)} />
+      </AppFrame>
+    );
+  }
+
+  const settingsButton = (
+    <Button type="button" onClick={() => setSettingsOpen(true)}>
+      Settings
+    </Button>
+  );
 
   if (state.status === "idle") {
     return (
-      <AppFrame title="New course">
+      <AppFrame title="New course" meta={settingsButton}>
         <TopicForm onGenerate={generate} />
       </AppFrame>
     );
@@ -99,7 +117,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
   if (state.status === "error") {
     return (
-      <AppFrame title={state.topic}>
+      <AppFrame title={state.topic} meta={settingsButton}>
         <ErrorState message={state.message} onRetry={() => generate(state.topic)} />
       </AppFrame>
     );
@@ -113,6 +131,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
           <Button variant="primary" onClick={reset}>
             New course
           </Button>
+          {settingsButton}
         </>
       }
     >
