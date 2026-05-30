@@ -24,7 +24,7 @@ ui::cmd "make run"           "Bulletproof end-to-end: setup + start-all"
 ui::cmd "make stop"          "Stop all services (Supabase data preserved)"
 
 ui::section "Diagnostics"
-ui::cmd "make check-ports"   "Pre-flight host port conflicts (8000/5173/54321-3)"
+ui::cmd "make check-ports"   "Pre-flight the fixed Supabase ports (54321-3)"
 
 ui::section "Testing"
 ui::cmd "make test"          "Run the standard suites: Python + web"

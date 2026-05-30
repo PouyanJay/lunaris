@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# scripts/check-ports.sh — port-conflict pre-flight for `make start`.
+# scripts/check-ports.sh — Supabase infra-port pre-flight for `make start`.
 #
-# Checks every host port the Lunaris stack needs before we bring it up, and
-# resolves conflicts with the safest reasonable default:
+# Checks ONLY the fixed Supabase ports — the ones the Supabase CLI binds from
+# supabase/config.toml (54321/54322/54323). These CANNOT be relocated: the
+# project's URLs and keys are configured against them, so a conflict must be
+# resolved by freeing the port, not by moving the data layer.
 #
+# (The API and web ports are NOT checked here — run.sh resolves those itself
+# at launch and can fall back to a new free port, since it owns those processes.)
+#
+# Resolution, safest reasonable default:
 #   - Our own Lunaris container (Supabase project "lunaris") holding a port →
 #     silently skipped; `supabase start` reuses/replaces it naturally.
 #   - Foreign Docker container (e.g. another project's Supabase stack, like
@@ -11,10 +17,8 @@
 #     (default No) to STOP it. Containers are stopped (NOT removed), so the
 #     other project's data survives and `docker start <name>` restores it.
 #     Non-TTY (CI) aborts unless LUNARIS_AUTO_STOP_CONFLICTS=1.
-#   - Non-Docker host process (a stray uvicorn, a host Postgres, …) →
-#     diagnostic only. We NEVER kill arbitrary host processes by PID; the
-#     user must stop it (run.sh already reaps our OWN api/web by pidfile
-#     before this pre-flight, so anything left here is genuinely foreign).
+#   - Non-Docker host process (a host Postgres, …) → diagnostic only. We NEVER
+#     kill arbitrary host processes by PID; the user must stop it.
 #
 # Exit codes:
 #   0 = every port is available (or conflicts were resolved successfully)
@@ -35,10 +39,9 @@ source "$(dirname "$0")/lib/ui.sh"
 
 # --- Defaults ---------------------------------------------------------------
 
-# Each entry: "<port> <label>". User-facing services first, infra after.
+# Each entry: "<port> <label>". The fixed Supabase ports only — see the header
+# note on why api/web are resolved by run.sh instead.
 DEFAULT_PORT_TABLE='
-8000  api
-5173  web
 54321 supabase-api
 54322 supabase-db
 54323 supabase-studio
@@ -67,7 +70,9 @@ while [ $# -gt 0 ]; do
       cat <<EOF
 Usage: scripts/check-ports.sh [--self-test]
 
-Pre-flight check for host port conflicts before \`make start\`.
+Pre-flight for the fixed Supabase ports (54321/54322/54323) before
+\`make start\`. These can't be relocated; the API/web ports are resolved by
+run.sh, which can fall back to a free port.
 
 Behavior:
   - Free / lunaris-owned ports: silently passed.
@@ -77,7 +82,7 @@ Behavior:
 
 Environment overrides:
   LUNARIS_PORT_TABLE              Newline-separated "<port> <label>" lines.
-                                  Default: 8000/5173/54321/54322/54323.
+                                  Default: 54321/54322/54323 (Supabase).
   LUNARIS_AUTO_STOP_CONFLICTS=1   Skip prompts; auto-stop foreign Docker.
 
 Exit codes:
@@ -283,7 +288,7 @@ if [ "$SELF_TEST" = "1" ]; then
   exit $?
 fi
 
-ui::section "Port-conflict pre-flight"
+ui::section "Supabase port pre-flight"
 
 EXIT_CODE=0
 while IFS=' ' read -r port label; do

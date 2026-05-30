@@ -23,6 +23,9 @@ set -euo pipefail
 source "$(dirname "$0")/lib/ui.sh"
 ui::init
 
+# `lsof` lives in /usr/sbin on macOS and is often off a restricted PATH.
+export PATH="/usr/sbin:/sbin:${PATH}"
+
 # --- Defaults & argument parsing --------------------------------------------
 
 WANT_SUPABASE=1
@@ -158,6 +161,93 @@ _poll_url_ready() {
   return 2
 }
 
+# --- Service-port resolution (api / web) ------------------------------------
+# The API and web are processes WE launch, so a port conflict can be resolved
+# by asking and then either stopping the holder or relocating to a free port —
+# the behaviour requested for `make start`. (Supabase ports are fixed and are
+# handled by check-ports.sh instead.)
+
+# is_interactive — true iff we can prompt. Tests stdin + STDERR (not stdout):
+# resolve_service_port runs inside $(...), so fd1 is a pipe even on a real
+# terminal — stderr is where the prompt actually goes.
+is_interactive() { [ -t 0 ] && [ -t 2 ]; }
+
+# confirm "prompt" — y/N, default No. Prompt goes to stderr so it stays visible
+# (and uncaptured) when this runs inside a command substitution.
+confirm() {
+  local answer
+  printf "%s [y/N] " "$1" >&2
+  read -r answer || return 1
+  case "$(printf "%s" "$answer" | tr 'A-Z' 'a-z')" in
+    y|yes) return 0 ;;
+    *)     return 1 ;;
+  esac
+}
+
+# port_listener_pid PORT — PID listening on PORT (listeners only), or empty.
+port_listener_pid() { lsof -ti ":$1" -sTCP:LISTEN 2>/dev/null | head -n 1; }
+
+# pick_free_port START — first free TCP port at or above START (scans up to +50).
+pick_free_port() {
+  local p="$1"
+  local max=$(( $1 + 50 ))
+  while [ "$p" -lt "$max" ]; do
+    [ -z "$(port_listener_pid "$p")" ] && { printf "%s" "$p"; return 0; }
+    p=$((p + 1))
+  done
+  printf "%s" "$1"; return 1
+}
+
+# resolve_service_port DESIRED LABEL — choose the port to bind for a service we
+# launch. Our own stale instance is already reaped, so any holder is foreign.
+#   free                   → use DESIRED
+#   held + you say yes     → stop the holder (docker stop / kill pid), use DESIRED
+#   held + you say no      → fall back to the next free port, serve there
+#   held + non-interactive → fall back to a free port (never kill blind in CI)
+# Echoes the chosen port on STDOUT; all prompts/status go to STDERR so the
+# captured value stays clean.
+resolve_service_port() {
+  local desired="$1"
+  local label="$2"
+  local pid
+  pid="$(port_listener_pid "$desired")"
+  if [ -z "$pid" ]; then
+    printf "%s" "$desired"; return 0
+  fi
+
+  local container
+  container="$(docker ps --filter "publish=${desired}" --format '{{.Names}}' 2>/dev/null | head -n 1)"
+  local holder
+  if [ -n "$container" ]; then
+    holder="container '${container}'"
+  else
+    holder="process pid=${pid} ($(ps -o comm= -p "$pid" 2>/dev/null | head -n 1))"
+  fi
+  ui::warn "${label}: port ${desired} is in use by ${holder}" >&2
+
+  if is_interactive && confirm "    Stop it and take port ${desired}?  (No = serve on a new free port)"; then
+    if [ -n "$container" ]; then
+      docker stop "$container" >/dev/null 2>&1 \
+        && ui::ok "stopped ${container} (\`docker start ${container}\` to restore)" >&2 \
+        || ui::warn "could not stop ${container} — relocating instead" >&2
+    else
+      kill "$pid" 2>/dev/null \
+        && ui::ok "stopped ${holder}" >&2 \
+        || ui::warn "could not stop pid ${pid} — relocating instead" >&2
+    fi
+    sleep 1
+    if [ -z "$(port_listener_pid "$desired")" ]; then
+      printf "%s" "$desired"; return 0
+    fi
+    ui::warn "port ${desired} still held — relocating" >&2
+  fi
+
+  local alt
+  alt="$(pick_free_port $((desired + 1)))"
+  ui::info "${label}: serving on free port ${alt} (instead of ${desired})" >&2
+  printf "%s" "$alt"
+}
+
 # start_supabase — bring up the local Supabase stack via its CLI (idempotent:
 # a second `supabase start` just reports the running stack). Migrations apply
 # on first start. Returns 0 (up), 1 (could not start).
@@ -218,6 +308,9 @@ start_api() {
     return 1
   fi
 
+  # Resolve the port (ask → stop the holder, or relocate to a free port).
+  API_PORT="$(resolve_service_port "$API_PORT" "api")"
+
   local env_flag=""
   [ -f ".env" ] && env_flag="--env-file .env"
 
@@ -257,12 +350,18 @@ start_web() {
   fi
   [ -d "apps/web/node_modules" ] || ui::run "npm install (apps/web)" "cd apps/web && npm install"
 
+  # Resolve the port (ask → stop the holder, or relocate to a free port).
+  WEB_PORT="$(resolve_service_port "$WEB_PORT" "web")"
+
   local root="$PWD"
   local log="${root}/${RUN_STATE_DIR}/web.log"
   # cd into apps/web so $! is npm's PID (SIGTERM cascades to the Vite child via
   # npm's process group), then cd back so the rest of the script is unaffected.
+  # --strictPort: bind exactly the port we resolved (don't let Vite silently
+  # pick a different one, which would desync the reported port + readiness poll).
+  # VITE_API_URL points the web app at the API's actual (possibly relocated) port.
   cd apps/web
-  VITE_API_URL="http://${API_HOST}:${API_PORT}" nohup npm run dev -- --port "$WEB_PORT" >"$log" 2>&1 &
+  VITE_API_URL="http://${API_HOST}:${API_PORT}" nohup npm run dev -- --port "$WEB_PORT" --strictPort >"$log" 2>&1 &
   local pid=$!
   cd "$root"
   echo "$pid" >"${root}/${RUN_STATE_DIR}/web.pid"
