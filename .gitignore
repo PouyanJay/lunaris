@@ -224,3 +224,7 @@ skills-lock.json
 
 # macOS
 .DS_Store
+
+# Supabase CLI local artifacts (keep migrations/ tracked)
+supabase/.temp/
+supabase/.branches/

@@ -6,6 +6,8 @@ requires-python = ">=3.12"
 dependencies = [
     "lunaris-runtime",
     "langchain-anthropic>=0.3",
+    "langchain-voyageai>=0.1",
+    "supabase>=2.9",
     "structlog>=24.4",
 ]
 
