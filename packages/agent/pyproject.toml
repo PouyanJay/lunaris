@@ -7,6 +7,10 @@ dependencies = [
     "lunaris-runtime",
     "lunaris-graph",
     "langchain-anthropic>=0.3",
+    "langchain>=0.3",
+    "langchain-core>=0.3",
+    "langgraph>=0.2",
+    "deepagents>=0.0.2",
     "structlog>=24.4",
 ]
 
