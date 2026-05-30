@@ -1,11 +1,14 @@
 import structlog
 from lunaris_graph import PrerequisiteGraphBuilder
+from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import Course, CourseStatus
 
+from .lesson_claims import iter_claims
 from .subagents.concept_extractor import IConceptExtractor
 from .subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
+from .subagents.module_author import IModuleAuthor, LessonAssembler
 
 logger = structlog.get_logger()
 
@@ -13,9 +16,10 @@ logger = structlog.get_logger()
 class Orchestrator:
     """Owns the plan and the course-object; delegates the work.
 
-    Pathway so far: topic → concept extraction (KCs) → deterministic prerequisite
-    graph (Failure-A moat) → curriculum architect (backward design: objectives +
-    assessment before content). Authoring, verification, and visuals attach later.
+    Pathway: topic → concept extraction (KCs) → deterministic prerequisite graph
+    (Failure-A moat) → curriculum architect (backward design) → module authoring
+    (Merrill lessons) → verifier (Failure-B moat, claim-level publish gate). Visuals
+    and the pedagogy critic attach in later stages.
     """
 
     def __init__(
@@ -24,13 +28,19 @@ class Orchestrator:
         extractor: IConceptExtractor,
         builder: PrerequisiteGraphBuilder,
         architect: ICurriculumArchitect,
-        assembler: CurriculumAssembler | None = None,
+        author: IModuleAuthor,
+        verifier: Verifier,
+        curriculum_assembler: CurriculumAssembler | None = None,
+        lesson_assembler: LessonAssembler | None = None,
     ) -> None:
         self._store = store
         self._extractor = extractor
         self._builder = builder
         self._architect = architect
-        self._assembler = assembler or CurriculumAssembler()
+        self._author = author
+        self._verifier = verifier
+        self._curriculum_assembler = curriculum_assembler or CurriculumAssembler()
+        self._lesson_assembler = lesson_assembler or LessonAssembler()
 
     async def run(self, topic: str, *, course_id: str, run_id: str) -> Course:
         bind_run_id(run_id)
@@ -50,15 +60,28 @@ class Orchestrator:
         )
 
         plan = await self._architect.design(course.graph)
-        course.modules = self._assembler.assemble(plan, course.graph)
+        course.modules = self._curriculum_assembler.assemble(plan, course.graph)
 
+        course.status = CourseStatus.AUTHORING
+        for module in course.modules:
+            draft = await self._author.author(module)
+            module.lessons = [self._lesson_assembler.assemble(draft, lesson_id=f"{module.id}-l0")]
+
+        course.status = CourseStatus.VERIFYING
+        all_lessons = [lesson for module in course.modules for lesson in module.lessons]
+        claims = list(iter_claims(all_lessons))
+        citations = await self._verifier.verify(claims, risk_tier=course.risk.tier)
+        course.provenance = citations
+
+        course.status = CourseStatus.REVIEW
         self._store.save(course)
         logger.info(
             "course_run_completed",
             course_id=course_id,
             status=course.status.value,
             kc_count=len(course.graph.nodes),
-            edge_count=len(course.graph.edges),
             module_count=len(course.modules),
+            claim_count=len(claims),
+            citation_count=len(citations),
         )
         return course

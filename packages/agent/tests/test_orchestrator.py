@@ -10,10 +10,12 @@ from lunaris_agent.subagents.curriculum_architect import (
     ObjectivePlan,
     StubCurriculumArchitect,
 )
+from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft, StubModuleAuthor
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
+from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
 from lunaris_runtime.logging import clear_correlation, configure_logging
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import BloomLevel, CourseStatus, KnowledgeComponent
+from lunaris_runtime.schema import BloomLevel, Citation, CourseStatus, KnowledgeComponent, Module
 
 
 def _json_lines(captured: str) -> list[dict]:
@@ -44,13 +46,7 @@ def _binary_search_extraction() -> Extraction:
 
 
 def _curriculum_plan() -> CurriculumPlan:
-    levels = [
-        ("comparison", 0.1),
-        ("arrays", 0.2),
-        ("loops", 0.3),
-        ("sorted_order", 0.45),
-        ("binary_search", 0.75),
-    ]
+    levels = ["comparison", "arrays", "loops", "sorted_order", "binary_search"]
     return CurriculumPlan(
         modules=[
             ModulePlan(
@@ -62,19 +58,29 @@ def _curriculum_plan() -> CurriculumPlan:
                     )
                 ],
             )
-            for kc_id, _ in levels
+            for kc_id in levels
         ]
     )
 
 
-async def test_pipeline_extracts_builds_and_designs_with_correlated_logs(
+def _author_draft(module: Module) -> LessonDraft:
+    # one verifiable claim per module's demonstrate phase, keyed by module id
+    return LessonDraft(
+        activate=SegmentDraft("recall", []),
+        demonstrate=SegmentDraft("teach", [f"claim for {module.id}"]),
+        apply=SegmentDraft("practice", []),
+        integrate=SegmentDraft("transfer", []),
+    )
+
+
+async def test_full_pipeline_authors_and_verifies_with_publish_gate(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Arrange — topic -> KCs -> graph -> curriculum, all offline via stubs
+    # Arrange — extract -> graph -> curriculum -> author -> verify, all offline via stubs.
+    # Retriever returns evidence for every claim, so all claims should be SUPPORTED.
     clear_correlation()
     configure_logging(json_output=True)
     store = CourseStore(tmp_path)
-    extractor = StubConceptExtractor(_binary_search_extraction())
     builder = PrerequisiteGraphBuilder(
         StubPrereqJudge(
             [
@@ -85,26 +91,34 @@ async def test_pipeline_extracts_builds_and_designs_with_correlated_logs(
             ]
         )
     )
-    architect = StubCurriculumArchitect(_curriculum_plan())
-    orchestrator = Orchestrator(store, extractor, builder, architect)
+    retriever = StubEvidenceRetriever(
+        lambda claim: [Evidence(citation=Citation(id=f"src::{claim}", snippet=claim), score=0.9)]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    orchestrator = Orchestrator(
+        store,
+        StubConceptExtractor(_binary_search_extraction()),
+        builder,
+        StubCurriculumArchitect(_curriculum_plan()),
+        StubModuleAuthor(_author_draft),
+        verifier,
+    )
 
     # Act
     course = await orchestrator.run("binary search", course_id="c1", run_id="run-7")
     clear_correlation()
 
-    # Assert — full pathway: extraction + moat + backward design, persisted, correlated
-    assert course.status is CourseStatus.SEQUENCING
-    assert course.goal_concept == "binary_search"
-    assert course.graph.is_acyclic
-    assert len(course.modules) == 5
-    # backward design: every objective is assessed by real items
-    for module in course.modules:
-        item_ids = {item.id for item in module.assessment.items}
-        for objective in module.objectives:
-            assert set(objective.assessed_by) <= item_ids and objective.assessed_by
+    # Assert — full pathway reached REVIEW; lessons authored; claims verified + cited
+    assert course.status is CourseStatus.REVIEW
+    assert all(m.lessons for m in course.modules)
+    supported = [
+        c for m in course.modules for lsn in m.lessons for c in lsn.segments.demonstrate.claims
+    ]
+    assert supported and all(c.supported_by for c in supported)
+    assert course.provenance  # citations registered
     assert store.load("c1") == course
 
     entries = _json_lines(capsys.readouterr().out)
     events = {e["event"] for e in entries}
-    assert {"course_run_started", "prerequisite_graph_built", "course_run_completed"} <= events
+    assert {"prerequisite_graph_built", "claims_verified", "course_run_completed"} <= events
     assert all(e["run_id"] == "run-7" for e in entries)
