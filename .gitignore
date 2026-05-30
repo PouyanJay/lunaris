@@ -220,6 +220,7 @@ __marimo__/
 # Claude Code local config
 .claude/
 CLAUDE.md
+skills-lock.json
 
 # macOS
 .DS_Store
