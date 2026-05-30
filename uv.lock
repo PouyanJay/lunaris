@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 members = [
     "lunaris",
     "lunaris-agent",
+    "lunaris-graph",
     "lunaris-runtime",
 ]
 
@@ -399,6 +400,23 @@ dev = [
 name = "lunaris-agent"
 version = "0.0.0"
 source = { editable = "packages/agent" }
+dependencies = [
+    { name = "langchain-anthropic" },
+    { name = "lunaris-runtime" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "langchain-anthropic", specifier = ">=0.3" },
+    { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "structlog", specifier = ">=24.4" },
+]
+
+[[package]]
+name = "lunaris-graph"
+version = "0.0.0"
+source = { editable = "packages/graph" }
 dependencies = [
     { name = "langchain-anthropic" },
     { name = "lunaris-runtime" },

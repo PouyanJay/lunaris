@@ -1,0 +1,20 @@
+[project]
+name = "lunaris-graph"
+version = "0.0.0"
+description = "Lunaris prerequisite-graph builder — the correctness moat (Failure A)"
+requires-python = ">=3.12"
+dependencies = [
+    "lunaris-runtime",
+    "langchain-anthropic>=0.3",
+    "structlog>=24.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lunaris_graph"]
+
+[tool.uv.sources]
+lunaris-runtime = { workspace = true }
