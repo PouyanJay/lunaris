@@ -12,6 +12,7 @@ members = [
     "lunaris",
     "lunaris-agent",
     "lunaris-api",
+    "lunaris-eval",
     "lunaris-graph",
     "lunaris-grounding",
     "lunaris-runtime",
@@ -1015,6 +1016,21 @@ requires-dist = [
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
+]
+
+[[package]]
+name = "lunaris-eval"
+version = "0.0.0"
+source = { editable = "packages/eval" }
+dependencies = [
+    { name = "lunaris-runtime" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "pydantic", specifier = ">=2.9" },
 ]
 
 [[package]]
