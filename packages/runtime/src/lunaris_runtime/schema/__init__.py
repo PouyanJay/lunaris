@@ -6,6 +6,7 @@ from .enums import (
     Latency,
     Mode,
     Pace,
+    ProgressStage,
     QualityFloor,
     RiskCategory,
     RiskOverride,
@@ -28,6 +29,7 @@ from .instruction import (
 )
 from .knowledge import Citation, Edge, KnowledgeComponent, PrerequisiteGraph
 from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Probe
+from .progress import ProgressEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 
 __all__ = [
@@ -59,6 +61,8 @@ __all__ = [
     "Prefs",
     "PrerequisiteGraph",
     "Probe",
+    "ProgressEvent",
+    "ProgressStage",
     "QualityFloor",
     "RiskCategory",
     "RiskOverride",
