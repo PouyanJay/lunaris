@@ -150,6 +150,9 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Per-feature journey tracking (specs + progress) — local only, never shipped
+.memory/
+
 # Generated course-object store (API/orchestrator runtime artifact)
 .courses/
 
