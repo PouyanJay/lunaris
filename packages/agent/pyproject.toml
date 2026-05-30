@@ -5,6 +5,7 @@ description = "Lunaris agent — orchestrator and model router over the course-o
 requires-python = ">=3.12"
 dependencies = [
     "lunaris-runtime",
+    "lunaris-graph",
     "langchain-anthropic>=0.3",
     "structlog>=24.4",
 ]
@@ -18,3 +19,4 @@ packages = ["src/lunaris_agent"]
 
 [tool.uv.sources]
 lunaris-runtime = { workspace = true }
+lunaris-graph = { workspace = true }

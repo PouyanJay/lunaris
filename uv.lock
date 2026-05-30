@@ -402,6 +402,7 @@ version = "0.0.0"
 source = { editable = "packages/agent" }
 dependencies = [
     { name = "langchain-anthropic" },
+    { name = "lunaris-graph" },
     { name = "lunaris-runtime" },
     { name = "structlog" },
 ]
@@ -409,6 +410,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "langchain-anthropic", specifier = ">=0.3" },
+    { name = "lunaris-graph", editable = "packages/graph" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "structlog", specifier = ">=24.4" },
 ]

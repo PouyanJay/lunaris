@@ -3,34 +3,73 @@ from pathlib import Path
 
 import pytest
 from lunaris_agent.orchestrator import Orchestrator
+from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
+from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_runtime.logging import clear_correlation, configure_logging
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import CourseStatus
+from lunaris_runtime.schema import BloomLevel, CourseStatus, KnowledgeComponent
 
 
 def _json_lines(captured: str) -> list[dict]:
     return [json.loads(line) for line in captured.splitlines() if line.strip().startswith("{")]
 
 
-async def test_walking_skeleton_persists_course_with_correlated_logs(
+def _kc(kc_id: str, difficulty: float) -> KnowledgeComponent:
+    return KnowledgeComponent(
+        id=kc_id,
+        label=kc_id,
+        definition=kc_id,
+        difficulty=difficulty,
+        bloom_ceiling=BloomLevel.APPLY,
+    )
+
+
+def _binary_search_extraction() -> Extraction:
+    return Extraction(
+        kcs=[
+            _kc("comparison", 0.1),
+            _kc("arrays", 0.2),
+            _kc("loops", 0.3),
+            _kc("sorted_order", 0.45),
+            _kc("binary_search", 0.75),
+        ],
+        goal_id="binary_search",
+    )
+
+
+async def test_pipeline_extracts_then_builds_graph_with_correlated_logs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Arrange — schema, persistence, logging wired together, no network
+    # Arrange — topic -> KCs -> graph, all offline via stubs
     clear_correlation()
     configure_logging(json_output=True)
     store = CourseStore(tmp_path)
-    orchestrator = Orchestrator(store)
+    extractor = StubConceptExtractor(_binary_search_extraction())
+    builder = PrerequisiteGraphBuilder(
+        StubPrereqJudge(
+            [
+                ("arrays", "binary_search"),
+                ("loops", "binary_search"),
+                ("sorted_order", "binary_search"),
+                ("comparison", "sorted_order"),
+            ]
+        )
+    )
+    orchestrator = Orchestrator(store, extractor, builder)
 
-    # Act — the cross-layer roundtrip
-    course = await orchestrator.run("binary search", course_id="c1", run_id="run-42")
+    # Act
+    course = await orchestrator.run("binary search", course_id="c1", run_id="run-7")
     clear_correlation()
 
-    # Assert — the pathway walked: built -> persisted -> logged, all under one run_id
-    assert course.status is CourseStatus.MAPPING
+    # Assert — the pathway walked through extraction + the moat, persisted, correlated
+    assert course.status is CourseStatus.SEQUENCING
+    assert course.goal_concept == "binary_search"
+    assert course.graph.is_acyclic
+    assert len(course.graph.nodes) == 5
+    assert course.graph.topo_order[-1] == "binary_search"
     assert store.load("c1") == course
 
     entries = _json_lines(capsys.readouterr().out)
-    events = {entry["event"] for entry in entries}
-    assert "course_run_started" in events
-    assert "course_run_completed" in events
-    assert all(entry["run_id"] == "run-42" for entry in entries)
+    events = {e["event"] for e in entries}
+    assert {"course_run_started", "prerequisite_graph_built", "course_run_completed"} <= events
+    assert all(e["run_id"] == "run-7" for e in entries)
