@@ -1,0 +1,70 @@
+/* Shared layout for the centered empty/error views and the loading skeleton. */
+.center {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+}
+
+.message {
+  max-width: 360px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.body {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.action {
+  margin-top: var(--space-2);
+}
+
+/* ─── Loading skeleton — mirrors the graph canvas, not a centered spinner ─── */
+.skeleton {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.skeletonNode {
+  position: absolute;
+  width: 200px;
+  height: 80px;
+  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border);
+  background: linear-gradient(
+    100deg,
+    var(--bg-subtle) 30%,
+    var(--bg-muted) 50%,
+    var(--bg-subtle) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease) infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonNode {
+    animation: none;
+  }
+}

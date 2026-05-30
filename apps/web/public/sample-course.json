@@ -1,0 +1,512 @@
+{
+  "id": "sample-binary-search",
+  "topic": "how binary search works",
+  "goalConcept": "binary_search",
+  "settings": {
+    "latency": "await_full",
+    "mode": "artifact",
+    "budget": {
+      "maxUsd": 5.0,
+      "maxWallClockMin": 30.0,
+      "qualityFloor": "standard"
+    },
+    "riskOverride": "auto",
+    "loadBudgetPerLesson": 5.0,
+    "maxModules": 12
+  },
+  "risk": {
+    "tier": "low",
+    "categories": [],
+    "rationale": ""
+  },
+  "learner": {
+    "goal": "",
+    "timeBudgetMin": 0,
+    "frontier": [],
+    "probes": [],
+    "prefs": {
+      "pace": "normal",
+      "tone": ""
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "id": "comparison",
+        "label": "Comparison",
+        "definition": "Deciding whether one value is less than, equal to, or greater than another.",
+        "difficulty": 0.1,
+        "bloomCeiling": "apply",
+        "sources": []
+      },
+      {
+        "id": "arrays",
+        "label": "Arrays",
+        "definition": "Contiguous, index-addressable sequences of elements.",
+        "difficulty": 0.2,
+        "bloomCeiling": "apply",
+        "sources": []
+      },
+      {
+        "id": "loops",
+        "label": "Loops",
+        "definition": "Repeating a block of work until a condition is met.",
+        "difficulty": 0.3,
+        "bloomCeiling": "apply",
+        "sources": []
+      },
+      {
+        "id": "sorted_order",
+        "label": "Sorted Order",
+        "definition": "The invariant that elements are arranged by a comparison key.",
+        "difficulty": 0.45,
+        "bloomCeiling": "apply",
+        "sources": []
+      },
+      {
+        "id": "binary_search",
+        "label": "Binary Search",
+        "definition": "Halving a sorted range each step to locate a target in logarithmic time.",
+        "difficulty": 0.75,
+        "bloomCeiling": "apply",
+        "sources": []
+      }
+    ],
+    "edges": [
+      {
+        "from": "comparison",
+        "to": "sorted_order",
+        "strength": 0.9
+      },
+      {
+        "from": "arrays",
+        "to": "binary_search",
+        "strength": 0.9
+      },
+      {
+        "from": "loops",
+        "to": "binary_search",
+        "strength": 0.9
+      },
+      {
+        "from": "sorted_order",
+        "to": "binary_search",
+        "strength": 0.9
+      }
+    ],
+    "frontier": [],
+    "isAcyclic": true,
+    "topoOrder": [
+      "comparison",
+      "arrays",
+      "loops",
+      "sorted_order",
+      "binary_search"
+    ]
+  },
+  "modules": [
+    {
+      "id": "m0",
+      "title": "Comparison",
+      "kcs": [
+        "comparison"
+      ],
+      "objectives": [
+        {
+          "statement": "Given a problem, the learner can apply comparison.",
+          "bloomLevel": "apply",
+          "kc": "comparison",
+          "assessedBy": [
+            "m0-o0-i0"
+          ]
+        }
+      ],
+      "lessons": [
+        {
+          "id": "m0-l0",
+          "segments": {
+            "activate": {
+              "prose": "Recall what you already know.",
+              "visuals": [],
+              "claims": []
+            },
+            "demonstrate": {
+              "prose": "Worked example.",
+              "visuals": [],
+              "claims": [
+                {
+                  "text": "Comparison reduces the problem size each step.",
+                  "supportedBy": "src::Comparison reduces the p",
+                  "verifierStatus": "supported"
+                }
+              ]
+            },
+            "apply": {
+              "prose": "Try it yourself.",
+              "visuals": [],
+              "claims": []
+            },
+            "integrate": {
+              "prose": "Connect it to the bigger picture.",
+              "visuals": [],
+              "claims": []
+            }
+          },
+          "gagne": {
+            "gainAttention": true,
+            "stateObjective": true,
+            "recallPrior": true,
+            "presentContent": true,
+            "guideLearning": true,
+            "elicitPerformance": true,
+            "provideFeedback": true,
+            "assessPerformance": false,
+            "enhanceTransfer": true
+          },
+          "loadEstimate": 1.0
+        }
+      ],
+      "assessment": {
+        "items": [
+          {
+            "id": "m0-o0-i0",
+            "prompt": "q",
+            "objective": "comparison",
+            "answer": null
+          }
+        ]
+      },
+      "difficultyIndex": 0.1
+    },
+    {
+      "id": "m1",
+      "title": "Arrays",
+      "kcs": [
+        "arrays"
+      ],
+      "objectives": [
+        {
+          "statement": "Given a problem, the learner can apply arrays.",
+          "bloomLevel": "apply",
+          "kc": "arrays",
+          "assessedBy": [
+            "m1-o0-i0"
+          ]
+        }
+      ],
+      "lessons": [
+        {
+          "id": "m1-l0",
+          "segments": {
+            "activate": {
+              "prose": "Recall what you already know.",
+              "visuals": [],
+              "claims": []
+            },
+            "demonstrate": {
+              "prose": "Worked example.",
+              "visuals": [],
+              "claims": [
+                {
+                  "text": "Arrays reduces the problem size each step.",
+                  "supportedBy": "src::Arrays reduces the probl",
+                  "verifierStatus": "supported"
+                }
+              ]
+            },
+            "apply": {
+              "prose": "Try it yourself.",
+              "visuals": [],
+              "claims": []
+            },
+            "integrate": {
+              "prose": "Connect it to the bigger picture.",
+              "visuals": [],
+              "claims": []
+            }
+          },
+          "gagne": {
+            "gainAttention": true,
+            "stateObjective": true,
+            "recallPrior": true,
+            "presentContent": true,
+            "guideLearning": true,
+            "elicitPerformance": true,
+            "provideFeedback": true,
+            "assessPerformance": false,
+            "enhanceTransfer": true
+          },
+          "loadEstimate": 1.0
+        }
+      ],
+      "assessment": {
+        "items": [
+          {
+            "id": "m1-o0-i0",
+            "prompt": "q",
+            "objective": "arrays",
+            "answer": null
+          }
+        ]
+      },
+      "difficultyIndex": 0.2
+    },
+    {
+      "id": "m2",
+      "title": "Loops",
+      "kcs": [
+        "loops"
+      ],
+      "objectives": [
+        {
+          "statement": "Given a problem, the learner can apply loops.",
+          "bloomLevel": "apply",
+          "kc": "loops",
+          "assessedBy": [
+            "m2-o0-i0"
+          ]
+        }
+      ],
+      "lessons": [
+        {
+          "id": "m2-l0",
+          "segments": {
+            "activate": {
+              "prose": "Recall what you already know.",
+              "visuals": [],
+              "claims": []
+            },
+            "demonstrate": {
+              "prose": "Worked example.",
+              "visuals": [],
+              "claims": [
+                {
+                  "text": "Loops reduces the problem size each step.",
+                  "supportedBy": "src::Loops reduces the proble",
+                  "verifierStatus": "supported"
+                }
+              ]
+            },
+            "apply": {
+              "prose": "Try it yourself.",
+              "visuals": [],
+              "claims": []
+            },
+            "integrate": {
+              "prose": "Connect it to the bigger picture.",
+              "visuals": [],
+              "claims": []
+            }
+          },
+          "gagne": {
+            "gainAttention": true,
+            "stateObjective": true,
+            "recallPrior": true,
+            "presentContent": true,
+            "guideLearning": true,
+            "elicitPerformance": true,
+            "provideFeedback": true,
+            "assessPerformance": false,
+            "enhanceTransfer": true
+          },
+          "loadEstimate": 1.0
+        }
+      ],
+      "assessment": {
+        "items": [
+          {
+            "id": "m2-o0-i0",
+            "prompt": "q",
+            "objective": "loops",
+            "answer": null
+          }
+        ]
+      },
+      "difficultyIndex": 0.3
+    },
+    {
+      "id": "m3",
+      "title": "Sorted Order",
+      "kcs": [
+        "sorted_order"
+      ],
+      "objectives": [
+        {
+          "statement": "Given a problem, the learner can apply sorted order.",
+          "bloomLevel": "apply",
+          "kc": "sorted_order",
+          "assessedBy": [
+            "m3-o0-i0"
+          ]
+        }
+      ],
+      "lessons": [
+        {
+          "id": "m3-l0",
+          "segments": {
+            "activate": {
+              "prose": "Recall what you already know.",
+              "visuals": [],
+              "claims": []
+            },
+            "demonstrate": {
+              "prose": "Worked example.",
+              "visuals": [],
+              "claims": [
+                {
+                  "text": "Sorted Order reduces the problem size each step.",
+                  "supportedBy": "src::Sorted Order reduces the",
+                  "verifierStatus": "supported"
+                }
+              ]
+            },
+            "apply": {
+              "prose": "Try it yourself.",
+              "visuals": [],
+              "claims": []
+            },
+            "integrate": {
+              "prose": "Connect it to the bigger picture.",
+              "visuals": [],
+              "claims": []
+            }
+          },
+          "gagne": {
+            "gainAttention": true,
+            "stateObjective": true,
+            "recallPrior": true,
+            "presentContent": true,
+            "guideLearning": true,
+            "elicitPerformance": true,
+            "provideFeedback": true,
+            "assessPerformance": false,
+            "enhanceTransfer": true
+          },
+          "loadEstimate": 1.0
+        }
+      ],
+      "assessment": {
+        "items": [
+          {
+            "id": "m3-o0-i0",
+            "prompt": "q",
+            "objective": "sorted_order",
+            "answer": null
+          }
+        ]
+      },
+      "difficultyIndex": 0.45
+    },
+    {
+      "id": "m4",
+      "title": "Binary Search",
+      "kcs": [
+        "binary_search"
+      ],
+      "objectives": [
+        {
+          "statement": "Given a problem, the learner can apply binary search.",
+          "bloomLevel": "apply",
+          "kc": "binary_search",
+          "assessedBy": [
+            "m4-o0-i0"
+          ]
+        }
+      ],
+      "lessons": [
+        {
+          "id": "m4-l0",
+          "segments": {
+            "activate": {
+              "prose": "Recall what you already know.",
+              "visuals": [],
+              "claims": []
+            },
+            "demonstrate": {
+              "prose": "Worked example.",
+              "visuals": [],
+              "claims": [
+                {
+                  "text": "Binary Search reduces the problem size each step.",
+                  "supportedBy": "src::Binary Search reduces th",
+                  "verifierStatus": "supported"
+                }
+              ]
+            },
+            "apply": {
+              "prose": "Try it yourself.",
+              "visuals": [],
+              "claims": []
+            },
+            "integrate": {
+              "prose": "Connect it to the bigger picture.",
+              "visuals": [],
+              "claims": []
+            }
+          },
+          "gagne": {
+            "gainAttention": true,
+            "stateObjective": true,
+            "recallPrior": true,
+            "presentContent": true,
+            "guideLearning": true,
+            "elicitPerformance": true,
+            "provideFeedback": true,
+            "assessPerformance": false,
+            "enhanceTransfer": true
+          },
+          "loadEstimate": 1.0
+        }
+      ],
+      "assessment": {
+        "items": [
+          {
+            "id": "m4-o0-i0",
+            "prompt": "q",
+            "objective": "binary_search",
+            "answer": null
+          }
+        ]
+      },
+      "difficultyIndex": 0.75
+    }
+  ],
+  "provenance": [
+    {
+      "id": "src::Comparison reduces the p",
+      "title": "Reference",
+      "url": null,
+      "snippet": "Comparison reduces the problem size each step."
+    },
+    {
+      "id": "src::Arrays reduces the probl",
+      "title": "Reference",
+      "url": null,
+      "snippet": "Arrays reduces the problem size each step."
+    },
+    {
+      "id": "src::Loops reduces the proble",
+      "title": "Reference",
+      "url": null,
+      "snippet": "Loops reduces the problem size each step."
+    },
+    {
+      "id": "src::Sorted Order reduces the",
+      "title": "Reference",
+      "url": null,
+      "snippet": "Sorted Order reduces the problem size each step."
+    },
+    {
+      "id": "src::Binary Search reduces th",
+      "title": "Reference",
+      "url": null,
+      "snippet": "Binary Search reduces the problem size each step."
+    }
+  ],
+  "status": "review",
+  "budgetLedger": {
+    "spentUsd": 0.0,
+    "projectedUsd": 0.0,
+    "rungsApplied": 0
+  }
+}

@@ -1,0 +1,67 @@
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ramp {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.swatch {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.ends {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.markers {
+  display: flex;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.marker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.box {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  border: var(--border-width) solid var(--border-strong);
+  background: var(--surface);
+}
+.goal {
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 1px var(--accent-500);
+}
+.known {
+  opacity: 0.5;
+}
+
+.markerLabel {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}

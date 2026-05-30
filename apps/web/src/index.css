@@ -1,0 +1,252 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   Design tokens — the single source of truth (enterprise-ui "Workstation").
+   Every component references the SEMANTIC tokens, never a raw ramp value, so the
+   whole product re-skins from this one block.
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Neutral ramp — slightly cool gray reads as "software". */
+  --gray-0: #ffffff;
+  --gray-50: #f7f8fa;
+  --gray-100: #eef0f4;
+  --gray-200: #e2e5ea;
+  --gray-300: #cbd0d9;
+  --gray-400: #9aa1ad;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f242e;
+  --gray-900: #12151c;
+  --gray-950: #0a0c10;
+
+  /* ONE signature accent — amber, used as a scalpel only. */
+  --accent-500: #c8860f;
+  --accent-600: #a86f0a;
+  --accent-700: #8a5b08;
+  --accent-soft: #fbf2dd;
+
+  /* Status — muted, reserved meanings (dot + uppercase-mono label, never a pill). */
+  --success: #3f9d76;
+  --warning: #bb8a36;
+  --danger: #cb4a40;
+  --info: var(--accent-500);
+
+  /* Semantic tokens — components use ONLY these. */
+  --bg: var(--gray-0);
+  --bg-subtle: var(--gray-50);
+  --bg-muted: var(--gray-100);
+  --surface: var(--gray-0);
+  --surface-raised: var(--gray-0);
+  --border: var(--gray-200);
+  --border-strong: var(--gray-300);
+  --frame-top: var(--gray-200);
+  --text: var(--gray-900);
+  --text-secondary: var(--gray-600);
+  --text-muted: var(--gray-500);
+  --text-on-accent: #ffffff;
+  --focus-ring: var(--accent-500);
+  --primary: var(--gray-900);
+  --primary-text: #ffffff;
+
+  /* Difficulty ramp — a single hue stepped by tier (category color, not an accent). */
+  --tier-1: #5a7fb5;
+  --tier-2: #5f93a8;
+  --tier-3: #6aa38c;
+  --tier-4: #b08a4a;
+  --tier-5: #c07a55;
+
+  /* Typography */
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+
+  /* Spacing (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Radius / shadow / motion */
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
+  --border-width: 1px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+}
+
+[data-theme="dark"] {
+  --bg: #090a0c;
+  --bg-subtle: #0f1115;
+  --bg-muted: #13161b;
+  --surface: #0f1115;
+  --surface-raised: #13161b;
+  --border: #1d2127;
+  --border-strong: #2a2f38;
+  --frame-top: #262b33;
+  --text: #e9ebee;
+  --text-secondary: #8a909b;
+  --text-muted: #565c66;
+  --accent-500: #e0a23c;
+  --accent-600: #c8860f;
+  --accent-soft: #16140d;
+  --success: #56a585;
+  --warning: #c0974a;
+  --danger: #d2726a;
+  --primary: #eceef1;
+  --primary-text: #0a0b0d;
+
+  --tier-1: #6b8fc4;
+  --tier-2: #6fa3b8;
+  --tier-3: #79b39c;
+  --tier-4: #c89a5a;
+  --tier-5: #d08a65;
+
+  color-scheme: dark;
+}
+
+/* ─── Base reset ──────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: -48px;
+  z-index: 1500;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  transition: top var(--dur) var(--ease);
+}
+.skip-link:focus {
+  top: var(--space-3);
+}
+
+/* ─── React Flow theming → map its CSS vars onto our tokens ───────────────── */
+.react-flow {
+  --xy-background-color: var(--bg);
+  --xy-edge-stroke-default: var(--border-strong);
+  --xy-edge-stroke-selected-default: var(--accent-500);
+  --xy-connectionline-stroke-default: var(--accent-500);
+  --xy-attribution-background-color-default: transparent;
+}
+
+.react-flow__edge-path {
+  stroke-width: 1.5;
+}
+
+.react-flow__handle {
+  width: 6px;
+  height: 6px;
+  background: var(--border-strong);
+  border: 1px solid var(--bg);
+}
+
+.react-flow__controls {
+  box-shadow: var(--shadow-md);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--surface-raised);
+  border-bottom: var(--border-width) solid var(--border);
+  color: var(--text-secondary);
+}
+.react-flow__controls-button:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
