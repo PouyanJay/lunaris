@@ -20,6 +20,7 @@ class Settings:
     pipeline: str
     course_dir: Path
     cors_origins: tuple[str, ...]
+    secrets_path: Path
 
 
 @lru_cache
@@ -29,4 +30,5 @@ def get_settings() -> Settings:
         pipeline=os.getenv("LUNARIS_PIPELINE", "live").lower(),
         course_dir=Path(os.getenv("LUNARIS_COURSE_DIR", ".courses")),
         cors_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
+        secrets_path=Path(os.getenv("LUNARIS_SECRETS_PATH", ".secrets/secrets.json")),
     )

@@ -150,6 +150,9 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Operator-provided secrets (API keys entered via Settings) — owner-only, never committed
+.secrets/
+
 # Per-feature journey tracking (specs + progress) — local only, never shipped
 .memory/
 

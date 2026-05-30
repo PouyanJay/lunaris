@@ -17,7 +17,10 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     clear_correlation()
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: Settings(
-        pipeline="stub", course_dir=tmp_path, cors_origins=()
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(),
+        secrets_path=tmp_path / "secrets.json",
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:

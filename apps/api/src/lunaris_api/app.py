@@ -4,6 +4,7 @@ from lunaris_runtime.logging import configure_logging
 
 from .config import get_settings
 from .routers import courses, health
+from .routers import settings as settings_router
 
 
 def create_app() -> FastAPI:
@@ -21,4 +22,5 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(courses.router)
+    app.include_router(settings_router.router)
     return app
