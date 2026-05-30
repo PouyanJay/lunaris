@@ -12,6 +12,7 @@ from .subagents.curriculum_architect import (
     StubCurriculumArchitect,
 )
 from .subagents.module_author import LessonDraft, SegmentDraft, StubModuleAuthor
+from .subagents.visual_agent import StubDiagramRenderer, StubVisualGenerator, VisualEngine
 
 # A deterministic binary-search course — the offline/demo pipeline (no API key, no network).
 _KCS = [
@@ -107,4 +108,5 @@ def build_stub_orchestrator(store: CourseStore) -> Orchestrator:
         StubCurriculumArchitect(plan),
         StubModuleAuthor(author),
         Verifier(retriever, StubSupportAssessor()),
+        visual_engine=VisualEngine(StubVisualGenerator(), StubDiagramRenderer()),
     )

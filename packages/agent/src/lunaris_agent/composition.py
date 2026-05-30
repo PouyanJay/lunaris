@@ -1,4 +1,6 @@
 import os
+import shlex
+from pathlib import Path
 
 import structlog
 from lunaris_graph import ClaudePrereqJudge, PrerequisiteGraphBuilder
@@ -17,6 +19,7 @@ from .orchestrator import Orchestrator
 from .subagents.concept_extractor import ClaudeConceptExtractor
 from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.module_author import ClaudeModuleAuthor
+from .subagents.visual_agent import ClaudeVisualGenerator, MermaidRenderer, VisualEngine
 
 logger = structlog.get_logger()
 
@@ -38,6 +41,29 @@ def _retriever_from_env() -> IEvidenceRetriever | None:
         return PgVectorRetriever(VoyageEmbedder(), SupabaseCorpusStore())
     logger.info("grounding_retriever_stubbed", reason="supabase/embeddings creds unset")
     return None
+
+
+def _visual_engine_from_env(worker_model: str) -> VisualEngine | None:
+    """Wire the live visual engine iff the beautiful-mermaid render script is configured.
+
+    ``LUNARIS_MERMAID_SCRIPT`` points at the skill's ``render.ts``; ``LUNARIS_VISUAL_DIR``
+    is where rendered SVGs land (default ``.visuals``); ``LUNARIS_MERMAID_RUNTIME`` is the
+    invocation prefix (default ``bun run``; e.g. ``npx tsx``). Without the script set we skip
+    visuals entirely (return ``None``) — diagrams are optional, never a hard dependency.
+    """
+    script = os.getenv("LUNARIS_MERMAID_SCRIPT")
+    if not script:
+        logger.info("visual_engine_disabled", reason="LUNARIS_MERMAID_SCRIPT unset")
+        return None
+    output_dir = Path(os.getenv("LUNARIS_VISUAL_DIR", ".visuals"))
+    runtime_env = os.getenv("LUNARIS_MERMAID_RUNTIME")
+    runtime = tuple(shlex.split(runtime_env)) if runtime_env else None
+    renderer = (
+        MermaidRenderer(Path(script), output_dir, runtime=runtime)
+        if runtime
+        else MermaidRenderer(Path(script), output_dir)
+    )
+    return VisualEngine(ClaudeVisualGenerator(worker_model), renderer)
 
 
 def build_orchestrator(
@@ -65,4 +91,7 @@ def build_orchestrator(
     author = ClaudeModuleAuthor(worker)
     grounding = retriever or _retriever_from_env() or StubEvidenceRetriever()
     verifier = Verifier(grounding, ClaudeSupportAssessor(strong))
-    return Orchestrator(store, extractor, builder, architect, author, verifier)
+    visual_engine = _visual_engine_from_env(worker)
+    return Orchestrator(
+        store, extractor, builder, architect, author, verifier, visual_engine=visual_engine
+    )

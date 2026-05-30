@@ -231,3 +231,11 @@ skills-lock.json
 # Supabase CLI local artifacts (keep migrations/ tracked)
 supabase/.temp/
 supabase/.branches/
+
+# JS tooling must not pollute the repo root (this is a uv Python monorepo; the web app
+# has its own node_modules under apps/web). The beautiful-mermaid live renderer pulls JS
+# deps when run from here — keep them out of git.
+node_modules/
+/package.json
+/package-lock.json
+/.visuals/

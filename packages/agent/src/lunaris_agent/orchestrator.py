@@ -10,6 +10,7 @@ from .lesson_claims import iter_claims
 from .subagents.concept_extractor import IConceptExtractor
 from .subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
 from .subagents.module_author import IModuleAuthor, LessonAssembler
+from .subagents.visual_agent import VisualEngine
 
 logger = structlog.get_logger()
 
@@ -19,8 +20,8 @@ class Orchestrator:
 
     Pathway: topic → concept extraction (KCs) → deterministic prerequisite graph
     (Failure-A moat) → curriculum architect (backward design) → module authoring
-    (Merrill lessons) → verifier (Failure-B moat, claim-level publish gate). Visuals
-    and the pedagogy critic attach in later stages.
+    (Merrill lessons) → visual engine (validated diagrams, optional) → verifier
+    (Failure-B moat, claim-level publish gate) → pedagogy critic → publish.
     """
 
     def __init__(
@@ -32,6 +33,7 @@ class Orchestrator:
         author: IModuleAuthor,
         verifier: Verifier,
         critic: ICritic | None = None,
+        visual_engine: VisualEngine | None = None,
         curriculum_assembler: CurriculumAssembler | None = None,
         lesson_assembler: LessonAssembler | None = None,
     ) -> None:
@@ -42,6 +44,7 @@ class Orchestrator:
         self._author = author
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
+        self._visual_engine = visual_engine
         self._curriculum_assembler = curriculum_assembler or CurriculumAssembler()
         self._lesson_assembler = lesson_assembler or LessonAssembler()
 
@@ -69,6 +72,9 @@ class Orchestrator:
         for module in course.modules:
             draft = await self._author.author(module)
             module.lessons = [self._lesson_assembler.assemble(draft, lesson_id=f"{module.id}-l0")]
+
+        if self._visual_engine is not None:
+            await self._visual_engine.illustrate(course)
 
         course.status = CourseStatus.VERIFYING
         all_lessons = [lesson for module in course.modules for lesson in module.lessons]
