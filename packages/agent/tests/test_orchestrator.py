@@ -4,6 +4,12 @@ from pathlib import Path
 import pytest
 from lunaris_agent.orchestrator import Orchestrator
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
+from lunaris_agent.subagents.curriculum_architect import (
+    CurriculumPlan,
+    ModulePlan,
+    ObjectivePlan,
+    StubCurriculumArchitect,
+)
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_runtime.logging import clear_correlation, configure_logging
 from lunaris_runtime.persistence import CourseStore
@@ -37,10 +43,34 @@ def _binary_search_extraction() -> Extraction:
     )
 
 
-async def test_pipeline_extracts_then_builds_graph_with_correlated_logs(
+def _curriculum_plan() -> CurriculumPlan:
+    levels = [
+        ("comparison", 0.1),
+        ("arrays", 0.2),
+        ("loops", 0.3),
+        ("sorted_order", 0.45),
+        ("binary_search", 0.75),
+    ]
+    return CurriculumPlan(
+        modules=[
+            ModulePlan(
+                title=kc_id,
+                kcs=[kc_id],
+                objectives=[
+                    ObjectivePlan(
+                        kc_id, f"Given X, the learner can apply {kc_id}", BloomLevel.APPLY, ["q"]
+                    )
+                ],
+            )
+            for kc_id, _ in levels
+        ]
+    )
+
+
+async def test_pipeline_extracts_builds_and_designs_with_correlated_logs(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Arrange — topic -> KCs -> graph, all offline via stubs
+    # Arrange — topic -> KCs -> graph -> curriculum, all offline via stubs
     clear_correlation()
     configure_logging(json_output=True)
     store = CourseStore(tmp_path)
@@ -55,18 +85,23 @@ async def test_pipeline_extracts_then_builds_graph_with_correlated_logs(
             ]
         )
     )
-    orchestrator = Orchestrator(store, extractor, builder)
+    architect = StubCurriculumArchitect(_curriculum_plan())
+    orchestrator = Orchestrator(store, extractor, builder, architect)
 
     # Act
     course = await orchestrator.run("binary search", course_id="c1", run_id="run-7")
     clear_correlation()
 
-    # Assert — the pathway walked through extraction + the moat, persisted, correlated
+    # Assert — full pathway: extraction + moat + backward design, persisted, correlated
     assert course.status is CourseStatus.SEQUENCING
     assert course.goal_concept == "binary_search"
     assert course.graph.is_acyclic
-    assert len(course.graph.nodes) == 5
-    assert course.graph.topo_order[-1] == "binary_search"
+    assert len(course.modules) == 5
+    # backward design: every objective is assessed by real items
+    for module in course.modules:
+        item_ids = {item.id for item in module.assessment.items}
+        for objective in module.objectives:
+            assert set(objective.assessed_by) <= item_ids and objective.assessed_by
     assert store.load("c1") == course
 
     entries = _json_lines(capsys.readouterr().out)

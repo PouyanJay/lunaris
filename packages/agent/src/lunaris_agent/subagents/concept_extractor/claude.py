@@ -1,4 +1,5 @@
 import structlog
+from lunaris_runtime.resilience import retry_on_rate_limit
 
 from .extraction import Extraction
 from .parser import parse_extraction
@@ -36,9 +37,10 @@ class ClaudeConceptExtractor:
         if self._client is None:
             from langchain_anthropic import ChatAnthropic
 
-            self._client = ChatAnthropic(model=self._model_name, temperature=0)
+            self._client = ChatAnthropic(model=self._model_name)
 
-        message = await self._client.ainvoke(_PROMPT.format(topic=topic))  # type: ignore[attr-defined]
+        prompt = _PROMPT.format(topic=topic)
+        message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
         content = message.content if isinstance(message.content, str) else str(message.content)
         extraction = parse_extraction(content)
         logger.info(

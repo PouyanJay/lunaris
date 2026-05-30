@@ -5,6 +5,7 @@ from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import Course, CourseStatus
 
 from .subagents.concept_extractor import IConceptExtractor
+from .subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
 
 logger = structlog.get_logger()
 
@@ -12,9 +13,9 @@ logger = structlog.get_logger()
 class Orchestrator:
     """Owns the plan and the course-object; delegates the work.
 
-    Stage 2 pathway: topic → concept extraction (KCs) → deterministic prerequisite
-    graph (the Failure-A moat) written onto the course-object. Objectives, authoring,
-    verification, and visuals attach in later stages.
+    Pathway so far: topic → concept extraction (KCs) → deterministic prerequisite
+    graph (Failure-A moat) → curriculum architect (backward design: objectives +
+    assessment before content). Authoring, verification, and visuals attach later.
     """
 
     def __init__(
@@ -22,10 +23,14 @@ class Orchestrator:
         store: CourseStore,
         extractor: IConceptExtractor,
         builder: PrerequisiteGraphBuilder,
+        architect: ICurriculumArchitect,
+        assembler: CurriculumAssembler | None = None,
     ) -> None:
         self._store = store
         self._extractor = extractor
         self._builder = builder
+        self._architect = architect
+        self._assembler = assembler or CurriculumAssembler()
 
     async def run(self, topic: str, *, course_id: str, run_id: str) -> Course:
         bind_run_id(run_id)
@@ -44,6 +49,9 @@ class Orchestrator:
             goal=extraction.goal_id,
         )
 
+        plan = await self._architect.design(course.graph)
+        course.modules = self._assembler.assemble(plan, course.graph)
+
         self._store.save(course)
         logger.info(
             "course_run_completed",
@@ -51,5 +59,6 @@ class Orchestrator:
             status=course.status.value,
             kc_count=len(course.graph.nodes),
             edge_count=len(course.graph.edges),
+            module_count=len(course.modules),
         )
         return course

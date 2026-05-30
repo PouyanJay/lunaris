@@ -2,6 +2,7 @@ import json
 import re
 
 import structlog
+from lunaris_runtime.resilience import retry_on_rate_limit
 from lunaris_runtime.schema import KnowledgeComponent
 
 from lunaris_graph.verdict import PrereqVerdict
@@ -52,7 +53,7 @@ class ClaudePrereqJudge:
         if self._client is None:
             from langchain_anthropic import ChatAnthropic
 
-            self._client = ChatAnthropic(model=self._model_name, temperature=0)
+            self._client = ChatAnthropic(model=self._model_name)
 
         prompt = _PROMPT.format(
             a_label=prerequisite.label,
@@ -60,7 +61,7 @@ class ClaudePrereqJudge:
             b_label=dependent.label,
             b_def=dependent.definition,
         )
-        message = await self._client.ainvoke(prompt)  # type: ignore[attr-defined]
+        message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
         content = message.content if isinstance(message.content, str) else str(message.content)
         try:
             return _parse_verdict(content)
