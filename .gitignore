@@ -150,6 +150,9 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Generated course-object store (API/orchestrator runtime artifact)
+.courses/
+
 # Environments
 .env
 .envrc

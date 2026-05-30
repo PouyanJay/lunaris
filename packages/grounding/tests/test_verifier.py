@@ -2,6 +2,7 @@ from lunaris_grounding import (
     Evidence,
     StubEvidenceRetriever,
     StubSupportAssessor,
+    Support,
     Verifier,
 )
 from lunaris_runtime.schema import Citation, Claim, RiskTier, VerifierStatus
@@ -84,3 +85,65 @@ async def test_publish_gate_holds_across_mixed_claims() -> None:
     assert all(
         c.supported_by is not None or c.verifier_status is VerifierStatus.CUT for c in claims
     )
+
+
+class _FailingRetriever:
+    """Stands in for a grounding provider that is down / rate-limited."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def retrieve(self, _claim_text: str) -> list[Evidence]:
+        self.calls += 1
+        raise RuntimeError("voyageai.error.RateLimitError: 3 RPM exceeded")
+
+
+class _SpyAssessor:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def assess(self, claim_text: str, evidence: list[Evidence]) -> Support:
+        self.calls += 1
+        return await StubSupportAssessor().assess(claim_text, evidence)
+
+
+class _PartialRetriever:
+    """Fails to retrieve evidence only for claims whose text contains ``boom``."""
+
+    async def retrieve(self, claim_text: str) -> list[Evidence]:
+        if "boom" in claim_text:
+            raise RuntimeError("transient grounding outage")
+        return [_evidence("c1")]
+
+
+async def test_retriever_failure_fails_safe_to_cut_not_crash() -> None:
+    # Arrange — the evidence retriever raises (e.g. embeddings provider rate-limited);
+    # the verifier must uphold its contract (never ship an unsupported claim) by cutting,
+    # not by propagating and taking down the whole course delivery.
+    retriever = _FailingRetriever()
+    assessor = _SpyAssessor()
+    verifier = Verifier(retriever, assessor)
+    claim = Claim(text="binary search runs in logarithmic time")
+
+    # Act
+    citations = await verifier.verify([claim])
+
+    # Assert — fail-safe: claim cut, no citation, no crash, assessor never reached
+    assert claim.verifier_status is VerifierStatus.CUT
+    assert claim.supported_by is None
+    assert citations == []
+    assert assessor.calls == 0
+
+
+async def test_one_retriever_failure_does_not_sink_other_claims() -> None:
+    # Arrange — a retriever that fails only for one claim
+    verifier = Verifier(_PartialRetriever(), StubSupportAssessor())
+    claims = [Claim(text="good claim"), Claim(text="boom claim")]
+
+    # Act
+    citations = await verifier.verify(claims)
+
+    # Assert — the healthy claim is still supported; the failed one is cut
+    assert claims[0].verifier_status is VerifierStatus.SUPPORTED
+    assert claims[1].verifier_status is VerifierStatus.CUT
+    assert [c.id for c in citations] == ["c1"]

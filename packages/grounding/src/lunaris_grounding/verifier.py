@@ -34,8 +34,20 @@ class Verifier:
         citations: dict[str, Citation] = {}
 
         for claim in claims:
-            evidence = await self._retriever.retrieve(claim.text)
-            support = await self._assessor.assess(claim.text, evidence)
+            # Retrieval and assessment are separate live dependencies (vector store +
+            # embeddings, then an LLM assessor) that can each be down or rate-limited. We
+            # catch them in distinct scopes — same fail-safe outcome (CUT), but distinct
+            # log events so an outage in one is never mistaken for the other.
+            try:
+                evidence = await self._retriever.retrieve(claim.text)
+            except Exception as exc:
+                self._cut_on_grounding_failure(claim, "claim_retrieval_unavailable", exc)
+                continue
+            try:
+                support = await self._assessor.assess(claim.text, evidence)
+            except Exception as exc:
+                self._cut_on_grounding_failure(claim, "claim_assessment_unavailable", exc)
+                continue
             chosen = next((e for e in evidence if e.citation.id == support.citation_id), None)
             if support.score >= threshold and chosen is not None:
                 claim.supported_by = chosen.citation.id
@@ -54,6 +66,16 @@ class Verifier:
             cut=len(claims) - supported,
         )
         return list(citations.values())
+
+    def _cut_on_grounding_failure(self, claim: Claim, event: str, exc: Exception) -> None:
+        """Fail safe: an unreachable grounding dependency CUTs the claim, never crashes.
+
+        A grounding outage degrades coverage, never correctness — a claim we cannot
+        ground is simply not shipped, which still satisfies the publish gate.
+        """
+        logger.warning(event, error=type(exc).__name__, claim_prefix=claim.text[:120])
+        claim.supported_by = None
+        claim.verifier_status = VerifierStatus.CUT
 
     def _assert_publish_gate(self, claims: list[Claim]) -> None:
         """No course ships with a live unsupported claim (build-spec §08)."""
