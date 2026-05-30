@@ -159,14 +159,20 @@ classify_port() {
 
 # --- Interactive helpers ----------------------------------------------------
 
-is_interactive() { [ -t 0 ] && [ -t 1 ]; }
+# We can prompt iff a controlling terminal is reachable. We must talk to
+# /dev/tty directly rather than test [ -t 0 ] / read from stdin: the port loop
+# below feeds the table via a heredoc (`done <<EOF`), which redirects fd0 inside
+# the loop — so a plain `read` there would consume table lines, and [ -t 0 ]
+# would be false even in a real terminal. /dev/tty sidesteps that entirely.
+is_interactive() { [ -t 2 ] && { : </dev/tty; } 2>/dev/null; }
 
-# Prompt y/N, default No. Returns 0 for yes, 1 for no.
+# Prompt y/N, default No. Returns 0 for yes, 1 for no. Prompt → stderr; the
+# answer is read from /dev/tty (the controlling terminal), not fd0.
 confirm_stop() {
   local prompt="$1"
   local answer
-  printf "%s [y/N] " "$prompt"
-  if ! read -r answer; then
+  printf "%s [y/N] " "$prompt" >&2
+  if ! read -r answer </dev/tty 2>/dev/null; then
     return 1
   fi
   case "$(printf "%s" "$answer" | tr 'A-Z' 'a-z')" in
@@ -228,7 +234,7 @@ resolve_port() {
   ${port}  →  docker stop ${container}     # tried + failed — try manually"
         return 1
       fi
-      if confirm_stop "    Stop container '${container}' to free port ${port}? (data preserved)"; then
+      if confirm_stop "    Stop the '${project}' stack (container '${container}') to free Supabase port ${port}? (its data is preserved)"; then
         if stop_container "$container"; then
           ui::ok "stopped ${container} (\`docker start ${container}\` to restore)"
           return 0
@@ -308,21 +314,16 @@ if [ -n "$STOPPED_CONTAINERS" ]; then
 fi
 
 if [ $EXIT_CODE -ne 0 ]; then
-  # Deliberate stop — not a crash. Frame as "needs your input" so CI logs and
-  # users don't mistake the non-zero exit for a bug.
-  ui::section "Stopped — port(s) still blocked, free them and re-run"
+  # Deliberate stop — not a crash. Supabase ports are fixed (config.toml), so a
+  # conflict we didn't resolve means Lunaris can't start. Fail with a clear,
+  # concise message rather than limping on without the data layer.
+  ui::section "Supabase can't start — port held by another stack"
   printf "%s\n\n" "$STILL_BLOCKING"
-  ui::hint "Then re-run: make start"
-
-  RULE="$(ui::_repeat_char "─" 70)"
-  printf "\n  %s%s%s\n" "${UI_DIM}" "${RULE}" "${UI_RESET}"
-  printf "  %s%s  Deliberate stop — this is NOT a crash.%s\n" \
-    "${UI_PRIMARY}${UI_BOLD}" "${UI_ICON_PAUSE}" "${UI_RESET}"
-  printf "  %s   The %s'make: *** [start] Error 1'%s%s line that follows is the\n" \
-    "${UI_DIM}" "${UI_BOLD}" "${UI_RESET}" "${UI_DIM}"
-  printf "  %s   standard exit-code signal CI relies on. Expected here —\n" "${UI_DIM}"
-  printf "  %s   re-run after freeing the port(s) listed above.%s\n" "${UI_DIM}" "${UI_RESET}"
-  printf "  %s%s%s\n\n" "${UI_DIM}" "${RULE}" "${UI_RESET}"
+  ui::hint "Re-run 'make start' and answer 'y' to stop it — or free the port(s) above"
+  printf "  %sThese Supabase ports are fixed and can't be relocated, so this is a%s\n" \
+    "${UI_DIM}" "${UI_RESET}"
+  printf "  %s%s deliberate stop, not a crash — the 'make: *** Error 1' below is expected.%s\n\n" \
+    "${UI_PRIMARY}${UI_ICON_PAUSE}${UI_DIM}" "${UI_RESET}" "${UI_RESET}"
   exit 1
 fi
 

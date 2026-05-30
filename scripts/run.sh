@@ -268,11 +268,16 @@ start_supabase() {
     return 1
   fi
 
-  # Free any foreign container holding our ports (e.g. another project's
-  # Supabase stack on 54321/54322) before `supabase start` tries to bind them.
+  # Free any foreign container holding our Supabase ports (e.g. another
+  # project's Supabase stack on 54321/54322) before `supabase start` binds them.
+  # check-ports.sh asks to stop it; if the conflict isn't resolved (declined, or
+  # CI without auto-stop) the Supabase ports are fixed and can't be relocated, so
+  # we fail the whole start with a clear message rather than limping on without
+  # the data layer. (ui::die exits — Supabase is step 1, nothing started yet.)
   if [ -x "$(dirname "$0")/check-ports.sh" ]; then
     if ! "$(dirname "$0")/check-ports.sh"; then
-      return 1   # check-ports.sh already printed the "free them and re-run" block
+      ui::die "Supabase port conflict not resolved — Lunaris cannot start" \
+              "See the message above: answer 'y' to stop the other stack, or free the port(s)"
     fi
   fi
 
