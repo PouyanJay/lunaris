@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { makeCourse } from "./test/fixtures";
+import { courseFrame, makeCourse, progressFrame, sseStreamResponse } from "./test/fixtures";
 
 function stubFetchResolving(course = makeCourse()) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => course }));
@@ -68,5 +68,56 @@ describe("App", () => {
 
     expect(await screen.findByText("No concepts yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reload course/i })).toBeInTheDocument();
+  });
+});
+
+describe("App — live studio (VITE_API_URL set)", () => {
+  beforeEach(() => vi.stubEnv("VITE_API_URL", "http://test"));
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("opens on the topic form, not an auto-generated course", () => {
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
+  });
+
+  it("streams the build for a typed topic, then renders the generated graph", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          sseStreamResponse([
+            progressFrame("run_started", 0),
+            progressFrame("graph_built", 1, { kcCount: 3, edgeCount: 2 }),
+            courseFrame(makeCourse()),
+          ]),
+        ),
+    );
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // The stream resolves and hands off to the explorer for the generated course.
+    expect(
+      await screen.findByRole("heading", { name: "How binary search works" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Binary Search")).toBeInTheDocument();
+  });
+
+  it("shows a recoverable error when the build fails mid-stream", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, body: null }));
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/http 500/i);
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 });

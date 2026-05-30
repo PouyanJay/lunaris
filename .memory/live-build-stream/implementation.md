@@ -14,12 +14,17 @@
   (StreamingResponse text/event-stream, X-Run-Id, _sse_frame helper). 4 tests (ordered events+course,
   422, log correlation, early-disconnect cancel). Live-verified: 11 progress + 1 course frame.
   3-agent review (no BLOCKING) addressed: _StreamItem private, service-layer error log, helper extract.
-- [ ] **T3 — Web input + Generate** (`apps/web`): topic field + Generate button, enterprise-ui, states.
-  Status: planned
-- [ ] **T4 — Web live progress view**: EventSource client → per-stage fill-in → PrereqGraphExplorer.
-  Status: planned
-- [ ] **T5 — Offline + error/abort + variant coverage + reviews**.
-  Status: planned
+- [x] **T3+T4 — Web live-build flow** (`apps/web`): GREEN+reviewed. ProgressStage/ProgressEvent TS types;
+  `streamCourse` (fetch + ReadableStream SSE parser, not EventSource — abortable + testable);
+  `useCourseStream` hook (idle→streaming→ready→error, AbortController lifecycle); `TopicForm` (labelled
+  input, validate-on-submit, example chips); `BuildProgress` (live checklist + counts + aria-live);
+  `App` branches SeedApp(offline)/StudioApp(live). 45 web tests; typecheck/lint/format/build green.
+  **Visually verified in-browser (Playwright)**: idle form, live BUILDING checklist, result explorer.
+  2-agent review (1 BLOCKING: test/fixtures dup → fixed; hoisted BuildProgress helpers; 10px→eyebrow).
+- [x] **T5 — offline + error/abort + variants**: offline=SeedApp (existing tests), error state + retry
+  (tested), abort = useCourseStream aborts prior controller + on unmount (T2 covers server-side cancel),
+  empty-topic validation (tested). Variant: stub (deterministic, tested) + live (same orchestrator path,
+  gated by ANTHROPIC_API_KEY; stub flow verified live in-browser).
 
 ## Walking skeleton
 T1+T2 together form the skeleton's backend half (web → API SSE → orchestrator → events + course);

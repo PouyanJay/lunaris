@@ -76,3 +76,29 @@ export interface Course {
   provenance: Citation[];
   status: CourseStatus;
 }
+
+/** A pipeline stage boundary, streamed live while a course builds (mirrors ProgressStage). */
+export type ProgressStage =
+  | "run_started"
+  | "concepts_extracted"
+  | "graph_built"
+  | "curriculum_designed"
+  | "module_authored"
+  | "claims_verified"
+  | "run_completed";
+
+/** One streamed build update (mirrors the ProgressEvent schema, serialised camelCase). */
+export interface ProgressEvent {
+  stage: ProgressStage;
+  label: string;
+  runId: string;
+  sequence: number;
+  kcCount: number | null;
+  edgeCount: number | null;
+  moduleCount: number | null;
+  moduleId: string | null;
+  claimsTotal: number | null;
+  claimsSupported: number | null;
+  claimsCut: number | null;
+  status: CourseStatus | null;
+}

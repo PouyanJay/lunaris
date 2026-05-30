@@ -47,3 +47,8 @@ on page load and renders the finished graph. No topic input, no Generate, no bui
   each subagent/). [source: agent package layout]
 - SSE endpoint is `GET` (EventSource is GET-only) with `topic` as a query param. [source: spec]
 - Demo defaults to stub pipeline (no key, instant). [source: spec + run.sh default]
+- Web consumes the SSE stream via `fetch` + `ReadableStream` (not `EventSource`): testable with
+  the existing fetch-mock harness, supports `AbortController` cancel, avoids EventSource's jsdom
+  gaps. The endpoint stays GET text/event-stream (EventSource-compatible too). [source: web test harness]
+- App branches on `VITE_API_URL`: set → live flow (idle TopicForm → streaming BuildProgress →
+  ready explorer → error); unset → offline static seed (current behavior, graceful). [source: spec]

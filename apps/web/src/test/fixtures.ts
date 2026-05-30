@@ -1,4 +1,4 @@
-import type { Course } from "../types/course";
+import type { Course, ProgressEvent, ProgressStage } from "../types/course";
 
 /** A small but complete course-object for tests: comparison → sorted_order → binary_search,
  *  with binary_search the goal. Mirrors the real (camelCase) schema shape. */
@@ -55,4 +55,55 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
     },
     ...overrides,
   };
+}
+
+/** A ProgressEvent with sensible null defaults; pass `extra` to set the stage's counts. */
+export function makeProgressEvent(
+  stage: ProgressStage,
+  sequence: number,
+  extra: Partial<ProgressEvent> = {},
+): ProgressEvent {
+  return {
+    stage,
+    label: `${stage} step`,
+    runId: "run-test",
+    sequence,
+    kcCount: null,
+    edgeCount: null,
+    moduleCount: null,
+    moduleId: null,
+    claimsTotal: null,
+    claimsSupported: null,
+    claimsCut: null,
+    status: null,
+    ...extra,
+  };
+}
+
+/** A fetch-style Response whose body streams the given SSE text frames. */
+export function sseStreamResponse(frames: string[], init: { ok?: boolean; status?: number } = {}) {
+  const { ok = true, status = 200 } = init;
+  return {
+    ok,
+    status,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    }),
+  };
+}
+
+export function progressFrame(
+  stage: ProgressStage,
+  sequence: number,
+  extra: Partial<ProgressEvent> = {},
+): string {
+  return `event: progress\ndata: ${JSON.stringify(makeProgressEvent(stage, sequence, extra))}\n\n`;
+}
+
+export function courseFrame(course: Course = makeCourse()): string {
+  return `event: course\ndata: ${JSON.stringify(course)}\n\n`;
 }
