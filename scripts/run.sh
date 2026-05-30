@@ -187,7 +187,17 @@ start_supabase() {
   fi
 
   if ! ui::run "supabase start (Postgres + pgvector + migrations)" "supabase start"; then
-    return 1
+    # Self-heal a stale/partial stack. The CLI refuses with "supabase start is
+    # already running" while a core container (db/kong) has actually exited
+    # (137 = OOM / forced stop, common after the host sleeps or Docker is
+    # memory-pressured). A clean `supabase stop` tears the partial stack down
+    # (the database VOLUME is preserved), so a retry comes up healthy.
+    ui::warn "supabase start failed — recovering a stale/partial stack (data preserved)"
+    ui::run "supabase stop (cleanup)" "supabase stop" || true
+    if ! ui::run "supabase start (retry after cleanup)" "supabase start"; then
+      ui::hint "Inspect: docker ps -a --filter name=supabase_  ·  supabase start --debug"
+      return 1
+    fi
   fi
 
   if _poll_url_ready "$SUPABASE_REST" 60; then
