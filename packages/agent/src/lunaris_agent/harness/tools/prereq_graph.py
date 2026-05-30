@@ -2,7 +2,8 @@ from collections.abc import Mapping, Sequence
 
 from langchain_core.tools import BaseTool, tool
 from lunaris_graph import PrerequisiteGraphBuilder
-from lunaris_runtime.schema import BloomLevel, KnowledgeComponent
+
+from ._core import build_prerequisite_graph_payload
 
 
 def make_prerequisite_graph_tool(builder: PrerequisiteGraphBuilder) -> BaseTool:
@@ -10,9 +11,8 @@ def make_prerequisite_graph_tool(builder: PrerequisiteGraphBuilder) -> BaseTool:
 
     The agent PROPOSES the knowledge components; this tool GUARANTEES the result — an acyclic
     graph with a topological teaching order (Failure-A moat). The guarantee lives in the
-    builder (deterministic assembly), never in the model, so the agent cannot teach a concept
-    before its prerequisite no matter what it reasons. The builder is injected, so the live
-    path uses the Claude judge and the no-key path uses a stub.
+    builder, never in the model, so the agent cannot teach a concept before its prerequisite.
+    The builder is injected (live Claude judge or a stub for the no-key path).
     """
 
     @tool
@@ -27,17 +27,6 @@ def make_prerequisite_graph_tool(builder: PrerequisiteGraphBuilder) -> BaseTool:
         ``{nodes, edges, topoOrder, isAcyclic, ...}``. ``topoOrder`` is the authoritative
         teaching sequence — always teach in that order; never reorder it yourself.
         """
-        kcs = [
-            KnowledgeComponent(
-                id=str(concept["id"]),
-                label=str(concept.get("label", concept["id"])),
-                definition=str(concept.get("definition", "")),
-                difficulty=float(concept.get("difficulty", 0.5)),  # type: ignore[arg-type]
-                bloom_ceiling=BloomLevel.APPLY,
-            )
-            for concept in concepts
-        ]
-        graph = await builder.build(kcs, frontier=list(frontier or []), goal=goal)
-        return graph.model_dump(by_alias=True)
+        return await build_prerequisite_graph_payload(builder, concepts, goal, frontier)
 
     return build_prerequisite_graph

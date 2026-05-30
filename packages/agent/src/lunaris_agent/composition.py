@@ -66,6 +66,26 @@ def _visual_engine_from_env(worker_model: str) -> VisualEngine | None:
     return VisualEngine(ClaudeVisualGenerator(worker_model), renderer)
 
 
+def build_live_prereq_builder(worker_model: str | None = None) -> PrerequisiteGraphBuilder:
+    """The live prerequisite-graph builder (Claude judge) — shared by the orchestrator + MCP."""
+    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
+    return PrerequisiteGraphBuilder(ClaudePrereqJudge(worker))
+
+
+def build_live_verifier(
+    strong_model: str | None = None,
+    retriever: IEvidenceRetriever | None = None,
+) -> Verifier:
+    """The live claim verifier (real retrieval + Claude assessor) — shared by orchestrator + MCP.
+
+    Falls back to the conservative stub retriever (cuts every claim) when the corpus/embeddings
+    creds are unset, so it stays runnable offline.
+    """
+    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    grounding = retriever or _retriever_from_env() or StubEvidenceRetriever()
+    return Verifier(grounding, ClaudeSupportAssessor(strong))
+
+
 def build_orchestrator(
     store: CourseStore,
     *,
@@ -86,11 +106,10 @@ def build_orchestrator(
     strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
 
     extractor = ClaudeConceptExtractor(worker)
-    builder = PrerequisiteGraphBuilder(ClaudePrereqJudge(worker))
+    builder = build_live_prereq_builder(worker)
     architect = ClaudeCurriculumArchitect(strong)
     author = ClaudeModuleAuthor(worker)
-    grounding = retriever or _retriever_from_env() or StubEvidenceRetriever()
-    verifier = Verifier(grounding, ClaudeSupportAssessor(strong))
+    verifier = build_live_verifier(strong, retriever)
     visual_engine = _visual_engine_from_env(worker)
     return Orchestrator(
         store, extractor, builder, architect, author, verifier, visual_engine=visual_engine

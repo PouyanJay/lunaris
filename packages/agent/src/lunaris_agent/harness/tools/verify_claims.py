@@ -2,7 +2,8 @@ from collections.abc import Sequence
 
 from langchain_core.tools import BaseTool, tool
 from lunaris_grounding import Verifier
-from lunaris_runtime.schema import Claim, RiskTier
+
+from ._core import verify_claims_payload
 
 
 def make_verify_claims_tool(verifier: Verifier) -> BaseTool:
@@ -11,8 +12,7 @@ def make_verify_claims_tool(verifier: Verifier) -> BaseTool:
     The Failure-B moat as a tool. The agent submits claim sentences; the verifier retrieves
     evidence and an independent assessor decides support — each claim comes back SUPPORTED
     (with its citation) or CUT. The publish gate ("no unsupported claim ships") is enforced
-    here, not by the model: the agent must drop anything returned as cut. The verifier is
-    injected, so the live path uses pgvector + the Claude assessor and the no-key path uses stubs.
+    here, not by the model. The verifier is injected (live pgvector + Claude assessor, or stubs).
     """
 
     @tool
@@ -23,19 +23,6 @@ def make_verify_claims_tool(verifier: Verifier) -> BaseTool:
         supportedBy}], citations: [...]}`` where ``status`` is ``supported`` or ``cut``.
         NEVER publish a claim returned as ``cut`` — drop it or revise and re-verify.
         """
-        claim_objects = [Claim(text=text) for text in claims]
-        tier = RiskTier.HIGH if risk_tier == "high" else RiskTier.LOW
-        citations = await verifier.verify(claim_objects, risk_tier=tier)
-        return {
-            "results": [
-                {
-                    "text": claim.text,
-                    "status": claim.verifier_status.value,
-                    "supportedBy": claim.supported_by,
-                }
-                for claim in claim_objects
-            ],
-            "citations": [citation.model_dump(by_alias=True) for citation in citations],
-        }
+        return await verify_claims_payload(verifier, claims, risk_tier)
 
     return verify_claims

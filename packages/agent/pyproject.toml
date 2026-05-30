@@ -11,8 +11,12 @@ dependencies = [
     "langchain-core>=0.3",
     "langgraph>=0.2",
     "deepagents>=0.0.2",
+    "mcp>=1.2",
     "structlog>=24.4",
 ]
+
+[project.scripts]
+lunaris-mcp = "lunaris_agent.mcp_registry.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
