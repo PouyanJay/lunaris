@@ -103,6 +103,25 @@ export interface ProgressEvent {
   status: CourseStatus | null;
 }
 
+/** The operational lifecycle of a build run for the sidebar history (mirrors RunStatus). */
+export type RunStatus = "running" | "completed" | "failed";
+
+/**
+ * One row in the run-history index — a single course build listed in the sidebar (mirrors the
+ * CourseRun schema, serialised camelCase). `id` is the course_id the run re-opens with; `runId`
+ * is the correlation id; timestamps are owned by the run, not the course.
+ */
+export interface CourseRun {
+  id: string;
+  runId: string;
+  topic: string;
+  status: RunStatus;
+  kcCount: number;
+  moduleCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */
 export type AgentEventKind = "reasoning" | "tool_call" | "tool_result" | "todo";
 

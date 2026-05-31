@@ -1,0 +1,66 @@
+.shell {
+  --sidebar-width: 264px;
+  /* padding (space-3 × 2 = 24px) + a control row (the metric band / Button, ~29px). Holds the
+     canvas header height steady across views (title-only vs title + metric band) — no jump. */
+  --header-min-height: 53px;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  background: var(--bg);
+  border-top: var(--border-width) solid var(--frame-top);
+}
+
+.sidebar {
+  min-height: 0;
+  border-right: var(--border-width) solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.canvas {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border);
+  flex: none;
+  min-height: var(--header-min-height);
+}
+
+.title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* Narrow viewports: trim the rail (productivity tool — desktop-first, degrades gracefully). */
+@media (max-width: 720px) {
+  .shell {
+    --sidebar-width: 200px;
+  }
+}

@@ -2,7 +2,13 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { courseFrame, makeCourse, progressFrame, sseStreamResponse } from "./test/fixtures";
+import {
+  courseFrame,
+  makeCourse,
+  makeRun,
+  progressFrame,
+  sseStreamResponse,
+} from "./test/fixtures";
 
 function stubFetchResolving(course = makeCourse()) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => course }));
@@ -78,25 +84,53 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("opens on the topic form, not an auto-generated course", () => {
+  /** StudioApp now fetches GET /api/runs on mount (the sidebar) AND streams the build, so the
+   *  fetch mock routes by URL: the run history is JSON, the build is an SSE stream. */
+  function routedFetch(handlers: { runs?: unknown; build?: unknown }) {
+    return vi.fn((input: Parameters<typeof fetch>[0]) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.includes("/api/runs")) {
+        return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
+      }
+      return Promise.resolve(handlers.build);
+    });
+  }
+
+  it("opens on the topic form, not an auto-generated course", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [] }));
     render(<App />);
 
     expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
+    // Let the sidebar's run-history fetch settle (empty) so its state update is awaited.
+    expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
+  });
+
+  it("shows the run-history sidebar with prior runs", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ runs: [makeRun({ topic: "queues", status: "completed" })] }),
+    );
+    render(<App />);
+
+    // The persistent sidebar: brand, the primary action, and the recorded run.
+    expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
+    expect(screen.getByText("Recent runs")).toBeInTheDocument();
+    expect(await screen.findByText("queues")).toBeInTheDocument();
+    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
   it("streams the build for a typed topic, then renders the generated graph", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(
-          sseStreamResponse([
-            progressFrame("run_started", 0),
-            progressFrame("graph_built", 1, { kcCount: 3, edgeCount: 2 }),
-            courseFrame(makeCourse()),
-          ]),
-        ),
+      routedFetch({
+        runs: [],
+        build: sseStreamResponse([
+          progressFrame("run_started", 0),
+          progressFrame("graph_built", 1, { kcCount: 3, edgeCount: 2 }),
+          courseFrame(makeCourse()),
+        ]),
+      }),
     );
     render(<App />);
 
@@ -111,7 +145,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
   });
 
   it("shows a recoverable error when the build fails mid-stream", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, body: null }));
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ runs: [], build: { ok: false, status: 500, body: null } }),
+    );
     render(<App />);
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "x" } });

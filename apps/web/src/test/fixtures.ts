@@ -1,4 +1,19 @@
-import type { Course, ProgressEvent, ProgressStage } from "../types/course";
+import type { Course, CourseRun, ProgressEvent, ProgressStage } from "../types/course";
+
+/** A run-history row for sidebar tests; mirrors the camelCase CourseRun wire shape. */
+export function makeRun(overrides: Partial<CourseRun> = {}): CourseRun {
+  return {
+    id: "course-test",
+    runId: "run-test",
+    topic: "How binary search works",
+    status: "completed",
+    kcCount: 3,
+    moduleCount: 1,
+    createdAt: "2026-05-31T09:00:00Z",
+    updatedAt: "2026-05-31T09:01:00Z",
+    ...overrides,
+  };
+}
 
 /** A small but complete course-object for tests: comparison → sorted_order → binary_search,
  *  with binary_search the goal. Mirrors the real (camelCase) schema shape. */
