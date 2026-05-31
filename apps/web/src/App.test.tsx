@@ -174,9 +174,38 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // Reasoning + the tool-call card render in the canvas transcript.
+    // Reasoning + the tool-call card render in the canvas transcript (a labelled, focusable region).
     expect(await screen.findByText("Mapping the prerequisites.")).toBeInTheDocument();
     expect(screen.getByText("extract_concepts")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /agent transcript/i })).toBeInTheDocument();
+  });
+
+  it("cancels an in-flight build and returns to the topic form", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [],
+        build: sseStreamResponse(
+          [
+            progressFrame("run_started", 0),
+            agentFrame("reasoning", 1, { text: "Mapping the prerequisites." }),
+          ],
+          { open: true }, // stay streaming so Cancel has something to abort
+        ),
+      }),
+    );
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    await screen.findByText("Mapping the prerequisites.");
+
+    // Act — cancel mid-build.
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+
+    // Assert — back on the topic form, transcript gone.
+    expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    expect(screen.queryByText("Mapping the prerequisites.")).not.toBeInTheDocument();
   });
 
   it("opens a course in the canvas when a run is selected from the sidebar", async () => {

@@ -34,7 +34,15 @@ export function Transcript({ topic, events, agentEvents }: TranscriptProps) {
           <TodoList todos={todos} />
         </div>
       )}
-      <div className={styles.feed} ref={feedRef}>
+      {/* Focusable + labelled so keyboard users can scroll the feed; not a live region (the stage
+          rail announces progress, so the transcript stays quiet for screen readers). */}
+      <div
+        className={styles.feed}
+        ref={feedRef}
+        tabIndex={0}
+        role="region"
+        aria-label="Agent transcript"
+      >
         {entries.length === 0 ? (
           <p className={styles.waiting}>The agent is starting its work…</p>
         ) : (
