@@ -112,6 +112,34 @@ describe("CourseReader", () => {
     // Assert
     expect(screen.getByRole("status")).toHaveTextContent(/no lessons/i);
   });
+
+  it("focuses the lesson covering a concept on a focus request (Map drill-in)", () => {
+    // Arrange — binary_search is taught by the second module (its lesson is Lesson 3).
+    const course = makeCourse({
+      modules: [
+        makeModule({
+          id: "m1",
+          title: "Foundations",
+          lessons: [lessonWith("l1", "Prose one."), lessonWith("l2", "Prose two.")],
+        }),
+        makeModule({
+          id: "m2",
+          title: "Search",
+          kcs: ["binary_search"],
+          lessons: [lessonWith("l3", "Prose three.")],
+        }),
+      ],
+    });
+    const { rerender } = render(<CourseReader course={course} />);
+    expect(screen.getByText("Prose one.")).toBeInTheDocument();
+
+    // Act — a drill-in request targeting binary_search.
+    rerender(<CourseReader course={course} focusRequest={{ kc: "binary_search", seq: 1 }} />);
+
+    // Assert — the reader jumps to that module's lesson.
+    expect(screen.getByText("Prose three.")).toBeInTheDocument();
+    expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
+  });
 });
 
 /** One module, two lessons, with objectives (module-start) and an assessment (module-end). */

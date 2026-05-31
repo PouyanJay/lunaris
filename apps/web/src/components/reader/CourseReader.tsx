@@ -34,15 +34,24 @@ interface ReaderLesson {
   assessment: AssessmentItem[];
 }
 
-/** Flatten the course into an ordered lesson list and the matching outline groups in one pass.
- *  Modules with no authored lessons are skipped — they have nothing to read. */
-function buildReaderModel(course: Course): { lessons: ReaderLesson[]; groups: OutlineGroup[] } {
+interface ReaderModel {
+  lessons: ReaderLesson[];
+  groups: OutlineGroup[];
+  /** Each module KC → the lesson index that opens its module, for Map → Learn drill-in. */
+  kcToLessonIndex: Map<string, number>;
+}
+
+/** Flatten the course into an ordered lesson list, outline groups, and a KC→lesson index in one
+ *  pass. Modules with no authored lessons are skipped — they have nothing to read. */
+function buildReaderModel(course: Course): ReaderModel {
   const lessons: ReaderLesson[] = [];
   const groups: OutlineGroup[] = [];
+  const kcToLessonIndex = new Map<string, number>();
   for (const module of course.modules) {
     if (module.lessons.length === 0) continue;
     const items: OutlineGroup["items"] = [];
     const last = module.lessons.length - 1;
+    const moduleStartIndex = lessons.length;
     module.lessons.forEach((lesson, lessonIndex) => {
       const index = lessons.length;
       const label = `Lesson ${index + 1}`;
@@ -55,32 +64,53 @@ function buildReaderModel(course: Course): { lessons: ReaderLesson[]; groups: Ou
       });
       items.push({ index, label });
     });
+    for (const kc of module.kcs) {
+      if (!kcToLessonIndex.has(kc)) kcToLessonIndex.set(kc, moduleStartIndex);
+    }
     groups.push({ moduleId: module.id, moduleTitle: module.title, items });
   }
-  return { lessons, groups };
+  return { lessons, groups, kcToLessonIndex };
+}
+
+/** A Map → Learn drill-in: focus the lesson covering `kc`. `seq` increments per request so the same
+ *  concept can be re-requested after the learner has navigated away. */
+export interface LessonFocusRequest {
+  kc: string;
+  seq: number;
 }
 
 interface CourseReaderProps {
   course: Course;
+  focusRequest?: LessonFocusRequest | null;
 }
 
 /** The lesson reader (Learn view): a persistent course outline beside a single focused lesson, with
  *  Prev/Next navigation and a position indicator. Renders the focused lesson's four Merrill phases.
  *  Claims/provenance and the branded visual renderer land in later slices. */
-export function CourseReader({ course }: CourseReaderProps) {
-  const { lessons, groups } = useMemo(() => buildReaderModel(course), [course]);
+export function CourseReader({ course, focusRequest }: CourseReaderProps) {
+  const { lessons, groups, kcToLessonIndex } = useMemo(() => buildReaderModel(course), [course]);
   const citations = useMemo(
     () => new Map(course.provenance.map((citation) => [citation.id, citation])),
     [course.provenance],
   );
   const [activeIndex, setActiveIndex] = useState(0);
   const paneRef = useRef<HTMLDivElement>(null);
+  const handledFocusSeq = useRef(0);
 
   // Reset to the first lesson when a different course is opened.
   useEffect(() => setActiveIndex(0), [course]);
   // Return to the top of the reading pane whenever the focused lesson changes. (scrollTo is
   // optional-chained — jsdom doesn't implement it, and a missing scroll is harmless.)
   useEffect(() => paneRef.current?.scrollTo?.({ top: 0 }), [activeIndex]);
+
+  // Honour a Map drill-in once per request: jump to the lesson covering the requested concept. The
+  // seq ref gates re-firing, so a course switch (which changes kcToLessonIndex) won't re-focus.
+  useEffect(() => {
+    if (!focusRequest || focusRequest.seq === handledFocusSeq.current) return;
+    handledFocusSeq.current = focusRequest.seq;
+    const index = kcToLessonIndex.get(focusRequest.kc);
+    if (index !== undefined) setActiveIndex(index);
+  }, [focusRequest, kcToLessonIndex]);
 
   const total = lessons.length;
   // Defensive clamp for the single render between switching to a shorter course and the

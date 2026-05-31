@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AppFrame } from "./components/AppFrame";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
-import { CourseReader } from "./components/reader/CourseReader";
+import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
 import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
@@ -55,9 +55,17 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 /** A loaded course's graph, or its empty state when no concepts were mapped. */
-function CourseBody({ course, onReload }: { course: Course; onReload: () => void }) {
+function CourseBody({
+  course,
+  onReload,
+  onOpenLesson,
+}: {
+  course: Course;
+  onReload: () => void;
+  onOpenLesson?: ((kcId: string) => void) | undefined;
+}) {
   return course.graph.nodes.length > 0 ? (
-    <PrereqGraphExplorer course={course} />
+    <PrereqGraphExplorer course={course} onOpenLesson={onOpenLesson} />
   ) : (
     <EmptyState onReload={onReload} />
   );
@@ -89,6 +97,10 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // A ready course defaults to the lesson reader (Learn); Map shows the prerequisite graph.
   const [viewMode, setViewMode] = useState<CourseView>("learn");
+  // A Map → Learn drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
+  // request for the same concept after the learner has navigated away.
+  const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
+  const focusSeq = useRef(0);
 
   // When a build finishes, the new run was recorded server-side — refresh the history so it shows.
   // Depend on the stable `reloadRuns` (not the hook's per-render object) so this fires once per
@@ -111,6 +123,12 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     },
     [openRun],
   );
+  // Drill from a Map concept into its lesson: switch to the reader and request that lesson's focus.
+  const openLessonForKc = useCallback((kc: string) => {
+    focusSeq.current += 1;
+    setFocusRequest({ kc, seq: focusSeq.current });
+    setViewMode("learn");
+  }, []);
 
   const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
 
@@ -126,9 +144,9 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     ),
     body:
       viewMode === "map" ? (
-        <CourseBody course={course} onReload={onReload} />
+        <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
       ) : (
-        <CourseReader course={course} />
+        <CourseReader course={course} focusRequest={focusRequest} />
       ),
   });
 

@@ -18,6 +18,11 @@
   gap: var(--space-3);
 }
 
+.openLesson {
+  margin-top: var(--space-3);
+  align-self: flex-start;
+}
+
 .title {
   font-size: var(--text-lg);
   font-weight: 600;
