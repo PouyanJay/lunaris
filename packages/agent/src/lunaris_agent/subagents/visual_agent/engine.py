@@ -48,6 +48,17 @@ class VisualEngine:
         if draft is None:
             return None  # the generator judged no diagram helps (coherence) — not a repair case
 
+        # A branded spec is self-contained — Pydantic-validated and drawn by the web — so it ships
+        # without the Mermaid render gate (which only guards diagram-as-code source).
+        if not draft.source and draft.spec is not None:
+            logger.info("visual_placed", concept=concept, kind="spec", spec_type=draft.spec.type)
+            return Visual(
+                kind=VisualKind.SPEC,
+                source="",
+                spec=draft.spec,
+                mayer_checks=MayerFlags(coherence=True),
+            )
+
         for attempt in range(self._max_repairs + 1):
             result = await self._renderer.render(draft.source)
             if result.ok:
@@ -56,6 +67,7 @@ class VisualEngine:
                     kind=VisualKind.MERMAID,
                     source=draft.source,
                     rendered=result.path,
+                    spec=draft.spec,
                     # coherence is the generator's decision to draw at all; signaling is a
                     # property of the diagram we don't verify here — leave it at its default.
                     mayer_checks=MayerFlags(coherence=True),

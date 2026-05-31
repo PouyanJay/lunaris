@@ -56,7 +56,7 @@ export interface Objective {
 export type VerifierStatus = "unverified" | "supported" | "revise" | "cut";
 
 /** How a diagram is expressed on the wire (mirrors VisualKind). */
-export type VisualKind = "mermaid" | "svg" | "chart";
+export type VisualKind = "mermaid" | "svg" | "chart" | "spec";
 
 /** Mayer multimedia-design checks attached to a visual (mirrors MayerFlags). */
 export interface MayerFlags {

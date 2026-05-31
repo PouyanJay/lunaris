@@ -65,6 +65,27 @@ async def test_create_course_carries_lesson_content(client: httpx.AsyncClient) -
     assert isinstance(module["assessment"]["items"], list)
 
 
+async def test_stub_course_carries_a_branded_visual_spec(client: httpx.AsyncClient) -> None:
+    # Arrange — no extra setup; the client runs the stub pipeline (its visual engine emits a spec).
+
+    # Act
+    body = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+
+    # Assert — a typed VisualSpec rides a demonstrate visual, serialized camelCase for the reader.
+    visuals = [
+        visual
+        for module in body["modules"]
+        for lesson in module["lessons"]
+        for visual in lesson["segments"]["demonstrate"]["visuals"]
+    ]
+    assert visuals, "the stub pipeline should attach demonstrate visuals"
+    spec = next((visual["spec"] for visual in visuals if visual.get("spec")), None)
+    assert spec is not None, "a demonstrate visual should carry a branded spec"
+    assert spec["type"] in {"flow", "tree", "steps", "comparison", "timeline"}
+    # camelCase wire contract: no snake_case keys leak through (e.g. flow edges carry `from`).
+    assert all("_" not in key for key in spec)
+
+
 async def test_create_then_fetch_roundtrips_by_id(client: httpx.AsyncClient) -> None:
     # Arrange
     created = (await client.post("/api/courses", json={"topic": "binary search"})).json()

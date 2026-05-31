@@ -7,13 +7,17 @@ from lunaris_agent.subagents.visual_agent import (
     VisualDraft,
     VisualEngine,
     parse_visual,
+    parse_visual_spec,
 )
 from lunaris_runtime.schema import (
     Course,
+    FlowNode,
+    FlowSpec,
     Lesson,
     MerrillSegments,
     Module,
     Segment,
+    StepsSpec,
     VisualKind,
 )
 
@@ -46,6 +50,38 @@ def test_parse_visual_returns_none_for_unrecognised_diagram() -> None:
 def test_parse_visual_rejects_a_graph_lookalike() -> None:
     # "graphQL" must not slip past the "graph" diagram type
     assert parse_visual("graphQL TD\n  A-->B") is None
+
+
+# ─── visual-spec parser ────────────────────────────────────────────────────────
+def test_parse_visual_spec_parses_a_fenced_flow_spec() -> None:
+    spec = parse_visual_spec(
+        'Here:\n```json\n{"type":"flow","nodes":[{"id":"a","label":"A"}],"edges":[]}\n```'
+    )
+
+    assert isinstance(spec, FlowSpec)
+    assert spec.nodes[0].label == "A"
+    assert spec.edges == []
+
+
+def test_parse_visual_spec_accepts_bare_json_for_steps() -> None:
+    spec = parse_visual_spec('{"type":"steps","steps":[{"title":"One"}]}')
+
+    assert isinstance(spec, StepsSpec)
+    assert spec.steps[0].title == "One"
+
+
+def test_parse_visual_spec_returns_none_for_explicit_none() -> None:
+    assert parse_visual_spec("NONE") is None
+
+
+def test_parse_visual_spec_returns_none_for_non_json_text() -> None:
+    assert parse_visual_spec("not json at all") is None
+
+
+def test_parse_visual_spec_rejects_an_unknown_discriminator() -> None:
+    # Safety gate: an invented "type" must not produce any spec — the agent cannot talk its way
+    # past validation with a discriminator outside the union.
+    assert parse_visual_spec('{"type":"bogus","x":1}') is None
 
 
 # ─── stub renderer ───────────────────────────────────────────────────────────
@@ -106,6 +142,40 @@ async def test_engine_attaches_a_validated_visual() -> None:
     assert visual.kind is VisualKind.MERMAID
     assert visual.rendered is not None
     assert visual.mayer_checks.coherence is True
+
+
+async def test_engine_threads_a_visual_spec_onto_the_rendered_visual() -> None:
+    # Arrange — a draft with both Mermaid source (render gate) and a branded spec.
+    course = _course_with_lessons()
+    spec = FlowSpec(nodes=[FlowNode(id="a", label="A")])
+    generator = StubVisualGenerator(lambda _c, _x: VisualDraft(_VALID_DIAGRAM, spec=spec))
+    engine = VisualEngine(generator, StubDiagramRenderer())
+
+    # Act
+    placed = await engine.illustrate(course)
+
+    # Assert — the source still renders AND the spec rides along.
+    assert placed == 1
+    visual = course.modules[0].lessons[0].segments.demonstrate.visuals[0]
+    assert visual.spec is spec
+    assert visual.rendered is not None
+
+
+async def test_engine_ships_a_spec_only_visual_without_rendering() -> None:
+    # Arrange — a spec with no Mermaid source; the renderer would fail if it were called.
+    course = _course_with_lessons()
+    spec = FlowSpec(nodes=[FlowNode(id="a", label="A")])
+    generator = StubVisualGenerator(lambda _c, _x: VisualDraft("", spec=spec))
+    engine = VisualEngine(generator, StubDiagramRenderer(fail_on="graph"))
+
+    # Act
+    placed = await engine.illustrate(course)
+
+    # Assert — the spec is self-contained, so it ships without a render path.
+    assert placed == 1
+    visual = course.modules[0].lessons[0].segments.demonstrate.visuals[0]
+    assert visual.spec is spec
+    assert visual.rendered is None
 
 
 async def test_engine_places_a_visual_on_every_module() -> None:
