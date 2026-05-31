@@ -1,24 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { Course, Lesson, MerrillSegments } from "../../types/course";
+import type {
+  AssessmentItem,
+  Course,
+  Lesson,
+  MerrillSegments,
+  Objective,
+} from "../../types/course";
 import { Button } from "../primitives/Button";
+import { LessonAssessment } from "./LessonAssessment";
+import { LessonObjectives } from "./LessonObjectives";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import styles from "./CourseReader.module.css";
 
-/** Merrill's First Principles phases, in teaching order, with their reader labels. */
-const PHASES: { key: keyof MerrillSegments; label: string }[] = [
-  { key: "activate", label: "Activate" },
-  { key: "demonstrate", label: "Demonstrate" },
-  { key: "apply", label: "Apply" },
-  { key: "integrate", label: "Integrate" },
+/** Merrill's First Principles phases, in teaching order, with their reader labels and a plain-language
+ *  cue so a learner understands what each phase is for. */
+const PHASES: { key: keyof MerrillSegments; label: string; cue: string }[] = [
+  { key: "activate", label: "Activate", cue: "Connect to what you already know" },
+  { key: "demonstrate", label: "Demonstrate", cue: "See the idea worked through" },
+  { key: "apply", label: "Apply", cue: "Practise it yourself" },
+  { key: "integrate", label: "Integrate", cue: "Make it your own" },
 ];
 
 /** A lesson in course-wide reading order, carrying its owning module's title for context (lessons
- *  have no title of their own in the schema) and a display label. */
+ *  have no title of their own in the schema) and a display label. Module-level objectives and
+ *  assessment are attached to the module's first / last lesson respectively, so each shows once. */
 interface ReaderLesson {
   lesson: Lesson;
   moduleTitle: string;
   label: string;
+  objectives: Objective[];
+  assessment: AssessmentItem[];
 }
 
 /** Flatten the course into an ordered lesson list and the matching outline groups in one pass.
@@ -29,12 +41,19 @@ function buildReaderModel(course: Course): { lessons: ReaderLesson[]; groups: Ou
   for (const module of course.modules) {
     if (module.lessons.length === 0) continue;
     const items: OutlineGroup["items"] = [];
-    for (const lesson of module.lessons) {
+    const last = module.lessons.length - 1;
+    module.lessons.forEach((lesson, lessonIndex) => {
       const index = lessons.length;
       const label = `Lesson ${index + 1}`;
-      lessons.push({ lesson, moduleTitle: module.title, label });
+      lessons.push({
+        lesson,
+        moduleTitle: module.title,
+        label,
+        objectives: lessonIndex === 0 ? module.objectives : [],
+        assessment: lessonIndex === last ? module.assessment.items : [],
+      });
       items.push({ index, label });
-    }
+    });
     groups.push({ moduleId: module.id, moduleTitle: module.title, items });
   }
   return { lessons, groups };
@@ -87,12 +106,19 @@ export function CourseReader({ course }: CourseReaderProps) {
             </p>
           </header>
 
-          {PHASES.map(({ key, label }) => (
+          {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
+
+          {PHASES.map(({ key, label, cue }) => (
             <section key={key} className={styles.phase} aria-label={label}>
-              <h3 className={styles.phaseLabel}>{label}</h3>
+              <div className={styles.phaseHead}>
+                <h3 className={styles.phaseLabel}>{label}</h3>
+                <p className={styles.phaseCue}>{cue}</p>
+              </div>
               <p className={styles.prose}>{current.lesson.segments[key].prose}</p>
             </section>
           ))}
+
+          {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
 
           <footer className={styles.nav}>
             <Button

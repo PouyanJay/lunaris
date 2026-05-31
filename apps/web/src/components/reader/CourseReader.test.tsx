@@ -113,3 +113,87 @@ describe("CourseReader", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/no lessons/i);
   });
 });
+
+/** One module, two lessons, with objectives (module-start) and an assessment (module-end). */
+function moduleWithObjectivesAndAssessment() {
+  return makeCourse({
+    modules: [
+      makeModule({
+        id: "m1",
+        title: "Foundations",
+        objectives: [
+          {
+            statement: "Locate a target in a sorted array with binary search.",
+            bloomLevel: "apply",
+            kc: "binary_search",
+            assessedBy: ["i1"],
+          },
+        ],
+        lessons: [lessonWith("l1", "Lesson one prose."), lessonWith("l2", "Lesson two prose.")],
+        assessment: {
+          items: [
+            {
+              id: "i1",
+              prompt: "What is the worst-case time complexity?",
+              objective: "binary_search",
+              answer: "O(log n)",
+            },
+          ],
+        },
+      }),
+    ],
+  });
+}
+
+describe("CourseReader — lesson body", () => {
+  it("renders the four Merrill phases of the focused lesson", () => {
+    // Arrange / Act
+    render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
+
+    // Assert
+    expect(screen.getByRole("heading", { name: "Activate" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Demonstrate" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Apply" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Integrate" })).toBeInTheDocument();
+  });
+
+  it("shows the module's Bloom-tagged objectives on its first lesson only", () => {
+    // Arrange / Act — the first lesson is focused by default.
+    render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
+
+    // Assert — objectives + Bloom level are present on the module's opening lesson.
+    expect(screen.getByText(/learning objectives/i)).toBeInTheDocument();
+    expect(screen.getByText("Locate a target in a sorted array with binary search.")).toBeInTheDocument();
+    expect(screen.getByText("apply")).toBeInTheDocument();
+
+    // Act — move off the first lesson; objectives no longer show.
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+    expect(screen.queryByText(/learning objectives/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Locate a target in a sorted array with binary search."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the assessment on the module's last lesson, with answers revealable", () => {
+    // Arrange
+    render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
+
+    // Assert — assessment is hidden on the first (non-final) lesson.
+    expect(screen.queryByText("What is the worst-case time complexity?")).not.toBeInTheDocument();
+
+    // Act — go to the last lesson.
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+
+    // Assert — the assessment prompt shows; the answer is hidden until revealed.
+    expect(screen.getByText("What is the worst-case time complexity?")).toBeInTheDocument();
+    expect(screen.queryByText("O(log n)")).not.toBeInTheDocument();
+
+    // Act — reveal the answer.
+    fireEvent.click(screen.getByRole("button", { name: /show answer/i }));
+    expect(screen.getByText("O(log n)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hide answer/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+});
