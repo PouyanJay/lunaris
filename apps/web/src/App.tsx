@@ -14,8 +14,9 @@ import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { TopicForm } from "./components/TopicForm";
 import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
+import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
-import type { Course, CourseStatus } from "./types/course";
+import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
@@ -82,6 +83,7 @@ function SeedApp() {
 function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state, generate, reset } = useCourseStream(apiBaseUrl);
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
+  const opened = useOpenedRun(apiBaseUrl);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // When a build finishes, the new run was recorded server-side — refresh the history so it shows.
@@ -94,8 +96,16 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const startNewCourse = () => {
     setSettingsOpen(false);
+    opened.close();
     reset();
   };
+
+  const selectRun = (run: CourseRun) => {
+    setSettingsOpen(false);
+    opened.open(run);
+  };
+
+  const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
 
   const sidebar = (
     <Sidebar
@@ -104,6 +114,8 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       onNewCourse={startNewCourse}
       onOpenSettings={() => setSettingsOpen(true)}
       settingsActive={settingsOpen}
+      onSelectRun={selectRun}
+      selectedRunId={selectedRunId}
     />
   );
 
@@ -114,6 +126,35 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       </AgentShell>
     );
   }
+
+  // A selected run takes the canvas (read-only view of a past build); the sidebar persists.
+  if (opened.state.status === "loading") {
+    return (
+      <AgentShell sidebar={sidebar} title={opened.state.topic}>
+        <GraphSkeleton />
+      </AgentShell>
+    );
+  }
+  if (opened.state.status === "error") {
+    const { courseId, topic, message } = opened.state;
+    return (
+      <AgentShell sidebar={sidebar} title={topic}>
+        <ErrorState message={message} onRetry={() => opened.open({ id: courseId, topic })} />
+      </AgentShell>
+    );
+  }
+  if (opened.state.status === "ready") {
+    const { course } = opened.state;
+    return (
+      <AgentShell sidebar={sidebar} title={course.topic} meta={<HeaderMeta course={course} />}>
+        <CourseBody
+          course={course}
+          onReload={() => opened.open({ id: course.id, topic: course.topic })}
+        />
+      </AgentShell>
+    );
+  }
+
   if (state.status === "idle") {
     return (
       <AgentShell sidebar={sidebar} title="New course">

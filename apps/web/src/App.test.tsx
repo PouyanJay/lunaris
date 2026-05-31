@@ -87,11 +87,17 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
   /** StudioApp now fetches GET /api/runs on mount (the sidebar) AND streams the build, so the
    *  fetch mock routes by URL: the run history is JSON, the build is an SSE stream. */
-  function routedFetch(handlers: { runs?: unknown; build?: unknown }) {
+  function routedFetch(handlers: { runs?: unknown; build?: unknown; course?: unknown }) {
     return vi.fn((input: Parameters<typeof fetch>[0]) => {
       const url = input instanceof Request ? input.url : String(input);
       if (url.includes("/api/runs")) {
         return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
+      }
+      if (url.includes("/api/courses/stream")) {
+        return Promise.resolve(handlers.build);
+      }
+      if (url.includes("/api/courses/")) {
+        return Promise.resolve({ ok: true, json: async () => handlers.course });
       }
       return Promise.resolve(handlers.build);
     });
@@ -171,6 +177,24 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // Reasoning + the tool-call card render in the canvas transcript.
     expect(await screen.findByText("Mapping the prerequisites.")).toBeInTheDocument();
     expect(screen.getByText("extract_concepts")).toBeInTheDocument();
+  });
+
+  it("opens a course in the canvas when a run is selected from the sidebar", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [makeRun({ id: "c-1", topic: "queues" })],
+        course: makeCourse({ id: "c-1", topic: "queues" }),
+      }),
+    );
+    render(<App />);
+
+    // Click the run in the sidebar history.
+    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+
+    // The canvas opens that run's course: its title heading + a graph node from the course.
+    expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
+    expect(screen.getByText("Binary Search")).toBeInTheDocument();
   });
 
   it("shows a recoverable error when the build fails mid-stream", async () => {
