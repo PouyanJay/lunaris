@@ -128,7 +128,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
-  it("streams the agent transcript for a typed topic, then renders the generated graph", async () => {
+  it("streams the agent transcript, lands on the ready reader, and Map shows the graph", async () => {
     vi.stubGlobal(
       "fetch",
       routedFetch({
@@ -147,9 +147,14 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // The stream resolves and hands off to the explorer for the generated course.
+    // The stream resolves and hands off to the ready course (reader by default).
     expect(
       await screen.findByRole("heading", { name: "How binary search works" }),
+    ).toBeInTheDocument();
+    // Map surfaces the generated prerequisite graph.
+    fireEvent.click(screen.getByRole("radio", { name: /map/i }));
+    expect(
+      await screen.findByRole("application", { name: /prerequisite graph/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("Binary Search")).toBeInTheDocument();
   });
@@ -220,9 +225,11 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // Click the run in the sidebar history.
     fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
 
-    // The canvas opens that run's course: its title heading + a graph node from the course.
+    // The canvas opens that run's course on the reader; its title heading shows.
     expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
-    expect(screen.getByText("Binary Search")).toBeInTheDocument();
+    // Map surfaces a graph node from the opened course.
+    fireEvent.click(screen.getByRole("radio", { name: /map/i }));
+    expect(await screen.findByText("Binary Search")).toBeInTheDocument();
     // Opened by the run's course_id, not a re-build.
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/courses/c-1"),
@@ -267,5 +274,56 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/http 500/i);
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it("defaults the ready canvas to the lesson reader (Learn), not the graph", async () => {
+    // Arrange — a build that resolves straight to a ready course.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [],
+        build: sseStreamResponse([progressFrame("run_started", 0), courseFrame(makeCourse())]),
+      }),
+    );
+    render(<App />);
+
+    // Act — generate the course.
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // Assert — the reader is the default ready view: lesson prose renders, the graph is absent…
+    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("application", { name: /prerequisite graph/i }),
+    ).not.toBeInTheDocument();
+    // …and the Learn | Map toggle shows Learn selected.
+    expect(screen.getByRole("radio", { name: /learn/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /map/i })).not.toBeChecked();
+  });
+
+  it("toggles the ready canvas between the reader (Learn) and the graph (Map)", async () => {
+    // Arrange — a ready course on the canvas.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [],
+        build: sseStreamResponse([progressFrame("run_started", 0), courseFrame(makeCourse())]),
+      }),
+    );
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    await screen.findByText(/find a word in a dictionary/i);
+
+    // Act — switch to Map. Assert — the graph canvas shows, the prose is gone.
+    fireEvent.click(screen.getByRole("radio", { name: /map/i }));
+    expect(
+      await screen.findByRole("application", { name: /prerequisite graph/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
+
+    // Act — switch back to Learn. Assert — the reader returns.
+    fireEvent.click(screen.getByRole("radio", { name: /learn/i }));
+    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
   });
 });

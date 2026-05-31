@@ -1,11 +1,54 @@
 import type {
   AgentEvent,
   AgentEventKind,
+  Claim,
   Course,
   CourseRun,
+  GagneFlags,
+  Lesson,
   ProgressEvent,
   ProgressStage,
+  Segment,
 } from "../types/course";
+
+const NO_GAGNE: GagneFlags = {
+  gainAttention: false,
+  stateObjective: false,
+  recallPrior: false,
+  presentContent: false,
+  guideLearning: false,
+  elicitPerformance: false,
+  provideFeedback: false,
+  assessPerformance: false,
+  enhanceTransfer: false,
+};
+
+function segment(prose: string, claims: Claim[] = []): Segment {
+  return { prose, visuals: [], claims };
+}
+
+/** A complete Merrill lesson for reader tests: four phases with distinct prose, a grounded claim in
+ *  the demonstrate phase (cites `src-1`), so the reader has real content to render. */
+export function makeLesson(overrides: Partial<Lesson> = {}): Lesson {
+  return {
+    id: "m-binary_search-l0",
+    segments: {
+      activate: segment("Recall how you find a word in a dictionary by halving the pages."),
+      demonstrate: segment("Binary search halves the candidate range on each comparison.", [
+        {
+          text: "Comparison reduces the problem size each step.",
+          supportedBy: "src-1",
+          verifierStatus: "supported",
+        },
+      ]),
+      apply: segment("Trace binary search on [1, 3, 5, 7, 9] searching for 7."),
+      integrate: segment("Where else does halving a search space speed things up?"),
+    },
+    gagne: { ...NO_GAGNE },
+    loadEstimate: 1.0,
+    ...overrides,
+  };
+}
 
 /** A run-history row for sidebar tests; mirrors the camelCase CourseRun wire shape. */
 export function makeRun(overrides: Partial<CourseRun> = {}): CourseRun {
@@ -36,7 +79,25 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
         id: "m-binary_search",
         title: "Binary Search",
         kcs: ["binary_search"],
-        objectives: [],
+        objectives: [
+          {
+            statement: "Given a sorted array, locate a target with binary search.",
+            bloomLevel: "apply",
+            kc: "binary_search",
+            assessedBy: ["m0-i0"],
+          },
+        ],
+        lessons: [makeLesson()],
+        assessment: {
+          items: [
+            {
+              id: "m0-i0",
+              prompt: "What is the worst-case time complexity of binary search?",
+              objective: "binary_search",
+              answer: "O(log n)",
+            },
+          ],
+        },
         difficultyIndex: 0.75,
       },
     ],

@@ -47,6 +47,24 @@ async def test_create_course_returns_camelcase_course_object(client: httpx.Async
     assert response.headers["x-run-id"]  # correlation id surfaced
 
 
+async def test_create_course_carries_lesson_content(client: httpx.AsyncClient) -> None:
+    # Act
+    body = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+
+    # Assert — the wire contract the lesson/reader view consumes: modules carry lessons, each lesson
+    # carries the four Merrill segments (camelCase), and a segment carries prose + claims + visuals.
+    module = body["modules"][0]
+    assert module["lessons"], "module must carry lessons for the reader to render"
+    segments = module["lessons"][0]["segments"]
+    assert set(segments) == {"activate", "demonstrate", "apply", "integrate"}
+    activate = segments["activate"]
+    assert isinstance(activate["prose"], str)
+    assert isinstance(activate["claims"], list)
+    assert isinstance(activate["visuals"], list)
+    # Assessment items serialize camelCase alongside the lesson content.
+    assert isinstance(module["assessment"]["items"], list)
+
+
 async def test_create_then_fetch_roundtrips_by_id(client: httpx.AsyncClient) -> None:
     # Arrange
     created = (await client.post("/api/courses", json={"topic": "binary search"})).json()

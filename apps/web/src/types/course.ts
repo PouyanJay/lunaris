@@ -52,11 +52,93 @@ export interface Objective {
   assessedBy: string[];
 }
 
+/** The verifier's verdict on a claim's grounding (mirrors VerifierStatus). */
+export type VerifierStatus = "unverified" | "supported" | "revise" | "cut";
+
+/** How a diagram is expressed on the wire (mirrors VisualKind). */
+export type VisualKind = "mermaid" | "svg" | "chart";
+
+/** Mayer multimedia-design checks attached to a visual (mirrors MayerFlags). */
+export interface MayerFlags {
+  coherence: boolean;
+  signaling: boolean;
+  spatialContiguity: boolean;
+  redundancy: boolean;
+}
+
+/** A diagram attached to a segment. `source` is diagram-as-code (e.g. Mermaid); `rendered` is a
+ *  server-side artifact path. A typed `VisualSpec` (the branded-renderer path) lands in a later slice. */
+export interface Visual {
+  kind: VisualKind;
+  source: string;
+  rendered: string | null;
+  mayerChecks: MayerFlags;
+}
+
+/** A single factual assertion in a segment, grounded (or cut) by the verifier. `supportedBy` is a
+ *  Citation id resolved against `Course.provenance`. */
+export interface Claim {
+  text: string;
+  supportedBy: string | null;
+  verifierStatus: VerifierStatus;
+}
+
+/** The content of one Merrill phase: prose plus its diagrams and grounded claims. */
+export interface Segment {
+  prose: string;
+  visuals: Visual[];
+  claims: Claim[];
+}
+
+/** Merrill's First Principles — the four instructional phases of a lesson. */
+export interface MerrillSegments {
+  activate: Segment;
+  demonstrate: Segment;
+  apply: Segment;
+  integrate: Segment;
+}
+
+/** Gagné's nine events of instruction, tracked per lesson (mirrors GagneFlags). */
+export interface GagneFlags {
+  gainAttention: boolean;
+  stateObjective: boolean;
+  recallPrior: boolean;
+  presentContent: boolean;
+  guideLearning: boolean;
+  elicitPerformance: boolean;
+  provideFeedback: boolean;
+  assessPerformance: boolean;
+  enhanceTransfer: boolean;
+}
+
+export interface Lesson {
+  id: string;
+  segments: MerrillSegments;
+  gagne: GagneFlags;
+  /** Estimated intrinsic cognitive load for the lesson. */
+  loadEstimate: number;
+}
+
+/** One assessment item (mirrors Item). `answer` is the model answer, often absent. */
+export interface AssessmentItem {
+  id: string;
+  prompt: string;
+  /** The objective/KC id this item assesses. */
+  objective: string;
+  answer: string | null;
+}
+
+export interface Assessment {
+  items: AssessmentItem[];
+}
+
 export interface Module {
   id: string;
   title: string;
   kcs: string[];
   objectives: Objective[];
+  lessons: Lesson[];
+  assessment: Assessment;
   difficultyIndex: number;
 }
 
