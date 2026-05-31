@@ -20,6 +20,7 @@ import uuid
 import pytest
 from lunaris_agent import build_agent_course_builder
 from lunaris_eval import evaluate_course
+from lunaris_grounding import StubEvidenceRetriever
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import CourseStatus, VerifierStatus
 
@@ -28,9 +29,15 @@ pytestmark = pytest.mark.eval
 
 @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="needs ANTHROPIC_API_KEY")
 async def test_agent_builds_a_real_course_with_live_claude(tmp_path, capsys) -> None:
-    # Arrange — the live composition root: real Claude tiers, env-gated retriever.
+    # Arrange — the live composition root with real Claude tiers. Grounding is pinned to the
+    # conservative stub retriever ON PURPOSE: this test proves the deep-agent HARNESS builds a
+    # course on a live model, not the grounding corpus. The real Voyage retriever's free tier is
+    # 3 req/min — far too slow to ground a full course — so leaving it on would gate this proof on
+    # an unrelated provider limit (real grounded PUBLISHED is proven separately by the Stage 4b
+    # grounded eval). With no evidence every claim is CUT (the publish gate still holds: no
+    # unsupported claim ships), so the course finishes REVIEW and the DoD's factuality check passes.
     store = CourseStore(tmp_path)
-    builder = build_agent_course_builder(store)
+    builder = build_agent_course_builder(store, retriever=StubEvidenceRetriever())
     run_id = uuid.uuid4().hex
 
     # Act — the real agent drives the whole build (extract → graph → curriculum → author/verify/
