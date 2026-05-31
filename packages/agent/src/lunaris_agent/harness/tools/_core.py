@@ -9,16 +9,26 @@ from collections.abc import Mapping, Sequence
 
 from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
-from lunaris_runtime.schema import BloomLevel, Claim, KnowledgeComponent, RiskTier
+from lunaris_runtime.schema import (
+    BloomLevel,
+    Claim,
+    KnowledgeComponent,
+    PrerequisiteGraph,
+    RiskTier,
+)
 
 
-async def build_prerequisite_graph_payload(
+async def build_prerequisite_graph_typed(
     builder: PrerequisiteGraphBuilder,
     concepts: Sequence[Mapping[str, object]],
     goal: str,
     frontier: Sequence[str] | None = None,
-) -> dict[str, object]:
-    """Order proposed concepts into a validated, acyclic prerequisite graph (Failure-A moat)."""
+) -> PrerequisiteGraph:
+    """Order proposed concepts into a validated, acyclic prerequisite graph (Failure-A moat).
+
+    Returns the typed graph so callers that need to retain it (the agent's run draft) get the
+    domain object; the dict payload below is the over-the-wire form for the tool/MCP surface.
+    """
     kcs = [
         KnowledgeComponent(
             id=str(concept["id"]),
@@ -29,7 +39,17 @@ async def build_prerequisite_graph_payload(
         )
         for concept in concepts
     ]
-    graph = await builder.build(kcs, frontier=list(frontier or []), goal=goal)
+    return await builder.build(kcs, frontier=list(frontier or []), goal=goal)
+
+
+async def build_prerequisite_graph_payload(
+    builder: PrerequisiteGraphBuilder,
+    concepts: Sequence[Mapping[str, object]],
+    goal: str,
+    frontier: Sequence[str] | None = None,
+) -> dict[str, object]:
+    """The dict form of :func:`build_prerequisite_graph_typed` (the tool/MCP wire payload)."""
+    graph = await build_prerequisite_graph_typed(builder, concepts, goal, frontier)
     return graph.model_dump(by_alias=True)
 
 

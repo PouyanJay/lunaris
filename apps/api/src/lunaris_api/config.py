@@ -13,8 +13,9 @@ _DEFAULT_ORIGINS = (
 class Settings:
     """API runtime configuration, read from the environment.
 
-    ``pipeline`` selects the course-generation backend: ``live`` (real Claude subagents,
-    needs ``ANTHROPIC_API_KEY``) or ``stub`` (deterministic, offline — for demos/tests).
+    ``pipeline`` selects the course-generation backend: ``agent`` (the real deep-agent harness,
+    needs ``ANTHROPIC_API_KEY``), ``live`` (the legacy single-shot orchestrator, also needs a key),
+    or ``stub`` (deterministic, offline — for demos/tests).
     """
 
     pipeline: str

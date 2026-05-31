@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 
 import structlog
-from lunaris_agent import Orchestrator
+from lunaris_agent import CoursePipeline
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import Course, ProgressEvent
 
@@ -10,7 +10,8 @@ from .progress_sink import QueueProgressSink
 
 logger = structlog.get_logger()
 
-OrchestratorFactory = Callable[[CourseStore], Orchestrator]
+# Builds the per-run course pipeline (stub / live orchestrator / deep agent) from the shared store.
+PipelineFactory = Callable[[CourseStore], CoursePipeline]
 
 # A streamed item: a ("progress", ProgressEvent) update, or the terminal ("course", Course).
 # Internal to the service<->router contract; the kind string maps directly to the SSE event name.
@@ -20,24 +21,25 @@ _StreamItem = tuple[str, ProgressEvent | Course]
 class CourseService:
     """Application service over the course pipeline — the API's only door to the agent.
 
-    Builds an orchestrator per run via the injected factory (live or stub) and persists
-    through the shared ``CourseStore``, so the HTTP layer stays free of pipeline wiring.
+    Builds a course pipeline per run via the injected factory (stub / live orchestrator / deep
+    agent) and persists through the shared ``CourseStore``, so the HTTP layer stays free of
+    pipeline wiring.
     """
 
-    def __init__(self, store: CourseStore, orchestrator_factory: OrchestratorFactory) -> None:
+    def __init__(self, store: CourseStore, pipeline_factory: PipelineFactory) -> None:
         self._store = store
-        self._factory = orchestrator_factory
+        self._factory = pipeline_factory
 
     async def create(self, topic: str, *, course_id: str, run_id: str) -> Course:
-        orchestrator = self._factory(self._store)
-        return await orchestrator.run(topic, course_id=course_id, run_id=run_id)
+        pipeline = self._factory(self._store)
+        return await pipeline.run(topic, course_id=course_id, run_id=run_id)
 
     async def stream(
         self, topic: str, *, course_id: str, run_id: str
     ) -> AsyncIterator[_StreamItem]:
         """Run the pipeline, yielding each progress event as it happens, then the course.
 
-        The orchestrator runs in a background task feeding a queue; we forward each
+        The pipeline runs in a background task feeding a queue; we forward each
         ProgressEvent as it lands and, once the run completes, drain any tail and yield
         the finished course-object. The run task is always cancelled on early exit (a
         disconnected client) so a dropped SSE stream never leaks a running pipeline.
@@ -49,9 +51,9 @@ class CourseService:
         queue: asyncio.Queue[ProgressEvent] = asyncio.Queue()
         run_task: asyncio.Task[Course] | None = None
         try:
-            orchestrator = self._factory(self._store)
+            pipeline = self._factory(self._store)
             run_task = asyncio.create_task(
-                orchestrator.run(
+                pipeline.run(
                     topic, course_id=course_id, run_id=run_id, progress=QueueProgressSink(queue)
                 )
             )

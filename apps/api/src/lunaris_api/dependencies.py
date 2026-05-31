@@ -1,19 +1,38 @@
 from pathlib import Path
 from typing import Annotated
 
+import structlog
 from fastapi import Depends
-from lunaris_agent import build_orchestrator, build_stub_orchestrator
+from lunaris_agent import (
+    build_agent_course_builder,
+    build_orchestrator,
+    build_stub_orchestrator,
+)
 from lunaris_runtime.persistence import CourseStore
 
 from .config import Settings, get_settings
 from .secrets import AnthropicProbeValidator, ISecretValidator, SecretStore
-from .service import CourseService
+from .service import CourseService, PipelineFactory
+
+logger = structlog.get_logger()
+
+# LUNARIS_PIPELINE → the per-run pipeline factory. ``stub`` is the deterministic no-key demo;
+# ``agent`` is the real deep-agent harness; ``live`` (default) is the legacy orchestrator.
+_PIPELINE_FACTORIES: dict[str, PipelineFactory] = {
+    "stub": build_stub_orchestrator,
+    "agent": build_agent_course_builder,
+    "live": build_orchestrator,
+}
 
 
 def get_course_service(settings: Annotated[Settings, Depends(get_settings)]) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     store = CourseStore(settings.course_dir)
-    factory = build_stub_orchestrator if settings.pipeline == "stub" else build_orchestrator
+    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
+    if factory is None:
+        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
+        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
+        factory = build_orchestrator
     return CourseService(store, factory)
 
 

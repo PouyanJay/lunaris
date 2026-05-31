@@ -15,6 +15,8 @@ from lunaris_grounding import (
 )
 from lunaris_runtime.persistence import CourseStore
 
+from .harness.authoring import ClaudeLessonReviser
+from .harness.runner import AgentCourseBuilder
 from .orchestrator import Orchestrator
 from .subagents.concept_extractor import ClaudeConceptExtractor
 from .subagents.curriculum_architect import ClaudeCurriculumArchitect
@@ -113,4 +115,33 @@ def build_orchestrator(
     visual_engine = _visual_engine_from_env(worker)
     return Orchestrator(
         store, extractor, builder, architect, author, verifier, visual_engine=visual_engine
+    )
+
+
+def build_agent_course_builder(
+    store: CourseStore,
+    *,
+    worker_model: str | None = None,
+    strong_model: str | None = None,
+    retriever: IEvidenceRetriever | None = None,
+) -> AgentCourseBuilder:
+    """Composition root for the AGENT pipeline: a real deep agent over the live subagents/moats.
+
+    Replaces ``build_orchestrator`` with a ``create_deep_agent`` harness that plans the build and
+    delegates lesson authoring to the author→verify→revise subagent. Same tier split as the
+    orchestrator: the STRONG tier is the agent planner + curriculum architect + independent support
+    assessor; the WORKER tier handles extraction, the prereq judge, and lesson authoring/revision.
+    The retriever follows the same env-gated path as the orchestrator (real pgvector when creds are
+    set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed.
+    """
+    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
+    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    return AgentCourseBuilder(
+        strong,
+        store,
+        extractor=ClaudeConceptExtractor(worker),
+        builder=build_live_prereq_builder(worker),
+        architect=ClaudeCurriculumArchitect(strong),
+        reviser=ClaudeLessonReviser(worker),
+        verifier=build_live_verifier(strong, retriever),
     )
