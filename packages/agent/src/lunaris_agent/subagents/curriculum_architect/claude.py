@@ -1,5 +1,9 @@
 import structlog
-from lunaris_runtime.resilience import retry_on_rate_limit
+from lunaris_runtime.resilience import (
+    LLM_MAX_RETRIES,
+    LLM_REQUEST_TIMEOUT_S,
+    retry_on_rate_limit,
+)
 from lunaris_runtime.schema import PrerequisiteGraph
 
 from .parser import parse_curriculum
@@ -40,7 +44,11 @@ class ClaudeCurriculumArchitect:
         if self._client is None:
             from langchain_anthropic import ChatAnthropic
 
-            self._client = ChatAnthropic(model=self._model_name)
+            self._client = ChatAnthropic(
+                model=self._model_name,
+                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+                max_retries=LLM_MAX_RETRIES,
+            )
 
         labels = {kc.id: kc.label for kc in graph.nodes}
         ordered = "\n".join(

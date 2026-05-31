@@ -1,4 +1,8 @@
-from lunaris_runtime.resilience import retry_on_rate_limit
+from lunaris_runtime.resilience import (
+    LLM_MAX_RETRIES,
+    LLM_REQUEST_TIMEOUT_S,
+    retry_on_rate_limit,
+)
 
 from .draft import VisualDraft
 from .parser import parse_visual
@@ -32,7 +36,11 @@ class ClaudeVisualGenerator:
         if self._client is None:
             from langchain_anthropic import ChatAnthropic
 
-            self._client = ChatAnthropic(model=self._model_name)
+            self._client = ChatAnthropic(
+                model=self._model_name,
+                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+                max_retries=LLM_MAX_RETRIES,
+            )
 
         prompt = _PROMPT.format(concept=concept, context=context)
         message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]

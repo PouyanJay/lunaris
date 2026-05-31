@@ -1,0 +1,87 @@
+"""Live, key-gated proof that the REAL deep-agent harness builds a course end-to-end (P2).
+
+Deselected unless ``-m eval``. Drives ``build_agent_course_builder`` with real Claude: the agent
+plans, calls the deterministic moat tools, and delegates authoring to the verify→revise sub-agent —
+no scripted model, no stubs. Proves the harness the MVP never had actually works on a live model and
+that the moats hold on real LLM output (acyclic prerequisite order; no unsupported claim ships).
+
+Run: ``uv run --env-file .env pytest -m eval packages/agent/tests/test_agent_pipeline_live.py -s``
+
+Grounding: with ``SUPABASE_*`` + ``EMBEDDINGS_API_KEY`` set, the real pgvector retriever is used; if
+the corpus is empty / Voyage is rate-limited, claims fall back to CUT (fail-safe). Either a
+PUBLISHED or a REVIEW course passes here — the point is the harness runs on a live model and the DoD
+(prereq-order + factuality) holds, never that a specific publish status results.
+"""
+
+import asyncio
+import os
+import uuid
+
+import pytest
+from lunaris_agent import build_agent_course_builder
+from lunaris_eval import evaluate_course
+from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.schema import CourseStatus, VerifierStatus
+
+pytestmark = pytest.mark.eval
+
+
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="needs ANTHROPIC_API_KEY")
+async def test_agent_builds_a_real_course_with_live_claude(tmp_path, capsys) -> None:
+    # Arrange — the live composition root: real Claude tiers, env-gated retriever.
+    store = CourseStore(tmp_path)
+    builder = build_agent_course_builder(store)
+    run_id = uuid.uuid4().hex
+
+    # Act — the real agent drives the whole build (extract → graph → curriculum → author/verify/
+    # revise sub-agent → finalize). May take a few minutes and absorb transient 429s via retry. An
+    # overall wall-clock bound turns any stall into a clean test failure instead of a hung session
+    # (the per-request timeouts on the clients should make this ceiling unreachable in practice).
+    course = await asyncio.wait_for(
+        builder.run("Binary search", course_id="live-agent", run_id=run_id),
+        timeout=420,
+    )
+
+    # Assert — the harness produced a structurally real course on live output.
+    assert course.graph.nodes, "no concepts were extracted"
+    assert course.graph.is_acyclic is True
+    topo = course.graph.topo_order
+    assert set(topo) == {kc.id for kc in course.graph.nodes}, "topo order must cover every concept"
+    assert course.modules and all(m.lessons for m in course.modules), "every module needs a lesson"
+    assert course.goal_concept and course.goal_concept in topo
+
+    # The Failure-B moat held on live output: every claim went through the verifier (none left
+    # UNVERIFIED), so no claim is live-and-unsupported (the publish gate).
+    claims = [
+        claim
+        for module in course.modules
+        for lesson in module.lessons
+        for segment in (
+            lesson.segments.activate,
+            lesson.segments.demonstrate,
+            lesson.segments.apply,
+            lesson.segments.integrate,
+        )
+        for claim in segment.claims
+    ]
+    assert all(claim.verifier_status is not VerifierStatus.UNVERIFIED for claim in claims), (
+        "every claim must have been through the verifier"
+    )
+
+    # The independent DoD eval passes on live output (prereq-order + factuality).
+    report = evaluate_course(course)
+    detail = "; ".join(f"{c.name}={c.passed} ({c.detail})" for c in report.checks)
+    assert report.meets_dod, detail
+
+    # Status is whichever the publish gate + triage decided; both are valid outcomes here.
+    assert course.status in (CourseStatus.PUBLISHED, CourseStatus.REVIEW)
+
+    # Surface the live result so a human can eyeball it (run with -s).
+    supported = sum(1 for c in claims if c.verifier_status is VerifierStatus.SUPPORTED)
+    with capsys.disabled():
+        print(
+            f"\n[LIVE AGENT] run_id={run_id} status={course.status.value} "
+            f"concepts={len(course.graph.nodes)} modules={len(course.modules)} "
+            f"claims={len(claims)} supported={supported} cut={len(claims) - supported} "
+            f"provenance={len(course.provenance)} meets_dod={report.meets_dod}"
+        )

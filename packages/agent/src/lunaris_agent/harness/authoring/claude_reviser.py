@@ -11,7 +11,11 @@ from collections.abc import Callable, Sequence
 
 import structlog
 from langchain_core.language_models import BaseChatModel
-from lunaris_runtime.resilience import retry_on_rate_limit
+from lunaris_runtime.resilience import (
+    LLM_MAX_RETRIES,
+    LLM_REQUEST_TIMEOUT_S,
+    retry_on_rate_limit,
+)
 from lunaris_runtime.schema import Module
 
 from ...subagents.module_author import ClaudeModuleAuthor, LessonDraft
@@ -69,5 +73,9 @@ class ClaudeLessonReviser:
             else:
                 from langchain_anthropic import ChatAnthropic
 
-                self._client = ChatAnthropic(model=self._model)  # type: ignore[call-arg]
+                self._client = ChatAnthropic(  # type: ignore[call-arg]
+                    model=self._model,
+                    default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+                    max_retries=LLM_MAX_RETRIES,
+                )
         return self._client

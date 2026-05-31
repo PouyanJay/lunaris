@@ -14,6 +14,7 @@ from lunaris_grounding import (
     VoyageEmbedder,
 )
 from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.resilience import LLM_MAX_RETRIES, LLM_REQUEST_TIMEOUT_S
 
 from .harness.authoring import ClaudeLessonReviser
 from .harness.runner import AgentCourseBuilder
@@ -132,12 +133,22 @@ def build_agent_course_builder(
     orchestrator: the STRONG tier is the agent planner + curriculum architect + independent support
     assessor; the WORKER tier handles extraction, the prereq judge, and lesson authoring/revision.
     The retriever follows the same env-gated path as the orchestrator (real pgvector when creds are
-    set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed.
+    set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed. The
+    planner client is built explicitly (not as a bare model id) so it carries a request timeout —
+    otherwise ``create_deep_agent`` would build an un-timed client and a stalled socket would hang
+    the whole run.
     """
+    from langchain_anthropic import ChatAnthropic
+
     worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
     strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    planner = ChatAnthropic(
+        model=strong,
+        default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+        max_retries=LLM_MAX_RETRIES,
+    )
     return AgentCourseBuilder(
-        strong,
+        planner,
         store,
         extractor=ClaudeConceptExtractor(worker),
         builder=build_live_prereq_builder(worker),

@@ -1,5 +1,9 @@
 import structlog
-from lunaris_runtime.resilience import retry_on_rate_limit
+from lunaris_runtime.resilience import (
+    LLM_MAX_RETRIES,
+    LLM_REQUEST_TIMEOUT_S,
+    retry_on_rate_limit,
+)
 
 from .extraction import Extraction
 from .parser import parse_extraction
@@ -37,7 +41,11 @@ class ClaudeConceptExtractor:
         if self._client is None:
             from langchain_anthropic import ChatAnthropic
 
-            self._client = ChatAnthropic(model=self._model_name)
+            self._client = ChatAnthropic(
+                model=self._model_name,
+                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+                max_retries=LLM_MAX_RETRIES,
+            )
 
         prompt = _PROMPT.format(topic=topic)
         message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
