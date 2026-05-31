@@ -1,4 +1,8 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import type { Course, Lesson, MerrillSegments } from "../../types/course";
+import { Button } from "../primitives/Button";
+import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import styles from "./CourseReader.module.css";
 
 /** Merrill's First Principles phases, in teaching order, with their reader labels. */
@@ -9,29 +13,56 @@ const PHASES: { key: keyof MerrillSegments; label: string }[] = [
   { key: "integrate", label: "Integrate" },
 ];
 
-// Walking skeleton: the reader always shows the first lesson. Real per-module lesson numbering and
-// navigation arrive in T1, which replaces this with a derived label.
-const LESSON_LABEL = "Lesson 1";
+/** A lesson in course-wide reading order, carrying its owning module's title for context (lessons
+ *  have no title of their own in the schema) and a display label. */
+interface ReaderLesson {
+  lesson: Lesson;
+  moduleTitle: string;
+  label: string;
+}
 
-/** The first authored lesson in topological module order, plus the module that owns it. Lessons
- *  carry no title in the schema, so the reader contextualises them by their module. */
-function firstLesson(course: Course): { moduleTitle: string; lesson: Lesson } | null {
+/** Flatten the course into an ordered lesson list and the matching outline groups in one pass.
+ *  Modules with no authored lessons are skipped — they have nothing to read. */
+function buildReaderModel(course: Course): { lessons: ReaderLesson[]; groups: OutlineGroup[] } {
+  const lessons: ReaderLesson[] = [];
+  const groups: OutlineGroup[] = [];
   for (const module of course.modules) {
-    const lesson = module.lessons[0];
-    if (lesson) return { moduleTitle: module.title, lesson };
+    if (module.lessons.length === 0) continue;
+    const items: OutlineGroup["items"] = [];
+    for (const lesson of module.lessons) {
+      const index = lessons.length;
+      const label = `Lesson ${index + 1}`;
+      lessons.push({ lesson, moduleTitle: module.title, label });
+      items.push({ index, label });
+    }
+    groups.push({ moduleId: module.id, moduleTitle: module.title, items });
   }
-  return null;
+  return { lessons, groups };
 }
 
 interface CourseReaderProps {
   course: Course;
 }
 
-/** The lesson reader (Learn view). Walking skeleton: renders the first authored lesson's four
- *  Merrill phases. The course outline (TOC), lesson navigation, claims/provenance, and the branded
- *  visual renderer land in later slices. */
+/** The lesson reader (Learn view): a persistent course outline beside a single focused lesson, with
+ *  Prev/Next navigation and a position indicator. Renders the focused lesson's four Merrill phases.
+ *  Claims/provenance and the branded visual renderer land in later slices. */
 export function CourseReader({ course }: CourseReaderProps) {
-  const current = firstLesson(course);
+  const { lessons, groups } = useMemo(() => buildReaderModel(course), [course]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const paneRef = useRef<HTMLDivElement>(null);
+
+  // Reset to the first lesson when a different course is opened.
+  useEffect(() => setActiveIndex(0), [course]);
+  // Return to the top of the reading pane whenever the focused lesson changes. (scrollTo is
+  // optional-chained — jsdom doesn't implement it, and a missing scroll is harmless.)
+  useEffect(() => paneRef.current?.scrollTo?.({ top: 0 }), [activeIndex]);
+
+  const total = lessons.length;
+  // Defensive clamp for the single render between switching to a shorter course and the
+  // reset-on-course effect firing — keeps the focused index in range so `current` stays defined.
+  const safeIndex = Math.min(activeIndex, Math.max(0, total - 1));
+  const current = lessons[safeIndex];
 
   if (!current) {
     return (
@@ -41,21 +72,46 @@ export function CourseReader({ course }: CourseReaderProps) {
     );
   }
 
-  const { moduleTitle, lesson } = current;
   return (
-    <section className={styles.reader} aria-label="Lesson reader" tabIndex={0}>
-      <article className={styles.page}>
-        <header className={styles.lessonHead}>
-          <p className="eyebrow">{moduleTitle}</p>
-          <h2 className={styles.lessonTitle}>{LESSON_LABEL}</h2>
-        </header>
-        {PHASES.map(({ key, label }) => (
-          <section key={key} className={styles.phase} aria-label={label}>
-            <h3 className={styles.phaseLabel}>{label}</h3>
-            <p className={styles.prose}>{lesson.segments[key].prose}</p>
-          </section>
-        ))}
-      </article>
-    </section>
+    <div className={styles.reader}>
+      <ReaderOutline groups={groups} activeIndex={safeIndex} onSelect={setActiveIndex} />
+      <div className={styles.pane} ref={paneRef} role="region" aria-label="Lesson reader" tabIndex={0}>
+        <article className={styles.page}>
+          <header className={styles.lessonHead}>
+            <div className={styles.lessonHeading}>
+              <p className="eyebrow">{current.moduleTitle}</p>
+              <h2 className={styles.lessonTitle}>{current.label}</h2>
+            </div>
+            <p className={`${styles.progress} mono`}>
+              Lesson {safeIndex + 1} of {total}
+            </p>
+          </header>
+
+          {PHASES.map(({ key, label }) => (
+            <section key={key} className={styles.phase} aria-label={label}>
+              <h3 className={styles.phaseLabel}>{label}</h3>
+              <p className={styles.prose}>{current.lesson.segments[key].prose}</p>
+            </section>
+          ))}
+
+          <footer className={styles.nav}>
+            <Button
+              aria-label="Previous lesson"
+              disabled={safeIndex === 0}
+              onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
+            >
+              Prev
+            </Button>
+            <Button
+              aria-label="Next lesson"
+              disabled={safeIndex >= total - 1}
+              onClick={() => setActiveIndex((index) => Math.min(total - 1, index + 1))}
+            >
+              Next
+            </Button>
+          </footer>
+        </article>
+      </div>
+    </div>
   );
 }

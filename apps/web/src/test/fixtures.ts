@@ -6,6 +6,7 @@ import type {
   CourseRun,
   GagneFlags,
   Lesson,
+  Module,
   ProgressEvent,
   ProgressStage,
   Segment,
@@ -46,6 +47,21 @@ export function makeLesson(overrides: Partial<Lesson> = {}): Lesson {
     },
     gagne: { ...NO_GAGNE },
     loadEstimate: 1.0,
+    ...overrides,
+  };
+}
+
+/** A course module with sensible defaults — pass `lessons`/`title` to build multi-lesson courses
+ *  for reader navigation tests. */
+export function makeModule(overrides: Partial<Module> = {}): Module {
+  return {
+    id: "m-test",
+    title: "Module",
+    kcs: [],
+    objectives: [],
+    lessons: [makeLesson()],
+    assessment: { items: [] },
+    difficultyIndex: 0.5,
     ...overrides,
   };
 }
