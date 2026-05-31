@@ -13,7 +13,7 @@ from lunaris_runtime.schema import (
 
 from .critic import ICritic, MinimalCritic
 from .lesson_claims import iter_claims
-from .progress import IProgressSink, NoOpProgressSink
+from .progress import IAgentSink, IProgressSink, NoOpProgressSink
 from .subagents.concept_extractor import IConceptExtractor
 from .subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
 from .subagents.module_author import IModuleAuthor, LessonAssembler
@@ -62,7 +62,11 @@ class Orchestrator:
         course_id: str,
         run_id: str,
         progress: IProgressSink | None = None,
+        agent: IAgentSink | None = None,
     ) -> Course:
+        # ``agent`` (the rich transcript channel) is part of the CoursePipeline contract but the
+        # legacy single-shot orchestrator emits only coarse stages, so it is intentionally unused.
+        _ = agent
         bind_run_id(run_id)
         logger.info("course_run_started", topic=topic, course_id=course_id)
 

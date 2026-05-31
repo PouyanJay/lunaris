@@ -102,3 +102,29 @@ export interface ProgressEvent {
   claimsCut: number | null;
   status: CourseStatus | null;
 }
+
+/** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */
+export type AgentEventKind = "reasoning" | "tool_call" | "tool_result" | "todo";
+
+/** One todo/plan item the agent is tracking. */
+export interface AgentTodo {
+  content: string;
+  status: string;
+}
+
+/**
+ * One fine-grained event from the deep agent's execution, streamed live to the transcript
+ * (mirrors the AgentEvent schema, serialised camelCase). Fields are populated per `kind`:
+ * `reasoning` → `text`; `tool_call` → `tool` + `toolArgs`; `tool_result` → `tool` + `result`;
+ * `todo` → `todos`.
+ */
+export interface AgentEvent {
+  kind: AgentEventKind;
+  runId: string;
+  sequence: number;
+  text: string | null;
+  tool: string | null;
+  toolArgs: Record<string, unknown> | null;
+  result: string | null;
+  todos: AgentTodo[] | null;
+}

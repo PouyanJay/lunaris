@@ -31,6 +31,8 @@ from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import (
+    AgentEvent,
+    AgentEventKind,
     BloomLevel,
     Citation,
     CourseStatus,
@@ -308,6 +310,36 @@ async def test_agent_flags_review_when_a_goal_claim_cannot_be_grounded(
     # Assert — withheld from publication, but still assembled + persisted for review.
     assert course.status == CourseStatus.REVIEW
     assert store.load("course-4").status == CourseStatus.REVIEW
+
+
+class _RecordingAgentSink:
+    """An IAgentSink that captures the fine-grained transcript events for assertion."""
+
+    def __init__(self) -> None:
+        self.events: list[AgentEvent] = []
+
+    async def emit(self, event: AgentEvent) -> None:
+        self.events.append(event)
+
+
+async def test_agent_builder_emits_transcript_events_to_the_agent_sink(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — the real AgentCourseBuilder with a recording agent sink (closes the gap the API
+    # test masks with its own pipeline: prove the BUILDER itself emits the transcript channel).
+    builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path))
+    sink = _RecordingAgentSink()
+
+    # Act
+    await builder.run("demo", course_id="course-5", run_id="run-5", agent=sink)
+
+    # Assert — at least the opening reasoning beat reached the sink, run_id-correlated, sequenced
+    # from zero. (T1 enriches with real tool_call/result/todo events from the harness tap later.)
+    assert sink.events, "the agent builder emitted no transcript events"
+    assert sink.events[0].kind is AgentEventKind.REASONING
+    assert all(e.run_id == "run-5" for e in sink.events)
+    assert [e.sequence for e in sink.events] == list(range(len(sink.events)))
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

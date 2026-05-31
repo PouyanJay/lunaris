@@ -1,13 +1,16 @@
 """``AgentCourseBuilder`` — the agent-pipeline replacement for ``Orchestrator``.
 
-Exposes the SAME contract the API's ``CourseService`` already calls
-(``run(topic, *, course_id, run_id, progress=None) -> Course``), so the new ``agent`` pipeline
-drops in beside ``live``/``stub`` with no HTTP-layer changes. Each run builds a fresh
+Exposes the SAME contract the API's ``CourseService`` calls
+(``run(topic, *, course_id, run_id, progress=None, agent=None) -> Course``), so the ``agent``
+pipeline drops in beside ``live``/``stub`` with no HTTP-layer changes. Each run builds a fresh
 :class:`CourseDraft`, a fresh set of draft-bound tools, and a fresh module-author subagent (the
 author→verify→revise loop), then drives the REAL deep-agent harness: the model plans, calls the
 deterministic moat tools, and DELEGATES lesson authoring to the subagent via the ``task`` tool. The
 moats + ``finalize_course`` guarantee the result; the model is injected — a real Claude id (live) or
 a scripted fake (the no-key CI path).
+
+``progress`` carries coarse pipeline stages; ``agent`` carries the fine-grained transcript feed
+(reasoning / tool calls / todos). Both default to a no-op sink, so batch callers need no wiring.
 """
 
 import structlog
@@ -18,13 +21,14 @@ from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Course, ProgressStage, RiskTier
+from lunaris_runtime.schema import AgentEventKind, Course, ProgressStage, RiskTier
 
 from ..critic import ICritic, MinimalCritic
-from ..progress import IProgressSink
+from ..progress import IAgentSink, IProgressSink
 from ..subagents.concept_extractor import IConceptExtractor
 from ..subagents.curriculum_architect import ICurriculumArchitect
 from .agent import build_course_agent
+from .agent_reporter import AgentReporter
 from .authoring import ILessonReviser, build_authoring_subgraph
 from .draft import CourseDraft
 from .progress_reporter import ProgressReporter
@@ -86,6 +90,7 @@ class AgentCourseBuilder:
         course_id: str,
         run_id: str,
         progress: IProgressSink | None = None,
+        agent: IAgentSink | None = None,
     ) -> Course:
         # ``run_id`` is bound for the whole run and cleared in ``finally`` so it never leaks
         # into a later run sharing the event loop (the API reuses it across requests).
@@ -99,13 +104,20 @@ class AgentCourseBuilder:
             # the draft-bound tools + authoring loop emit onto draft.progress as they run.
             if progress is not None:
                 draft.progress = ProgressReporter(run_id, progress)
+            # The fine-grained transcript feed (reasoning / tool calls / todos). T1 will tap the
+            # harness's own event stream; for now the runner emits the opening reasoning beat so the
+            # whole agent-event channel — sink → SSE → web transcript — is exercised end-to-end.
+            agent_reporter = AgentReporter(run_id, agent)
             await draft.progress.emit(ProgressStage.RUN_STARTED, f"Building a course for “{topic}”")
-            agent = build_course_agent(
+            await agent_reporter.emit(
+                AgentEventKind.REASONING, text=f"Planning how to build a course on “{topic}”."
+            )
+            deep_agent = build_course_agent(
                 self._model,
                 self._make_tools(draft),
                 subagents=[self._make_author_subagent(draft)],
             )
-            await agent.ainvoke(
+            await deep_agent.ainvoke(
                 {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]}
             )
             return self._finished_course(draft, course_id)

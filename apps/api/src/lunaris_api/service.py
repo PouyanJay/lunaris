@@ -4,18 +4,19 @@ from collections.abc import AsyncIterator, Callable
 import structlog
 from lunaris_agent import CoursePipeline
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Course, ProgressEvent
+from lunaris_runtime.schema import AgentEvent, Course, ProgressEvent
 
-from .progress_sink import QueueProgressSink
+from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 
 logger = structlog.get_logger()
 
 # Builds the per-run course pipeline (stub / live orchestrator / deep agent) from the shared store.
 PipelineFactory = Callable[[CourseStore], CoursePipeline]
 
-# A streamed item: a ("progress", ProgressEvent) update, or the terminal ("course", Course).
-# Internal to the service<->router contract; the kind string maps directly to the SSE event name.
-_StreamItem = tuple[str, ProgressEvent | Course]
+# A streamed item: a ("progress", ProgressEvent) stage, an ("agent", AgentEvent) transcript beat,
+# or the terminal ("course", Course). Internal to the service<->router contract; the kind string
+# maps directly to the SSE event name.
+_StreamItem = tuple[str, ProgressEvent | AgentEvent | Course]
 
 
 class CourseService:
@@ -37,24 +38,29 @@ class CourseService:
     async def stream(
         self, topic: str, *, course_id: str, run_id: str
     ) -> AsyncIterator[_StreamItem]:
-        """Run the pipeline, yielding each progress event as it happens, then the course.
+        """Run the pipeline, yielding each progress/agent event as it happens, then the course.
 
-        The pipeline runs in a background task feeding a queue; we forward each
-        ProgressEvent as it lands and, once the run completes, drain any tail and yield
-        the finished course-object. The run task is always cancelled on early exit (a
-        disconnected client) so a dropped SSE stream never leaks a running pipeline.
+        The pipeline runs in a background task feeding one shared queue (coarse ``progress`` stages
+        and fine-grained ``agent`` transcript beats, interleaved in emission order); we forward each
+        item as it lands and, once the run completes, drain any tail and yield the finished
+        course-object. The run task is always cancelled on early exit (a disconnected client) so a
+        dropped SSE stream never leaks a running pipeline.
 
         A pipeline failure is logged here with ``run_id`` (so a truncated stream is still
         triangulatable across layers) and re-raised; the client-visible error frame is a
         later refinement.
         """
-        queue: asyncio.Queue[ProgressEvent] = asyncio.Queue()
+        queue: asyncio.Queue[StreamItem] = asyncio.Queue()
         run_task: asyncio.Task[Course] | None = None
         try:
             pipeline = self._factory(self._store)
             run_task = asyncio.create_task(
                 pipeline.run(
-                    topic, course_id=course_id, run_id=run_id, progress=QueueProgressSink(queue)
+                    topic,
+                    course_id=course_id,
+                    run_id=run_id,
+                    progress=QueueProgressSink(queue),
+                    agent=QueueAgentSink(queue),
                 )
             )
             while True:
@@ -63,12 +69,12 @@ class CourseService:
                     {next_event_task, run_task}, return_when=asyncio.FIRST_COMPLETED
                 )
                 if next_event_task in done:
-                    yield ("progress", next_event_task.result())
+                    yield next_event_task.result()  # already a (kind, payload) tuple
                     continue
                 # The run finished: cancel the pending get, flush any queued tail, stop.
                 next_event_task.cancel()
                 while not queue.empty():
-                    yield ("progress", queue.get_nowait())
+                    yield queue.get_nowait()
                 break
             yield ("course", run_task.result())  # .result() propagates a pipeline failure here
         except Exception:

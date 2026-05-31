@@ -1,6 +1,8 @@
+from .agent_event import AgentEvent
 from .base import CourseModel
 from .course import Course
 from .enums import (
+    AgentEventKind,
     BloomLevel,
     CourseStatus,
     Latency,
@@ -33,6 +35,8 @@ from .progress import ProgressEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 
 __all__ = [
+    "AgentEvent",
+    "AgentEventKind",
     "Assessment",
     "BloomLevel",
     "Budget",

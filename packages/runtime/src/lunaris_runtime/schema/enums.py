@@ -88,3 +88,12 @@ class Pace(StrEnum):
     SLOW = "slow"
     NORMAL = "normal"
     FAST = "fast"
+
+
+class AgentEventKind(StrEnum):
+    """The kind of a fine-grained agent-execution event in the live transcript feed."""
+
+    REASONING = "reasoning"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    TODO = "todo"

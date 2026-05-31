@@ -174,3 +174,62 @@ async def test_run_id_correlates_request_to_pipeline_logs(
     ]
     completed = [e for e in events if e.get("event") == "course_run_completed"]
     assert completed and all(e["run_id"] == run_id for e in completed)
+
+
+class _AgentEventPipeline:
+    """A minimal CoursePipeline that emits one progress stage + one agent transcript beat, then
+    returns a tiny published course. Proves the SSE multiplex carries the new ``agent`` frame
+    end-to-end without needing the full deep-agent harness (that path is covered separately)."""
+
+    def __init__(self, store: "object") -> None:
+        self._store = store
+
+    async def run(self, topic, *, course_id, run_id, progress=None, agent=None):  # type: ignore[no-untyped-def]
+        from lunaris_agent.harness.agent_reporter import AgentReporter
+        from lunaris_agent.harness.progress_reporter import ProgressReporter
+        from lunaris_runtime.schema import (
+            AgentEventKind,
+            Course,
+            CourseStatus,
+            ProgressStage,
+        )
+
+        await ProgressReporter(run_id, progress).emit(ProgressStage.RUN_STARTED, "start")
+        await AgentReporter(run_id, agent).emit(
+            AgentEventKind.TOOL_CALL, tool="extract_concepts", tool_args={"topic": topic}
+        )
+        await ProgressReporter(run_id, progress).emit(
+            ProgressStage.RUN_COMPLETED, "done", status=CourseStatus.PUBLISHED
+        )
+        return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
+
+
+async def test_stream_carries_agent_transcript_frames(tmp_path: Path) -> None:
+    # Arrange — the API wired to a pipeline that emits a progress stage AND an agent beat.
+    from lunaris_api.dependencies import get_course_service
+    from lunaris_api.service import CourseService
+    from lunaris_runtime.persistence import CourseStore
+
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), _AgentEventPipeline)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        # Act
+        response = await http.get("/api/courses/stream", params={"topic": "binary search"})
+
+    # Assert — a new `agent` frame rides the same stream as progress + the terminal course.
+    assert response.status_code == 200
+    run_id = response.headers["x-run-id"]
+    frames = _parse_sse(response.text)
+    names = [name for name, _ in frames]
+    assert "progress" in names and "agent" in names and names[-1] == "course"
+
+    agent_frames = [data for name, data in frames if name == "agent"]
+    assert len(agent_frames) == 1
+    beat = agent_frames[0]
+    assert beat["kind"] == "tool_call"
+    assert beat["tool"] == "extract_concepts"
+    assert beat["toolArgs"] == {"topic": "binary search"}  # camelCase wire contract
+    assert beat["runId"] == run_id  # cross-layer correlation

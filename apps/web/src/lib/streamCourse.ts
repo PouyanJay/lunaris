@@ -1,9 +1,11 @@
-import type { Course, ProgressEvent } from "../types/course";
+import type { AgentEvent, Course, ProgressEvent } from "../types/course";
 import { CourseLoadError, parseCourse } from "./loadCourse";
 
 interface StreamCourseOptions {
-  /** Called for each pipeline-stage event as it arrives. */
+  /** Called for each coarse pipeline-stage event as it arrives. */
   onProgress?: (event: ProgressEvent) => void;
+  /** Called for each fine-grained agent-transcript beat (reasoning / tool call / todo). */
+  onAgent?: (event: AgentEvent) => void;
   /** Abort the in-flight build (e.g. the user navigates away or starts a new topic). */
   signal?: AbortSignal;
 }
@@ -18,7 +20,7 @@ interface StreamCourseOptions {
 export async function streamCourse(
   apiBaseUrl: string,
   topic: string,
-  { onProgress, signal }: StreamCourseOptions,
+  { onProgress, onAgent, signal }: StreamCourseOptions,
 ): Promise<Course> {
   const url = `${apiBaseUrl}/api/courses/stream?${new URLSearchParams({ topic })}`;
   let response: Response;
@@ -50,6 +52,8 @@ export async function streamCourse(
       buffer = buffer.slice(boundary + 2);
       if (frame?.event === "progress") {
         onProgress?.(frame.data as ProgressEvent);
+      } else if (frame?.event === "agent") {
+        onAgent?.(frame.data as AgentEvent);
       } else if (frame?.event === "course") {
         course = parseCourse(frame.data);
       }
