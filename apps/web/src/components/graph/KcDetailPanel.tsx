@@ -2,17 +2,20 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { difficultyTier, orderInPath, UNKNOWN_ORDER } from "../../lib/graphLayout";
 import type { Course, KnowledgeComponent } from "../../types/course";
+import { Button } from "../primitives/Button";
 import styles from "./KcDetailPanel.module.css";
 
 interface KcDetailPanelProps {
   course: Course;
   selectedId: string;
   onClose: () => void;
+  /** Drill into the lesson that teaches this concept (switches the canvas to the reader). */
+  onOpenLesson?: ((kcId: string) => void) | undefined;
 }
 
 /** Right-docked inspector for the selected concept: its place in the path, what it needs,
  *  what it unlocks, the modules that teach it, and its grounding sources. */
-export function KcDetailPanel({ course, selectedId, onClose }: KcDetailPanelProps) {
+export function KcDetailPanel({ course, selectedId, onClose, onOpenLesson }: KcDetailPanelProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const { graph, modules, provenance } = course;
 
@@ -148,16 +151,23 @@ export function KcDetailPanel({ course, selectedId, onClose }: KcDetailPanelProp
         {coveringModules.length === 0 ? (
           <p className={styles.empty}>No module teaches this concept yet.</p>
         ) : (
-          <ul className={styles.list}>
-            {coveringModules.map((module) => (
-              <li key={module.id} className={styles.listItem}>
-                <span className={styles.listLabel}>{module.title}</span>
-                <span className={`${styles.strength} mono`}>
-                  {Math.round(module.difficultyIndex * 100)}%
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <ul className={styles.list}>
+              {coveringModules.map((module) => (
+                <li key={module.id} className={styles.listItem}>
+                  <span className={styles.listLabel}>{module.title}</span>
+                  <span className={`${styles.strength} mono`}>
+                    {Math.round(module.difficultyIndex * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {onOpenLesson && (
+              <Button className={styles.openLesson} onClick={() => onOpenLesson(kc.id)}>
+                Open lesson <span aria-hidden="true">→</span>
+              </Button>
+            )}
+          </>
         )}
       </Section>
 

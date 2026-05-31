@@ -2,6 +2,7 @@ from pydantic import Field
 
 from .base import CourseModel
 from .enums import BloomLevel, VerifierStatus, VisualKind
+from .visual_spec import VisualSpec
 
 
 class Objective(CourseModel):
@@ -41,8 +42,9 @@ class MayerFlags(CourseModel):
 
 class Visual(CourseModel):
     kind: VisualKind
-    source: str  # diagram-as-code
+    source: str  # diagram-as-code (Mermaid) — the renderer's fallback
     rendered: str | None = None  # path to validated PNG/SVG
+    spec: VisualSpec | None = None  # typed branded-renderer spec; None => render from source
     mayer_checks: MayerFlags = Field(default_factory=MayerFlags)
     staged: list["Visual"] | None = None  # segmenting: progressive builds
 

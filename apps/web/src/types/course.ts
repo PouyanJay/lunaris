@@ -52,11 +52,157 @@ export interface Objective {
   assessedBy: string[];
 }
 
+/** The verifier's verdict on a claim's grounding (mirrors VerifierStatus). */
+export type VerifierStatus = "unverified" | "supported" | "revise" | "cut";
+
+/** How a diagram is expressed on the wire (mirrors VisualKind). */
+export type VisualKind = "mermaid" | "svg" | "chart" | "spec";
+
+/** Mayer multimedia-design checks attached to a visual (mirrors MayerFlags). */
+export interface MayerFlags {
+  coherence: boolean;
+  signaling: boolean;
+  spatialContiguity: boolean;
+  redundancy: boolean;
+}
+
+/** A typed, bounded visual specification the branded renderer draws with its own components
+ *  (mirrors the Pydantic VisualSpec union, discriminated by `type`). */
+export interface FlowNode {
+  id: string;
+  label: string;
+}
+export interface FlowEdge {
+  from: string;
+  to: string;
+  label: string | null;
+}
+export interface FlowSpec {
+  type: "flow";
+  title: string | null;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}
+
+export interface TreeNode {
+  id: string;
+  label: string;
+  parentId: string | null;
+}
+export interface TreeSpec {
+  type: "tree";
+  title: string | null;
+  nodes: TreeNode[];
+}
+
+export interface StepItem {
+  title: string;
+  detail: string | null;
+}
+export interface StepsSpec {
+  type: "steps";
+  title: string | null;
+  steps: StepItem[];
+}
+
+export interface ComparisonRow {
+  label: string;
+  values: string[];
+}
+export interface ComparisonSpec {
+  type: "comparison";
+  title: string | null;
+  columns: string[];
+  rows: ComparisonRow[];
+}
+
+export interface TimelineEvent {
+  label: string;
+  detail: string | null;
+  when: string | null;
+}
+export interface TimelineSpec {
+  type: "timeline";
+  title: string | null;
+  events: TimelineEvent[];
+}
+
+export type VisualSpec = FlowSpec | TreeSpec | StepsSpec | ComparisonSpec | TimelineSpec;
+
+/** A diagram attached to a segment. `source` is diagram-as-code (Mermaid) — the renderer's
+ *  fallback; `spec` is the typed branded-renderer specification when the agent emitted one. */
+export interface Visual {
+  kind: VisualKind;
+  source: string;
+  rendered: string | null;
+  spec: VisualSpec | null;
+  mayerChecks: MayerFlags;
+}
+
+/** A single factual assertion in a segment, grounded (or cut) by the verifier. `supportedBy` is a
+ *  Citation id resolved against `Course.provenance`. */
+export interface Claim {
+  text: string;
+  supportedBy: string | null;
+  verifierStatus: VerifierStatus;
+}
+
+/** The content of one Merrill phase: prose plus its diagrams and grounded claims. */
+export interface Segment {
+  prose: string;
+  visuals: Visual[];
+  claims: Claim[];
+}
+
+/** Merrill's First Principles — the four instructional phases of a lesson. */
+export interface MerrillSegments {
+  activate: Segment;
+  demonstrate: Segment;
+  apply: Segment;
+  integrate: Segment;
+}
+
+/** Gagné's nine events of instruction, tracked per lesson (mirrors GagneFlags). */
+export interface GagneFlags {
+  gainAttention: boolean;
+  stateObjective: boolean;
+  recallPrior: boolean;
+  presentContent: boolean;
+  guideLearning: boolean;
+  elicitPerformance: boolean;
+  provideFeedback: boolean;
+  assessPerformance: boolean;
+  enhanceTransfer: boolean;
+}
+
+export interface Lesson {
+  id: string;
+  segments: MerrillSegments;
+  gagne: GagneFlags;
+  /** Estimated intrinsic cognitive load for the lesson. */
+  loadEstimate: number;
+}
+
+/** One assessment item (mirrors Item). `answer` is the model answer, often absent. */
+export interface AssessmentItem {
+  id: string;
+  prompt: string;
+  /** The objective/KC id this item assesses. */
+  objective: string;
+  answer: string | null;
+}
+
+export interface Assessment {
+  items: AssessmentItem[];
+}
+
 export interface Module {
   id: string;
   title: string;
   kcs: string[];
   objectives: Objective[];
+  lessons: Lesson[];
+  assessment: Assessment;
   difficultyIndex: number;
 }
 

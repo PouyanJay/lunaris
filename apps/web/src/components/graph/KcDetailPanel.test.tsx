@@ -58,4 +58,46 @@ describe("KcDetailPanel", () => {
 
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("offers a lesson drill-in for a concept a module teaches", () => {
+    // Arrange — binary_search is covered by the Binary Search module.
+    const onOpenLesson = vi.fn();
+    render(
+      <KcDetailPanel
+        course={makeCourse()}
+        selectedId="binary_search"
+        onClose={() => {}}
+        onOpenLesson={onOpenLesson}
+      />,
+    );
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /open lesson/i }));
+
+    // Assert — the drill-in carries the concept id.
+    expect(onOpenLesson).toHaveBeenCalledWith("binary_search");
+  });
+
+  it("offers no drill-in for a concept no module teaches", () => {
+    // Arrange / Act — comparison is not in any module's kcs.
+    render(
+      <KcDetailPanel
+        course={makeCourse()}
+        selectedId="comparison"
+        onClose={() => {}}
+        onOpenLesson={() => {}}
+      />,
+    );
+
+    // Assert
+    expect(screen.queryByRole("button", { name: /open lesson/i })).not.toBeInTheDocument();
+  });
+
+  it("offers no drill-in when no handler is supplied", () => {
+    // Arrange / Act — binary_search is taught, but the caller wires no drill-in handler.
+    render(<KcDetailPanel course={makeCourse()} selectedId="binary_search" onClose={() => {}} />);
+
+    // Assert
+    expect(screen.queryByRole("button", { name: /open lesson/i })).not.toBeInTheDocument();
+  });
 });

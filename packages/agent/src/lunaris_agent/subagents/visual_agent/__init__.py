@@ -6,6 +6,7 @@ from .parser import parse_visual
 from .protocol import IVisualGenerator
 from .render_result import RenderResult
 from .renderer_protocol import IDiagramRenderer
+from .spec_parser import parse_visual_spec
 from .stub import StubVisualGenerator
 from .stub_renderer import StubDiagramRenderer
 
@@ -20,4 +21,5 @@ __all__ = [
     "VisualDraft",
     "VisualEngine",
     "parse_visual",
+    "parse_visual_spec",
 ]

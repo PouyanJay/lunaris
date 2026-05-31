@@ -1,5 +1,5 @@
 import structlog
-from lunaris_runtime.schema import Course, MayerFlags, Visual, VisualKind
+from lunaris_runtime.schema import Course, Lesson, MayerFlags, Visual, VisualKind
 
 from .protocol import IVisualGenerator
 from .renderer_protocol import IDiagramRenderer
@@ -43,10 +43,32 @@ class VisualEngine:
         logger.info("visuals_placed", count=placed)
         return placed
 
+    async def illustrate_lesson(self, concept: str, lesson: Lesson) -> bool:
+        """Re-illustrate a single lesson's demonstrate segment in place (used when regenerating one
+        lesson). Clears the existing diagram first so a regenerate never stacks visuals; returns
+        whether a new one was placed."""
+        lesson.segments.demonstrate.visuals.clear()
+        visual = await self._make_visual(concept, lesson.segments.demonstrate.prose)
+        if visual is None:
+            return False
+        lesson.segments.demonstrate.visuals.append(visual)
+        return True
+
     async def _make_visual(self, concept: str, context: str) -> Visual | None:
         draft = await self._generator.generate(concept, context)
         if draft is None:
             return None  # the generator judged no diagram helps (coherence) — not a repair case
+
+        # A branded spec is self-contained — Pydantic-validated and drawn by the web — so it ships
+        # without the Mermaid render gate (which only guards diagram-as-code source).
+        if not draft.source and draft.spec is not None:
+            logger.info("visual_placed", concept=concept, kind="spec", spec_type=draft.spec.type)
+            return Visual(
+                kind=VisualKind.SPEC,
+                source="",
+                spec=draft.spec,
+                mayer_checks=MayerFlags(coherence=True),
+            )
 
         for attempt in range(self._max_repairs + 1):
             result = await self._renderer.render(draft.source)
@@ -56,6 +78,7 @@ class VisualEngine:
                     kind=VisualKind.MERMAID,
                     source=draft.source,
                     rendered=result.path,
+                    spec=draft.spec,
                     # coherence is the generator's decision to draw at all; signaling is a
                     # property of the diagram we don't verify here — leave it at its default.
                     mayer_checks=MayerFlags(coherence=True),

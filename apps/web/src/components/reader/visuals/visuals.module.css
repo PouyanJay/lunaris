@@ -1,0 +1,178 @@
+.card {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cardTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── steps ─────────────────────────────────────────────────────────────── */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.stepIndex {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.stepBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.stepTitle {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.stepDetail {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── comparison table ──────────────────────────────────────────────────── */
+.tableWrap {
+  overflow-x: auto;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th,
+.table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: var(--border-width) solid var(--border);
+  color: var(--text-secondary);
+}
+
+.table thead th {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--bg-subtle);
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.rowLabel {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.corner {
+  background: var(--bg-subtle);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+/* ── timeline ──────────────────────────────────────────────────────────── */
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.event {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  padding-left: var(--space-4);
+  border-left: var(--border-width) solid var(--border);
+}
+
+.event:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+
+.eventDot {
+  position: absolute;
+  left: -4px;
+  top: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+}
+
+.eventBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.eventWhen {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.eventLabel {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.eventDetail {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── mermaid-source fallback ───────────────────────────────────────────── */
+.fallback {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fallbackCode {
+  margin: 0;
+  padding: var(--space-3);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}

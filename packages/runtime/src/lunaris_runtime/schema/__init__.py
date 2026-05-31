@@ -35,6 +35,20 @@ from .knowledge import Citation, Edge, KnowledgeComponent, PrerequisiteGraph
 from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Probe
 from .progress import ProgressEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
+from .visual_spec import (
+    ComparisonRow,
+    ComparisonSpec,
+    FlowEdge,
+    FlowNode,
+    FlowSpec,
+    StepItem,
+    StepsSpec,
+    TimelineEvent,
+    TimelineSpec,
+    TreeNode,
+    TreeSpec,
+    VisualSpec,
+)
 
 __all__ = [
     "AgentEvent",
@@ -45,12 +59,17 @@ __all__ = [
     "BudgetLedger",
     "Citation",
     "Claim",
+    "ComparisonRow",
+    "ComparisonSpec",
     "Course",
     "CourseModel",
     "CourseRun",
     "CourseSettings",
     "CourseStatus",
     "Edge",
+    "FlowEdge",
+    "FlowNode",
+    "FlowSpec",
     "GagneFlags",
     "Item",
     "KnowledgeComponent",
@@ -77,7 +96,14 @@ __all__ = [
     "RiskTier",
     "RunStatus",
     "Segment",
+    "StepItem",
+    "StepsSpec",
+    "TimelineEvent",
+    "TimelineSpec",
+    "TreeNode",
+    "TreeSpec",
     "VerifierStatus",
     "Visual",
     "VisualKind",
+    "VisualSpec",
 ]

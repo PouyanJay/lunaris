@@ -82,6 +82,7 @@ class VisualKind(StrEnum):
     MERMAID = "mermaid"
     SVG = "svg"
     CHART = "chart"
+    SPEC = "spec"  # a typed VisualSpec drawn by the web; no diagram-as-code source
 
 
 class Pace(StrEnum):

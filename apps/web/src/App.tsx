@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AppFrame } from "./components/AppFrame";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
+import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
+import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
 import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
@@ -16,6 +18,7 @@ import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
+import { regenerateLesson } from "./lib/loadCourse";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
@@ -53,9 +56,17 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 /** A loaded course's graph, or its empty state when no concepts were mapped. */
-function CourseBody({ course, onReload }: { course: Course; onReload: () => void }) {
+function CourseBody({
+  course,
+  onReload,
+  onOpenLesson,
+}: {
+  course: Course;
+  onReload: () => void;
+  onOpenLesson?: ((kcId: string) => void) | undefined;
+}) {
   return course.graph.nodes.length > 0 ? (
-    <PrereqGraphExplorer course={course} />
+    <PrereqGraphExplorer course={course} onOpenLesson={onOpenLesson} />
   ) : (
     <EmptyState onReload={onReload} />
   );
@@ -85,6 +96,12 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // A ready course defaults to the lesson reader (Learn); Map shows the prerequisite graph.
+  const [viewMode, setViewMode] = useState<CourseView>("learn");
+  // A Map → Learn drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
+  // request for the same concept after the learner has navigated away.
+  const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
+  const focusSeq = useRef(0);
 
   // When a build finishes, the new run was recorded server-side — refresh the history so it shows.
   // Depend on the stable `reloadRuns` (not the hook's per-render object) so this fires once per
@@ -107,8 +124,36 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     },
     [openRun],
   );
+  // Drill from a Map concept into its lesson: switch to the reader and request that lesson's focus.
+  const openLessonForKc = useCallback((kc: string) => {
+    focusSeq.current += 1;
+    setFocusRequest({ kc, seq: focusSeq.current });
+    setViewMode("learn");
+  }, []);
 
   const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
+
+  // A ready course's canvas: the Learn | Map toggle + course metrics in the header, and either the
+  // lesson reader (Learn, default) or the prerequisite-graph explorer (Map) in the body.
+  const buildReadyCanvas = (course: Course, onReload: () => void) => ({
+    title: course.topic,
+    meta: (
+      <>
+        <ViewToggle value={viewMode} onChange={setViewMode} />
+        <HeaderMeta course={course} />
+      </>
+    ),
+    body:
+      viewMode === "map" ? (
+        <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
+      ) : (
+        <CourseReader
+          course={course}
+          focusRequest={focusRequest}
+          onRegenerate={(lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)}
+        />
+      ),
+  });
 
   const sidebar = (
     <Sidebar
@@ -142,11 +187,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (opened.state.status === "ready") {
       const { course } = opened.state;
       const reopen = () => openRun({ id: course.id, topic: course.topic });
-      return {
-        title: course.topic,
-        meta: <HeaderMeta course={course} />,
-        body: <CourseBody course={course} onReload={reopen} />,
-      };
+      return buildReadyCanvas(course, reopen);
     }
     if (state.status === "idle") {
       return { title: "New course", meta: null, body: <TopicForm onGenerate={generate} /> };
@@ -173,11 +214,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
         body: <ErrorState message={message} onRetry={() => generate(topic)} />,
       };
     }
-    return {
-      title: state.course.topic,
-      meta: <HeaderMeta course={state.course} />,
-      body: <CourseBody course={state.course} onReload={reset} />,
-    };
+    return buildReadyCanvas(state.course, reset);
   })();
 
   return (

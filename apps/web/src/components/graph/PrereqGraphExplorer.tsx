@@ -25,11 +25,13 @@ const FIT_VIEW_OPTIONS = { padding: 0.18, maxZoom: 1.1 };
 
 interface PrereqGraphExplorerProps {
   course: Course;
+  /** Drill from the selected concept into the lesson that teaches it (switches to the reader). */
+  onOpenLesson?: ((kcId: string) => void) | undefined;
 }
 
 /** The interactive prerequisite-graph canvas: a dagre-laid DAG of knowledge components with
  *  flexible bezier prerequisite edges, a difficulty legend, and a docked concept inspector. */
-export function PrereqGraphExplorer({ course }: PrereqGraphExplorerProps) {
+export function PrereqGraphExplorer({ course, onOpenLesson }: PrereqGraphExplorerProps) {
   const layout = useMemo(
     () => buildGraphLayout(course.graph, course.goalConcept),
     [course.graph, course.goalConcept],
@@ -94,7 +96,12 @@ export function PrereqGraphExplorer({ course }: PrereqGraphExplorerProps) {
         </ReactFlow>
       </div>
       {selectedId && (
-        <KcDetailPanel course={course} selectedId={selectedId} onClose={onPaneClick} />
+        <KcDetailPanel
+          course={course}
+          selectedId={selectedId}
+          onClose={onPaneClick}
+          onOpenLesson={onOpenLesson}
+        />
       )}
     </div>
   );
