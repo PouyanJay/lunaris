@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { Lesson } from "../../types/course";
+import type { Claim, Lesson } from "../../types/course";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 import { CourseReader } from "./CourseReader";
 
@@ -144,6 +144,71 @@ function moduleWithObjectivesAndAssessment() {
     ],
   });
 }
+
+/** Single-lesson course whose demonstrate phase carries `claim`; default provenance includes src-1. */
+function courseWithDemonstrateClaim(claim: Claim, provenance = makeCourse().provenance) {
+  const base = makeLesson();
+  return makeCourse({
+    provenance,
+    modules: [
+      makeModule({
+        lessons: [
+          {
+            ...base,
+            segments: {
+              ...base.segments,
+              demonstrate: { prose: "Demonstration.", visuals: [], claims: [claim] },
+            },
+          },
+        ],
+      }),
+    ],
+  });
+}
+
+describe("CourseReader — claims & provenance", () => {
+  it("renders a claim with its verification status and resolved source", () => {
+    // Arrange — the default course's demonstrate phase has a supported claim citing src-1.
+    const course = makeCourse();
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — the claim, its status, and the resolved citation (a real outbound link) all show.
+    expect(screen.getByText("Comparison reduces the problem size each step.")).toBeInTheDocument();
+    expect(screen.getByText("SUPPORTED")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "CLRS" });
+    expect(link).toHaveAttribute("href", "https://example.org/clrs");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+  });
+
+  it("marks a claim whose citation cannot be resolved", () => {
+    // Arrange — the supported claim still cites src-1, but provenance is empty so it won't resolve.
+    const course = makeCourse({ provenance: [] });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert
+    expect(screen.getByText(/no source on record/i)).toBeInTheDocument();
+  });
+
+  it("surfaces a cut claim's status independent of its citation", () => {
+    // Arrange — a cut claim that still resolves a citation, isolating the status from the source path.
+    const course = courseWithDemonstrateClaim({
+      text: "An unsupported assertion.",
+      supportedBy: "src-1",
+      verifierStatus: "cut",
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert
+    expect(screen.getByText("An unsupported assertion.")).toBeInTheDocument();
+    expect(screen.getByText("CUT")).toBeInTheDocument();
+  });
+});
 
 describe("CourseReader — lesson body", () => {
   it("renders the four Merrill phases of the focused lesson", () => {

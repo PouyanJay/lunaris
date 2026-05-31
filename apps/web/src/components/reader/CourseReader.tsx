@@ -9,6 +9,7 @@ import type {
 } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { LessonAssessment } from "./LessonAssessment";
+import { LessonClaims } from "./LessonClaims";
 import { LessonObjectives } from "./LessonObjectives";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import styles from "./CourseReader.module.css";
@@ -68,6 +69,10 @@ interface CourseReaderProps {
  *  Claims/provenance and the branded visual renderer land in later slices. */
 export function CourseReader({ course }: CourseReaderProps) {
   const { lessons, groups } = useMemo(() => buildReaderModel(course), [course]);
+  const citations = useMemo(
+    () => new Map(course.provenance.map((citation) => [citation.id, citation])),
+    [course.provenance],
+  );
   const [activeIndex, setActiveIndex] = useState(0);
   const paneRef = useRef<HTMLDivElement>(null);
 
@@ -108,15 +113,21 @@ export function CourseReader({ course }: CourseReaderProps) {
 
           {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
 
-          {PHASES.map(({ key, label, cue }) => (
-            <section key={key} className={styles.phase} aria-label={label}>
-              <div className={styles.phaseHead}>
-                <h3 className={styles.phaseLabel}>{label}</h3>
-                <p className={styles.phaseCue}>{cue}</p>
-              </div>
-              <p className={styles.prose}>{current.lesson.segments[key].prose}</p>
-            </section>
-          ))}
+          {PHASES.map(({ key, label, cue }) => {
+            const segment = current.lesson.segments[key];
+            return (
+              <section key={key} className={styles.phase} aria-label={label}>
+                <div className={styles.phaseHead}>
+                  <h3 className={styles.phaseLabel}>{label}</h3>
+                  <p className={styles.phaseCue}>{cue}</p>
+                </div>
+                <p className={styles.prose}>{segment.prose}</p>
+                {segment.claims.length > 0 && (
+                  <LessonClaims claims={segment.claims} citations={citations} />
+                )}
+              </section>
+            );
+          })}
 
           {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
 
