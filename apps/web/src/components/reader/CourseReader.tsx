@@ -12,6 +12,7 @@ import { LessonAssessment } from "./LessonAssessment";
 import { LessonClaims } from "./LessonClaims";
 import { LessonObjectives } from "./LessonObjectives";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
+import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
 /** Merrill's First Principles phases, in teaching order, with their reader labels and a plain-language
@@ -152,6 +153,10 @@ export function CourseReader({ course, focusRequest }: CourseReaderProps) {
                   <p className={styles.phaseCue}>{cue}</p>
                 </div>
                 <p className={styles.prose}>{segment.prose}</p>
+                {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
+                {segment.visuals.map((visual, visualIndex) => (
+                  <VisualRenderer key={visualIndex} visual={visual} />
+                ))}
                 {segment.claims.length > 0 && (
                   <LessonClaims claims={segment.claims} citations={citations} />
                 )}
