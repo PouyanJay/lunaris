@@ -66,12 +66,76 @@ export interface MayerFlags {
   redundancy: boolean;
 }
 
-/** A diagram attached to a segment. `source` is diagram-as-code (e.g. Mermaid); `rendered` is a
- *  server-side artifact path. A typed `VisualSpec` (the branded-renderer path) lands in a later slice. */
+/** A typed, bounded visual specification the branded renderer draws with its own components
+ *  (mirrors the Pydantic VisualSpec union, discriminated by `type`). */
+export interface FlowNode {
+  id: string;
+  label: string;
+}
+export interface FlowEdge {
+  from: string;
+  to: string;
+  label: string | null;
+}
+export interface FlowSpec {
+  type: "flow";
+  title: string | null;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}
+
+export interface TreeNode {
+  id: string;
+  label: string;
+  parentId: string | null;
+}
+export interface TreeSpec {
+  type: "tree";
+  title: string | null;
+  nodes: TreeNode[];
+}
+
+export interface StepItem {
+  title: string;
+  detail: string | null;
+}
+export interface StepsSpec {
+  type: "steps";
+  title: string | null;
+  steps: StepItem[];
+}
+
+export interface ComparisonRow {
+  label: string;
+  values: string[];
+}
+export interface ComparisonSpec {
+  type: "comparison";
+  title: string | null;
+  columns: string[];
+  rows: ComparisonRow[];
+}
+
+export interface TimelineEvent {
+  label: string;
+  detail: string | null;
+  when: string | null;
+}
+export interface TimelineSpec {
+  type: "timeline";
+  title: string | null;
+  events: TimelineEvent[];
+}
+
+export type VisualSpec = FlowSpec | TreeSpec | StepsSpec | ComparisonSpec | TimelineSpec;
+
+/** A diagram attached to a segment. `source` is diagram-as-code (Mermaid) — the renderer's
+ *  fallback; `spec` is the typed branded-renderer specification when the agent emitted one. */
 export interface Visual {
   kind: VisualKind;
   source: string;
   rendered: string | null;
+  spec: VisualSpec | null;
   mayerChecks: MayerFlags;
 }
 
