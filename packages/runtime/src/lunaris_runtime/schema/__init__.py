@@ -1,6 +1,7 @@
 from .agent_event import AgentEvent
 from .base import CourseModel
 from .course import Course
+from .course_run import CourseRun
 from .enums import (
     AgentEventKind,
     BloomLevel,
@@ -13,6 +14,7 @@ from .enums import (
     RiskCategory,
     RiskOverride,
     RiskTier,
+    RunStatus,
     VerifierStatus,
     VisualKind,
 )
@@ -45,6 +47,7 @@ __all__ = [
     "Claim",
     "Course",
     "CourseModel",
+    "CourseRun",
     "CourseSettings",
     "CourseStatus",
     "Edge",
@@ -72,6 +75,7 @@ __all__ = [
     "RiskOverride",
     "RiskProfile",
     "RiskTier",
+    "RunStatus",
     "Segment",
     "VerifierStatus",
     "Visual",

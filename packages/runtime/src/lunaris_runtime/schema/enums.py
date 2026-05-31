@@ -97,3 +97,15 @@ class AgentEventKind(StrEnum):
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TODO = "todo"
+
+
+class RunStatus(StrEnum):
+    """The operational lifecycle of a course-build run (the sidebar history status).
+
+    Distinct from ``CourseStatus`` (the pedagogical lifecycle of the course itself):
+    a run is ``RUNNING`` while building, then ``COMPLETED`` or ``FAILED``.
+    """
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"

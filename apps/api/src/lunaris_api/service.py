@@ -3,8 +3,8 @@ from collections.abc import AsyncIterator, Callable
 
 import structlog
 from lunaris_agent import CoursePipeline
-from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import AgentEvent, Course, ProgressEvent
+from lunaris_runtime.persistence import CourseStore, IRunStore
+from lunaris_runtime.schema import AgentEvent, Course, ProgressEvent, RunStatus
 
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 
@@ -27,13 +27,29 @@ class CourseService:
     pipeline wiring.
     """
 
-    def __init__(self, store: CourseStore, pipeline_factory: PipelineFactory) -> None:
+    def __init__(
+        self,
+        store: CourseStore,
+        pipeline_factory: PipelineFactory,
+        run_store: IRunStore | None = None,
+    ) -> None:
         self._store = store
         self._factory = pipeline_factory
+        # ``run_store`` is optional and best-effort: when present, the run lifecycle is recorded
+        # for the sidebar history; a failed history write never breaks a build (mirrors how the
+        # progress/agent sinks default to a no-op for batch callers).
+        self._run_store = run_store
 
     async def create(self, topic: str, *, course_id: str, run_id: str) -> Course:
         pipeline = self._factory(self._store)
-        return await pipeline.run(topic, course_id=course_id, run_id=run_id)
+        await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
+        try:
+            course = await pipeline.run(topic, course_id=course_id, run_id=run_id)
+        except Exception:
+            await self._record_failure(course_id)
+            raise
+        await self._record_finish(course)
+        return course
 
     async def stream(
         self, topic: str, *, course_id: str, run_id: str
@@ -52,6 +68,7 @@ class CourseService:
         """
         queue: asyncio.Queue[StreamItem] = asyncio.Queue()
         run_task: asyncio.Task[Course] | None = None
+        await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
         try:
             pipeline = self._factory(self._store)
             run_task = asyncio.create_task(
@@ -76,9 +93,12 @@ class CourseService:
                 while not queue.empty():
                     yield queue.get_nowait()
                 break
-            yield ("course", run_task.result())  # .result() propagates a pipeline failure here
+            course = run_task.result()  # .result() propagates a pipeline failure here
+            await self._record_finish(course)
+            yield ("course", course)
         except Exception:
             logger.error("course_stream_failed", course_id=course_id, run_id=run_id, exc_info=True)
+            await self._record_failure(course_id)
             raise
         finally:
             if run_task is not None and not run_task.done():
@@ -89,3 +109,39 @@ class CourseService:
             return self._store.load(course_id)
         except FileNotFoundError:
             return None
+
+    async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
+        """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""
+        if self._run_store is None:
+            return
+        try:
+            await self._run_store.start(run_id=run_id, course_id=course_id, topic=topic)
+        except Exception:
+            logger.warning(
+                "run_history_start_failed", course_id=course_id, run_id=run_id, exc_info=True
+            )
+
+    async def _record_finish(self, course: Course) -> None:
+        """Mark the run COMPLETED with the artifact's KC/module counts — best-effort."""
+        if self._run_store is None:
+            return
+        try:
+            await self._run_store.finish(
+                course_id=course.id,
+                status=RunStatus.COMPLETED,
+                kc_count=len(course.graph.nodes),
+                module_count=len(course.modules),
+            )
+        except Exception:
+            logger.warning("run_history_finish_failed", course_id=course.id, exc_info=True)
+
+    async def _record_failure(self, course_id: str) -> None:
+        """Mark the run FAILED — best-effort (a no-op if the start row was never written)."""
+        if self._run_store is None:
+            return
+        try:
+            await self._run_store.finish(
+                course_id=course_id, status=RunStatus.FAILED, kc_count=0, module_count=0
+            )
+        except Exception:
+            logger.warning("run_history_mark_failed_error", course_id=course_id, exc_info=True)

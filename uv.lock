@@ -1283,12 +1283,14 @@ source = { editable = "packages/runtime" }
 dependencies = [
     { name = "pydantic" },
     { name = "structlog" },
+    { name = "supabase" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.9" },
     { name = "structlog", specifier = ">=24.4" },
+    { name = "supabase", specifier = ">=2.9" },
 ]
 
 [[package]]
