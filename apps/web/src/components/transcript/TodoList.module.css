@@ -1,0 +1,92 @@
+.plan {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  align-items: start;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.item[data-state="in_progress"] {
+  color: var(--text);
+}
+.item[data-state="completed"] {
+  color: var(--text-secondary);
+}
+
+.content {
+  line-height: 1.45;
+}
+.item[data-state="completed"] .content {
+  text-decoration: line-through;
+  text-decoration-color: var(--text-muted);
+}
+
+/* Hollow ring (pending) → pulsing amber (in progress) → success check (completed). */
+.indicator {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border-strong);
+  justify-self: center;
+}
+.indicator[data-state="in_progress"] {
+  border-color: var(--accent-500);
+  background: var(--accent-500);
+  animation: todoPulse 1.6s var(--ease) infinite;
+}
+.indicator[data-state="completed"] {
+  border: none;
+  position: relative;
+}
+.indicator[data-state="completed"]::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--success);
+}
+
+@keyframes todoPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-500) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator[data-state="in_progress"] {
+    animation: none;
+  }
+}

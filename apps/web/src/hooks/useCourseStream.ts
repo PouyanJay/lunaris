@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CourseLoadError } from "../lib/loadCourse";
 import { streamCourse } from "../lib/streamCourse";
-import type { Course, ProgressEvent } from "../types/course";
+import type { AgentEvent, Course, ProgressEvent } from "../types/course";
 
 export type BuildState =
   | { status: "idle" }
-  | { status: "streaming"; topic: string; events: ProgressEvent[] }
+  | { status: "streaming"; topic: string; events: ProgressEvent[]; agentEvents: AgentEvent[] }
   | { status: "ready"; course: Course }
   | { status: "error"; message: string; topic: string };
 
@@ -38,13 +38,19 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
-      setState({ status: "streaming", topic, events: [] });
+      setState({ status: "streaming", topic, events: [], agentEvents: [] });
 
       streamCourse(apiBaseUrl, topic, {
         signal: controller.signal,
         onProgress: (event) =>
           setState((prev) =>
             prev.status === "streaming" ? { ...prev, events: [...prev.events, event] } : prev,
+          ),
+        onAgent: (event) =>
+          setState((prev) =>
+            prev.status === "streaming"
+              ? { ...prev, agentEvents: [...prev.agentEvents, event] }
+              : prev,
           ),
       })
         .then((course) => {

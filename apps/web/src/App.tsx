@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 
 import { AppFrame } from "./components/AppFrame";
-import { BuildProgress } from "./components/build/BuildProgress";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
+import { Transcript } from "./components/transcript/Transcript";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -133,7 +133,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
           </>
         }
       >
-        <BuildProgress topic={state.topic} events={state.events} />
+        <Transcript topic={state.topic} events={state.events} agentEvents={state.agentEvents} />
       </AgentShell>
     );
   }

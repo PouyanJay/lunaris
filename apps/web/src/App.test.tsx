@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
 import {
+  agentFrame,
   courseFrame,
   makeCourse,
   makeRun,
@@ -120,14 +121,16 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
-  it("streams the build for a typed topic, then renders the generated graph", async () => {
+  it("streams the agent transcript for a typed topic, then renders the generated graph", async () => {
     vi.stubGlobal(
       "fetch",
       routedFetch({
         runs: [],
         build: sseStreamResponse([
           progressFrame("run_started", 0),
-          progressFrame("graph_built", 1, { kcCount: 3, edgeCount: 2 }),
+          agentFrame("tool_call", 1, { tool: "extract_concepts", toolArgs: { topic: "graphs" } }),
+          agentFrame("tool_result", 2, { tool: "extract_concepts", result: "16 concepts" }),
+          progressFrame("graph_built", 3, { kcCount: 3, edgeCount: 2 }),
           courseFrame(makeCourse()),
         ]),
       }),
@@ -142,6 +145,32 @@ describe("App — live studio (VITE_API_URL set)", () => {
       await screen.findByRole("heading", { name: "How binary search works" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Binary Search")).toBeInTheDocument();
+  });
+
+  it("shows the live agent transcript while the build streams", async () => {
+    // A build that emits a tool call then stalls (no terminal course) so the transcript stays up.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [],
+        build: sseStreamResponse(
+          [
+            progressFrame("run_started", 0),
+            agentFrame("reasoning", 1, { text: "Mapping the prerequisites." }),
+            agentFrame("tool_call", 2, { tool: "extract_concepts", toolArgs: { topic: "graphs" } }),
+          ],
+          { open: true }, // stay streaming so the transcript is visible to assert
+        ),
+      }),
+    );
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // Reasoning + the tool-call card render in the canvas transcript.
+    expect(await screen.findByText("Mapping the prerequisites.")).toBeInTheDocument();
+    expect(screen.getByText("extract_concepts")).toBeInTheDocument();
   });
 
   it("shows a recoverable error when the build fails mid-stream", async () => {
