@@ -27,6 +27,12 @@ class VisualEngine:
         self._renderer = renderer
         self._max_repairs = max_repairs
 
+    @property
+    def renderer(self) -> IDiagramRenderer:
+        """The diagram renderer this engine drives — read-only, for composition-level introspection
+        (e.g. asserting which renderer the env-gated composition root wired)."""
+        return self._renderer
+
     async def illustrate(self, course: Course) -> int:
         """Attach validated visuals across the course; returns how many were placed.
 

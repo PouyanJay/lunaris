@@ -15,6 +15,7 @@ from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import Course, CourseStatus, Module, PrerequisiteGraph, ProgressStage
 
 from ...critic import ICritic
+from ...subagents.visual_agent import VisualEngine
 from ..draft import CourseDraft
 
 logger = structlog.get_logger()
@@ -56,8 +57,21 @@ def _assemble(draft: CourseDraft) -> Course:
     )
 
 
-def make_finalize_course_tool(critic: ICritic, store: CourseStore, draft: CourseDraft) -> BaseTool:
-    """Build the ``finalize_course`` tool, closed over the critic, the store, and the run draft."""
+def make_finalize_course_tool(
+    critic: ICritic,
+    store: CourseStore,
+    draft: CourseDraft,
+    *,
+    visual_engine: VisualEngine | None = None,
+) -> BaseTool:
+    """Build the ``finalize_course`` tool, closed over the critic, the store, and the run draft.
+
+    When a ``visual_engine`` is wired, the assembled course is illustrated before the publish gate
+    runs and before it is persisted — the agent-pipeline analogue of the Orchestrator's
+    ``author → visual_engine → verify`` placement. Verification already ran inside the authoring
+    subgraph (diagrams don't affect claim grounding), so this is the last enrichment before publish.
+    Visuals are optional: without an engine the course finalizes exactly as before.
+    """
 
     @tool
     async def finalize_course() -> dict[str, object]:
@@ -68,6 +82,9 @@ def make_finalize_course_tool(critic: ICritic, store: CourseStore, draft: Course
         publish gate passes, else ``review`` with the blocking ``issues`` listed.
         """
         course = _assemble(draft)
+        if visual_engine is not None:
+            placed = await visual_engine.illustrate(course)
+            logger.info("agent_course_illustrated", run_id=draft.run_id, visuals_placed=placed)
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
         # The authoring loop's triage flags a course whose goal-critical claim could not be

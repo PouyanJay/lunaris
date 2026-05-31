@@ -26,7 +26,12 @@ from .orchestrator import Orchestrator
 from .subagents.concept_extractor import ClaudeConceptExtractor
 from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.module_author import ClaudeModuleAuthor
-from .subagents.visual_agent import ClaudeVisualGenerator, MermaidRenderer, VisualEngine
+from .subagents.visual_agent import (
+    ClaudeVisualGenerator,
+    MermaidRenderer,
+    PassthroughDiagramRenderer,
+    VisualEngine,
+)
 
 logger = structlog.get_logger()
 
@@ -50,18 +55,25 @@ def _retriever_from_env() -> IEvidenceRetriever | None:
     return None
 
 
-def _visual_engine_from_env(worker_model: str) -> VisualEngine | None:
-    """Wire the live visual engine iff the beautiful-mermaid render script is configured.
+def _visual_engine_from_env(worker_model: str) -> VisualEngine:
+    """Wire the live visual engine, choosing the renderer from the environment.
 
-    ``LUNARIS_MERMAID_SCRIPT`` points at the skill's ``render.ts``; ``LUNARIS_VISUAL_DIR``
-    is where rendered SVGs land (default ``.visuals``); ``LUNARIS_MERMAID_RUNTIME`` is the
-    invocation prefix (default ``bun run``; e.g. ``npx tsx``). Without the script set we skip
-    visuals entirely (return ``None``) — diagrams are optional, never a hard dependency.
+    The generator (Claude, worker tier) always proposes a branded ``VisualSpec`` plus a Mermaid
+    fallback. The renderer only gates the *source* path:
+    - ``LUNARIS_MERMAID_SCRIPT`` set → the real :class:`MermaidRenderer` shells out to the
+      beautiful-mermaid skill's ``render.ts`` (``LUNARIS_VISUAL_DIR`` = SVG output dir, default
+      ``.visuals``; ``LUNARIS_MERMAID_RUNTIME`` = the invocation prefix, default ``bun run``,
+      e.g. ``npx tsx``), validating each diagram to an SVG before it ships.
+    - unset → the :class:`PassthroughDiagramRenderer`, which validates the source syntactically and
+      ships it un-rendered (the web draws from the spec or the raw source, never the SVG path).
+
+    Either way a course gets its branded visuals; the render toolchain is an enhancement, never a
+    hard dependency. Always returns an engine (which still declines decorative diagrams itself).
     """
     script = os.getenv("LUNARIS_MERMAID_SCRIPT")
     if not script:
-        logger.info("visual_engine_disabled", reason="LUNARIS_MERMAID_SCRIPT unset")
-        return None
+        logger.info("visual_engine_passthrough", reason="LUNARIS_MERMAID_SCRIPT unset")
+        return VisualEngine(ClaudeVisualGenerator(worker_model), PassthroughDiagramRenderer())
     output_dir = Path(os.getenv("LUNARIS_VISUAL_DIR", ".visuals"))
     runtime_env = os.getenv("LUNARIS_MERMAID_RUNTIME")
     runtime = tuple(shlex.split(runtime_env)) if runtime_env else None
@@ -160,4 +172,5 @@ def build_agent_course_builder(
         architect=ClaudeCurriculumArchitect(strong),
         reviser=ClaudeLessonReviser(worker),
         verifier=build_live_verifier(strong, retriever),
+        visual_engine=_visual_engine_from_env(worker),
     )

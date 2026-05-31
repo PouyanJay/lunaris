@@ -27,6 +27,7 @@ from ..critic import ICritic, MinimalCritic
 from ..progress import IAgentSink, IProgressSink
 from ..subagents.concept_extractor import IConceptExtractor
 from ..subagents.curriculum_architect import ICurriculumArchitect
+from ..subagents.visual_agent import VisualEngine
 from .agent import build_course_agent
 from .agent_reporter import AgentReporter
 from .authoring import ILessonReviser, build_authoring_subgraph
@@ -72,6 +73,7 @@ class AgentCourseBuilder:
         reviser: ILessonReviser,
         verifier: Verifier,
         critic: ICritic | None = None,
+        visual_engine: VisualEngine | None = None,
         risk_tier: RiskTier = RiskTier.LOW,
     ) -> None:
         self._model = model
@@ -82,6 +84,7 @@ class AgentCourseBuilder:
         self._reviser = reviser
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
+        self._visual_engine = visual_engine
         self._risk_tier = risk_tier
 
     async def run(
@@ -136,7 +139,9 @@ class AgentCourseBuilder:
             make_extract_concepts_tool(self._extractor, draft),
             make_prerequisite_graph_tool(self._builder, draft),
             make_design_curriculum_tool(self._architect, draft),
-            make_finalize_course_tool(self._critic, self._store, draft),
+            make_finalize_course_tool(
+                self._critic, self._store, draft, visual_engine=self._visual_engine
+            ),
         ]
 
     def _make_author_subagent(self, draft: CourseDraft) -> dict[str, object]:

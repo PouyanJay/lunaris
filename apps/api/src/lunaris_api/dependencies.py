@@ -21,8 +21,8 @@ from .service import CourseService, PipelineFactory
 
 logger = structlog.get_logger()
 
-# LUNARIS_PIPELINE → the per-run pipeline factory. ``stub`` is the deterministic no-key demo;
-# ``agent`` is the real deep-agent harness; ``live`` (default) is the legacy orchestrator.
+# LUNARIS_PIPELINE → the per-run pipeline factory. ``agent`` (the default) is the real deep-agent
+# harness; ``stub`` is the deterministic no-key demo; ``live`` is the legacy orchestrator.
 _PIPELINE_FACTORIES: dict[str, PipelineFactory] = {
     "stub": build_stub_orchestrator,
     "agent": build_agent_course_builder,
