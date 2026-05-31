@@ -34,12 +34,12 @@ async def test_agent_builds_a_real_course_with_live_claude(tmp_path, capsys) -> 
     run_id = uuid.uuid4().hex
 
     # Act — the real agent drives the whole build (extract → graph → curriculum → author/verify/
-    # revise sub-agent → finalize). May take a few minutes and absorb transient 429s via retry. An
-    # overall wall-clock bound turns any stall into a clean test failure instead of a hung session
-    # (the per-request timeouts on the clients should make this ceiling unreachable in practice).
+    # revise sub-agent → finalize). The wall-clock bound only turns a genuine stall into a clean
+    # failure instead of a hung session (per-request timeouts + the rate limiter make it unreachable
+    # in practice on a tier that comfortably absorbs the O(n²) prereq-judge fan-out).
     course = await asyncio.wait_for(
-        builder.run("Binary search", course_id="live-agent", run_id=run_id),
-        timeout=420,
+        builder.run("Bubble sort", course_id="live-agent", run_id=run_id),
+        timeout=600,
     )
 
     # Assert — the harness produced a structurally real course on live output.

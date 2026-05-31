@@ -31,10 +31,10 @@ LLM_REQUEST_TIMEOUT_S = 60.0
 # handled separately by ``retry_on_rate_limit``; this is a small safety net on top.
 LLM_MAX_RETRIES = 2
 
-# Sustained request budget (requests/second). Tuned below the common 50 req/min Anthropic tier
-# (≈0.83/s) with margin, since the limiter paces only this process's clients and a little headroom
-# absorbs jitter. Override via the ``LUNARIS_LLM_RPS`` env var for a higher tier.
-_DEFAULT_LLM_RPS = 0.7
+# Sustained request budget (requests/second). Default ≈720 req/min — under Anthropic's Tier-2
+# 1000 req/min while the shared limiter + ``retry_on_rate_limit`` absorb any overshoot. Lower it via
+# ``LUNARIS_LLM_RPS`` on the base 50/min tier (e.g. 0.7); raise it on a higher tier.
+_DEFAULT_LLM_RPS = 12.0
 
 _rate_limiter: "BaseRateLimiter | None" = None
 
