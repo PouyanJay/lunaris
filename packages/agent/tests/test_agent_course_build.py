@@ -334,12 +334,24 @@ async def test_agent_builder_emits_transcript_events_to_the_agent_sink(
     # Act
     await builder.run("demo", course_id="course-5", run_id="run-5", agent=sink)
 
-    # Assert — at least the opening reasoning beat reached the sink, run_id-correlated, sequenced
-    # from zero. (T1 enriches with real tool_call/result/todo events from the harness tap later.)
+    # Assert — the REAL harness tap produced a rich transcript: reasoning plus each tool's call
+    # and result, run_id-correlated and monotonically sequenced. (The scripted plan does not call
+    # write_todos, so TODO mapping is covered exhaustively by the event-tap unit tests instead.)
     assert sink.events, "the agent builder emitted no transcript events"
-    assert sink.events[0].kind is AgentEventKind.REASONING
+    kinds = {event.kind for event in sink.events}
+    assert AgentEventKind.REASONING in kinds
+    assert AgentEventKind.TOOL_CALL in kinds
+    assert AgentEventKind.TOOL_RESULT in kinds
     assert all(e.run_id == "run-5" for e in sink.events)
     assert [e.sequence for e in sink.events] == list(range(len(sink.events)))
+    # The moat tools show up as real tool calls carrying their args.
+    tool_calls = [e for e in sink.events if e.kind is AgentEventKind.TOOL_CALL]
+    assert any(e.tool == "extract_concepts" and e.tool_args for e in tool_calls)
+    # The scripted plan drives several tools (extract → graph → curriculum → … → finalize), so the
+    # tap must surface multiple named results — not pass vacuously on an empty set.
+    tool_results = [e for e in sink.events if e.kind is AgentEventKind.TOOL_RESULT]
+    assert len(tool_results) >= 3
+    assert all(e.tool for e in tool_results)
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

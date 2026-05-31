@@ -21,7 +21,7 @@ from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import AgentEventKind, Course, ProgressStage, RiskTier
+from lunaris_runtime.schema import Course, ProgressStage, RiskTier
 
 from ..critic import ICritic, MinimalCritic
 from ..progress import IAgentSink, IProgressSink
@@ -31,6 +31,7 @@ from .agent import build_course_agent
 from .agent_reporter import AgentReporter
 from .authoring import ILessonReviser, build_authoring_subgraph
 from .draft import CourseDraft
+from .event_tap import stream_course_build
 from .progress_reporter import ProgressReporter
 from .tools import (
     make_design_curriculum_tool,
@@ -104,21 +105,21 @@ class AgentCourseBuilder:
             # the draft-bound tools + authoring loop emit onto draft.progress as they run.
             if progress is not None:
                 draft.progress = ProgressReporter(run_id, progress)
-            # The fine-grained transcript feed (reasoning / tool calls / todos). T1 will tap the
-            # harness's own event stream; for now the runner emits the opening reasoning beat so the
-            # whole agent-event channel — sink → SSE → web transcript — is exercised end-to-end.
+            # The fine-grained transcript feed (reasoning / tool calls / todos): tap the deep
+            # agent's own LangGraph event stream and translate it onto the agent channel
+            # (sink → SSE → web transcript). This drives the graph to completion exactly as
+            # ``ainvoke`` would; the finalized course is read from the draft afterward.
             agent_reporter = AgentReporter(run_id, agent)
             await draft.progress.emit(ProgressStage.RUN_STARTED, f"Building a course for “{topic}”")
-            await agent_reporter.emit(
-                AgentEventKind.REASONING, text=f"Planning how to build a course on “{topic}”."
-            )
             deep_agent = build_course_agent(
                 self._model,
                 self._make_tools(draft),
                 subagents=[self._make_author_subagent(draft)],
             )
-            await deep_agent.ainvoke(
-                {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]}
+            await stream_course_build(
+                deep_agent,
+                {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]},
+                agent_reporter,
             )
             return self._finished_course(draft, course_id)
         finally:
