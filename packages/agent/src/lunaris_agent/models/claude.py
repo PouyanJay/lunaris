@@ -1,4 +1,8 @@
-from lunaris_runtime.resilience import LLM_MAX_RETRIES, LLM_REQUEST_TIMEOUT_S
+from lunaris_runtime.resilience import (
+    LLM_MAX_RETRIES,
+    LLM_REQUEST_TIMEOUT_S,
+    get_llm_rate_limiter,
+)
 
 
 class ClaudeModel:
@@ -17,6 +21,7 @@ class ClaudeModel:
                 model=self._model_name,
                 default_request_timeout=LLM_REQUEST_TIMEOUT_S,
                 max_retries=LLM_MAX_RETRIES,
+                rate_limiter=get_llm_rate_limiter(),
             )
         message = await self._client.ainvoke(prompt)  # type: ignore[attr-defined]
         content = message.content

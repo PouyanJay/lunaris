@@ -14,6 +14,7 @@ from langchain_core.language_models import BaseChatModel
 from lunaris_runtime.resilience import (
     LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_S,
+    get_llm_rate_limiter,
     retry_on_rate_limit,
 )
 from lunaris_runtime.schema import Module
@@ -77,5 +78,6 @@ class ClaudeLessonReviser:
                     model=self._model,
                     default_request_timeout=LLM_REQUEST_TIMEOUT_S,
                     max_retries=LLM_MAX_RETRIES,
+                    rate_limiter=get_llm_rate_limiter(),
                 )
         return self._client

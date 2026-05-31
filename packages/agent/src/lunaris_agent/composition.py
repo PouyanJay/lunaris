@@ -14,7 +14,11 @@ from lunaris_grounding import (
     VoyageEmbedder,
 )
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.resilience import LLM_MAX_RETRIES, LLM_REQUEST_TIMEOUT_S
+from lunaris_runtime.resilience import (
+    LLM_MAX_RETRIES,
+    LLM_REQUEST_TIMEOUT_S,
+    get_llm_rate_limiter,
+)
 
 from .harness.authoring import ClaudeLessonReviser
 from .harness.runner import AgentCourseBuilder
@@ -146,6 +150,7 @@ def build_agent_course_builder(
         model=strong,
         default_request_timeout=LLM_REQUEST_TIMEOUT_S,
         max_retries=LLM_MAX_RETRIES,
+        rate_limiter=get_llm_rate_limiter(),
     )
     return AgentCourseBuilder(
         planner,
