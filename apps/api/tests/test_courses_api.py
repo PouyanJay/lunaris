@@ -104,6 +104,79 @@ async def test_unknown_course_is_404(client: httpx.AsyncClient) -> None:
     assert response.status_code == 404
 
 
+async def test_regenerate_lesson_returns_the_updated_course(
+    client: httpx.AsyncClient, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Arrange — a built course with a known lesson.
+    created = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    course_id = created["id"]
+    lesson_id = created["modules"][0]["lessons"][0]["id"]
+
+    # Act
+    response = await client.post(f"/api/courses/{course_id}/lessons/{lesson_id}/regenerate")
+
+    # Assert — 200 with the same course, the lesson re-authored + re-illustrated.
+    assert response.status_code == 200
+    run_id = response.headers["x-run-id"]
+    body = response.json()
+    assert body["id"] == course_id
+    lesson = next(
+        lesson
+        for module in body["modules"]
+        for lesson in module["lessons"]
+        if lesson["id"] == lesson_id
+    )
+    assert lesson["segments"]["demonstrate"]["visuals"]
+
+    # Assert — the same run_id threads the orchestrator's regenerate log (cross-layer correlation).
+    events = [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.strip().startswith("{")
+    ]
+    regenerated = [e for e in events if e.get("event") == "lesson_regenerated"]
+    assert regenerated and all(e["run_id"] == run_id for e in regenerated)
+
+
+async def test_regenerate_unknown_lesson_is_404(client: httpx.AsyncClient) -> None:
+    # Arrange — a real course, so the course_id is valid but the lesson id is fabricated.
+    created = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+
+    # Act
+    response = await client.post(f"/api/courses/{created['id']}/lessons/ghost/regenerate")
+
+    # Assert
+    assert response.status_code == 404
+
+
+async def test_regenerate_with_an_unsupported_pipeline_is_501(tmp_path: Path) -> None:
+    # Arrange — a pipeline that builds courses but can't regenerate a single lesson (the deep-agent
+    # shape). It satisfies CoursePipeline but not LessonRegenerator.
+    from lunaris_api.dependencies import get_course_service
+    from lunaris_api.service import CourseService
+    from lunaris_runtime.persistence import CourseStore
+    from lunaris_runtime.schema import Course, CourseStatus
+
+    class _NoRegenPipeline:
+        def __init__(self, store: "object") -> None:
+            self._store = store
+
+        async def run(self, topic, *, course_id, run_id, progress=None, agent=None):  # type: ignore[no-untyped-def]
+            return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
+
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), _NoRegenPipeline)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        # Act
+        response = await http.post("/api/courses/any/lessons/any/regenerate")
+
+    # Assert
+    assert response.status_code == 501
+
+
 async def test_blank_topic_is_rejected(client: httpx.AsyncClient) -> None:
     response = await client.post("/api/courses", json={"topic": ""})
 

@@ -83,26 +83,40 @@ export interface LessonFocusRequest {
 interface CourseReaderProps {
   course: Course;
   focusRequest?: LessonFocusRequest | null;
+  /** Re-author the focused lesson with the agent, returning the updated course. Absent => the
+   *  regenerate action is hidden (e.g. offline). */
+  onRegenerate?: ((lessonId: string) => Promise<Course>) | undefined;
 }
 
 /** The lesson reader (Learn view): a persistent course outline beside a single focused lesson, with
- *  Prev/Next navigation and a position indicator. Renders the focused lesson's four Merrill phases.
- *  Claims/provenance and the branded visual renderer land in later slices. */
-export function CourseReader({ course, focusRequest }: CourseReaderProps) {
-  const { lessons, groups, kcToLessonIndex } = useMemo(() => buildReaderModel(course), [course]);
+ *  Prev/Next navigation, a position indicator, and a per-lesson agent regenerate action. Renders the
+ *  focused lesson's Merrill phases, objectives, claims/provenance, and branded visuals. */
+export function CourseReader({ course, focusRequest, onRegenerate }: CourseReaderProps) {
+  // A successful regenerate swaps in the updated course locally until a different course is opened.
+  const [regeneratedCourse, setRegeneratedCourse] = useState<Course | null>(null);
+  const active = regeneratedCourse ?? course;
+  const { lessons, groups, kcToLessonIndex } = useMemo(() => buildReaderModel(active), [active]);
   const citations = useMemo(
-    () => new Map(course.provenance.map((citation) => [citation.id, citation])),
-    [course.provenance],
+    () => new Map(active.provenance.map((citation) => [citation.id, citation])),
+    [active.provenance],
   );
   const [activeIndex, setActiveIndex] = useState(0);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const paneRef = useRef<HTMLDivElement>(null);
   const handledFocusSeq = useRef(0);
 
-  // Reset to the first lesson when a different course is opened.
-  useEffect(() => setActiveIndex(0), [course]);
-  // Return to the top of the reading pane whenever the focused lesson changes. (scrollTo is
-  // optional-chained — jsdom doesn't implement it, and a missing scroll is harmless.)
-  useEffect(() => paneRef.current?.scrollTo?.({ top: 0 }), [activeIndex]);
+  // Reset to the first lesson and drop any regenerate override when a different course is opened.
+  useEffect(() => {
+    setActiveIndex(0);
+    setRegeneratedCourse(null);
+  }, [course]);
+  // On a lesson change: return to the top of the reading pane (scrollTo is optional-chained — jsdom
+  // doesn't implement it) and clear any stale regenerate error from the previous lesson.
+  useEffect(() => {
+    paneRef.current?.scrollTo?.({ top: 0 });
+    setError(null);
+  }, [activeIndex]);
 
   // Honour a Map drill-in once per request: jump to the lesson covering the requested concept. The
   // seq ref gates re-firing, so a course switch (which changes kcToLessonIndex) won't re-focus.
@@ -126,6 +140,20 @@ export function CourseReader({ course, focusRequest }: CourseReaderProps) {
       </div>
     );
   }
+
+  const focusedLessonId = current.lesson.id;
+  const regenerate = async () => {
+    if (!onRegenerate) return;
+    setPending(true);
+    setError(null);
+    try {
+      setRegeneratedCourse(await onRegenerate(focusedLessonId));
+    } catch {
+      setError("Couldn’t regenerate this lesson. Try again.");
+    } finally {
+      setPending(false);
+    }
+  };
 
   return (
     <div className={styles.reader}>
@@ -167,21 +195,35 @@ export function CourseReader({ course, focusRequest }: CourseReaderProps) {
           {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
 
           <footer className={styles.nav}>
-            <Button
-              aria-label="Previous lesson"
-              disabled={safeIndex === 0}
-              onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
-            >
-              Prev
-            </Button>
-            <Button
-              aria-label="Next lesson"
-              disabled={safeIndex >= total - 1}
-              onClick={() => setActiveIndex((index) => Math.min(total - 1, index + 1))}
-            >
-              Next
-            </Button>
+            {onRegenerate ? (
+              <Button onClick={regenerate} disabled={pending} aria-busy={pending}>
+                {pending ? "Regenerating…" : "Regenerate lesson"}
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className={styles.navButtons}>
+              <Button
+                aria-label="Previous lesson"
+                disabled={safeIndex === 0}
+                onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
+              >
+                Prev
+              </Button>
+              <Button
+                aria-label="Next lesson"
+                disabled={safeIndex >= total - 1}
+                onClick={() => setActiveIndex((index) => Math.min(total - 1, index + 1))}
+              >
+                Next
+              </Button>
+            </div>
           </footer>
+          {error && (
+            <p className={styles.regenError} role="alert">
+              {error}
+            </p>
+          )}
         </article>
       </div>
     </div>

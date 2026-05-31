@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 
 import structlog
-from lunaris_agent import CoursePipeline
+from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_runtime.persistence import CourseStore, IRunStore
 from lunaris_runtime.schema import AgentEvent, Course, CourseRun, ProgressEvent, RunStatus
 
@@ -23,6 +23,14 @@ PipelineFactory = Callable[[CourseStore], CoursePipeline]
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
 # maps directly to the SSE event name.
 _StreamItem = tuple[str, ProgressEvent | AgentEvent | Course]
+
+
+class CourseServiceError(Exception):
+    """Base for CourseService domain errors."""
+
+
+class LessonRegenerationUnsupportedError(CourseServiceError):
+    """Raised when the active pipeline cannot regenerate a single lesson (e.g. the deep agent)."""
 
 
 class CourseService:
@@ -114,6 +122,19 @@ class CourseService:
             return self._store.load(course_id)
         except FileNotFoundError:
             return None
+
+    async def regenerate_lesson(
+        self, course_id: str, lesson_id: str, *, run_id: str
+    ) -> Course | None:
+        """Re-author one lesson of an existing course and return the updated course.
+
+        Returns ``None`` if the course or lesson is unknown. Raises the unsupported error if the
+        active pipeline can't regenerate a single lesson (e.g. the deep-agent builder).
+        """
+        pipeline = self._factory(self._store)
+        if not isinstance(pipeline, LessonRegenerator):
+            raise LessonRegenerationUnsupportedError(type(pipeline).__name__)
+        return await pipeline.regenerate_lesson(course_id, lesson_id, run_id=run_id)
 
     async def list_runs(self, *, limit: int = RUNS_LIMIT_DEFAULT) -> list[CourseRun]:
         """Return an empty list when no run store is wired (batch / no-history callers), so the

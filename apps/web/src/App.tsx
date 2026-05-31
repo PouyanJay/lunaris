@@ -18,6 +18,7 @@ import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
+import { regenerateLesson } from "./lib/loadCourse";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
@@ -146,7 +147,11 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       viewMode === "map" ? (
         <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
       ) : (
-        <CourseReader course={course} focusRequest={focusRequest} />
+        <CourseReader
+          course={course}
+          focusRequest={focusRequest}
+          onRegenerate={(lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)}
+        />
       ),
   });
 

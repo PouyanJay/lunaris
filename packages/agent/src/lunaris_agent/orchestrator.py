@@ -4,8 +4,11 @@ from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import (
+    Citation,
     Course,
     CourseStatus,
+    Lesson,
+    Module,
     ProgressEvent,
     ProgressStage,
     VerifierStatus,
@@ -171,3 +174,72 @@ class Orchestrator:
             status=course.status,
         )
         return course
+
+    async def regenerate_lesson(
+        self, course_id: str, lesson_id: str, *, run_id: str
+    ) -> Course | None:
+        """Re-author a single lesson of an existing course in place: re-run its module's author,
+        re-illustrate it, re-verify its claims, recompute the publish status, persist, and return
+        the updated course. Returns ``None`` if the course or lesson is unknown.
+        """
+        bind_run_id(run_id)
+        try:
+            course = self._store.load(course_id)
+        except FileNotFoundError:
+            return None
+
+        located = self._locate_lesson(course, lesson_id)
+        if located is None:
+            logger.warning("regenerate_lesson_not_found", course_id=course_id, lesson_id=lesson_id)
+            return None
+        module, _ = located
+
+        draft = await self._author.author(module)
+        lesson = self._lesson_assembler.assemble(draft, lesson_id=lesson_id)
+        module.lessons = [
+            lesson if existing.id == lesson_id else existing for existing in module.lessons
+        ]
+
+        if self._visual_engine is not None:
+            await self._visual_engine.illustrate_lesson(module.title, lesson)
+
+        claims = list(iter_claims([lesson]))
+        citations = await self._verifier.verify(claims, risk_tier=course.risk.tier)
+        course.provenance = self._merge_provenance(course.provenance, citations)
+
+        course.status = CourseStatus.REVIEW
+        issues = self._critic.review(course)
+        if issues:
+            logger.warning(
+                "critic_flagged_on_regenerate",
+                course_id=course_id,
+                lesson_id=lesson_id,
+                issue_count=len(issues),
+            )
+        else:
+            course.status = CourseStatus.PUBLISHED
+
+        self._store.save(course)
+        logger.info(
+            "lesson_regenerated",
+            course_id=course_id,
+            lesson_id=lesson_id,
+            status=course.status.value,
+        )
+        return course
+
+    @staticmethod
+    def _locate_lesson(course: Course, lesson_id: str) -> tuple[Module, Lesson] | None:
+        for module in course.modules:
+            for lesson in module.lessons:
+                if lesson.id == lesson_id:
+                    return module, lesson
+        return None
+
+    @staticmethod
+    def _merge_provenance(existing: list[Citation], regenerated: list[Citation]) -> list[Citation]:
+        """Merge re-verified citations into the course provenance, keyed by id (newest wins)."""
+        by_id = {citation.id: citation for citation in existing}
+        for citation in regenerated:
+            by_id[citation.id] = citation
+        return list(by_id.values())

@@ -102,6 +102,28 @@ export async function fetchCourseById(
   return parseResponse(response);
 }
 
+/** Re-author a single lesson with the agent (POST /api/courses/:id/lessons/:lessonId/regenerate)
+ *  and return the updated course. Network / HTTP / malformed failures surface as CourseLoadError. */
+export async function regenerateLesson(
+  apiBaseUrl: string,
+  courseId: string,
+  lessonId: string,
+  signal?: AbortSignal,
+): Promise<Course> {
+  const lessonPath = `${encodeURIComponent(courseId)}/lessons/${encodeURIComponent(lessonId)}`;
+  const url = `${apiBaseUrl}/api/courses/${lessonPath}/regenerate`;
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "POST", ...(signal ? { signal } : {}) });
+  } catch (cause) {
+    throw new CourseLoadError("Could not reach the course service.", { cause });
+  }
+  if (!response.ok) {
+    throw new CourseLoadError(`Couldn't regenerate this lesson (HTTP ${response.status}).`);
+  }
+  return parseResponse(response);
+}
+
 /** Resolve the course for the current environment: the live API when VITE_API_URL is set,
  *  otherwise the bundled static seed. The web stays usable offline either way. */
 export function resolveCourse(signal?: AbortSignal): Promise<Course> {

@@ -1,5 +1,5 @@
 import structlog
-from lunaris_runtime.schema import Course, MayerFlags, Visual, VisualKind
+from lunaris_runtime.schema import Course, Lesson, MayerFlags, Visual, VisualKind
 
 from .protocol import IVisualGenerator
 from .renderer_protocol import IDiagramRenderer
@@ -42,6 +42,17 @@ class VisualEngine:
                     placed += 1
         logger.info("visuals_placed", count=placed)
         return placed
+
+    async def illustrate_lesson(self, concept: str, lesson: Lesson) -> bool:
+        """Re-illustrate a single lesson's demonstrate segment in place (used when regenerating one
+        lesson). Clears the existing diagram first so a regenerate never stacks visuals; returns
+        whether a new one was placed."""
+        lesson.segments.demonstrate.visuals.clear()
+        visual = await self._make_visual(concept, lesson.segments.demonstrate.prose)
+        if visual is None:
+            return False
+        lesson.segments.demonstrate.visuals.append(visual)
+        return True
 
     async def _make_visual(self, concept: str, context: str) -> Visual | None:
         draft = await self._generator.generate(concept, context)

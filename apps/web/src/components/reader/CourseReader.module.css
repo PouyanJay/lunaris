@@ -83,10 +83,21 @@
 
 .nav {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   padding-top: var(--space-6);
   border-top: var(--border-width) solid var(--border);
+}
+
+.navButtons {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.regenError {
+  font-size: var(--text-sm);
+  color: var(--danger);
 }
 
 .empty {

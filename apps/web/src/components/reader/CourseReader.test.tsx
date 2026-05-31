@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Claim, Lesson, Visual } from "../../types/course";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
@@ -110,6 +110,36 @@ describe("CourseReader", () => {
     fireEvent.click(prev);
     expect(screen.getByText("Prose for lesson one.")).toBeInTheDocument();
     expect(prev).toBeDisabled();
+  });
+
+  it("regenerates the focused lesson and shows the updated content", async () => {
+    // Arrange — a handler that returns a course with rewritten activate prose.
+    const updated = makeCourse();
+    updated.modules[0]!.lessons[0]!.segments.activate = {
+      prose: "Regenerated prose.",
+      visuals: [],
+      claims: [],
+    };
+    const onRegenerate = vi.fn().mockResolvedValue(updated);
+    const course = makeCourse();
+    const originalProse = course.modules[0]!.lessons[0]!.segments.activate.prose;
+    render(<CourseReader course={course} onRegenerate={onRegenerate} />);
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /regenerate/i }));
+
+    // Assert — the handler gets the focused lesson id, and the updated prose replaces the old.
+    expect(onRegenerate).toHaveBeenCalledWith(course.modules[0]!.lessons[0]!.id);
+    expect(await screen.findByText("Regenerated prose.")).toBeInTheDocument();
+    expect(screen.queryByText(originalProse)).not.toBeInTheDocument();
+  });
+
+  it("hides the regenerate action when no handler is provided", () => {
+    // Arrange / Act
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert
+    expect(screen.queryByRole("button", { name: /regenerate/i })).not.toBeInTheDocument();
   });
 
   it("renders an empty state when no lessons are authored", () => {

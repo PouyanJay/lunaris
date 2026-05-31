@@ -7,6 +7,7 @@ from lunaris_runtime.schema import Course, ProgressEvent
 
 from ..dependencies import CourseServiceDep
 from ..schemas import CourseRequest
+from ..service import LessonRegenerationUnsupportedError
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -68,4 +69,29 @@ async def get_course(course_id: str, service: CourseServiceDep) -> Course:
     course = service.get(course_id)
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    return course
+
+
+@router.post("/{course_id}/lessons/{lesson_id}/regenerate", response_model=Course)
+async def regenerate_lesson(
+    course_id: str, lesson_id: str, service: CourseServiceDep, response: Response
+) -> Course:
+    """Re-author a single lesson with the agent and return the updated course-object.
+
+    The new ``run_id`` is surfaced in ``X-Run-Id`` for cross-layer correlation. 404 if the course
+    or lesson is unknown; 501 if the active pipeline can't regenerate a single lesson.
+    """
+    run_id = uuid4().hex
+    response.headers["X-Run-Id"] = run_id
+    try:
+        course = await service.regenerate_lesson(course_id, lesson_id, run_id=run_id)
+    except LessonRegenerationUnsupportedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="This pipeline does not support lesson regeneration",
+        ) from exc
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course or lesson not found"
+        )
     return course
