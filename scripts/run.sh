@@ -14,9 +14,11 @@
 #   .run-state/<service>.log   — captured stdout+stderr
 # Supabase is managed by its own CLI (`supabase start` / `supabase stop`).
 #
-# Pipeline mode: the API serves the deterministic stub pipeline by default
-# (no API key, instant, always works). Set LUNARIS_PIPELINE=live (with a real
-# ANTHROPIC_API_KEY in .env) to serve the real Claude pipeline.
+# Pipeline mode: by default this serves the REAL deep-agent harness
+# (LUNARIS_PIPELINE=agent) when a usable ANTHROPIC_API_KEY is reachable (process
+# env, .env, or the Settings secret store). With no key it falls back to the
+# deterministic stub (no key, instant, always works) and says so. Override
+# explicitly with LUNARIS_PIPELINE=agent|live|stub.
 
 set -euo pipefail
 
@@ -37,7 +39,12 @@ API_HOST="127.0.0.1"
 API_PORT="${LUNARIS_API_PORT:-8000}"
 WEB_PORT="${LUNARIS_WEB_PORT:-5173}"
 SUPABASE_REST="http://127.0.0.1:54321/rest/v1/"
-PIPELINE="${LUNARIS_PIPELINE:-stub}"
+# The explicit pipeline override, if any. When empty it is resolved by a key guard
+# (resolve_pipeline) AFTER the .env file exists — default 'agent', falling back to 'stub'.
+PIPELINE="${LUNARIS_PIPELINE:-}"
+PIPELINE_FELL_BACK=0
+# The .env.sample placeholder — treated as "no key", so a fresh checkout falls back to stub.
+ANTHROPIC_KEY_PLACEHOLDER="sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 print_help() {
   cat <<EOF
@@ -56,8 +63,10 @@ Options:
   -h, --help         Show this help
 
 Environment:
-  LUNARIS_PIPELINE   API pipeline backend: 'stub' (default; deterministic, no
-                     key) or 'live' (real Claude — needs ANTHROPIC_API_KEY).
+  LUNARIS_PIPELINE   API pipeline backend: 'agent' (default — the real deep-agent
+                     harness; needs ANTHROPIC_API_KEY), 'live' (legacy single-shot
+                     orchestrator, also needs a key), or 'stub' (deterministic, no
+                     key). With no key reachable the default falls back to 'stub'.
   LUNARIS_API_PORT   API port (default 8000).
   LUNARIS_WEB_PORT   Web dev-server port (default 5173).
 
@@ -67,7 +76,7 @@ Background process state:
 
 Examples:
   scripts/run.sh                       # everything (supabase + api + web)
-  LUNARIS_PIPELINE=live scripts/run.sh # serve the real Claude pipeline
+  LUNARIS_PIPELINE=stub scripts/run.sh # force the deterministic no-key pipeline
   scripts/run.sh --backend-only        # supabase + api, no web
   scripts/run.sh --stop                # tear down
 EOF
@@ -248,6 +257,50 @@ resolve_service_port() {
   printf "%s" "$alt"
 }
 
+# --- Pipeline resolution (key guard) ----------------------------------------
+# The agent/live pipelines need a real Anthropic key; the stub needs none. To make
+# `make run` "live by default but never broken", we default to the real agent harness
+# only when a usable key is reachable, and otherwise fall back to the stub with a clear
+# message. An explicit LUNARIS_PIPELINE always wins (no guard, operator's choice).
+
+# anthropic_key_present — 0 iff a usable ANTHROPIC_API_KEY is reachable from any of the
+# sources the API will see at startup: the process env, the .env file (loaded via
+# --env-file), or the Settings secret store (.secrets/secrets.json, applied to env on
+# API startup). The .env.sample placeholder counts as "no key".
+anthropic_key_present() {
+  if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "${ANTHROPIC_API_KEY}" != "$ANTHROPIC_KEY_PLACEHOLDER" ]; then
+    return 0
+  fi
+  if [ -f ".env" ]; then
+    local value
+    value="$(grep -E '^[[:space:]]*ANTHROPIC_API_KEY=' .env | tail -n 1 | cut -d= -f2-)"
+    value="${value%\"}"; value="${value#\"}"   # strip surrounding double quotes, if any
+    value="${value%\'}"; value="${value#\'}"   # and single quotes
+    if [ -n "$value" ] && [ "$value" != "$ANTHROPIC_KEY_PLACEHOLDER" ]; then
+      return 0
+    fi
+  fi
+  local secrets="${LUNARIS_SECRETS_PATH:-.secrets/secrets.json}"
+  if [ -f "$secrets" ] && grep -q "ANTHROPIC_API_KEY" "$secrets" 2>/dev/null; then
+    return 0
+  fi
+  return 1
+}
+
+# resolve_pipeline — set PIPELINE (and PIPELINE_FELL_BACK) honoring an explicit override,
+# else defaulting to 'agent' guarded by anthropic_key_present (→ 'stub' when no key).
+resolve_pipeline() {
+  if [ -n "$PIPELINE" ]; then
+    return 0   # explicit LUNARIS_PIPELINE — honor it verbatim
+  fi
+  if anthropic_key_present; then
+    PIPELINE="agent"
+  else
+    PIPELINE="stub"
+    PIPELINE_FELL_BACK=1
+  fi
+}
+
 # start_supabase — bring up the local Supabase stack via its CLI (idempotent:
 # a second `supabase start` just reports the running stack). Migrations apply
 # on first start. Returns 0 (up), 1 (could not start).
@@ -322,7 +375,14 @@ start_api() {
   local root="$PWD"
   local log="${root}/${RUN_STATE_DIR}/api.log"
 
-  ui::info "pipeline mode: ${PIPELINE}$([ "$PIPELINE" = stub ] && echo '  (set LUNARIS_PIPELINE=live for real Claude)')"
+  if [ "$PIPELINE_FELL_BACK" = "1" ]; then
+    ui::warn "pipeline mode: stub — no ANTHROPIC_API_KEY found, so the real agent harness is off"
+    ui::hint "Add ANTHROPIC_API_KEY to .env (or set it in the Settings panel) for the live agent"
+  elif [ "$PIPELINE" = "stub" ]; then
+    ui::info "pipeline mode: stub  (deterministic, no key; unset LUNARIS_PIPELINE for the live agent)"
+  else
+    ui::info "pipeline mode: ${PIPELINE}  (real Claude — the deep-agent harness)"
+  fi
 
   # Launch in run.sh's own shell so $! is the uvicorn PID; SIGTERM to it stops
   # the server cleanly. Env is exported inline so the child inherits the mode.
@@ -426,11 +486,15 @@ if [ ! -f ".env" ]; then
   if [ -f ".env.sample" ]; then
     cp .env.sample .env
     ui::info ".env created from .env.sample"
-    ui::hint "Edit .env to set ANTHROPIC_API_KEY before using LUNARIS_PIPELINE=live"
+    ui::hint "Edit .env to set ANTHROPIC_API_KEY for the real agent pipeline (else it runs the stub)"
   else
     ui::warn ".env not found and .env.sample missing — services will use defaults"
   fi
 fi
+
+# Resolve the pipeline now that .env exists: default to the real agent harness when a
+# key is reachable, else fall back to the stub (announced below at the API step).
+resolve_pipeline
 
 # Reap our OWN stale api/web processes first, so a re-run is a clean restart
 # and the port pre-flight only flags genuinely foreign conflicts.

@@ -13,9 +13,11 @@ _DEFAULT_ORIGINS = (
 class Settings:
     """API runtime configuration, read from the environment.
 
-    ``pipeline`` selects the course-generation backend: ``agent`` (the real deep-agent harness,
-    needs ``ANTHROPIC_API_KEY``), ``live`` (the legacy single-shot orchestrator, also needs a key),
-    or ``stub`` (deterministic, offline — for demos/tests).
+    ``pipeline`` selects the course-generation backend and defaults to ``agent`` (the real
+    deep-agent harness — the product default, needs ``ANTHROPIC_API_KEY``). The alternatives are
+    ``live`` (the legacy single-shot orchestrator, also needs a key) and ``stub`` (deterministic,
+    offline — for demos/tests). ``make run`` resolves this with a key guard, falling back to
+    ``stub`` when no key is reachable; a direct ``uvicorn`` launch trusts the operator for a key.
     """
 
     pipeline: str
@@ -35,7 +37,7 @@ class Settings:
 def get_settings() -> Settings:
     origins = os.getenv("LUNARIS_CORS_ORIGINS", _DEFAULT_ORIGINS)
     return Settings(
-        pipeline=os.getenv("LUNARIS_PIPELINE", "live").lower(),
+        pipeline=os.getenv("LUNARIS_PIPELINE", "agent").lower(),
         course_dir=Path(os.getenv("LUNARIS_COURSE_DIR", ".courses")),
         cors_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
         secrets_path=Path(os.getenv("LUNARIS_SECRETS_PATH", ".secrets/secrets.json")),
