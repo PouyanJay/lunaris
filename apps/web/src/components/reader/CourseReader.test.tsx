@@ -1,9 +1,16 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { Claim, Lesson } from "../../types/course";
+import type { Claim, Lesson, Visual } from "../../types/course";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 import { CourseReader } from "./CourseReader";
+
+const NO_MAYER = {
+  coherence: false,
+  signaling: false,
+  spatialContiguity: false,
+  redundancy: false,
+};
 
 /** A lesson identifiable in the reader by its activate-phase prose — enough for navigation asserts. */
 function lessonWith(id: string, activateProse: string): Lesson {
@@ -111,6 +118,57 @@ describe("CourseReader", () => {
 
     // Assert
     expect(screen.getByRole("status")).toHaveTextContent(/no lessons/i);
+  });
+
+  it("renders a segment's branded visual inside the reader", () => {
+    // Arrange — a lesson whose demonstrate phase carries a flow-spec visual.
+    const base = makeLesson();
+    const visual: Visual = {
+      kind: "spec",
+      source: "",
+      rendered: null,
+      spec: { type: "flow", title: null, nodes: [{ id: "a", label: "Halve the range" }], edges: [] },
+      mayerChecks: NO_MAYER,
+    };
+    const course = makeCourse({
+      modules: [
+        makeModule({
+          lessons: [
+            {
+              ...base,
+              segments: {
+                ...base.segments,
+                demonstrate: { prose: "Demo.", visuals: [visual], claims: [] },
+              },
+            },
+          ],
+        }),
+      ],
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — the branded renderer drew the spec's node.
+    expect(screen.getByText("Halve the range")).toBeInTheDocument();
+  });
+
+  it("skips a module with no authored lessons in the outline", () => {
+    // Arrange
+    const course = makeCourse({
+      modules: [
+        makeModule({ id: "m-empty", title: "Empty", lessons: [] }),
+        makeModule({ id: "m-real", title: "Real", lessons: [makeLesson()] }),
+      ],
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert
+    const outline = screen.getByRole("navigation", { name: /course outline/i });
+    expect(within(outline).queryByText("Empty")).not.toBeInTheDocument();
+    expect(within(outline).getByText("Real")).toBeInTheDocument();
   });
 
   it("focuses the lesson covering a concept on a focus request (Map drill-in)", () => {

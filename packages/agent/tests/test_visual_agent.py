@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from lunaris_agent.subagents.visual_agent import (
     MermaidRenderer,
     StubDiagramRenderer,
@@ -82,6 +83,24 @@ def test_parse_visual_spec_rejects_an_unknown_discriminator() -> None:
     # Safety gate: an invented "type" must not produce any spec — the agent cannot talk its way
     # past validation with a discriminator outside the union.
     assert parse_visual_spec('{"type":"bogus","x":1}') is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_type"),
+    [
+        ('{"type":"flow","nodes":[],"edges":[]}', "flow"),
+        ('{"type":"tree","nodes":[]}', "tree"),
+        ('{"type":"steps","steps":[]}', "steps"),
+        ('{"type":"comparison","columns":[],"rows":[]}', "comparison"),
+        ('{"type":"timeline","events":[]}', "timeline"),
+    ],
+)
+def test_parse_visual_spec_covers_every_variant(payload: str, expected_type: str) -> None:
+    # Variant coverage: every member of the VisualSpec union is selected by its discriminator.
+    spec = parse_visual_spec(payload)
+
+    assert spec is not None
+    assert spec.type == expected_type
 
 
 # ─── stub renderer ───────────────────────────────────────────────────────────
