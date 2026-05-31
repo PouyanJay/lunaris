@@ -1,4 +1,11 @@
-import type { Course, CourseRun, ProgressEvent, ProgressStage } from "../types/course";
+import type {
+  AgentEvent,
+  AgentEventKind,
+  Course,
+  CourseRun,
+  ProgressEvent,
+  ProgressStage,
+} from "../types/course";
 
 /** A run-history row for sidebar tests; mirrors the camelCase CourseRun wire shape. */
 export function makeRun(overrides: Partial<CourseRun> = {}): CourseRun {
@@ -95,9 +102,13 @@ export function makeProgressEvent(
   };
 }
 
-/** A fetch-style Response whose body streams the given SSE text frames. */
-export function sseStreamResponse(frames: string[], init: { ok?: boolean; status?: number } = {}) {
-  const { ok = true, status = 200 } = init;
+/** A fetch-style Response whose body streams the given SSE text frames. Pass `open: true` to leave
+ *  the stream un-closed (it stays "streaming" — for asserting the live transcript mid-build). */
+export function sseStreamResponse(
+  frames: string[],
+  init: { ok?: boolean; status?: number; open?: boolean } = {},
+) {
+  const { ok = true, status = 200, open = false } = init;
   return {
     ok,
     status,
@@ -105,7 +116,7 @@ export function sseStreamResponse(frames: string[], init: { ok?: boolean; status
       start(controller) {
         const encoder = new TextEncoder();
         for (const frame of frames) controller.enqueue(encoder.encode(frame));
-        controller.close();
+        if (!open) controller.close();
       },
     }),
   };
@@ -121,4 +132,31 @@ export function progressFrame(
 
 export function courseFrame(course: Course = makeCourse()): string {
   return `event: course\ndata: ${JSON.stringify(course)}\n\n`;
+}
+
+/** A fine-grained agent-transcript event with null defaults; set the fields the `kind` uses. */
+export function makeAgentEvent(
+  kind: AgentEventKind,
+  sequence: number,
+  extra: Partial<AgentEvent> = {},
+): AgentEvent {
+  return {
+    kind,
+    runId: "run-test",
+    sequence,
+    text: null,
+    tool: null,
+    toolArgs: null,
+    result: null,
+    todos: null,
+    ...extra,
+  };
+}
+
+export function agentFrame(
+  kind: AgentEventKind,
+  sequence: number,
+  extra: Partial<AgentEvent> = {},
+): string {
+  return `event: agent\ndata: ${JSON.stringify(makeAgentEvent(kind, sequence, extra))}\n\n`;
 }

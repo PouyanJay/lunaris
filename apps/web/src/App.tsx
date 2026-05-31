@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { AppFrame } from "./components/AppFrame";
-import { BuildProgress } from "./components/build/BuildProgress";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
+import { Transcript } from "./components/transcript/Transcript";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -14,8 +14,9 @@ import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { TopicForm } from "./components/TopicForm";
 import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
+import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
-import type { Course, CourseStatus } from "./types/course";
+import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
@@ -82,6 +83,7 @@ function SeedApp() {
 function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state, generate, reset } = useCourseStream(apiBaseUrl);
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
+  const opened = useOpenedRun(apiBaseUrl);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // When a build finishes, the new run was recorded server-side — refresh the history so it shows.
@@ -92,10 +94,21 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (finishedCourseId) reloadRuns();
   }, [finishedCourseId, reloadRuns]);
 
-  const startNewCourse = () => {
+  const { open: openRun, close: closeRun } = opened;
+  const startNewCourse = useCallback(() => {
     setSettingsOpen(false);
+    closeRun();
     reset();
-  };
+  }, [closeRun, reset]);
+  const selectRun = useCallback(
+    (run: CourseRun) => {
+      setSettingsOpen(false);
+      openRun(run);
+    },
+    [openRun],
+  );
+
+  const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
 
   const sidebar = (
     <Sidebar
@@ -104,53 +117,72 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       onNewCourse={startNewCourse}
       onOpenSettings={() => setSettingsOpen(true)}
       settingsActive={settingsOpen}
+      onSelectRun={selectRun}
+      selectedRunId={selectedRunId}
     />
   );
 
-  if (settingsOpen) {
-    return (
-      <AgentShell sidebar={sidebar} title="Settings">
-        <SettingsPanel apiBaseUrl={apiBaseUrl} onClose={() => setSettingsOpen(false)} />
-      </AgentShell>
-    );
-  }
-  if (state.status === "idle") {
-    return (
-      <AgentShell sidebar={sidebar} title="New course">
-        <TopicForm onGenerate={generate} />
-      </AgentShell>
-    );
-  }
-  if (state.status === "streaming") {
-    return (
-      <AgentShell
-        sidebar={sidebar}
-        title={state.topic}
-        meta={
+  // Resolve the single canvas surface; the shell + sidebar wrap it once. Priority:
+  // settings → an opened historical run → the live build (idle / streaming / error / ready).
+  const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
+    if (settingsOpen) {
+      const body = <SettingsPanel apiBaseUrl={apiBaseUrl} onClose={() => setSettingsOpen(false)} />;
+      return { title: "Settings", meta: null, body };
+    }
+    if (opened.state.status === "loading") {
+      return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
+    }
+    if (opened.state.status === "error") {
+      const { courseId, topic, message } = opened.state;
+      const body = (
+        <ErrorState message={message} onRetry={() => openRun({ id: courseId, topic })} />
+      );
+      return { title: topic, meta: null, body };
+    }
+    if (opened.state.status === "ready") {
+      const { course } = opened.state;
+      const reopen = () => openRun({ id: course.id, topic: course.topic });
+      return {
+        title: course.topic,
+        meta: <HeaderMeta course={course} />,
+        body: <CourseBody course={course} onReload={reopen} />,
+      };
+    }
+    if (state.status === "idle") {
+      return { title: "New course", meta: null, body: <TopicForm onGenerate={generate} /> };
+    }
+    if (state.status === "streaming") {
+      return {
+        title: state.topic,
+        meta: (
           <>
             <StatusDot label="building" tone="accent" live />
             <Button onClick={reset}>Cancel</Button>
           </>
-        }
-      >
-        <BuildProgress topic={state.topic} events={state.events} />
-      </AgentShell>
-    );
-  }
-  if (state.status === "error") {
-    return (
-      <AgentShell sidebar={sidebar} title={state.topic}>
-        <ErrorState message={state.message} onRetry={() => generate(state.topic)} />
-      </AgentShell>
-    );
-  }
+        ),
+        body: (
+          <Transcript topic={state.topic} events={state.events} agentEvents={state.agentEvents} />
+        ),
+      };
+    }
+    if (state.status === "error") {
+      const { topic, message } = state;
+      return {
+        title: topic,
+        meta: null,
+        body: <ErrorState message={message} onRetry={() => generate(topic)} />,
+      };
+    }
+    return {
+      title: state.course.topic,
+      meta: <HeaderMeta course={state.course} />,
+      body: <CourseBody course={state.course} onReload={reset} />,
+    };
+  })();
+
   return (
-    <AgentShell
-      sidebar={sidebar}
-      title={state.course.topic}
-      meta={<HeaderMeta course={state.course} />}
-    >
-      <CourseBody course={state.course} onReload={reset} />
+    <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta}>
+      {canvas.body}
     </AgentShell>
   );
 }

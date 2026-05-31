@@ -28,16 +28,18 @@ describe("RunList", () => {
     expect(screen.getByText(/no runs yet/i)).toBeInTheDocument();
   });
 
-  it("renders each run with its topic and status", () => {
+  it("renders every run status variant (completed / running / failed)", () => {
     const runs = [
       makeRun({ id: "c-1", topic: "binary search", status: "completed" }),
       makeRun({ id: "c-2", topic: "graphs", status: "running" }),
+      makeRun({ id: "c-3", topic: "broken build", status: "failed" }),
     ];
     render(<RunList state={{ status: "ready", runs }} onRetry={noop} />);
 
     expect(screen.getByText("binary search")).toBeInTheDocument();
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
     expect(screen.getByText("RUNNING")).toBeInTheDocument();
+    expect(screen.getByText("FAILED")).toBeInTheDocument();
   });
 
   it("keeps the KC/module counts available as a tooltip (off the narrow rail)", () => {

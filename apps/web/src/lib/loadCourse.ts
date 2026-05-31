@@ -79,6 +79,29 @@ export async function generateCourse(
   return parseResponse(response);
 }
 
+/** Fetch + parse a previously built course by id (GET /api/courses/:id) — opening a run from the
+ *  sidebar history. Network / HTTP / malformed failures all surface as CourseLoadError. */
+export async function fetchCourseById(
+  apiBaseUrl: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<Course> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `${apiBaseUrl}/api/courses/${encodeURIComponent(id)}`,
+      signal ? { signal } : undefined,
+    );
+  } catch (cause) {
+    throw new CourseLoadError("Could not reach the course service.", { cause });
+  }
+  if (!response.ok) {
+    const detail = response.status === 404 ? "This run's course is no longer available." : null;
+    throw new CourseLoadError(detail ?? `Couldn't open this course (HTTP ${response.status}).`);
+  }
+  return parseResponse(response);
+}
+
 /** Resolve the course for the current environment: the live API when VITE_API_URL is set,
  *  otherwise the bundled static seed. The web stays usable offline either way. */
 export function resolveCourse(signal?: AbortSignal): Promise<Course> {
