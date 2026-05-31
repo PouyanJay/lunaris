@@ -4,11 +4,17 @@ from collections.abc import AsyncIterator, Callable
 import structlog
 from lunaris_agent import CoursePipeline
 from lunaris_runtime.persistence import CourseStore, IRunStore
-from lunaris_runtime.schema import AgentEvent, Course, ProgressEvent, RunStatus
+from lunaris_runtime.schema import AgentEvent, Course, CourseRun, ProgressEvent, RunStatus
 
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 
 logger = structlog.get_logger()
+
+# Bounds for the run-history list, shared with the GET /api/runs router so the HTTP validation and
+# the service-layer clamp stay in lockstep (single source of truth).
+RUNS_LIMIT_DEFAULT = 50
+RUNS_LIMIT_MIN = 1
+RUNS_LIMIT_MAX = 200
 
 # Builds the per-run course pipeline (stub / live orchestrator / deep agent) from the shared store.
 PipelineFactory = Callable[[CourseStore], CoursePipeline]
@@ -35,9 +41,8 @@ class CourseService:
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
-        # ``run_store`` is optional and best-effort: when present, the run lifecycle is recorded
-        # for the sidebar history; a failed history write never breaks a build (mirrors how the
-        # progress/agent sinks default to a no-op for batch callers).
+        # Best-effort: a failed history write must never propagate and break a build (mirrors how
+        # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
 
     async def create(self, topic: str, *, course_id: str, run_id: str) -> Course:
@@ -109,6 +114,16 @@ class CourseService:
             return self._store.load(course_id)
         except FileNotFoundError:
             return None
+
+    async def list_runs(self, *, limit: int = RUNS_LIMIT_DEFAULT) -> list[CourseRun]:
+        """Return an empty list when no run store is wired (batch / no-history callers), so the
+        endpoint degrades gracefully instead of failing. ``limit`` is clamped to a sane range for
+        direct callers; the HTTP router already validates it upstream.
+        """
+        if self._run_store is None:
+            return []
+        bounded = max(RUNS_LIMIT_MIN, min(limit, RUNS_LIMIT_MAX))
+        return await self._run_store.list_recent(limit=bounded)
 
     async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
         """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""
