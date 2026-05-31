@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { AppFrame } from "./components/AppFrame";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
@@ -94,16 +94,19 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (finishedCourseId) reloadRuns();
   }, [finishedCourseId, reloadRuns]);
 
-  const startNewCourse = () => {
+  const { open: openRun, close: closeRun } = opened;
+  const startNewCourse = useCallback(() => {
     setSettingsOpen(false);
-    opened.close();
+    closeRun();
     reset();
-  };
-
-  const selectRun = (run: CourseRun) => {
-    setSettingsOpen(false);
-    opened.open(run);
-  };
+  }, [closeRun, reset]);
+  const selectRun = useCallback(
+    (run: CourseRun) => {
+      setSettingsOpen(false);
+      openRun(run);
+    },
+    [openRun],
+  );
 
   const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
 
@@ -119,79 +122,67 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     />
   );
 
-  if (settingsOpen) {
-    return (
-      <AgentShell sidebar={sidebar} title="Settings">
-        <SettingsPanel apiBaseUrl={apiBaseUrl} onClose={() => setSettingsOpen(false)} />
-      </AgentShell>
-    );
-  }
-
-  // A selected run takes the canvas (read-only view of a past build); the sidebar persists.
-  if (opened.state.status === "loading") {
-    return (
-      <AgentShell sidebar={sidebar} title={opened.state.topic}>
-        <GraphSkeleton />
-      </AgentShell>
-    );
-  }
-  if (opened.state.status === "error") {
-    const { courseId, topic, message } = opened.state;
-    return (
-      <AgentShell sidebar={sidebar} title={topic}>
-        <ErrorState message={message} onRetry={() => opened.open({ id: courseId, topic })} />
-      </AgentShell>
-    );
-  }
-  if (opened.state.status === "ready") {
-    const { course } = opened.state;
-    return (
-      <AgentShell sidebar={sidebar} title={course.topic} meta={<HeaderMeta course={course} />}>
-        <CourseBody
-          course={course}
-          onReload={() => opened.open({ id: course.id, topic: course.topic })}
-        />
-      </AgentShell>
-    );
-  }
-
-  if (state.status === "idle") {
-    return (
-      <AgentShell sidebar={sidebar} title="New course">
-        <TopicForm onGenerate={generate} />
-      </AgentShell>
-    );
-  }
-  if (state.status === "streaming") {
-    return (
-      <AgentShell
-        sidebar={sidebar}
-        title={state.topic}
-        meta={
+  // Resolve the single canvas surface; the shell + sidebar wrap it once. Priority:
+  // settings → an opened historical run → the live build (idle / streaming / error / ready).
+  const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
+    if (settingsOpen) {
+      const body = <SettingsPanel apiBaseUrl={apiBaseUrl} onClose={() => setSettingsOpen(false)} />;
+      return { title: "Settings", meta: null, body };
+    }
+    if (opened.state.status === "loading") {
+      return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
+    }
+    if (opened.state.status === "error") {
+      const { courseId, topic, message } = opened.state;
+      const body = (
+        <ErrorState message={message} onRetry={() => openRun({ id: courseId, topic })} />
+      );
+      return { title: topic, meta: null, body };
+    }
+    if (opened.state.status === "ready") {
+      const { course } = opened.state;
+      const reopen = () => openRun({ id: course.id, topic: course.topic });
+      return {
+        title: course.topic,
+        meta: <HeaderMeta course={course} />,
+        body: <CourseBody course={course} onReload={reopen} />,
+      };
+    }
+    if (state.status === "idle") {
+      return { title: "New course", meta: null, body: <TopicForm onGenerate={generate} /> };
+    }
+    if (state.status === "streaming") {
+      return {
+        title: state.topic,
+        meta: (
           <>
             <StatusDot label="building" tone="accent" live />
             <Button onClick={reset}>Cancel</Button>
           </>
-        }
-      >
-        <Transcript topic={state.topic} events={state.events} agentEvents={state.agentEvents} />
-      </AgentShell>
-    );
-  }
-  if (state.status === "error") {
-    return (
-      <AgentShell sidebar={sidebar} title={state.topic}>
-        <ErrorState message={state.message} onRetry={() => generate(state.topic)} />
-      </AgentShell>
-    );
-  }
+        ),
+        body: (
+          <Transcript topic={state.topic} events={state.events} agentEvents={state.agentEvents} />
+        ),
+      };
+    }
+    if (state.status === "error") {
+      const { topic, message } = state;
+      return {
+        title: topic,
+        meta: null,
+        body: <ErrorState message={message} onRetry={() => generate(topic)} />,
+      };
+    }
+    return {
+      title: state.course.topic,
+      meta: <HeaderMeta course={state.course} />,
+      body: <CourseBody course={state.course} onReload={reset} />,
+    };
+  })();
+
   return (
-    <AgentShell
-      sidebar={sidebar}
-      title={state.course.topic}
-      meta={<HeaderMeta course={state.course} />}
-    >
-      <CourseBody course={state.course} onReload={reset} />
+    <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta}>
+      {canvas.body}
     </AgentShell>
   );
 }

@@ -40,6 +40,31 @@ describe("useOpenedRun", () => {
     });
   });
 
+  it("ignores a superseded fetch when a second open lands first", async () => {
+    let resolveFirst!: (value: unknown) => void;
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValue({ ok: true, json: async () => makeCourse({ id: "c-2" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useOpenedRun("http://test"));
+
+    // Open c-1 (stays pending), then immediately open c-2 (resolves) — c-2 must win.
+    act(() => result.current.open(makeRun({ id: "c-1", topic: "queues" })));
+    act(() => result.current.open(makeRun({ id: "c-2", topic: "trees" })));
+    await waitFor(() =>
+      expect(result.current.state).toMatchObject({ status: "ready", courseId: "c-2" }),
+    );
+
+    // Resolving the aborted first fetch must NOT clobber the c-2 result.
+    act(() => resolveFirst({ ok: true, json: async () => makeCourse({ id: "c-1" }) }));
+    expect(result.current.state).toMatchObject({ status: "ready", courseId: "c-2" });
+  });
+
   it("closes back to the build surface", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => makeCourse() }));
     const { result } = renderHook(() => useOpenedRun("http://test"));

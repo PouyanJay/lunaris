@@ -38,7 +38,7 @@ export function ToolCallCard({ tool, args, result }: ToolCallCardProps) {
             <span className="mono">running…</span>
           </span>
         ) : (
-          <span className={`mono ${styles.resultText}`}>{result || "done"}</span>
+          <span className={`mono ${styles.resultText}`}>{result === "" ? "done" : result}</span>
         )}
       </div>
     </div>

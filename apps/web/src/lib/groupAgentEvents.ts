@@ -22,8 +22,9 @@ export function groupAgentEvents(events: AgentEvent[]): TranscriptEntry[] {
 
   for (const event of events) {
     if (event.kind === "reasoning") {
-      if (event.text && event.text.trim()) {
-        entries.push({ kind: "reasoning", key: `r-${event.sequence}`, text: event.text });
+      const text = event.text?.trim();
+      if (text) {
+        entries.push({ kind: "reasoning", key: `r-${event.sequence}`, text });
       }
     } else if (event.kind === "tool_call") {
       entries.push({

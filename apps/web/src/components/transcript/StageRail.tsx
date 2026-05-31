@@ -14,8 +14,10 @@ const PHASES: { stage: ProgressStage; label: string }[] = [
 
 const PHASE_INDEX = new Map(PHASES.map((phase, index) => [phase.stage, index]));
 
-function phaseStatus(index: number, currentIndex: number, done: boolean): PhaseStatus {
-  if (done || index < currentIndex) return "done";
+function phaseStatus(index: number, currentIndex: number): PhaseStatus {
+  // run_completed is the last phase, so reaching it marks every phase done.
+  const allDone = currentIndex >= PHASES.length - 1;
+  if (allDone || index < currentIndex) return "done";
   if (index === currentIndex) return "active";
   return "pending";
 }
@@ -30,13 +32,12 @@ export function StageRail({ events }: StageRailProps) {
   const last = events.at(-1);
   const currentIndex =
     last && last.stage !== "run_started" ? (PHASE_INDEX.get(last.stage) ?? -1) : -1;
-  const done = last?.stage === "run_completed";
 
   return (
     <div className={styles.rail}>
       <ol className={styles.phases}>
         {PHASES.map((phase, index) => {
-          const status = phaseStatus(index, currentIndex, done);
+          const status = phaseStatus(index, currentIndex);
           return (
             <li key={phase.stage} className={styles.phase} data-status={status}>
               <span className={styles.dot} data-status={status} aria-hidden="true" />

@@ -44,6 +44,30 @@ describe("groupAgentEvents", () => {
     expect(entries[0]).toMatchObject({ text: "First, map the prerequisites." });
   });
 
+  it("pairs the most recent pending call when a tool is called twice", () => {
+    const events = [
+      makeAgentEvent("tool_call", 0, { tool: "verify_claims" }),
+      makeAgentEvent("tool_call", 1, { tool: "verify_claims" }),
+      makeAgentEvent("tool_result", 2, { tool: "verify_claims", result: "second result" }),
+    ];
+
+    const entries = groupAgentEvents(events);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({ kind: "tool", result: null }); // first call still pending
+    expect(entries[1]).toMatchObject({ kind: "tool", result: "second result" });
+  });
+
+  it("renders a tool_result with no matching call as a standalone entry (reconnect)", () => {
+    const entries = groupAgentEvents([
+      makeAgentEvent("tool_result", 5, { tool: "verify_claims", result: "3 claims" }),
+    ]);
+
+    expect(entries).toEqual([
+      { kind: "tool", key: "t-5", tool: "verify_claims", args: null, result: "3 claims" },
+    ]);
+  });
+
   it("excludes todo events from the entry feed", () => {
     const entries = groupAgentEvents([
       makeAgentEvent("todo", 0, { todos: [{ content: "plan", status: "pending" }] }),

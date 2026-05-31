@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { makeAgentEvent, makeProgressEvent } from "../../test/fixtures";
 import { Transcript } from "./Transcript";
 
+const reasoning = (seq: number, text: string) => makeAgentEvent("reasoning", seq, { text });
+
 describe("Transcript", () => {
   it("shows a waiting affordance before the first agent beat", () => {
     render(<Transcript topic="graphs" events={[]} agentEvents={[]} />);
@@ -60,5 +62,25 @@ describe("Transcript", () => {
 
     expect(screen.getByText("verify_claims")).toBeInTheDocument();
     expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
+  it("follows the feed to the bottom as new events arrive", () => {
+    const { rerender } = render(
+      <Transcript topic="graphs" events={[]} agentEvents={[reasoning(0, "first")]} />,
+    );
+    const feed = screen.getByRole("region", { name: /agent transcript/i });
+    // jsdom has no layout, so give the feed a scrollable height to observe the effect.
+    Object.defineProperty(feed, "scrollHeight", { value: 500, configurable: true });
+    feed.scrollTop = 0;
+
+    rerender(
+      <Transcript
+        topic="graphs"
+        events={[]}
+        agentEvents={[reasoning(0, "first"), reasoning(1, "second")]}
+      />,
+    );
+
+    expect(feed.scrollTop).toBe(500);
   });
 });

@@ -58,7 +58,11 @@ export function useOpenedRun(apiBaseUrl: string): OpenedRun {
     setState({ status: "closed" });
   }, []);
 
-  useEffect(() => () => controllerRef.current?.abort(), []);
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
 
   return { state, open, close };
 }

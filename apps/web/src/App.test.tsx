@@ -96,10 +96,11 @@ describe("App — live studio (VITE_API_URL set)", () => {
       if (url.includes("/api/courses/stream")) {
         return Promise.resolve(handlers.build);
       }
-      if (url.includes("/api/courses/")) {
+      if (/\/api\/courses\/[^/?]+$/.test(url)) {
+        // course-by-id: exactly one path segment after /courses/, no query (≠ the stream URL)
         return Promise.resolve({ ok: true, json: async () => handlers.course });
       }
-      return Promise.resolve(handlers.build);
+      throw new Error(`routedFetch: unhandled URL ${url}`);
     });
   }
 
@@ -209,13 +210,11 @@ describe("App — live studio (VITE_API_URL set)", () => {
   });
 
   it("opens a course in the canvas when a run is selected from the sidebar", async () => {
-    vi.stubGlobal(
-      "fetch",
-      routedFetch({
-        runs: [makeRun({ id: "c-1", topic: "queues" })],
-        course: makeCourse({ id: "c-1", topic: "queues" }),
-      }),
-    );
+    const fetchMock = routedFetch({
+      runs: [makeRun({ id: "c-1", topic: "queues" })],
+      course: makeCourse({ id: "c-1", topic: "queues" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
     // Click the run in the sidebar history.
@@ -224,6 +223,36 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // The canvas opens that run's course: its title heading + a graph node from the course.
     expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
     expect(screen.getByText("Binary Search")).toBeInTheDocument();
+    // Opened by the run's course_id, not a re-build.
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/courses/c-1"),
+      expect.anything(),
+    );
+  });
+
+  it("switches the canvas to a selected run even while a build is streaming", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [makeRun({ id: "c-1", topic: "queues" })],
+        build: sseStreamResponse(
+          [progressFrame("run_started", 0), agentFrame("reasoning", 1, { text: "Mapping KCs…" })],
+          { open: true },
+        ),
+        course: makeCourse({ id: "c-1", topic: "queues" }),
+      }),
+    );
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    await screen.findByText("Mapping KCs…"); // transcript is up
+
+    // Open a historical run mid-build — the opened run takes the canvas (priority over the build).
+    fireEvent.click(screen.getByRole("button", { name: /queues/i }));
+
+    expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
+    expect(screen.queryByText("Mapping KCs…")).not.toBeInTheDocument();
   });
 
   it("shows a recoverable error when the build fails mid-stream", async () => {

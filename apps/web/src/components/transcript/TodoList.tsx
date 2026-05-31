@@ -23,6 +23,8 @@ export function TodoList({ todos }: TodoListProps) {
       <ol className={styles.list}>
         {todos.map((todo, index) => {
           const state = todoState(todo.status);
+          // AgentTodo has no stable id; index+content is the best key available. A content edit
+          // remounts the row rather than updating it — acceptable for a short, infrequent plan.
           return (
             <li key={`${index}-${todo.content}`} className={styles.item} data-state={state}>
               <span className={styles.indicator} data-state={state} aria-hidden="true" />
