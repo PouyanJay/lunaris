@@ -27,6 +27,11 @@ from lunaris_agent.subagents.curriculum_architect import (
     StubCurriculumArchitect,
 )
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
+from lunaris_agent.subagents.visual_agent import (
+    StubDiagramRenderer,
+    StubVisualGenerator,
+    VisualEngine,
+)
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
 from lunaris_runtime.persistence import CourseStore
@@ -129,6 +134,7 @@ def _builder(
     *,
     reviser: StubLessonReviser | None = None,
     verifier: Verifier | None = None,
+    visual_engine: VisualEngine | None = None,
 ) -> AgentCourseBuilder:
     """Construct the agent course builder over the no-key stub subagents + real moats."""
     return AgentCourseBuilder(
@@ -139,6 +145,7 @@ def _builder(
         architect=StubCurriculumArchitect(_PLAN),
         reviser=reviser or _reviser(),
         verifier=verifier or _verifier(),
+        visual_engine=visual_engine,
     )
 
 
@@ -283,6 +290,50 @@ async def test_agent_publishes_after_the_subagent_revises_a_cut_claim(
     assert claims
     assert all(claim.verifier_status is VerifierStatus.SUPPORTED for claim in claims)
     assert course.status == CourseStatus.PUBLISHED
+
+
+async def test_agent_pipeline_illustrates_the_authored_lessons(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — the agent builder with a visual engine injected (no key, no render toolchain).
+    # This pins the P5 wiring: the deep-agent harness must illustrate the authored lessons the way
+    # the legacy Orchestrator does, not silently skip visuals.
+    store = CourseStore(tmp_path)
+    engine = VisualEngine(StubVisualGenerator(), StubDiagramRenderer())
+    builder = _builder(_delegating_script(scripted_model), store, visual_engine=engine)
+
+    # Act
+    course = await builder.run("demo", course_id="course-vis", run_id="run-vis")
+
+    # Assert — every authored lesson's demonstrate segment carries a visual, and they survive
+    # persistence (proving the engine ran BEFORE finalize assembled + saved the course, not after).
+    assert course.modules and all(module.lessons for module in course.modules)
+    for module in course.modules:
+        for lesson in module.lessons:
+            assert lesson.segments.demonstrate.visuals, f"module {module.id} got no visual"
+    reloaded = store.load("course-vis")
+    for module in reloaded.modules:
+        for lesson in module.lessons:
+            assert lesson.segments.demonstrate.visuals, f"reloaded {module.id} lost a visual"
+
+
+async def test_agent_pipeline_ships_without_a_visual_engine(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — no visual engine wired (the optional dependency is absent).
+    store = CourseStore(tmp_path)
+    builder = _builder(_delegating_script(scripted_model), store)
+
+    # Act — the build still completes and publishes; visuals are simply absent.
+    course = await builder.run("demo", course_id="course-novis", run_id="run-novis")
+
+    # Assert — no visuals, but a valid persisted course (visuals are never a hard dependency).
+    assert course.status == CourseStatus.PUBLISHED
+    lessons = [lesson for module in course.modules for lesson in module.lessons]
+    assert lessons  # guard against a vacuous all() over an empty course
+    assert all(not lesson.segments.demonstrate.visuals for lesson in lessons)
 
 
 async def test_agent_flags_review_when_a_goal_claim_cannot_be_grounded(

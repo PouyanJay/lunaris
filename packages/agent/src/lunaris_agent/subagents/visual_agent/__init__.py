@@ -3,6 +3,7 @@ from .draft import VisualDraft
 from .engine import VisualEngine
 from .mermaid_renderer import MermaidRenderer
 from .parser import parse_visual
+from .passthrough_renderer import PassthroughDiagramRenderer
 from .protocol import IVisualGenerator
 from .render_result import RenderResult
 from .renderer_protocol import IDiagramRenderer
@@ -15,6 +16,7 @@ __all__ = [
     "IDiagramRenderer",
     "IVisualGenerator",
     "MermaidRenderer",
+    "PassthroughDiagramRenderer",
     "RenderResult",
     "StubDiagramRenderer",
     "StubVisualGenerator",

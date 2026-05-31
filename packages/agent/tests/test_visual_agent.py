@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from lunaris_agent.subagents.visual_agent import (
     MermaidRenderer,
+    PassthroughDiagramRenderer,
     StubDiagramRenderer,
     StubVisualGenerator,
     VisualDraft,
@@ -113,6 +114,42 @@ async def test_stub_renderer_succeeds_on_a_valid_diagram() -> None:
 
 async def test_stub_renderer_fails_on_unrecognised_source() -> None:
     assert not (await StubDiagramRenderer().render("not a diagram")).ok
+
+
+# ─── passthrough renderer (no-toolchain fallback) ─────────────────────────────
+async def test_passthrough_renderer_accepts_a_valid_diagram_without_a_path() -> None:
+    # The no-toolchain fallback validates the source syntactically and ships it un-rendered:
+    # ok=True so the engine attaches the visual, path=None because no SVG was produced.
+    result = await PassthroughDiagramRenderer().render(_VALID_DIAGRAM)
+
+    assert result.ok is True
+    assert result.path is None
+
+
+async def test_passthrough_renderer_rejects_unrecognised_source() -> None:
+    # Prose / malformed blocks are still rejected, exactly as the real renderers do — the
+    # fallback ships diagram-as-code, never arbitrary text.
+    result = await PassthroughDiagramRenderer().render("just some prose, not a diagram")
+
+    assert result.ok is False
+    assert result.error is not None
+
+
+async def test_engine_ships_a_source_diagram_via_passthrough_unrendered() -> None:
+    # Arrange — the no-script fallback path: a source-only diagram with the passthrough renderer.
+    course = _course_with_lessons()
+    engine = VisualEngine(StubVisualGenerator(), PassthroughDiagramRenderer())
+
+    # Act
+    placed = await engine.illustrate(course)
+
+    # Assert — the diagram ships (the web draws from source via MermaidFallback) but carries no
+    # render path, since no SVG toolchain ran.
+    assert placed == 1
+    visual = course.modules[0].lessons[0].segments.demonstrate.visuals[0]
+    assert visual.kind is VisualKind.MERMAID
+    assert visual.source
+    assert visual.rendered is None
 
 
 # ─── mermaid renderer (live impl) ────────────────────────────────────────────

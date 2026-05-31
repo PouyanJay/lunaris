@@ -83,12 +83,28 @@ async def test_agent_builds_a_real_course_with_live_claude(tmp_path, capsys) -> 
     # Status is whichever the publish gate + triage decided; both are valid outcomes here.
     assert course.status in (CourseStatus.PUBLISHED, CourseStatus.REVIEW)
 
+    # P5: the agent pipeline now illustrates the authored lessons (the harness wired no visuals
+    # before). With no LUNARIS_MERMAID_SCRIPT the passthrough renderer ships diagrams un-rendered,
+    # but the branded VisualSpec still rides along. Prove a branded spec made it end-to-end on a
+    # live model: at least one demonstrate-segment visual carries a typed spec.
+    visuals = [
+        visual
+        for module in course.modules
+        for lesson in module.lessons
+        for visual in lesson.segments.demonstrate.visuals
+    ]
+    branded = [visual for visual in visuals if visual.spec is not None]
+    assert visuals, "the agent pipeline placed no visuals on live output"
+    assert branded, "no branded VisualSpec shipped — only raw mermaid (or none)"
+
     # Surface the live result so a human can eyeball it (run with -s).
     supported = sum(1 for c in claims if c.verifier_status is VerifierStatus.SUPPORTED)
+    spec_types = sorted({visual.spec.type for visual in branded})
     with capsys.disabled():
         print(
             f"\n[LIVE AGENT] run_id={run_id} status={course.status.value} "
             f"concepts={len(course.graph.nodes)} modules={len(course.modules)} "
             f"claims={len(claims)} supported={supported} cut={len(claims) - supported} "
-            f"provenance={len(course.provenance)} meets_dod={report.meets_dod}"
+            f"provenance={len(course.provenance)} meets_dod={report.meets_dod} "
+            f"visuals={len(visuals)} branded_specs={len(branded)} spec_types={spec_types}"
         )
