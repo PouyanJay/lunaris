@@ -33,6 +33,13 @@ class LessonRegenerationUnsupportedError(CourseServiceError):
     """Raised when the active pipeline cannot regenerate a single lesson (e.g. the deep agent)."""
 
 
+class RunHistoryUnavailableError(CourseServiceError):
+    """Raised when the run-history backend can't be read (Supabase unreachable, table missing).
+
+    Reads, unlike the best-effort writes, surface their failure rather than degrade to an empty
+    list (which would lie "no runs yet"); the router maps this to a 503."""
+
+
 class CourseService:
     """Application service over the course pipeline — the API's only door to the agent.
 
@@ -160,7 +167,14 @@ class CourseService:
         if self._run_store is None:
             return []
         bounded = max(RUNS_LIMIT_MIN, min(limit, RUNS_LIMIT_MAX))
-        return await self._run_store.list_recent(limit=bounded)
+        try:
+            return await self._run_store.list_recent(limit=bounded)
+        except Exception as exc:
+            # A configured backend that fails to read is a real outage — surface it (vs. a silent
+            # empty list, which would lie "no runs yet"). Logged with the run_id from contextvars so
+            # the failure is triangulatable across layers; the router maps it to a recoverable 503.
+            logger.warning("run_history_list_failed", limit=bounded, exc_info=True)
+            raise RunHistoryUnavailableError("Run history backend is unavailable") from exc
 
     async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
         """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""

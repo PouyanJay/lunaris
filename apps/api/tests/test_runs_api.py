@@ -11,7 +11,34 @@ from lunaris_api.app import create_app
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
+from lunaris_runtime.persistence import CourseStore, InMemoryRunStore, IRunStore
+from lunaris_runtime.schema import CourseRun, RunStatus
+
+
+class _UnavailableRunStore:
+    """A run store whose reads fail — models the history backend being unavailable (the
+    ``course_runs`` table missing, Supabase unreachable). Writes are no-ops because recording is
+    best-effort; only ``list_recent`` raises, which is what the sidebar's read must survive."""
+
+    async def start(self, *, run_id: str, course_id: str, topic: str) -> None: ...
+
+    async def finish(
+        self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
+    ) -> None: ...
+
+    async def list_recent(self, *, limit: int = 50) -> list[CourseRun]:
+        raise RuntimeError("history backend unavailable")
+
+
+def _client_for(tmp_path: Path, run_store: IRunStore) -> httpx.AsyncClient:
+    """Wire the app over a given run store and return a client for the real HTTP → service → store
+    path. Shared by the default fixture and the outage test so the setup lives in one place."""
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
 @pytest.fixture
@@ -21,12 +48,7 @@ def run_store() -> InMemoryRunStore:
 
 @pytest.fixture
 async def client(tmp_path: Path, run_store: InMemoryRunStore) -> AsyncIterator[httpx.AsyncClient]:
-    clear_correlation()
-    app = create_app()
-    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store)
-    app.dependency_overrides[get_course_service] = lambda: service
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+    async with _client_for(tmp_path, run_store) as http_client:
         yield http_client
 
 
@@ -35,6 +57,22 @@ async def test_runs_list_is_empty_before_any_build(client: httpx.AsyncClient) ->
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+async def test_unavailable_history_backend_returns_503_with_cors_headers(tmp_path: Path) -> None:
+    # Arrange — a service whose run store fails on read (the missing-table / outage case).
+    dev_origin = "http://localhost:5173"  # the Vite dev server, in the CORS allowlist
+
+    # Act — the browser sends an Origin; the sidebar must get a recoverable answer back.
+    async with _client_for(tmp_path, _UnavailableRunStore()) as http_client:
+        response = await http_client.get("/api/runs", headers={"Origin": dev_origin})
+
+    # Assert — a backend outage is a recoverable 503, NOT a 500. A 500 is raised outside the CORS
+    # middleware, so its response carries no Access-Control-Allow-Origin header and the browser
+    # surfaces it as a network error ("Could not reach the run history") instead of the sidebar's
+    # Retry state. The 503 must keep its CORS header so the error reaches the client honestly.
+    assert response.status_code == 503
+    assert response.headers["access-control-allow-origin"] == dev_origin
 
 
 async def test_run_appears_in_the_list_after_a_build(client: httpx.AsyncClient) -> None:
