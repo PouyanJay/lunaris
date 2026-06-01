@@ -191,17 +191,26 @@ class CourseService:
             recorded = True
             raise
         finally:
+            # Capture intent before discard clears it, so a disconnect that races ahead of the
+            # post-loop cancelled-branch still lands CANCELLED for an explicitly cancelled run.
+            cancelled = self._registry.was_cancelled(run_id)
             self._registry.discard(run_id)
             if run_task is not None and not run_task.done():
                 run_task.cancel()
             if not recorded:
-                # The consumer was cancelled (client disconnect) before the run reached a terminal
-                # event, so neither branch above ran — the run would otherwise stay stuck RUNNING in
-                # history. Record it FAILED on the way out. Awaiting here is safe during async-gen
-                # finalization because we do not ``yield`` in ``finally``; ``_record_failure`` is
-                # best-effort (never raises).
-                logger.info("run_recorded_failed_on_disconnect", course_id=course_id, run_id=run_id)
-                await self._record_failure(course_id)
+                # The consumer was cancelled before the run reached a terminal event, so neither
+                # branch above ran — the run would otherwise stay stuck RUNNING in history. Record a
+                # terminal status on the way out: CANCELLED for an explicit cancel (the Terminate
+                # control), else FAILED for a plain client disconnect. Awaiting here is safe during
+                # async-gen finalization (we don't ``yield`` in ``finally``); both writes are
+                # best-effort (never raise).
+                if cancelled:
+                    event = "run_recorded_cancelled_on_disconnect"
+                    await self._record_cancelled(course_id)
+                else:
+                    event = "run_recorded_failed_on_disconnect"
+                    await self._record_failure(course_id)
+                logger.info(event, course_id=course_id, run_id=run_id)
 
     def get(self, course_id: str) -> Course | None:
         # An unsafe id can't name a stored course (ids are uuid4().hex); treat it as not-found

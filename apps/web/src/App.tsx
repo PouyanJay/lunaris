@@ -24,6 +24,7 @@ import { regenerateLesson } from "./lib/loadCourse";
 import { fetchSettings } from "./lib/settings";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useDeleteRun } from "./hooks/useDeleteRun";
+import { useTerminateBuild } from "./hooks/useTerminateBuild";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
@@ -160,6 +161,8 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeRun, reloadRuns);
   // Cancel an in-flight run (no confirm — it's recoverable): POST cancel → refresh (flips CANCELLED).
   const cancellation = useCancelRun(apiBaseUrl, reloadRuns);
+  // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
+  const termination = useTerminateBuild(apiBaseUrl, reset, reloadRuns);
 
   // A ready course's canvas: the Learn | Map toggle + course metrics in the header, and either the
   // lesson reader (Learn, default) or the prerequisite-graph explorer (Map) in the body.
@@ -241,12 +244,13 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       return { title: "New course", meta: null, body: <TopicForm onGenerate={generate} /> };
     }
     if (state.status === "streaming") {
+      const { runId } = state;
       return {
         title: state.topic,
         meta: (
           <>
             <StatusDot label="building" tone="accent" live />
-            <Button onClick={reset}>Cancel</Button>
+            <Button onClick={() => termination.request(runId)}>Terminate</Button>
           </>
         ),
         body: (
@@ -285,6 +289,18 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
         errorMessage={deleteRun.deleteError}
         onConfirm={deleteRun.confirm}
         onCancel={deleteRun.cancel}
+      />
+      <ConfirmDialog
+        open={termination.isConfirming}
+        title="Terminate course generation?"
+        description="This stops the build that's in progress and records the run as cancelled. You can start a new course anytime."
+        confirmLabel="Terminate"
+        pendingLabel="Terminating…"
+        danger
+        pending={termination.isTerminating}
+        errorMessage={termination.terminateError}
+        onConfirm={termination.confirm}
+        onCancel={termination.dismiss}
       />
     </>
   );

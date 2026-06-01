@@ -6,7 +6,14 @@ import type { AgentEvent, Course, ProgressEvent } from "../types/course";
 
 export type BuildState =
   | { status: "idle" }
-  | { status: "streaming"; topic: string; events: ProgressEvent[]; agentEvents: AgentEvent[] }
+  | {
+      status: "streaming";
+      topic: string;
+      events: ProgressEvent[];
+      agentEvents: AgentEvent[];
+      // The run_id, captured from the first event — lets the UI terminate this build by run_id.
+      runId?: string;
+    }
   | { status: "ready"; course: Course }
   | { status: "error"; message: string; topic: string };
 
@@ -44,12 +51,18 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
         signal: controller.signal,
         onProgress: (event) =>
           setState((prev) =>
-            prev.status === "streaming" ? { ...prev, events: [...prev.events, event] } : prev,
+            prev.status === "streaming"
+              ? { ...prev, runId: prev.runId ?? event.runId, events: [...prev.events, event] }
+              : prev,
           ),
         onAgent: (event) =>
           setState((prev) =>
             prev.status === "streaming"
-              ? { ...prev, agentEvents: [...prev.agentEvents, event] }
+              ? {
+                  ...prev,
+                  runId: prev.runId ?? event.runId,
+                  agentEvents: [...prev.agentEvents, event],
+                }
               : prev,
           ),
       })

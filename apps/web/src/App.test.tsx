@@ -94,8 +94,12 @@ describe("App — live studio (VITE_API_URL set)", () => {
     course?: unknown;
     settings?: unknown;
   }) {
-    return vi.fn((input: Parameters<typeof fetch>[0]) => {
+    return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
+        return Promise.resolve({ ok: true, status: 202 });
+      }
       if (url.includes("/api/runs")) {
         return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
       }
@@ -200,32 +204,71 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("region", { name: /agent transcript/i })).toBeInTheDocument();
   });
 
-  it("cancels an in-flight build and returns to the topic form", async () => {
-    vi.stubGlobal(
-      "fetch",
-      routedFetch({
-        runs: [],
-        build: sseStreamResponse(
-          [
-            progressFrame("run_started", 0),
-            agentFrame("reasoning", 1, { text: "Mapping the prerequisites." }),
-          ],
-          { open: true }, // stay streaming so Cancel has something to abort
-        ),
-      }),
-    );
+  it("terminates an in-flight build after confirming and returns to the topic form", async () => {
+    // Arrange — a build streaming (kept open) so Terminate has something to stop.
+    const fetchMock = routedFetch({
+      runs: [],
+      build: sseStreamResponse(
+        [
+          progressFrame("run_started", 0),
+          agentFrame("reasoning", 1, { text: "Mapping the prerequisites." }),
+        ],
+        { open: true },
+      ),
+    });
+    vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
     await screen.findByText("Mapping the prerequisites.");
 
-    // Act — cancel mid-build.
-    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    // Act — Terminate goes through a confirmation dialog (not an immediate local abort).
+    fireEvent.click(screen.getByRole("button", { name: /terminate/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^terminate$/i }));
 
-    // Assert — back on the topic form, transcript gone.
-    expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    // Assert — back on the topic form, transcript gone, and the build was cancelled server-side by
+    // run_id (so it lands CANCELLED, not the disconnect→FAILED path).
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Mapping the prerequisites.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/runs/run-test/cancel"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("dismisses the terminate confirmation and keeps building", async () => {
+    // Arrange — a build streaming.
+    const fetchMock = routedFetch({
+      runs: [],
+      build: sseStreamResponse(
+        [
+          progressFrame("run_started", 0),
+          agentFrame("reasoning", 1, { text: "Mapping the prerequisites." }),
+        ],
+        { open: true },
+      ),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    await screen.findByText("Mapping the prerequisites.");
+
+    // Act — open the terminate dialog, then dismiss it.
+    fireEvent.click(screen.getByRole("button", { name: /terminate/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+
+    // Assert — the build keeps streaming (transcript up), and no cancel was ever POSTed.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Mapping the prerequisites.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining("/cancel"),
+      expect.anything(),
+    );
   });
 
   it("opens a course in the canvas when a run is selected from the sidebar", async () => {
