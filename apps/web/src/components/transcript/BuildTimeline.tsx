@@ -9,6 +9,7 @@ import {
 import { formatDuration } from "../../lib/formatDuration";
 import type { AgentEvent, ProgressEvent, ProgressStage } from "../../types/course";
 import { LiveActivity } from "./LiveActivity";
+import { ReasoningBeat } from "./ReasoningBeat";
 import { TodoList } from "./TodoList";
 import { ToolCallCard } from "./ToolCallCard";
 import styles from "./BuildTimeline.module.css";
@@ -154,20 +155,13 @@ function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef, startedAt }
                 />
               );
             }
-            // Show a live caret only on the active phase's latest beat while it is still streaming
-            // in — the visible signal the agent's reasoning is forming token-by-token.
+            // The live caret shows only on the active phase's latest beat while it is still
+            // streaming — the visible signal the agent's reasoning is forming token-by-token.
             const isLiveCaret =
               entry.streaming === true &&
               phase.status === "active" &&
               index === phase.entries.length - 1;
-            return (
-              <p key={entry.key} className={styles.reasoning}>
-                {entry.text}
-                {isLiveCaret && (
-                  <span className={styles.caret} aria-hidden="true" data-testid="reasoning-caret" />
-                )}
-              </p>
-            );
+            return <ReasoningBeat key={entry.key} text={entry.text} streaming={isLiveCaret} />;
           })}
         </div>
       )}
