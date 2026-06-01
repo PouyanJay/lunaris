@@ -134,6 +134,15 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (finishedCourseId) reloadRuns();
   }, [finishedCourseId, reloadRuns]);
 
+  // The run is recorded RUNNING server-side before its first event is emitted, so the run_id on that
+  // first event is a race-free cue that the row exists — refetch so the sidebar shows the new run
+  // without a browser refresh (useRuns then polls while it's running). Keyed on the run_id so it
+  // fires once per build, not per streamed event.
+  const streamingRunId = state.status === "streaming" ? state.runId : undefined;
+  useEffect(() => {
+    if (streamingRunId) reloadRuns();
+  }, [streamingRunId, reloadRuns]);
+
   const { open: openRun, close: closeRun } = opened;
   const startNewCourse = useCallback(() => {
     setSettingsOpen(false);

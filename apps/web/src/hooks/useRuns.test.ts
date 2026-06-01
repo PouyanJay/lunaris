@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeRun } from "../test/fixtures";
-import { useRuns, type RunsState } from "./useRuns";
+import { RUNS_POLL_INTERVAL_MS, useRuns, type RunsState } from "./useRuns";
 
 /** Narrow to the ready runs with a clear failure message if the state isn't ready. */
 function readyRuns(state: RunsState) {
@@ -11,7 +11,10 @@ function readyRuns(state: RunsState) {
 }
 
 describe("useRuns", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
 
   it("loads recent runs from the API", async () => {
     vi.stubGlobal(
@@ -76,6 +79,39 @@ describe("useRuns", () => {
 
     act(() => resolveReload({ ok: true, json: async () => [] }));
     await waitFor(() => expect(readyRuns(result.current.state)).toHaveLength(0));
+  });
+
+  it("polls the run history while a build is running and stops once it finishes", async () => {
+    // A live build's status must refresh without a manual reload: while the list holds a running
+    // run the hook re-fetches on an interval, and once nothing is running it stops polling.
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => [makeRun({ status: "running" })] })
+      .mockResolvedValue({ ok: true, json: async () => [makeRun({ status: "completed" })] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useRuns("http://test"));
+
+    // Initial load lands a still-running run, which starts the live-status poll.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(readyRuns(result.current.state)[0]?.status).toBe("running");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // One interval later the poll re-reads and sees the run has finished.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RUNS_POLL_INTERVAL_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(readyRuns(result.current.state)[0]?.status).toBe("completed");
+
+    // With nothing running, polling stops — no further reads as more time passes.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RUNS_POLL_INTERVAL_MS * 3);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the stale runs when a background refresh fails", async () => {

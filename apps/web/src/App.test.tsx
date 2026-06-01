@@ -204,6 +204,58 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("region", { name: /agent transcript/i })).toBeInTheDocument();
   });
 
+  it("surfaces a newly started build in the sidebar history without a manual refresh", async () => {
+    // The run is recorded RUNNING server-side before the first event is emitted, so the run_id on
+    // that first event is the cue to refetch the history. /api/runs is empty until the build starts,
+    // then lists the running run — the sidebar must pick it up on its own (the reported bug was that
+    // it only showed after a browser refresh).
+    // The history is empty until the build has started (the stream was requested), then it lists
+    // the running run — keyed on the causal event, not an ordinal call count.
+    let buildStarted = false;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (url.includes("/api/courses/stream")) {
+        buildStarted = true;
+        return Promise.resolve(
+          sseStreamResponse(
+            [
+              progressFrame("run_started", 0),
+              agentFrame("reasoning", 1, { text: "Mapping the prerequisites." }),
+            ],
+            { open: true }, // stay streaming so the run is still RUNNING when we assert
+          ),
+        );
+      }
+      if (url.includes("/api/runs")) {
+        const runs = buildStarted
+          ? [makeRun({ id: "c-9", runId: "run-test", topic: "graphs", status: "running" })]
+          : [];
+        return Promise.resolve({ ok: true, json: async () => runs });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    // Empty history first, then start a build.
+    await screen.findByText(/no runs yet/i);
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // The first streamed event lands the run_id → the sidebar refetches and shows the RUNNING run.
+    // Scope to the run-history rail so we match the sidebar row, not the canvas's building header.
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(await within(history).findByText("graphs")).toBeInTheDocument();
+    expect(within(history).getByText("RUNNING")).toBeInTheDocument();
+  });
+
   it("terminates an in-flight build after confirming and returns to the topic form", async () => {
     // Arrange — a build streaming (kept open) so Terminate has something to stop.
     const fetchMock = routedFetch({

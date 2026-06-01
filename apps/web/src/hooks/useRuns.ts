@@ -14,6 +14,11 @@ interface RunsFeed {
   reload: () => void;
 }
 
+/** How often to re-poll the history while a run is still in flight, so its status (running →
+ *  completed/cancelled/failed) stays live without a manual refresh. Polling only runs while at
+ *  least one row is RUNNING, then stops — idle history isn't polled. */
+export const RUNS_POLL_INTERVAL_MS = 2500;
+
 /**
  * Loads the sidebar's run history: loading → ready (the recent runs) or error. Each load aborts
  * any prior in-flight request, and the controller is aborted on unmount, so a slow fetch never
@@ -48,6 +53,17 @@ export function useRuns(apiBaseUrl: string): RunsFeed {
     load();
     return () => controllerRef.current?.abort();
   }, [load]);
+
+  // Live-status poll: while any loaded run is still RUNNING, re-fetch on an interval so the sidebar
+  // reflects its transition to a terminal status on its own. The flag is a stable boolean, so the
+  // interval is created once when a run starts running and torn down once none are — not per render.
+  const hasRunningRun =
+    state.status === "ready" && state.runs.some((run) => run.status === "running");
+  useEffect(() => {
+    if (!hasRunningRun) return undefined;
+    const interval = setInterval(load, RUNS_POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [hasRunningRun, load]);
 
   return { state, reload: load };
 }
