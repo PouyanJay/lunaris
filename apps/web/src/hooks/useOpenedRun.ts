@@ -7,14 +7,16 @@ export type OpenedRunState =
   | { status: "closed" }
   | { status: "loading"; courseId: string; topic: string }
   // A running run has no persisted course yet; show this instead of fetching (which 404s).
-  | { status: "building"; courseId: string; topic: string }
+  // Carries runId so the canvas can cancel the in-flight build (cancellation is keyed by run_id).
+  | { status: "building"; courseId: string; topic: string; runId: string }
   | { status: "ready"; courseId: string; course: Course }
   | { status: "error"; courseId: string; topic: string; message: string };
 
-/** The minimum a caller needs to open a run: its course_id, a title for the header, and the run's
- *  status — a running run has no persisted course yet, so we show "still building" rather than
- *  fetching and rendering a broken-looking 404. */
-type OpenableRun = Pick<CourseRun, "id" | "topic" | "status">;
+/** What a caller needs to open a run: its course_id, a title, the run's status, and (for a running
+ *  run) its run_id so the building view can cancel the in-flight build. `runId` is optional because
+ *  the internal reopen of an already-loaded course doesn't carry one and never needs it (it fetches
+ *  rather than entering the building branch). */
+type OpenableRun = Pick<CourseRun, "id" | "topic" | "status"> & { runId?: string };
 
 interface OpenedRun {
   state: OpenedRunState;
@@ -76,9 +78,15 @@ export function useOpenedRun(apiBaseUrl: string): OpenedRun {
   const open = useCallback(
     (run: OpenableRun) => {
       if (run.status === "running") {
-        // No fetch: a running run's course isn't on disk until the build finishes.
+        // No fetch: a running run's course isn't on disk until the build finishes. A running run
+        // always carries a run_id (it comes from the run history); the fallback never triggers.
         controllerRef.current?.abort();
-        setState({ status: "building", courseId: run.id, topic: run.topic });
+        setState({
+          status: "building",
+          courseId: run.id,
+          topic: run.topic,
+          runId: run.runId ?? "",
+        });
         return;
       }
       // A completed/failed run whose course is gone (404) is a real error — surface the reason.
@@ -92,9 +100,9 @@ export function useOpenedRun(apiBaseUrl: string): OpenedRun {
   const recheck = useCallback(() => {
     const current = stateRef.current;
     if (current.status !== "building") return;
-    const { courseId, topic } = current;
+    const { courseId, topic, runId } = current;
     // A 404 means the build still hasn't persisted its course → stay building, not an error.
-    load(courseId, topic, () => setState({ status: "building", courseId, topic }));
+    load(courseId, topic, () => setState({ status: "building", courseId, topic, runId }));
   }, [load]);
 
   const close = useCallback(() => {

@@ -22,6 +22,7 @@ import { useRuns } from "./hooks/useRuns";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { fetchSettings } from "./lib/settings";
+import { useCancelRun } from "./hooks/useCancelRun";
 import { useDeleteRun } from "./hooks/useDeleteRun";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
@@ -157,6 +158,8 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
   // of it + refresh the history. The workflow lives in its own hook to keep StudioApp lean.
   const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeRun, reloadRuns);
+  // Cancel an in-flight run (no confirm — it's recoverable): POST cancel → refresh (flips CANCELLED).
+  const cancellation = useCancelRun(apiBaseUrl, reloadRuns);
 
   // A ready course's canvas: the Learn | Map toggle + course metrics in the header, and either the
   // lesson reader (Learn, default) or the prerequisite-graph explorer (Map) in the body.
@@ -193,6 +196,8 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       settingsActive={settingsOpen}
       onSelectRun={selectRun}
       onDeleteRun={deleteRun.request}
+      onCancelRun={(run) => cancellation.cancel(run.runId)}
+      cancellingRunId={cancellation.cancellingRunId}
       selectedRunId={selectedRunId}
     />
   );
@@ -208,10 +213,17 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
     }
     if (opened.state.status === "building") {
+      const { topic, runId } = opened.state;
       return {
-        title: opened.state.topic,
+        title: topic,
         meta: <StatusDot label="building" tone="accent" live />,
-        body: <BuildingState onRecheck={opened.recheck} />,
+        body: (
+          <BuildingState
+            onRecheck={opened.recheck}
+            onCancel={() => cancellation.cancel(runId)}
+            cancelling={cancellation.cancellingRunId === runId}
+          />
+        ),
       };
     }
     if (opened.state.status === "error") {

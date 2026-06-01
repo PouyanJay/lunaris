@@ -23,6 +23,10 @@ interface RunListProps {
   onSelectRun?: ((run: CourseRun) => void) | undefined;
   /** When provided, a non-running run shows a hover/focus-revealed delete action. */
   onDeleteRun?: ((run: CourseRun) => void) | undefined;
+  /** When provided, a running run shows a hover/focus-revealed cancel action instead of delete. */
+  onCancelRun?: ((run: CourseRun) => void) | undefined;
+  /** The run_id whose cancellation is in flight (its cancel action shows a pending/disabled state). */
+  cancellingRunId?: string | null | undefined;
   selectedRunId?: string | undefined;
 }
 
@@ -33,6 +37,8 @@ export function RunList({
   onRetry,
   onSelectRun,
   onDeleteRun,
+  onCancelRun,
+  cancellingRunId,
   selectedRunId,
 }: RunListProps) {
   if (state.status === "loading") {
@@ -71,6 +77,8 @@ export function RunList({
             run={run}
             onSelect={onSelectRun}
             onDelete={onDeleteRun}
+            onCancel={onCancelRun}
+            cancelling={run.runId === cancellingRunId}
             selected={run.id === selectedRunId}
           />
         </li>
@@ -83,10 +91,12 @@ interface RunItemProps {
   run: CourseRun;
   onSelect?: ((run: CourseRun) => void) | undefined;
   onDelete?: ((run: CourseRun) => void) | undefined;
+  onCancel?: ((run: CourseRun) => void) | undefined;
+  cancelling: boolean;
   selected: boolean;
 }
 
-function RunItem({ run, onSelect, onDelete, selected }: RunItemProps) {
+function RunItem({ run, onSelect, onDelete, onCancel, cancelling, selected }: RunItemProps) {
   const { tone, live } = STATUS_TONE[run.status];
   const itemClass = `${styles.item} ${selected ? styles.itemSelected : ""}`.trim();
   // Counts live in the canvas metric band when a course is open; the narrow rail shows status +
@@ -109,8 +119,8 @@ function RunItem({ run, onSelect, onDelete, selected }: RunItemProps) {
     return <div className={itemClass}>{body}</div>;
   }
 
-  // A running run has no deletable assets yet (the API 409s), so we don't offer the action for it.
-  // Testing onDelete inline (not via a derived boolean) lets TypeScript narrow it to non-null below.
+  // A running run offers Cancel (stop the build); a finished one offers Delete (purge it). Testing
+  // the callbacks inline (not via a derived boolean) lets TypeScript narrow them to non-null below.
   return (
     <div className={itemClass}>
       <button
@@ -121,10 +131,22 @@ function RunItem({ run, onSelect, onDelete, selected }: RunItemProps) {
       >
         {body}
       </button>
-      {onDelete !== undefined && run.status !== "running" && (
+      {run.status === "running" && onCancel !== undefined && (
         <button
           type="button"
-          className={styles.delete}
+          className={styles.rowAction}
+          onClick={() => onCancel(run)}
+          disabled={cancelling}
+          aria-label={`Cancel build: ${run.topic}`}
+          title="Cancel build"
+        >
+          <CancelIcon />
+        </button>
+      )}
+      {run.status !== "running" && onDelete !== undefined && (
+        <button
+          type="button"
+          className={`${styles.rowAction} ${styles.rowActionDanger}`}
           onClick={() => onDelete(run)}
           aria-label={`Delete course: ${run.topic}`}
           title="Delete course"
@@ -133,6 +155,15 @@ function RunItem({ run, onSelect, onDelete, selected }: RunItemProps) {
         </button>
       )}
     </div>
+  );
+}
+
+function CancelIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M6 6l4 4M10 6l-4 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
   );
 }
 

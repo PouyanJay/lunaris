@@ -157,6 +157,31 @@ export async function deleteCourse(
   }
 }
 
+/** Cancel an in-flight build (POST /api/runs/:runId/cancel — keyed by run_id, the correlation id).
+ *  Resolves on 202; rejects with CourseLoadError (carrying the HTTP status) otherwise. */
+export async function cancelRun(
+  apiBaseUrl: string,
+  runId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/runs/${encodeURIComponent(runId)}/cancel`, {
+      method: "POST",
+      ...(signal ? { signal } : {}),
+    });
+  } catch (cause) {
+    throw new CourseLoadError("Could not reach the course service.", { cause });
+  }
+  if (!response.ok) {
+    const message =
+      response.status === 404
+        ? "This run already finished."
+        : `Couldn't cancel this run (HTTP ${response.status}).`;
+    throw new CourseLoadError(message, { status: response.status });
+  }
+}
+
 /** Resolve the course for the current environment: the live API when VITE_API_URL is set,
  *  otherwise the bundled static seed. The web stays usable offline either way. */
 export function resolveCourse(signal?: AbortSignal): Promise<Course> {

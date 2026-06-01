@@ -102,4 +102,49 @@ describe("RunList", () => {
 
     expect(screen.queryByRole("button", { name: /delete course/i })).not.toBeInTheDocument();
   });
+
+  it("offers a cancel action for a running run and calls onCancelRun", () => {
+    const onCancelRun = vi.fn();
+    const run = makeRun({ id: "c-1", topic: "graphs", status: "running" });
+    render(
+      <RunList
+        state={{ status: "ready", runs: [run] }}
+        onRetry={noop}
+        onSelectRun={vi.fn()}
+        onCancelRun={onCancelRun}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel build: graphs/i }));
+    expect(onCancelRun).toHaveBeenCalledWith(run);
+  });
+
+  it("does not offer cancel for a finished run", () => {
+    render(
+      <RunList
+        state={{ status: "ready", runs: [makeRun({ topic: "trees", status: "completed" })] }}
+        onRetry={noop}
+        onSelectRun={vi.fn()}
+        onCancelRun={vi.fn()}
+        onDeleteRun={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /cancel build/i })).not.toBeInTheDocument();
+  });
+
+  it("disables the cancel action while its cancellation is in flight", () => {
+    const run = makeRun({ id: "c-1", runId: "run-1", topic: "graphs", status: "running" });
+    render(
+      <RunList
+        state={{ status: "ready", runs: [run] }}
+        onRetry={noop}
+        onSelectRun={vi.fn()}
+        onCancelRun={vi.fn()}
+        cancellingRunId="run-1"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /cancel build: graphs/i })).toBeDisabled();
+  });
 });

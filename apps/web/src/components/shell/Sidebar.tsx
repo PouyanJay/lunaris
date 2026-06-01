@@ -12,6 +12,8 @@ interface SidebarProps {
   settingsActive: boolean;
   onSelectRun?: ((run: CourseRun) => void) | undefined;
   onDeleteRun?: ((run: CourseRun) => void) | undefined;
+  onCancelRun?: ((run: CourseRun) => void) | undefined;
+  cancellingRunId?: string | null | undefined;
   selectedRunId?: string | undefined;
 }
 
@@ -25,6 +27,8 @@ export function Sidebar({
   settingsActive,
   onSelectRun,
   onDeleteRun,
+  onCancelRun,
+  cancellingRunId,
   selectedRunId,
 }: SidebarProps) {
   return (
@@ -47,6 +51,8 @@ export function Sidebar({
           onRetry={onReloadRuns}
           onSelectRun={onSelectRun}
           onDeleteRun={onDeleteRun}
+          onCancelRun={onCancelRun}
+          cancellingRunId={cancellingRunId}
           selectedRunId={selectedRunId}
         />
       </nav>

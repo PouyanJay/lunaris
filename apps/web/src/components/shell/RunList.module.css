@@ -51,10 +51,10 @@
   background: var(--bg-muted);
 }
 
-/* The delete action: hidden until the row is hovered or focus is inside it (the rail stays calm),
-   and always shown while it itself has keyboard focus. Sibling of .select (never nested), so a
-   click resolves to exactly one control. */
-.delete {
+/* A per-row action (cancel a running run, or delete a finished one): hidden until the row is
+   hovered or focus is inside it (the rail stays calm), and always shown while it itself has
+   keyboard focus. Sibling of .select (never nested), so a click resolves to exactly one control. */
+.rowAction {
   position: absolute;
   top: 50%;
   right: var(--space-2);
@@ -76,18 +76,26 @@
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
-.item:hover .delete,
-.item:focus-within .delete {
+.item:hover .rowAction,
+.item:focus-within .rowAction {
   opacity: 1;
 }
-.delete:hover {
+.rowAction:hover {
   background: var(--bg-subtle);
-  color: var(--danger);
+  color: var(--text);
 }
-.delete:focus-visible {
+.rowAction:focus-visible {
   opacity: 1;
   outline: none;
   box-shadow: 0 0 0 2px var(--focus-ring);
+}
+.rowAction:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+/* Delete is destructive — its hover tints toward danger; cancel stays neutral. */
+.rowActionDanger:hover {
+  color: var(--danger);
 }
 /* The house active indicator: a 2px accent bar on the selected run. */
 .itemSelected::before {

@@ -13,7 +13,11 @@ from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.run_registry import RunRegistry
-from lunaris_api.service import CourseBuildCancelledError, CourseService
+from lunaris_api.service import (
+    CourseBuildCancelledError,
+    CourseService,
+    RunNotCancellableError,
+)
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
 from lunaris_runtime.schema import Course, RunStatus
@@ -130,6 +134,41 @@ async def test_cancel_unknown_run_is_404(client: httpx.AsyncClient) -> None:
 
     assert response.status_code == 404
     assert "in-flight" in response.json()["detail"]
+
+
+async def test_double_cancel_is_not_cancellable_after_the_run_ends(tmp_path: Path) -> None:
+    # Once a run has ended (here: by the first cancel), it's discarded from the registry — a second
+    # cancel finds nothing in-flight.
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    pipeline = _BlockingPipeline()
+    service = CourseService(CourseStore(tmp_path), lambda _store: pipeline, run_store, registry)
+    build = asyncio.create_task(service.create("graphs", course_id="c-1", run_id="r-1"))
+    await asyncio.wait_for(pipeline.started.wait(), timeout=5)
+
+    await service.cancel_run("r-1")
+    with pytest.raises(CourseBuildCancelledError):
+        await build
+
+    with pytest.raises(RunNotCancellableError):
+        await service.cancel_run("r-1")
+
+
+async def test_a_cancelled_run_can_then_be_deleted(
+    client: httpx.AsyncClient, run_store: InMemoryRunStore, tmp_path: Path
+) -> None:
+    # The two journeys compose: a CANCELLED run is terminal (not RUNNING), so the delete RUNNING→409
+    # guard lets it through — cancel-then-delete works.
+    await run_store.start(run_id="r", course_id="c-done", topic="t")
+    await run_store.finish(
+        course_id="c-done", status=RunStatus.CANCELLED, kc_count=0, module_count=0
+    )
+    (tmp_path / "c-done.json").write_text("{}")
+
+    response = await client.delete("/api/courses/c-done")
+
+    assert response.status_code == 204
+    assert await run_store.get(course_id="c-done") is None
 
 
 async def test_cancel_endpoint_signals_an_in_flight_task_and_returns_202(

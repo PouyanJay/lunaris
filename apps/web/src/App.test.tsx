@@ -306,7 +306,86 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     expect(await screen.findByText(/still building this course/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /check again/i })).toBeInTheDocument();
+    // The canvas Cancel action (exact name) — distinct from the sidebar's "Cancel build: <topic>".
+    expect(screen.getByRole("button", { name: /^cancel build$/i })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("cancels a running run from the sidebar and the history flips to CANCELLED", async () => {
+    let runsReads = 0;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
+        return Promise.resolve({ ok: true, status: 202 });
+      }
+      if (url.includes("/api/runs")) {
+        runsReads += 1;
+        const status = runsReads === 1 ? "running" : "cancelled";
+        return Promise.resolve({
+          ok: true,
+          json: async () => [makeRun({ id: "c-1", runId: "run-1", topic: "graphs", status })],
+        });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /cancel build: graphs/i }));
+
+    // The cancel is POSTed by run_id and the refreshed history shows the terminal CANCELLED status.
+    expect(await screen.findByText("CANCELLED")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/runs/run-1/cancel"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("cancels from the building canvas when a running run is open", async () => {
+    let runsReads = 0;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
+        return Promise.resolve({ ok: true, status: 202 });
+      }
+      if (url.includes("/api/runs")) {
+        runsReads += 1;
+        const status = runsReads === 1 ? "running" : "cancelled";
+        return Promise.resolve({
+          ok: true,
+          json: async () => [makeRun({ id: "c-1", runId: "run-1", topic: "graphs", status })],
+        });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    // Open the running run → building canvas, then cancel from the canvas (exact-name button).
+    fireEvent.click(await screen.findByRole("button", { name: /^graphs/i }));
+    await screen.findByText(/still building this course/i);
+    fireEvent.click(screen.getByRole("button", { name: /^cancel build$/i }));
+
+    // The cancel was POSTed by run_id and the refreshed history reflects CANCELLED.
+    expect(await screen.findByText("CANCELLED")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/runs/run-1/cancel"),
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("switches the canvas to a selected run even while a build is streaming", async () => {
