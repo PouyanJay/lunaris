@@ -19,8 +19,10 @@ import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
+import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { fetchSettings } from "./lib/settings";
+import { useDeleteRun } from "./hooks/useDeleteRun";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
@@ -152,6 +154,10 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
 
+  // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
+  // of it + refresh the history. The workflow lives in its own hook to keep StudioApp lean.
+  const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeRun, reloadRuns);
+
   // A ready course's canvas: the Learn | Map toggle + course metrics in the header, and either the
   // lesson reader (Learn, default) or the prerequisite-graph explorer (Map) in the body.
   const buildReadyCanvas = (course: Course, onReload: () => void) => ({
@@ -186,6 +192,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       onOpenSettings={() => setSettingsOpen(true)}
       settingsActive={settingsOpen}
       onSelectRun={selectRun}
+      onDeleteRun={deleteRun.request}
       selectedRunId={selectedRunId}
     />
   );
@@ -247,9 +254,27 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   })();
 
   return (
-    <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta}>
-      {canvas.body}
-    </AgentShell>
+    <>
+      <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta}>
+        {canvas.body}
+      </AgentShell>
+      <ConfirmDialog
+        open={deleteRun.pendingDelete !== null}
+        title="Delete this course?"
+        description={
+          deleteRun.pendingDelete
+            ? `“${deleteRun.pendingDelete.topic}” and its build history will be permanently removed. This can’t be undone.`
+            : ""
+        }
+        confirmLabel="Delete course"
+        pendingLabel="Deleting…"
+        danger
+        pending={deleteRun.isDeleting}
+        errorMessage={deleteRun.deleteError}
+        onConfirm={deleteRun.confirm}
+        onCancel={deleteRun.cancel}
+      />
+    </>
   );
 }
 

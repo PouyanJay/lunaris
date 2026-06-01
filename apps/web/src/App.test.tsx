@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -237,7 +237,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     render(<App />);
 
     // Click the run in the sidebar history.
-    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
 
     // The canvas opens that run's course on the reader; its title heading shows.
     expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
@@ -262,7 +262,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     );
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
     await screen.findByRole("heading", { name: "queues" });
 
     // The capability fetch resolves to true, so the reader offers the per-lesson regenerate action.
@@ -281,7 +281,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     );
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
     await screen.findByRole("heading", { name: "queues" });
 
     // waitFor drains the capability-fetch microtask, so the absence reflects
@@ -302,7 +302,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     );
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
 
     expect(await screen.findByText(/still building this course/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /check again/i })).toBeInTheDocument();
@@ -328,7 +328,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     await screen.findByText("Mapping KCs…"); // transcript is up
 
     // Open a historical run mid-build — the opened run takes the canvas (priority over the build).
-    fireEvent.click(screen.getByRole("button", { name: /queues/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^queues/i }));
 
     expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
     expect(screen.queryByText("Mapping KCs…")).not.toBeInTheDocument();
@@ -397,5 +397,48 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // Act — switch back to Learn. Assert — the reader returns.
     fireEvent.click(screen.getByRole("radio", { name: /learn/i }));
     expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+  });
+
+  it("deletes a run after confirmation, then refreshes the history", async () => {
+    // The run is present on the first /api/runs read and gone after the DELETE; the second read
+    // (triggered by the delete) returns an empty list, so the sidebar lands on its empty state.
+    let runsReads = 0;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (url.includes("/api/runs")) {
+        runsReads += 1;
+        const runs =
+          runsReads === 1 ? [makeRun({ id: "c-1", topic: "queues", status: "completed" })] : [];
+        return Promise.resolve({ ok: true, json: async () => runs });
+      }
+      if (/\/api\/courses\/c-1$/.test(url) && method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204 });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    // Reveal + click the run's delete action, then confirm in the dialog.
+    fireEvent.click(await screen.findByRole("button", { name: /delete course: queues/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete course$/i }));
+
+    // The history refetched empty → the sidebar shows its empty state, the run is gone, the dialog
+    // closed, and a DELETE was issued.
+    expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
+    expect(screen.queryByText("queues")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/courses/c-1"),
+      expect.objectContaining({ method: "DELETE" }),
+    );
   });
 });

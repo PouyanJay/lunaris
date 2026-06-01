@@ -57,7 +57,8 @@ describe("RunList", () => {
       <RunList state={{ status: "ready", runs: [makeRun({ topic: "queues" })] }} onRetry={noop} />,
     );
 
-    // The run still renders, just not as an interactive control.
+    // The run still renders, just not as an interactive control — neither the select row nor the
+    // delete action exists without onSelectRun.
     expect(screen.getByText("queues")).toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
@@ -69,7 +70,36 @@ describe("RunList", () => {
       <RunList state={{ status: "ready", runs: [run] }} onRetry={noop} onSelectRun={onSelectRun} />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /trees/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^trees/i }));
     expect(onSelectRun).toHaveBeenCalledWith(run);
+  });
+
+  it("offers a delete action per non-running run and calls onDeleteRun", () => {
+    const onDeleteRun = vi.fn();
+    const run = makeRun({ id: "c-1", topic: "trees", status: "completed" });
+    render(
+      <RunList
+        state={{ status: "ready", runs: [run] }}
+        onRetry={noop}
+        onSelectRun={vi.fn()}
+        onDeleteRun={onDeleteRun}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /delete course: trees/i }));
+    expect(onDeleteRun).toHaveBeenCalledWith(run);
+  });
+
+  it("does not offer delete for a running run (its assets aren't deletable yet)", () => {
+    render(
+      <RunList
+        state={{ status: "ready", runs: [makeRun({ topic: "graphs", status: "running" })] }}
+        onRetry={noop}
+        onSelectRun={vi.fn()}
+        onDeleteRun={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /delete course/i })).not.toBeInTheDocument();
   });
 });

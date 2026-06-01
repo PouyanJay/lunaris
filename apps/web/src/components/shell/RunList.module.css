@@ -10,32 +10,84 @@
   gap: 1px;
 }
 
+/* The row container: relative so the hover-revealed delete action can overlay it and the selected
+   accent bar can anchor. The inner .select button carries the row padding; an offline static row
+   (no .select inside) carries it itself. */
 .item {
   position: relative;
+  border-radius: var(--radius-md);
+  color: inherit;
+}
+.item:not(:has(.select)) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* The clickable row (opens the course). padding-right reserves room for the delete action so a
+   long topic never sits beneath it. */
+.select {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   width: 100%;
   text-align: left;
   padding: var(--space-2) var(--space-3);
+  padding-right: var(--space-10);
   border-radius: var(--radius-md);
-  color: inherit;
-}
-
-/* A run is rendered as a <button> only when selectable (then it's interactive). */
-button.item {
   background: transparent;
   border: none;
   font: inherit;
+  color: inherit;
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease);
 }
-button.item:hover {
+.select:hover {
   background: var(--bg-muted);
 }
 
 .itemSelected {
   background: var(--bg-muted);
+}
+
+/* The delete action: hidden until the row is hovered or focus is inside it (the rail stays calm),
+   and always shown while it itself has keyboard focus. Sibling of .select (never nested), so a
+   click resolves to exactly one control. */
+.delete {
+  position: absolute;
+  top: 50%;
+  right: var(--space-2);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 28px keeps the icon hit target above the 24px WCAG AA minimum within the dense rail. */
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.item:hover .delete,
+.item:focus-within .delete {
+  opacity: 1;
+}
+.delete:hover {
+  background: var(--bg-subtle);
+  color: var(--danger);
+}
+.delete:focus-visible {
+  opacity: 1;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 /* The house active indicator: a 2px accent bar on the selected run. */
 .itemSelected::before {

@@ -38,3 +38,11 @@
   background: var(--bg-muted);
   border-color: var(--text-muted);
 }
+
+.danger {
+  background: var(--danger-solid);
+  color: var(--danger-text);
+}
+.danger:hover {
+  background: var(--danger-solid-hover);
+}

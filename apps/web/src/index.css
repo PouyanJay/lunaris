@@ -28,6 +28,11 @@
   --success: #3f9d76;
   --warning: #bb8a36;
   --danger: #cb4a40;
+  /* Filled destructive button: a dark-enough red that white text clears WCAG AA (~6:1) on BOTH
+     themes — distinct from --danger (a dot/text/border hue tuned for contrast against the page). */
+  --danger-solid: #b3392f;
+  --danger-solid-hover: #9c3228;
+  --danger-text: #ffffff; /* text on a filled danger button (both themes share --danger-solid) */
   --info: var(--accent-500);
 
   /* Semantic tokens — components use ONLY these. */
@@ -86,6 +91,10 @@
   --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
   --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
   --border-width: 1px;
+  /* Stacking order for layered surfaces (modal sits above the app, below toasts at 1500). */
+  --z-overlay: 1200;
+  --z-modal: 1300;
+  --scrim: rgba(10, 12, 16, 0.55); /* modal backdrop dim — dark on both themes */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 120ms;

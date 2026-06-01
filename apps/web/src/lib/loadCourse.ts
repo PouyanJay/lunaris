@@ -131,6 +131,32 @@ export async function regenerateLesson(
   return parseResponse(response);
 }
 
+/** Delete a course and its assets (DELETE /api/courses/:id). Resolves on success (204); rejects
+ *  with CourseLoadError (carrying the HTTP status) on failure, so the caller can message a 409
+ *  (run still building) differently from a transport error. */
+export async function deleteCourse(
+  apiBaseUrl: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/courses/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      ...(signal ? { signal } : {}),
+    });
+  } catch (cause) {
+    throw new CourseLoadError("Could not reach the course service.", { cause });
+  }
+  if (!response.ok) {
+    const message =
+      response.status === 409
+        ? "This run is still building — cancel it before deleting."
+        : `Couldn't delete this course (HTTP ${response.status}).`;
+    throw new CourseLoadError(message, { status: response.status });
+  }
+}
+
 /** Resolve the course for the current environment: the live API when VITE_API_URL is set,
  *  otherwise the bundled static seed. The web stays usable offline either way. */
 export function resolveCourse(signal?: AbortSignal): Promise<Course> {
