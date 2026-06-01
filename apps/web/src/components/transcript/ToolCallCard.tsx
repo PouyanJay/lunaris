@@ -1,3 +1,5 @@
+import { parseToolResult } from "../../lib/toolResult";
+import { ToolBody } from "./toolRenderers";
 import styles from "./ToolCallCard.module.css";
 
 interface ToolCallCardProps {
@@ -7,10 +9,11 @@ interface ToolCallCardProps {
   result: string | null;
 }
 
-/** One tool call in the transcript: the tool name (mono, the data signature), its arguments, and
- *  its result — a single hairline-bordered region, not a floating card. */
+/** One tool call in the transcript: a hairline-bordered region with the tool name (mono, the data
+ *  signature) over a branded body. Known tools render through {@link toolRenderers} — concept chips,
+ *  graph stats, the module list, the publish verdict — so no raw JSON reaches the user; an unknown
+ *  tool degrades to {@link FallbackBody} (its args + result tucked behind a collapsed disclosure). */
 export function ToolCallCard({ tool, args, result }: ToolCallCardProps) {
-  const argEntries = args ? Object.entries(args) : [];
   const pending = result === null;
 
   return (
@@ -19,38 +22,15 @@ export function ToolCallCard({ tool, args, result }: ToolCallCardProps) {
         <span className="eyebrow">Tool call</span>
         <span className={`mono ${styles.tool}`}>{tool}</span>
       </div>
-
-      {argEntries.length > 0 && (
-        <dl className={styles.args}>
-          {argEntries.map(([key, value]) => (
-            <div key={key} className={styles.arg}>
-              <dt className={`mono ${styles.argKey}`}>{key}</dt>
-              <dd className={`mono ${styles.argValue}`}>{formatValue(value)}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-
-      <div className={styles.result}>
-        {pending ? (
-          <span className={styles.runningResult}>
-            <span className={styles.spinner} aria-hidden="true" />
-            <span className="mono">running…</span>
-          </span>
-        ) : (
-          <span className={`mono ${styles.resultText}`}>{result === "" ? "done" : result}</span>
-        )}
+      <div className={styles.body}>
+        <ToolBody
+          tool={tool}
+          args={args}
+          parsed={parseToolResult(result)}
+          result={result}
+          pending={pending}
+        />
       </div>
     </div>
   );
-}
-
-/** Render an argument value compactly: strings as-is, everything else as condensed JSON. */
-function formatValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
 }
