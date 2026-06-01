@@ -40,6 +40,8 @@
   gap: var(--space-2);
   font-size: var(--text-sm);
   color: var(--text-muted);
+  /* Smooth the pending → in-progress → completed colour shift rather than snapping it. */
+  transition: color var(--dur) var(--ease);
 }
 .item[data-state="in_progress"] {
   color: var(--text);
@@ -50,6 +52,7 @@
 
 .content {
   line-height: 1.45;
+  transition: text-decoration-color var(--dur) var(--ease);
 }
 .item[data-state="completed"] .content {
   text-decoration: line-through;
@@ -64,6 +67,10 @@
   border-radius: var(--radius-full);
   border: 1.5px solid var(--border-strong);
   justify-self: center;
+  /* Ease the ring → amber → check colour change so a status update doesn't snap. */
+  transition:
+    border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
 }
 .indicator[data-state="in_progress"] {
   border-color: var(--accent-500);
@@ -83,6 +90,18 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--success);
+  animation: todoCheck var(--dur) var(--ease-out);
+}
+
+@keyframes todoCheck {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes todoPulse {
@@ -100,5 +119,13 @@
 @media (prefers-reduced-motion: reduce) {
   .indicator[data-state="in_progress"] {
     animation: none;
+  }
+  .indicator[data-state="completed"]::after {
+    animation: none;
+  }
+  .item,
+  .indicator,
+  .content {
+    transition: none;
   }
 }

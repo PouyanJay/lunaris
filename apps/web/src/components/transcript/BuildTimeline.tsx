@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildTimeline,
@@ -13,6 +13,9 @@ import { ReasoningBeat } from "./ReasoningBeat";
 import { TodoList } from "./TodoList";
 import { ToolCallCard } from "./ToolCallCard";
 import styles from "./BuildTimeline.module.css";
+
+// Within this many px of the bottom the user counts as "pinned" — auto-scroll keeps following.
+const SCROLL_PIN_PX = 80;
 
 interface BuildTimelineProps {
   topic: string;
@@ -49,19 +52,27 @@ export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildT
     });
   }, []);
 
-  // Keep the active phase in view as its events stream in.
+  // Follow the newest content as it streams — but only while the user is pinned near the bottom.
+  // Once they scroll up to read, stop yanking them back (it resumes when they return to the bottom),
+  // so a long stream never traps them at the foot of the transcript.
   const containerRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    const node = activeRef.current;
+  const pinnedRef = useRef(true);
+  const onScroll = useCallback(() => {
     const container = containerRef.current;
-    if (node && container) container.scrollTop = node.offsetTop;
-  }, [agentEvents.length, activeKey, collapsed]);
+    if (!container) return;
+    const fromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    pinnedRef.current = fromBottom < SCROLL_PIN_PX;
+  }, []);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container && pinnedRef.current) container.scrollTop = container.scrollHeight;
+  }, [agentEvents.length, events.length, collapsed]);
 
   return (
     <div
       className={styles.timeline}
       ref={containerRef}
+      onScroll={onScroll}
       role="region"
       aria-label={`Building ${topic}`}
       tabIndex={0}
@@ -84,7 +95,6 @@ export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildT
               expanded={hasBody && !collapsed.has(phase.key)}
               expandable={hasBody}
               onToggle={() => toggle(phase.key)}
-              nodeRef={phase.status === "active" ? activeRef : undefined}
               startedAt={phase.status === "active" ? activeStartedAt : undefined}
             />
           );
@@ -105,14 +115,11 @@ interface PhaseNodeProps {
   expanded: boolean;
   expandable: boolean;
   onToggle: () => void;
-  // Explicit `| undefined` for the repo's exactOptionalPropertyTypes (the active node passes the ref;
-  // the others pass undefined).
-  nodeRef?: Ref<HTMLLIElement> | undefined;
   /** When the active phase began (ms epoch), for its live clock; undefined for non-active nodes. */
   startedAt?: number | undefined;
 }
 
-function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef, startedAt }: PhaseNodeProps) {
+function PhaseNode({ phase, expanded, expandable, onToggle, startedAt }: PhaseNodeProps) {
   const duration = phase.durationMs !== null ? formatDuration(phase.durationMs) : null;
   const header = (
     <>
@@ -125,7 +132,7 @@ function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef, startedAt }
   );
 
   return (
-    <li className={styles.phase} data-status={phase.status} ref={nodeRef}>
+    <li className={styles.phase} data-status={phase.status}>
       {expandable ? (
         <button
           type="button"

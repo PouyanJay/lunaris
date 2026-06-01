@@ -1,14 +1,22 @@
-/** A piece of a reasoning beat: ordinary prose, or a JSON/code blob lifted out so the UI can render
- *  it as a *bounded* artifact instead of letting a raw dump take over (and keep streaming) the view.
- *  `closed` is false while a blob is still streaming in (an unterminated fence or unbalanced bracket),
- *  so the artifact can show a "streaming…" affordance and never grow unbounded. */
+/** A piece of a reasoning beat: ordinary prose, a JSON/code blob lifted out so the UI can render it
+ *  as a *bounded* artifact, or a *group* of many small consecutive blobs collapsed into one (so a
+ *  flood of tiny snippets — e.g. one prerequisite judgment per pair — can't stack into hundreds of
+ *  cards). `closed` is false while a blob is still streaming in (an unterminated fence or unbalanced
+ *  bracket), so the artifact can show a "streaming…" affordance and never grow unbounded. */
 export type ReasoningSegment =
   | { kind: "prose"; text: string }
-  | { kind: "json"; source: string; closed: boolean };
+  | { kind: "json"; source: string; closed: boolean }
+  | { kind: "jsonGroup"; sources: string[]; closed: boolean };
 
 // A raw (unfenced) bracketed span is only lifted into an artifact when it's at least this long and
 // looks like JSON — short inline `{x}` stays in the prose where it reads naturally.
 const MIN_RAW_JSON = 40;
+// Consecutive JSON blobs each shorter than this collapse into one group. Larger blobs (a curriculum
+// dump, a visual spec) stay individual — they're worth their own artifact.
+const SMALL_JSON = 200;
+// Prose this short (after trimming) between two blobs is streaming noise (a stray ```json label, a
+// fragment) — it doesn't break a run of grouped blobs.
+const MAX_JOIN_PROSE = 20;
 const FENCE = "```";
 
 /**
@@ -41,7 +49,66 @@ export function parseReasoning(text: string): ReasoningSegment[] {
     }
   }
   flushProse();
-  return mergeProse(segments);
+  return coalesceSmallJson(mergeProse(segments));
+}
+
+/** Collapse runs of consecutive *small* JSON blobs (separated only by streaming noise) into one
+ *  `jsonGroup`, so a flood of tiny snippets renders as a single bounded artifact rather than
+ *  hundreds of cards. Large blobs and lone small blobs are left as individual `json` segments. */
+function coalesceSmallJson(segments: ReasoningSegment[]): ReasoningSegment[] {
+  const out: ReasoningSegment[] = [];
+  let i = 0;
+  while (i < segments.length) {
+    const run = smallJsonRunAt(segments, i);
+    if (run.sources.length >= 2) {
+      out.push({ kind: "jsonGroup", sources: run.sources, closed: run.closed });
+      i = run.next;
+    } else {
+      out.push(segments[i]!);
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/** The run of small JSON blobs starting at `start` (skipping short noise prose between them): the
+ *  collected sources, whether the last is closed, and the index just past the run. */
+function smallJsonRunAt(
+  segments: ReasoningSegment[],
+  start: number,
+): { sources: string[]; closed: boolean; next: number } {
+  const sources: string[] = [];
+  let closed = true;
+  let i = start;
+  while (i < segments.length) {
+    const segment = segments[i]!;
+    if (isSmallJson(segment)) {
+      sources.push(segment.source);
+      closed = segment.closed;
+      i += 1;
+      continue;
+    }
+    // A short noise-prose between two small blobs is skipped so the run continues across it.
+    const next = segments[i + 1];
+    if (
+      sources.length > 0 &&
+      segment.kind === "prose" &&
+      segment.text.trim().length <= MAX_JOIN_PROSE &&
+      next !== undefined &&
+      isSmallJson(next)
+    ) {
+      i += 1;
+      continue;
+    }
+    break;
+  }
+  return { sources, closed, next: i };
+}
+
+function isSmallJson(
+  segment: ReasoningSegment,
+): segment is { kind: "json"; source: string; closed: boolean } {
+  return segment.kind === "json" && segment.source.length < SMALL_JSON;
 }
 
 /** Read a fenced block starting at `start` (a ``` run). Returns its inner source, whether the

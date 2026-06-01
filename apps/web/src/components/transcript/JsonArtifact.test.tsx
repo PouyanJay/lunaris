@@ -66,8 +66,10 @@ describe("JsonArtifact", () => {
     expect(screen.getByText(/^\d+ line/)).toBeInTheDocument();
   });
 
-  describe("Explain", () => {
+  describe("auto-Explain", () => {
     afterEach(() => vi.unstubAllGlobals());
+
+    const SUBSTANTIAL = '{"a":1,"b":2,"c":3}'; // 3 keys → worth explaining
 
     function renderWithExplain(node: ReactNode, available = true) {
       return render(
@@ -77,43 +79,70 @@ describe("JsonArtifact", () => {
       );
     }
 
-    it("offers Explain when available and shows the returned explanation", async () => {
+    function mockExplain(text = "It maps the order.") {
       const fetchMock = vi
         .fn()
-        .mockResolvedValue({ ok: true, json: async () => ({ explanation: "It maps the order." }) });
+        .mockResolvedValue({ ok: true, json: async () => ({ explanation: text }) });
       vi.stubGlobal("fetch", fetchMock);
-      renderWithExplain(<JsonArtifact source='{"a":1}' closed />);
+      return fetchMock;
+    }
 
-      fireEvent.click(screen.getByRole("button", { name: /^explain$/i }));
+    it("auto-explains a substantial blob — no click — and shows the result once", async () => {
+      const fetchMock = mockExplain();
+      renderWithExplain(<JsonArtifact source={SUBSTANTIAL} closed />);
 
       expect(await screen.findByText("It maps the order.")).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(fetchMock).toHaveBeenCalledWith(
         "http://test/api/explain",
         expect.objectContaining({ method: "POST" }),
       );
-      // The button is gone once explained — no second call.
-      expect(screen.queryByRole("button", { name: /^explain$/i })).not.toBeInTheDocument();
     });
 
-    it("surfaces a recoverable message when Explain fails", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
-      renderWithExplain(<JsonArtifact source='{"a":1}' closed />);
+    it("auto-explains a long blob even with few keys (the source-length branch)", async () => {
+      const long = '{"note":"' + "x".repeat(110) + '"}'; // 1 key, but > 100 chars
+      const fetchMock = mockExplain();
+      renderWithExplain(<JsonArtifact source={long} closed />);
 
-      fireEvent.click(screen.getByRole("button", { name: /^explain$/i }));
+      expect(await screen.findByText("It maps the order.")).toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("surfaces a recoverable message when the explanation fails", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
+      renderWithExplain(<JsonArtifact source={SUBSTANTIAL} closed />);
 
       expect(await screen.findByText(/couldn't explain/i)).toBeInTheDocument();
     });
 
-    it("hides Explain when the service is unavailable", () => {
-      renderWithExplain(<JsonArtifact source='{"a":1}' closed />, false);
+    it("does not explain when the service is unavailable", () => {
+      const fetchMock = mockExplain();
+      renderWithExplain(<JsonArtifact source={SUBSTANTIAL} closed />, false);
 
-      expect(screen.queryByRole("button", { name: /explain/i })).not.toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it("does not offer Explain on a diagram (it explains itself)", () => {
+    it("does not explain a diagram (it explains itself)", () => {
+      const fetchMock = mockExplain();
       renderWithExplain(<JsonArtifact source={FLOW_SPEC} closed />);
 
-      expect(screen.queryByRole("button", { name: /explain/i })).not.toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("does not explain a trivial blob", () => {
+      const fetchMock = mockExplain();
+      renderWithExplain(<JsonArtifact source='{"a":1}' closed />);
+
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("does not explain a blob that is still streaming (even a substantial one)", () => {
+      // Long enough to be "substantial", but unterminated → the closed guard alone must stop it.
+      const streaming = '{"detail":"' + "x".repeat(110);
+      const fetchMock = mockExplain();
+      renderWithExplain(<JsonArtifact source={streaming} closed={false} />);
+
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });
