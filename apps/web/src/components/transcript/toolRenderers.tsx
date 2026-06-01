@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { LunarSpinner } from "./LunarSpinner";
 import styles from "./toolRenderers.module.css";
 
 /** What a per-tool renderer is handed: the (full, untruncated) call args, the result parsed into a
@@ -113,11 +114,12 @@ function StatusTag({ status }: { status: string }) {
   );
 }
 
-/** The in-flight indicator: a spinner + "running…". Shared by every renderer and the fallback. */
+/** The in-flight indicator: the branded moon spinner + "running…". Shared by every renderer and the
+ *  fallback. (The literal "running…" stays here; the cycling personality lives in the phase header.) */
 function Pending() {
   return (
     <span className={styles.pending}>
-      <span className={styles.spinner} aria-hidden="true" />
+      <LunarSpinner size={9} />
       <span className="mono">running…</span>
     </span>
   );

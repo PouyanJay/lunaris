@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Annotated, get_type_hints
 
@@ -17,11 +18,15 @@ from lunaris_runtime.persistence import (
 )
 
 from .config import Settings, get_settings
+from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
-from .secrets import AnthropicProbeValidator, ISecretValidator, SecretStore
+from .secrets import KNOWN_SECRETS, AnthropicProbeValidator, ISecretValidator, SecretStore
 from .service import CourseService, PipelineFactory
 
 logger = structlog.get_logger()
+
+# Worker-tier model for the (cheap, short) Explain calls; overridable via the usual env knob.
+_EXPLAIN_MODEL = "claude-haiku-4-5-20251001"
 
 # LUNARIS_PIPELINE → the per-run pipeline factory. ``agent`` (the default) is the real deep-agent
 # harness; ``stub`` is the deterministic no-key demo; ``live`` is the legacy orchestrator.
@@ -121,3 +126,35 @@ def get_secret_validator() -> ISecretValidator:
 
 SecretStoreDep = Annotated[SecretStore, Depends(get_secret_store)]
 SecretValidatorDep = Annotated[ISecretValidator, Depends(get_secret_validator)]
+
+
+def explain_is_available() -> bool:
+    """Whether plain-language Explain can run — i.e. an Anthropic key is reachable.
+
+    Keyed on the environment variable (the unified runtime source, named once in ``KNOWN_SECRETS``):
+    a key set in ``.env`` OR entered via the Settings UI (the SecretStore applies stored keys to
+    ``os.environ``) both satisfy it.
+    """
+    return bool(os.getenv(KNOWN_SECRETS["anthropic"]))
+
+
+# One explainer per process (built lazily on first availability). NOT cached as None — the key can
+# be added at runtime via the Settings UI, so availability is re-checked every call.
+_explainer: ClaudeExplainer | None = None
+
+
+def get_explainer() -> IExplainer | None:
+    """The transcript-blob explainer (worker tier), or None when no Anthropic key is reachable.
+
+    None makes the route fail closed with a 503 instead of constructing a client that can't call
+    out; the web mirrors this via ``supportsExplain`` so it never shows a button that would 503.
+    """
+    global _explainer
+    if not explain_is_available():
+        return None
+    if _explainer is None:
+        _explainer = ClaudeExplainer(os.getenv("LUNARIS_MODEL_WORKER", _EXPLAIN_MODEL))
+    return _explainer
+
+
+ExplainerDep = Annotated[IExplainer | None, Depends(get_explainer)]

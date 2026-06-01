@@ -1,12 +1,9 @@
-from pydantic import BaseModel, ConfigDict, SecretStr
-from pydantic.alias_generators import to_camel
+from pydantic import BaseModel, SecretStr
+
+from .base import CamelModel
 
 
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
-
-
-class SecretStatusView(_CamelModel):
+class SecretStatusView(CamelModel):
     """What the API reveals about one secret — set/unset + last 4 chars, never the value."""
 
     name: str
@@ -14,7 +11,7 @@ class SecretStatusView(_CamelModel):
     last4: str | None
 
 
-class SettingsView(_CamelModel):
+class SettingsView(CamelModel):
     """The settings surface: per-secret status + the current (read-only) pipeline mode."""
 
     secrets: list[SecretStatusView]
@@ -22,6 +19,9 @@ class SettingsView(_CamelModel):
     # Whether the active pipeline can re-author a single lesson; the web hides the regenerate
     # action when False rather than offering a button the pipeline would reject with a 501.
     supports_lesson_regeneration: bool
+    # Whether plain-language "Explain" is available (an Anthropic key is reachable); the web hides
+    # the Explain affordance when False rather than offering a button that 503s.
+    supports_explain: bool
 
 
 class SecretValue(BaseModel):

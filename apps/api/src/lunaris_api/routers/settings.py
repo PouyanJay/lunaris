@@ -6,6 +6,7 @@ from ..config import Settings, get_settings
 from ..dependencies import (
     SecretStoreDep,
     SecretValidatorDep,
+    explain_is_available,
     pipeline_supports_lesson_regeneration,
 )
 from ..schemas import SecretStatusView, SecretValue, SettingsView
@@ -31,6 +32,7 @@ def get_settings_view(
         secrets=[_to_view(s) for s in store.statuses()],
         pipeline=settings.pipeline,
         supports_lesson_regeneration=pipeline_supports_lesson_regeneration(settings.pipeline),
+        supports_explain=explain_is_available(),
     )
 
 

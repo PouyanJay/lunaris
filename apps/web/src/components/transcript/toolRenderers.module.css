@@ -160,27 +160,6 @@
   color: var(--text-muted);
 }
 
-.spinner {
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-full);
-  border: 1.5px solid var(--border-strong);
-  border-top-color: var(--accent-500);
-  animation: toolSpin 0.7s linear infinite;
-}
-
-@keyframes toolSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
-  }
-}
-
 /* ─── Raw fallback (unknown tools) — collapsed by default ─────────────────── */
 .raw {
   font-size: var(--text-xs);
