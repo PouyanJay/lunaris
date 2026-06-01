@@ -229,6 +229,137 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("region", { name: /building graphs/i })).toBeInTheDocument();
   });
 
+  it("buckets a full multi-phase build into branded, timed phases and threads the run_id", async () => {
+    // The end-to-end Phase A path: a representative build streams every moat + the author handoff
+    // through SSE → useCourseStream → BuildTimeline. Each tool's payload must reach its branded
+    // renderer (no raw JSON), bucketed under the phase it completed in, with the run_id threading
+    // into the sidebar. Kept open so Lessons stays the active, streaming phase.
+    const concepts = [
+      { id: "tcp", label: "TCP" },
+      { id: "tls", label: "TLS handshake" },
+      { id: "https", label: "HTTPS" },
+    ];
+    let buildStarted = false;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "agent", supportsLessonRegeneration: false }),
+        });
+      }
+      if (url.includes("/api/courses/stream")) {
+        buildStarted = true;
+        return Promise.resolve(
+          sseStreamResponse(
+            [
+              progressFrame("run_started", 0),
+              // The call fires in run_started but its result lands in concepts_extracted — the fold
+              // pairs them and buckets the pair under the result's (completion) phase.
+              agentFrame("tool_call", 1, {
+                stage: "run_started",
+                tool: "extract_concepts",
+                toolArgs: { topic: "HTTPS" },
+              }),
+              agentFrame("tool_result", 2, {
+                stage: "concepts_extracted",
+                tool: "extract_concepts",
+                result: JSON.stringify({ goalId: "https", count: 3, concepts }),
+              }),
+              progressFrame("concepts_extracted", 3, { kcCount: 3, label: "Extracted 3 concepts" }),
+              agentFrame("tool_call", 4, {
+                stage: "concepts_extracted",
+                tool: "build_prerequisite_graph",
+                toolArgs: { concepts, goal: "https" },
+              }),
+              agentFrame("tool_result", 5, {
+                stage: "graph_built",
+                tool: "build_prerequisite_graph",
+                result: '{"nodes": [{"id": "tcp", "label": "TCP", "definition": "a long', // truncated
+              }),
+              progressFrame("graph_built", 6, {
+                kcCount: 3,
+                edgeCount: 2,
+                label: "Built prerequisite graph: 3 concepts, 2 edges",
+              }),
+              agentFrame("tool_call", 7, {
+                stage: "graph_built",
+                tool: "design_curriculum",
+                toolArgs: {},
+              }),
+              agentFrame("tool_result", 8, {
+                stage: "curriculum_designed",
+                tool: "design_curriculum",
+                result: JSON.stringify({
+                  moduleCount: 2,
+                  modules: [
+                    { id: "m0", title: "Foundations", kcs: ["tcp"], objectiveCount: 1 },
+                    { id: "m1", title: "Securing HTTPS", kcs: ["tls", "https"], objectiveCount: 2 },
+                  ],
+                }),
+              }),
+              progressFrame("curriculum_designed", 9, {
+                moduleCount: 2,
+                label: "Designed curriculum: 2 modules",
+              }),
+              agentFrame("tool_call", 10, {
+                stage: "module_authored",
+                tool: "task",
+                toolArgs: {
+                  subagent_type: "module-author",
+                  description: "Author the Foundations module",
+                },
+              }),
+              progressFrame("module_authored", 11, {
+                moduleId: "m0",
+                label: "Authored module 1 of 2",
+              }),
+            ],
+            { open: true },
+          ),
+        );
+      }
+      if (url.includes("/api/runs")) {
+        const runs = buildStarted
+          ? [makeRun({ id: "c-https", runId: "run-test", topic: "HTTPS", status: "running" })]
+          : [];
+        return Promise.resolve({ ok: true, json: async () => runs });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "HTTPS" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // The build timeline is live, and the active Lessons phase shows the delegated subagent — branded,
+    // not raw JSON — proving the `task` payload flowed through the real SSE → timeline path.
+    expect(await screen.findByRole("region", { name: /building HTTPS/i })).toBeInTheDocument();
+    expect(await screen.findByText("module-author")).toBeInTheDocument();
+    expect(await screen.findByText(/Author the Foundations module/i)).toBeInTheDocument();
+    // No tool's payload leaks as raw JSON anywhere — including the deliberately truncated graph result.
+    expect(screen.queryByText(/"nodes":/)).not.toBeInTheDocument();
+
+    // The run_id on the first event threads into the sidebar, which lists the RUNNING run.
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(await within(history).findByText("HTTPS")).toBeInTheDocument();
+    expect(await within(history).findByText("RUNNING")).toBeInTheDocument();
+
+    // Expanding the DONE Curriculum phase shows its module list (design_curriculum's parsed result).
+    fireEvent.click(
+      screen.getByRole("button", { name: /curriculum — designed curriculum: 2 modules/i }),
+    );
+    expect(await screen.findByText("Foundations")).toBeInTheDocument();
+    expect(screen.getByText("Securing HTTPS")).toBeInTheDocument();
+
+    // Expanding the DONE Concepts phase shows the concept chips parsed from the streamed result —
+    // the payload was bucketed into Concepts (its completion stage), not where the call fired.
+    fireEvent.click(screen.getByRole("button", { name: /concepts — extracted 3 concepts/i }));
+    expect(await screen.findByText("TLS handshake")).toBeInTheDocument();
+  });
+
   it("surfaces a newly started build in the sidebar history without a manual refresh", async () => {
     // The run is recorded RUNNING server-side before the first event is emitted, so the run_id on
     // that first event is the cue to refetch the history. /api/runs is empty until the build starts,
