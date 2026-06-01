@@ -347,17 +347,19 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(await within(history).findByText("HTTPS")).toBeInTheDocument();
     expect(await within(history).findByText("RUNNING")).toBeInTheDocument();
 
-    // Expanding the DONE Curriculum phase shows its module list (design_curriculum's parsed result).
-    fireEvent.click(
-      screen.getByRole("button", { name: /curriculum — designed curriculum: 2 modules/i }),
-    );
+    // Phases are expanded by default, so the DONE Curriculum phase already shows its module list —
+    // design_curriculum's parsed result, bucketed under the phase it completed in and rendered
+    // branded (not raw JSON), straight off the live stream with no click needed.
     expect(await screen.findByText("Foundations")).toBeInTheDocument();
     expect(screen.getByText("Securing HTTPS")).toBeInTheDocument();
 
-    // Expanding the DONE Concepts phase shows the concept chips parsed from the streamed result —
-    // the payload was bucketed into Concepts (its completion stage), not where the call fired.
-    fireEvent.click(screen.getByRole("button", { name: /concepts — extracted 3 concepts/i }));
-    expect(await screen.findByText("TLS handshake")).toBeInTheDocument();
+    // extract_concepts' parsed result reaches its branded chips too, scoped to the Concepts phase it
+    // completed in (the same concept also chips under Graph from the call args — scoping avoids the
+    // clash and pins the bucketing: the call fired in run_started, the pair landed in Concepts).
+    const conceptsPhase = screen
+      .getByRole("button", { name: /concepts — extracted 3 concepts/i })
+      .closest("li");
+    expect(within(conceptsPhase as HTMLElement).getByText("TLS handshake")).toBeInTheDocument();
   });
 
   it("surfaces a newly started build in the sidebar history without a manual refresh", async () => {

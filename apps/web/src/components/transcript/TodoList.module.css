@@ -8,7 +8,19 @@
   gap: var(--space-2);
 }
 
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .label {
+  color: var(--text-muted);
+}
+
+.count {
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 

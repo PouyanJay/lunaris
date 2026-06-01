@@ -15,14 +15,14 @@ export type TimelineEntry =
     };
 
 /** One node on the timeline: a major pipeline phase, its status, a one-line summary, and the
- *  fine-grained events that fired while it was active (the live plan, if any, rides along). */
+ *  fine-grained reasoning/tool beats that fired while it was active. The agent's plan (todos) is no
+ *  longer per-phase — it lives in the pinned top panel (see {@link latestPlan}). */
 export interface TimelinePhase {
   key: string;
   label: string;
   status: PhaseStatus;
   summary: string | null;
   entries: TimelineEntry[];
-  todos: AgentTodo[] | null;
   /** Wall-clock span of a DONE phase (ms), from its stage arrival back to the previous stage; null
    *  for active/pending phases or when stage arrival times were not captured. */
   durationMs: number | null;
@@ -115,14 +115,15 @@ function stagedEntries(agentEvents: AgentEvent[]): StagedEntry[] {
   return staged;
 }
 
-/** The latest plan (todos) seen per phase. */
-function todosByPhase(agentEvents: AgentEvent[]): Map<string, AgentTodo[]> {
-  const byPhase = new Map<string, AgentTodo[]>();
-  for (const event of agentEvents) {
-    if (event.kind === "todo" && event.todos)
-      byPhase.set(phaseKeyForStage(event.stage), event.todos);
+/** The most recent plan the agent emitted — the latest non-empty `write_todos`, scanning
+ *  newest-first; its overall done/total is the build's coarse progress. Null until the agent has
+ *  planned. (Where it renders — the pinned top panel — is the caller's concern.) */
+export function latestPlan(agentEvents: AgentEvent[]): AgentTodo[] | null {
+  for (let i = agentEvents.length - 1; i >= 0; i -= 1) {
+    const event = agentEvents[i];
+    if (event?.kind === "todo" && event.todos && event.todos.length > 0) return event.todos;
   }
-  return byPhase;
+  return null;
 }
 
 /** The active phase index from the latest progress stage: run_completed → all done (past the last),
@@ -165,8 +166,9 @@ function durationForPhase(
 /**
  * Fold the coarse progress stream + the fine agent-event stream into an ordered list of timeline
  * phases — the data the {@link BuildTimeline} renders. Each phase carries its status (the single
- * in-flight one is `active`), a one-line summary, the bucketed reasoning/tool entries, and the live
- * plan. An intro "Plan" node leads only when there are pre-stage beats to show.
+ * in-flight one is `active`), a one-line summary, the bucketed reasoning/tool entries, and its
+ * duration. A leading "Start" node holds the agent's opening reasoning (the pre-stage beats), and
+ * appears only when there is such reasoning to show; the plan itself rides the pinned top panel.
  */
 export function buildTimeline(
   events: ProgressEvent[],
@@ -174,21 +176,18 @@ export function buildTimeline(
   stageTimes: StageTimes = {},
 ): TimelinePhase[] {
   const staged = stagedEntries(agentEvents);
-  const todos = todosByPhase(agentEvents);
   const current = currentPhaseIndex(events);
   const entriesFor = (key: string) => staged.filter((s) => s.phaseKey === key).map((s) => s.entry);
 
   const phases: TimelinePhase[] = [];
   const introEntries = entriesFor(INTRO_KEY);
-  const introTodos = todos.get(INTRO_KEY) ?? null;
-  if (introEntries.length > 0 || introTodos) {
+  if (introEntries.length > 0) {
     phases.push({
       key: INTRO_KEY,
-      label: "Plan",
+      label: "Start",
       status: current < 0 ? "active" : "done",
       summary: null,
       entries: introEntries,
-      todos: introTodos,
       durationMs: null,
     });
   }
@@ -200,7 +199,6 @@ export function buildTimeline(
       status,
       summary: summaryForStage(events, phase.stage),
       entries: entriesFor(phase.stage),
-      todos: todos.get(phase.stage) ?? null,
       durationMs: durationForPhase(index, status, stageTimes),
     });
   });

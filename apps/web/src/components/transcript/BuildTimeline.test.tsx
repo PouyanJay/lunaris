@@ -28,11 +28,11 @@ function streamingProps() {
 }
 
 describe("BuildTimeline", () => {
-  it("renders the intro and every pipeline phase as a node on the spine", () => {
+  it("renders the leading Start node and every pipeline phase on the spine", () => {
     render(<BuildTimeline {...streamingProps()} />);
 
     for (const label of [
-      "Plan",
+      "Start",
       "Concepts",
       "Graph",
       "Curriculum",
@@ -42,6 +42,33 @@ describe("BuildTimeline", () => {
     ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
+  });
+
+  it("pins the agent's plan at the top with a done/total progress count", () => {
+    render(
+      <BuildTimeline
+        topic="X"
+        events={[makeProgressEvent("concepts_extracted", 1)]}
+        agentEvents={[
+          makeAgentEvent("todo", 0, {
+            stage: "run_started",
+            todos: [
+              { content: "Extract concepts", status: "completed" },
+              { content: "Design curriculum", status: "in_progress" },
+              { content: "Finalize the course", status: "pending" },
+            ],
+          }),
+        ]}
+      />,
+    );
+
+    // The plan panel lives inside the build timeline region (not floating elsewhere).
+    const timeline = screen.getByRole("region", { name: /building x/i });
+    const plan = within(timeline).getByRole("region", { name: /agent plan/i });
+    expect(within(plan).getByText("Extract concepts")).toBeInTheDocument();
+    expect(within(plan).getByText("Finalize the course")).toBeInTheDocument();
+    // One of three plan items complete → the panel doubles as a coarse progress readout.
+    expect(within(plan).getByText("1 / 3")).toBeInTheDocument();
   });
 
   it("shows a Starting… status before any phase is active", () => {
@@ -67,7 +94,7 @@ describe("BuildTimeline", () => {
       />,
     );
 
-    // Concepts is done: run_started→concepts_extracted = 2.0s, shown in its (collapsed) header.
+    // Concepts is done: run_started→concepts_extracted = 2.0s, shown in its header.
     const conceptsHeader = screen.getByRole("button", { name: /concepts — 21 concepts/i });
     expect(within(conceptsHeader).getByText("2.0s")).toBeInTheDocument();
     // Graph is active → it streams "running…", never a duration (even though both stamps exist).
@@ -81,25 +108,27 @@ describe("BuildTimeline", () => {
     const region = screen.getByRole("region", { name: /building https/i });
     expect(region).toHaveAttribute("tabindex", "0");
     expect(screen.getByRole("status")).toBeInTheDocument();
-    // Done phases collapse to a real <button> (Enter/Space operable natively), not a div with onClick.
+    // A phase with content collapses to a real <button> (Enter/Space operable natively); it is
+    // expanded by default, so aria-expanded starts true.
     expect(screen.getByRole("button", { name: /concepts — 21 concepts/i })).toHaveAttribute(
       "aria-expanded",
-      "false",
+      "true",
     );
   });
 
-  it("collapses a done phase to its summary and re-opens it on click", () => {
+  it("shows a done phase expanded by default and collapses it on click", () => {
     render(<BuildTimeline {...streamingProps()} />);
 
-    // Concepts is done: its summary shows, but its tool entry is collapsed away.
-    expect(screen.getByText("21 concepts")).toBeInTheDocument();
-    expect(screen.queryByText("extract_concepts")).not.toBeInTheDocument();
-
-    // Clicking the phase header reveals its entries and flips the expanded state.
+    // Concepts is done but EXPANDED by default — its tool entry shows without a click.
     const conceptsHeader = screen.getByRole("button", { name: /concepts — 21 concepts/i });
-    expect(conceptsHeader).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(conceptsHeader);
     expect(conceptsHeader).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("extract_concepts")).toBeInTheDocument();
+
+    // Clicking collapses it; clicking again re-expands.
+    fireEvent.click(conceptsHeader);
+    expect(conceptsHeader).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("extract_concepts")).not.toBeInTheDocument();
+    fireEvent.click(conceptsHeader);
     expect(screen.getByText("extract_concepts")).toBeInTheDocument();
   });
 });

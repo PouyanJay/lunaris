@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
 
-import { buildTimeline, type StageTimes, type TimelinePhase } from "../../lib/buildTimeline";
+import {
+  buildTimeline,
+  latestPlan,
+  type StageTimes,
+  type TimelinePhase,
+} from "../../lib/buildTimeline";
 import { formatDuration } from "../../lib/formatDuration";
 import type { AgentEvent, ProgressEvent } from "../../types/course";
 import { TodoList } from "./TodoList";
@@ -15,22 +20,23 @@ interface BuildTimelineProps {
   stageTimes?: StageTimes | undefined;
 }
 
-/** The live build canvas: a vertical timeline of the pipeline's major phases. Each phase is a node on
- *  a hairline spine (dot + label + summary + status); the active phase auto-expands and streams its
- *  reasoning and tool calls, done phases collapse to their summary (click to re-open), pending phases
- *  preview what's coming. Replaces the horizontal StageRail + flat transcript feed. */
+/** The live build canvas: a pinned plan panel (the agent's todos + overall progress) over a vertical
+ *  timeline of the pipeline's major phases. Each phase is a node on a hairline spine (dot + label +
+ *  summary + duration + status); every phase with content is expanded by default and streams its
+ *  reasoning and tool calls — the user can collapse any of them. Replaces the horizontal StageRail. */
 export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildTimelineProps) {
   const phases = useMemo(
     () => buildTimeline(events, agentEvents, stageTimes),
     [events, agentEvents, stageTimes],
   );
+  const plan = useMemo(() => latestPlan(agentEvents), [agentEvents]);
   const activeKey = phases.find((phase) => phase.status === "active")?.key ?? null;
 
-  // Done phases the user manually re-opened. The active phase is always expanded; pending phases with
-  // no body never expand. So expanded = active OR manually-opened.
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  // Phases are expanded by default; this tracks the ones the user manually COLLAPSED, so newly
+  // streamed content is always visible without a click while staying dismissible.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const toggle = useCallback((key: string) => {
-    setOpened((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -45,7 +51,7 @@ export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildT
     const node = activeRef.current;
     const container = containerRef.current;
     if (node && container) container.scrollTop = node.offsetTop;
-  }, [agentEvents.length, activeKey, opened]);
+  }, [agentEvents.length, activeKey, collapsed]);
 
   return (
     <div
@@ -58,16 +64,20 @@ export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildT
       <p className="sr-only" role="status" aria-live="polite">
         {activeKey ? `Building: ${phases.find((p) => p.key === activeKey)?.label}` : "Starting…"}
       </p>
+      {plan && (
+        <div className={styles.plan}>
+          <TodoList todos={plan} />
+        </div>
+      )}
       <ol className={styles.phases}>
         {phases.map((phase) => {
-          const hasBody = phase.entries.length > 0 || phase.todos !== null;
-          const expanded = phase.status === "active" || opened.has(phase.key);
+          const hasBody = phase.entries.length > 0;
           return (
             <PhaseNode
               key={phase.key}
               phase={phase}
-              expanded={expanded && hasBody}
-              expandable={hasBody && phase.status !== "active"}
+              expanded={hasBody && !collapsed.has(phase.key)}
+              expandable={hasBody}
               onToggle={() => toggle(phase.key)}
               nodeRef={phase.status === "active" ? activeRef : undefined}
             />
@@ -124,7 +134,6 @@ function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef }: PhaseNode
 
       {expanded && (
         <div className={styles.body}>
-          {phase.todos && <TodoList todos={phase.todos} />}
           {phase.entries.map((entry) =>
             entry.kind === "reasoning" ? (
               <p key={entry.key} className={styles.reasoning}>

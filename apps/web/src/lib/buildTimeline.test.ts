@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeAgentEvent, makeProgressEvent } from "../test/fixtures";
-import { buildTimeline, type TimelinePhase } from "./buildTimeline";
+import { buildTimeline, latestPlan, type TimelinePhase } from "./buildTimeline";
 
 /** Find a phase by its label, failing loudly if absent. */
 function phase(phases: TimelinePhase[], label: string): TimelinePhase {
@@ -43,8 +43,8 @@ describe("buildTimeline", () => {
 
     const phases = buildTimeline(events, agentEvents);
 
-    // The pre-stage beat is in the intro "Plan" node.
-    const intro = phase(phases, "Plan");
+    // The pre-stage beat is in the leading "Start" node.
+    const intro = phase(phases, "Start");
     expect(intro.entries).toEqual([
       expect.objectContaining({ kind: "reasoning", text: "Planning the build…" }),
     ]);
@@ -173,5 +173,26 @@ describe("buildTimeline", () => {
     expect(phase(phases, "Graph").entries).toEqual([
       expect.objectContaining({ kind: "tool", tool: "build_prerequisite_graph", result: "ok" }),
     ]);
+  });
+});
+
+describe("latestPlan", () => {
+  it("returns the most recent plan the agent emitted (latest write_todos wins)", () => {
+    const plan = latestPlan([
+      makeAgentEvent("todo", 0, {
+        todos: [
+          { content: "a", status: "in_progress" },
+          { content: "b", status: "pending" },
+        ],
+      }),
+      makeAgentEvent("reasoning", 1, { text: "working…" }),
+      makeAgentEvent("todo", 2, { todos: [{ content: "a", status: "completed" }] }),
+    ]);
+
+    expect(plan).toEqual([{ content: "a", status: "completed" }]);
+  });
+
+  it("returns null before the agent has emitted a plan", () => {
+    expect(latestPlan([makeAgentEvent("reasoning", 0, { text: "thinking" })])).toBeNull();
   });
 });
