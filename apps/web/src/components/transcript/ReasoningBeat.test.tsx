@@ -19,7 +19,7 @@ describe("ReasoningBeat", () => {
 
   it("lifts an embedded JSON blob into a bounded artifact instead of dumping it in the prose", () => {
     const blob = '{"modules":[{"title":"Networking"},{"title":"Crypto"},{"title":"Trust"}]}';
-    render(<ReasoningBeat text={`Now designing the curriculum. ${blob}`} streaming={false} />);
+    render(<ReasoningBeat text={`Now designing the curriculum.\n${blob}`} streaming={false} />);
 
     // The prose shows; the JSON is summarised in an artifact (collapsed), not dumped raw alongside.
     expect(screen.getByText("Now designing the curriculum.")).toBeInTheDocument();
@@ -28,7 +28,7 @@ describe("ReasoningBeat", () => {
   });
 
   it("keeps the caret off a trailing streaming JSON blob (the artifact shows its own state)", () => {
-    render(<ReasoningBeat text='Designing it: {"modules":[{"title":"Net' streaming />);
+    render(<ReasoningBeat text={'Designing it:\n{"modules":[{"title":"Net'} streaming />);
 
     // The last segment is a streaming artifact, so no caret trails it.
     expect(screen.getByText("streaming…")).toBeInTheDocument();

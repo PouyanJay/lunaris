@@ -13,102 +13,105 @@ describe("parseReasoning", () => {
     const segments = parseReasoning('A diagram helps here.\n```json\n{"type":"flow"}\n```\nDone.');
 
     expect(segments).toEqual([
-      { kind: "prose", text: "A diagram helps here.\n" },
-      { kind: "json", source: '{"type":"flow"}\n', closed: true },
-      { kind: "prose", text: "\nDone." },
+      { kind: "prose", text: "A diagram helps here." },
+      { kind: "json", source: '{"type":"flow"}', closed: true },
+      { kind: "prose", text: "Done." },
     ]);
   });
 
-  it("marks an unterminated fenced block as still streaming", () => {
-    const segments = parseReasoning('Designing it:\n```json\n{"modules":[');
+  it("lifts a JSON object on its own line as a single artifact", () => {
+    const blob = '{"modules":[{"title":"Networking"},{"title":"Crypto"}]}';
+    const segments = parseReasoning(`Now designing the curriculum.\n${blob}\nThen verify.`);
 
     expect(segments).toEqual([
-      { kind: "prose", text: "Designing it:\n" },
-      { kind: "json", source: '{"modules":[', closed: false },
-    ]);
-  });
-
-  it("lifts a large raw (unfenced) JSON object out of prose", () => {
-    const blob = '{"modules":[{"title":"Networking"},{"title":"Crypto"},{"title":"Trust"}]}';
-    const segments = parseReasoning(`Now designing the curriculum. ${blob} Then verify.`);
-
-    expect(segments).toEqual([
-      { kind: "prose", text: "Now designing the curriculum. " },
+      { kind: "prose", text: "Now designing the curriculum." },
       { kind: "json", source: blob, closed: true },
-      { kind: "prose", text: " Then verify." },
+      { kind: "prose", text: "Then verify." },
     ]);
   });
 
-  it("lifts a trailing still-streaming raw JSON blob", () => {
-    const segments = parseReasoning('Ordering them now: {"is_prereq": true, "strength": 0.85');
+  it("keeps a multi-line pretty-printed object together (lone closing brace included)", () => {
+    const blob = '{\n  "modules": ["Networking", "Crypto"]\n}';
+    const segments = parseReasoning(`Here is the curriculum:\n${blob}\nLet me verify.`);
 
     expect(segments).toEqual([
-      { kind: "prose", text: "Ordering them now: " },
-      { kind: "json", source: '{"is_prereq": true, "strength": 0.85', closed: false },
+      { kind: "prose", text: "Here is the curriculum:" },
+      { kind: "json", source: blob, closed: true },
+      { kind: "prose", text: "Let me verify." },
     ]);
   });
 
-  it("leaves short inline brackets in the prose", () => {
-    // A small `{n}`-style placeholder is not JSON-ish/large enough to lift.
+  it("does not start a region on a quoted prose line", () => {
+    const text = '"Requirements are clear."\nNow let me proceed.';
+    expect(parseReasoning(text)).toEqual([{ kind: "prose", text }]);
+  });
+
+  it("marks a still-opening object as a streaming artifact", () => {
+    const segments = parseReasoning('Judging:\n{"is_prereq": true, "strength":');
+
+    expect(segments).toEqual([
+      { kind: "prose", text: "Judging:" },
+      { kind: "json", source: '{"is_prereq": true, "strength":', closed: false },
+    ]);
+  });
+
+  it("collapses a flood of small objects into ONE group, even with ragged fences/labels/fragments", () => {
+    // The real shape: ```json labels, bare `json` lines, and a leftover fragment between objects.
+    const text = [
+      "Let me judge the prerequisite pairs.",
+      "```json",
+      '{"is_prereq": false, "strength": 0.95}',
+      "```",
+      "json",
+      '{"is_prereq": true, "strength": 0.85}',
+      '{"is_prereq": false, "strength": 0.15}',
+      '": true, "strength": 0.85}', // a stray fragment — must be absorbed, not shown as prose
+    ].join("\n");
+
+    const segments = parseReasoning(text);
+
+    // One prose line, then ONE group of the three clean objects (the fragment is dropped).
+    expect(segments).toEqual([
+      { kind: "prose", text: "Let me judge the prerequisite pairs." },
+      {
+        kind: "jsonGroup",
+        sources: [
+          '{"is_prereq": false, "strength": 0.95}',
+          '{"is_prereq": true, "strength": 0.85}',
+          '{"is_prereq": false, "strength": 0.15}',
+        ],
+        closed: true,
+      },
+    ]);
+  });
+
+  it("treats a flood that ends mid-object as a still-streaming group", () => {
+    const text = [
+      '{"is_prereq": true, "strength": 0.85}',
+      '{"is_prereq": false, "strength": 0.15}',
+      '{"is_prereq": true, "strength":', // streaming tail
+    ].join("\n");
+
+    const segments = parseReasoning(text);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ kind: "jsonGroup", closed: false });
+    expect((segments[0] as { sources: string[] }).sources).toHaveLength(3);
+  });
+
+  it("leaves a short inline bracket in the prose (a long sentence, not a JSON line)", () => {
     const text = "Replace {n} with the count and keep going.";
     expect(parseReasoning(text)).toEqual([{ kind: "prose", text }]);
   });
 
-  it("does not miscount braces that appear inside JSON string values", () => {
+  it("does not miscount braces inside JSON string values", () => {
     const blob = '{"label":"a }] tricky string","ok":true,"note":"another { brace"}';
-    const segments = parseReasoning(`Here: ${blob} end`);
+    const segments = parseReasoning(`Here:\n${blob}\nend`);
 
     expect(segments).toEqual([
-      { kind: "prose", text: "Here: " },
+      { kind: "prose", text: "Here:" },
       { kind: "json", source: blob, closed: true },
-      { kind: "prose", text: " end" },
-    ]);
-  });
-
-  it("coalesces a run of small JSON blobs (with noise between) into one group", () => {
-    // The flood case: many small judgments separated by stray ```json labels / fragments.
-    const a = '{"is_prereq": true, "strength": 0.85, "pair": "a"}';
-    const b = '{"is_prereq": false, "strength": 0.15, "pair": "b"}';
-    const c = '{"is_prereq": true, "strength": 0.72, "pair": "c"}';
-    const segments = parseReasoning(`${a} json ${b} ${c}`);
-
-    expect(segments).toEqual([{ kind: "jsonGroup", sources: [a, b, c], closed: true }]);
-  });
-
-  it("coalesces a run of fenced JSON blobs (the real flood shape)", () => {
-    // Fenced blobs are lifted at any size; these small ones then coalesce into one closed group.
-    const fence = (body: string) => "```json\n" + body + "\n```";
-    const segments = parseReasoning(
-      `${fence('{"is_prereq": true}')}\n${fence('{"is_prereq": false}')}`,
-    );
-
-    expect(segments).toHaveLength(1);
-    expect(segments[0]).toMatchObject({ kind: "jsonGroup", closed: true });
-    expect((segments[0] as { sources: string[] }).sources).toHaveLength(2);
-  });
-
-  it("keeps a lone small JSON blob as an individual artifact", () => {
-    const blob = '{"is_prereq": true, "strength": 0.85, "pair": "x"}';
-    const segments = parseReasoning(`Judging the pair now: ${blob} and moving on.`);
-
-    expect(segments).toEqual([
-      { kind: "prose", text: "Judging the pair now: " },
-      { kind: "json", source: blob, closed: true },
-      { kind: "prose", text: " and moving on." },
-    ]);
-  });
-
-  it("keeps consecutive LARGE blobs individual (only small ones group)", () => {
-    // Each blob is well over the small-blob threshold, so they stay worth-their-own-artifact.
-    const big = (n: number) => `{"module":${n},"detail":"${"x".repeat(220)}"}`;
-    const a = big(1);
-    const b = big(2);
-    const segments = parseReasoning(`${a} ${b}`);
-
-    expect(segments).toEqual([
-      { kind: "json", source: a, closed: true },
-      { kind: "prose", text: " " },
-      { kind: "json", source: b, closed: true },
+      { kind: "prose", text: "end" },
     ]);
   });
 });
