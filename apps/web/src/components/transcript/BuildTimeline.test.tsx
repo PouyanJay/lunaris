@@ -74,6 +74,20 @@ describe("BuildTimeline", () => {
     expect(screen.queryByText("0.5s")).not.toBeInTheDocument();
   });
 
+  it("exposes the timeline as a focusable region with a live status and keyboard-operable toggles", () => {
+    render(<BuildTimeline {...streamingProps()} />);
+
+    // The scrollable timeline is reachable by keyboard, and announces the active phase via a live region.
+    const region = screen.getByRole("region", { name: /building https/i });
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    // Done phases collapse to a real <button> (Enter/Space operable natively), not a div with onClick.
+    expect(screen.getByRole("button", { name: /concepts — 21 concepts/i })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  });
+
   it("collapses a done phase to its summary and re-opens it on click", () => {
     render(<BuildTimeline {...streamingProps()} />);
 

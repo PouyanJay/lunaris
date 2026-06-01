@@ -245,6 +245,96 @@ describe("ToolCallCard per-tool renderers", () => {
     expect(screen.getByText("A")).toBeInTheDocument();
   });
 
+  // Variant coverage of request #2: every branded tool, given a representative payload, shows branded
+  // content and never dumps its raw JSON — the single contract the renderer registry exists to keep.
+  it.each([
+    {
+      tool: "extract_concepts",
+      args: { topic: "X" },
+      result: resultOf({
+        goalId: "a",
+        count: 2,
+        concepts: [
+          { id: "a", label: "Alpha" },
+          { id: "b", label: "Beta" },
+        ],
+      }),
+      present: "Alpha",
+      absent: /"goalId"/,
+    },
+    {
+      tool: "build_prerequisite_graph",
+      args: { concepts: [{ id: "a", label: "Alpha" }], goal: "a" },
+      result: '{"nodes": [{"id": "a", "label": "Alpha", "definition": "a long', // truncated
+      present: "Alpha",
+      absent: /"label":/,
+    },
+    {
+      tool: "design_curriculum",
+      args: {},
+      result: resultOf({
+        moduleCount: 1,
+        modules: [{ id: "m", title: "Mod A", kcs: ["a"], objectiveCount: 1 }],
+      }),
+      present: "Mod A",
+      absent: /"objectiveCount"/,
+    },
+    {
+      tool: "finalize_course",
+      args: {},
+      result: resultOf({ courseId: "c", status: "published", moduleCount: 2, issues: [] }),
+      present: /published/i,
+      absent: /"courseId"/,
+    },
+    {
+      tool: "verify_claims",
+      args: { claims: ["c1", "c2"] },
+      result: resultOf({
+        results: [
+          { text: "c1", status: "supported", supportedBy: "s" },
+          { text: "c2", status: "cut", supportedBy: null },
+        ],
+        citations: [],
+      }),
+      present: /supported/i,
+      absent: /"citations"/,
+    },
+    {
+      tool: "task",
+      args: { subagent_type: "module-author", description: "Do the thing" },
+      result: "All done.",
+      present: "module-author",
+      absent: /"subagent_type"/,
+    },
+  ])(
+    "$tool renders branded content and never dumps raw JSON",
+    ({ tool, args, result, present, absent }) => {
+      render(<ToolCallCard tool={tool} args={args} result={result} />);
+
+      expect(screen.getByText(present)).toBeInTheDocument();
+      expect(screen.queryByText(absent)).not.toBeInTheDocument();
+    },
+  );
+
+  it("renders every chip for a large concept set (long content)", () => {
+    const concepts = Array.from({ length: 24 }, (_, i) => ({
+      id: `kc${i}`,
+      label: `Concept ${i}`,
+    }));
+    render(
+      <ToolCallCard
+        tool="build_prerequisite_graph"
+        args={{ concepts, goal: "kc23" }}
+        result={null}
+      />,
+    );
+
+    // First, last, and the count all render — large arrays are chipped in full, not truncated.
+    expect(screen.getByText("Concept 0")).toBeInTheDocument();
+    expect(screen.getByText("Concept 23")).toBeInTheDocument();
+    expect(screen.getByText(/24 concepts/i)).toBeInTheDocument();
+  });
+
   // Every tool — branded or not — keeps the same chrome: a "Tool call" eyebrow + the mono tool name.
   it.each([
     "extract_concepts",
