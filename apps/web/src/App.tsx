@@ -9,6 +9,7 @@ import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
 import { Transcript } from "./components/transcript/Transcript";
+import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
@@ -199,16 +200,22 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     if (opened.state.status === "loading") {
       return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
     }
+    if (opened.state.status === "building") {
+      return {
+        title: opened.state.topic,
+        meta: <StatusDot label="building" tone="accent" live />,
+        body: <BuildingState onRecheck={opened.recheck} />,
+      };
+    }
     if (opened.state.status === "error") {
       const { courseId, topic, message } = opened.state;
-      const body = (
-        <ErrorState message={message} onRetry={() => openRun({ id: courseId, topic })} />
-      );
+      const onRetry = () => openRun({ id: courseId, topic, status: "completed" });
+      const body = <ErrorState message={message} onRetry={onRetry} />;
       return { title: topic, meta: null, body };
     }
     if (opened.state.status === "ready") {
       const { course } = opened.state;
-      const reopen = () => openRun({ id: course.id, topic: course.topic });
+      const reopen = () => openRun({ id: course.id, topic: course.topic, status: "completed" });
       return buildReadyCanvas(course, reopen);
     }
     if (state.status === "idle") {

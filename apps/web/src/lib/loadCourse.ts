@@ -5,9 +5,13 @@ import type { Course } from "../types/course";
 export const DEFAULT_COURSE_URL = "/sample-course.json";
 
 export class CourseLoadError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  /** HTTP status when the failure came from a response (absent for transport/parse errors). Lets
+   *  callers distinguish a 404 (course not persisted yet / gone) from other failures. */
+  readonly status?: number | undefined;
+  constructor(message: string, options?: ErrorOptions & { status?: number }) {
     super(message, options);
     this.name = "CourseLoadError";
+    this.status = options?.status;
   }
 }
 
@@ -96,8 +100,11 @@ export async function fetchCourseById(
     throw new CourseLoadError("Could not reach the course service.", { cause });
   }
   if (!response.ok) {
-    const detail = response.status === 404 ? "This run's course is no longer available." : null;
-    throw new CourseLoadError(detail ?? `Couldn't open this course (HTTP ${response.status}).`);
+    const message =
+      response.status === 404
+        ? "This run's course is no longer available."
+        : `Couldn't open this course (HTTP ${response.status}).`;
+    throw new CourseLoadError(message, { status: response.status });
   }
   return parseResponse(response);
 }

@@ -292,6 +292,23 @@ describe("App — live studio (VITE_API_URL set)", () => {
     );
   });
 
+  it("shows a building state — not a 404 error — when a still-running run is opened", async () => {
+    // The course isn't persisted until the run finishes, so opening a RUNNING run must not fetch
+    // and render the broken-looking "no longer available" error. No `course` handler is wired, so
+    // routedFetch would throw on any course fetch — proving the running run never triggers one.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ runs: [makeRun({ id: "c-1", topic: "queues", status: "running" })] }),
+    );
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+
+    expect(await screen.findByText(/still building this course/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /check again/i })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("switches the canvas to a selected run even while a build is streaming", async () => {
     vi.stubGlobal(
       "fetch",

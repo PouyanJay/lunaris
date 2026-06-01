@@ -40,6 +40,50 @@ describe("useOpenedRun", () => {
     });
   });
 
+  it("shows a building state for a still-running run without fetching", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useOpenedRun("http://test"));
+
+    act(() => result.current.open(makeRun({ id: "c-1", topic: "queues", status: "running" })));
+
+    expect(result.current.state).toMatchObject({
+      status: "building",
+      courseId: "c-1",
+      topic: "queues",
+    });
+    // A running run has no persisted course yet, so we must not fetch (it would 404).
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("recheck opens the course once a building run has finished", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 404 }) // first check: build still running
+      .mockResolvedValue({ ok: true, json: async () => makeCourse({ id: "c-1" }) }); // then done
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useOpenedRun("http://test"));
+
+    act(() => result.current.open(makeRun({ id: "c-1", topic: "queues", status: "running" })));
+    expect(result.current.state.status).toBe("building");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // First re-check fetches; the course isn't persisted yet (404) → stays building, not an error.
+    // Gate on the fetch count so this asserts the settled-after-404 building, not the initial one.
+    act(() => result.current.recheck());
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(result.current.state.status).toBe("building");
+    });
+
+    // Second re-check: the build finished and the course is persisted → it opens.
+    act(() => result.current.recheck());
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(result.current.state).toMatchObject({ status: "ready", courseId: "c-1" });
+    });
+  });
+
   it("ignores a superseded fetch when a second open lands first", async () => {
     let resolveFirst!: (value: unknown) => void;
     const fetchMock = vi
