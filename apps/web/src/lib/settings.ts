@@ -10,6 +10,9 @@ export interface SecretStatus {
 export interface SettingsView {
   secrets: SecretStatus[];
   pipeline: string;
+  /** Whether the active pipeline can re-author a single lesson. The reader hides the regenerate
+   *  action when false (the deep-agent pipeline doesn't support it and would 501). */
+  supportsLessonRegeneration: boolean;
 }
 
 export class SettingsError extends Error {

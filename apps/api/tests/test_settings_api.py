@@ -8,7 +8,11 @@ import httpx
 import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
-from lunaris_api.dependencies import get_secret_store, get_secret_validator
+from lunaris_api.dependencies import (
+    get_secret_store,
+    get_secret_validator,
+    pipeline_supports_lesson_regeneration,
+)
 from lunaris_api.secrets import KNOWN_SECRETS, SecretStore, SecretValidationError
 
 
@@ -57,6 +61,27 @@ async def test_settings_start_all_unset(client: httpx.AsyncClient) -> None:
     assert names["anthropic"]["isSet"] is False
     assert names["anthropic"]["last4"] is None
     assert body["pipeline"] == "stub"
+
+
+async def test_settings_exposes_lesson_regeneration_capability(client: httpx.AsyncClient) -> None:
+    # The reader hides the "Regenerate lesson" action when the active pipeline can't honour it
+    # (returns 501) rather than offering a button that always fails. The stub pipeline is the
+    # single-shot Orchestrator, which regenerates, so the flag is True here.
+    body = (await client.get("/api/settings")).json()
+
+    assert body["supportsLessonRegeneration"] is True
+
+
+@pytest.mark.parametrize(
+    ("pipeline", "supported"),
+    [("stub", True), ("live", True), ("agent", False), ("bogus", False)],
+)
+def test_regeneration_capability_tracks_the_pipeline(pipeline: str, supported: bool) -> None:
+    # Derived from each factory's declared return type, so it can never drift from the
+    # isinstance(pipeline, LessonRegenerator) gate in CourseService.regenerate_lesson: the
+    # single-shot Orchestrator (stub/live) regenerates; the deep agent and an unknown pipeline
+    # do not.
+    assert pipeline_supports_lesson_regeneration(pipeline) is supported
 
 
 async def test_set_secret_is_write_only_and_never_echoes_the_value(

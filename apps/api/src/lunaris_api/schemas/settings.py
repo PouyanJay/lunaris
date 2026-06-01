@@ -19,6 +19,9 @@ class SettingsView(_CamelModel):
 
     secrets: list[SecretStatusView]
     pipeline: str
+    # Whether the active pipeline can re-author a single lesson; the web hides the regenerate
+    # action when False rather than offering a button the pipeline would reject with a 501.
+    supports_lesson_regeneration: bool
 
 
 class SecretValue(BaseModel):

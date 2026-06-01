@@ -1,9 +1,10 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, get_type_hints
 
 import structlog
 from fastapi import Depends
 from lunaris_agent import (
+    LessonRegenerator,
     build_agent_course_builder,
     build_orchestrator,
     build_stub_orchestrator,
@@ -28,6 +29,29 @@ _PIPELINE_FACTORIES: dict[str, PipelineFactory] = {
     "agent": build_agent_course_builder,
     "live": build_orchestrator,
 }
+
+
+def pipeline_supports_lesson_regeneration(pipeline: str) -> bool:
+    """Whether the configured pipeline implements the optional ``LessonRegenerator`` capability.
+
+    Derived from the factory's declared return type — never by instantiating it (building the agent
+    pipeline constructs LLM clients and needs an API key) — so it stays in lockstep with the
+    ``isinstance(pipeline, LessonRegenerator)`` gate in ``CourseService.regenerate_lesson``: the
+    single-shot Orchestrator regenerates, the deep-agent builder does not. The web reads this to
+    show or hide the per-lesson regenerate action instead of offering a button that always 501s.
+    (``issubclass`` against the runtime_checkable Protocol matches method *names* only — sufficient
+    for the closed, hand-curated set of pipeline factories.)
+    """
+    factory = _PIPELINE_FACTORIES.get(pipeline)
+    if factory is None:
+        return False
+    try:
+        return_type = get_type_hints(factory).get("return")
+    except Exception:
+        # A factory whose annotations can't be resolved (e.g. PEP 563 string hints losing a name in
+        # scope) falls back to "unsupported" — the same fail-safe as an unknown pipeline above.
+        return False
+    return isinstance(return_type, type) and issubclass(return_type, LessonRegenerator)
 
 
 # One run store per process, shared across requests (mirrors _secret_stores). The in-memory

@@ -3,7 +3,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..config import Settings, get_settings
-from ..dependencies import SecretStoreDep, SecretValidatorDep
+from ..dependencies import (
+    SecretStoreDep,
+    SecretValidatorDep,
+    pipeline_supports_lesson_regeneration,
+)
 from ..schemas import SecretStatusView, SecretValue, SettingsView
 from ..secrets import KNOWN_SECRETS, SecretStatus, SecretValidationError
 
@@ -26,6 +30,7 @@ def get_settings_view(
     return SettingsView(
         secrets=[_to_view(s) for s in store.statuses()],
         pipeline=settings.pipeline,
+        supports_lesson_regeneration=pipeline_supports_lesson_regeneration(settings.pipeline),
     )
 
 

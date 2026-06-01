@@ -19,6 +19,7 @@ import { useCourseStream } from "./hooks/useCourseStream";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
 import { regenerateLesson } from "./lib/loadCourse";
+import { fetchSettings } from "./lib/settings";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
@@ -96,6 +97,23 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
+  // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
+  // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
+  const [canRegenerate, setCanRegenerate] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchSettings(apiBaseUrl, controller.signal)
+      .then((settings) => {
+        if (!controller.signal.aborted) setCanRegenerate(settings.supportsLessonRegeneration);
+      })
+      .catch(() => {
+        // Fail closed: a settings fetch we can't complete hides the action. Guard the unmount race
+        // like the success path so an aborted fetch never sets state on a gone component.
+        if (!controller.signal.aborted) setCanRegenerate(false);
+      });
+    return () => controller.abort();
+  }, [apiBaseUrl]);
   // A ready course defaults to the lesson reader (Learn); Map shows the prerequisite graph.
   const [viewMode, setViewMode] = useState<CourseView>("learn");
   // A Map → Learn drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
@@ -150,7 +168,11 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
         <CourseReader
           course={course}
           focusRequest={focusRequest}
-          onRegenerate={(lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)}
+          onRegenerate={
+            canRegenerate
+              ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
+              : undefined
+          }
         />
       ),
   });

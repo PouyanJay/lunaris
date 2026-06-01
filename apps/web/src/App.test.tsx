@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
@@ -85,13 +85,27 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.unstubAllGlobals();
   });
 
-  /** StudioApp now fetches GET /api/runs on mount (the sidebar) AND streams the build, so the
-   *  fetch mock routes by URL: the run history is JSON, the build is an SSE stream. */
-  function routedFetch(handlers: { runs?: unknown; build?: unknown; course?: unknown }) {
+  /** StudioApp fetches GET /api/runs (sidebar) + GET /api/settings (regenerate capability) on mount
+   *  AND streams the build, so the fetch mock routes by URL: run history + settings are JSON, the
+   *  build is an SSE stream. ``settings`` defaults to a regenerate-capable pipeline. */
+  function routedFetch(handlers: {
+    runs?: unknown;
+    build?: unknown;
+    course?: unknown;
+    settings?: unknown;
+  }) {
     return vi.fn((input: Parameters<typeof fetch>[0]) => {
       const url = input instanceof Request ? input.url : String(input);
       if (url.includes("/api/runs")) {
         return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
+      }
+      if (url.includes("/api/settings")) {
+        const settings = handlers.settings ?? {
+          secrets: [],
+          pipeline: "stub",
+          supportsLessonRegeneration: true,
+        };
+        return Promise.resolve({ ok: true, json: async () => settings });
       }
       if (url.includes("/api/courses/stream")) {
         return Promise.resolve(handlers.build);
@@ -234,6 +248,47 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/courses/c-1"),
       expect.anything(),
+    );
+  });
+
+  it("offers the regenerate action when the pipeline supports it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [makeRun({ id: "c-1", topic: "queues" })],
+        course: makeCourse({ id: "c-1", topic: "queues" }),
+        settings: { secrets: [], pipeline: "stub", supportsLessonRegeneration: true },
+      }),
+    );
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+    await screen.findByRole("heading", { name: "queues" });
+
+    // The capability fetch resolves to true, so the reader offers the per-lesson regenerate action.
+    expect(await screen.findByRole("button", { name: /regenerate lesson/i })).toBeInTheDocument();
+  });
+
+  it("hides the regenerate action when the pipeline can't regenerate", async () => {
+    // The agent pipeline 501s on regenerate; the reader must not surface a button that always fails.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [makeRun({ id: "c-1", topic: "queues" })],
+        course: makeCourse({ id: "c-1", topic: "queues" }),
+        settings: { secrets: [], pipeline: "agent", supportsLessonRegeneration: false },
+      }),
+    );
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /queues/i }));
+    await screen.findByRole("heading", { name: "queues" });
+
+    // waitFor drains the capability-fetch microtask, so the absence reflects
+    // supportsLessonRegeneration === false — not merely an unresolved fetch (canRegenerate
+    // defaults to false). The paired "offers" test proves the button CAN appear.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /regenerate lesson/i })).not.toBeInTheDocument(),
     );
   });
 
