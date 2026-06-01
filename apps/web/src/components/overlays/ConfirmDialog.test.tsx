@@ -69,4 +69,26 @@ describe("ConfirmDialog", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("This run is still building.");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
+
+  it("restores focus to the triggering control when it closes", () => {
+    function Harness({ open }: { open: boolean }) {
+      return (
+        <>
+          <button>Open</button>
+          <ConfirmDialog {...base} open={open} />
+        </>
+      );
+    }
+    const { rerender } = render(<Harness open={false} />);
+    const trigger = screen.getByRole("button", { name: "Open" });
+    trigger.focus();
+
+    // Open: focus moves into the dialog (onto the confirm action).
+    rerender(<Harness open />);
+    expect(screen.getByRole("button", { name: "Delete course" })).toHaveFocus();
+
+    // Close: focus returns to the control that opened it (WCAG focus management).
+    rerender(<Harness open={false} />);
+    expect(trigger).toHaveFocus();
+  });
 });

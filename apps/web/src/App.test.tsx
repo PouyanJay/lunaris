@@ -441,4 +441,107 @@ describe("App — live studio (VITE_API_URL set)", () => {
       expect.objectContaining({ method: "DELETE" }),
     );
   });
+
+  it("cancelling the delete keeps the run", async () => {
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (url.includes("/api/runs")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [makeRun({ id: "c-1", topic: "queues", status: "completed" })],
+        });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete course: queues/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^cancel$/i }));
+
+    // Dialog dismissed, run still listed — and no DELETE was issued (the mock would have thrown).
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("queues")).toBeInTheDocument();
+  });
+
+  it("keeps the dialog open with the reason when the API rejects the delete (409)", async () => {
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (url.includes("/api/runs")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => [makeRun({ id: "c-1", topic: "queues", status: "completed" })],
+        });
+      }
+      if (/\/api\/courses\/c-1$/.test(url) && method === "DELETE") {
+        return Promise.resolve({ ok: false, status: 409 });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete course: queues/i }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete course$/i }));
+
+    // The dialog stays open carrying the 409 reason; the run is not removed.
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(/still building/i);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("queues")).toBeInTheDocument();
+  });
+
+  it("closes the open course's canvas when that run is deleted", async () => {
+    let runsReads = 0;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (url.includes("/api/runs")) {
+        runsReads += 1;
+        const runs =
+          runsReads === 1 ? [makeRun({ id: "c-1", topic: "queues", status: "completed" })] : [];
+        return Promise.resolve({ ok: true, json: async () => runs });
+      }
+      if (/\/api\/courses\/c-1$/.test(url) && method === "DELETE") {
+        return Promise.resolve({ ok: true, status: 204 });
+      }
+      if (/\/api\/courses\/c-1$/.test(url)) {
+        return Promise.resolve({ ok: true, json: async () => makeCourse({ id: "c-1", topic: "queues" }) });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    // Open the run in the canvas, then delete it.
+    fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
+    await screen.findByRole("heading", { name: "queues" });
+    fireEvent.click(screen.getByRole("button", { name: /delete course: queues/i }));
+    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }));
+
+    // The canvas drops the deleted course and returns to the build surface.
+    expect(await screen.findByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "queues" })).not.toBeInTheDocument();
+  });
 });

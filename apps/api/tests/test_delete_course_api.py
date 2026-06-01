@@ -14,6 +14,7 @@ from lunaris_api.dependencies import get_course_service
 from lunaris_api.service import CourseService, InvalidCourseIdError
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
+from lunaris_runtime.schema import RunStatus
 
 
 @pytest.fixture
@@ -91,6 +92,52 @@ async def test_delete_unknown_course_is_404(client: httpx.AsyncClient) -> None:
     response = await client.delete("/api/courses/doesnotexist")
 
     assert response.status_code == 404
+
+
+async def test_delete_a_row_only_orphan_returns_204(
+    client: httpx.AsyncClient, run_store: InMemoryRunStore
+) -> None:
+    # A finished run whose course file is gone (or was never written) — deleting it should still
+    # clean up the orphan row, not 404.
+    await run_store.start(run_id="r", course_id="rowonly", topic="t")
+    await run_store.finish(
+        course_id="rowonly", status=RunStatus.COMPLETED, kc_count=1, module_count=1
+    )
+
+    response = await client.delete("/api/courses/rowonly")
+
+    assert response.status_code == 204
+    assert await run_store.get(course_id="rowonly") is None
+
+
+async def test_delete_a_file_only_orphan_returns_204(
+    client: httpx.AsyncClient, tmp_path: Path
+) -> None:
+    # A stored course with no run-history row (e.g. recorded by a no-history caller) — deleting it
+    # should remove the file, not 404.
+    (tmp_path / "fileonly.json").write_text("{}")
+
+    response = await client.delete("/api/courses/fileonly")
+
+    assert response.status_code == 204
+    assert not (tmp_path / "fileonly.json").exists()
+
+
+async def test_delete_a_failed_run_with_its_file_returns_204(
+    client: httpx.AsyncClient, run_store: InMemoryRunStore, tmp_path: Path
+) -> None:
+    # A failed run that still left a partial file — both assets should go.
+    await run_store.start(run_id="r", course_id="failedrun", topic="t")
+    await run_store.finish(
+        course_id="failedrun", status=RunStatus.FAILED, kc_count=0, module_count=0
+    )
+    (tmp_path / "failedrun.json").write_text("{}")
+
+    response = await client.delete("/api/courses/failedrun")
+
+    assert response.status_code == 204
+    assert await run_store.get(course_id="failedrun") is None
+    assert not (tmp_path / "failedrun.json").exists()
 
 
 async def test_delete_emits_a_structured_log_for_the_course(
