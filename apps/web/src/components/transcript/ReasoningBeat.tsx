@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 import { parseReasoning } from "../../lib/parseReasoning";
 import { JsonArtifact } from "./JsonArtifact";
+import { JsonGroup } from "./JsonGroup";
 import styles from "./ReasoningBeat.module.css";
 
 interface ReasoningBeatProps {
@@ -20,18 +21,22 @@ export function ReasoningBeat({ text, streaming }: ReasoningBeatProps) {
 
   return (
     <div className={styles.beat}>
-      {segments.map((segment, index) =>
-        segment.kind === "prose" ? (
-          <p key={`p-${index}`} className={styles.prose}>
-            {segment.text}
-            {streaming && index === lastIndex && (
-              <span className={styles.caret} aria-hidden="true" data-testid="reasoning-caret" />
-            )}
-          </p>
-        ) : (
-          <JsonArtifact key={`j-${index}`} source={segment.source} closed={segment.closed} />
-        ),
-      )}
+      {segments.map((segment, index) => {
+        if (segment.kind === "prose") {
+          return (
+            <p key={`p-${index}`} className={styles.prose}>
+              {segment.text}
+              {streaming && index === lastIndex && (
+                <span className={styles.caret} aria-hidden="true" data-testid="reasoning-caret" />
+              )}
+            </p>
+          );
+        }
+        if (segment.kind === "jsonGroup") {
+          return <JsonGroup key={`g-${index}`} sources={segment.sources} closed={segment.closed} />;
+        }
+        return <JsonArtifact key={`j-${index}`} source={segment.source} closed={segment.closed} />;
+      })}
     </div>
   );
 }

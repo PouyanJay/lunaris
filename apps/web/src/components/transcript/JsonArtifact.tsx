@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { VisualSpec } from "../../types/course";
 import { ComparisonTable } from "../reader/visuals/ComparisonTable";
@@ -30,35 +30,24 @@ export function JsonArtifact({ source, closed }: JsonArtifactProps) {
   // summary so a long dump never floods the view — the user expands it on demand.
   const [open, setOpen] = useState(() => spec !== null || !closed);
 
-  const { available, explanation, explaining, explainError, request } = useExplainState(source);
-  // Explain is offered for finished, dense blobs — not a diagram (it explains itself) nor a blob
-  // still streaming in — and only when the service is available and it hasn't already run.
-  const canExplain = available && closed && spec === null && explanation === null;
+  // Finished, substantial, non-diagram blobs auto-explain: a plain-language summary streams in
+  // below on its own (no click). Diagrams explain themselves; trivial blobs need no narration.
+  const shouldExplain = closed && spec === null && isSubstantial(parsed, source);
+  const { explanation, explaining, explainError } = useExplainState(source, shouldExplain);
 
   return (
     <div className={styles.artifact}>
-      <div className={styles.head}>
-        <button
-          type="button"
-          className={styles.toggle}
-          onClick={() => setOpen((value) => !value)}
-          aria-expanded={open}
-        >
-          <span className={`eyebrow ${styles.kind}`}>{spec ? "diagram" : "json"}</span>
-          <span className={`mono ${styles.summary}`}>{summary}</span>
-          <span className={styles.chevron} data-open={open} aria-hidden="true" />
-        </button>
-        {canExplain && (
-          <button
-            type="button"
-            className={styles.explainButton}
-            onClick={request}
-            disabled={explaining}
-          >
-            {explaining ? "Explaining…" : "Explain"}
-          </button>
-        )}
-      </div>
+      <button
+        type="button"
+        className={styles.head}
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        <span className={`eyebrow ${styles.kind}`}>{spec ? "diagram" : "json"}</span>
+        <span className={`mono ${styles.summary}`}>{summary}</span>
+        <span className={styles.chevron} data-open={open} aria-hidden="true" />
+      </button>
+      {explaining && <p className={styles.explaining}>Explaining…</p>}
       {explanation && <p className={styles.explanation}>{explanation}</p>}
       {explainError && (
         <p className={styles.explainError} role="status">
@@ -194,22 +183,41 @@ function tokenClass(token: string): "key" | "str" | "bool" | "nul" | "num" {
   return "num";
 }
 
-/** The Explain lifecycle for one blob: availability, the in-flight/result/error state, and the
- *  request trigger — kept out of the component body so it stays focused on rendering. */
-function useExplainState(source: string) {
+// A blob is worth narrating once its source is this long, or it carries at least this many entries —
+// below both, the summary already says all there is to say, so auto-explain stays quiet.
+const SUBSTANTIAL_SOURCE_CHARS = 100;
+const SUBSTANTIAL_ENTRY_COUNT = 3;
+
+/** Whether a blob is worth a plain-language explanation: a long source, or a non-trivial object /
+ *  array. Tiny blobs (a lone judgment) are self-evident from their summary and aren't auto-explained. */
+function isSubstantial(parsed: unknown, source: string): boolean {
+  if (source.length >= SUBSTANTIAL_SOURCE_CHARS) return true;
+  if (Array.isArray(parsed)) return parsed.length >= SUBSTANTIAL_ENTRY_COUNT;
+  if (parsed && typeof parsed === "object") {
+    return Object.keys(parsed).length >= SUBSTANTIAL_ENTRY_COUNT;
+  }
+  return false;
+}
+
+/** The auto-Explain lifecycle for one blob: when `auto` and the service is available, fetch a
+ *  plain-language explanation exactly once and expose its in-flight / result / error state. Kept out
+ *  of the component body so it stays focused on rendering. */
+function useExplainState(source: string, auto: boolean) {
   const { available, explain } = useExplainApi();
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explaining, setExplaining] = useState(false);
   const [explainError, setExplainError] = useState<string | null>(null);
+  const requestedRef = useRef(false);
 
-  const request = useCallback(() => {
+  useEffect(() => {
+    if (!auto || !available || requestedRef.current) return;
+    requestedRef.current = true;
     setExplaining(true);
-    setExplainError(null);
     explain(source)
       .then((result) => setExplanation(result))
       .catch(() => setExplainError("Couldn't explain this right now."))
       .finally(() => setExplaining(false));
-  }, [explain, source]);
+  }, [auto, available, explain, source]);
 
-  return { available, explanation, explaining, explainError, request };
+  return { explanation, explaining, explainError };
 }

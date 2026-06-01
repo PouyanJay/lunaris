@@ -65,14 +65,49 @@ describe("parseReasoning", () => {
     ]);
   });
 
-  it("handles multiple large JSON blobs in one beat", () => {
-    const a = '{"is_prereq": true, "strength": 0.85, "from": "tcp", "to": "tls"}';
-    const b = '{"is_prereq": false, "strength": 0.15, "from": "tls", "to": "dns"}';
-    const segments = parseReasoning(`${a} then ${b}`);
+  it("coalesces a run of small JSON blobs (with noise between) into one group", () => {
+    // The flood case: many small judgments separated by stray ```json labels / fragments.
+    const a = '{"is_prereq": true, "strength": 0.85, "pair": "a"}';
+    const b = '{"is_prereq": false, "strength": 0.15, "pair": "b"}';
+    const c = '{"is_prereq": true, "strength": 0.72, "pair": "c"}';
+    const segments = parseReasoning(`${a} json ${b} ${c}`);
+
+    expect(segments).toEqual([{ kind: "jsonGroup", sources: [a, b, c], closed: true }]);
+  });
+
+  it("coalesces a run of fenced JSON blobs (the real flood shape)", () => {
+    // Fenced blobs are lifted at any size; these small ones then coalesce into one closed group.
+    const fence = (body: string) => "```json\n" + body + "\n```";
+    const segments = parseReasoning(
+      `${fence('{"is_prereq": true}')}\n${fence('{"is_prereq": false}')}`,
+    );
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ kind: "jsonGroup", closed: true });
+    expect((segments[0] as { sources: string[] }).sources).toHaveLength(2);
+  });
+
+  it("keeps a lone small JSON blob as an individual artifact", () => {
+    const blob = '{"is_prereq": true, "strength": 0.85, "pair": "x"}';
+    const segments = parseReasoning(`Judging the pair now: ${blob} and moving on.`);
+
+    expect(segments).toEqual([
+      { kind: "prose", text: "Judging the pair now: " },
+      { kind: "json", source: blob, closed: true },
+      { kind: "prose", text: " and moving on." },
+    ]);
+  });
+
+  it("keeps consecutive LARGE blobs individual (only small ones group)", () => {
+    // Each blob is well over the small-blob threshold, so they stay worth-their-own-artifact.
+    const big = (n: number) => `{"module":${n},"detail":"${"x".repeat(220)}"}`;
+    const a = big(1);
+    const b = big(2);
+    const segments = parseReasoning(`${a} ${b}`);
 
     expect(segments).toEqual([
       { kind: "json", source: a, closed: true },
-      { kind: "prose", text: " then " },
+      { kind: "prose", text: " " },
       { kind: "json", source: b, closed: true },
     ]);
   });
