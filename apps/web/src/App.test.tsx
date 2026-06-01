@@ -146,6 +146,31 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
+  it("collapses the sidebar to a mini icon rail and expands it again", async () => {
+    // Asserts on DOM presence: the collapsed rail removes the history + splitter from the tree
+    // (conditional render), not via CSS — jsdom doesn't apply CSS, so absence here is real absence.
+    vi.stubGlobal("fetch", routedFetch({ runs: [] }));
+    render(<App />);
+    await screen.findByText(/no runs yet/i);
+
+    // Expanded: the run history + resize splitter are shown; the toggle collapses.
+    expect(screen.getByText("Recent runs")).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: /resize sidebar/i })).toBeInTheDocument();
+
+    // Collapse → mini rail: history + splitter gone, the toggle now expands, actions stay as icons.
+    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
+    expect(screen.queryByText("Recent runs")).not.toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: /resize sidebar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
+
+    // Expand → the run history + splitter return.
+    fireEvent.click(screen.getByRole("button", { name: /expand sidebar/i }));
+    expect(screen.getByText("Recent runs")).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: /resize sidebar/i })).toBeInTheDocument();
+  });
+
   it("streams the agent transcript, lands on the ready reader, and Map shows the graph", async () => {
     vi.stubGlobal(
       "fetch",

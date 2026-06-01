@@ -48,6 +48,10 @@
   --text-secondary: var(--gray-600);
   --text-muted: var(--gray-500);
   --text-on-accent: #ffffff;
+  /* Ink for text/icons sitting ON the amber accent (e.g. the accent action button). Amber is a
+     light hue, so it needs DARK text — white fails AA on it. This near-black clears AA on both
+     themes (matches the brand mark's ink). */
+  --accent-text: #1a1206;
   --focus-ring: var(--accent-500);
   --primary: var(--gray-900);
   --primary-text: #ffffff;

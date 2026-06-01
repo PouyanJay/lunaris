@@ -39,6 +39,16 @@
   border-color: var(--text-muted);
 }
 
+/* The brand-amber hero CTA. Amber is a light hue, so the label is dark ink (--accent-text), not
+   white — white fails AA on it. Reserved for the primary call-to-action (see Button.tsx). */
+.accent {
+  background: var(--accent-500);
+  color: var(--accent-text);
+}
+.accent:hover {
+  background: var(--accent-600);
+}
+
 .danger {
   background: var(--danger-solid);
   color: var(--danger-text);

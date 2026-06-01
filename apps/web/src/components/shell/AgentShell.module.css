@@ -1,25 +1,78 @@
 .shell {
-  --sidebar-width: 264px;
   /* padding (space-3 × 2 = 24px) + a control row (the metric band / Button, ~29px). Holds the
      canvas header height steady across views (title-only vs title + metric band) — no jump. */
   --header-min-height: 53px;
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-columns: var(--sidebar-width) 1fr;
+  display: flex;
   background: var(--bg);
   border-top: var(--border-width) solid var(--frame-top);
 }
 
+/* While dragging the splitter: force the resize cursor and kill text selection so the drag feels
+   solid and never selects canvas text mid-drag. */
+.shell[data-resizing] {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .sidebar {
+  flex: none;
+  width: var(--sidebar-width);
   min-height: 0;
-  border-right: var(--border-width) solid var(--border);
+  overflow: hidden;
   background: var(--bg-subtle);
+  border-right: var(--border-width) solid var(--border);
+  transition: width var(--dur) var(--ease);
+}
+/* During a drag the width tracks the cursor 1:1 — no easing lag behind the pointer. */
+.shell[data-resizing] .sidebar {
+  transition: none;
+}
+
+/* The draggable seam: a zero-width flex overlay sitting on the rail's right border. The border is
+   the persistent hairline; this is the grab handle, lighting an accent line on hover/focus/drag.
+   Keyboard-resizable (role=separator, arrow keys). */
+.resizer {
+  flex: none;
+  position: relative;
+  width: 0;
+  align-self: stretch;
+  z-index: 1;
+}
+.resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+  cursor: col-resize;
+}
+.resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--accent-500);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer[data-resizing]::after {
+  opacity: 1;
+}
+.resizer:focus-visible {
+  outline: none;
 }
 
 .canvas {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-width: 0;
   min-height: 0;
 }
@@ -35,10 +88,14 @@
   min-height: var(--header-min-height);
 }
 
+/* The contextual title styled as an oversized eyebrow label — uppercase, tracked, muted — matching
+   the canvas "Build a course" treatment (kept at the title size, AA-legible secondary tone). */
 .title {
   font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -58,9 +115,8 @@
   position: relative;
 }
 
-/* Narrow viewports: trim the rail (productivity tool — desktop-first, degrades gracefully). */
-@media (max-width: 720px) {
-  .shell {
-    --sidebar-width: 200px;
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
   }
 }

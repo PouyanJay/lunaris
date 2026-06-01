@@ -19,6 +19,7 @@ import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
+import { useSidebarLayout } from "./hooks/useSidebarLayout";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { fetchSettings } from "./lib/settings";
@@ -101,6 +102,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   const { state, generate, reset } = useCourseStream(apiBaseUrl);
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
+  const sidebarLayout = useSidebarLayout();
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
@@ -206,6 +208,8 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       onNewCourse={startNewCourse}
       onOpenSettings={() => setSettingsOpen(true)}
       settingsActive={settingsOpen}
+      collapsed={sidebarLayout.collapsed}
+      onToggleCollapse={sidebarLayout.toggleCollapsed}
       onSelectRun={selectRun}
       onDeleteRun={deleteRun.request}
       onCancelRun={(run) => cancellation.cancel(run.runId)}
@@ -280,7 +284,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   return (
     <>
-      <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta}>
+      <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta} layout={sidebarLayout}>
         {canvas.body}
       </AgentShell>
       <ConfirmDialog

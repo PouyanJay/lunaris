@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { BrandMark } from "./shell/BrandMark";
 import styles from "./AppFrame.module.css";
 
 const MAIN_CONTENT_ID = "graph-body";
@@ -21,7 +22,7 @@ export function AppFrame({ title, meta, children }: AppFrameProps) {
       </a>
       <header className={styles.header}>
         <div className={styles.brand}>
-          <span className={styles.mark} aria-hidden="true" />
+          <BrandMark size={20} />
           <div className={styles.heading}>
             <span className="eyebrow">Lunaris · Prerequisite graph</span>
             <h1 className={styles.title} title={title}>

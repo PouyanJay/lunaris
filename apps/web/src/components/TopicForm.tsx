@@ -42,13 +42,17 @@ export function TopicForm({ onGenerate }: TopicFormProps) {
         }}
       >
         <span className="eyebrow">Build a course</span>
-        <h2 className={styles.title}>What do you want to learn?</h2>
+        <h2 className={styles.title}>
+          What do you want to <span className={styles.titleAccent}>learn</span>?
+        </h2>
         <p id={hintId} className={styles.hint}>
           Name a topic. Lunaris maps its prerequisites, writes the lessons, and verifies every claim
           &mdash; you&rsquo;ll watch each step run.
         </p>
 
-        <label className={styles.label} htmlFor={inputId}>
+        {/* The field is self-evident from the heading + placeholder; keep the label for screen
+            readers only (never placeholder-as-label) rather than showing a redundant "Topic". */}
+        <label className="sr-only" htmlFor={inputId}>
           Topic
         </label>
         <div className={styles.field}>
@@ -70,7 +74,7 @@ export function TopicForm({ onGenerate }: TopicFormProps) {
             maxLength={200}
             autoFocus
           />
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="accent">
             Generate course
           </Button>
         </div>
