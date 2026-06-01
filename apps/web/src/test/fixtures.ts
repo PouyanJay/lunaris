@@ -223,6 +223,7 @@ export function makeAgentEvent(
     sequence,
     stage: null,
     text: null,
+    delta: null,
     tool: null,
     toolArgs: null,
     result: null,

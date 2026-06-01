@@ -1,9 +1,13 @@
+import pytest
 from lunaris_runtime.schema import (
+    AgentEvent,
+    AgentEventKind,
     BloomLevel,
     Course,
     CourseStatus,
     KnowledgeComponent,
 )
+from pydantic import ValidationError
 
 
 def test_course_minimal_construction_uses_defaults() -> None:
@@ -38,3 +42,19 @@ def test_knowledge_component_difficulty_is_bounded() -> None:
     # Assert
     assert kc.difficulty == 0.4
     assert kc.bloom_ceiling is BloomLevel.APPLY
+
+
+def test_agent_event_rejects_both_text_and_delta() -> None:
+    # Arrange / Act / Assert — a REASONING beat is a whole text OR a streaming delta, never both.
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        AgentEvent(kind=AgentEventKind.REASONING, run_id="r", text="whole", delta="chunk")
+
+
+def test_agent_event_allows_text_or_delta_alone() -> None:
+    # Arrange / Act — each form on its own is valid.
+    whole = AgentEvent(kind=AgentEventKind.REASONING, run_id="r", text="whole beat")
+    streamed = AgentEvent(kind=AgentEventKind.REASONING, run_id="r", delta="a chunk")
+
+    # Assert
+    assert whole.delta is None
+    assert streamed.text is None

@@ -280,8 +280,8 @@ export interface AgentTodo {
 /**
  * One fine-grained event from the deep agent's execution, streamed live to the transcript
  * (mirrors the AgentEvent schema, serialised camelCase). Fields are populated per `kind`:
- * `reasoning` → `text`; `tool_call` → `tool` + `toolArgs`; `tool_result` → `tool` + `result`;
- * `todo` → `todos`.
+ * `reasoning` → `text` (a whole beat) or `delta` (one streaming token chunk to append to the live
+ * beat); `tool_call` → `tool` + `toolArgs`; `tool_result` → `tool` + `result`; `todo` → `todos`.
  */
 export interface AgentEvent {
   kind: AgentEventKind;
@@ -291,6 +291,7 @@ export interface AgentEvent {
    *  first stage), so the live timeline buckets it under its phase deterministically. */
   stage: ProgressStage | null;
   text: string | null;
+  delta: string | null;
   tool: string | null;
   toolArgs: Record<string, unknown> | null;
   result: string | null;

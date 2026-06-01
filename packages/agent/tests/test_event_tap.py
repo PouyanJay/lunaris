@@ -10,7 +10,7 @@ run_id correlation + sequencing, multi-node chunks, and content-block tool resul
 from collections.abc import AsyncIterator
 from typing import Any
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from lunaris_agent.harness.agent_reporter import AgentReporter
 from lunaris_agent.harness.event_tap import stream_course_build
 from lunaris_runtime.schema import AgentEvent, AgentEventKind
@@ -38,11 +38,37 @@ class _ScriptedUpdatesAgent:
             yield update
 
 
+class _ScriptedMultiModeAgent:
+    """A stand-in compiled agent replaying a fixed ``astream(["updates","messages"])`` sequence.
+
+    Each item is a ``(mode, data)`` tuple — the shape LangGraph yields when ``stream_mode`` is a
+    list: ``("updates", {node: delta})`` and ``("messages", (message_chunk, metadata))``.
+    """
+
+    def __init__(self, items: list[tuple[str, Any]]) -> None:
+        self._items = items
+
+    async def astream(self, inputs: Any, stream_mode: Any) -> AsyncIterator[tuple[str, Any]]:
+        assert stream_mode == ["updates", "messages"], f"expected multi-mode, got {stream_mode!r}"
+        for item in self._items:
+            yield item
+
+
 async def _run(updates: list[dict[str, Any]], run_id: str = "run-x") -> _RecordingSink:
     """Drive the tap over a scripted updates stream and return the recording sink."""
     sink = _RecordingSink()
     agent = _ScriptedUpdatesAgent(updates)
     await stream_course_build(agent, {"messages": []}, AgentReporter(run_id, sink))
+    return sink
+
+
+async def _run_tokens(items: list[tuple[str, Any]], run_id: str = "run-x") -> _RecordingSink:
+    """Drive the tap in token-streaming mode over a scripted multi-mode stream."""
+    sink = _RecordingSink()
+    agent = _ScriptedMultiModeAgent(items)
+    await stream_course_build(
+        agent, {"messages": []}, AgentReporter(run_id, sink), stream_tokens=True
+    )
     return sink
 
 
@@ -173,3 +199,109 @@ async def test_event_tap_renders_content_block_tool_results() -> None:
     # Assert — the text blocks are flattened into the result summary.
     assert sink.events[0].kind is AgentEventKind.TOOL_RESULT
     assert sink.events[0].result == "extracted 3"
+
+
+async def test_event_tap_streams_token_deltas_and_suppresses_the_duplicate_full_text() -> None:
+    # Arrange — the model narrates token-by-token via the messages stream, then the SAME assistant
+    # message arrives whole on the updates stream (text + a tool call). Its text already streamed,
+    # so it must NOT re-emit as a complete reasoning beat; only its tool call rides updates.
+    full = AIMessage(
+        content="Let me extract.",
+        tool_calls=[{"name": "extract_concepts", "args": {"topic": "x"}, "id": "t1"}],
+    )
+    items: list[tuple[str, Any]] = [
+        ("messages", (AIMessageChunk(content="Let me "), {"langgraph_node": "model"})),
+        ("messages", (AIMessageChunk(content="extract."), {"langgraph_node": "model"})),
+        ("updates", {"model": {"messages": [full]}}),
+    ]
+
+    # Act
+    sink = await _run_tokens(items)
+
+    # Assert — two streaming reasoning deltas (carried on `delta`, not `text`), then the tool call.
+    assert [e.kind for e in sink.events] == [
+        AgentEventKind.REASONING,
+        AgentEventKind.REASONING,
+        AgentEventKind.TOOL_CALL,
+    ]
+    # The two chunks arrive as separate deltas (the frontend stitches them into one growing beat).
+    assert [e.delta for e in sink.events[:2]] == ["Let me ", "extract."]
+    # The full text never double-emits as a `text` reasoning beat in token mode.
+    assert all(e.text is None for e in sink.events)
+    assert sink.events[2].tool == "extract_concepts"
+    assert sink.events[2].tool_args == {"topic": "x"}
+
+
+async def test_event_tap_token_mode_drops_a_full_text_message_with_no_tool_calls() -> None:
+    # Arrange — a pure-text assistant turn (no tool calls): it streams as deltas, then the same
+    # whole message rides the updates stream. The updates copy must be fully suppressed (zero
+    # events), so the reasoning never doubles even with no tool call to carry from the updates side.
+    items: list[tuple[str, Any]] = [
+        ("messages", (AIMessageChunk(content="I have "), {"langgraph_node": "model"})),
+        ("messages", (AIMessageChunk(content="planned it."), {"langgraph_node": "model"})),
+        ("updates", {"model": {"messages": [AIMessage(content="I have planned it.")]}}),
+    ]
+
+    # Act
+    sink = await _run_tokens(items)
+
+    # Assert — only the two streaming deltas; the whole-text updates copy emitted nothing.
+    assert [e.kind for e in sink.events] == [AgentEventKind.REASONING, AgentEventKind.REASONING]
+    assert [e.delta for e in sink.events] == ["I have ", "planned it."]
+
+
+async def test_event_tap_token_mode_ignores_tool_call_chunks_and_streamed_tool_messages() -> None:
+    # Arrange — the messages stream also carries tool-call arg deltas (empty text) and streamed tool
+    # results; neither is reasoning. The structured result is read from the updates stream instead.
+    tool_call_chunk = AIMessageChunk(
+        content="",
+        tool_call_chunks=[{"name": "x", "args": "{}", "id": "t", "index": 0}],
+    )
+    streamed_tool = ToolMessage(content="streamed", name="extract_concepts", tool_call_id="t")
+    items: list[tuple[str, Any]] = [
+        ("messages", (tool_call_chunk, {"langgraph_node": "model"})),
+        ("messages", (streamed_tool, {"langgraph_node": "tools"})),
+        (
+            "updates",
+            {
+                "tools": {
+                    "messages": [
+                        ToolMessage(content="3 concepts", name="extract_concepts", tool_call_id="t")
+                    ]
+                }
+            },
+        ),
+    ]
+
+    # Act
+    sink = await _run_tokens(items)
+
+    # Assert — only the one structured tool result; no spurious reasoning from the messages stream.
+    assert [e.kind for e in sink.events] == [AgentEventKind.TOOL_RESULT]
+    assert sink.events[0].result == "3 concepts"
+
+
+async def test_event_tap_token_mode_still_maps_todos_from_the_updates_stream() -> None:
+    # Arrange — the planning tool still surfaces as a TODO via updates while reasoning streams.
+    todo_call = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "write_todos",
+                "args": {"todos": [{"content": "Extract concepts", "status": "in_progress"}]},
+                "id": "p0",
+            }
+        ],
+    )
+    items: list[tuple[str, Any]] = [
+        ("messages", (AIMessageChunk(content="Planning…"), {"langgraph_node": "model"})),
+        ("updates", {"model": {"messages": [todo_call]}}),
+    ]
+
+    # Act
+    sink = await _run_tokens(items)
+
+    # Assert — the streamed reasoning delta, then the plan (todos); write_todos itself stays hidden.
+    assert [e.kind for e in sink.events] == [AgentEventKind.REASONING, AgentEventKind.TODO]
+    assert sink.events[0].delta == "Planning…"
+    assert sink.events[1].todos == [{"content": "Extract concepts", "status": "in_progress"}]

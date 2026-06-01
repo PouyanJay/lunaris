@@ -3,9 +3,11 @@ import type { AgentEvent, AgentTodo, ProgressEvent, ProgressStage } from "../typ
 /** A phase's lifecycle on the build timeline. Only the single in-flight phase is `active`. */
 export type PhaseStatus = "pending" | "active" | "done";
 
-/** A rendered entry inside a phase: a reasoning beat, or a tool call paired with its result. */
+/** A rendered entry inside a phase: a reasoning beat, or a tool call paired with its result. A
+ *  `streaming` reasoning beat is one being assembled live from token deltas (the live path); the
+ *  UI grows its text in place and shows a caret while it is the active phase's latest beat. */
 export type TimelineEntry =
-  | { kind: "reasoning"; key: string; text: string }
+  | { kind: "reasoning"; key: string; text: string; streaming?: boolean }
   | {
       kind: "tool";
       key: string;
@@ -66,6 +68,32 @@ function pendingToolIndex(staged: StagedEntry[], tool: string): number {
   return -1;
 }
 
+/** Append a streaming token chunk to the in-progress reasoning beat, or start a new one. Consecutive
+ *  deltas in the same phase grow one `<p>` (keyed by the first delta), so the reasoning forms in
+ *  place rather than spawning a beat per token; any other entry (a tool, or a whole-text beat) ends
+ *  the run, so a later delta begins a fresh streaming beat. */
+function appendDelta(
+  staged: StagedEntry[],
+  delta: string,
+  sequence: number,
+  phaseKey: string,
+): void {
+  const last = staged[staged.length - 1];
+  if (last?.entry.kind === "reasoning" && last.entry.streaming && last.phaseKey === phaseKey) {
+    // Replace (not mutate) the entry so the fold's intermediate state stays obvious, mirroring the
+    // call/result pairing below.
+    staged[staged.length - 1] = {
+      entry: { ...last.entry, text: last.entry.text + delta },
+      phaseKey,
+    };
+  } else {
+    staged.push({
+      entry: { kind: "reasoning", key: `r-${sequence}`, text: delta, streaming: true },
+      phaseKey,
+    });
+  }
+}
+
 /** Fold the agent events into staged entries: reasoning beats, and tool calls paired with their
  *  result. A pair follows the result's stage (a tool emits its boundary stage as it completes), so
  *  e.g. extract_concepts lands in Concepts even though its call fired during run_started. */
@@ -74,9 +102,13 @@ function stagedEntries(agentEvents: AgentEvent[]): StagedEntry[] {
   for (const event of agentEvents) {
     const phaseKey = phaseKeyForStage(event.stage);
     if (event.kind === "reasoning") {
-      const text = event.text?.trim();
-      if (text) {
-        staged.push({ entry: { kind: "reasoning", key: `r-${event.sequence}`, text }, phaseKey });
+      if (event.delta) {
+        appendDelta(staged, event.delta, event.sequence, phaseKey);
+      } else {
+        const text = event.text?.trim();
+        if (text) {
+          staged.push({ entry: { kind: "reasoning", key: `r-${event.sequence}`, text }, phaseKey });
+        }
       }
     } else if (event.kind === "tool_call") {
       staged.push({

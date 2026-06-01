@@ -134,20 +134,32 @@ function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef }: PhaseNode
 
       {expanded && (
         <div className={styles.body}>
-          {phase.entries.map((entry) =>
-            entry.kind === "reasoning" ? (
+          {phase.entries.map((entry, index) => {
+            if (entry.kind === "tool") {
+              return (
+                <ToolCallCard
+                  key={entry.key}
+                  tool={entry.tool}
+                  args={entry.args}
+                  result={entry.result}
+                />
+              );
+            }
+            // Show a live caret only on the active phase's latest beat while it is still streaming
+            // in — the visible signal the agent's reasoning is forming token-by-token.
+            const isLiveCaret =
+              entry.streaming === true &&
+              phase.status === "active" &&
+              index === phase.entries.length - 1;
+            return (
               <p key={entry.key} className={styles.reasoning}>
                 {entry.text}
+                {isLiveCaret && (
+                  <span className={styles.caret} aria-hidden="true" data-testid="reasoning-caret" />
+                )}
               </p>
-            ) : (
-              <ToolCallCard
-                key={entry.key}
-                tool={entry.tool}
-                args={entry.args}
-                result={entry.result}
-              />
-            ),
-          )}
+            );
+          })}
         </div>
       )}
     </li>

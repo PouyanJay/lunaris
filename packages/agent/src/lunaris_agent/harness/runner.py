@@ -76,6 +76,7 @@ class AgentCourseBuilder:
         critic: ICritic | None = None,
         visual_engine: VisualEngine | None = None,
         risk_tier: RiskTier = RiskTier.LOW,
+        stream_tokens: bool = False,
     ) -> None:
         self._model = model
         self._store = store
@@ -87,6 +88,15 @@ class AgentCourseBuilder:
         self._critic = critic or MinimalCritic()
         self._visual_engine = visual_engine
         self._risk_tier = risk_tier
+        # Token-by-token reasoning streaming: enabled only for a real streaming model (the live
+        # composition root sets it). The scripted no-key model keeps the deterministic ``updates``
+        # path, so the offline suite stays stable.
+        self._stream_tokens = stream_tokens
+
+    @property
+    def stream_tokens(self) -> bool:
+        """Whether this builder streams the agent's reasoning token-by-token (live path only)."""
+        return self._stream_tokens
 
     async def run(
         self,
@@ -133,6 +143,7 @@ class AgentCourseBuilder:
                 deep_agent,
                 {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]},
                 agent_reporter,
+                stream_tokens=self._stream_tokens,
             )
             return self._finished_course(draft, course_id)
         finally:

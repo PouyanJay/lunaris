@@ -174,6 +174,52 @@ describe("buildTimeline", () => {
       expect.objectContaining({ kind: "tool", tool: "build_prerequisite_graph", result: "ok" }),
     ]);
   });
+
+  it("accumulates consecutive reasoning deltas into one growing streaming beat", () => {
+    const phases = buildTimeline(
+      [makeProgressEvent("run_started", 0)],
+      [
+        makeAgentEvent("reasoning", 0, { stage: "run_started", delta: "Let me " }),
+        makeAgentEvent("reasoning", 1, { stage: "run_started", delta: "extract " }),
+        makeAgentEvent("reasoning", 2, { stage: "run_started", delta: "the concepts." }),
+      ],
+    );
+
+    // One beat, keyed by the first delta, carrying the concatenated (untrimmed) text + a stream flag.
+    expect(phase(phases, "Start").entries).toEqual([
+      { kind: "reasoning", key: "r-0", text: "Let me extract the concepts.", streaming: true },
+    ]);
+  });
+
+  it("splits reasoning deltas into separate beats when a tool call interleaves them", () => {
+    const phases = buildTimeline(
+      [makeProgressEvent("concepts_extracted", 1)],
+      [
+        makeAgentEvent("reasoning", 0, { stage: "concepts_extracted", delta: "First " }),
+        makeAgentEvent("reasoning", 1, { stage: "concepts_extracted", delta: "thought." }),
+        makeAgentEvent("tool_call", 2, { stage: "concepts_extracted", tool: "extract_concepts" }),
+        makeAgentEvent("reasoning", 3, { stage: "concepts_extracted", delta: "Second thought." }),
+      ],
+    );
+
+    // The tool ends the first streaming run; the later delta begins a fresh beat (distinct key).
+    expect(phase(phases, "Concepts").entries).toEqual([
+      { kind: "reasoning", key: "r-0", text: "First thought.", streaming: true },
+      expect.objectContaining({ kind: "tool", tool: "extract_concepts" }),
+      { kind: "reasoning", key: "r-3", text: "Second thought.", streaming: true },
+    ]);
+  });
+
+  it("keeps whole-text reasoning beats non-streaming (the deterministic path)", () => {
+    const phases = buildTimeline(
+      [makeProgressEvent("run_started", 0)],
+      [makeAgentEvent("reasoning", 0, { stage: "run_started", text: "Planning the build." })],
+    );
+
+    const [entry] = phase(phases, "Start").entries;
+    expect(entry).toEqual({ kind: "reasoning", key: "r-0", text: "Planning the build." });
+    expect(entry).not.toHaveProperty("streaming", true);
+  });
 });
 
 describe("latestPlan", () => {

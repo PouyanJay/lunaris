@@ -1,18 +1,26 @@
 """Translate the deep agent's LangGraph stream into :class:`AgentEvent`s.
 
-Taps ``CompiledStateGraph.astream(stream_mode="updates")`` and maps each step the harness takes onto
-the fine-grained transcript channel the UI renders:
+Taps ``CompiledStateGraph.astream`` and maps each step the harness takes onto the fine-grained
+transcript channel the UI renders:
 
 - an assistant message's text → ``REASONING``,
 - its tool calls → ``TOOL_CALL`` (name + args), except the planning tool (``write_todos``) which
   surfaces as ``TODO`` (the live plan, as ``{content, status}`` items), and
 - each tool's result message → ``TOOL_RESULT`` (name + a compact summary).
 
-``updates`` mode is deliberate: it streams *state deltas* (the messages each node appends) while the
-model node still runs via ``ainvoke``. That keeps the deterministic no-key path working — token
-streaming (``astream_events`` / ``stream_mode="messages"``) forces the model into streaming mode,
-which the scripted fake model cannot satisfy for tool-call-only turns. It also drives the graph to
-completion exactly as ``ainvoke`` would, so the finalized course is read from the draft afterward.
+Two modes, chosen by ``stream_tokens``:
+
+- **off (default)** — ``stream_mode="updates"`` streams *state deltas* (the messages each node
+  appends) while the model node runs via ``ainvoke``. This is the deterministic no-key path: the
+  scripted fake model cannot satisfy token streaming for tool-call-only turns, so the tap reads
+  whole assistant messages and emits whole-message ``REASONING`` beats.
+- **on (live)** — ``stream_mode=["updates","messages"]`` additionally surfaces the model's text
+  token-by-token (``messages`` chunks), emitted as ``REASONING`` *deltas* so the reasoning forms
+  live in the UI. The whole assistant message still rides ``updates`` (carrying the structured tool
+  calls/results/todos), but its text is suppressed there — it already streamed as deltas — so the
+  beat never doubles. The graph still runs to completion, so the finalized course is read from the
+  draft afterward.
+
 Emission is best-effort (the reporter swallows sink failures), so a disconnected stream degrades the
 transcript without aborting the build.
 """
@@ -30,29 +38,66 @@ _MAX_RESULT_CHARS = 600
 
 
 class IStreamableAgent(Protocol):
-    """The slice of a compiled LangGraph the tap needs: an ``updates``-mode async event stream.
+    """The slice of a compiled LangGraph the tap needs: an async event stream over ``stream_mode``.
 
     A structural Protocol (not the concrete ``CompiledStateGraph``) so the tap is unit-testable with
-    a lightweight scripted stand-in, while real callers pass the harness graph unchanged.
+    a lightweight scripted stand-in, while real callers pass the harness graph unchanged. The mode
+    is a single string (``"updates"``) or a list (``["updates","messages"]``), and the stream yields
+    either bare update chunks or ``(mode, data)`` tuples accordingly.
     """
 
     def astream(
-        self, inputs: Mapping[str, Any], stream_mode: str
-    ) -> AsyncIterator[Mapping[str, Any]]: ...
+        self, inputs: Mapping[str, Any], stream_mode: str | list[str]
+    ) -> AsyncIterator[Any]: ...
 
 
 async def stream_course_build(
-    agent: IStreamableAgent, inputs: Mapping[str, Any], reporter: AgentReporter
+    agent: IStreamableAgent,
+    inputs: Mapping[str, Any],
+    reporter: AgentReporter,
+    *,
+    stream_tokens: bool = False,
 ) -> None:
-    """Drive ``agent`` over ``inputs`` and emit each harness step as an :class:`AgentEvent`."""
-    async for update in agent.astream(inputs, stream_mode="updates"):
-        if not isinstance(update, Mapping):
-            continue
-        for message in _iter_messages(update):
-            await _emit_message(message, reporter)
+    """Drive ``agent`` over ``inputs`` and emit each harness step as an :class:`AgentEvent`.
+
+    With ``stream_tokens`` on (the live path), the model's reasoning streams token-by-token as
+    ``REASONING`` deltas; off (the default no-key path), whole-message reasoning beats are emitted.
+    """
+    if not stream_tokens:
+        async for update in agent.astream(inputs, stream_mode="updates"):
+            if isinstance(update, Mapping):
+                for message in _iter_messages(update):
+                    await _emit_message(message, reporter)
+        return
+    # Live path: multi-mode streams the model's text token-by-token via ``messages`` while
+    # ``updates`` still carries the structured tool calls/results/todos. Reasoning text is
+    # suppressed on the updates side (it already streamed as deltas) so the beat never doubles.
+    async for mode, data in agent.astream(inputs, stream_mode=["updates", "messages"]):
+        if mode == "messages":
+            await _emit_token_delta(data, reporter)
+        elif mode == "updates" and isinstance(data, Mapping):
+            for message in _iter_messages(data):
+                await _emit_message(message, reporter, text_already_streamed=True)
 
 
-async def _emit_message(message: BaseMessage, reporter: AgentReporter) -> None:
+async def _emit_token_delta(chunk: Any, reporter: AgentReporter) -> None:
+    """Emit a streaming reasoning delta from a ``messages``-mode ``(message, metadata)`` chunk.
+
+    Only an assistant message's *text* streams as reasoning; tool-call argument deltas (empty text)
+    and streamed tool-result messages are read from the ``updates`` stream fully formed, so they are
+    ignored here.
+    """
+    message_chunk = chunk[0] if isinstance(chunk, tuple) and chunk else None
+    if not isinstance(message_chunk, AIMessage):
+        return
+    text = _text_of(message_chunk.content)
+    if text:
+        await reporter.emit(AgentEventKind.REASONING, delta=text)
+
+
+async def _emit_message(
+    message: BaseMessage, reporter: AgentReporter, *, text_already_streamed: bool = False
+) -> None:
     if isinstance(message, ToolMessage):
         # Anonymous results (no name) still surface — with an empty tool — rather than vanish; the
         # planning tool's result is the one exception, since its plan already rode the TOOL_CALL.
@@ -63,9 +108,11 @@ async def _emit_message(message: BaseMessage, reporter: AgentReporter) -> None:
         )
         return
     if isinstance(message, AIMessage):
-        text = _text_of(message.content)
-        if text:
-            await reporter.emit(AgentEventKind.REASONING, text=text)
+        # In token mode the text already streamed as deltas, so only its tool calls/todos ride here.
+        if not text_already_streamed:
+            text = _text_of(message.content)
+            if text:
+                await reporter.emit(AgentEventKind.REASONING, text=text)
         for call in message.tool_calls or []:
             name = call.get("name") or ""
             args = _as_dict(call.get("args"))

@@ -131,4 +131,39 @@ describe("BuildTimeline", () => {
     fireEvent.click(conceptsHeader);
     expect(screen.getByText("extract_concepts")).toBeInTheDocument();
   });
+
+  it("streams reasoning token deltas into one growing beat with a live caret on the active phase", () => {
+    // Graph is active and the agent's reasoning is forming token-by-token in it.
+    render(
+      <BuildTimeline
+        topic="HTTPS"
+        events={[makeProgressEvent("concepts_extracted", 1), makeProgressEvent("graph_built", 2)]}
+        agentEvents={[
+          makeAgentEvent("reasoning", 0, { stage: "graph_built", delta: "Ordering the " }),
+          makeAgentEvent("reasoning", 1, { stage: "graph_built", delta: "prerequisites." }),
+        ]}
+      />,
+    );
+
+    // The deltas formed one beat (the full text, not a node per token), with a live caret beside it.
+    expect(screen.getByText("Ordering the prerequisites.")).toBeInTheDocument();
+    expect(screen.getByTestId("reasoning-caret")).toBeInTheDocument();
+  });
+
+  it("shows no caret once the streamed reasoning's phase is done", () => {
+    // The same streamed reasoning, but its phase (Concepts) has completed — the caret is gone.
+    render(
+      <BuildTimeline
+        topic="HTTPS"
+        events={[makeProgressEvent("concepts_extracted", 1), makeProgressEvent("graph_built", 2)]}
+        agentEvents={[
+          makeAgentEvent("reasoning", 0, { stage: "concepts_extracted", delta: "Extracted " }),
+          makeAgentEvent("reasoning", 1, { stage: "concepts_extracted", delta: "the concepts." }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Extracted the concepts.")).toBeInTheDocument();
+    expect(screen.queryByTestId("reasoning-caret")).not.toBeInTheDocument();
+  });
 });

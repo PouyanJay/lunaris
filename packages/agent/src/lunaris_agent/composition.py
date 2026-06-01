@@ -152,7 +152,8 @@ def build_agent_course_builder(
     set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed. The
     planner client is built explicitly (not as a bare model id) so it carries a request timeout —
     otherwise ``create_deep_agent`` would build an un-timed client and a stalled socket would hang
-    the whole run.
+    the whole run. ``stream_tokens=True`` because this planner is a real streaming model: the agent
+    reasoning streams token-by-token to the UI (the no-key path keeps the deterministic beats).
     """
     from langchain_anthropic import ChatAnthropic
 
@@ -173,4 +174,5 @@ def build_agent_course_builder(
         reviser=ClaudeLessonReviser(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
+        stream_tokens=True,
     )
