@@ -23,7 +23,13 @@ export interface TimelinePhase {
   summary: string | null;
   entries: TimelineEntry[];
   todos: AgentTodo[] | null;
+  /** Wall-clock span of a DONE phase (ms), from its stage arrival back to the previous stage; null
+   *  for active/pending phases or when stage arrival times were not captured. */
+  durationMs: number | null;
 }
+
+/** Client-stamped wall-clock arrival time (ms) per pipeline stage, captured live as events stream. */
+export type StageTimes = Partial<Record<ProgressStage, number>>;
 
 /** The six coarse phases shown on the spine (run_started is folded into the intro "Plan" node). */
 const PHASES: { stage: ProgressStage; label: string }[] = [
@@ -140,13 +146,33 @@ function summaryForStage(events: ProgressEvent[], stage: ProgressStage): string 
   return summary;
 }
 
+/** A DONE phase's wall-clock span: its stage's arrival minus the previous stage's (run_started leads
+ *  the first phase). Null for active/pending phases, or when either arrival time wasn't captured. */
+function durationForPhase(
+  index: number,
+  status: PhaseStatus,
+  stageTimes: StageTimes,
+): number | null {
+  if (status !== "done") return null;
+  const stage = PHASES[index]?.stage;
+  // PHASES is a fixed module constant and `index` comes from PHASES.forEach, so index-1 is in bounds.
+  const prevStage: ProgressStage = index === 0 ? "run_started" : PHASES[index - 1]!.stage;
+  const end = stage ? stageTimes[stage] : undefined;
+  const start = stageTimes[prevStage];
+  return end !== undefined && start !== undefined ? end - start : null;
+}
+
 /**
  * Fold the coarse progress stream + the fine agent-event stream into an ordered list of timeline
  * phases — the data the {@link BuildTimeline} renders. Each phase carries its status (the single
  * in-flight one is `active`), a one-line summary, the bucketed reasoning/tool entries, and the live
  * plan. An intro "Plan" node leads only when there are pre-stage beats to show.
  */
-export function buildTimeline(events: ProgressEvent[], agentEvents: AgentEvent[]): TimelinePhase[] {
+export function buildTimeline(
+  events: ProgressEvent[],
+  agentEvents: AgentEvent[],
+  stageTimes: StageTimes = {},
+): TimelinePhase[] {
   const staged = stagedEntries(agentEvents);
   const todos = todosByPhase(agentEvents);
   const current = currentPhaseIndex(events);
@@ -163,16 +189,19 @@ export function buildTimeline(events: ProgressEvent[], agentEvents: AgentEvent[]
       summary: null,
       entries: introEntries,
       todos: introTodos,
+      durationMs: null,
     });
   }
   PHASES.forEach((phase, index) => {
+    const status = statusFor(index, current);
     phases.push({
       key: phase.stage,
       label: phase.label,
-      status: statusFor(index, current),
+      status,
       summary: summaryForStage(events, phase.stage),
       entries: entriesFor(phase.stage),
       todos: todos.get(phase.stage) ?? null,
+      durationMs: durationForPhase(index, status, stageTimes),
     });
   });
   return phases;

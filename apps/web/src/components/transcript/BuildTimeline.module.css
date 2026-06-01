@@ -29,8 +29,13 @@
   left: 6px;
   top: 4px;
   bottom: 0;
-  width: 1px;
-  background: var(--border);
+  width: 1.5px;
+  background: var(--border-strong);
+}
+/* The traveled spine — the segment below a completed phase — tints toward success, so progress
+   reads as it flows down the rail; still-pending segments stay the neutral hairline. */
+.phase[data-status="done"]::before {
+  background: color-mix(in srgb, var(--success) 45%, var(--border-strong));
 }
 .phase:last-child {
   padding-bottom: 0;
@@ -99,10 +104,18 @@ button.header:hover .label {
   color: var(--text-muted);
 }
 
-.live {
+/* Right-aligned metadata at the end of a phase header: the live marker, or a completed duration. */
+.live,
+.duration {
   font-size: var(--text-xs);
-  color: var(--accent-500);
   margin-left: auto;
+}
+.live {
+  color: var(--accent-500);
+}
+/* Elapsed span of a completed phase — quiet, tabular (mono) for a clean right column. */
+.duration {
+  color: var(--text-muted);
 }
 
 .body {

@@ -271,6 +271,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
             topic={state.topic}
             events={state.events}
             agentEvents={state.agentEvents}
+            stageTimes={state.stageTimes}
           />
         ),
       };

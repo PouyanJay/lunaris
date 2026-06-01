@@ -120,6 +120,44 @@ describe("buildTimeline", () => {
     ]);
   });
 
+  it("times each DONE phase from its stage arrival back to the previous stage", () => {
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("concepts_extracted", 1),
+      makeProgressEvent("graph_built", 2),
+    ];
+    // Concepts spanned run_started→concepts_extracted (1.5s); Graph is still active.
+    const stageTimes = { run_started: 1_000, concepts_extracted: 2_500, graph_built: 3_000 };
+
+    const phases = buildTimeline(events, [], stageTimes);
+
+    expect(phase(phases, "Concepts").durationMs).toBe(1_500);
+    // The active phase shows "running…", not a duration; every unreached phase has none either.
+    expect(phase(phases, "Graph").durationMs).toBeNull();
+    expect(phases.filter((p) => p.status === "pending").every((p) => p.durationMs === null)).toBe(
+      true,
+    );
+  });
+
+  it("leaves a done phase's duration null when its lower-boundary stage time is missing", () => {
+    // The client reconnected after run_started fired: Concepts' completion time is known, its start
+    // (run_started) is not → no honest span to show.
+    const phases = buildTimeline(
+      [makeProgressEvent("concepts_extracted", 1), makeProgressEvent("graph_built", 2)],
+      [],
+      { concepts_extracted: 5_000, graph_built: 6_000 },
+    );
+
+    expect(phase(phases, "Concepts").status).toBe("done");
+    expect(phase(phases, "Concepts").durationMs).toBeNull();
+  });
+
+  it("leaves durations null when no stage times are provided", () => {
+    const phases = buildTimeline([makeProgressEvent("run_completed", 9)], []);
+
+    expect(phases.every((p) => p.durationMs === null)).toBe(true);
+  });
+
   it("surfaces an orphan tool result that has no preceding call", () => {
     const phases = buildTimeline(
       [makeProgressEvent("graph_built", 2)],

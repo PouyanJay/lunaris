@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
 
-import { buildTimeline, type TimelinePhase } from "../../lib/buildTimeline";
+import { buildTimeline, type StageTimes, type TimelinePhase } from "../../lib/buildTimeline";
+import { formatDuration } from "../../lib/formatDuration";
 import type { AgentEvent, ProgressEvent } from "../../types/course";
 import { TodoList } from "./TodoList";
 import { ToolCallCard } from "./ToolCallCard";
@@ -10,14 +11,19 @@ interface BuildTimelineProps {
   topic: string;
   events: ProgressEvent[];
   agentEvents: AgentEvent[];
+  /** Client-stamped stage arrival times, for per-phase durations. Optional (omitted in tests/replay). */
+  stageTimes?: StageTimes | undefined;
 }
 
 /** The live build canvas: a vertical timeline of the pipeline's major phases. Each phase is a node on
  *  a hairline spine (dot + label + summary + status); the active phase auto-expands and streams its
  *  reasoning and tool calls, done phases collapse to their summary (click to re-open), pending phases
  *  preview what's coming. Replaces the horizontal StageRail + flat transcript feed. */
-export function BuildTimeline({ topic, events, agentEvents }: BuildTimelineProps) {
-  const phases = useMemo(() => buildTimeline(events, agentEvents), [events, agentEvents]);
+export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildTimelineProps) {
+  const phases = useMemo(
+    () => buildTimeline(events, agentEvents, stageTimes),
+    [events, agentEvents, stageTimes],
+  );
   const activeKey = phases.find((phase) => phase.status === "active")?.key ?? null;
 
   // Done phases the user manually re-opened. The active phase is always expanded; pending phases with
@@ -83,6 +89,7 @@ interface PhaseNodeProps {
 }
 
 function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef }: PhaseNodeProps) {
+  const duration = phase.durationMs !== null ? formatDuration(phase.durationMs) : null;
   const header = (
     <>
       <span className={styles.dot} data-status={phase.status} aria-hidden="true" />
@@ -93,6 +100,7 @@ function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef }: PhaseNode
           running…
         </span>
       )}
+      {duration && <span className={`mono ${styles.duration}`}>{duration}</span>}
     </>
   );
 
@@ -104,7 +112,9 @@ function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef }: PhaseNode
           className={styles.header}
           onClick={onToggle}
           aria-expanded={expanded}
-          aria-label={`${phase.label}${phase.summary ? ` — ${phase.summary}` : ""}`}
+          aria-label={`${phase.label}${phase.summary ? ` — ${phase.summary}` : ""}${
+            duration ? ` (${duration})` : ""
+          }`}
         >
           {header}
         </button>

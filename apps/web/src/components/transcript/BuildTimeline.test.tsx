@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { makeAgentEvent, makeProgressEvent } from "../../test/fixtures";
@@ -57,6 +57,21 @@ describe("BuildTimeline", () => {
     expect(screen.getByText("Ordering the prerequisites.")).toBeInTheDocument();
     expect(screen.getByText("build_prerequisite_graph")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/building: graph/i);
+  });
+
+  it("shows the elapsed duration on a done phase, but not on the active one", () => {
+    render(
+      <BuildTimeline
+        {...streamingProps()}
+        stageTimes={{ run_started: 1_000, concepts_extracted: 3_000, graph_built: 3_500 }}
+      />,
+    );
+
+    // Concepts is done: run_started→concepts_extracted = 2.0s, shown in its (collapsed) header.
+    const conceptsHeader = screen.getByRole("button", { name: /concepts — 21 concepts/i });
+    expect(within(conceptsHeader).getByText("2.0s")).toBeInTheDocument();
+    // Graph is active → it streams "running…", never a duration (even though both stamps exist).
+    expect(screen.queryByText("0.5s")).not.toBeInTheDocument();
   });
 
   it("collapses a done phase to its summary and re-opens it on click", () => {
