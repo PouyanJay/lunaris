@@ -1,0 +1,252 @@
+/* Branded per-tool renderer sub-views. Tokens only; data is mono; status is a dot + label, never a
+   pill; the accent is a scalpel (the goal concept, the live spinner). */
+
+/* ─── Concept / KC chips ──────────────────────────────────────────────────── */
+.chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+}
+
+/* The goal concept — the one chip the accent is spent on. A soft-amber fill + accent border marks
+   it; the text stays full-contrast (amber text alone falls below AA on the light surface). */
+.chip[data-tone="goal"] {
+  color: var(--text);
+  border-color: var(--accent-500);
+  background: var(--accent-soft);
+}
+
+/* ─── One-line stat summary ───────────────────────────────────────────────── */
+.stat {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* ─── Labelled value (Topic, Delegated to) ────────────────────────────────── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fieldValue {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.description {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ─── Status (dot + uppercase-mono label) ─────────────────────────────────── */
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--text-muted);
+  flex: none;
+}
+.status[data-tone="ok"] .statusDot {
+  background: var(--success);
+}
+.status[data-tone="warn"] .statusDot {
+  background: var(--warning);
+}
+.status[data-tone="danger"] .statusDot {
+  background: var(--danger);
+}
+
+/* The label reuses the global `.eyebrow` utility (uppercase + tracking) plus `mono`. */
+
+/* ─── Verify tally ────────────────────────────────────────────────────────── */
+.tally {
+  margin: 0;
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.tallyItem[data-tone="ok"] {
+  color: var(--success);
+}
+.tallyItem[data-tone="danger"] {
+  color: var(--danger);
+}
+
+/* ─── Module list (design_curriculum) ─────────────────────────────────────── */
+.modules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.module {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.moduleTitle {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.moduleMeta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ─── Blocking issues (finalize_course held for review) ───────────────────── */
+.issues {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.issue {
+  font-size: var(--text-xs);
+  color: var(--danger);
+  padding-left: var(--space-3);
+  position: relative;
+}
+.issue::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+}
+
+/* ─── Running indicator ───────────────────────────────────────────────────── */
+.pending {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--accent-500);
+  animation: toolSpin 0.7s linear infinite;
+}
+
+@keyframes toolSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* ─── Raw fallback (unknown tools) — collapsed by default ─────────────────── */
+.raw {
+  font-size: var(--text-xs);
+}
+
+.rawSummary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.rawSummary::-webkit-details-marker {
+  display: none;
+}
+.rawSummary::before {
+  content: "›";
+  color: var(--text-muted);
+  transition: transform var(--dur) var(--ease);
+}
+.raw[open] .rawSummary::before {
+  transform: rotate(90deg);
+}
+.rawSummary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.args {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.arg {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) 1fr;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.argKey {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.argValue {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rawResult {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rawSummary::before {
+    transition: none;
+  }
+}

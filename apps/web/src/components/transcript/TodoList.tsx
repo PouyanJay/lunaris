@@ -15,11 +15,18 @@ function todoState(status: string): TodoState {
   return "pending";
 }
 
-/** The agent's live plan — the current `write_todos` list, each item checked/active/pending. */
+/** The agent's live plan — the current `write_todos` list, each item checked/active/pending. The
+ *  header carries a done/total count so the plan doubles as a coarse build-progress readout. */
 export function TodoList({ todos }: TodoListProps) {
+  const done = todos.filter((todo) => todoState(todo.status) === "completed").length;
   return (
     <section className={styles.plan} aria-label="Agent plan">
-      <span className={`eyebrow ${styles.label}`}>Plan</span>
+      <div className={styles.head}>
+        <span className={`eyebrow ${styles.label}`}>Plan</span>
+        <span className={`mono ${styles.count}`}>
+          {done} / {todos.length}
+        </span>
+      </div>
       <ol className={styles.list}>
         {todos.map((todo, index) => {
           const state = todoState(todo.status);

@@ -23,73 +23,12 @@
   color: var(--text);
 }
 
-.args {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border-top: var(--border-width) solid var(--border);
+/* The branded renderer (or the raw fallback) sits below the head as a hairline-divided region. */
+.body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-}
-
-.arg {
-  display: grid;
-  grid-template-columns: minmax(0, max-content) 1fr;
   gap: var(--space-2);
-  align-items: baseline;
-}
-
-.argKey {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.argValue {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.result {
   padding: var(--space-2) var(--space-3);
   border-top: var(--border-width) solid var(--border);
   background: var(--bg-subtle);
-}
-
-.resultText {
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.runningResult {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.spinner {
-  width: 10px;
-  height: 10px;
-  border-radius: var(--radius-full);
-  border: 1.5px solid var(--border-strong);
-  border-top-color: var(--accent-500);
-  animation: toolSpin 0.7s linear infinite;
-}
-
-@keyframes toolSpin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
-  }
 }

@@ -19,6 +19,7 @@ from lunaris_runtime.schema import (
     RiskTier,
 )
 
+from .agent_reporter import AgentReporter
 from .progress_reporter import ProgressReporter
 
 
@@ -48,6 +49,12 @@ class CourseDraft:
     # constructor arg: it defaults to a no-op reporter (so tests/batch runs need no wiring) and the
     # runner swaps in a streaming sink-backed reporter when the API requests SSE.
     progress: ProgressReporter = field(init=False)
+    # Fine-grained transcript emitter, same lifecycle as ``progress``: the authoring subagent (which
+    # the top-level event tap can't see into) emits its per-module reasoning beats here, so lesson
+    # authoring + verification surface live instead of one opaque ``task`` call. No-op by default;
+    # the runner swaps in the run's shared AgentReporter (same sink + cursor as the tap).
+    agent: AgentReporter = field(init=False)
 
     def __post_init__(self) -> None:
         self.progress = ProgressReporter(self.run_id)
+        self.agent = AgentReporter(self.run_id)

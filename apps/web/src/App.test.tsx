@@ -223,10 +223,143 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // Reasoning + the tool-call card render in the canvas transcript (a labelled, focusable region).
+    // Reasoning + the tool-call card render in the live build timeline (a labelled, focusable region).
     expect(await screen.findByText("Mapping the prerequisites.")).toBeInTheDocument();
     expect(screen.getByText("extract_concepts")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /agent transcript/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /building graphs/i })).toBeInTheDocument();
+  });
+
+  it("buckets a full multi-phase build into branded, timed phases and threads the run_id", async () => {
+    // The end-to-end Phase A path: a representative build streams every moat + the author handoff
+    // through SSE → useCourseStream → BuildTimeline. Each tool's payload must reach its branded
+    // renderer (no raw JSON), bucketed under the phase it completed in, with the run_id threading
+    // into the sidebar. Kept open so Lessons stays the active, streaming phase.
+    const concepts = [
+      { id: "tcp", label: "TCP" },
+      { id: "tls", label: "TLS handshake" },
+      { id: "https", label: "HTTPS" },
+    ];
+    let buildStarted = false;
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "agent", supportsLessonRegeneration: false }),
+        });
+      }
+      if (url.includes("/api/courses/stream")) {
+        buildStarted = true;
+        return Promise.resolve(
+          sseStreamResponse(
+            [
+              progressFrame("run_started", 0),
+              // The call fires in run_started but its result lands in concepts_extracted — the fold
+              // pairs them and buckets the pair under the result's (completion) phase.
+              agentFrame("tool_call", 1, {
+                stage: "run_started",
+                tool: "extract_concepts",
+                toolArgs: { topic: "HTTPS" },
+              }),
+              agentFrame("tool_result", 2, {
+                stage: "concepts_extracted",
+                tool: "extract_concepts",
+                result: JSON.stringify({ goalId: "https", count: 3, concepts }),
+              }),
+              progressFrame("concepts_extracted", 3, { kcCount: 3, label: "Extracted 3 concepts" }),
+              agentFrame("tool_call", 4, {
+                stage: "concepts_extracted",
+                tool: "build_prerequisite_graph",
+                toolArgs: { concepts, goal: "https" },
+              }),
+              agentFrame("tool_result", 5, {
+                stage: "graph_built",
+                tool: "build_prerequisite_graph",
+                result: '{"nodes": [{"id": "tcp", "label": "TCP", "definition": "a long', // truncated
+              }),
+              progressFrame("graph_built", 6, {
+                kcCount: 3,
+                edgeCount: 2,
+                label: "Built prerequisite graph: 3 concepts, 2 edges",
+              }),
+              agentFrame("tool_call", 7, {
+                stage: "graph_built",
+                tool: "design_curriculum",
+                toolArgs: {},
+              }),
+              agentFrame("tool_result", 8, {
+                stage: "curriculum_designed",
+                tool: "design_curriculum",
+                result: JSON.stringify({
+                  moduleCount: 2,
+                  modules: [
+                    { id: "m0", title: "Foundations", kcs: ["tcp"], objectiveCount: 1 },
+                    { id: "m1", title: "Securing HTTPS", kcs: ["tls", "https"], objectiveCount: 2 },
+                  ],
+                }),
+              }),
+              progressFrame("curriculum_designed", 9, {
+                moduleCount: 2,
+                label: "Designed curriculum: 2 modules",
+              }),
+              agentFrame("tool_call", 10, {
+                stage: "module_authored",
+                tool: "task",
+                toolArgs: {
+                  subagent_type: "module-author",
+                  description: "Author the Foundations module",
+                },
+              }),
+              progressFrame("module_authored", 11, {
+                moduleId: "m0",
+                label: "Authored module 1 of 2",
+              }),
+            ],
+            { open: true },
+          ),
+        );
+      }
+      if (url.includes("/api/runs")) {
+        const runs = buildStarted
+          ? [makeRun({ id: "c-https", runId: "run-test", topic: "HTTPS", status: "running" })]
+          : [];
+        return Promise.resolve({ ok: true, json: async () => runs });
+      }
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "HTTPS" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // The build timeline is live, and the active Lessons phase shows the delegated subagent — branded,
+    // not raw JSON — proving the `task` payload flowed through the real SSE → timeline path.
+    expect(await screen.findByRole("region", { name: /building HTTPS/i })).toBeInTheDocument();
+    expect(await screen.findByText("module-author")).toBeInTheDocument();
+    expect(await screen.findByText(/Author the Foundations module/i)).toBeInTheDocument();
+    // No tool's payload leaks as raw JSON anywhere — including the deliberately truncated graph result.
+    expect(screen.queryByText(/"nodes":/)).not.toBeInTheDocument();
+
+    // The run_id on the first event threads into the sidebar, which lists the RUNNING run.
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(await within(history).findByText("HTTPS")).toBeInTheDocument();
+    expect(await within(history).findByText("RUNNING")).toBeInTheDocument();
+
+    // Phases are expanded by default, so the DONE Curriculum phase already shows its module list —
+    // design_curriculum's parsed result, bucketed under the phase it completed in and rendered
+    // branded (not raw JSON), straight off the live stream with no click needed.
+    expect(await screen.findByText("Foundations")).toBeInTheDocument();
+    expect(screen.getByText("Securing HTTPS")).toBeInTheDocument();
+
+    // extract_concepts' parsed result reaches its branded chips too, scoped to the Concepts phase it
+    // completed in (the same concept also chips under Graph from the call args — scoping avoids the
+    // clash and pins the bucketing: the call fired in run_started, the pair landed in Concepts).
+    const conceptsPhase = screen
+      .getByRole("button", { name: /concepts — extracted 3 concepts/i })
+      .closest("li");
+    expect(within(conceptsPhase as HTMLElement).getByText("TLS handshake")).toBeInTheDocument();
   });
 
   it("surfaces a newly started build in the sidebar history without a manual refresh", async () => {
@@ -726,7 +859,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
         return Promise.resolve({ ok: true, status: 204 });
       }
       if (/\/api\/courses\/c-1$/.test(url)) {
-        return Promise.resolve({ ok: true, json: async () => makeCourse({ id: "c-1", topic: "queues" }) });
+        return Promise.resolve({
+          ok: true,
+          json: async () => makeCourse({ id: "c-1", topic: "queues" }),
+        });
       }
       throw new Error(`unhandled ${method} ${url}`);
     });
@@ -737,10 +873,14 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
     await screen.findByRole("heading", { name: "queues" });
     fireEvent.click(screen.getByRole("button", { name: /delete course: queues/i }));
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }),
+    );
 
     // The canvas drops the deleted course and returns to the build surface.
-    expect(await screen.findByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "queues" })).not.toBeInTheDocument();
   });
 });

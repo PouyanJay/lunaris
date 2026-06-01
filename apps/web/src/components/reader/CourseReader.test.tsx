@@ -33,7 +33,11 @@ function multiLessonCourse() {
           lessonWith("l2", "Prose for lesson two."),
         ],
       }),
-      makeModule({ id: "m2", title: "Search", lessons: [lessonWith("l3", "Prose for lesson three.")] }),
+      makeModule({
+        id: "m2",
+        title: "Search",
+        lessons: [lessonWith("l3", "Prose for lesson three.")],
+      }),
     ],
   });
 }
@@ -157,7 +161,12 @@ describe("CourseReader", () => {
       kind: "spec",
       source: "",
       rendered: null,
-      spec: { type: "flow", title: null, nodes: [{ id: "a", label: "Halve the range" }], edges: [] },
+      spec: {
+        type: "flow",
+        title: null,
+        nodes: [{ id: "a", label: "Halve the range" }],
+        edges: [],
+      },
       mayerChecks: NO_MAYER,
     };
     const course = makeCourse({
@@ -344,7 +353,9 @@ describe("CourseReader — lesson body", () => {
 
     // Assert — objectives + Bloom level are present on the module's opening lesson.
     expect(screen.getByText(/learning objectives/i)).toBeInTheDocument();
-    expect(screen.getByText("Locate a target in a sorted array with binary search.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Locate a target in a sorted array with binary search."),
+    ).toBeInTheDocument();
     expect(screen.getByText("apply")).toBeInTheDocument();
 
     // Act — move off the first lesson; objectives no longer show.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { StageTimes } from "../lib/buildTimeline";
 import { CourseLoadError } from "../lib/loadCourse";
 import { streamCourse } from "../lib/streamCourse";
 import type { AgentEvent, Course, ProgressEvent } from "../types/course";
@@ -13,6 +14,8 @@ export type BuildState =
       agentEvents: AgentEvent[];
       // The run_id, captured from the first event — lets the UI terminate this build by run_id.
       runId?: string;
+      // Client-stamped stage arrival times (wall-clock), for the timeline's per-phase durations.
+      stageTimes: StageTimes;
     }
   | { status: "ready"; course: Course }
   | { status: "error"; message: string; topic: string };
@@ -45,16 +48,25 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
-      setState({ status: "streaming", topic, events: [], agentEvents: [] });
+      setState({ status: "streaming", topic, events: [], agentEvents: [], stageTimes: {} });
 
       streamCourse(apiBaseUrl, topic, {
         signal: controller.signal,
-        onProgress: (event) =>
+        onProgress: (event) => {
+          // Stamp the stage's wall-clock arrival now (not in the reducer, which may run twice in
+          // StrictMode); the latest arrival per stage wins, so a repeated stage reflects its last beat.
+          const arrivedAt = Date.now();
           setState((prev) =>
             prev.status === "streaming"
-              ? { ...prev, runId: prev.runId ?? event.runId, events: [...prev.events, event] }
+              ? {
+                  ...prev,
+                  runId: prev.runId ?? event.runId,
+                  events: [...prev.events, event],
+                  stageTimes: { ...prev.stageTimes, [event.stage]: arrivedAt },
+                }
               : prev,
-          ),
+          );
+        },
         onAgent: (event) =>
           setState((prev) =>
             prev.status === "streaming"

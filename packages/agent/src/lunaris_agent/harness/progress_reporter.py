@@ -12,6 +12,7 @@ import structlog
 from lunaris_runtime.schema import ProgressEvent, ProgressStage
 
 from ..progress import IProgressSink, NoOpProgressSink
+from .stage_cursor import StageCursor
 
 logger = structlog.get_logger()
 
@@ -19,10 +20,15 @@ logger = structlog.get_logger()
 class ProgressReporter:
     """Stamps and forwards progress events for one run (one instance per :class:`CourseDraft`)."""
 
-    def __init__(self, run_id: str, sink: IProgressSink | None = None) -> None:
+    def __init__(
+        self, run_id: str, sink: IProgressSink | None = None, cursor: StageCursor | None = None
+    ) -> None:
         self._run_id = run_id
         self._sink = sink or NoOpProgressSink()
         self._sequence = 0
+        # Shared with the run's AgentReporter (when wired) so fine events bucket under the phase
+        # active at their emit time; None for batch callers that don't track phases.
+        self._cursor = cursor
 
     async def emit(self, stage: ProgressStage, label: str, **counts: object) -> None:
         """Emit one ordered event; its monotonic sequence lets clients order without a clock.
@@ -31,6 +37,8 @@ class ProgressReporter:
         is swallowed-and-logged, so a broken/disconnected stream degrades streaming without aborting
         the build (in the agent path a raised emit would surface as a tool error the model fumbles).
         """
+        if self._cursor is not None:
+            self._cursor.advance(stage)
         event = ProgressEvent(
             stage=stage, label=label, run_id=self._run_id, sequence=self._sequence, **counts
         )

@@ -60,9 +60,7 @@ export function useTerminateBuild(
       if (error instanceof CourseLoadError && error.status === 404) {
         stopLocally();
       } else {
-        setTerminateError(
-          error instanceof Error ? error.message : "Couldn’t terminate the build.",
-        );
+        setTerminateError(error instanceof Error ? error.message : "Couldn’t terminate the build.");
       }
     } finally {
       setIsTerminating(false);

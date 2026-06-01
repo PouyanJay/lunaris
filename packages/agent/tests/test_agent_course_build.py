@@ -16,6 +16,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.authoring import StubLessonReviser
 from lunaris_agent.harness.draft import CourseDraft
+from lunaris_agent.harness.event_tap import stream_course_build as real_stream_course_build
 from lunaris_agent.harness.runner import AgentCourseBuilder
 from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.lesson_claims import iter_claims
@@ -135,6 +136,7 @@ def _builder(
     reviser: StubLessonReviser | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
+    stream_tokens: bool = False,
 ) -> AgentCourseBuilder:
     """Construct the agent course builder over the no-key stub subagents + real moats."""
     return AgentCourseBuilder(
@@ -146,17 +148,24 @@ def _builder(
         reviser=reviser or _reviser(),
         verifier=verifier or _verifier(),
         visual_engine=visual_engine,
+        stream_tokens=stream_tokens,
     )
 
 
 def _delegating_script(
     scripted_model: Callable[[Sequence[BaseMessage]], object],
+    *,
+    first_narration: str = "",
 ) -> object:
-    """The standard happy-path agent script: extract → graph → curriculum → delegate → finalize."""
+    """The standard happy-path agent script: extract → graph → curriculum → delegate → finalize.
+
+    ``first_narration`` lets a test make the agent narrate its first step (text that streams as
+    tokens in token mode); it defaults to empty, leaving the deterministic tool-only turns intact.
+    """
     return scripted_model(
         [
             AIMessage(
-                content="",
+                content=first_narration,
                 tool_calls=[{"name": "extract_concepts", "args": {"topic": "demo"}, "id": "t1"}],
             ),
             AIMessage(
@@ -403,6 +412,37 @@ async def test_agent_builder_emits_transcript_events_to_the_agent_sink(
     tool_results = [e for e in sink.events if e.kind is AgentEventKind.TOOL_RESULT]
     assert len(tool_results) >= 3
     assert all(e.tool for e in tool_results)
+
+
+async def test_agent_builder_forwards_stream_tokens_to_the_harness_tap(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The token-by-token path is verified at the tap (test_event_tap), where a controlled
+    # multi-mode stream can be replayed. Here we pin the WIRING: a builder constructed with
+    # stream_tokens=True forwards that to the harness tap. It can't be exercised through a full
+    # scripted build — a GenericFakeChatModel drops its tool_calls when forced to stream, so the
+    # agent loop can't reach finalize (the very reason the no-key path stays on ``updates``). So the
+    # spy records the forwarded flag, then forwards to the REAL tap in ``updates`` mode, letting the
+    # deterministic build complete normally.
+    captured: dict[str, bool] = {}
+
+    async def spy(agent: object, inputs: object, reporter: object, *, stream_tokens: bool = False):
+        captured["stream_tokens"] = stream_tokens
+        await real_stream_course_build(agent, inputs, reporter, stream_tokens=False)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("lunaris_agent.harness.runner.stream_course_build", spy)
+    builder = _builder(
+        _delegating_script(scripted_model), CourseStore(tmp_path), stream_tokens=True
+    )
+
+    # Act
+    course = await builder.run("demo", course_id="course-fwd", run_id="run-fwd")
+
+    # Assert — the builder asked the tap to stream tokens, and the build still completed.
+    assert captured["stream_tokens"] is True
+    assert course.status == CourseStatus.PUBLISHED
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

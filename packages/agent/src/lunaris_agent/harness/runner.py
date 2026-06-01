@@ -34,6 +34,7 @@ from .authoring import ILessonReviser, build_authoring_subgraph
 from .draft import CourseDraft
 from .event_tap import stream_course_build
 from .progress_reporter import ProgressReporter
+from .stage_cursor import StageCursor
 from .tools import (
     make_design_curriculum_tool,
     make_extract_concepts_tool,
@@ -75,6 +76,7 @@ class AgentCourseBuilder:
         critic: ICritic | None = None,
         visual_engine: VisualEngine | None = None,
         risk_tier: RiskTier = RiskTier.LOW,
+        stream_tokens: bool = False,
     ) -> None:
         self._model = model
         self._store = store
@@ -86,6 +88,15 @@ class AgentCourseBuilder:
         self._critic = critic or MinimalCritic()
         self._visual_engine = visual_engine
         self._risk_tier = risk_tier
+        # Token-by-token reasoning streaming: enabled only for a real streaming model (the live
+        # composition root sets it). The scripted no-key model keeps the deterministic ``updates``
+        # path, so the offline suite stays stable.
+        self._stream_tokens = stream_tokens
+
+    @property
+    def stream_tokens(self) -> bool:
+        """Whether this builder streams the agent's reasoning token-by-token (live path only)."""
+        return self._stream_tokens
 
     async def run(
         self,
@@ -104,15 +115,24 @@ class AgentCourseBuilder:
             draft = CourseDraft(
                 topic=topic, course_id=course_id, run_id=run_id, risk_tier=self._risk_tier
             )
+            # One stage cursor per run, shared by both reporters: the ProgressReporter advances
+            # it at each stage boundary, and the AgentReporter stamps every fine event's `stage`
+            # from it, so the timeline buckets reasoning/tool beats under the active phase.
+            cursor = StageCursor()
             # Stream stage-boundary progress through the injected sink (no-op for batch callers);
             # the draft-bound tools + authoring loop emit onto draft.progress as they run.
             if progress is not None:
-                draft.progress = ProgressReporter(run_id, progress)
+                draft.progress = ProgressReporter(run_id, progress, cursor=cursor)
             # The fine-grained transcript feed (reasoning / tool calls / todos): tap the deep
             # agent's own LangGraph event stream and translate it onto the agent channel
             # (sink → SSE → web transcript). This drives the graph to completion exactly as
             # ``ainvoke`` would; the finalized course is read from the draft afterward.
-            agent_reporter = AgentReporter(run_id, agent)
+            # The cursor is advanced only by draft.progress (above); a batch caller with
+            # progress=None never advances it, so every agent event correctly emits stage=None.
+            agent_reporter = AgentReporter(run_id, agent, cursor=cursor)
+            # Share it with the draft so the authoring subagent emits its per-module beats on the
+            # SAME channel (one sink + sequence) — the tap can't see inside the subagent.
+            draft.agent = agent_reporter
             await draft.progress.emit(ProgressStage.RUN_STARTED, f"Building a course for “{topic}”")
             deep_agent = build_course_agent(
                 self._model,
@@ -123,6 +143,7 @@ class AgentCourseBuilder:
                 deep_agent,
                 {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]},
                 agent_reporter,
+                stream_tokens=self._stream_tokens,
             )
             return self._finished_course(draft, course_id)
         finally:
