@@ -120,6 +120,9 @@ class AgentCourseBuilder:
             # The cursor is advanced only by draft.progress (above); a batch caller with
             # progress=None never advances it, so every agent event correctly emits stage=None.
             agent_reporter = AgentReporter(run_id, agent, cursor=cursor)
+            # Share it with the draft so the authoring subagent emits its per-module beats on the
+            # SAME channel (one sink + sequence) — the tap can't see inside the subagent.
+            draft.agent = agent_reporter
             await draft.progress.emit(ProgressStage.RUN_STARTED, f"Building a course for “{topic}”")
             deep_agent = build_course_agent(
                 self._model,

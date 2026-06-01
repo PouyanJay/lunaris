@@ -23,7 +23,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from lunaris_grounding import Verifier
-from lunaris_runtime.schema import Module, ProgressStage, RiskTier, VerifierStatus
+from lunaris_runtime.schema import AgentEventKind, Module, ProgressStage, RiskTier, VerifierStatus
 
 from ...lesson_claims import iter_claims
 from ...subagents.module_author import LessonAssembler
@@ -95,6 +95,11 @@ def build_authoring_subgraph(
                 f"Authored lesson: {module.title}",
                 module_id=module.id,
             )
+            # Surface each module as it lands (the tap can't see inside this subagent), so the
+            # Lessons phase streams real progress instead of one opaque "running…" task call.
+            await draft.agent.emit(
+                AgentEventKind.REASONING, text=f"Authored the lesson for “{module.title}”."
+            )
         # Seed the loop counters so the routing reads real values, not TypedDict defaults.
         return {"round": 0, "prev_cut": _UNSET_CUT}
 
@@ -115,10 +120,24 @@ def build_authoring_subgraph(
             claims_supported=supported,
             claims_cut=cut,
         )
+        await draft.agent.emit(
+            AgentEventKind.REASONING,
+            text=(
+                f"Verified {len(claims)} claims against the corpus — "
+                f"{supported} supported, {cut} cut."
+            ),
+        )
         return {"cut": cut}
 
     async def revise(state: AuthoringState) -> AuthoringState:
         cut_by_module = _cut_texts_by_module(draft)
+        await draft.agent.emit(
+            AgentEventKind.REASONING,
+            text=(
+                f"Revising {len(cut_by_module)} module(s) with unsupported claims, "
+                "then re-verifying."
+            ),
+        )
         for module in draft.modules:
             cut_texts = cut_by_module.get(module.id)
             if not cut_texts:

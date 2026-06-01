@@ -10,15 +10,36 @@ from collections.abc import Sequence
 
 import structlog
 from langchain_core.messages import HumanMessage
+from lunaris_agent.harness.agent_reporter import AgentReporter
 from lunaris_agent.harness.authoring import build_authoring_subgraph
 from lunaris_agent.harness.authoring.stub_reviser import StubLessonReviser
 from lunaris_agent.harness.draft import CourseDraft
+from lunaris_agent.harness.progress_reporter import ProgressReporter
+from lunaris_agent.harness.stage_cursor import StageCursor
 from lunaris_agent.lesson_claims import iter_claims
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
-from lunaris_runtime.schema import Citation, Module, RiskTier, VerifierStatus
+from lunaris_runtime.schema import (
+    AgentEvent,
+    AgentEventKind,
+    Citation,
+    Module,
+    ProgressStage,
+    RiskTier,
+    VerifierStatus,
+)
 
 _GROUNDED = "grounded"  # the stub retriever finds evidence only for claims containing this word
+
+
+class _RecordingAgentSink:
+    """An IAgentSink that captures the loop's fine-grained transcript beats for assertion."""
+
+    def __init__(self) -> None:
+        self.events: list[AgentEvent] = []
+
+    async def emit(self, event: AgentEvent) -> None:
+        self.events.append(event)
 
 
 def _lesson_with_claim(text: str) -> LessonDraft:
@@ -89,6 +110,38 @@ async def test_loop_revises_until_every_claim_is_grounded() -> None:
     assert all(c.verifier_status is VerifierStatus.SUPPORTED for c in claims)
     assert draft.provenance
     assert draft.needs_review is False
+
+
+async def test_loop_surfaces_per_module_authoring_and_verify_beats() -> None:
+    # Arrange — a recording agent sink + a shared stage cursor advanced by the progress reporter,
+    # exactly as the runner wires them, so we can assert the beats bucket into the right phase.
+    draft = _draft(Module(id="m0", title="Routing", kcs=["c"], difficulty_index=0.5))
+    cursor = StageCursor()
+    sink = _RecordingAgentSink()
+    draft.progress = ProgressReporter("r1", cursor=cursor)
+    draft.agent = AgentReporter("r1", sink, cursor=cursor)
+
+    def author_fn(module: Module) -> LessonDraft:
+        return _lesson_with_claim(f"{_GROUNDED} fact about {module.title}")
+
+    def revise_fn(module: Module, cut: Sequence[str], attempt: int) -> LessonDraft:
+        return _lesson_with_claim("unused")
+
+    subgraph = build_authoring_subgraph(
+        StubLessonReviser(author_fn, revise_fn), _marker_verifier(), draft
+    )
+
+    # Act
+    await subgraph.ainvoke({"messages": [HumanMessage(content="author")]})
+
+    # Assert — the otherwise-opaque subagent narrated authoring the module and the verify tally, and
+    # each beat is stamped with the phase active when it fired (so the live timeline buckets them
+    # into Lessons + Verify rather than showing a lone "running…" task).
+    authored = next(e for e in sink.events if "Routing" in (e.text or ""))
+    assert authored.kind is AgentEventKind.REASONING
+    assert authored.stage is ProgressStage.MODULE_AUTHORED
+    verified = next(e for e in sink.events if "supported" in (e.text or ""))
+    assert verified.stage is ProgressStage.CLAIMS_VERIFIED
 
 
 async def test_loop_stops_early_when_a_round_stops_shrinking_the_cut_set() -> None:
