@@ -1,10 +1,11 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 
 import type { VisualSpec } from "../../types/course";
 import { ComparisonTable } from "../reader/visuals/ComparisonTable";
 import { FlowDiagram } from "../reader/visuals/FlowDiagram";
 import { StepsDiagram } from "../reader/visuals/StepsDiagram";
 import { TimelineDiagram } from "../reader/visuals/TimelineDiagram";
+import { useExplainApi } from "./ExplainContext";
 import styles from "./JsonArtifact.module.css";
 
 interface JsonArtifactProps {
@@ -29,18 +30,41 @@ export function JsonArtifact({ source, closed }: JsonArtifactProps) {
   // summary so a long dump never floods the view — the user expands it on demand.
   const [open, setOpen] = useState(() => spec !== null || !closed);
 
+  const { available, explanation, explaining, explainError, request } = useExplainState(source);
+  // Explain is offered for finished, dense blobs — not a diagram (it explains itself) nor a blob
+  // still streaming in — and only when the service is available and it hasn't already run.
+  const canExplain = available && closed && spec === null && explanation === null;
+
   return (
     <div className={styles.artifact}>
-      <button
-        type="button"
-        className={styles.head}
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        <span className={`eyebrow ${styles.kind}`}>{spec ? "diagram" : "json"}</span>
-        <span className={`mono ${styles.summary}`}>{summary}</span>
-        <span className={styles.chevron} data-open={open} aria-hidden="true" />
-      </button>
+      <div className={styles.head}>
+        <button
+          type="button"
+          className={styles.toggle}
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+        >
+          <span className={`eyebrow ${styles.kind}`}>{spec ? "diagram" : "json"}</span>
+          <span className={`mono ${styles.summary}`}>{summary}</span>
+          <span className={styles.chevron} data-open={open} aria-hidden="true" />
+        </button>
+        {canExplain && (
+          <button
+            type="button"
+            className={styles.explainButton}
+            onClick={request}
+            disabled={explaining}
+          >
+            {explaining ? "Explaining…" : "Explain"}
+          </button>
+        )}
+      </div>
+      {explanation && <p className={styles.explanation}>{explanation}</p>}
+      {explainError && (
+        <p className={styles.explainError} role="status">
+          {explainError}
+        </p>
+      )}
       {open && (
         <div className={styles.body} data-diagram={spec !== null}>
           {spec ? (
@@ -168,4 +192,24 @@ function tokenClass(token: string): "key" | "str" | "bool" | "nul" | "num" {
   if (token === "true" || token === "false") return "bool";
   if (token === "null") return "nul";
   return "num";
+}
+
+/** The Explain lifecycle for one blob: availability, the in-flight/result/error state, and the
+ *  request trigger — kept out of the component body so it stays focused on rendering. */
+function useExplainState(source: string) {
+  const { available, explain } = useExplainApi();
+  const [explanation, setExplanation] = useState<string | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
+
+  const request = useCallback(() => {
+    setExplaining(true);
+    setExplainError(null);
+    explain(source)
+      .then((result) => setExplanation(result))
+      .catch(() => setExplainError("Couldn't explain this right now."))
+      .finally(() => setExplaining(false));
+  }, [explain, source]);
+
+  return { available, explanation, explaining, explainError, request };
 }

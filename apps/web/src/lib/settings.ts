@@ -13,6 +13,9 @@ export interface SettingsView {
   /** Whether the active pipeline can re-author a single lesson. The reader hides the regenerate
    *  action when false (the deep-agent pipeline doesn't support it and would 501). */
   supportsLessonRegeneration: boolean;
+  /** Whether plain-language "Explain" is available (an Anthropic key is reachable). The transcript
+   *  hides the Explain affordance when false rather than offering a button that 503s. */
+  supportsExplain: boolean;
 }
 
 export class SettingsError extends Error {

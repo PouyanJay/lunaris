@@ -9,6 +9,7 @@ import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
 import { BuildTimeline } from "./components/transcript/BuildTimeline";
+import { ExplainProvider } from "./components/transcript/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
@@ -108,16 +109,23 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
   const [canRegenerate, setCanRegenerate] = useState(false);
+  // Whether the transcript may offer "Explain" on a JSON blob — available only when an Anthropic key
+  // is reachable. Read alongside the regenerate capability; fail closed so a button never 503s.
+  const [canExplain, setCanExplain] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     fetchSettings(apiBaseUrl, controller.signal)
       .then((settings) => {
-        if (!controller.signal.aborted) setCanRegenerate(settings.supportsLessonRegeneration);
+        if (controller.signal.aborted) return;
+        setCanRegenerate(settings.supportsLessonRegeneration);
+        setCanExplain(settings.supportsExplain);
       })
       .catch(() => {
-        // Fail closed: a settings fetch we can't complete hides the action. Guard the unmount race
+        // Fail closed: a settings fetch we can't complete hides the actions. Guard the unmount race
         // like the success path so an aborted fetch never sets state on a gone component.
-        if (!controller.signal.aborted) setCanRegenerate(false);
+        if (controller.signal.aborted) return;
+        setCanRegenerate(false);
+        setCanExplain(false);
       });
     return () => controller.abort();
   }, [apiBaseUrl]);
@@ -267,12 +275,14 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
           </>
         ),
         body: (
-          <BuildTimeline
-            topic={state.topic}
-            events={state.events}
-            agentEvents={state.agentEvents}
-            stageTimes={state.stageTimes}
-          />
+          <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+            <BuildTimeline
+              topic={state.topic}
+              events={state.events}
+              agentEvents={state.agentEvents}
+              stageTimes={state.stageTimes}
+            />
+          </ExplainProvider>
         ),
       };
     }
