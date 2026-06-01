@@ -77,10 +77,16 @@ class CourseService:
 
         A pipeline failure is logged here with ``run_id`` (so a truncated stream is still
         triangulatable across layers) and re-raised; the client-visible error frame is a
-        later refinement.
+        later refinement. On client disconnect the consumer is cancelled mid-build — the run is
+        recorded FAILED on the way out so it is never left stuck RUNNING in history.
         """
         queue: asyncio.Queue[StreamItem] = asyncio.Queue()
         run_task: asyncio.Task[Course] | None = None
+        # Tracks whether a terminal status (COMPLETED/FAILED) was recorded. A client disconnect
+        # throws GeneratorExit/CancelledError (both BaseException, NOT Exception) at the suspended
+        # ``yield``, bypassing the ``except Exception`` below; the ``finally`` uses this flag to
+        # record FAILED for an interrupted run instead of leaving it stuck RUNNING.
+        recorded = False
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
         try:
             pipeline = self._factory(self._store)
@@ -108,14 +114,24 @@ class CourseService:
                 break
             course = run_task.result()  # .result() propagates a pipeline failure here
             await self._record_finish(course)
+            recorded = True
             yield ("course", course)
         except Exception:
             logger.error("course_stream_failed", course_id=course_id, run_id=run_id, exc_info=True)
             await self._record_failure(course_id)
+            recorded = True
             raise
         finally:
             if run_task is not None and not run_task.done():
                 run_task.cancel()
+            if not recorded:
+                # The consumer was cancelled (client disconnect) before the run reached a terminal
+                # event, so neither branch above ran — the run would otherwise stay stuck RUNNING in
+                # history. Record it FAILED on the way out. Awaiting here is safe during async-gen
+                # finalization because we do not ``yield`` in ``finally``; ``_record_failure`` is
+                # best-effort (never raises).
+                logger.info("run_recorded_failed_on_disconnect", course_id=course_id, run_id=run_id)
+                await self._record_failure(course_id)
 
     def get(self, course_id: str) -> Course | None:
         try:
