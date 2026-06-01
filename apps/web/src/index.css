@@ -73,6 +73,11 @@
   --text-xl: 1.375rem;
   --text-2xl: 1.75rem;
 
+  /* Height of the top band — the canvas header AND the sidebar brand row share it so the dividing
+     hairline is continuous across the seam. Sized for padding (space-3 ×2) + a control row (metric
+     band / Button, ~29px). */
+  --header-height: 53px;
+
   /* Spacing (4px base) */
   --space-1: 4px;
   --space-2: 8px;

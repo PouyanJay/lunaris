@@ -44,7 +44,7 @@ export function Sidebar({
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
       <div className={styles.brand}>
-        <BrandMark />
+        <BrandMark size={24} />
         {!collapsed && <span className={styles.wordmark}>Lunaris</span>}
         <SidebarToggle collapsed={collapsed} onClick={onToggleCollapse} />
       </div>

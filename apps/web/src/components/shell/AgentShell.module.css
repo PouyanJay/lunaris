@@ -1,7 +1,4 @@
 .shell {
-  /* padding (space-3 × 2 = 24px) + a control row (the metric band / Button, ~29px). Holds the
-     canvas header height steady across views (title-only vs title + metric band) — no jump. */
-  --header-min-height: 53px;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -85,7 +82,7 @@
   padding: var(--space-3) var(--space-5);
   border-bottom: var(--border-width) solid var(--border);
   flex: none;
-  min-height: var(--header-min-height);
+  min-height: var(--header-height);
 }
 
 /* The contextual title styled as an oversized eyebrow label — uppercase, tracked, muted — matching
