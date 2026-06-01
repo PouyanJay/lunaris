@@ -16,7 +16,10 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
-        allow_methods=["GET", "POST"],
+        # The web uses GET (reads, SSE stream), POST (build a course), and PUT/DELETE (set/clear a
+        # secret in the Settings panel). The browser preflights PUT/DELETE, so they must be allowed
+        # or the preflight 400s and the fetch surfaces as a network error in the UI.
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
         expose_headers=["X-Run-Id"],
     )
