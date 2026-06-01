@@ -1,0 +1,149 @@
+"""Integration tests for run cancellation — POST /api/runs/{run_id}/cancel and the service path.
+A run is cancelled by signalling its in-flight task through the registry; the run's own teardown
+records CANCELLED (distinct from FAILED). A controllable blocking pipeline makes the mid-build
+cancellation deterministic (the stub pipeline finishes too fast to interrupt)."""
+
+import asyncio
+from collections.abc import AsyncIterator
+from pathlib import Path
+
+import httpx
+import pytest
+from lunaris_agent import build_stub_orchestrator
+from lunaris_api.app import create_app
+from lunaris_api.dependencies import get_course_service
+from lunaris_api.run_registry import RunRegistry
+from lunaris_api.service import CourseBuildCancelledError, CourseService
+from lunaris_runtime.logging import clear_correlation
+from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
+from lunaris_runtime.schema import Course, RunStatus
+
+
+class _BlockingPipeline:
+    """A pipeline whose run() blocks until cancelled — so a build can be caught mid-flight."""
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+
+    async def run(self, topic, *, course_id, run_id, progress=None, agent=None):  # type: ignore[no-untyped-def]
+        self.started.set()
+        await asyncio.Event().wait()  # blocks forever; cancellation raises CancelledError here
+        return Course(id=course_id, topic=topic)  # pragma: no cover - never reached
+
+
+@pytest.fixture
+def run_store() -> InMemoryRunStore:
+    return InMemoryRunStore()
+
+
+@pytest.fixture
+def registry() -> RunRegistry:
+    return RunRegistry()
+
+
+@pytest.fixture
+async def client(
+    tmp_path: Path, run_store: InMemoryRunStore, registry: RunRegistry
+) -> AsyncIterator[httpx.AsyncClient]:
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store, registry)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+        yield http_client
+
+
+async def _drain(stream: AsyncIterator[object]) -> list[object]:
+    return [item async for item in stream]
+
+
+async def test_cancelling_an_in_flight_build_records_cancelled(tmp_path: Path) -> None:
+    # Arrange — a build blocked mid-run, registered for cancellation.
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    pipeline = _BlockingPipeline()
+    service = CourseService(CourseStore(tmp_path), lambda _store: pipeline, run_store, registry)
+
+    build = asyncio.create_task(service.create("graphs", course_id="c-1", run_id="r-1"))
+    await asyncio.wait_for(pipeline.started.wait(), timeout=5)  # in-flight + registered + RUNNING
+
+    # Act — cancel it. create() converts the asyncio CancelledError into a domain error (so it can't
+    # escape the request layer as a connection drop).
+    await service.cancel_run("r-1")
+    with pytest.raises(CourseBuildCancelledError):
+        await build
+
+    # Assert — the run is recorded CANCELLED (not FAILED, not stuck RUNNING).
+    run = await run_store.get(course_id="c-1")
+    assert run is not None and run.status == RunStatus.CANCELLED
+
+
+async def test_post_create_cancelled_midflight_returns_409(tmp_path: Path) -> None:
+    # A cancelled await-full POST must return a clean 409 — not a dropped connection (which a raw
+    # CancelledError escaping Starlette would cause).
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    pipeline = _BlockingPipeline()
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), lambda _store: pipeline, run_store, registry)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        build = asyncio.create_task(http.post("/api/courses", json={"topic": "graphs"}))
+        await asyncio.wait_for(pipeline.started.wait(), timeout=5)
+        run_id = (await run_store.list_recent())[0].run_id
+
+        cancel = await http.post(f"/api/runs/{run_id}/cancel")
+        assert cancel.status_code == 202
+
+        response = await asyncio.wait_for(build, timeout=5)
+        assert response.status_code == 409
+
+    assert (await run_store.list_recent())[0].status == RunStatus.CANCELLED
+
+
+async def test_cancelling_a_streaming_build_records_cancelled_and_ends_cleanly(
+    tmp_path: Path,
+) -> None:
+    # Arrange — a streaming build blocked awaiting its first event, being consumed.
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    pipeline = _BlockingPipeline()
+    service = CourseService(CourseStore(tmp_path), lambda _store: pipeline, run_store, registry)
+    consume = asyncio.create_task(_drain(service.stream("graphs", course_id="c-2", run_id="r-2")))
+    await asyncio.wait_for(pipeline.started.wait(), timeout=5)
+
+    # Act — cancel it; the SSE generator should end cleanly (no error frame, no exception), distinct
+    # from the disconnect→FAILED path.
+    await service.cancel_run("r-2")
+    await asyncio.wait_for(consume, timeout=5)
+
+    # Assert — recorded CANCELLED, not FAILED.
+    run = await run_store.get(course_id="c-2")
+    assert run is not None and run.status == RunStatus.CANCELLED
+
+
+async def test_cancel_unknown_run_is_404(client: httpx.AsyncClient) -> None:
+    response = await client.post("/api/runs/not-in-flight/cancel")
+
+    assert response.status_code == 404
+    assert "in-flight" in response.json()["detail"]
+
+
+async def test_cancel_endpoint_signals_an_in_flight_task_and_returns_202(
+    client: httpx.AsyncClient, registry: RunRegistry
+) -> None:
+    # Arrange — a task registered as in-flight under a run_id (stands in for a live build).
+    task: asyncio.Task[None] = asyncio.create_task(asyncio.Event().wait())  # type: ignore[arg-type]
+    registry.register("r-1", task)
+
+    # Act
+    response = await client.post("/api/runs/r-1/cancel")
+
+    # Assert — 202, a correlation id is returned, and the task was actually cancelled.
+    assert response.status_code == 202
+    assert response.headers["x-request-id"]
+    await asyncio.gather(task, return_exceptions=True)
+    assert task.cancelled()

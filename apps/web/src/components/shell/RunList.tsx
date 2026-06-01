@@ -10,6 +10,8 @@ const STATUS_TONE: Record<RunStatus, { tone: StatusTone; live: boolean }> = {
   running: { tone: "accent", live: true },
   completed: { tone: "success", live: false },
   failed: { tone: "danger", live: false },
+  // A deliberate stop, not an error — neutral, so it doesn't read as a failure.
+  cancelled: { tone: "neutral", live: false },
 };
 
 const SKELETON_ROW_COUNT = 3;

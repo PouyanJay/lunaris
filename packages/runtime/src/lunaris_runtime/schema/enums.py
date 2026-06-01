@@ -104,9 +104,11 @@ class RunStatus(StrEnum):
     """The operational lifecycle of a course-build run (the sidebar history status).
 
     Distinct from ``CourseStatus`` (the pedagogical lifecycle of the course itself):
-    a run is ``RUNNING`` while building, then ``COMPLETED`` or ``FAILED``.
+    a run is ``RUNNING`` while building, then ``COMPLETED``, ``FAILED``, or ``CANCELLED``
+    (explicitly terminated mid-build — distinct from FAILED, which is an error/disconnect).
     """
 
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"

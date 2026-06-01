@@ -17,6 +17,7 @@ from lunaris_runtime.persistence import (
 )
 
 from .config import Settings, get_settings
+from .run_registry import RunRegistry
 from .secrets import AnthropicProbeValidator, ISecretValidator, SecretStore
 from .service import CourseService, PipelineFactory
 
@@ -61,6 +62,15 @@ def pipeline_supports_lesson_regeneration(pipeline: str) -> bool:
 _in_memory_run_store = InMemoryRunStore()
 _supabase_run_store = SupabaseRunStore()
 
+# One in-flight run-task registry per process, shared across requests — the cancel request and the
+# build request must see the same in-flight set, so this MUST be a singleton.
+_run_registry = RunRegistry()
+
+
+def get_run_registry() -> RunRegistry:
+    """The process-wide registry of in-flight build tasks (for cancellation)."""
+    return _run_registry
+
 
 def get_run_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunStore:
     """The run-history index: Supabase when creds are present, else the in-process fallback.
@@ -77,6 +87,7 @@ def get_run_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunS
 def get_course_service(
     settings: Annotated[Settings, Depends(get_settings)],
     run_store: Annotated[IRunStore, Depends(get_run_store)],
+    registry: Annotated[RunRegistry, Depends(get_run_registry)],
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     store = CourseStore(settings.course_dir)
@@ -85,7 +96,7 @@ def get_course_service(
         # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
         logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
         factory = build_orchestrator
-    return CourseService(store, factory, run_store)
+    return CourseService(store, factory, run_store, registry)
 
 
 CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]

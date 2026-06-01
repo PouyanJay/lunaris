@@ -9,6 +9,7 @@ from lunaris_runtime.schema import Course, ProgressEvent
 from ..dependencies import CourseServiceDep
 from ..schemas import CourseRequest
 from ..service import (
+    CourseBuildCancelledError,
     CourseDeletionConflictError,
     CourseNotFoundError,
     InvalidCourseIdError,
@@ -30,12 +31,17 @@ async def create_course(
     """Run the pipeline for a topic and return the finished course-object (await_full).
 
     The generated ``run_id`` is returned in the ``X-Run-Id`` header so a single run can be
-    triangulated across every layer's logs.
+    triangulated across every layer's logs. 409 if the build is cancelled mid-flight.
     """
     course_id = uuid4().hex
     run_id = uuid4().hex
     response.headers["X-Run-Id"] = run_id
-    return await service.create(payload.topic, course_id=course_id, run_id=run_id)
+    try:
+        return await service.create(payload.topic, course_id=course_id, run_id=run_id)
+    except CourseBuildCancelledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Build was cancelled"
+        ) from exc
 
 
 @router.get("/stream")

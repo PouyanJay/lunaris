@@ -8,6 +8,7 @@ from lunaris_runtime.persistence import CourseStore, IRunStore
 from lunaris_runtime.schema import AgentEvent, Course, CourseRun, ProgressEvent, RunStatus
 
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
+from .run_registry import RunRegistry
 
 logger = structlog.get_logger()
 
@@ -54,6 +55,16 @@ class CourseNotFoundError(CourseServiceError):
     """Raised when deleting a course with no stored file and no run-history row. Router → 404."""
 
 
+class RunNotCancellableError(CourseServiceError):
+    """Raised when cancelling a run that isn't in-flight (unknown or already done). Router → 404."""
+
+
+class CourseBuildCancelledError(CourseServiceError):
+    """Raised by ``create()`` when its build was explicitly cancelled mid-flight. Converts the
+    asyncio ``CancelledError`` (a BaseException that would escape Starlette's exception middleware
+    and drop the connection with no response) into a domain error the router maps to a 409."""
+
+
 # A safe course_id is a non-empty run of [A-Za-z0-9_-] — no path separators, dots, or ``..`` that
 # could escape the course directory when the id becomes ``<id>.json``. Real ids are uuid4().hex.
 _SAFE_COURSE_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -76,21 +87,42 @@ class CourseService:
         store: CourseStore,
         pipeline_factory: PipelineFactory,
         run_store: IRunStore | None = None,
+        registry: RunRegistry | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
+        # In-flight task registry for cancellation. In production a process-wide singleton is
+        # injected (so the cancel request and the build request share it). The lone-instance default
+        # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
+        self._registry = registry or RunRegistry()
 
     async def create(self, topic: str, *, course_id: str, run_id: str) -> Course:
         pipeline = self._factory(self._store)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
+        # Run the pipeline in a registered task so a separate request can cancel this build (the
+        # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
+        # it raises CancelledError at this await without cancelling the request coroutine itself.
+        task = asyncio.create_task(pipeline.run(topic, course_id=course_id, run_id=run_id))
+        self._registry.register(run_id, task)
         try:
-            course = await pipeline.run(topic, course_id=course_id, run_id=run_id)
+            course = await task
+        except asyncio.CancelledError:
+            if self._registry.was_cancelled(run_id):
+                # Convert to a domain error: a raw CancelledError (BaseException) would escape
+                # Starlette and drop the connection with no response. The router maps this → 409.
+                await self._record_cancelled(course_id)
+                raise CourseBuildCancelledError(run_id) from None
+            # Not a registry cancel — this request coroutine itself is being torn down; let it go.
+            await self._record_failure(course_id)
+            raise
         except Exception:
             await self._record_failure(course_id)
             raise
+        finally:
+            self._registry.discard(run_id)
         await self._record_finish(course)
         return course
 
@@ -129,6 +161,7 @@ class CourseService:
                     agent=QueueAgentSink(queue),
                 )
             )
+            self._registry.register(run_id, run_task)  # cancellable by a separate request
             while True:
                 next_event_task = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
@@ -142,6 +175,12 @@ class CourseService:
                 while not queue.empty():
                     yield queue.get_nowait()
                 break
+            if run_task.cancelled():
+                # Explicitly cancelled via the registry — record CANCELLED and end the stream
+                # cleanly (no terminal course frame), distinct from the disconnect→FAILED path.
+                await self._record_cancelled(course_id)
+                recorded = True
+                return
             course = run_task.result()  # .result() propagates a pipeline failure here
             await self._record_finish(course)
             recorded = True
@@ -152,6 +191,7 @@ class CourseService:
             recorded = True
             raise
         finally:
+            self._registry.discard(run_id)
             if run_task is not None and not run_task.done():
                 run_task.cancel()
             if not recorded:
@@ -243,6 +283,14 @@ class CourseService:
             logger.warning("run_history_list_failed", limit=bounded, exc_info=True)
             raise RunHistoryUnavailableError("Run history backend is unavailable") from exc
 
+    async def cancel_run(self, run_id: str) -> None:
+        """Request cancellation of an in-flight run. Only signals it — the build's own task records
+        CANCELLED as it unwinds (status writes stay owned by the run's coroutine). Raises
+        RunNotCancellableError (router → 404) when nothing is in-flight."""
+        if not self._registry.cancel(run_id):
+            raise RunNotCancellableError(run_id)
+        logger.info("run_cancel_requested", run_id=run_id)
+
     async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
         """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""
         if self._run_store is None:
@@ -278,3 +326,14 @@ class CourseService:
             )
         except Exception:
             logger.warning("run_history_mark_failed_error", course_id=course_id, exc_info=True)
+
+    async def _record_cancelled(self, course_id: str) -> None:
+        """Mark the run CANCELLED — best-effort (a no-op if the start row was never written)."""
+        if self._run_store is None:
+            return
+        try:
+            await self._run_store.finish(
+                course_id=course_id, status=RunStatus.CANCELLED, kc_count=0, module_count=0
+            )
+        except Exception:
+            logger.warning("run_history_mark_cancelled_error", course_id=course_id, exc_info=True)

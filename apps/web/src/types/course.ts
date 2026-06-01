@@ -250,7 +250,7 @@ export interface ProgressEvent {
 }
 
 /** The operational lifecycle of a build run for the sidebar history (mirrors RunStatus). */
-export type RunStatus = "running" | "completed" | "failed";
+export type RunStatus = "running" | "completed" | "failed" | "cancelled";
 
 /**
  * One row in the run-history index — a single course build listed in the sidebar (mirrors the
