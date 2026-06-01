@@ -7,7 +7,8 @@ import {
   type TimelinePhase,
 } from "../../lib/buildTimeline";
 import { formatDuration } from "../../lib/formatDuration";
-import type { AgentEvent, ProgressEvent } from "../../types/course";
+import type { AgentEvent, ProgressEvent, ProgressStage } from "../../types/course";
+import { LiveActivity } from "./LiveActivity";
 import { TodoList } from "./TodoList";
 import { ToolCallCard } from "./ToolCallCard";
 import styles from "./BuildTimeline.module.css";
@@ -31,6 +32,9 @@ export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildT
   );
   const plan = useMemo(() => latestPlan(agentEvents), [agentEvents]);
   const activeKey = phases.find((phase) => phase.status === "active")?.key ?? null;
+  // When the active phase began (its stage's arrival), so its status line can show a live clock.
+  // The pre-stage "intro" node isn't a stage, so it carries no timer.
+  const activeStartedAt = isTimedPhase(activeKey) ? stageTimes?.[activeKey] : undefined;
 
   // Phases are expanded by default; this tracks the ones the user manually COLLAPSED, so newly
   // streamed content is always visible without a click while staying dismissible.
@@ -80,12 +84,19 @@ export function BuildTimeline({ topic, events, agentEvents, stageTimes }: BuildT
               expandable={hasBody}
               onToggle={() => toggle(phase.key)}
               nodeRef={phase.status === "active" ? activeRef : undefined}
+              startedAt={phase.status === "active" ? activeStartedAt : undefined}
             />
           );
         })}
       </ol>
     </div>
   );
+}
+
+/** A phase keyed by a real ProgressStage (so it has a stage-arrival time) — i.e. not the pre-stage
+ *  "intro" node and not the no-active-phase (`null`) case. */
+function isTimedPhase(key: string | null): key is ProgressStage {
+  return key !== null && key !== "intro";
 }
 
 interface PhaseNodeProps {
@@ -96,20 +107,18 @@ interface PhaseNodeProps {
   // Explicit `| undefined` for the repo's exactOptionalPropertyTypes (the active node passes the ref;
   // the others pass undefined).
   nodeRef?: Ref<HTMLLIElement> | undefined;
+  /** When the active phase began (ms epoch), for its live clock; undefined for non-active nodes. */
+  startedAt?: number | undefined;
 }
 
-function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef }: PhaseNodeProps) {
+function PhaseNode({ phase, expanded, expandable, onToggle, nodeRef, startedAt }: PhaseNodeProps) {
   const duration = phase.durationMs !== null ? formatDuration(phase.durationMs) : null;
   const header = (
     <>
       <span className={styles.dot} data-status={phase.status} aria-hidden="true" />
       <span className={styles.label}>{phase.label}</span>
       {phase.summary && <span className={`mono ${styles.summary}`}>{phase.summary}</span>}
-      {phase.status === "active" && (
-        <span className={`mono ${styles.live}`} aria-hidden="true">
-          running…
-        </span>
-      )}
+      {phase.status === "active" && <LiveActivity phaseKey={phase.key} startedAt={startedAt} />}
       {duration && <span className={`mono ${styles.duration}`}>{duration}</span>}
     </>
   );

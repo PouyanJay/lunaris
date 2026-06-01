@@ -1,0 +1,38 @@
+/* The Lunaris moon spinner: a dark moon body with an accent "lit" disc that sweeps across it, so the
+   lit face waxes to full and wanes back — read as our signature mark, in motion. */
+.moon {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  /* The always-visible moon body (the unlit disc), a quiet accent-tinted dark. */
+  background: color-mix(in srgb, var(--accent-500) 22%, var(--bg));
+}
+
+.lit {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+  /* Slides the lit disc across the body: off-left (new) → centered (full) → off-right (new). */
+  animation: lunarPhase 2.6s var(--ease) infinite alternate;
+}
+
+@keyframes lunarPhase {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lit {
+    animation: none;
+    /* Park the lit disc at ~quarter overlap (the keyframes sweep -100%→100%), so the moon holds a
+       readable crescent instead of cycling. */
+    transform: translateX(-42%);
+  }
+}

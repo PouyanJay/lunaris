@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { makeAgentEvent, makeProgressEvent } from "../../test/fixtures";
 import { BuildTimeline } from "./BuildTimeline";
@@ -165,5 +165,28 @@ describe("BuildTimeline", () => {
 
     expect(screen.getByText("Extracted the concepts.")).toBeInTheDocument();
     expect(screen.queryByTestId("reasoning-caret")).not.toBeInTheDocument();
+  });
+
+  it("shows a cycling phase verb and the branded spinner on the active phase", () => {
+    render(<BuildTimeline {...streamingProps()} />);
+
+    // Graph is active → its status line shows a phase-scoped verb (starting on the first one) with
+    // the branded spinner beside it, replacing the old static "running…" header label. Scope the
+    // spinner to the verb's own activity strip so an in-flight tool card's spinner can't satisfy it.
+    const verb = screen.getByText("Mapping prerequisites…");
+    expect(within(verb.parentElement!).getByTestId("lunar-spinner")).toBeInTheDocument();
+  });
+
+  it("shows a live elapsed clock on the active phase when its start time is known", () => {
+    // Fake timers freeze Date.now() so the 30s diff renders exactly 0:30 (no real-clock race).
+    vi.useFakeTimers();
+    try {
+      render(
+        <BuildTimeline {...streamingProps()} stageTimes={{ graph_built: Date.now() - 30_000 }} />,
+      );
+      expect(screen.getByText("0:30")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

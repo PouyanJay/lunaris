@@ -1,0 +1,50 @@
+.activity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  font-size: var(--text-xs);
+}
+
+/* The verb shimmers: an accent highlight sweeps across muted text, the "it's alive" signal. The
+   sweep duration is independent of the JS verb cycle (CYCLE_MS) — each new verb remounts via its
+   `key`, restarting the sweep — so the two need not match. Reduced motion holds plain readable text. */
+.verb {
+  background: linear-gradient(
+    90deg,
+    var(--text-muted) 0%,
+    var(--text-secondary) 35%,
+    var(--accent-500) 50%,
+    var(--text-secondary) 65%,
+    var(--text-muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: liveShimmer 2.6s linear infinite;
+}
+
+.elapsed {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes liveShimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verb {
+    animation: none;
+    background: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+    color: var(--text-secondary);
+  }
+}
