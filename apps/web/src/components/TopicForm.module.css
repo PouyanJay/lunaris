@@ -39,6 +39,12 @@
   align-items: stretch;
 }
 
+/* Match the submit button to the input's height so the welded field reads as one inline row (the
+   base Button is 32px; the input is taller). Scoped child selector outweighs the Button default. */
+.field > button {
+  height: 38px;
+}
+
 .input {
   flex: 1;
   min-width: 0;
