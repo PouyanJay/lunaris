@@ -23,3 +23,15 @@ class CourseStore:
 
     def load(self, course_id: str) -> Course:
         return Course.model_validate_json(self.path_for(course_id).read_text())
+
+    def delete(self, course_id: str) -> bool:
+        """Delete the stored course file. Idempotent: a missing file is not an error.
+
+        Returns ``True`` if a file was removed, ``False`` if it was already absent — so the caller
+        can tell a real deletion from a no-op (e.g. to choose 204 vs 404).
+        """
+        path = self.path_for(course_id)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True

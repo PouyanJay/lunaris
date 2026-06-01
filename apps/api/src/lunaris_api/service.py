@@ -1,4 +1,5 @@
 import asyncio
+import re
 from collections.abc import AsyncIterator, Callable
 
 import structlog
@@ -38,6 +39,28 @@ class RunHistoryUnavailableError(CourseServiceError):
 
     Reads, unlike the best-effort writes, surface their failure rather than degrade to an empty
     list (which would lie "no runs yet"); the router maps this to a 503."""
+
+
+class InvalidCourseIdError(CourseServiceError):
+    """Raised when a course_id isn't the safe shape (alphanumeric, ``-``, ``_``). Guards the
+    filesystem path against traversal before it becomes ``<id>.json``. Router → 400."""
+
+
+class CourseDeletionConflictError(CourseServiceError):
+    """Raised when deleting a course whose run is still building — cancel it first. Router → 409."""
+
+
+class CourseNotFoundError(CourseServiceError):
+    """Raised when deleting a course with no stored file and no run-history row. Router → 404."""
+
+
+# A safe course_id is a non-empty run of [A-Za-z0-9_-] — no path separators, dots, or ``..`` that
+# could escape the course directory when the id becomes ``<id>.json``. Real ids are uuid4().hex.
+_SAFE_COURSE_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _is_safe_course_id(course_id: str) -> bool:
+    return _SAFE_COURSE_ID.fullmatch(course_id) is not None
 
 
 class CourseService:
@@ -141,6 +164,10 @@ class CourseService:
                 await self._record_failure(course_id)
 
     def get(self, course_id: str) -> Course | None:
+        # An unsafe id can't name a stored course (ids are uuid4().hex); treat it as not-found
+        # rather than let it reach path_for — the same traversal guard delete_course applies.
+        if not _is_safe_course_id(course_id):
+            return None
         try:
             return self._store.load(course_id)
         except FileNotFoundError:
@@ -154,10 +181,50 @@ class CourseService:
         Returns ``None`` if the course or lesson is unknown. Raises the unsupported error if the
         active pipeline can't regenerate a single lesson (e.g. the deep-agent builder).
         """
+        if not _is_safe_course_id(course_id):
+            return None  # unsafe id can't name a stored course → not-found (router → 404)
         pipeline = self._factory(self._store)
         if not isinstance(pipeline, LessonRegenerator):
             raise LessonRegenerationUnsupportedError(type(pipeline).__name__)
         return await pipeline.regenerate_lesson(course_id, lesson_id, run_id=run_id)
+
+    async def delete_course(self, course_id: str) -> None:
+        """Delete a course and its per-course assets: the stored course-object + run-history row.
+
+        Guards (one door for all callers): rejects an unsafe id before touching the filesystem;
+        refuses to delete a course whose run is still building (cancel it first); raises not-found
+        if neither asset exists. Otherwise idempotent — clearing a stray file or row alone succeeds.
+        """
+        if not _is_safe_course_id(course_id):
+            raise InvalidCourseIdError(course_id)
+        await self._ensure_not_running(course_id)
+        await self._purge_course_assets(course_id)
+
+    async def _ensure_not_running(self, course_id: str) -> None:
+        """Block deleting a course whose build is still in progress. With no run store wired there's
+        no run history and so no live build to protect, so the guard is intentionally skipped."""
+        if self._run_store is None:
+            return
+        run = await self._run_store.get(course_id=course_id)
+        if run is not None and run.status == RunStatus.RUNNING:
+            raise CourseDeletionConflictError(course_id)
+
+    async def _purge_course_assets(self, course_id: str) -> None:
+        """Remove the stored file + the run row; not-found if neither existed."""
+        file_deleted = self._store.delete(course_id)
+        row_deleted = (
+            await self._run_store.delete(course_id=course_id)
+            if self._run_store is not None
+            else False
+        )
+        if not file_deleted and not row_deleted:
+            raise CourseNotFoundError(course_id)
+        logger.info(
+            "course_deleted",
+            course_id=course_id,
+            file_deleted=file_deleted,
+            row_deleted=row_deleted,
+        )
 
     async def list_runs(self, *, limit: int = RUNS_LIMIT_DEFAULT) -> list[CourseRun]:
         """Return an empty list when no run store is wired (batch / no-history callers), so the

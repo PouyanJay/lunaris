@@ -3,11 +3,17 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
+from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.schema import Course, ProgressEvent
 
 from ..dependencies import CourseServiceDep
 from ..schemas import CourseRequest
-from ..service import LessonRegenerationUnsupportedError
+from ..service import (
+    CourseDeletionConflictError,
+    CourseNotFoundError,
+    InvalidCourseIdError,
+    LessonRegenerationUnsupportedError,
+)
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -70,6 +76,36 @@ async def get_course(course_id: str, service: CourseServiceDep) -> Course:
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     return course
+
+
+@router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_course(course_id: str, service: CourseServiceDep) -> Response:
+    """Delete a course and its per-course assets (the stored course-object + its run-history row).
+
+    400 if the id isn't the safe shape; 409 if the run is still building (cancel it first); 404 if
+    there's nothing to delete; 204 on success. A ``request_id`` is bound + returned in
+    ``X-Request-Id`` so the deletion is traceable across the structured logs.
+    """
+    request_id = uuid4().hex
+    bind_request_id(request_id)
+    headers = {"X-Request-Id": request_id}
+    try:
+        await service.delete_course(course_id)
+    except InvalidCourseIdError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid course id", headers=headers
+        ) from exc
+    except CourseDeletionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete a course while its run is in progress; cancel it first",
+            headers=headers,
+        ) from exc
+    except CourseNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found", headers=headers
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=headers)
 
 
 @router.post("/{course_id}/lessons/{lesson_id}/regenerate", response_model=Course)

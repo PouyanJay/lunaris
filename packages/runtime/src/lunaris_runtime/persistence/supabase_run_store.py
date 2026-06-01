@@ -85,6 +85,34 @@ class SupabaseRunStore:
         )
         return [self._to_course_run(row) for row in (response.data or [])]
 
+    async def get(self, *, course_id: str) -> CourseRun | None:
+        client = self._ensure_client()
+        response = await asyncio.to_thread(
+            lambda: (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .select("*")
+                .eq("id", course_id)
+                .limit(1)
+                .execute()
+            )
+        )
+        rows = response.data or []
+        return self._to_course_run(rows[0]) if rows else None
+
+    async def delete(self, *, course_id: str) -> bool:
+        client = self._ensure_client()
+        # Ask PostgREST for an exact count so the "did anything get deleted?" answer doesn't depend
+        # on the client's implicit return-representation default (which could change to minimal).
+        response = await asyncio.to_thread(
+            lambda: (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .delete(count="exact")
+                .eq("id", course_id)
+                .execute()
+            )
+        )
+        return (response.count or 0) > 0
+
     @staticmethod
     def _to_course_run(row: dict[str, object]) -> CourseRun:
         # Coerce explicitly: the supabase-py rows are untyped, and timestamptz arrives as an ISO

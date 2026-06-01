@@ -47,3 +47,14 @@ class InMemoryRunStore:
     async def list_recent(self, *, limit: int = 50) -> list[CourseRun]:
         newest_first = list(reversed(self._order))[:limit]
         return [self._runs[course_id] for course_id in newest_first]
+
+    async def get(self, *, course_id: str) -> CourseRun | None:
+        return self._runs.get(course_id)
+
+    async def delete(self, *, course_id: str) -> bool:
+        """Drop a run's history row. Idempotent: returns False if it wasn't recorded."""
+        if course_id not in self._runs:
+            return False
+        del self._runs[course_id]
+        self._order = [cid for cid in self._order if cid != course_id]
+        return True
