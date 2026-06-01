@@ -223,10 +223,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // Reasoning + the tool-call card render in the canvas transcript (a labelled, focusable region).
+    // Reasoning + the tool-call card render in the live build timeline (a labelled, focusable region).
     expect(await screen.findByText("Mapping the prerequisites.")).toBeInTheDocument();
     expect(screen.getByText("extract_concepts")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: /agent transcript/i })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: /building graphs/i })).toBeInTheDocument();
   });
 
   it("surfaces a newly started build in the sidebar history without a manual refresh", async () => {
@@ -726,7 +726,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
         return Promise.resolve({ ok: true, status: 204 });
       }
       if (/\/api\/courses\/c-1$/.test(url)) {
-        return Promise.resolve({ ok: true, json: async () => makeCourse({ id: "c-1", topic: "queues" }) });
+        return Promise.resolve({
+          ok: true,
+          json: async () => makeCourse({ id: "c-1", topic: "queues" }),
+        });
       }
       throw new Error(`unhandled ${method} ${url}`);
     });
@@ -737,10 +740,14 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
     await screen.findByRole("heading", { name: "queues" });
     fireEvent.click(screen.getByRole("button", { name: /delete course: queues/i }));
-    fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }),
+    );
 
     // The canvas drops the deleted course and returns to the build surface.
-    expect(await screen.findByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "queues" })).not.toBeInTheDocument();
   });
 });

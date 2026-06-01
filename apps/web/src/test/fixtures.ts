@@ -221,6 +221,7 @@ export function makeAgentEvent(
     kind,
     runId: "run-test",
     sequence,
+    stage: null,
     text: null,
     tool: null,
     toolArgs: null,

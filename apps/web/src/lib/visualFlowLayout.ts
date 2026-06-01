@@ -19,7 +19,10 @@ const GRAPH_MARGIN = 24;
 
 /** Lay a flow or tree spec out top-to-bottom with dagre into React Flow nodes (movable, absolute
  *  positions) and bezier edges. A tree's edges are derived from each node's `parentId`. */
-export function buildVisualLayout(spec: FlowSpec | TreeSpec): { nodes: DiagramNode[]; edges: Edge[] } {
+export function buildVisualLayout(spec: FlowSpec | TreeSpec): {
+  nodes: DiagramNode[];
+  edges: Edge[];
+} {
   const nodeIds = new Set(spec.nodes.map((node) => node.id));
   const rawEdges = (
     spec.type === "flow"
@@ -54,13 +57,18 @@ export function buildVisualLayout(spec: FlowSpec | TreeSpec): { nodes: DiagramNo
   });
 
   const edges: Edge[] = rawEdges.map((edge, index) => ({
-      id: `${edge.from}->${edge.to}-${index}`,
-      source: edge.from,
-      target: edge.to,
-      label: edge.label ?? undefined,
-      type: "default",
-      markerEnd: { type: MarkerType.ArrowClosed, width: 12, height: 12, color: "var(--border-strong)" },
-    }));
+    id: `${edge.from}->${edge.to}-${index}`,
+    source: edge.from,
+    target: edge.to,
+    label: edge.label ?? undefined,
+    type: "default",
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 12,
+      height: 12,
+      color: "var(--border-strong)",
+    },
+  }));
 
   return { nodes, edges };
 }

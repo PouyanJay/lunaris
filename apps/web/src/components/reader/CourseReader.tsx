@@ -158,7 +158,13 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   return (
     <div className={styles.reader}>
       <ReaderOutline groups={groups} activeIndex={safeIndex} onSelect={setActiveIndex} />
-      <div className={styles.pane} ref={paneRef} role="region" aria-label="Lesson reader" tabIndex={0}>
+      <div
+        className={styles.pane}
+        ref={paneRef}
+        role="region"
+        aria-label="Lesson reader"
+        tabIndex={0}
+      >
         <article className={styles.page}>
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>

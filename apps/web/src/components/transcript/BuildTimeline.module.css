@@ -1,0 +1,139 @@
+.timeline {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6);
+}
+/* Inset ring (an outer box-shadow would clip on the scroll container). */
+.timeline:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+.phases {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 820px;
+}
+
+/* Each phase is a node on a continuous hairline spine: a vertical rule runs through the dot column,
+   drawn by the node's ::before and bridged to the next node by the row gap it spans. */
+.phase {
+  position: relative;
+  padding: 0 0 var(--space-5) var(--space-6);
+}
+.phase::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.phase:last-child {
+  padding-bottom: 0;
+}
+.phase:last-child::before {
+  display: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  border-radius: var(--radius-sm);
+}
+button.header {
+  cursor: pointer;
+}
+button.header:hover .label {
+  color: var(--text);
+}
+
+/* The status dot sits on the spine (left:6px line → dot centered on it). */
+.dot {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  width: 13px;
+  height: 13px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border-strong);
+  background: var(--bg);
+  flex: none;
+}
+.dot[data-status="active"] {
+  border-color: var(--accent-500);
+  background: var(--accent-500);
+  animation: timelinePulse 1.6s var(--ease) infinite;
+}
+.dot[data-status="done"] {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.phase[data-status="pending"] .label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.phase[data-status="done"] .label {
+  color: var(--text-secondary);
+}
+
+.summary {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.live {
+  font-size: var(--text-xs);
+  color: var(--accent-500);
+  margin-left: auto;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-1);
+}
+
+.reasoning {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@keyframes timelinePulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-500) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot[data-status="active"] {
+    animation: none;
+  }
+}

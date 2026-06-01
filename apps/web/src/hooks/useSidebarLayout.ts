@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 
 /** Sidebar width bounds (px). The rail stays usable at the floor and never eats the canvas at the
  *  ceiling. Exported so the resize control can advertise them via aria-valuemin/max and the tests

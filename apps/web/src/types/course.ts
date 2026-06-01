@@ -287,6 +287,9 @@ export interface AgentEvent {
   kind: AgentEventKind;
   runId: string;
   sequence: number;
+  /** The coarse pipeline stage active when this event fired (null for the "intro" beats before the
+   *  first stage), so the live timeline buckets it under its phase deterministically. */
+  stage: ProgressStage | null;
   text: string | null;
   tool: string | null;
   toolArgs: Record<string, unknown> | null;
