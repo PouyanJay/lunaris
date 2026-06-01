@@ -34,6 +34,7 @@ from .authoring import ILessonReviser, build_authoring_subgraph
 from .draft import CourseDraft
 from .event_tap import stream_course_build
 from .progress_reporter import ProgressReporter
+from .stage_cursor import StageCursor
 from .tools import (
     make_design_curriculum_tool,
     make_extract_concepts_tool,
@@ -104,15 +105,21 @@ class AgentCourseBuilder:
             draft = CourseDraft(
                 topic=topic, course_id=course_id, run_id=run_id, risk_tier=self._risk_tier
             )
+            # One stage cursor per run, shared by both reporters: the ProgressReporter advances
+            # it at each stage boundary, and the AgentReporter stamps every fine event's `stage`
+            # from it, so the timeline buckets reasoning/tool beats under the active phase.
+            cursor = StageCursor()
             # Stream stage-boundary progress through the injected sink (no-op for batch callers);
             # the draft-bound tools + authoring loop emit onto draft.progress as they run.
             if progress is not None:
-                draft.progress = ProgressReporter(run_id, progress)
+                draft.progress = ProgressReporter(run_id, progress, cursor=cursor)
             # The fine-grained transcript feed (reasoning / tool calls / todos): tap the deep
             # agent's own LangGraph event stream and translate it onto the agent channel
             # (sink → SSE → web transcript). This drives the graph to completion exactly as
             # ``ainvoke`` would; the finalized course is read from the draft afterward.
-            agent_reporter = AgentReporter(run_id, agent)
+            # The cursor is advanced only by draft.progress (above); a batch caller with
+            # progress=None never advances it, so every agent event correctly emits stage=None.
+            agent_reporter = AgentReporter(run_id, agent, cursor=cursor)
             await draft.progress.emit(ProgressStage.RUN_STARTED, f"Building a course for “{topic}”")
             deep_agent = build_course_agent(
                 self._model,
