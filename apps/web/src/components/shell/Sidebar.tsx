@@ -2,11 +2,13 @@ import { Button } from "../primitives/Button";
 import { BrandMark } from "./BrandMark";
 import { RunList } from "./RunList";
 import { SidebarToggle } from "./SidebarToggle";
+import { ThemeToggle } from "./ThemeToggle";
 import type { RunsState } from "../../hooks/useRuns";
+import type { ThemeProps } from "../../hooks/useTheme";
 import type { CourseRun } from "../../types/course";
 import styles from "./Sidebar.module.css";
 
-interface SidebarProps {
+interface SidebarProps extends ThemeProps {
   runs: RunsState;
   onReloadRuns: () => void;
   onNewCourse: () => void;
@@ -40,6 +42,8 @@ export function Sidebar({
   onCancelRun,
   cancellingRunId,
   selectedRunId,
+  theme,
+  onToggleTheme,
 }: SidebarProps) {
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
@@ -104,6 +108,7 @@ export function Sidebar({
             Settings
           </button>
         )}
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
     </div>
   );
