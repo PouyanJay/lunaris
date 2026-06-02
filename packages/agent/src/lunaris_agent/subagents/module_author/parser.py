@@ -1,6 +1,6 @@
-import json
 import re
 
+from ..json_tolerant import loads_tolerant
 from .lesson_draft import LessonDraft, SegmentDraft
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -23,7 +23,9 @@ def parse_lesson(text: str) -> LessonDraft:
     match = _JSON_OBJECT_RE.search(text)
     if match is None:
         raise ValueError("no JSON object in module-author response")
-    data = json.loads(match.group(0))
+    data = loads_tolerant(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("module-author response is not a JSON object")
 
     missing = [p for p in _PHASES if p not in data]
     if missing:

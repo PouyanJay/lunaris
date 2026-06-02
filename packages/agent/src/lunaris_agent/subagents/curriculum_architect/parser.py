@@ -1,8 +1,8 @@
-import json
 import re
 
 from lunaris_runtime.schema import BloomLevel
 
+from ..json_tolerant import loads_tolerant
 from .plan import CurriculumPlan, ModulePlan, ObjectivePlan
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -38,7 +38,9 @@ def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
     match = _JSON_OBJECT_RE.search(text)
     if match is None:
         raise ValueError("no JSON object in architect response")
-    data = json.loads(match.group(0))
+    data = loads_tolerant(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("architect response is not a JSON object")
 
     raw_modules = data.get("modules", [])
     if not raw_modules:
@@ -49,6 +51,8 @@ def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
     for raw in raw_modules:
         objectives: list[ObjectivePlan] = []
         for obj in raw.get("objectives", []):
+            if not isinstance(obj, dict) or "kc" not in obj:
+                continue  # skip a malformed/half-written objective rather than KeyError on it
             kc = str(obj["kc"])
             if kc not in known_kc_ids:
                 raise ValueError(f"objective targets unknown KC {kc!r}")

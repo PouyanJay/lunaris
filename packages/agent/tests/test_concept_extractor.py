@@ -1,6 +1,7 @@
 import pytest
 from lunaris_agent.subagents.concept_extractor import parse_extraction
 from lunaris_runtime.schema import BloomLevel
+from structlog.testing import capture_logs
 
 
 def test_parse_extraction_reads_kcs_and_goal() -> None:
@@ -51,16 +52,23 @@ def test_parse_extraction_defaults_goal_to_last_kc() -> None:
     assert extraction.goal_id == "b"
 
 
-def test_parse_extraction_rejects_goal_not_in_kcs() -> None:
-    # Arrange
+def test_parse_extraction_falls_back_when_goal_not_in_kcs() -> None:
+    # Arrange — the model named a goal it didn't actually extract (a common live slip on fuzzy
+    # topics). Rather than crash the whole build, snap the goal to the last (hardest) KC.
     text = (
         '{"goal_id": "ghost", "kcs": ['
-        '{"id": "a", "label": "A", "definition": "d", "difficulty": 0.1}]}'
+        '{"id": "a", "label": "A", "definition": "d", "difficulty": 0.1},'
+        '{"id": "b", "label": "B", "definition": "d", "difficulty": 0.9}]}'
     )
 
-    # Act / Assert
-    with pytest.raises(ValueError, match="not among"):
-        parse_extraction(text)
+    # Act
+    with capture_logs() as logs:
+        extraction = parse_extraction(text)
+
+    # Assert — the goal snaps to the last KC, and the slip is logged for operators (not silent).
+    assert extraction.goal_id == "b"
+    assert [kc.id for kc in extraction.kcs] == ["a", "b"]
+    assert any(e["event"] == "extractor_goal_id_not_in_kcs" and e["fallback"] == "b" for e in logs)
 
 
 def test_parse_extraction_rejects_empty() -> None:
