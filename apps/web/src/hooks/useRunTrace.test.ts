@@ -56,4 +56,35 @@ describe("useRunTrace", () => {
     if (state.status !== "error") throw new Error("expected error");
     expect(state.message).toMatch(/build record/i);
   });
+
+  it("discards a superseded load's late result", async () => {
+    let resolveFirst!: (value: unknown) => void;
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ ok: true, json: async () => [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ id }) => useRunTrace("http://test", id), {
+      initialProps: { id: "run-1" },
+    });
+    expect(result.current.state.status).toBe("loading");
+
+    // A new runId starts a second load and aborts the first.
+    rerender({ id: "run-2" });
+    await waitFor(() => expect(result.current.state.status).toBe("empty"));
+
+    // The first (aborted) fetch resolving late must NOT overwrite the second load's result —
+    // if the abort guard were removed, this would flip the state back to "ready".
+    resolveFirst({
+      ok: true,
+      json: async () => [makeRunEvent(0, makeProgressEvent("run_started", 0))],
+    });
+    await Promise.resolve();
+    expect(result.current.state.status).toBe("empty");
+  });
 });

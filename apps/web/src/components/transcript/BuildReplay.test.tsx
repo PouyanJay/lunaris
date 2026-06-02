@@ -41,6 +41,15 @@ describe("BuildReplay", () => {
     }
   });
 
+  it("shows a loading skeleton while the log is in flight", () => {
+    // A never-resolving fetch keeps the hook in its loading state.
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+
+    renderReplay("run-1");
+
+    expect(screen.getByRole("status", { name: /loading build record/i })).toBeInTheDocument();
+  });
+
   it("shows a 'no build record' state when the run left no log", async () => {
     stubFetch({ ok: true, json: async () => [] });
 

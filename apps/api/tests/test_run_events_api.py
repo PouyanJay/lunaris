@@ -17,7 +17,7 @@ from lunaris_api.dependencies import get_course_service
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import CourseStore, InMemoryRunEventStore, InMemoryRunStore
-from lunaris_runtime.schema import RunEvent
+from lunaris_runtime.schema import ProgressEvent, ProgressStage, RunEvent, RunEventKind
 
 
 def _client_for(service: CourseService) -> httpx.ASGITransport:
@@ -177,3 +177,71 @@ async def test_event_log_write_failure_does_not_break_a_build(
     ]
     append_failures = [e for e in events if e.get("event") == "run_events_append_failed"]
     assert append_failures and all(e["run_id"] == run_id for e in append_failures)
+
+
+# --- T5 variant coverage: read-outage, and partial logs of incomplete runs --------------------
+
+
+class _ReadFailingEventStore(InMemoryRunEventStore):
+    """Reads blow up — the missing-table / backend-outage case for the replay endpoint."""
+
+    async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
+        raise RuntimeError("event log backend is unavailable")
+
+
+async def test_event_log_read_outage_returns_503_with_cors_headers(tmp_path: Path) -> None:
+    # Arrange — a service whose event-log reads fail; the browser sends an allowed Origin.
+    dev_origin = "http://localhost:5173"  # the Vite dev server, in the CORS allowlist
+    service = CourseService(
+        CourseStore(tmp_path),
+        build_stub_orchestrator,
+        InMemoryRunStore(),
+        event_store=_ReadFailingEventStore(),
+    )
+    transport = _client_for(service)
+
+    # Act
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/runs/run-1/events", headers={"Origin": dev_origin})
+
+    # Assert — a read outage is a recoverable 503 (not a CORS-stripped 500), so the replay view
+    # shows a retry, not a network error. The CORS header must survive (handled in-middleware).
+    assert response.status_code == 503
+    assert response.headers["access-control-allow-origin"] == dev_origin
+
+
+async def test_partial_log_of_an_incomplete_run_is_replayable(
+    http_with: httpx.AsyncClient, event_store: InMemoryRunEventStore
+) -> None:
+    # Arrange — a run that never reached run_completed (still building, or failed/cancelled
+    # mid-flight) leaves a partial log. Seed two persisted beats with no terminal stage.
+    run_id, course_id = "partial-run", "c-partial"
+
+    def _row(seq: int, stage: ProgressStage, label: str) -> RunEvent:
+        return RunEvent(
+            run_id=run_id,
+            course_id=course_id,
+            seq=seq,
+            kind=RunEventKind.PROGRESS,
+            payload=ProgressEvent(stage=stage, label=label, run_id=run_id).model_dump(
+                by_alias=True, mode="json"
+            ),
+        )
+
+    await event_store.append(
+        events=[
+            _row(0, ProgressStage.RUN_STARTED, "Starting"),
+            _row(1, ProgressStage.CONCEPTS_EXTRACTED, "Extracted 5"),
+        ]
+    )
+
+    # Act — replay-persisted (MVP): the endpoint returns whatever was captured, no terminal frame.
+    log = await http_with.get(f"/api/runs/{run_id}/events")
+
+    # Assert — the partial log replays in order and stops where the build stopped.
+    assert log.status_code == 200
+    events = log.json()
+    assert [e["seq"] for e in events] == [0, 1]
+    stages = [e["payload"]["stage"] for e in events]
+    assert stages == ["run_started", "concepts_extracted"]
+    assert "run_completed" not in stages
