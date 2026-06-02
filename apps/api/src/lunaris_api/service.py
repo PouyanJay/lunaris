@@ -4,10 +4,18 @@ from collections.abc import AsyncIterator, Callable
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
-from lunaris_runtime.persistence import CourseStore, IRunStore
-from lunaris_runtime.schema import AgentEvent, Course, CourseRun, ProgressEvent, RunStatus
+from lunaris_runtime.persistence import CourseStore, IRunEventStore, IRunStore
+from lunaris_runtime.schema import (
+    AgentEvent,
+    Course,
+    CourseRun,
+    ProgressEvent,
+    RunEvent,
+    RunStatus,
+)
 
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
+from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
 
 logger = structlog.get_logger()
@@ -88,12 +96,16 @@ class CourseService:
         pipeline_factory: PipelineFactory,
         run_store: IRunStore | None = None,
         registry: RunRegistry | None = None,
+        event_store: IRunEventStore | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
+        # The replayable build-event log (build-timeline Phase B). Best-effort like the run store;
+        # None for callers that don't persist a transcript (batch / tests that don't replay).
+        self._event_store = event_store
         # In-flight task registry for cancellation. In production a process-wide singleton is
         # injected (so the cancel request and the build request share it). The lone-instance default
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
@@ -149,6 +161,10 @@ class CourseService:
         # ``yield``, bypassing the ``except Exception`` below; the ``finally`` uses this flag to
         # record FAILED for an interrupted run instead of leaving it stuck RUNNING.
         recorded = False
+        # Persists each forwarded beat to the replayable build log: buffered, flushed in best-effort
+        # batches at phase boundaries (so a crash mid-build still replays up to the last boundary),
+        # capped per run, and drained in the ``finally`` below. Never blocks a yield.
+        recorder = RunEventRecorder(self._event_store, run_id=run_id, course_id=course_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
         try:
             pipeline = self._factory(self._store)
@@ -168,12 +184,16 @@ class CourseService:
                     {next_event_task, run_task}, return_when=asyncio.FIRST_COMPLETED
                 )
                 if next_event_task in done:
-                    yield next_event_task.result()  # already a (kind, payload) tuple
+                    item = next_event_task.result()  # already a (kind, payload) tuple
+                    await recorder.record(item)
+                    yield item
                     continue
                 # The run finished: cancel the pending get, flush any queued tail, stop.
                 next_event_task.cancel()
                 while not queue.empty():
-                    yield queue.get_nowait()
+                    item = queue.get_nowait()
+                    await recorder.record(item)
+                    yield item
                 break
             if run_task.cancelled():
                 # Explicitly cancelled via the registry — record CANCELLED and end the stream
@@ -191,6 +211,10 @@ class CourseService:
             recorded = True
             raise
         finally:
+            # Drain the buffered build-log tail on every terminal path (success, failure, cancel,
+            # or disconnect) so a run's last batch is persisted; best-effort, safe to await here
+            # (no ``yield`` in ``finally``).
+            await recorder.flush()
             # Capture intent before discard clears it, so a disconnect that races ahead of the
             # post-loop cancelled-branch still lands CANCELLED for an explicitly cancelled run.
             cancelled = self._registry.was_cancelled(run_id)
@@ -259,21 +283,36 @@ class CourseService:
             raise CourseDeletionConflictError(course_id)
 
     async def _purge_course_assets(self, course_id: str) -> None:
-        """Remove the stored file + the run row; not-found if neither existed."""
+        """Remove the stored file + the run row + the build-event log; not-found if no file/row."""
         file_deleted = self._store.delete(course_id)
         row_deleted = (
             await self._run_store.delete(course_id=course_id)
             if self._run_store is not None
             else False
         )
+        # Guard before the secondary purge: not-found is keyed on the authoritative assets (file/
+        # row), and the event-log I/O should only fire for a course that actually existed.
         if not file_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
+        events_purged = await self._purge_event_log(course_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
             file_deleted=file_deleted,
             row_deleted=row_deleted,
+            events_purged=events_purged,
         )
+
+    async def _purge_event_log(self, course_id: str) -> int:
+        """Best-effort: a purge failure must never block the user's delete (the build-event log is
+        non-authoritative operational data)."""
+        if self._event_store is None:
+            return 0
+        try:
+            return await self._event_store.delete_for_course(course_id=course_id)
+        except Exception:
+            logger.warning("run_events_purge_failed", course_id=course_id, exc_info=True)
+            return 0
 
     async def list_runs(self, *, limit: int = RUNS_LIMIT_DEFAULT) -> list[CourseRun]:
         """Return an empty list when no run store is wired (batch / no-history callers), so the
@@ -291,6 +330,23 @@ class CourseService:
             # the failure is triangulatable across layers; the router maps it to a recoverable 503.
             logger.warning("run_history_list_failed", limit=bounded, exc_info=True)
             raise RunHistoryUnavailableError("Run history backend is unavailable") from exc
+
+    async def list_run_events(self, run_id: str) -> list[RunEvent]:
+        """Return a run's persisted build log in emission order (for timeline replay).
+
+        Empty when no event store is wired or the run left no trace (a course built before Phase B,
+        or one whose log writes all failed) — the UI renders a "no build record" state, not an
+        error. A configured store that fails to *read* is a real outage → a
+        ``RunHistoryUnavailableError`` (router → 503), mirroring ``list_runs`` (a silent empty list
+        would lie "never built").
+        """
+        if self._event_store is None:
+            return []
+        try:
+            return await self._event_store.list_for_run(run_id=run_id)
+        except Exception as exc:
+            logger.warning("run_events_list_failed", run_id=run_id, exc_info=True)
+            raise RunHistoryUnavailableError("Build event log is unavailable") from exc
 
     async def cancel_run(self, run_id: str) -> None:
         """Request cancellation of an in-flight run. Only signals it — the build's own task records

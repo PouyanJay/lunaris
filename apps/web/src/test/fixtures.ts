@@ -9,6 +9,7 @@ import type {
   Module,
   ProgressEvent,
   ProgressStage,
+  RunEvent,
   Segment,
 } from "../types/course";
 
@@ -238,4 +239,14 @@ export function agentFrame(
   extra: Partial<AgentEvent> = {},
 ): string {
   return `event: agent\ndata: ${JSON.stringify(makeAgentEvent(kind, sequence, extra))}\n\n`;
+}
+
+/** A persisted run-event row (the GET /api/runs/{runId}/events wire shape) wrapping a payload. */
+export function makeRunEvent(
+  seq: number,
+  payload: ProgressEvent | AgentEvent,
+  extra: Partial<Omit<RunEvent, "seq" | "payload">> = {},
+): RunEvent {
+  const kind: RunEvent["kind"] = "kind" in payload ? "agent" : "progress";
+  return { runId: "run-test", courseId: "course-test", seq, kind, payload, ...extra };
 }

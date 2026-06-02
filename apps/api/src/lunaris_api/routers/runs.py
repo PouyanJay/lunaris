@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from lunaris_runtime.logging import bind_request_id
-from lunaris_runtime.schema import CourseRun
+from lunaris_runtime.schema import CourseRun, RunEvent
 
 from ..dependencies import CourseServiceDep
 from ..service import (
@@ -33,6 +33,24 @@ async def list_runs(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Run history is temporarily unavailable",
+        ) from exc
+
+
+@router.get("/{run_id}/events", response_model=list[RunEvent])
+async def list_run_events(run_id: str, service: CourseServiceDep) -> list[RunEvent]:
+    """Replay a past build: the run's persisted event log, in emission order (camelCase wire).
+
+    An empty list (200) means the run left no trace — a course built before this shipped, or whose
+    best-effort log writes all failed; the web shows a "no build record" state. 503 when the log
+    backend is unreachable (kept inside the CORS middleware, like the run-history list), so the
+    replay view shows a recoverable error rather than a network failure.
+    """
+    try:
+        return await service.list_run_events(run_id)
+    except RunHistoryUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Build event log is temporarily unavailable",
         ) from exc
 
 

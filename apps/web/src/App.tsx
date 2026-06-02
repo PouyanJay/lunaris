@@ -9,6 +9,7 @@ import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
 import { BuildTimeline } from "./components/transcript/BuildTimeline";
+import { BuildReplay } from "./components/transcript/BuildReplay";
 import { ExplainProvider } from "./components/transcript/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
@@ -183,9 +184,10 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
   const termination = useTerminateBuild(apiBaseUrl, reset, reloadRuns);
 
-  // A ready course's canvas: the Learn | Map toggle + course metrics in the header, and either the
-  // lesson reader (Learn, default) or the prerequisite-graph explorer (Map) in the body.
-  const buildReadyCanvas = (course: Course, onReload: () => void) => ({
+  // A ready course's canvas: the Learn | Map | Build toggle + course metrics in the header, and the
+  // lesson reader (Learn, default), the prerequisite-graph explorer (Map), or the build-session
+  // replay (Build) in the body. `runId` (when known) lets Build replay this course's build log.
+  const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => ({
     title: course.topic,
     meta: (
       <>
@@ -196,6 +198,10 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
     body:
       viewMode === "map" ? (
         <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
+      ) : viewMode === "build" ? (
+        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+          <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
+        </ExplainProvider>
       ) : (
         <CourseReader
           course={course}
@@ -257,9 +263,9 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       return { title: topic, meta: null, body };
     }
     if (opened.state.status === "ready") {
-      const { course } = opened.state;
+      const { course, runId } = opened.state;
       const reopen = () => openRun({ id: course.id, topic: course.topic, status: "completed" });
-      return buildReadyCanvas(course, reopen);
+      return buildReadyCanvas(course, reopen, runId);
     }
     if (state.status === "idle") {
       return { title: "New course", meta: null, body: <TopicForm onGenerate={generate} /> };
@@ -294,7 +300,7 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
         body: <ErrorState message={message} onRetry={() => generate(topic)} />,
       };
     }
-    return buildReadyCanvas(state.course, reset);
+    return buildReadyCanvas(state.course, reset, state.runId);
   })();
 
   return (

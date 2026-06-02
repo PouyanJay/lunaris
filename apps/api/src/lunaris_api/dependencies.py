@@ -12,8 +12,11 @@ from lunaris_agent import (
 )
 from lunaris_runtime.persistence import (
     CourseStore,
+    InMemoryRunEventStore,
     InMemoryRunStore,
+    IRunEventStore,
     IRunStore,
+    SupabaseRunEventStore,
     SupabaseRunStore,
 )
 
@@ -67,6 +70,12 @@ def pipeline_supports_lesson_regeneration(pipeline: str) -> bool:
 _in_memory_run_store = InMemoryRunStore()
 _supabase_run_store = SupabaseRunStore()
 
+# The replayable build-event log (build-timeline Phase B), one per process (same singleton rationale
+# as the run store: an in-memory log must be shared so a build's writes survive for a later replay
+# read). The Supabase-store singleton rationale lives in get_run_event_store's docstring.
+_in_memory_run_event_store = InMemoryRunEventStore()
+_supabase_run_event_store = SupabaseRunEventStore()
+
 # One in-flight run-task registry per process, shared across requests — the cancel request and the
 # build request must see the same in-flight set, so this MUST be a singleton.
 _run_registry = RunRegistry()
@@ -89,10 +98,22 @@ def get_run_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunS
     return _in_memory_run_store
 
 
+def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunEventStore:
+    """The replayable build-event log: Supabase when creds are present, else the in-process store.
+
+    Same lazy-client / process-singleton posture as ``get_run_store`` — without creds the log lives
+    for the process lifetime only (durable, cross-machine replay requires Supabase).
+    """
+    if settings.has_supabase:
+        return _supabase_run_event_store
+    return _in_memory_run_event_store
+
+
 def get_course_service(
     settings: Annotated[Settings, Depends(get_settings)],
     run_store: Annotated[IRunStore, Depends(get_run_store)],
     registry: Annotated[RunRegistry, Depends(get_run_registry)],
+    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     store = CourseStore(settings.course_dir)
@@ -101,7 +122,7 @@ def get_course_service(
         # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
         logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
         factory = build_orchestrator
-    return CourseService(store, factory, run_store, registry)
+    return CourseService(store, factory, run_store, registry, event_store)
 
 
 CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]

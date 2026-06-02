@@ -2,12 +2,14 @@ import { useRef, type KeyboardEvent } from "react";
 
 import styles from "./ViewToggle.module.css";
 
-/** The two ready-course canvas views: the lesson reader (Learn) and the prereq-graph explorer (Map). */
-export type CourseView = "learn" | "map";
+/** The ready-course canvas views: the lesson reader (Learn), the prereq-graph explorer (Map), and
+ *  the replay of how the course was built (Build). */
+export type CourseView = "learn" | "map" | "build";
 
 const OPTIONS: { value: CourseView; label: string }[] = [
   { value: "learn", label: "Learn" },
   { value: "map", label: "Map" },
+  { value: "build", label: "Build" },
 ];
 
 interface ViewToggleProps {
@@ -15,9 +17,10 @@ interface ViewToggleProps {
   onChange: (view: CourseView) => void;
 }
 
-/** Segmented Learn | Map control for the canvas header. Switches a ready course between the lesson
- *  reader and the prerequisite-graph explorer. A radiogroup with the APG roving-tabindex + arrow-key
- *  pattern: only the active option is tabbable, and Left/Right (or Up/Down) move the selection. */
+/** Segmented Learn | Map | Build control for the canvas header. Switches a ready course between the
+ *  lesson reader, the prerequisite-graph explorer, and the build-session replay. A radiogroup with
+ *  the APG roving-tabindex + arrow-key pattern: only the active option is tabbable, and Left/Right
+ *  (or Up/Down) move the selection. */
 export function ViewToggle({ value, onChange }: ViewToggleProps) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 

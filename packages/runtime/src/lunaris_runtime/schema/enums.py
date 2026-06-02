@@ -100,6 +100,18 @@ class AgentEventKind(StrEnum):
     TODO = "todo"
 
 
+class RunEventKind(StrEnum):
+    """Which stream a persisted build event came from (build-timeline replay).
+
+    The two live SSE channels — coarse ``progress`` stages and fine-grained ``agent`` transcript
+    beats — are persisted into one ordered log; the kind tells the replay client which wire shape
+    (``ProgressEvent`` vs ``AgentEvent``) the row's ``payload`` carries.
+    """
+
+    PROGRESS = "progress"
+    AGENT = "agent"
+
+
 class RunStatus(StrEnum):
     """The operational lifecycle of a course-build run (the sidebar history status).
 
