@@ -4,6 +4,7 @@
    whole product re-skins from this one block.
    ─────────────────────────────────────────────────────────────────────────── */
 :root {
+  color-scheme: light; /* light is the default theme; [data-theme="dark"] overrides to dark */
   /* Neutral ramp — slightly cool gray reads as "software". */
   --gray-0: #ffffff;
   --gray-50: #f7f8fa;

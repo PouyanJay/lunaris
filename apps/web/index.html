@@ -1,10 +1,25 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090a0c" />
+    <!-- theme-color values mirror THEME_COLOR in src/hooks/useTheme.ts — keep them in sync -->
+    <meta name="theme-color" content="#ffffff" />
     <title>Lunaris · Prerequisite Graph</title>
+    <script>
+      // Apply the saved theme before first paint (no flash). Default: light.
+      (function () {
+        try {
+          if (localStorage.getItem("lunaris-theme") === "dark") {
+            document.documentElement.setAttribute("data-theme", "dark");
+            var m = document.querySelector('meta[name="theme-color"]');
+            if (m) m.setAttribute("content", "#090a0c"); // THEME_COLOR.dark in useTheme.ts
+          }
+        } catch (e) {
+          /* private mode / no storage — stay on the light default */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

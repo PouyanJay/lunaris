@@ -19,6 +19,7 @@ import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { TopicForm } from "./components/TopicForm";
 import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
+import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
@@ -82,7 +83,7 @@ function CourseBody({
 }
 
 /** Offline surface (no VITE_API_URL): load and explore the bundled sample course. */
-function SeedApp() {
+function SeedApp({ theme, onToggleTheme }: ThemeProps) {
   const { state, reload } = useCourse();
   const course = state.status === "ready" ? state.course : null;
 
@@ -90,6 +91,8 @@ function SeedApp() {
     <AppFrame
       title={course ? course.topic : "Loading course…"}
       meta={course ? <HeaderMeta course={course} /> : undefined}
+      theme={theme}
+      onToggleTheme={onToggleTheme}
     >
       {state.status === "loading" && <GraphSkeleton />}
       {state.status === "error" && <ErrorState message={state.message} onRetry={reload} />}
@@ -100,7 +103,7 @@ function SeedApp() {
 
 /** Live surface: name a topic, watch the pipeline build it, then explore the result. The sidebar
  *  (run history + nav) persists across every state; only the canvas changes. */
-function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
+function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } & ThemeProps) {
   const { state, generate, reset } = useCourseStream(apiBaseUrl);
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
@@ -229,6 +232,8 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
       onCancelRun={(run) => cancellation.cancel(run.runId)}
       cancellingRunId={cancellation.cancellingRunId}
       selectedRunId={selectedRunId}
+      theme={theme}
+      onToggleTheme={onToggleTheme}
     />
   );
 
@@ -342,5 +347,11 @@ function StudioApp({ apiBaseUrl }: { apiBaseUrl: string }) {
 
 export default function App() {
   const apiBaseUrl = import.meta.env.VITE_API_URL;
-  return apiBaseUrl ? <StudioApp apiBaseUrl={apiBaseUrl} /> : <SeedApp />;
+  // App-wide light/dark theme (default light), so both surfaces switch from the one toggle.
+  const { theme, toggle } = useTheme();
+  return apiBaseUrl ? (
+    <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
+  ) : (
+    <SeedApp theme={theme} onToggleTheme={toggle} />
+  );
 }

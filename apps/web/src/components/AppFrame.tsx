@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
 import { BrandMark } from "./shell/BrandMark";
+import { ThemeToggle } from "./shell/ThemeToggle";
+import type { ThemeProps } from "../hooks/useTheme";
 import styles from "./AppFrame.module.css";
 
 const MAIN_CONTENT_ID = "graph-body";
 
-interface AppFrameProps {
+interface AppFrameProps extends ThemeProps {
   title: string;
   /** Right-aligned header content — status + metric band. */
   meta?: ReactNode;
@@ -14,7 +16,7 @@ interface AppFrameProps {
 
 /** The app instrument frame: a lighter top edge (light-from-above), a hairline-divided
  *  header band, and a full-bleed body. Panels, not floating cards. */
-export function AppFrame({ title, meta, children }: AppFrameProps) {
+export function AppFrame({ title, meta, children, theme, onToggleTheme }: AppFrameProps) {
   return (
     <div className={styles.frame}>
       <a className="skip-link" href={`#${MAIN_CONTENT_ID}`}>
@@ -30,7 +32,10 @@ export function AppFrame({ title, meta, children }: AppFrameProps) {
             </h1>
           </div>
         </div>
-        {meta && <div className={styles.meta}>{meta}</div>}
+        <div className={styles.meta}>
+          {meta}
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
       </header>
       <main id={MAIN_CONTENT_ID} className={styles.body}>
         {children}

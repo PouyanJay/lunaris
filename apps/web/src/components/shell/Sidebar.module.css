@@ -43,8 +43,7 @@
   gap: var(--space-2);
   padding: var(--space-3) 0;
 }
-.sidebar[data-collapsed] .actions,
-.sidebar[data-collapsed] .footer {
+.sidebar[data-collapsed] .actions {
   display: flex;
   justify-content: center;
   padding: var(--space-2) 0;
@@ -94,11 +93,24 @@
 
 .footer {
   /* Pinned to the bottom: in the expanded rail the flex:1 history already pushes it down; in the
-     collapsed rail (no history) this auto margin does the pushing. */
+     collapsed rail (no history) this auto margin does the pushing. Expanded = a row with Settings on
+     the left and the theme toggle trailing; collapsed = the two icons stacked + centered. */
   margin-top: auto;
   border-top: var(--border-width) solid var(--border);
   padding: var(--space-2);
   flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.footer .navItem {
+  flex: 1; /* Settings grows; the theme toggle sits at the trailing edge */
+  width: auto;
+}
+.sidebar[data-collapsed] .footer {
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-2) 0;
 }
 
 .navItem {
