@@ -11,6 +11,7 @@ describe("ViewToggle", () => {
     // Assert
     expect(screen.getByRole("radio", { name: /learn/i })).toBeChecked();
     expect(screen.getByRole("radio", { name: /map/i })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /build/i })).not.toBeChecked();
   });
 
   it("selects a view when its option is clicked", () => {
@@ -56,7 +57,7 @@ describe("ViewToggle", () => {
   });
 
   it("wraps around the ends", () => {
-    // Arrange — on the first option, ArrowLeft should wrap to the last.
+    // Arrange — on the first option, ArrowLeft should wrap to the last (Build).
     const onChange = vi.fn();
     render(<ViewToggle value="learn" onChange={onChange} />);
     const learn = screen.getByRole("radio", { name: /learn/i });
@@ -66,7 +67,19 @@ describe("ViewToggle", () => {
     fireEvent.keyDown(learn, { key: "ArrowLeft" });
 
     // Assert
-    expect(onChange).toHaveBeenCalledWith("map");
+    expect(onChange).toHaveBeenCalledWith("build");
+  });
+
+  it("exposes the Build view as a third option", () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<ViewToggle value="learn" onChange={onChange} />);
+
+    // Act
+    fireEvent.click(screen.getByRole("radio", { name: /build/i }));
+
+    // Assert
+    expect(onChange).toHaveBeenCalledWith("build");
   });
 
   it("keeps only the active option in the tab order (roving tabindex)", () => {

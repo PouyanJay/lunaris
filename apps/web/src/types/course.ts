@@ -297,3 +297,17 @@ export interface AgentEvent {
   result: string | null;
   todos: AgentTodo[] | null;
 }
+
+/**
+ * One persisted row of a run's build log (mirrors the RunEvent schema, serialised camelCase). The
+ * two live SSE channels are persisted into one ordered log so a past build can be replayed; `kind`
+ * says which wire shape the `payload` carries. Rows arrive ordered by `seq` (the run-scoped emission
+ * index) from `GET /api/runs/{runId}/events`.
+ */
+export interface RunEvent {
+  runId: string;
+  courseId: string;
+  seq: number;
+  kind: "progress" | "agent";
+  payload: ProgressEvent | AgentEvent;
+}

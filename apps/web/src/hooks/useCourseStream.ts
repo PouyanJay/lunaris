@@ -12,12 +12,14 @@ export type BuildState =
       topic: string;
       events: ProgressEvent[];
       agentEvents: AgentEvent[];
-      // The run_id, captured from the first event — lets the UI terminate this build by run_id.
-      runId?: string;
+      // The run_id, captured from the first event — lets the UI terminate this build by run_id and
+      // (once ready) replay it in the Build tab. Undefined until the first event arrives.
+      runId: string | undefined;
       // Client-stamped stage arrival times (wall-clock), for the timeline's per-phase durations.
       stageTimes: StageTimes;
     }
-  | { status: "ready"; course: Course }
+  // runId is carried from the streaming state so the ready course's Build tab can replay this run.
+  | { status: "ready"; course: Course; runId: string | undefined }
   | { status: "error"; message: string; topic: string };
 
 interface CourseStream {
@@ -48,7 +50,14 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
-      setState({ status: "streaming", topic, events: [], agentEvents: [], stageTimes: {} });
+      setState({
+        status: "streaming",
+        topic,
+        events: [],
+        agentEvents: [],
+        runId: undefined,
+        stageTimes: {},
+      });
 
       streamCourse(apiBaseUrl, topic, {
         signal: controller.signal,
@@ -79,7 +88,13 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
           ),
       })
         .then((course) => {
-          if (!controller.signal.aborted) setState({ status: "ready", course });
+          if (controller.signal.aborted) return;
+          // Carry the run_id captured during streaming into ready, so the Build tab can replay it.
+          setState((prev) => ({
+            status: "ready",
+            course,
+            runId: prev.status === "streaming" ? prev.runId : undefined,
+          }));
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;

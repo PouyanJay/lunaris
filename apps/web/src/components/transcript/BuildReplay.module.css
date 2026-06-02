@@ -1,0 +1,62 @@
+/* Loading skeleton for the Build replay tab — a vertical spine that echoes the timeline (per
+   enterprise-ui: a skeleton matching the final layout, not a centered spinner). The centered
+   empty/error states reuse the shared DataStates.module.css. */
+.skeleton {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-6);
+}
+
+.skeletonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.skeletonDot {
+  flex: none;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-full);
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-muted);
+}
+
+.skeletonLine {
+  height: var(--space-4);
+  width: 40%;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    100deg,
+    var(--bg-subtle) 30%,
+    var(--bg-muted) 50%,
+    var(--bg-subtle) 70%
+  );
+  background-size: 200% 100%;
+  animation: replayShimmer 1.4s var(--ease) infinite;
+}
+
+.skeletonRow:nth-child(2) .skeletonLine {
+  width: 64%;
+}
+
+.skeletonRow:nth-child(3) .skeletonLine {
+  width: 52%;
+}
+
+@keyframes replayShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonLine {
+    animation: none;
+  }
+}
