@@ -23,8 +23,9 @@ def make_extract_concepts_tool(extractor: IConceptExtractor, draft: CourseDraft)
     async def extract_concepts(topic: str) -> dict[str, object]:
         """Propose the knowledge components (concepts) a course on ``topic`` must teach.
 
-        Returns ``{goalId, count, concepts: [{id, label, definition, difficulty}]}``. Feed the
-        returned concepts into ``build_prerequisite_graph`` to get the authoritative teaching order.
+        Returns ``{goalId, count, concepts: [{id, label, definition, difficulty}]}``. Call
+        ``build_prerequisite_graph`` next for the authoritative teaching order — it reads these
+        concepts automatically; you do NOT need to pass them back.
         """
         extraction = await extractor.extract(topic)
         draft.goal_concept = extraction.goal_id
