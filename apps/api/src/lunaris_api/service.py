@@ -4,8 +4,16 @@ from collections.abc import AsyncIterator, Callable
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
-from lunaris_runtime.persistence import CourseStore, IRunStore
-from lunaris_runtime.schema import AgentEvent, Course, CourseRun, ProgressEvent, RunStatus
+from lunaris_runtime.persistence import CourseStore, IRunEventStore, IRunStore
+from lunaris_runtime.schema import (
+    AgentEvent,
+    Course,
+    CourseRun,
+    ProgressEvent,
+    RunEvent,
+    RunEventKind,
+    RunStatus,
+)
 
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_registry import RunRegistry
@@ -88,12 +96,16 @@ class CourseService:
         pipeline_factory: PipelineFactory,
         run_store: IRunStore | None = None,
         registry: RunRegistry | None = None,
+        event_store: IRunEventStore | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
+        # The replayable build-event log (build-timeline Phase B). Best-effort like the run store;
+        # None for callers that don't persist a transcript (batch / tests that don't replay).
+        self._event_store = event_store
         # In-flight task registry for cancellation. In production a process-wide singleton is
         # injected (so the cancel request and the build request share it). The lone-instance default
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
@@ -149,6 +161,10 @@ class CourseService:
         # ``yield``, bypassing the ``except Exception`` below; the ``finally`` uses this flag to
         # record FAILED for an interrupted run instead of leaving it stuck RUNNING.
         recorded = False
+        # Run-scoped emission index for the persisted replay log: one counter across both streams,
+        # assigned here where progress + agent events interleave into a single queue, so replay
+        # order survives without a wall clock. Best-effort persistence never blocks a yield.
+        seq = 0
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
         try:
             pipeline = self._factory(self._store)
@@ -168,12 +184,16 @@ class CourseService:
                     {next_event_task, run_task}, return_when=asyncio.FIRST_COMPLETED
                 )
                 if next_event_task in done:
-                    yield next_event_task.result()  # already a (kind, payload) tuple
+                    item = next_event_task.result()  # already a (kind, payload) tuple
+                    seq = await self._persist_stream_event(run_id, course_id, item, seq)
+                    yield item
                     continue
                 # The run finished: cancel the pending get, flush any queued tail, stop.
                 next_event_task.cancel()
                 while not queue.empty():
-                    yield queue.get_nowait()
+                    item = queue.get_nowait()
+                    seq = await self._persist_stream_event(run_id, course_id, item, seq)
+                    yield item
                 break
             if run_task.cancelled():
                 # Explicitly cancelled via the registry — record CANCELLED and end the stream
@@ -292,6 +312,23 @@ class CourseService:
             logger.warning("run_history_list_failed", limit=bounded, exc_info=True)
             raise RunHistoryUnavailableError("Run history backend is unavailable") from exc
 
+    async def list_run_events(self, run_id: str) -> list[RunEvent]:
+        """Return a run's persisted build log in emission order (for timeline replay).
+
+        Empty when no event store is wired or the run left no trace (a course built before Phase B,
+        or one whose log writes all failed) — the UI renders a "no build record" state, not an
+        error. A configured store that fails to *read* is a real outage → a
+        ``RunHistoryUnavailableError`` (router → 503), mirroring ``list_runs`` (a silent empty list
+        would lie "never built").
+        """
+        if self._event_store is None:
+            return []
+        try:
+            return await self._event_store.list_for_run(run_id=run_id)
+        except Exception as exc:
+            logger.warning("run_events_list_failed", run_id=run_id, exc_info=True)
+            raise RunHistoryUnavailableError("Build event log is unavailable") from exc
+
     async def cancel_run(self, run_id: str) -> None:
         """Request cancellation of an in-flight run. Only signals it — the build's own task records
         CANCELLED as it unwinds (status writes stay owned by the run's coroutine). Raises
@@ -299,6 +336,36 @@ class CourseService:
         if not self._registry.cancel(run_id):
             raise RunNotCancellableError(run_id)
         logger.info("run_cancel_requested", run_id=run_id)
+
+    async def _persist_stream_event(
+        self, run_id: str, course_id: str, item: _StreamItem, seq: int
+    ) -> int:
+        """Append one streamed event to the replay log; return the next seq.
+
+        Best-effort (a failed write never blocks the yield) and append-only — each progress/agent
+        event is persisted as it is forwarded, so a build that crashes mid-stream still replays what
+        it managed to emit. The terminal ``course`` frame is the result, not a transcript beat, so
+        it is skipped. ``seq`` advances even on a write failure: a gap is fine, reuse is not.
+        """
+        if self._event_store is None:
+            return seq
+        kind, payload = item
+        if kind not in (RunEventKind.PROGRESS, RunEventKind.AGENT):
+            return seq  # the closing course-object is the build's result, not a transcript beat
+        record = RunEvent(
+            run_id=run_id,
+            course_id=course_id,
+            seq=seq,
+            kind=RunEventKind(kind),
+            payload=payload.model_dump(by_alias=True, mode="json"),
+        )
+        try:
+            await self._event_store.append(events=[record])
+        except Exception:
+            logger.warning(
+                "run_events_append_failed", course_id=course_id, run_id=run_id, exc_info=True
+            )
+        return seq + 1
 
     async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
         """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""

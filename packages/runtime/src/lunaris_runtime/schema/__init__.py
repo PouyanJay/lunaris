@@ -14,6 +14,7 @@ from .enums import (
     RiskCategory,
     RiskOverride,
     RiskTier,
+    RunEventKind,
     RunStatus,
     VerifierStatus,
     VisualKind,
@@ -34,6 +35,7 @@ from .instruction import (
 from .knowledge import Citation, Edge, KnowledgeComponent, PrerequisiteGraph
 from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Probe
 from .progress import ProgressEvent
+from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .visual_spec import (
     ComparisonRow,
@@ -94,6 +96,8 @@ __all__ = [
     "RiskOverride",
     "RiskProfile",
     "RiskTier",
+    "RunEvent",
+    "RunEventKind",
     "RunStatus",
     "Segment",
     "StepItem",
