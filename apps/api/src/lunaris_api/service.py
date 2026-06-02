@@ -11,11 +11,11 @@ from lunaris_runtime.schema import (
     CourseRun,
     ProgressEvent,
     RunEvent,
-    RunEventKind,
     RunStatus,
 )
 
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
+from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
 
 logger = structlog.get_logger()
@@ -161,10 +161,10 @@ class CourseService:
         # ``yield``, bypassing the ``except Exception`` below; the ``finally`` uses this flag to
         # record FAILED for an interrupted run instead of leaving it stuck RUNNING.
         recorded = False
-        # Run-scoped emission index for the persisted replay log: one counter across both streams,
-        # assigned here where progress + agent events interleave into a single queue, so replay
-        # order survives without a wall clock. Best-effort persistence never blocks a yield.
-        seq = 0
+        # Persists each forwarded beat to the replayable build log: buffered, flushed in best-effort
+        # batches at phase boundaries (so a crash mid-build still replays up to the last boundary),
+        # capped per run, and drained in the ``finally`` below. Never blocks a yield.
+        recorder = RunEventRecorder(self._event_store, run_id=run_id, course_id=course_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
         try:
             pipeline = self._factory(self._store)
@@ -185,14 +185,14 @@ class CourseService:
                 )
                 if next_event_task in done:
                     item = next_event_task.result()  # already a (kind, payload) tuple
-                    seq = await self._persist_stream_event(run_id, course_id, item, seq)
+                    await recorder.record(item)
                     yield item
                     continue
                 # The run finished: cancel the pending get, flush any queued tail, stop.
                 next_event_task.cancel()
                 while not queue.empty():
                     item = queue.get_nowait()
-                    seq = await self._persist_stream_event(run_id, course_id, item, seq)
+                    await recorder.record(item)
                     yield item
                 break
             if run_task.cancelled():
@@ -211,6 +211,10 @@ class CourseService:
             recorded = True
             raise
         finally:
+            # Drain the buffered build-log tail on every terminal path (success, failure, cancel,
+            # or disconnect) so a run's last batch is persisted; best-effort, safe to await here
+            # (no ``yield`` in ``finally``).
+            await recorder.flush()
             # Capture intent before discard clears it, so a disconnect that races ahead of the
             # post-loop cancelled-branch still lands CANCELLED for an explicitly cancelled run.
             cancelled = self._registry.was_cancelled(run_id)
@@ -336,36 +340,6 @@ class CourseService:
         if not self._registry.cancel(run_id):
             raise RunNotCancellableError(run_id)
         logger.info("run_cancel_requested", run_id=run_id)
-
-    async def _persist_stream_event(
-        self, run_id: str, course_id: str, item: _StreamItem, seq: int
-    ) -> int:
-        """Append one streamed event to the replay log; return the next seq.
-
-        Best-effort (a failed write never blocks the yield) and append-only — each progress/agent
-        event is persisted as it is forwarded, so a build that crashes mid-stream still replays what
-        it managed to emit. The terminal ``course`` frame is the result, not a transcript beat, so
-        it is skipped. ``seq`` advances even on a write failure: a gap is fine, reuse is not.
-        """
-        if self._event_store is None:
-            return seq
-        kind, payload = item
-        if kind not in (RunEventKind.PROGRESS, RunEventKind.AGENT):
-            return seq  # the closing course-object is the build's result, not a transcript beat
-        record = RunEvent(
-            run_id=run_id,
-            course_id=course_id,
-            seq=seq,
-            kind=RunEventKind(kind),
-            payload=payload.model_dump(by_alias=True, mode="json"),
-        )
-        try:
-            await self._event_store.append(events=[record])
-        except Exception:
-            logger.warning(
-                "run_events_append_failed", course_id=course_id, run_id=run_id, exc_info=True
-            )
-        return seq + 1
 
     async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
         """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""
