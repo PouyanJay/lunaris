@@ -96,6 +96,7 @@ class _FakeQuery:
         self._select_data = select_data
         self._delete_count = delete_count
         self._is_delete = False
+        self._range: tuple[int, int] | None = None
 
     def insert(self, rows: list[dict[str, object]]) -> "_FakeQuery":
         self._calls.append(("insert", rows))
@@ -118,9 +119,20 @@ class _FakeQuery:
         self._calls.append(("order", column, desc))
         return self
 
+    def range(self, start: int, end: int) -> "_FakeQuery":
+        self._calls.append(("range", start, end))
+        self._range = (start, end)
+        return self
+
     def execute(self) -> _FakeResponse:
         if self._is_delete:
             return _FakeResponse([], count=self._delete_count)
+        if self._range is not None:
+            # Mimic Supabase/PostgREST: a request returns at most 1000 rows, even if a wider
+            # range is asked for — the cap that forces list_for_run to paginate.
+            start, end = self._range
+            width = min(end - start + 1, 1000)
+            return _FakeResponse(self._select_data[start : start + width])
         return _FakeResponse(self._select_data)
 
 
@@ -216,6 +228,46 @@ async def test_supabase_list_for_run_maps_rows_in_seq_order() -> None:
     assert events[1].payload == {"kind": "reasoning"}
     assert ("eq", "run_id", "r-1") in client.calls
     assert ("order", "seq", False) in client.calls
+
+
+async def test_supabase_list_for_run_paginates_past_the_1000_row_cap() -> None:
+    # Arrange — a long (or loopy) build exceeds Supabase's 1000-row-per-request cap. The store must
+    # page through every row, or the replay shows a truncated, stuck-mid-build timeline.
+    rows = [
+        {"run_id": "r-1", "course_id": "c-1", "seq": i, "kind": "agent", "payload": {"i": i}}
+        for i in range(2500)
+    ]
+    client = _FakeClient(select_data=rows)
+    store = _store_with(client)
+
+    # Act
+    events = await store.list_for_run(run_id="r-1")
+
+    # Assert — all 2500 events returned in seq order (not just the first 1000-row page).
+    assert len(events) == 2500
+    assert [e.seq for e in events] == list(range(2500))
+    # Three pages were requested: 0-999, 1000-1999, 2000-2999 (the last short, ending the loop).
+    range_calls = [c for c in client.calls if c[0] == "range"]
+    assert range_calls == [("range", 0, 999), ("range", 1000, 1999), ("range", 2000, 2999)]
+
+
+async def test_supabase_list_for_run_terminates_on_an_exactly_divisible_count() -> None:
+    # Arrange — a row count that is an exact multiple of the page size: the last full page must be
+    # followed by one empty page that ends the loop (not an infinite loop on the boundary).
+    rows = [
+        {"run_id": "r-1", "course_id": "c-1", "seq": i, "kind": "agent", "payload": {}}
+        for i in range(2000)
+    ]
+    client = _FakeClient(select_data=rows)
+    store = _store_with(client)
+
+    # Act
+    events = await store.list_for_run(run_id="r-1")
+
+    # Assert — all 2000 returned; a third (empty) page request terminates the loop.
+    assert len(events) == 2000
+    range_calls = [c for c in client.calls if c[0] == "range"]
+    assert range_calls == [("range", 0, 999), ("range", 1000, 1999), ("range", 2000, 2999)]
 
 
 async def test_supabase_delete_for_course_returns_the_exact_count() -> None:
