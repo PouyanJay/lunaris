@@ -76,6 +76,56 @@ async def test_stream_build_persists_a_replayable_event_log(
     assert progress[0]["payload"]["runId"] == run_id
 
 
+async def test_deleting_a_course_purges_its_event_log(
+    http_with: httpx.AsyncClient, event_store: InMemoryRunEventStore
+) -> None:
+    # Arrange — build a course so it has a persisted event log; find its course_id from a row.
+    response = await http_with.get("/api/courses/stream", params={"topic": "graphs"})
+    _ = response.text
+    run_id = response.headers["x-run-id"]
+    before = (await http_with.get(f"/api/runs/{run_id}/events")).json()
+    assert before, "precondition: the build left an event log to purge"
+    course_id = before[0]["courseId"]
+
+    # Act — delete the course (the same door the sidebar/CLI use).
+    deleted = await http_with.delete(f"/api/courses/{course_id}")
+
+    # Assert — deletion succeeds and the run's event log is gone with the course.
+    assert deleted.status_code == 204
+    after = await http_with.get(f"/api/runs/{run_id}/events")
+    assert after.json() == []
+
+
+class _PurgeFailingEventStore(InMemoryRunEventStore):
+    """Appends/reads normally but blows up on purge — proves purge is best-effort."""
+
+    async def delete_for_course(self, *, course_id: str) -> int:
+        raise RuntimeError("event log purge is down")
+
+
+async def test_event_log_purge_failure_does_not_break_course_deletion(tmp_path: Path) -> None:
+    # Arrange — a course built with an event store whose purge fails.
+    event_store = _PurgeFailingEventStore()
+    service = CourseService(
+        CourseStore(tmp_path),
+        build_stub_orchestrator,
+        InMemoryRunStore(),
+        event_store=event_store,
+    )
+    transport = _client_for(service)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/courses/stream", params={"topic": "graphs"})
+        _ = response.text
+        run_id = response.headers["x-run-id"]
+        course_id = (await client.get(f"/api/runs/{run_id}/events")).json()[0]["courseId"]
+
+        # Act — the course delete must still succeed despite the failing event-log purge.
+        deleted = await client.delete(f"/api/courses/{course_id}")
+
+    # Assert — best-effort: the user's deletion is not blocked by a purge failure.
+    assert deleted.status_code == 204
+
+
 async def test_unknown_run_has_no_build_record(http_with: httpx.AsyncClient) -> None:
     # Act — a run that never built (or a course built before Phase B shipped).
     log = await http_with.get("/api/runs/never-ran/events")

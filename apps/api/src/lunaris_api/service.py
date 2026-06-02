@@ -283,21 +283,36 @@ class CourseService:
             raise CourseDeletionConflictError(course_id)
 
     async def _purge_course_assets(self, course_id: str) -> None:
-        """Remove the stored file + the run row; not-found if neither existed."""
+        """Remove the stored file + the run row + the build-event log; not-found if no file/row."""
         file_deleted = self._store.delete(course_id)
         row_deleted = (
             await self._run_store.delete(course_id=course_id)
             if self._run_store is not None
             else False
         )
+        # Guard before the secondary purge: not-found is keyed on the authoritative assets (file/
+        # row), and the event-log I/O should only fire for a course that actually existed.
         if not file_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
+        events_purged = await self._purge_event_log(course_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
             file_deleted=file_deleted,
             row_deleted=row_deleted,
+            events_purged=events_purged,
         )
+
+    async def _purge_event_log(self, course_id: str) -> int:
+        """Best-effort: a purge failure must never block the user's delete (the build-event log is
+        non-authoritative operational data)."""
+        if self._event_store is None:
+            return 0
+        try:
+            return await self._event_store.delete_for_course(course_id=course_id)
+        except Exception:
+            logger.warning("run_events_purge_failed", course_id=course_id, exc_info=True)
+            return 0
 
     async def list_runs(self, *, limit: int = RUNS_LIMIT_DEFAULT) -> list[CourseRun]:
         """Return an empty list when no run store is wired (batch / no-history callers), so the
