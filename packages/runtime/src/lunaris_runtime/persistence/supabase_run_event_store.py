@@ -2,11 +2,23 @@ import asyncio
 import os
 from collections.abc import Sequence
 
+import structlog
+
 from lunaris_runtime.schema import RunEvent, RunEventKind
+
+logger = structlog.get_logger()
 
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "run_events"
+
+# Supabase/PostgREST caps a single request at 1000 rows, so a long (or loopy) build's log has to be
+# read in pages — else the replay only ever sees the first 1000 events and shows the build stuck
+# mid-stream. The per-run write cap (RunEventRecorder.CAP_PER_RUN = 5000, in apps/api) bounds the
+# total, so pagination terminates in at most ~6 pages on the largest run.
+_PAGE_SIZE = 1000
+# A hard ceiling so a future cap change (or a pathological full-page stream) can't loop unbounded.
+_MAX_PAGES = 20
 
 
 class SupabaseRunEventStore:
@@ -67,16 +79,28 @@ class SupabaseRunEventStore:
 
     async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
         client = self._ensure_client()
-        response = await asyncio.to_thread(
-            lambda: (
-                client.table(_TABLE)  # type: ignore[attr-defined]
-                .select("*")
-                .eq("run_id", run_id)
-                .order("seq")
-                .execute()
+        rows: list[dict[str, object]] = []
+        for page_index in range(_MAX_PAGES):
+            start = page_index * _PAGE_SIZE
+            end = start + _PAGE_SIZE - 1
+            response = await asyncio.to_thread(
+                lambda s=start, e=end: (
+                    client.table(_TABLE)  # type: ignore[attr-defined]
+                    .select("*")
+                    .eq("run_id", run_id)
+                    .order("seq")
+                    .range(s, e)
+                    .execute()
+                )
             )
-        )
-        return [self._to_run_event(row) for row in (response.data or [])]
+            page = response.data or []
+            rows.extend(page)
+            if len(page) < _PAGE_SIZE:  # a short (or empty) page is the last one
+                break
+        else:
+            # Reached the page ceiling without a short page — surface it; the log is read truncated.
+            logger.warning("run_events_read_hit_page_ceiling", run_id=run_id, pages=_MAX_PAGES)
+        return [self._to_run_event(row) for row in rows]
 
     async def delete_for_course(self, *, course_id: str) -> int:
         client = self._ensure_client()
