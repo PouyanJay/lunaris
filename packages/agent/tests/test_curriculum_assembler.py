@@ -1,4 +1,3 @@
-import pytest
 from lunaris_agent.subagents.curriculum_architect import (
     CurriculumAssembler,
     CurriculumPlan,
@@ -83,10 +82,14 @@ def test_assemble_sets_non_decreasing_difficulty_index() -> None:
     assert modules[1].difficulty_index == 0.8
 
 
-def test_assemble_rejects_decreasing_difficulty() -> None:
-    # Arrange — reverse the module order so difficulty goes 0.8 -> 0.2
+def test_assemble_reorders_decreasing_difficulty() -> None:
+    # Arrange — the architect emitted modules hardest-first (0.8 -> 0.2).
     reversed_plan = CurriculumPlan(modules=list(reversed(_plan().modules)))
 
-    # Act / Assert
-    with pytest.raises(ValueError, match="non-decreasing"):
-        CurriculumAssembler().assemble(reversed_plan, _graph())
+    # Act — the assembler reorders to non-decreasing difficulty instead of crashing the build.
+    modules = CurriculumAssembler().assemble(reversed_plan, _graph())
+
+    # Assert — easy module leads, difficulty is non-decreasing, ids are sequential in that order.
+    assert [m.difficulty_index for m in modules] == [0.2, 0.8]
+    assert modules[0].title == "Foundations"
+    assert [m.id for m in modules] == ["m0", "m1"]

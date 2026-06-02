@@ -8,7 +8,7 @@ from lunaris_runtime.schema import (
     PrerequisiteGraph,
 )
 
-from .plan import CurriculumPlan
+from .plan import CurriculumPlan, ModulePlan
 
 
 class CurriculumAssembler:
@@ -23,7 +23,12 @@ class CurriculumAssembler:
         difficulty = {kc.id: kc.difficulty for kc in graph.nodes}
         modules: list[Module] = []
 
-        for m_index, module_plan in enumerate(plan.modules):
+        # Order the model's modules by difficulty before assigning sequential ids, so the
+        # non-decreasing-difficulty invariant holds by construction rather than crashing the build
+        # when the architect emits them out of order (a common live slip). A stable sort keeps the
+        # model's order within a difficulty tier.
+        ordered = sorted(plan.modules, key=lambda mp: self._plan_difficulty(mp, difficulty))
+        for m_index, module_plan in enumerate(ordered):
             objectives: list[Objective] = []
             items: list[Item] = []
             for o_index, obj in enumerate(module_plan.objectives):
@@ -44,9 +49,6 @@ class CurriculumAssembler:
                 )
 
             module_kcs = module_plan.kcs or [o.kc for o in module_plan.objectives]
-            covered = [difficulty[k] for k in module_kcs if k in difficulty]
-            difficulty_index = max(covered) if covered else 0.0
-
             modules.append(
                 Module(
                     id=f"m{m_index}",
@@ -54,12 +56,20 @@ class CurriculumAssembler:
                     kcs=module_kcs,
                     objectives=objectives,
                     assessment=Assessment(items=items),
-                    difficulty_index=difficulty_index,
+                    difficulty_index=self._plan_difficulty(module_plan, difficulty),
                 )
             )
 
+        # A safety net after the sort: the invariant holds by construction, so it should not fire.
         self._assert_difficulty_monotonic(modules)
         return modules
+
+    @staticmethod
+    def _plan_difficulty(module_plan: ModulePlan, difficulty: dict[str, float]) -> float:
+        """A module's difficulty index — the hardest KC it covers (0 if none are graphed)."""
+        module_kcs = module_plan.kcs or [o.kc for o in module_plan.objectives]
+        covered = [difficulty[k] for k in module_kcs if k in difficulty]
+        return max(covered) if covered else 0.0
 
     def _assert_difficulty_monotonic(self, modules: list[Module]) -> None:
         for earlier, later in pairwise(modules):

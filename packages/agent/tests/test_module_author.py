@@ -29,6 +29,22 @@ def test_parse_lesson_reads_four_merrill_phases() -> None:
     assert draft.activate.prose == "a"
 
 
+def test_parse_lesson_survives_a_malformed_json_response() -> None:
+    # Arrange — a missing comma between two phases (the live delimiter failure). The author path
+    # produces the actual lesson content, so it must survive a single slip, not lose the lesson.
+    text = (
+        '{"activate": {"prose": "a"} "demonstrate": {"prose": "b", "claims": []},'  # missing comma
+        ' "apply": {"prose": "c"}, "integrate": {"prose": "d"}}'
+    )
+
+    # Act
+    draft = parse_lesson(text)
+
+    # Assert
+    assert draft.activate.prose == "a"
+    assert draft.demonstrate.prose == "b"
+
+
 def test_parse_lesson_rejects_missing_phase() -> None:
     # Arrange — no "integrate" phase
     text = '{"activate": {"prose": "a"}, "demonstrate": {"prose": "b"}, "apply": {"prose": "c"}}'
