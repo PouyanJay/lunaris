@@ -16,6 +16,7 @@ from lunaris_runtime.persistence import (
     InMemoryRunStore,
     IRunEventStore,
     IRunStore,
+    SupabaseRunEventStore,
     SupabaseRunStore,
 )
 
@@ -71,8 +72,9 @@ _supabase_run_store = SupabaseRunStore()
 
 # The replayable build-event log (build-timeline Phase B), one per process (same singleton rationale
 # as the run store: an in-memory log must be shared so a build's writes survive for a later replay
-# read). Phase B/T0 ships the in-memory store only; the Supabase-backed log lands in T1.
+# read). The Supabase-store singleton rationale lives in get_run_event_store's docstring.
 _in_memory_run_event_store = InMemoryRunEventStore()
+_supabase_run_event_store = SupabaseRunEventStore()
 
 # One in-flight run-task registry per process, shared across requests — the cancel request and the
 # build request must see the same in-flight set, so this MUST be a singleton.
@@ -96,9 +98,14 @@ def get_run_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunS
     return _in_memory_run_store
 
 
-def get_run_event_store() -> IRunEventStore:
-    """The replayable build-event log. Phase B/T0 wires the in-process store unconditionally; T1
-    swaps in the Supabase-backed log when creds are present (mirroring ``get_run_store``)."""
+def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunEventStore:
+    """The replayable build-event log: Supabase when creds are present, else the in-process store.
+
+    Same lazy-client / process-singleton posture as ``get_run_store`` — without creds the log lives
+    for the process lifetime only (durable, cross-machine replay requires Supabase).
+    """
+    if settings.has_supabase:
+        return _supabase_run_event_store
     return _in_memory_run_event_store
 
 

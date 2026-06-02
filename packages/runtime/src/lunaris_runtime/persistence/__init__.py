@@ -3,6 +3,7 @@ from .memory_run_event_store import InMemoryRunEventStore
 from .memory_run_store import InMemoryRunStore
 from .run_event_store_protocol import IRunEventStore
 from .run_store_protocol import IRunStore
+from .supabase_run_event_store import SupabaseRunEventStore
 from .supabase_run_store import SupabaseRunStore
 
 __all__ = [
@@ -11,5 +12,6 @@ __all__ = [
     "IRunStore",
     "InMemoryRunEventStore",
     "InMemoryRunStore",
+    "SupabaseRunEventStore",
     "SupabaseRunStore",
 ]
