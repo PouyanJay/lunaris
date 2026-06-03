@@ -178,6 +178,11 @@ export interface GagneFlags {
 export interface Lesson {
   id: string;
   segments: MerrillSegments;
+  /** The lesson arc's bookends (P7.3): the entry expectations the lesson assumes ("what this lesson
+   *  expects you already know") and the self-checks the learner runs to confirm the competency.
+   *  Personalized per course; may be absent on courses built before P7.3 (treat as empty). */
+  expects: string[];
+  selfCheck: string[];
   gagne: GagneFlags;
   /** Estimated intrinsic cognitive load for the lesson. */
   loadEstimate: number;
@@ -200,6 +205,8 @@ export interface Module {
   id: string;
   title: string;
   kcs: string[];
+  /** The researched target competency this module covers (P7.3); null on the no-research path. */
+  competency: string | null;
   objectives: Objective[];
   lessons: Lesson[];
   assessment: Assessment;

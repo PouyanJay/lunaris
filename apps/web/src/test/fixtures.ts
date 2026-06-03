@@ -46,6 +46,8 @@ export function makeLesson(overrides: Partial<Lesson> = {}): Lesson {
       apply: segment("Trace binary search on [1, 3, 5, 7, 9] searching for 7."),
       integrate: segment("Where else does halving a search space speed things up?"),
     },
+    expects: ["You can compare two numbers and recognise a sorted list."],
+    selfCheck: ["Can you locate 7 in a 9-element sorted array in at most 4 comparisons?"],
     gagne: { ...NO_GAGNE },
     loadEstimate: 1.0,
     ...overrides,
@@ -53,12 +55,14 @@ export function makeLesson(overrides: Partial<Lesson> = {}): Lesson {
 }
 
 /** A course module with sensible defaults — pass `lessons`/`title` to build multi-lesson courses
- *  for reader navigation tests. */
+ *  for reader navigation tests. `competency` defaults to null (no-research path); `makeCourse`
+ *  builds its module inline with a non-null competency for the arc/competency reader tests. */
 export function makeModule(overrides: Partial<Module> = {}): Module {
   return {
     id: "m-test",
     title: "Module",
     kcs: [],
+    competency: null,
     objectives: [],
     lessons: [makeLesson()],
     assessment: { items: [] },
@@ -96,6 +100,7 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
         id: "m-binary_search",
         title: "Binary Search",
         kcs: ["binary_search"],
+        competency: "Locate an element in a sorted collection efficiently.",
         objectives: [
           {
             statement: "Given a sorted array, locate a target with binary search.",

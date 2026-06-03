@@ -30,6 +30,8 @@ class LessonAssembler:
         return Lesson(
             id=lesson_id,
             segments=segments,
+            expects=list(draft.expects),
+            self_check=list(draft.self_check),
             gagne=GagneFlags(
                 gain_attention=True,
                 state_objective=True,

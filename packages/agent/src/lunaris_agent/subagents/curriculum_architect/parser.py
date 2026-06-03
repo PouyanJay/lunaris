@@ -24,6 +24,14 @@ def _coerce_bloom(value: object) -> BloomLevel:
         return BloomLevel.UNDERSTAND
 
 
+def _optional_str(raw: object) -> str | None:
+    """A present, non-blank string value, else ``None`` — for an optional free-text field the model
+    may omit, blank, or (mis)emit as a non-string (the module's researched competency)."""
+    if not isinstance(raw, str):
+        return None
+    return raw.strip() or None
+
+
 def _has_bloom_verb(statement: str, level: BloomLevel) -> bool:
     lowered = statement.lower()
     return any(verb in lowered for verb in _BLOOM_VERBS[level])
@@ -75,6 +83,9 @@ def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
                 title=str(raw.get("title", "Module")),
                 kcs=[str(k) for k in raw.get("kcs", [])],
                 objectives=objectives,
+                # The researched target skill the architect mapped this module to (P7.3); None on
+                # the no-research path (absent / blank / non-string).
+                competency=_optional_str(raw.get("competency")),
             )
         )
 

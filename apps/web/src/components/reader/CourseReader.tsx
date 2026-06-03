@@ -30,6 +30,9 @@ const PHASES: { key: keyof MerrillSegments; label: string; cue: string }[] = [
 interface ReaderLesson {
   lesson: Lesson;
   moduleTitle: string;
+  /** The researched competency the owning module builds toward (P7.3), shown so the learner sees
+   *  what the lesson earns; null on the no-research path. */
+  competency: string | null;
   label: string;
   objectives: Objective[];
   assessment: AssessmentItem[];
@@ -59,6 +62,7 @@ function buildReaderModel(course: Course): ReaderModel {
       lessons.push({
         lesson,
         moduleTitle: module.title,
+        competency: module.competency,
         label,
         objectives: lessonIndex === 0 ? module.objectives : [],
         assessment: lessonIndex === last ? module.assessment.items : [],
@@ -142,6 +146,10 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   }
 
   const focusedLessonId = current.lesson.id;
+  // The arc bookends, defaulted for courses built before P7.3 (no arc) — read once, used in both
+  // the render guard and the list below.
+  const expects = current.lesson.expects ?? [];
+  const selfCheck = current.lesson.selfCheck ?? [];
   const regenerate = async () => {
     if (!onRegenerate) return;
     setPending(true);
@@ -170,6 +178,11 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
               <h2 className={styles.lessonTitle}>{current.label}</h2>
+              {current.competency && (
+                <p className={styles.competency}>
+                  Builds toward <span className={styles.competencyName}>{current.competency}</span>
+                </p>
+              )}
             </div>
             <p className={`${styles.progress} mono`}>
               Lesson {safeIndex + 1} of {total}
@@ -177,6 +190,25 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
           </header>
 
           {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
+
+          {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
+              omitted for courses built before P7.3 (empty expects). */}
+          {expects.length > 0 && (
+            <section className={styles.phase} aria-label="What this lesson expects">
+              <div className={styles.phaseHead}>
+                <h3 className={styles.phaseLabel}>What this lesson expects</h3>
+                <p className={styles.phaseCue}>What to be comfortable with before you start</p>
+              </div>
+              <ul className={styles.arcList}>
+                {/* Stable, non-reordered list → index keys are safe. */}
+                {expects.map((item, index) => (
+                  <li key={index} className={styles.prose}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {PHASES.map(({ key, label, cue }) => {
             const segment = current.lesson.segments[key];
@@ -197,6 +229,23 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
               </section>
             );
           })}
+
+          {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
+          {selfCheck.length > 0 && (
+            <section className={styles.phase} aria-label="Self-check">
+              <div className={styles.phaseHead}>
+                <h3 className={styles.phaseLabel}>Self-check</h3>
+                <p className={styles.phaseCue}>Confirm you’ve got it before moving on</p>
+              </div>
+              <ul className={styles.arcList}>
+                {selfCheck.map((item, index) => (
+                  <li key={index} className={styles.prose}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
 

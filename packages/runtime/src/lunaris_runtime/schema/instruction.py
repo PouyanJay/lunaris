@@ -81,6 +81,14 @@ class GagneFlags(CourseModel):
 class Lesson(CourseModel):
     id: str
     segments: MerrillSegments
+    # The lesson arc's bookends (P7.3): the entry expectations the lesson assumes ("what this lesson
+    # expects you already know") and the self-checks a learner runs to confirm they reached the
+    # competency. Scaffolding the learner reads — NOT factual claims, so the verifier never grounds
+    # them. Personalized per course at authoring time (from the learner's frontier, the module's
+    # competency, and the requested detail/register), so the arc mirrors the standard rather than a
+    # generic Merrill climb.
+    expects: list[str] = Field(default_factory=list)
+    self_check: list[str] = Field(default_factory=list)
     gagne: GagneFlags = Field(default_factory=GagneFlags)
     load_estimate: float = 0.0  # vs the cognitive-load budget
 
@@ -89,6 +97,10 @@ class Module(CourseModel):
     id: str
     title: str
     kcs: list[str] = Field(default_factory=list)
+    # The researched target competency this module covers (P7.3): backward design from the real
+    # standard tags each module with the one skill it builds, so the reader can show what it earns
+    # and the architect designs toward it. None on the legacy / no-research path.
+    competency: str | None = None
     objectives: list[Objective] = Field(default_factory=list)
     lessons: list[Lesson] = Field(default_factory=list)
     assessment: Assessment = Field(default_factory=Assessment)

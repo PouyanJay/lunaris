@@ -50,6 +50,43 @@
   white-space: nowrap;
 }
 
+.competency {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.competencyName {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.arcList {
+  /* No design token exists for a list-marker dot; scope its size here rather than repeat a literal. */
+  --arc-bullet-size: 5px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.arcList > li {
+  padding-left: var(--space-4);
+  position: relative;
+}
+
+.arcList > li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.65em; /* optical centre of the first text line (≈ cap height) */
+  width: var(--arc-bullet-size);
+  height: var(--arc-bullet-size);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
 .phase {
   display: flex;
   flex-direction: column;
