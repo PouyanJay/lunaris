@@ -81,12 +81,22 @@ def test_build_curriculum_prompt_maps_modules_to_researched_competencies() -> No
     assert "Hearing implied intent" in prompt
 
 
+def test_build_curriculum_prompt_asks_for_a_per_module_competency_field_with_research() -> None:
+    # P7.3: the mapping is recorded structurally — the architect tags each module with the ONE
+    # competency it builds, so the JSON shape must carry a "competency" field and instruct it.
+    prompt = build_curriculum_prompt(_graph(), _researched_brief())
+
+    assert '"competency"' in prompt
+    assert "tag each module" in prompt.lower()
+
+
 def test_build_curriculum_prompt_is_plain_backward_design_without_research() -> None:
-    # No brief / no research → the original backward-design prompt, no competency mapping section.
+    # No brief / no research → the original backward-design prompt, no competency mapping section,
+    # and no competency field in the JSON shape (nothing to tag against).
     prompt = build_curriculum_prompt(_graph(), None)
 
     assert "Reading authorial stance" in prompt  # the KCs still drive it
-    assert "competenc" not in prompt.lower()  # no researched-competency mapping section
+    assert "competenc" not in prompt.lower()  # no researched-competency mapping section or field
 
 
 def test_build_curriculum_prompt_omits_mapping_for_partial_research_with_no_competencies() -> None:
