@@ -106,3 +106,8 @@
 .trust[data-tier="reputable"] {
   color: var(--accent);
 }
+
+/* Credibility percentage: supplementary to the trust-tier word; muted by default. */
+.credibility {
+  color: var(--text-muted);
+}

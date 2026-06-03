@@ -16,6 +16,7 @@ describe("LessonResources", () => {
             url: "https://example.edu/stance",
             source: "example.edu",
             trustTier: "reputable",
+            credibility: 0.82,
             duration: null,
           }),
         ]}
@@ -32,6 +33,7 @@ describe("LessonResources", () => {
     expect(screen.getByText("example.edu")).toBeInTheDocument();
     // Trust tier is shown in the word, not colour alone (WCAG: never colour as the sole signal).
     expect(screen.getByText("reputable")).toBeInTheDocument();
+    expect(screen.getByText("82%")).toBeInTheDocument();
   });
 
   it("shows a video's runtime and omits it for non-video resources", () => {

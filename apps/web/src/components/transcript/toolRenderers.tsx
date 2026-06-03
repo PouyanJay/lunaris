@@ -448,6 +448,45 @@ const renderResearchStandard: ToolRenderer = ({ parsed, pending }) => {
   );
 };
 
+/** `curate_resources` → the per-lesson resource-vetting tally: how many vetted aids were attached,
+ *  broken down by module. Degrades to an honest note when nothing met the bar. */
+const renderCurateResources: ToolRenderer = ({ parsed, pending }) => {
+  if (pending) return <Pending />;
+  const total = parsed ? asNumber(parsed.resourceCount) : null;
+  if (total === 0) {
+    return <Stat>no resource met the bar — the lessons stand on their own</Stat>;
+  }
+  const modules = asArray(parsed?.modules) ?? [];
+  return (
+    <>
+      {total !== null && (
+        <div className={styles.statusRow}>
+          <span className={`mono ${styles.stat}`}>
+            {total} resource{total === 1 ? "" : "s"}
+          </span>
+        </div>
+      )}
+      {modules.length > 0 && (
+        <ul className={styles.modules}>
+          {modules.map((item, index) => {
+            const record = asRecord(item);
+            const title = (record && asString(record.title)) ?? `Module ${index + 1}`;
+            const count = (record && asNumber(record.resourceCount)) ?? 0;
+            return (
+              <li key={(record && asString(record.id)) ?? index} className={styles.module}>
+                <span className={styles.moduleTitle}>{title}</span>
+                <span className={`mono ${styles.moduleMeta}`}>
+                  {count} resource{count === 1 ? "" : "s"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
+  );
+};
+
 /** The renderer registry, keyed by tool name. A tool with no entry uses the raw fallback body. */
 const toolRenderers: Record<string, ToolRenderer> = {
   interpret_request: renderInterpretRequest,
@@ -456,6 +495,7 @@ const toolRenderers: Record<string, ToolRenderer> = {
   extract_concepts: renderExtractConcepts,
   build_prerequisite_graph: renderPrerequisiteGraph,
   design_curriculum: renderDesignCurriculum,
+  curate_resources: renderCurateResources,
   finalize_course: renderFinalizeCourse,
   verify_claims: renderVerifyClaims,
   task: renderTask,

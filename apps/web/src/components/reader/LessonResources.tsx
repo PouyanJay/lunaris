@@ -38,6 +38,14 @@ export function LessonResources({ resources }: LessonResourcesProps) {
               <span className={`mono ${styles.trust}`} data-tier={resource.trustTier}>
                 {resource.trustTier}
               </span>
+              {resource.credibility > 0 && (
+                <span
+                  className={`mono ${styles.credibility}`}
+                  aria-label={`Quality score: ${Math.round(resource.credibility * 100)}%`}
+                >
+                  {Math.round(resource.credibility * 100)}%
+                </span>
+              )}
             </div>
           </li>
         ))}

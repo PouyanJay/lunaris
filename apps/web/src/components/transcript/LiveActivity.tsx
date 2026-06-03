@@ -20,6 +20,11 @@ const VERBS: Record<string, readonly string[]> = {
   curriculum_designed: ["Designing the curriculum…", "Sequencing modules…", "Setting objectives…"],
   module_authored: ["Authoring lessons…", "Writing worked examples…", "Composing each phase…"],
   claims_verified: ["Grounding claims…", "Weighing the evidence…", "Verifying against the corpus…"],
+  resources_curated: [
+    "Curating resources…",
+    "Vetting videos & articles…",
+    "Finding the best aids…",
+  ],
   run_completed: ["Finalizing…", "Assembling the course…", "Wrapping up…"],
 };
 const DEFAULT_VERBS = ["Working…", "Thinking…"] as const;
