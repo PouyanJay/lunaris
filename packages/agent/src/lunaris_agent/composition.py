@@ -7,7 +7,9 @@ from lunaris_graph import ClaudePrereqJudge, PrerequisiteGraphBuilder
 from lunaris_grounding import (
     ClaudeSupportAssessor,
     IEvidenceRetriever,
+    IVideoSource,
     PgVectorRetriever,
+    SearchVideoSource,
     StubEvidenceRetriever,
     SupabaseCorpusStore,
     TavilySearchProvider,
@@ -30,7 +32,11 @@ from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.learner_profiler import ClaudeLearnerProfiler
 from .subagents.module_author import ClaudeModuleAuthor
-from .subagents.resource_curator import IResourceCurator, StubResourceCurator
+from .subagents.resource_curator import (
+    ClaudeResourceCurator,
+    IResourceCurator,
+    StubResourceCurator,
+)
 from .subagents.standard_researcher import (
     ClaudeStandardResearcher,
     IStandardResearcher,
@@ -80,14 +86,26 @@ def _researcher_from_env(worker_model: str) -> IStandardResearcher:
     return StubStandardResearcher()
 
 
-def _curator_from_env(worker_model: str) -> IResourceCurator:
-    """Build the resource curator (P7.4). Stubbed for now — the live curator lands in P7.4-T1.
+def _video_source_from_env() -> IVideoSource:
+    """The video source for resource curation: the shared-search fallback (P7.4-T1).
 
-    Will mirror the researcher: a live curator over the shared search + an ``IVideoSource`` (YouTube
-    when ``YOUTUBE_API_KEY`` is set, else the shared-search fallback) when ``SEARCH_API_KEY`` is
-    present, else the stub so the no-key CI path curates deterministically to nothing.
+    A ``YouTubeVideoSource`` (rich duration/channel signals) is selected here when a
+    ``YOUTUBE_API_KEY`` is set in P7.4-T2; for now every video query routes through the shared
+    ``ISearchProvider`` so a video is still found + vetted, just without YouTube's metadata.
     """
-    logger.info("resource_curator_stubbed", reason="live curator lands in P7.4-T1")
+    return SearchVideoSource(TavilySearchProvider())
+
+
+def _curator_from_env(worker_model: str) -> IResourceCurator:
+    """Build the live resource curator iff a search key is present, else the stub (P7.4).
+
+    Mirrors the researcher: the live curator finds + vets resources over the shared Tavily search +
+    an ``IVideoSource`` (worker tier for the relevance judge). With no ``SEARCH_API_KEY`` it returns
+    the stub, so curation degrades honestly to nothing and the no-key CI path stays deterministic.
+    """
+    if os.getenv("SEARCH_API_KEY"):
+        return ClaudeResourceCurator(worker_model, TavilySearchProvider(), _video_source_from_env())
+    logger.info("resource_curator_stubbed", reason="SEARCH_API_KEY unset")
     return StubResourceCurator()
 
 
