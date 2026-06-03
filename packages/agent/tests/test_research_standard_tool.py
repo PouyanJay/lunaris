@@ -7,6 +7,7 @@ curriculum architect design against the real standard, not the model's memory), 
 honestly to ``UNAVAILABLE`` — without calling the researcher or crashing — when the brief is gone.
 """
 
+import pytest
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_research_standard_tool
 from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
@@ -85,3 +86,44 @@ async def test_research_standard_degrades_to_unavailable_without_a_brief() -> No
     assert result["sources"] == []
     assert draft.brief is None  # nothing fabricated onto a missing brief
     assert ProgressStage.STANDARD_RESEARCHED in draft.progress.stages  # type: ignore[attr-defined]
+
+
+# Variant coverage: every research outcome the stage can produce — grounded, thin, and unreachable —
+# records onto the brief, emits the stage, and returns the right status, with the source/competency
+# shapes the schema invariant allows (COMPLETE cites a source; UNAVAILABLE carries none).
+_OUTCOMES = [
+    StandardResearch(
+        status=ResearchStatus.COMPLETE,
+        competencies=["hear implied intent"],
+        sources=[ResearchSource(url="https://www.canada.ca/clb", trust_tier=TrustTier.OFFICIAL)],
+    ),
+    StandardResearch(
+        status=ResearchStatus.PARTIAL,
+        competencies=[],
+        sources=[ResearchSource(url="https://uni.edu/clb", trust_tier=TrustTier.REPUTABLE)],
+    ),
+    StandardResearch(status=ResearchStatus.UNAVAILABLE),
+]
+
+
+@pytest.mark.parametrize("research", _OUTCOMES, ids=lambda r: r.status.value)
+async def test_research_standard_records_and_emits_every_outcome(
+    research: StandardResearch,
+) -> None:
+    # Arrange — an interpreted brief; the researcher returns the parametrized outcome.
+    draft = CourseDraft(topic="English", course_id="c", run_id="r")
+    draft.brief = CourseBrief(subject="English", goal="reach CLB 10", target_level=Level.ADVANCED)
+    draft.progress = _RecordingProgress()  # type: ignore[assignment]
+    tool = make_research_standard_tool(StubStandardResearcher(research), draft)
+
+    # Act
+    result = await tool.ainvoke({})
+
+    # Assert — each outcome is recorded on the brief, round-trips to camelCase JSON (status,
+    # competencies, and the vetted sources), and emits the stage exactly once.
+    assert draft.brief.research == research
+    expected = research.model_dump(mode="json", by_alias=True)
+    assert result["status"] == expected["status"]
+    assert result["competencies"] == expected["competencies"]
+    assert result["sources"] == expected["sources"]
+    assert draft.progress.stages == [ProgressStage.STANDARD_RESEARCHED]  # type: ignore[attr-defined]
