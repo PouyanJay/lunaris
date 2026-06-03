@@ -23,14 +23,16 @@ class CourseStatus(StrEnum):
 class ProgressStage(StrEnum):
     """A boundary in the course-build pipeline, emitted as a ProgressEvent.
 
-    Ordered as the agent runs: the run starts, the request is interpreted into a brief,
-    the learner is modeled (the frontier of what they already know), concepts are extracted,
-    the prerequisite graph is built, the curriculum is designed, each module is authored
-    (one event per module), claims are verified, and the run completes.
+    Ordered as the agent runs: the run starts, the request is interpreted into a brief, the target
+    standard is researched (grounding the brief in real competencies), the learner is modeled (the
+    frontier of what they already know), concepts are extracted, the prerequisite graph is built,
+    the curriculum is designed, each module is authored (one event per module), claims are verified,
+    and the run completes.
     """
 
     RUN_STARTED = "run_started"
     BRIEF_INTERPRETED = "brief_interpreted"
+    STANDARD_RESEARCHED = "standard_researched"
     LEARNER_MODELED = "learner_modeled"
     CONCEPTS_EXTRACTED = "concepts_extracted"
     GRAPH_BUILT = "graph_built"
@@ -167,3 +169,33 @@ class LanguageStyle(StrEnum):
     BALANCED = "balanced"
     SOPHISTICATED = "sophisticated"
     SCIENTIFIC = "scientific"
+
+
+class ResearchStatus(StrEnum):
+    """How well the research stage grounded the brief's target standard (P7.2).
+
+    Research is always-on but bounded + best-effort: it degrades honestly rather than blocking a
+    build. ``COMPLETE`` = competencies were distilled from fetched sources; ``PARTIAL`` = some
+    sources were reached but the budget ran out or extraction was thin; ``UNAVAILABLE`` = no usable
+    source (no search key, search returned nothing, or every fetch failed) — design falls back to
+    the model's internal knowledge, surfaced as such in the UI.
+    """
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    UNAVAILABLE = "unavailable"
+
+
+class TrustTier(StrEnum):
+    """A source's authority tier, classified deterministically from its domain (P7.2).
+
+    A minimal, real trust model the research + (later) resource-curation stages share, and that P6
+    extends with its richer registry/field packs. ``OFFICIAL`` = the standard's own authority or a
+    government/standards body; ``REPUTABLE`` = an established institution (university, major org);
+    ``OPEN`` = the general web; ``BLOCKED`` = a denylisted domain (never fetched or shown).
+    """
+
+    OFFICIAL = "official"
+    REPUTABLE = "reputable"
+    OPEN = "open"
+    BLOCKED = "blocked"

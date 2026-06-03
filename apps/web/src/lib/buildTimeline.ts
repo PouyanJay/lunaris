@@ -36,6 +36,7 @@ export type StageTimes = Partial<Record<ProgressStage, number>>;
 /** The coarse phases shown on the spine (run_started is folded into the intro "Plan" node). */
 const PHASES: { stage: ProgressStage; label: string }[] = [
   { stage: "brief_interpreted", label: "Brief" },
+  { stage: "standard_researched", label: "Research" },
   { stage: "learner_modeled", label: "Learner" },
   { stage: "concepts_extracted", label: "Concepts" },
   { stage: "graph_built", label: "Graph" },

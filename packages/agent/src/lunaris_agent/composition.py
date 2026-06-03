@@ -28,6 +28,7 @@ from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.learner_profiler import ClaudeLearnerProfiler
 from .subagents.module_author import ClaudeModuleAuthor
+from .subagents.standard_researcher import StubStandardResearcher
 from .subagents.visual_agent import (
     ClaudeVisualGenerator,
     MermaidRenderer,
@@ -172,6 +173,9 @@ def build_agent_course_builder(
         store,
         interpreter=ClaudeGoalInterpreter(worker),
         profiler=ClaudeLearnerProfiler(worker),
+        # The real, Tavily-backed researcher (key-gated on SEARCH_API_KEY) is wired in P7.2-T3;
+        # until then the research stage runs but degrades honestly to UNAVAILABLE.
+        researcher=StubStandardResearcher(),
         extractor=ClaudeConceptExtractor(worker),
         builder=build_live_prereq_builder(worker),
         architect=ClaudeCurriculumArchitect(strong),
