@@ -14,6 +14,8 @@ from .search_provider import ISearchProvider
 from .search_result import SearchResult
 from .stub_content_extractor import StubContentExtractor
 from .stub_search_provider import StubSearchProvider
+from .tavily_search_provider import TavilySearchProvider
+from .trafilatura_content_extractor import TrafilaturaContentExtractor
 
 __all__ = [
     "ExtractedContent",
@@ -23,5 +25,7 @@ __all__ = [
     "SearchResult",
     "StubContentExtractor",
     "StubSearchProvider",
+    "TavilySearchProvider",
+    "TrafilaturaContentExtractor",
     "classify_domain",
 ]

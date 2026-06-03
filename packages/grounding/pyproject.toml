@@ -9,6 +9,8 @@ dependencies = [
     "langchain-voyageai>=0.1",
     "supabase>=2.9",
     "structlog>=24.4",
+    "tavily-python>=0.5",
+    "trafilatura>=1.12",
 ]
 
 [build-system]

@@ -24,6 +24,8 @@ from lunaris_grounding.discovery import (
     SearchResult,
     StubContentExtractor,
     StubSearchProvider,
+    TavilySearchProvider,
+    TrafilaturaContentExtractor,
     classify_domain,
 )
 from lunaris_grounding.embeddings import IEmbedder, StubEmbedder, VoyageEmbedder
@@ -57,6 +59,8 @@ __all__ = [
     "StubSupportAssessor",
     "SupabaseCorpusStore",
     "Support",
+    "TavilySearchProvider",
+    "TrafilaturaContentExtractor",
     "Verifier",
     "VoyageEmbedder",
     "chunk_text",
