@@ -20,9 +20,11 @@ from lunaris_grounding.discovery import (
     ExtractedContent,
     IContentExtractor,
     ISearchProvider,
+    ResearchBudget,
     SearchResult,
     StubContentExtractor,
     StubSearchProvider,
+    classify_domain,
 )
 from lunaris_grounding.embeddings import IEmbedder, StubEmbedder, VoyageEmbedder
 from lunaris_grounding.evidence import Evidence, Support
@@ -46,6 +48,7 @@ __all__ = [
     "ISupportAssessor",
     "InMemoryCorpusStore",
     "PgVectorRetriever",
+    "ResearchBudget",
     "SearchResult",
     "StubContentExtractor",
     "StubEmbedder",
@@ -57,4 +60,5 @@ __all__ = [
     "Verifier",
     "VoyageEmbedder",
     "chunk_text",
+    "classify_domain",
 ]

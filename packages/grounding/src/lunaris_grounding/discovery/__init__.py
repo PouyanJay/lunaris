@@ -7,7 +7,9 @@ research-to-ground-claims stage both build on these primitives.
 """
 
 from .content_extractor import IContentExtractor
+from .domain_trust import classify_domain
 from .extracted_content import ExtractedContent
+from .research_budget import ResearchBudget
 from .search_provider import ISearchProvider
 from .search_result import SearchResult
 from .stub_content_extractor import StubContentExtractor
@@ -17,7 +19,9 @@ __all__ = [
     "ExtractedContent",
     "IContentExtractor",
     "ISearchProvider",
+    "ResearchBudget",
     "SearchResult",
     "StubContentExtractor",
     "StubSearchProvider",
+    "classify_domain",
 ]

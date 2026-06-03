@@ -16,6 +16,7 @@ from lunaris_agent.subagents.standard_researcher import (
 )
 from lunaris_grounding import (
     ExtractedContent,
+    ResearchBudget,
     SearchResult,
     StubContentExtractor,
     StubSearchProvider,
@@ -61,6 +62,13 @@ class _RaisingSearchProvider:
 
     async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
         raise RuntimeError("search backend is down")
+
+
+class _ExtractorMustNotFetch:
+    """Raises if asked to fetch — proves a blocked URL is dropped before any fetch."""
+
+    async def extract(self, url: str) -> ExtractedContent | None:
+        raise AssertionError(f"a blocked domain must never be fetched: {url}")
 
 
 def _two_source_researcher(model: object) -> ClaudeStandardResearcher:
@@ -172,7 +180,11 @@ async def test_researcher_distills_competencies_with_provenance() -> None:
     urls = {source.url for source in research.sources}
     assert urls == {"https://ircc.canada.ca/clb10", "https://example.edu/clb-guide"}
     assert all(source.fetched_at == _FIXED_CLOCK for source in research.sources)
-    assert all(source.trust_tier is TrustTier.OPEN for source in research.sources)
+    # Each source carries its real, classified trust tier: the standard's own body is OFFICIAL,
+    # the university guide REPUTABLE (the authority hint comes from the brief's target_standard).
+    tiers = {source.url: source.trust_tier for source in research.sources}
+    assert tiers["https://ircc.canada.ca/clb10"] is TrustTier.OFFICIAL
+    assert tiers["https://example.edu/clb-guide"] is TrustTier.REPUTABLE
 
 
 async def test_researcher_is_unavailable_when_no_source_can_be_fetched() -> None:
@@ -232,4 +244,90 @@ async def test_researcher_is_partial_when_sources_read_but_nothing_distils() -> 
     assert len(research.sources) == 1
     assert research.sources[0].url == "https://example.edu/thin"
     assert research.sources[0].fetched_at == _FIXED_CLOCK
-    assert research.sources[0].trust_tier is TrustTier.OPEN
+    assert research.sources[0].trust_tier is TrustTier.REPUTABLE
+
+
+# ---- trust-tier preference + the per-build budget (T2) ------------------------------------------
+
+
+async def test_researcher_prefers_higher_trust_tiers_within_the_fetch_budget() -> None:
+    # Arrange — four candidates of mixed tiers but a budget that fetches only two: the researcher
+    # keeps the two highest-trust sources (official first, then reputable) and drops the open ones.
+    urls = [
+        "https://blog.example.com/clb",  # OPEN
+        "https://ircc.canada.ca/clb",  # OFFICIAL (the brief's authority body)
+        "https://news.example.org/clb",  # OPEN
+        "https://uni.edu/clb",  # REPUTABLE
+    ]
+    search = StubSearchProvider([SearchResult(url=url) for url in urls])
+    extractor = StubContentExtractor(
+        {url: ExtractedContent(url=url, text="CLB content") for url in urls}
+    )
+    researcher = ClaudeStandardResearcher(
+        _model('{"competencies": ["c"], "score_table": []}'),
+        search,
+        extractor,
+        budget=ResearchBudget(max_searches=3, max_fetches=2),
+        clock=lambda: _FIXED_CLOCK,
+    )
+
+    # Act
+    research = await researcher.research(_clb_brief())
+
+    # Assert — the two top-tier sources, official ahead of reputable; the open ones were DROPPED
+    # by the budget (not merely sorted to the back), so no unfetched source is ever cited.
+    assert [source.url for source in research.sources] == [
+        "https://ircc.canada.ca/clb",
+        "https://uni.edu/clb",
+    ]
+    assert [source.trust_tier for source in research.sources] == [
+        TrustTier.OFFICIAL,
+        TrustTier.REPUTABLE,
+    ]
+    kept = {source.url for source in research.sources}
+    assert "https://blog.example.com/clb" not in kept
+    assert "https://news.example.org/clb" not in kept
+    assert all(source.trust_tier is not TrustTier.OPEN for source in research.sources)
+
+
+async def test_researcher_never_fetches_a_blocked_domain() -> None:
+    # Arrange — the only hit is a blocked shortener; it must never be fetched (so → UNAVAILABLE).
+    search = StubSearchProvider([SearchResult(url="https://bit.ly/clb")])
+    researcher = ClaudeStandardResearcher(
+        _DistillationMustNotBeCalled(),
+        search,
+        _ExtractorMustNotFetch(),
+        clock=lambda: _FIXED_CLOCK,
+    )
+
+    # Act
+    research = await researcher.research(_clb_brief())
+
+    # Assert — the blocked domain yielded nothing fetchable; honest UNAVAILABLE.
+    assert research.status is ResearchStatus.UNAVAILABLE
+    assert research.sources == []
+
+
+async def test_research_budget_caps_the_number_of_fetched_sources() -> None:
+    # Arrange — three fetchable reputable sources, but a budget of a single fetch.
+    urls = ["https://a.edu/x", "https://b.edu/x", "https://c.edu/x"]
+    search = StubSearchProvider([SearchResult(url=url) for url in urls])
+    extractor = StubContentExtractor(
+        {url: ExtractedContent(url=url, text="content") for url in urls}
+    )
+    researcher = ClaudeStandardResearcher(
+        _model('{"competencies": ["c"], "score_table": []}'),
+        search,
+        extractor,
+        budget=ResearchBudget(max_searches=2, max_fetches=1),
+        clock=lambda: _FIXED_CLOCK,
+    )
+
+    # Act
+    research = await researcher.research(_clb_brief())
+
+    # Assert — exactly the first reputable source survives despite three being available; the budget
+    # bounds the work and the result is still grounded (COMPLETE) on that one source.
+    assert research.status is ResearchStatus.COMPLETE
+    assert [source.url for source in research.sources] == ["https://a.edu/x"]
+    assert research.sources[0].trust_tier is TrustTier.REPUTABLE
