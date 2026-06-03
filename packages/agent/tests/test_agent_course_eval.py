@@ -22,6 +22,7 @@ from lunaris_agent.subagents.curriculum_architect import (
     ObjectivePlan,
     StubCurriculumArchitect,
 )
+from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_eval import evaluate_course
 from lunaris_eval.report import CheckResult, EvalReport
@@ -32,10 +33,15 @@ from lunaris_runtime.schema import (
     BloomLevel,
     Citation,
     Course,
+    CourseBrief,
     CourseStatus,
     KnowledgeComponent,
     Module,
 )
+
+# A stub brief for the agent's new interpret stage; these eval tests assert on the moats/DoD, not
+# the brief, so a minimal interpretation suffices (the scripted plan drives the build either way).
+_BRIEF = CourseBrief(subject="Binary search", goal="Learn binary search")
 
 # A small but non-trivial topology: two roots feed the terminal goal, so the DoD's fit + prereq
 # checks are meaningful (a novice starts at a root; the goal is the final terminal concept).
@@ -176,6 +182,7 @@ async def _build(
     builder = AgentCourseBuilder(
         _script(scripted_model, _concept_args(), _GOAL),
         store,
+        interpreter=StubGoalInterpreter(_BRIEF),
         extractor=StubConceptExtractor(Extraction(kcs=_kcs(), goal_id=_GOAL)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(edges if edges is not None else _EDGES)),
         architect=StubCurriculumArchitect(_plan()),
@@ -244,6 +251,7 @@ async def test_agent_course_meets_dod_across_risk_tiers(
     builder = AgentCourseBuilder(
         _script(scripted_model, _concept_args(), _GOAL),
         CourseStore(tmp_path),
+        interpreter=StubGoalInterpreter(_BRIEF),
         extractor=StubConceptExtractor(Extraction(kcs=_kcs(), goal_id=_GOAL)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=StubCurriculumArchitect(_plan()),

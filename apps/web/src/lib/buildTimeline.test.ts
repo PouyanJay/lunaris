@@ -69,6 +69,43 @@ describe("buildTimeline", () => {
     expect(phase(phases, "Curriculum").entries).toHaveLength(0);
   });
 
+  it("buckets the interpret_request beats under a leading Brief phase, ahead of Concepts", () => {
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("brief_interpreted", 1, { label: "Interpreted the goal: reach CLB 10" }),
+      makeProgressEvent("concepts_extracted", 2, { label: "18 concepts" }),
+    ];
+    const agentEvents = [
+      makeAgentEvent("tool_call", 0, {
+        stage: "run_started",
+        tool: "interpret_request",
+        toolArgs: { request: "Improve my English to CLB 10" },
+      }),
+      makeAgentEvent("tool_result", 1, {
+        stage: "brief_interpreted",
+        tool: "interpret_request",
+        result: '{"subject":"English"}',
+      }),
+    ];
+
+    const phases = buildTimeline(events, agentEvents);
+
+    // Brief is the FIRST coarse phase on the spine, ahead of Concepts (the new front of the
+    // pipeline) — no intro "Start" node here, so it leads.
+    const labels = phases.map((p) => p.label);
+    expect(labels[0]).toBe("Brief");
+    expect(labels.indexOf("Brief")).toBeLessThan(labels.indexOf("Concepts"));
+
+    // The interpret_request call+result pair buckets into Brief (by the result's stage), done with
+    // its progress summary.
+    const brief = phase(phases, "Brief");
+    expect(brief.status).toBe("done");
+    expect(brief.summary).toBe("Interpreted the goal: reach CLB 10");
+    expect(brief.entries).toEqual([
+      expect.objectContaining({ kind: "tool", tool: "interpret_request" }),
+    ]);
+  });
+
   it("marks every phase done once the run completes", () => {
     const phases = buildTimeline([makeProgressEvent("run_completed", 9)], []);
 
@@ -87,10 +124,11 @@ describe("buildTimeline", () => {
     ]);
   });
 
-  it("returns the six pending phases (no intro node) for an empty build", () => {
+  it("returns the coarse pending phases (no intro node) for an empty build", () => {
     const phases = buildTimeline([], []);
 
     expect(phases.map((p) => p.label)).toEqual([
+      "Brief",
       "Concepts",
       "Graph",
       "Curriculum",
@@ -123,14 +161,22 @@ describe("buildTimeline", () => {
   it("times each DONE phase from its stage arrival back to the previous stage", () => {
     const events = [
       makeProgressEvent("run_started", 0),
-      makeProgressEvent("concepts_extracted", 1),
-      makeProgressEvent("graph_built", 2),
+      makeProgressEvent("brief_interpreted", 1),
+      makeProgressEvent("concepts_extracted", 2),
+      makeProgressEvent("graph_built", 3),
     ];
-    // Concepts spanned run_started→concepts_extracted (1.5s); Graph is still active.
-    const stageTimes = { run_started: 1_000, concepts_extracted: 2_500, graph_built: 3_000 };
+    // Brief spanned run_started→brief_interpreted (0.5s); Concepts spanned brief→concepts (1.5s);
+    // Graph is still active.
+    const stageTimes = {
+      run_started: 1_000,
+      brief_interpreted: 1_500,
+      concepts_extracted: 3_000,
+      graph_built: 3_500,
+    };
 
     const phases = buildTimeline(events, [], stageTimes);
 
+    expect(phase(phases, "Brief").durationMs).toBe(500);
     expect(phase(phases, "Concepts").durationMs).toBe(1_500);
     // The active phase shows "running…", not a duration; every unreached phase has none either.
     expect(phase(phases, "Graph").durationMs).toBeNull();

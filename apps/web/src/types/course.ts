@@ -226,6 +226,7 @@ export interface Course {
 /** A pipeline stage boundary, streamed live while a course builds (mirrors ProgressStage). */
 export type ProgressStage =
   | "run_started"
+  | "brief_interpreted"
   | "concepts_extracted"
   | "graph_built"
   | "curriculum_designed"

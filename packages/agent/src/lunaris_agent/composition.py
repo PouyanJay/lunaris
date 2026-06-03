@@ -25,6 +25,7 @@ from .harness.runner import AgentCourseBuilder
 from .orchestrator import Orchestrator
 from .subagents.concept_extractor import ClaudeConceptExtractor
 from .subagents.curriculum_architect import ClaudeCurriculumArchitect
+from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.module_author import ClaudeModuleAuthor
 from .subagents.visual_agent import (
     ClaudeVisualGenerator,
@@ -168,6 +169,7 @@ def build_agent_course_builder(
     return AgentCourseBuilder(
         planner,
         store,
+        interpreter=ClaudeGoalInterpreter(worker),
         extractor=ClaudeConceptExtractor(worker),
         builder=build_live_prereq_builder(worker),
         architect=ClaudeCurriculumArchitect(strong),

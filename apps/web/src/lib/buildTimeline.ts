@@ -33,8 +33,9 @@ export interface TimelinePhase {
 /** Client-stamped wall-clock arrival time (ms) per pipeline stage, captured live as events stream. */
 export type StageTimes = Partial<Record<ProgressStage, number>>;
 
-/** The six coarse phases shown on the spine (run_started is folded into the intro "Plan" node). */
+/** The coarse phases shown on the spine (run_started is folded into the intro "Plan" node). */
 const PHASES: { stage: ProgressStage; label: string }[] = [
+  { stage: "brief_interpreted", label: "Brief" },
   { stage: "concepts_extracted", label: "Concepts" },
   { stage: "graph_built", label: "Graph" },
   { stage: "curriculum_designed", label: "Curriculum" },

@@ -90,11 +90,16 @@ describe("BuildTimeline", () => {
     render(
       <BuildTimeline
         {...streamingProps()}
-        stageTimes={{ run_started: 1_000, concepts_extracted: 3_000, graph_built: 3_500 }}
+        stageTimes={{
+          run_started: 1_000,
+          brief_interpreted: 1_200,
+          concepts_extracted: 3_200,
+          graph_built: 3_700,
+        }}
       />,
     );
 
-    // Concepts is done: run_started→concepts_extracted = 2.0s, shown in its header.
+    // Concepts is done: brief_interpreted→concepts_extracted = 2.0s, shown in its header.
     const conceptsHeader = screen.getByRole("button", { name: /concepts — 21 concepts/i });
     expect(within(conceptsHeader).getByText("2.0s")).toBeInTheDocument();
     // Graph is active → it streams "running…", never a duration (even though both stamps exist).
