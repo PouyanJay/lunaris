@@ -34,6 +34,80 @@ describe("ToolCallCard per-tool renderers", () => {
     expect(screen.queryByText(/"goalId"/)).not.toBeInTheDocument();
   });
 
+  it("interpret_request: renders the interpreted brief as a card, never the raw JSON", () => {
+    render(
+      <ToolCallCard
+        tool="interpret_request"
+        args={{ request: "Improve my English to achieve CLB 10" }}
+        result={resultOf({
+          subject: "English language proficiency",
+          goal: "reach CLB 10 across all four skills",
+          targetStandard: { name: "CLB 10", kind: "external_standard", authorityHint: "ircc.ca" },
+          targetLevel: "advanced",
+          assumedPrior: "strong everyday English (CLB 8-9)",
+          audience: "an adult learner",
+          deliverableShape: { lessons: 6 },
+          needsResearch: true,
+          domainField: "language-learning",
+          preferences: { detailDepth: "in_depth", languageStyle: "sophisticated" },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("English language proficiency")).toBeInTheDocument();
+    expect(screen.getByText("reach CLB 10 across all four skills")).toBeInTheDocument();
+    // Target combines the humanised level + the named standard.
+    expect(screen.getByText("advanced · CLB 10")).toBeInTheDocument();
+    expect(screen.getByText("strong everyday English (CLB 8-9)")).toBeInTheDocument();
+    // The deliverable + preferences summary, with enum tokens humanised.
+    expect(
+      screen.getByText(/6 lessons · in depth · sophisticated · needs research/i),
+    ).toBeInTheDocument();
+    // No raw JSON dump leaks into the transcript.
+    expect(screen.queryByText(/"subject"/)).not.toBeInTheDocument();
+  });
+
+  it("interpret_request: omits the Target field when the level is n/a and no standard is named", () => {
+    render(
+      <ToolCallCard
+        tool="interpret_request"
+        args={{ request: "teach me knitting" }}
+        result={resultOf({
+          subject: "Knitting",
+          goal: "knit a scarf",
+          targetStandard: null,
+          targetLevel: "n/a",
+          assumedPrior: "",
+          deliverableShape: { lessons: null },
+          needsResearch: false,
+          preferences: { detailDepth: "balanced", languageStyle: "balanced" },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("Knitting")).toBeInTheDocument();
+    expect(screen.getByText("knit a scarf")).toBeInTheDocument();
+    // No Target field — level is n/a and there is no named standard.
+    expect(screen.queryByText("Target")).not.toBeInTheDocument();
+    // The captured (default) preferences still summarise.
+    expect(screen.getByText(/balanced · balanced/i)).toBeInTheDocument();
+  });
+
+  it("interpret_request: falls back to the request when the result is truncated (parsed=null)", () => {
+    // The tap clips large results to ~600 chars → unparseable. The card leans on the call args
+    // (the request) rather than rendering empty, and never leaks the half-written JSON.
+    render(
+      <ToolCallCard
+        tool="interpret_request"
+        args={{ request: "Improve my English to achieve CLB 10" }}
+        result={'{"subject":"English language proficiency","goal":"reach CLB 10 across all f'}
+      />,
+    );
+
+    expect(screen.getByText("Improve my English to achieve CLB 10")).toBeInTheDocument();
+    expect(screen.queryByText(/"subject"/)).not.toBeInTheDocument();
+  });
+
   it("build_prerequisite_graph: chips the concepts from ARGS even when the result is truncated", () => {
     // The real graph result is ~3.7KB and the tap clips it → unparseable. The concept chips must
     // come from the (full, untruncated) call args, marking the goal.
@@ -249,6 +323,13 @@ describe("ToolCallCard per-tool renderers", () => {
   // content and never dumps its raw JSON — the single contract the renderer registry exists to keep.
   it.each([
     {
+      tool: "interpret_request",
+      args: { request: "Improve my English to CLB 10" },
+      result: resultOf({ subject: "English", goal: "reach CLB 10", targetLevel: "advanced" }),
+      present: "English",
+      absent: /"subject"/,
+    },
+    {
       tool: "extract_concepts",
       args: { topic: "X" },
       result: resultOf({
@@ -344,6 +425,7 @@ describe("ToolCallCard per-tool renderers", () => {
     "verify_claims",
     "task",
     "an_unregistered_tool",
+    "interpret_request",
   ])("keeps the 'Tool call' eyebrow and mono tool name for %s", (tool) => {
     const { unmount } = render(<ToolCallCard tool={tool} args={{}} result="ok" />);
 

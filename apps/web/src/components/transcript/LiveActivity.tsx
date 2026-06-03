@@ -8,6 +8,7 @@ import styles from "./LiveActivity.module.css";
  *  stay evocative rather than re-stating them. Keyed by ProgressStage (+ the pre-stage "intro"). */
 const VERBS: Record<string, readonly string[]> = {
   intro: ["Planning the build…", "Thinking it through…", "Getting started…"],
+  brief_interpreted: ["Interpreting the request…", "Framing the goal…", "Reading the level…"],
   concepts_extracted: ["Reading the topic…", "Extracting concepts…", "Naming the pieces…"],
   graph_built: ["Mapping prerequisites…", "Ordering concepts…", "Untangling dependencies…"],
   curriculum_designed: ["Designing the curriculum…", "Sequencing modules…", "Setting objectives…"],

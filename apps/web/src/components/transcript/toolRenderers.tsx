@@ -35,6 +35,11 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+/** Humanise an enum token for display: "in_depth" → "in depth". */
+function pretty(token: string): string {
+  return token.replace(/_/g, " ");
+}
+
 interface ConceptLike {
   id: string;
   label: string;
@@ -307,8 +312,48 @@ const renderTask: ToolRenderer = ({ args, result, pending }) => {
   );
 };
 
+/** `interpret_request` → the interpreted brief as a compact card: subject, goal, target (level +
+ *  any named standard), assumed prior, and a summary of the deliverable shape + preferences. */
+const renderInterpretRequest: ToolRenderer = ({ args, parsed, pending }) => {
+  if (pending) return <Pending />;
+  const subject = parsed && asString(parsed.subject);
+  const goal = parsed && asString(parsed.goal);
+  if (!subject && !goal) {
+    // The brief result was truncated/unparseable — fall back to the request from the call args
+    // (the same lean-on-args degradation the graph renderer uses), never an empty card.
+    const request = args && asString(args.request);
+    return request ? <Field label="Request">{request}</Field> : <Stat>interpreted</Stat>;
+  }
+  const level = (parsed && asString(parsed.targetLevel)) ?? null;
+  const standardName = asString(asRecord(parsed?.targetStandard)?.name);
+  const assumedPrior = parsed && asString(parsed.assumedPrior);
+  const target = [level && level !== "n/a" ? pretty(level) : null, standardName]
+    .filter(Boolean)
+    .join(" · ");
+  const lessons = asNumber(asRecord(parsed?.deliverableShape)?.lessons);
+  const prefs = asRecord(parsed?.preferences);
+  const detailDepth = prefs ? asString(prefs.detailDepth) : null;
+  const languageStyle = prefs ? asString(prefs.languageStyle) : null;
+  const bits = [
+    lessons !== null ? `${lessons} lessons` : null,
+    detailDepth ? pretty(detailDepth) : null,
+    languageStyle ? pretty(languageStyle) : null,
+    parsed?.needsResearch === true ? "needs research" : null,
+  ].filter(Boolean);
+  return (
+    <>
+      {subject && <Field label="Subject">{subject}</Field>}
+      {goal && <Field label="Goal">{goal}</Field>}
+      {target && <Field label="Target">{target}</Field>}
+      {assumedPrior && <Field label="Assumes">{assumedPrior}</Field>}
+      {bits.length > 0 && <Stat>{bits.join(" · ")}</Stat>}
+    </>
+  );
+};
+
 /** The renderer registry, keyed by tool name. A tool with no entry uses the raw fallback body. */
 const toolRenderers: Record<string, ToolRenderer> = {
+  interpret_request: renderInterpretRequest,
   extract_concepts: renderExtractConcepts,
   build_prerequisite_graph: renderPrerequisiteGraph,
   design_curriculum: renderDesignCurriculum,
