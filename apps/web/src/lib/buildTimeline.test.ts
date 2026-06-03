@@ -106,6 +106,37 @@ describe("buildTimeline", () => {
     ]);
   });
 
+  it("buckets the model_learner beats under the Learner phase, between Brief and Concepts", () => {
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("brief_interpreted", 1),
+      makeProgressEvent("learner_modeled", 2, { label: "Modeled the learner: 2 known area(s)" }),
+      makeProgressEvent("concepts_extracted", 3, { label: "12 concepts" }),
+    ];
+    const agentEvents = [
+      makeAgentEvent("tool_call", 0, { stage: "brief_interpreted", tool: "model_learner" }),
+      makeAgentEvent("tool_result", 1, {
+        stage: "learner_modeled",
+        tool: "model_learner",
+        result: '{"frontier":["the alphabet","basic vocabulary"],"count":2}',
+      }),
+    ];
+
+    const phases = buildTimeline(events, agentEvents);
+
+    // Learner sits between Brief and Concepts on the spine.
+    const labels = phases.map((p) => p.label);
+    expect(labels.indexOf("Brief")).toBeLessThan(labels.indexOf("Learner"));
+    expect(labels.indexOf("Learner")).toBeLessThan(labels.indexOf("Concepts"));
+
+    const learner = phase(phases, "Learner");
+    expect(learner.status).toBe("done");
+    expect(learner.summary).toBe("Modeled the learner: 2 known area(s)");
+    expect(learner.entries).toEqual([
+      expect.objectContaining({ kind: "tool", tool: "model_learner" }),
+    ]);
+  });
+
   it("marks every phase done once the run completes", () => {
     const phases = buildTimeline([makeProgressEvent("run_completed", 9)], []);
 
@@ -129,6 +160,7 @@ describe("buildTimeline", () => {
 
     expect(phases.map((p) => p.label)).toEqual([
       "Brief",
+      "Learner",
       "Concepts",
       "Graph",
       "Curriculum",
@@ -162,21 +194,24 @@ describe("buildTimeline", () => {
     const events = [
       makeProgressEvent("run_started", 0),
       makeProgressEvent("brief_interpreted", 1),
-      makeProgressEvent("concepts_extracted", 2),
-      makeProgressEvent("graph_built", 3),
+      makeProgressEvent("learner_modeled", 2),
+      makeProgressEvent("concepts_extracted", 3),
+      makeProgressEvent("graph_built", 4),
     ];
-    // Brief spanned run_started→brief_interpreted (0.5s); Concepts spanned brief→concepts (1.5s);
-    // Graph is still active.
+    // Brief spanned run_started→brief (0.5s); Learner brief→learner (0.3s); Concepts
+    // learner→concepts (1.5s); Graph is still active.
     const stageTimes = {
       run_started: 1_000,
       brief_interpreted: 1_500,
-      concepts_extracted: 3_000,
-      graph_built: 3_500,
+      learner_modeled: 1_800,
+      concepts_extracted: 3_300,
+      graph_built: 3_800,
     };
 
     const phases = buildTimeline(events, [], stageTimes);
 
     expect(phase(phases, "Brief").durationMs).toBe(500);
+    expect(phase(phases, "Learner").durationMs).toBe(300);
     expect(phase(phases, "Concepts").durationMs).toBe(1_500);
     // The active phase shows "running…", not a duration; every unreached phase has none either.
     expect(phase(phases, "Graph").durationMs).toBeNull();
