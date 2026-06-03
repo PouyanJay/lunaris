@@ -2,6 +2,7 @@ from pydantic import Field
 
 from .base import CourseModel
 from .enums import BloomLevel, VerifierStatus, VisualKind
+from .resource import Resource
 from .visual_spec import VisualSpec
 
 
@@ -53,6 +54,10 @@ class Segment(CourseModel):
     prose: str = ""
     visuals: list[Visual] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
+    # Curated external aids attached to this phase (P7.4) — suggested, not part of the verified
+    # lesson, so they carry no claims and the verifier never grounds them. Default empty; a course
+    # built before P7.4 (or a phase no resource suited) simply has none.
+    resources: list[Resource] = Field(default_factory=list)
 
 
 class MerrillSegments(CourseModel):

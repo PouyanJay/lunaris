@@ -43,6 +43,7 @@ const PHASES: { stage: ProgressStage; label: string }[] = [
   { stage: "curriculum_designed", label: "Curriculum" },
   { stage: "module_authored", label: "Lessons" },
   { stage: "claims_verified", label: "Verify" },
+  { stage: "resources_curated", label: "Resources" },
   { stage: "run_completed", label: "Publish" },
 ];
 

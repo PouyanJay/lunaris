@@ -25,6 +25,7 @@ from lunaris_agent.subagents.curriculum_architect import (
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
 from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
+from lunaris_agent.subagents.resource_curator import StubResourceCurator
 from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
 from lunaris_eval import evaluate_course
 from lunaris_eval.report import CheckResult, EvalReport
@@ -191,6 +192,7 @@ async def _build(
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(edges if edges is not None else _EDGES)),
         architect=StubCurriculumArchitect(_plan()),
         reviser=StubLessonReviser(_lesson, lambda m, _c, _a: _lesson(m)),
+        curator=StubResourceCurator(),
         verifier=verifier or _grounding_verifier(),
     )
     return await builder.run("binary search", course_id="c-eval", run_id="r-eval")
@@ -262,6 +264,7 @@ async def test_agent_course_meets_dod_across_risk_tiers(
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=StubCurriculumArchitect(_plan()),
         reviser=StubLessonReviser(_lesson, lambda m, _c, _a: _lesson(m)),
+        curator=StubResourceCurator(),
         verifier=_grounding_verifier(),
         risk_tier=RiskTier.HIGH if risk == "high" else RiskTier.LOW,
     )

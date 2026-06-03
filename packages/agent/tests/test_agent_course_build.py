@@ -31,6 +31,7 @@ from lunaris_agent.subagents.curriculum_architect import (
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
 from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
+from lunaris_agent.subagents.resource_curator import StubResourceCurator
 from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
@@ -205,6 +206,7 @@ def _builder(
     researcher: StubStandardResearcher | None = None,
     architect: StubCurriculumArchitect | None = None,
     reviser: StubLessonReviser | None = None,
+    curator: StubResourceCurator | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
     stream_tokens: bool = False,
@@ -220,6 +222,7 @@ def _builder(
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=architect or StubCurriculumArchitect(_PLAN),
         reviser=reviser or _reviser(),
+        curator=curator or StubResourceCurator(),
         verifier=verifier or _verifier(),
         visual_engine=visual_engine,
         stream_tokens=stream_tokens,
@@ -284,7 +287,11 @@ def _delegating_script(
             ),
             AIMessage(
                 content="",
-                tool_calls=[{"name": "finalize_course", "args": {}, "id": "t5"}],
+                tool_calls=[{"name": "curate_resources", "args": {}, "id": "t5"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "finalize_course", "args": {}, "id": "t6"}],
             ),
             AIMessage(content="Course built."),
         ]

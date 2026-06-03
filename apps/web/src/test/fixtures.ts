@@ -9,6 +9,7 @@ import type {
   Module,
   ProgressEvent,
   ProgressStage,
+  Resource,
   RunEvent,
   Segment,
 } from "../types/course";
@@ -25,8 +26,25 @@ const NO_GAGNE: GagneFlags = {
   enhanceTransfer: false,
 };
 
-function segment(prose: string, claims: Claim[] = []): Segment {
-  return { prose, visuals: [], claims };
+function segment(prose: string, claims: Claim[] = [], resources: Resource[] = []): Segment {
+  return { prose, visuals: [], claims, resources };
+}
+
+/** A vetted resource with sensible defaults for reader/transcript tests. */
+export function makeResource(overrides: Partial<Resource> = {}): Resource {
+  return {
+    kind: "video",
+    title: "Binary search visualised",
+    url: "https://www.youtube.com/watch?v=demo",
+    source: "youtube.com",
+    why: "A 6-min animation of halving the search range.",
+    trustTier: "open",
+    credibility: 0.8,
+    fetchedAt: "2026-06-03T00:00:00Z",
+    duration: "6:12",
+    author: "CS Dojo",
+    ...overrides,
+  };
 }
 
 /** A complete Merrill lesson for reader tests: four phases with distinct prose, a grounded claim in
@@ -36,13 +54,17 @@ export function makeLesson(overrides: Partial<Lesson> = {}): Lesson {
     id: "m-binary_search-l0",
     segments: {
       activate: segment("Recall how you find a word in a dictionary by halving the pages."),
-      demonstrate: segment("Binary search halves the candidate range on each comparison.", [
-        {
-          text: "Comparison reduces the problem size each step.",
-          supportedBy: "src-1",
-          verifierStatus: "supported",
-        },
-      ]),
+      demonstrate: segment(
+        "Binary search halves the candidate range on each comparison.",
+        [
+          {
+            text: "Comparison reduces the problem size each step.",
+            supportedBy: "src-1",
+            verifierStatus: "supported",
+          },
+        ],
+        [makeResource()],
+      ),
       apply: segment("Trace binary search on [1, 3, 5, 7, 9] searching for 7."),
       integrate: segment("Where else does halving a search space speed things up?"),
     },

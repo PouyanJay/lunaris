@@ -200,6 +200,7 @@ describe("buildTimeline", () => {
       "Curriculum",
       "Lessons",
       "Verify",
+      "Resources",
       "Publish",
     ]);
     expect(phases.every((p) => p.status === "pending" && p.entries.length === 0)).toBe(true);

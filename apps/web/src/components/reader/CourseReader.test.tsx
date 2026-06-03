@@ -17,7 +17,10 @@ function lessonWith(id: string, activateProse: string): Lesson {
   const base = makeLesson({ id });
   return {
     ...base,
-    segments: { ...base.segments, activate: { prose: activateProse, visuals: [], claims: [] } },
+    segments: {
+      ...base.segments,
+      activate: { prose: activateProse, visuals: [], claims: [], resources: [] },
+    },
   };
 }
 
@@ -123,6 +126,7 @@ describe("CourseReader", () => {
       prose: "Regenerated prose.",
       visuals: [],
       claims: [],
+      resources: [],
     };
     const onRegenerate = vi.fn().mockResolvedValue(updated);
     const course = makeCourse();
@@ -177,7 +181,7 @@ describe("CourseReader", () => {
               ...base,
               segments: {
                 ...base.segments,
-                demonstrate: { prose: "Demo.", visuals: [visual], claims: [] },
+                demonstrate: { prose: "Demo.", visuals: [visual], claims: [], resources: [] },
               },
             },
           ],
@@ -282,7 +286,7 @@ function courseWithDemonstrateClaim(claim: Claim, provenance = makeCourse().prov
             ...base,
             segments: {
               ...base.segments,
-              demonstrate: { prose: "Demonstration.", visuals: [], claims: [claim] },
+              demonstrate: { prose: "Demonstration.", visuals: [], claims: [claim], resources: [] },
             },
           },
         ],
@@ -385,6 +389,21 @@ describe("CourseReader — lesson body", () => {
     expect(
       screen.getByText(/Locate an element in a sorted collection efficiently\./),
     ).toBeInTheDocument();
+  });
+
+  it("renders a phase's curated resources as out-bound links with source + trust (P7.4)", () => {
+    // Arrange / Act — the default lesson carries a video resource on its demonstrate phase.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert — the resource shows as a new-tab link, with its source domain and trust tier.
+    const link = screen.getByRole("link", { name: "Binary search visualised" });
+    expect(link).toHaveAttribute("href", "https://www.youtube.com/watch?v=demo");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
+    expect(screen.getByText("youtube.com")).toBeInTheDocument();
+    // Trust tier shows in the word, not colour alone (WCAG: never colour as the sole signal).
+    expect(screen.getByText("open")).toBeInTheDocument();
+    expect(screen.getByText("A 6-min animation of halving the search range.")).toBeInTheDocument();
   });
 
   it("omits the arc compartments for a course built before P7.3 (no expects / self-check)", () => {

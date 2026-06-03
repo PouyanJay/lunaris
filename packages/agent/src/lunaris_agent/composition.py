@@ -30,6 +30,7 @@ from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.learner_profiler import ClaudeLearnerProfiler
 from .subagents.module_author import ClaudeModuleAuthor
+from .subagents.resource_curator import IResourceCurator, StubResourceCurator
 from .subagents.standard_researcher import (
     ClaudeStandardResearcher,
     IStandardResearcher,
@@ -77,6 +78,17 @@ def _researcher_from_env(worker_model: str) -> IStandardResearcher:
         )
     logger.info("standard_researcher_stubbed", reason="SEARCH_API_KEY unset")
     return StubStandardResearcher()
+
+
+def _curator_from_env(worker_model: str) -> IResourceCurator:
+    """Build the resource curator (P7.4). Stubbed for now — the live curator lands in P7.4-T1.
+
+    Will mirror the researcher: a live curator over the shared search + an ``IVideoSource`` (YouTube
+    when ``YOUTUBE_API_KEY`` is set, else the shared-search fallback) when ``SEARCH_API_KEY`` is
+    present, else the stub so the no-key CI path curates deterministically to nothing.
+    """
+    logger.info("resource_curator_stubbed", reason="live curator lands in P7.4-T1")
+    return StubResourceCurator()
 
 
 def _visual_engine_from_env(worker_model: str) -> VisualEngine:
@@ -199,6 +211,7 @@ def build_agent_course_builder(
         builder=build_live_prereq_builder(worker),
         architect=ClaudeCurriculumArchitect(strong),
         reviser=ClaudeLessonReviser(worker),
+        curator=_curator_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
         stream_tokens=True,
