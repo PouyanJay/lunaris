@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from lunaris_runtime.schema import (
     Citation,
     Course,
+    CourseBrief,
     KnowledgeComponent,
     Module,
     PrerequisiteGraph,
@@ -35,6 +36,10 @@ class CourseDraft:
     course_id: str
     run_id: str
     risk_tier: RiskTier = RiskTier.LOW
+    # The interpreted request (P7), recorded by the interpret_request stage and read by later
+    # stages. None until interpreted, or on a path that skips it — downstream readers treat it as
+    # optional.
+    brief: CourseBrief | None = None
     frontier: list[str] = field(default_factory=list)
     goal_concept: str | None = None
     concepts: list[KnowledgeComponent] = field(default_factory=list)

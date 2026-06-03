@@ -7,6 +7,7 @@ the verifier onto the course, and that the ``run_id`` threads the structured log
 that finalize refuses to assemble a course before the prerequisite graph exists.
 """
 
+import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from lunaris_agent.subagents.curriculum_architect import (
     ObjectivePlan,
     StubCurriculumArchitect,
 )
+from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
@@ -37,13 +39,15 @@ from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import (
-    AgentEvent,
     AgentEventKind,
     BloomLevel,
     Citation,
+    CourseBrief,
     CourseStatus,
     KnowledgeComponent,
+    Level,
     Module,
+    ProgressStage,
     VerifierStatus,
 )
 
@@ -90,6 +94,13 @@ _PLAN = CurriculumPlan(
         )
         for kc_id, label, _definition, _difficulty in _CONCEPT_SPECS
     ]
+)
+
+
+# The stub interpreter's brief: the new first stage records it on the draft. These tests assert on
+# the moats + the brief flowing first, so a small fixed interpretation is enough.
+_BRIEF = CourseBrief(
+    subject="Demonstrations", goal="Build a demo course", target_level=Level.NOVICE
 )
 
 
@@ -142,6 +153,7 @@ def _builder(
     return AgentCourseBuilder(
         model,
         store,
+        interpreter=StubGoalInterpreter(_BRIEF),
         extractor=StubConceptExtractor(Extraction(kcs=_KCS, goal_id=_GOAL_ID)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=StubCurriculumArchitect(_PLAN),
@@ -157,7 +169,8 @@ def _delegating_script(
     *,
     first_narration: str = "",
 ) -> object:
-    """The standard happy-path agent script: extract → graph → curriculum → delegate → finalize.
+    """The standard happy-path agent script: interpret → extract → graph → curriculum → delegate →
+    finalize.
 
     ``first_narration`` lets a test make the agent narrate its first step (text that streams as
     tokens in token mode); it defaults to empty, leaving the deterministic tool-only turns intact.
@@ -166,6 +179,10 @@ def _delegating_script(
         [
             AIMessage(
                 content=first_narration,
+                tool_calls=[{"name": "interpret_request", "args": {"request": "demo"}, "id": "t0"}],
+            ),
+            AIMessage(
+                content="",
                 tool_calls=[{"name": "extract_concepts", "args": {"topic": "demo"}, "id": "t1"}],
             ),
             AIMessage(
@@ -372,24 +389,15 @@ async def test_agent_flags_review_when_a_goal_claim_cannot_be_grounded(
     assert store.load("course-4").status == CourseStatus.REVIEW
 
 
-class _RecordingAgentSink:
-    """An IAgentSink that captures the fine-grained transcript events for assertion."""
-
-    def __init__(self) -> None:
-        self.events: list[AgentEvent] = []
-
-    async def emit(self, event: AgentEvent) -> None:
-        self.events.append(event)
-
-
 async def test_agent_builder_emits_transcript_events_to_the_agent_sink(
     scripted_model: Callable[[Sequence[BaseMessage]], object],
+    agent_sink,
     tmp_path: Path,
 ) -> None:
     # Arrange — the real AgentCourseBuilder with a recording agent sink (closes the gap the API
     # test masks with its own pipeline: prove the BUILDER itself emits the transcript channel).
     builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path))
-    sink = _RecordingAgentSink()
+    sink = agent_sink
 
     # Act
     await builder.run("demo", course_id="course-5", run_id="run-5", agent=sink)
@@ -443,6 +451,53 @@ async def test_agent_builder_forwards_stream_tokens_to_the_harness_tap(
     # Assert — the builder asked the tap to stream tokens, and the build still completed.
     assert captured["stream_tokens"] is True
     assert course.status == CourseStatus.PUBLISHED
+
+
+async def test_agent_interprets_the_request_into_a_brief_before_extraction(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    agent_sink,
+    tmp_path: Path,
+) -> None:
+    # Arrange — the happy-path script now opens with interpret_request (the new front of the
+    # pipeline). Capture both the coarse progress stages and the fine transcript to prove the brief
+    # flows end-to-end, first, before any concept work.
+    builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path))
+    progress = progress_sink
+    transcript = agent_sink
+
+    # Act
+    await builder.run(
+        "Improve my English to CLB 10",
+        course_id="course-brief",
+        run_id="run-brief",
+        progress=progress,
+        agent=transcript,
+    )
+
+    # Assert — BRIEF_INTERPRETED is emitted right after the run starts and before concept
+    # extraction, run_id-correlated. The interpret stage is the new front of the pipeline.
+    stages = [event.stage for event in progress.events]
+    assert ProgressStage.BRIEF_INTERPRETED in stages
+    assert stages.index(ProgressStage.RUN_STARTED) < stages.index(ProgressStage.BRIEF_INTERPRETED)
+    assert stages.index(ProgressStage.BRIEF_INTERPRETED) < stages.index(
+        ProgressStage.CONCEPTS_EXTRACTED
+    )
+    brief_event = next(e for e in progress.events if e.stage is ProgressStage.BRIEF_INTERPRETED)
+    assert brief_event.run_id == "run-brief"
+
+    # The interpret_request tool surfaced the typed brief on the transcript as camelCase JSON
+    # (subject / goal / targetLevel) — exactly what the live build canvas renders.
+    results = [
+        e
+        for e in transcript.events
+        if e.kind is AgentEventKind.TOOL_RESULT and e.tool == "interpret_request"
+    ]
+    assert results, "interpret_request produced no tool result on the transcript"
+    payload = json.loads(results[0].result)
+    assert payload["subject"] == _BRIEF.subject
+    assert payload["goal"] == _BRIEF.goal
+    assert payload["targetLevel"] == _BRIEF.target_level.value
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

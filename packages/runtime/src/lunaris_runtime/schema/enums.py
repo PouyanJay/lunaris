@@ -23,12 +23,14 @@ class CourseStatus(StrEnum):
 class ProgressStage(StrEnum):
     """A boundary in the course-build pipeline, emitted as a ProgressEvent.
 
-    Ordered as the orchestrator runs: the run starts, concepts are extracted, the
-    prerequisite graph is built, the curriculum is designed, each module is authored
-    (one event per module), claims are verified, and the run completes.
+    Ordered as the agent runs: the run starts, the request is interpreted into a brief,
+    concepts are extracted, the prerequisite graph is built, the curriculum is designed,
+    each module is authored (one event per module), claims are verified, and the run
+    completes.
     """
 
     RUN_STARTED = "run_started"
+    BRIEF_INTERPRETED = "brief_interpreted"
     CONCEPTS_EXTRACTED = "concepts_extracted"
     GRAPH_BUILT = "graph_built"
     CURRICULUM_DESIGNED = "curriculum_designed"
@@ -124,3 +126,43 @@ class RunStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class Level(StrEnum):
+    """The learner level a course targets (the interpreted brief's ``target_level``).
+
+    Drives gap-scoped design (P7): an ``ADVANCED`` goal prunes foundations a ``NOVICE`` course
+    teaches. ``NOT_APPLICABLE`` covers goals with no meaningful proficiency ladder.
+    """
+
+    NOVICE = "novice"
+    INTERMEDIATE = "intermediate"
+    ADVANCED = "advanced"
+    EXPERT = "expert"
+    NOT_APPLICABLE = "n/a"
+
+
+class StandardKind(StrEnum):
+    """What kind of external target a goal's standard is (the brief's ``target_standard``)."""
+
+    EXTERNAL_STANDARD = "external_standard"
+    CERTIFICATION = "certification"
+    EXAM = "exam"
+    INFORMAL = "informal"
+
+
+class DetailDepth(StrEnum):
+    """How much depth the learner wants — a ``preferences`` input that steers authoring voice."""
+
+    CONCISE = "concise"
+    BALANCED = "balanced"
+    IN_DEPTH = "in_depth"
+
+
+class LanguageStyle(StrEnum):
+    """The register the course is written in — a ``preferences`` input for authoring voice."""
+
+    SIMPLE = "simple"
+    BALANCED = "balanced"
+    SOPHISTICATED = "sophisticated"
+    SCIENTIFIC = "scientific"
