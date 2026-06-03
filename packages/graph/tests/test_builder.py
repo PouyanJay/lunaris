@@ -52,3 +52,21 @@ async def test_builder_full_ladder_for_a_novice() -> None:
     # Assert — all five KCs present, goal last
     assert len(graph.nodes) == 5
     assert graph.topo_order[-1] == "binary_search"
+
+
+async def test_builder_descriptor_frontier_prunes_nothing() -> None:
+    # The P7 agent pipeline models the learner as concept DESCRIPTORS, not KC ids — gap scoping is
+    # done upstream at extraction. Descriptors match no node id, so the graph keeps the full
+    # goal-relevant set (it never silently drops a KC the extractor proposed). This is the
+    # agent-path safety guard; the KC-id auto-leveling above is unchanged for callers that use it.
+    builder = PrerequisiteGraphBuilder(StubPrereqJudge(BINARY_SEARCH.edges))
+    descriptors = ["comparison basics", "how arrays work", "everyday loops"]
+
+    # Act
+    graph = await builder.build(BINARY_SEARCH.kcs, frontier=descriptors, goal=BINARY_SEARCH.goal)
+
+    # Assert — identical to the novice full ladder; the descriptors pruned nothing, but are still
+    # recorded on the graph for provenance.
+    assert len(graph.nodes) == 5
+    assert graph.topo_order[-1] == "binary_search"
+    assert graph.frontier == descriptors

@@ -24,13 +24,14 @@ class ProgressStage(StrEnum):
     """A boundary in the course-build pipeline, emitted as a ProgressEvent.
 
     Ordered as the agent runs: the run starts, the request is interpreted into a brief,
-    concepts are extracted, the prerequisite graph is built, the curriculum is designed,
-    each module is authored (one event per module), claims are verified, and the run
-    completes.
+    the learner is modeled (the frontier of what they already know), concepts are extracted,
+    the prerequisite graph is built, the curriculum is designed, each module is authored
+    (one event per module), claims are verified, and the run completes.
     """
 
     RUN_STARTED = "run_started"
     BRIEF_INTERPRETED = "brief_interpreted"
+    LEARNER_MODELED = "learner_modeled"
     CONCEPTS_EXTRACTED = "concepts_extracted"
     GRAPH_BUILT = "graph_built"
     CURRICULUM_DESIGNED = "curriculum_designed"

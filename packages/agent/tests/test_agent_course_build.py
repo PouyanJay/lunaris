@@ -29,6 +29,7 @@ from lunaris_agent.subagents.curriculum_architect import (
     StubCurriculumArchitect,
 )
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
+from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
@@ -144,6 +145,7 @@ def _builder(
     model: object,
     store: CourseStore,
     *,
+    profiler: StubLearnerProfiler | None = None,
     reviser: StubLessonReviser | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
@@ -154,6 +156,7 @@ def _builder(
         model,
         store,
         interpreter=StubGoalInterpreter(_BRIEF),
+        profiler=profiler or StubLearnerProfiler(LearnerProfile(frontier=[])),
         extractor=StubConceptExtractor(Extraction(kcs=_KCS, goal_id=_GOAL_ID)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=StubCurriculumArchitect(_PLAN),
@@ -169,8 +172,8 @@ def _delegating_script(
     *,
     first_narration: str = "",
 ) -> object:
-    """The standard happy-path agent script: interpret → extract → graph → curriculum → delegate →
-    finalize.
+    """The standard happy-path agent script: interpret → model learner → extract → graph →
+    curriculum → delegate → finalize.
 
     ``first_narration`` lets a test make the agent narrate its first step (text that streams as
     tokens in token mode); it defaults to empty, leaving the deterministic tool-only turns intact.
@@ -180,6 +183,10 @@ def _delegating_script(
             AIMessage(
                 content=first_narration,
                 tool_calls=[{"name": "interpret_request", "args": {"request": "demo"}, "id": "t0"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "model_learner", "args": {}, "id": "t0b"}],
             ),
             AIMessage(
                 content="",
@@ -498,6 +505,55 @@ async def test_agent_interprets_the_request_into_a_brief_before_extraction(
     assert payload["subject"] == _BRIEF.subject
     assert payload["goal"] == _BRIEF.goal
     assert payload["targetLevel"] == _BRIEF.target_level.value
+
+
+async def test_agent_models_the_learner_between_the_brief_and_extraction(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    agent_sink,
+    tmp_path: Path,
+) -> None:
+    # Arrange — a profiler that returns a non-empty frontier (the foundations an advanced learner
+    # already has). The model-learner stage runs after interpret and before extraction.
+    frontier = ["the English alphabet", "everyday vocabulary"]
+    builder = _builder(
+        _delegating_script(scripted_model),
+        CourseStore(tmp_path),
+        profiler=StubLearnerProfiler(LearnerProfile(frontier=frontier)),
+    )
+
+    # Act
+    await builder.run(
+        "Improve my English to CLB 10",
+        course_id="course-frontier",
+        run_id="run-frontier",
+        progress=progress_sink,
+        agent=agent_sink,
+    )
+
+    # Assert — LEARNER_MODELED is emitted after BRIEF_INTERPRETED and before CONCEPTS_EXTRACTED,
+    # run_id-correlated (the frontier is modeled before the gap is extracted).
+    stages = [event.stage for event in progress_sink.events]
+    assert ProgressStage.LEARNER_MODELED in stages
+    assert stages.index(ProgressStage.BRIEF_INTERPRETED) < stages.index(
+        ProgressStage.LEARNER_MODELED
+    )
+    assert stages.index(ProgressStage.LEARNER_MODELED) < stages.index(
+        ProgressStage.CONCEPTS_EXTRACTED
+    )
+    modeled = next(e for e in progress_sink.events if e.stage is ProgressStage.LEARNER_MODELED)
+    assert modeled.run_id == "run-frontier"
+
+    # The inferred frontier surfaced on the transcript (what extraction will skip teaching).
+    results = [
+        e
+        for e in agent_sink.events
+        if e.kind is AgentEventKind.TOOL_RESULT and e.tool == "model_learner"
+    ]
+    assert results, "model_learner produced no tool result on the transcript"
+    payload = json.loads(results[0].result)
+    assert payload["frontier"] == frontier
+    assert payload["count"] == 2
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:
