@@ -40,6 +40,15 @@ function pretty(token: string): string {
   return token.replace(/_/g, " ");
 }
 
+/** A source URL's host for compact display, www stripped: "https://www.x.gov/a" → "x.gov". */
+function host(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 interface ConceptLike {
   id: string;
   label: string;
@@ -102,8 +111,10 @@ type StatusTone = "ok" | "warn" | "danger" | "neutral";
 const STATUS_TONES: Record<string, StatusTone> = {
   published: "ok",
   supported: "ok",
+  complete: "ok",
   review: "warn",
   revise: "warn",
+  partial: "warn",
   cut: "danger",
   failed: "danger",
 };
@@ -371,9 +382,76 @@ const renderModelLearner: ToolRenderer = ({ parsed, pending }) => {
   );
 };
 
+interface SourceLike {
+  url: string;
+  trustTier: string;
+}
+
+/** Pull `{url, trustTier}` vetted sources out of the result array, skipping url-less entries. */
+function asSources(value: unknown): SourceLike[] {
+  const list = asArray(value);
+  if (!list) return [];
+  return list.flatMap((item) => {
+    const record = asRecord(item);
+    const url = record && asString(record.url);
+    if (!url) return [];
+    return [{ url, trustTier: (record && asString(record.trustTier)) ?? "open" }];
+  });
+}
+
+/** Filter a result array down to its non-empty strings (competencies / score lines). */
+function asStrings(value: unknown): string[] {
+  return (asArray(value) ?? []).filter(
+    (item): item is string => typeof item === "string" && item.length > 0,
+  );
+}
+
+/** `research_standard` → the grounding: a status, the researched competency chips, any score/
+ *  threshold lines, and the source-vetting table (each vetted source's domain + its classified
+ *  trust tier). When no source met the bar the stage degrades honestly to a plain note. */
+const renderResearchStandard: ToolRenderer = ({ parsed, pending }) => {
+  if (pending) return <Pending />;
+  const status = (parsed && asString(parsed.status)) ?? null;
+  if (status === "unavailable") {
+    return <Stat>no source met the bar — designing from general knowledge</Stat>;
+  }
+  const competencies = asStrings(parsed?.competencies);
+  const scoreTable = asStrings(parsed?.scoreTable);
+  const sources = asSources(parsed?.sources);
+  return (
+    <>
+      <div className={styles.statusRow}>
+        {status && <StatusTag status={status} />}
+        {competencies.length > 0 && (
+          <span className={`mono ${styles.stat}`}>
+            {competencies.length} competenc{competencies.length === 1 ? "y" : "ies"}
+          </span>
+        )}
+      </div>
+      {competencies.length > 0 && (
+        <Chips items={competencies.map((label) => ({ id: label, label, goal: false }))} />
+      )}
+      {scoreTable.length > 0 && <Stat>{scoreTable.join(" · ")}</Stat>}
+      {sources.length > 0 && (
+        <ul className={styles.sources}>
+          {sources.map((source) => (
+            <li key={source.url} className={styles.source}>
+              <span className={`mono ${styles.sourceDomain}`}>{host(source.url)}</span>
+              <span className={`mono ${styles.trustTier}`} data-tier={source.trustTier}>
+                {source.trustTier}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+};
+
 /** The renderer registry, keyed by tool name. A tool with no entry uses the raw fallback body. */
 const toolRenderers: Record<string, ToolRenderer> = {
   interpret_request: renderInterpretRequest,
+  research_standard: renderResearchStandard,
   model_learner: renderModelLearner,
   extract_concepts: renderExtractConcepts,
   build_prerequisite_graph: renderPrerequisiteGraph,

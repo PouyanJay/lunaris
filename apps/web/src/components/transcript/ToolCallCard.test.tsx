@@ -150,6 +150,90 @@ describe("ToolCallCard per-tool renderers", () => {
     expect(screen.getByText(/running…/i)).toBeInTheDocument();
   });
 
+  it("research_standard: renders the grounding as competencies + a source-vetting table", () => {
+    render(
+      <ToolCallCard
+        tool="research_standard"
+        args={{}}
+        result={resultOf({
+          status: "complete",
+          competencies: ["hear implied intent", "read authorial stance"],
+          scoreTable: ["CELPIP 10"],
+          sources: [
+            { url: "https://www.canada.ca/clb-10", title: "CLB 10", trustTier: "official" },
+            { url: "https://uni.edu/clb-guide", title: "Guide", trustTier: "reputable" },
+          ],
+        })}
+      />,
+    );
+
+    // The status + competencies, both competency chips, the score line, and each vetted source's
+    // domain + tier — never the raw JSON.
+    expect(screen.getByText("complete")).toBeInTheDocument();
+    expect(screen.getByText(/2 competencies/i)).toBeInTheDocument();
+    expect(screen.getByText("hear implied intent")).toBeInTheDocument();
+    expect(screen.getByText("read authorial stance")).toBeInTheDocument();
+    expect(screen.getByText("CELPIP 10")).toBeInTheDocument(); // the score/threshold line
+    expect(screen.getByText("canada.ca")).toBeInTheDocument(); // host, www stripped
+    expect(screen.getByText("uni.edu")).toBeInTheDocument();
+    expect(screen.getByText("official")).toBeInTheDocument();
+    expect(screen.getByText("reputable")).toBeInTheDocument();
+    expect(screen.queryByText(/"competencies"/)).not.toBeInTheDocument();
+  });
+
+  it("research_standard: renders partial status (some sources read, grounding thin)", () => {
+    render(
+      <ToolCallCard
+        tool="research_standard"
+        args={{}}
+        result={resultOf({
+          status: "partial",
+          competencies: ["read authorial stance"],
+          sources: [{ url: "https://uni.edu/guide", title: "Guide", trustTier: "reputable" }],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("partial")).toBeInTheDocument();
+    expect(screen.getByText(/1 competency/i)).toBeInTheDocument();
+    expect(screen.getByText("uni.edu")).toBeInTheDocument();
+  });
+
+  it("research_standard: defaults a source without a trustTier to the open tier", () => {
+    render(
+      <ToolCallCard
+        tool="research_standard"
+        args={{}}
+        result={resultOf({
+          status: "complete",
+          competencies: ["read"],
+          sources: [{ url: "https://blog.example.com/post", title: "Post" }],
+        })}
+      />,
+    );
+
+    expect(screen.getByText("blog.example.com")).toBeInTheDocument();
+    expect(screen.getByText("open")).toBeInTheDocument();
+  });
+
+  it("research_standard: degrades to an honest note when no source met the bar", () => {
+    render(
+      <ToolCallCard
+        tool="research_standard"
+        args={{}}
+        result={resultOf({ status: "unavailable", competencies: [], sources: [] })}
+      />,
+    );
+
+    expect(screen.getByText(/no source met the bar/i)).toBeInTheDocument();
+  });
+
+  it("research_standard: shows a running indicator while in flight", () => {
+    render(<ToolCallCard tool="research_standard" args={{}} result={null} />);
+
+    expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
   it("build_prerequisite_graph: chips the concepts from ARGS even when the result is truncated", () => {
     // The real graph result is ~3.7KB and the tap clips it → unparseable. The concept chips must
     // come from the (full, untruncated) call args, marking the goal.
@@ -379,6 +463,17 @@ describe("ToolCallCard per-tool renderers", () => {
       absent: /"frontier"/,
     },
     {
+      tool: "research_standard",
+      args: {},
+      result: resultOf({
+        status: "complete",
+        competencies: ["hear implied intent"],
+        sources: [{ url: "https://canada.ca/clb-10", title: "CLB 10", trustTier: "official" }],
+      }),
+      present: "canada.ca",
+      absent: /"competencies"/,
+    },
+    {
       tool: "extract_concepts",
       args: { topic: "X" },
       result: resultOf({
@@ -475,6 +570,7 @@ describe("ToolCallCard per-tool renderers", () => {
     "task",
     "an_unregistered_tool",
     "interpret_request",
+    "research_standard",
     "model_learner",
   ])("keeps the 'Tool call' eyebrow and mono tool name for %s", (tool) => {
     const { unmount } = render(<ToolCallCard tool={tool} args={{}} result="ok" />);
