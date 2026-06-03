@@ -336,15 +336,17 @@ describe("CourseReader — claims & provenance", () => {
 });
 
 describe("CourseReader — lesson body", () => {
-  it("renders the four Merrill phases of the focused lesson", () => {
+  it("renders the four teaching phases, relabelled to the lesson arc (P7.3)", () => {
     // Arrange / Act
     render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
 
-    // Assert
-    expect(screen.getByRole("heading", { name: "Activate" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Demonstrate" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Apply" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Integrate" })).toBeInTheDocument();
+    // Assert — the Merrill phases now read as the arc's teaching rhythm.
+    expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Strategies & worked example" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Practice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Make it your own" })).toBeInTheDocument();
   });
 
   it("shows the module's Bloom-tagged objectives on its first lesson only", () => {
