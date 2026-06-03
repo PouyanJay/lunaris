@@ -1,4 +1,4 @@
-from lunaris_runtime.schema import PrerequisiteGraph
+from lunaris_runtime.schema import CourseBrief, PrerequisiteGraph
 
 from .plan import CurriculumPlan
 
@@ -9,5 +9,7 @@ class StubCurriculumArchitect:
     def __init__(self, plan: CurriculumPlan) -> None:
         self._plan = plan
 
-    async def design(self, graph: PrerequisiteGraph) -> CurriculumPlan:
+    async def design(
+        self, graph: PrerequisiteGraph, *, brief: CourseBrief | None = None
+    ) -> CurriculumPlan:
         return self._plan

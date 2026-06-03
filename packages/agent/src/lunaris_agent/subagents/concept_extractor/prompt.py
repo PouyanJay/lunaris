@@ -46,6 +46,21 @@ start at their edge (Vygotsky's ZPD). For each KC give:
 
 The single most advanced KC — the goal itself — is the goal."""
 
+# Appended to the gap prompt when research grounded the standard's real competencies (P7.2): the KCs
+# should COVER these rather than the model's memory of what the target requires.
+_RESEARCH_GROUNDING = (
+    "\n\nThese researched competencies define the target — propose KCs that cover them, and do not "
+    "invent competencies beyond what they and the goal imply:\n{competencies}"
+)
+
+
+def _with_research_grounding(body: str, brief: CourseBrief) -> str:
+    research = brief.research
+    if research is None or not research.competencies:
+        return body
+    competencies = "\n".join(f"- {competency}" for competency in research.competencies)
+    return body + _RESEARCH_GROUNDING.format(competencies=competencies)
+
 
 def build_extraction_prompt(topic: str, brief: CourseBrief | None, frontier: list[str]) -> str:
     """The extraction prompt: gap-scoped when the brief sets a non-novice level, else the full
@@ -53,7 +68,8 @@ def build_extraction_prompt(topic: str, brief: CourseBrief | None, frontier: lis
 
     Gap-scoping is the fix for the "advanced goal taught from the alphabet" failure: it tells the
     model to enumerate only the competencies that distinguish the target level from the learner's
-    assumed prior, and to skip the foundations on the frontier.
+    assumed prior, and to skip the foundations on the frontier. When research (P7.2) grounded the
+    target's real competencies, the gap prompt is told to cover those specific descriptors.
     """
     if brief is not None and brief.target_level in _SCOPED_LEVELS:
         known = ", ".join(frontier) if frontier else "the general foundations for this level"
@@ -64,6 +80,7 @@ def build_extraction_prompt(topic: str, brief: CourseBrief | None, frontier: lis
             assumed_prior=brief.assumed_prior or "the foundations beneath the target level",
             frontier=known,
         )
+        body = _with_research_grounding(body, brief)
     else:
         body = _NOVICE_PROMPT.format(topic=topic)
     return f"{body}\n\n{_KC_JSON_RESPONSE_SHAPE}"

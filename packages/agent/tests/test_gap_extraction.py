@@ -11,7 +11,15 @@ import pytest
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_extract_concepts_tool
 from lunaris_agent.subagents.concept_extractor import Extraction, build_extraction_prompt
-from lunaris_runtime.schema import BloomLevel, CourseBrief, KnowledgeComponent, Level
+from lunaris_runtime.schema import (
+    BloomLevel,
+    CourseBrief,
+    KnowledgeComponent,
+    Level,
+    ResearchSource,
+    ResearchStatus,
+    StandardResearch,
+)
 
 _FULL_LADDER = "INCLUDING the foundational prerequisites"
 _GAP_INSTRUCTION = "Do NOT include foundational"
@@ -76,6 +84,57 @@ def test_build_extraction_prompt_uses_the_full_ladder_for_novice_and_na(level: L
 
     assert _FULL_LADDER in prompt
     assert _GAP_INSTRUCTION not in prompt
+
+
+def test_build_extraction_prompt_grounds_in_researched_competencies() -> None:
+    # Arrange — a non-novice brief whose research grounded the standard's real competencies.
+    brief = CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10",
+        target_level=Level.ADVANCED,
+        research=StandardResearch(
+            status=ResearchStatus.COMPLETE,
+            competencies=["hear implied intent in speech", "read authorial stance"],
+            sources=[ResearchSource(url="https://www.canada.ca/clb-10")],
+        ),
+    )
+
+    # Act
+    prompt = build_extraction_prompt("English", brief, ["the alphabet"])
+
+    # Assert — the extractor is told to derive the KCs from the researched competencies, so the gap
+    # is the standard's actual competencies rather than the model's memory of them.
+    assert "hear implied intent in speech" in prompt
+    assert "read authorial stance" in prompt
+
+
+def test_build_extraction_prompt_omits_competency_grounding_without_research() -> None:
+    # A gap brief with no research grounds on the level alone — no fabricated competency block.
+    brief = CourseBrief(subject="s", goal="g", target_level=Level.ADVANCED)
+
+    prompt = build_extraction_prompt("s", brief, ["known thing"])
+
+    assert "researched competencies" not in prompt.lower()
+
+
+def test_build_extraction_prompt_does_not_ground_the_novice_path_even_with_research() -> None:
+    # Competency grounding is gap-scoped only: a NOVICE brief carrying research must still teach the
+    # full ladder with no competency block (grounding lives inside the non-novice branch).
+    brief = CourseBrief(
+        subject="English",
+        goal="speak basic phrases",
+        target_level=Level.NOVICE,
+        research=StandardResearch(
+            status=ResearchStatus.COMPLETE,
+            competencies=["greet politely"],
+            sources=[ResearchSource(url="https://example.com")],
+        ),
+    )
+
+    prompt = build_extraction_prompt("English", brief, [])
+
+    assert _FULL_LADDER in prompt
+    assert "greet politely" not in prompt
 
 
 def test_build_extraction_prompt_handles_an_empty_frontier_for_an_advanced_brief() -> None:

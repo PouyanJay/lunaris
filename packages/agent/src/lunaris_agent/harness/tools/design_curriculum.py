@@ -40,7 +40,9 @@ def make_design_curriculum_tool(
                 f"course {draft.course_id!r}: design_curriculum called before the prerequisite "
                 "graph was built — call build_prerequisite_graph first"
             )
-        plan = await architect.design(draft.graph)
+        # brief threads the researched competencies into the architect (backward design from the
+        # real standard); None on the legacy/no-research path leaves the design generic.
+        plan = await architect.design(draft.graph, brief=draft.brief)
         modules = curriculum_assembler.assemble(plan, draft.graph)
         draft.modules = modules
         await draft.progress.emit(
