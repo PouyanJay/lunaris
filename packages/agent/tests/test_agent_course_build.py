@@ -31,6 +31,7 @@ from lunaris_agent.subagents.curriculum_architect import (
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
 from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
+from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
     StubVisualGenerator,
@@ -49,6 +50,10 @@ from lunaris_runtime.schema import (
     Level,
     Module,
     ProgressStage,
+    ResearchSource,
+    ResearchStatus,
+    StandardResearch,
+    TrustTier,
     VerifierStatus,
 )
 
@@ -104,6 +109,21 @@ _BRIEF = CourseBrief(
     subject="Demonstrations", goal="Build a demo course", target_level=Level.NOVICE
 )
 
+# Small fixed findings: enough to assert stage ordering + provenance flow without a distillation
+# path (COMPLETE requires at least one cited source — the schema invariant).
+_RESEARCH = StandardResearch(
+    status=ResearchStatus.COMPLETE,
+    competencies=["hear implied intent in speech", "read authorial stance and subtext"],
+    sources=[
+        ResearchSource(
+            url="https://www.canada.ca/clb-10",
+            title="Canadian Language Benchmarks 10",
+            trust_tier=TrustTier.OFFICIAL,
+            fetched_at="2026-06-03T00:00:00Z",
+        )
+    ],
+)
+
 
 def _lesson_with_claim(text: str) -> LessonDraft:
     """A minimal Merrill lesson whose demonstrate phase carries one factual claim to verify."""
@@ -146,6 +166,7 @@ def _builder(
     store: CourseStore,
     *,
     profiler: StubLearnerProfiler | None = None,
+    researcher: StubStandardResearcher | None = None,
     reviser: StubLessonReviser | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
@@ -157,6 +178,7 @@ def _builder(
         store,
         interpreter=StubGoalInterpreter(_BRIEF),
         profiler=profiler or StubLearnerProfiler(LearnerProfile(frontier=[])),
+        researcher=researcher or StubStandardResearcher(),
         extractor=StubConceptExtractor(Extraction(kcs=_KCS, goal_id=_GOAL_ID)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=StubCurriculumArchitect(_PLAN),
@@ -172,8 +194,8 @@ def _delegating_script(
     *,
     first_narration: str = "",
 ) -> object:
-    """The standard happy-path agent script: interpret → model learner → extract → graph →
-    curriculum → delegate → finalize.
+    """The standard happy-path agent script: interpret → research → model learner → extract →
+    graph → curriculum → delegate → finalize.
 
     ``first_narration`` lets a test make the agent narrate its first step (text that streams as
     tokens in token mode); it defaults to empty, leaving the deterministic tool-only turns intact.
@@ -183,6 +205,10 @@ def _delegating_script(
             AIMessage(
                 content=first_narration,
                 tool_calls=[{"name": "interpret_request", "args": {"request": "demo"}, "id": "t0"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "research_standard", "args": {}, "id": "t0a"}],
             ),
             AIMessage(
                 content="",
@@ -422,11 +448,19 @@ async def test_agent_builder_emits_transcript_events_to_the_agent_sink(
     # The moat tools show up as real tool calls carrying their args.
     tool_calls = [e for e in sink.events if e.kind is AgentEventKind.TOOL_CALL]
     assert any(e.tool == "extract_concepts" and e.tool_args for e in tool_calls)
-    # The scripted plan drives several tools (extract → graph → curriculum → … → finalize), so the
-    # tap must surface multiple named results — not pass vacuously on an empty set.
+    # The scripted plan drives the full pipeline, so the tap must surface a named result for each
+    # distinct stage tool — not pass vacuously on a low threshold (the new research stage included).
     tool_results = [e for e in sink.events if e.kind is AgentEventKind.TOOL_RESULT]
-    assert len(tool_results) >= 3
     assert all(e.tool for e in tool_results)
+    result_tools = {e.tool for e in tool_results}
+    assert {
+        "interpret_request",
+        "research_standard",
+        "model_learner",
+        "extract_concepts",
+        "design_curriculum",
+        "finalize_course",
+    } <= result_tools
 
 
 async def test_agent_builder_forwards_stream_tokens_to_the_harness_tap(
@@ -554,6 +588,61 @@ async def test_agent_models_the_learner_between_the_brief_and_extraction(
     payload = json.loads(results[0].result)
     assert payload["frontier"] == frontier
     assert payload["count"] == 2
+
+
+async def test_agent_researches_the_standard_between_the_brief_and_the_learner(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    agent_sink,
+    tmp_path: Path,
+) -> None:
+    # Arrange — a researcher returning grounded competency descriptors with provenance. The research
+    # stage runs after the brief and before the learner is modeled (plan §4: interpret → research →
+    # model the learner), so the learner model + extraction design against the real standard.
+    builder = _builder(
+        _delegating_script(scripted_model),
+        CourseStore(tmp_path),
+        researcher=StubStandardResearcher(_RESEARCH),
+    )
+
+    # Act
+    await builder.run(
+        "Improve my English to CLB 10",
+        course_id="course-research",
+        run_id="run-research",
+        progress=progress_sink,
+        agent=agent_sink,
+    )
+
+    # Assert — STANDARD_RESEARCHED lands after BRIEF_INTERPRETED and before LEARNER_MODELED,
+    # run_id-correlated (the standard is grounded before the learner is modeled and the gap scoped).
+    stages = [event.stage for event in progress_sink.events]
+    assert ProgressStage.STANDARD_RESEARCHED in stages
+    assert stages.index(ProgressStage.BRIEF_INTERPRETED) < stages.index(
+        ProgressStage.STANDARD_RESEARCHED
+    )
+    assert stages.index(ProgressStage.STANDARD_RESEARCHED) < stages.index(
+        ProgressStage.LEARNER_MODELED
+    )
+    researched = next(
+        e for e in progress_sink.events if e.stage is ProgressStage.STANDARD_RESEARCHED
+    )
+    assert researched.run_id == "run-research"
+
+    # The research_standard tool surfaced the grounded findings on the transcript as camelCase JSON
+    # — the real competency descriptors plus structural provenance (URL + trust tier) the live build
+    # canvas vets, not the model's memory.
+    results = [
+        e
+        for e in agent_sink.events
+        if e.kind is AgentEventKind.TOOL_RESULT and e.tool == "research_standard"
+    ]
+    assert results, "research_standard produced no tool result on the transcript"
+    payload = json.loads(results[0].result)
+    assert payload["status"] == "complete"
+    assert "hear implied intent in speech" in payload["competencies"]
+    assert payload["sources"][0]["url"] == "https://www.canada.ca/clb-10"
+    assert payload["sources"][0]["trustTier"] == "official"
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

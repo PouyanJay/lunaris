@@ -2,6 +2,7 @@ from pydantic import Field
 
 from .base import CourseModel
 from .enums import DetailDepth, LanguageStyle, Level, StandardKind
+from .standard_research import StandardResearch
 
 
 class TargetStandard(CourseModel):
@@ -35,9 +36,9 @@ class CourseBrief(CourseModel):
     Produced by the goal interpreter as the first build stage and recorded on the run draft, so
     every later stage designs backward from the right desired result rather than enumerating a
     subject bottom-up. Frozen-at-generation config the way ``CourseSettings`` is — auditable and
-    reproducible. The ``research`` block (real competency descriptors) and a populated learner
-    frontier arrive in later P7 slices; here the interpreter infers the brief honestly and flags
-    ``needs_research`` without fabricating a named standard's content.
+    reproducible. The interpreter infers the brief honestly and flags ``needs_research`` without
+    fabricating a named standard's content; the research stage (P7.2) then grounds it, recording the
+    real competency descriptors + provenance on ``research`` via a copy.
     """
 
     subject: str
@@ -50,3 +51,5 @@ class CourseBrief(CourseModel):
     needs_research: bool = False
     domain_field: str = ""
     preferences: Preferences = Field(default_factory=Preferences)
+    # Grounded by the research stage (P7.2): None until researched, or on a path that skips it.
+    research: StandardResearch | None = None

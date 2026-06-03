@@ -24,12 +24,12 @@ def make_model_learner_tool(profiler: ILearnerProfiler, draft: CourseDraft) -> B
 
     @tool
     async def model_learner() -> dict[str, object]:
-        """Model the learner — call this SECOND, after interpret_request, before extraction.
+        """Model the learner — call this after research_standard, before extraction.
 
         Infers the learner's frontier (the foundations a learner at the brief's level already knows,
-        which the course must NOT teach) from the interpreted brief, and records it for gap-scoped
-        extraction. The frontier is recorded automatically; you do NOT need to pass it back. Returns
-        the frontier so you can confirm what will be skipped.
+        which the course must NOT teach) from the brief (which research_standard has grounded), and
+        records it for gap-scoped extraction. The frontier is recorded automatically; you do NOT
+        need to pass it back. Returns the frontier so you can confirm what will be skipped.
         """
         if draft.brief is None:
             draft.frontier = []

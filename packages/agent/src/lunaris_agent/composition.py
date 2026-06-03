@@ -10,6 +10,8 @@ from lunaris_grounding import (
     PgVectorRetriever,
     StubEvidenceRetriever,
     SupabaseCorpusStore,
+    TavilySearchProvider,
+    TrafilaturaContentExtractor,
     Verifier,
     VoyageEmbedder,
 )
@@ -28,6 +30,11 @@ from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.learner_profiler import ClaudeLearnerProfiler
 from .subagents.module_author import ClaudeModuleAuthor
+from .subagents.standard_researcher import (
+    ClaudeStandardResearcher,
+    IStandardResearcher,
+    StubStandardResearcher,
+)
 from .subagents.visual_agent import (
     ClaudeVisualGenerator,
     MermaidRenderer,
@@ -55,6 +62,21 @@ def _retriever_from_env() -> IEvidenceRetriever | None:
         return PgVectorRetriever(VoyageEmbedder(), SupabaseCorpusStore())
     logger.info("grounding_retriever_stubbed", reason="supabase/embeddings creds unset")
     return None
+
+
+def _researcher_from_env(worker_model: str) -> IStandardResearcher:
+    """Build the live standard researcher iff a search key is present, else the stub.
+
+    The real researcher grounds the brief over the shared Tavily search + Trafilatura extraction
+    adapters (worker tier for distillation). With no ``SEARCH_API_KEY`` it returns the stub, so
+    research degrades honestly to UNAVAILABLE and the no-key CI path stays deterministic.
+    """
+    if os.getenv("SEARCH_API_KEY"):
+        return ClaudeStandardResearcher(
+            worker_model, TavilySearchProvider(), TrafilaturaContentExtractor()
+        )
+    logger.info("standard_researcher_stubbed", reason="SEARCH_API_KEY unset")
+    return StubStandardResearcher()
 
 
 def _visual_engine_from_env(worker_model: str) -> VisualEngine:
@@ -172,6 +194,7 @@ def build_agent_course_builder(
         store,
         interpreter=ClaudeGoalInterpreter(worker),
         profiler=ClaudeLearnerProfiler(worker),
+        researcher=_researcher_from_env(worker),
         extractor=ClaudeConceptExtractor(worker),
         builder=build_live_prereq_builder(worker),
         architect=ClaudeCurriculumArchitect(strong),

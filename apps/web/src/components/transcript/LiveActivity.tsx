@@ -9,6 +9,11 @@ import styles from "./LiveActivity.module.css";
 const VERBS: Record<string, readonly string[]> = {
   intro: ["Planning the build…", "Thinking it through…", "Getting started…"],
   brief_interpreted: ["Interpreting the request…", "Framing the goal…", "Reading the level…"],
+  standard_researched: [
+    "Researching the standard…",
+    "Vetting the sources…",
+    "Grounding the targets…",
+  ],
   learner_modeled: ["Modeling the learner…", "Gauging what you know…", "Finding your edge…"],
   concepts_extracted: ["Reading the topic…", "Extracting concepts…", "Naming the pieces…"],
   graph_built: ["Mapping prerequisites…", "Ordering concepts…", "Untangling dependencies…"],

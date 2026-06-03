@@ -15,12 +15,14 @@ from .enums import (
     Pace,
     ProgressStage,
     QualityFloor,
+    ResearchStatus,
     RiskCategory,
     RiskOverride,
     RiskTier,
     RunEventKind,
     RunStatus,
     StandardKind,
+    TrustTier,
     VerifierStatus,
     VisualKind,
 )
@@ -42,6 +44,7 @@ from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Pro
 from .progress import ProgressEvent
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
+from .standard_research import ResearchSource, StandardResearch
 from .visual_spec import (
     ComparisonRow,
     ComparisonSpec,
@@ -103,6 +106,8 @@ __all__ = [
     "ProgressEvent",
     "ProgressStage",
     "QualityFloor",
+    "ResearchSource",
+    "ResearchStatus",
     "RiskCategory",
     "RiskOverride",
     "RiskProfile",
@@ -112,6 +117,7 @@ __all__ = [
     "RunStatus",
     "Segment",
     "StandardKind",
+    "StandardResearch",
     "StepItem",
     "StepsSpec",
     "TargetStandard",
@@ -119,6 +125,7 @@ __all__ = [
     "TimelineSpec",
     "TreeNode",
     "TreeSpec",
+    "TrustTier",
     "VerifierStatus",
     "Visual",
     "VisualKind",

@@ -106,7 +106,7 @@ describe("buildTimeline", () => {
     ]);
   });
 
-  it("buckets the model_learner beats under the Learner phase, between Brief and Concepts", () => {
+  it("buckets the model_learner beats under the Learner phase, between Research and Concepts", () => {
     const events = [
       makeProgressEvent("run_started", 0),
       makeProgressEvent("brief_interpreted", 1),
@@ -124,9 +124,9 @@ describe("buildTimeline", () => {
 
     const phases = buildTimeline(events, agentEvents);
 
-    // Learner sits between Brief and Concepts on the spine.
+    // Learner sits between Research and Concepts on the spine.
     const labels = phases.map((p) => p.label);
-    expect(labels.indexOf("Brief")).toBeLessThan(labels.indexOf("Learner"));
+    expect(labels.indexOf("Research")).toBeLessThan(labels.indexOf("Learner"));
     expect(labels.indexOf("Learner")).toBeLessThan(labels.indexOf("Concepts"));
 
     const learner = phase(phases, "Learner");
@@ -134,6 +134,39 @@ describe("buildTimeline", () => {
     expect(learner.summary).toBe("Modeled the learner: 2 known area(s)");
     expect(learner.entries).toEqual([
       expect.objectContaining({ kind: "tool", tool: "model_learner" }),
+    ]);
+  });
+
+  it("buckets the research_standard beats under the Research phase, between Brief and Learner", () => {
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("brief_interpreted", 1),
+      makeProgressEvent("standard_researched", 2, {
+        label: "Researched the standard: complete, 2 competency descriptor(s)",
+      }),
+      makeProgressEvent("learner_modeled", 3, { label: "Modeled the learner: 2 known area(s)" }),
+    ];
+    const agentEvents = [
+      makeAgentEvent("tool_call", 0, { stage: "brief_interpreted", tool: "research_standard" }),
+      makeAgentEvent("tool_result", 1, {
+        stage: "standard_researched",
+        tool: "research_standard",
+        result: '{"status":"complete","competencies":["hear implied intent"],"sources":[]}',
+      }),
+    ];
+
+    const phases = buildTimeline(events, agentEvents);
+
+    // Research sits between Brief and Learner on the spine (interpret → research → model learner).
+    const labels = phases.map((p) => p.label);
+    expect(labels.indexOf("Brief")).toBeLessThan(labels.indexOf("Research"));
+    expect(labels.indexOf("Research")).toBeLessThan(labels.indexOf("Learner"));
+
+    const research = phase(phases, "Research");
+    expect(research.status).toBe("done");
+    expect(research.summary).toBe("Researched the standard: complete, 2 competency descriptor(s)");
+    expect(research.entries).toEqual([
+      expect.objectContaining({ kind: "tool", tool: "research_standard" }),
     ]);
   });
 
@@ -160,6 +193,7 @@ describe("buildTimeline", () => {
 
     expect(phases.map((p) => p.label)).toEqual([
       "Brief",
+      "Research",
       "Learner",
       "Concepts",
       "Graph",
@@ -194,23 +228,26 @@ describe("buildTimeline", () => {
     const events = [
       makeProgressEvent("run_started", 0),
       makeProgressEvent("brief_interpreted", 1),
-      makeProgressEvent("learner_modeled", 2),
-      makeProgressEvent("concepts_extracted", 3),
-      makeProgressEvent("graph_built", 4),
+      makeProgressEvent("standard_researched", 2),
+      makeProgressEvent("learner_modeled", 3),
+      makeProgressEvent("concepts_extracted", 4),
+      makeProgressEvent("graph_built", 5),
     ];
-    // Brief spanned run_started→brief (0.5s); Learner brief→learner (0.3s); Concepts
-    // learner→concepts (1.5s); Graph is still active.
+    // Brief spanned run_started→brief (0.5s); Research brief→research (0.5s); Learner
+    // research→learner (0.3s); Concepts learner→concepts (1.5s); Graph is still active.
     const stageTimes = {
       run_started: 1_000,
       brief_interpreted: 1_500,
-      learner_modeled: 1_800,
-      concepts_extracted: 3_300,
-      graph_built: 3_800,
+      standard_researched: 2_000,
+      learner_modeled: 2_300,
+      concepts_extracted: 3_800,
+      graph_built: 4_300,
     };
 
     const phases = buildTimeline(events, [], stageTimes);
 
     expect(phase(phases, "Brief").durationMs).toBe(500);
+    expect(phase(phases, "Research").durationMs).toBe(500);
     expect(phase(phases, "Learner").durationMs).toBe(300);
     expect(phase(phases, "Concepts").durationMs).toBe(1_500);
     // The active phase shows "running…", not a duration; every unreached phase has none either.
