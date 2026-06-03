@@ -108,6 +108,48 @@ describe("ToolCallCard per-tool renderers", () => {
     expect(screen.queryByText(/"subject"/)).not.toBeInTheDocument();
   });
 
+  it("model_learner: chips the known areas the course will skip", () => {
+    render(
+      <ToolCallCard
+        tool="model_learner"
+        args={{}}
+        result={resultOf({ frontier: ["the alphabet", "basic vocabulary"], count: 2 })}
+      />,
+    );
+
+    expect(screen.getByText("the alphabet")).toBeInTheDocument();
+    expect(screen.getByText("basic vocabulary")).toBeInTheDocument();
+    // The full outcome — "skipped" is the semantically load-bearing word, not just the count.
+    expect(screen.getByText(/assumes 2 known areas — skipped/i)).toBeInTheDocument();
+    expect(screen.queryByText(/"frontier"/)).not.toBeInTheDocument();
+  });
+
+  it("model_learner: singularises the count for a single known area", () => {
+    render(
+      <ToolCallCard
+        tool="model_learner"
+        args={{}}
+        result={resultOf({ frontier: ["arithmetic"], count: 1 })}
+      />,
+    );
+
+    expect(screen.getByText(/assumes 1 known area — skipped/i)).toBeInTheDocument();
+  });
+
+  it("model_learner: shows the novice note when the frontier is empty", () => {
+    render(
+      <ToolCallCard tool="model_learner" args={{}} result={resultOf({ frontier: [], count: 0 })} />,
+    );
+
+    expect(screen.getByText(/novice — teaching from the foundations/i)).toBeInTheDocument();
+  });
+
+  it("model_learner: shows a running indicator while in flight", () => {
+    render(<ToolCallCard tool="model_learner" args={{}} result={null} />);
+
+    expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
   it("build_prerequisite_graph: chips the concepts from ARGS even when the result is truncated", () => {
     // The real graph result is ~3.7KB and the tap clips it → unparseable. The concept chips must
     // come from the (full, untruncated) call args, marking the goal.
@@ -330,6 +372,13 @@ describe("ToolCallCard per-tool renderers", () => {
       absent: /"subject"/,
     },
     {
+      tool: "model_learner",
+      args: {},
+      result: resultOf({ frontier: ["the alphabet"], count: 1 }),
+      present: "the alphabet",
+      absent: /"frontier"/,
+    },
+    {
       tool: "extract_concepts",
       args: { topic: "X" },
       result: resultOf({
@@ -426,6 +475,7 @@ describe("ToolCallCard per-tool renderers", () => {
     "task",
     "an_unregistered_tool",
     "interpret_request",
+    "model_learner",
   ])("keeps the 'Tool call' eyebrow and mono tool name for %s", (tool) => {
     const { unmount } = render(<ToolCallCard tool={tool} args={{}} result="ok" />);
 

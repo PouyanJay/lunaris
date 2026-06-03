@@ -23,6 +23,7 @@ from lunaris_agent.subagents.curriculum_architect import (
     StubCurriculumArchitect,
 )
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
+from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_eval import evaluate_course
 from lunaris_eval.report import CheckResult, EvalReport
@@ -183,6 +184,7 @@ async def _build(
         _script(scripted_model, _concept_args(), _GOAL),
         store,
         interpreter=StubGoalInterpreter(_BRIEF),
+        profiler=StubLearnerProfiler(LearnerProfile(frontier=[])),
         extractor=StubConceptExtractor(Extraction(kcs=_kcs(), goal_id=_GOAL)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(edges if edges is not None else _EDGES)),
         architect=StubCurriculumArchitect(_plan()),
@@ -252,6 +254,7 @@ async def test_agent_course_meets_dod_across_risk_tiers(
         _script(scripted_model, _concept_args(), _GOAL),
         CourseStore(tmp_path),
         interpreter=StubGoalInterpreter(_BRIEF),
+        profiler=StubLearnerProfiler(LearnerProfile(frontier=[])),
         extractor=StubConceptExtractor(Extraction(kcs=_kcs(), goal_id=_GOAL)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
         architect=StubCurriculumArchitect(_plan()),

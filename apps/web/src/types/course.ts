@@ -227,6 +227,7 @@ export interface Course {
 export type ProgressStage =
   | "run_started"
   | "brief_interpreted"
+  | "learner_modeled"
   | "concepts_extracted"
   | "graph_built"
   | "curriculum_designed"

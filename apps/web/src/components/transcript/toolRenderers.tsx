@@ -351,9 +351,30 @@ const renderInterpretRequest: ToolRenderer = ({ args, parsed, pending }) => {
   );
 };
 
+/** `model_learner` → the inferred frontier: the areas the learner already knows (and the course
+ *  will skip), or a novice note when the frontier is empty. */
+const renderModelLearner: ToolRenderer = ({ parsed, pending }) => {
+  if (pending) return <Pending />;
+  const frontier = (asArray(parsed?.frontier) ?? []).filter(
+    (item): item is string => typeof item === "string" && item.length > 0,
+  );
+  if (frontier.length === 0) {
+    return <Stat>novice — teaching from the foundations</Stat>;
+  }
+  return (
+    <>
+      <Chips items={frontier.map((label) => ({ id: label, label, goal: false }))} />
+      <Stat>
+        assumes {frontier.length} known area{frontier.length === 1 ? "" : "s"} — skipped
+      </Stat>
+    </>
+  );
+};
+
 /** The renderer registry, keyed by tool name. A tool with no entry uses the raw fallback body. */
 const toolRenderers: Record<string, ToolRenderer> = {
   interpret_request: renderInterpretRequest,
+  model_learner: renderModelLearner,
   extract_concepts: renderExtractConcepts,
   build_prerequisite_graph: renderPrerequisiteGraph,
   design_curriculum: renderDesignCurriculum,

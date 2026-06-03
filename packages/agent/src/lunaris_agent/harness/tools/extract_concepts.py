@@ -27,7 +27,9 @@ def make_extract_concepts_tool(extractor: IConceptExtractor, draft: CourseDraft)
         ``build_prerequisite_graph`` next for the authoritative teaching order — it reads these
         concepts automatically; you do NOT need to pass them back.
         """
-        extraction = await extractor.extract(topic)
+        # Pass the brief + frontier so the extractor scopes to the ZPD gap for a non-novice learner
+        # instead of the whole ladder; both are None/empty on the legacy/novice path.
+        extraction = await extractor.extract(topic, brief=draft.brief, frontier=draft.frontier)
         draft.goal_concept = extraction.goal_id
         draft.concepts = list(extraction.kcs)
         await draft.progress.emit(

@@ -28,6 +28,7 @@ from ..progress import IAgentSink, IProgressSink
 from ..subagents.concept_extractor import IConceptExtractor
 from ..subagents.curriculum_architect import ICurriculumArchitect
 from ..subagents.goal_interpreter import IGoalInterpreter
+from ..subagents.learner_profiler import ILearnerProfiler
 from ..subagents.visual_agent import VisualEngine
 from .agent import build_course_agent
 from .agent_reporter import AgentReporter
@@ -41,6 +42,7 @@ from .tools import (
     make_extract_concepts_tool,
     make_finalize_course_tool,
     make_interpret_request_tool,
+    make_model_learner_tool,
     make_prerequisite_graph_tool,
 )
 
@@ -56,7 +58,8 @@ _AUTHOR_SUBAGENT_DESCRIPTION = (
 
 _BUILD_INSTRUCTION = (
     "Build a complete, verified course for the request: {topic}. First call interpret_request to "
-    "interpret the request into a structured brief (a goal for a learner at a level). Then extract "
+    "interpret the request into a structured brief (a goal for a learner at a level). Then call "
+    "model_learner to infer what the learner already knows (the frontier to skip). Then extract "
     "the concepts, order them with the prerequisite-graph tool, design the curriculum, then "
     "delegate lesson authoring to the module-author subagent (it authors, verifies, and revises "
     "the lessons). Finally, finalize the course."
@@ -72,6 +75,7 @@ class AgentCourseBuilder:
         store: CourseStore,
         *,
         interpreter: IGoalInterpreter,
+        profiler: ILearnerProfiler,
         extractor: IConceptExtractor,
         builder: PrerequisiteGraphBuilder,
         architect: ICurriculumArchitect,
@@ -85,6 +89,7 @@ class AgentCourseBuilder:
         self._model = model
         self._store = store
         self._interpreter = interpreter
+        self._profiler = profiler
         self._extractor = extractor
         self._builder = builder
         self._architect = architect
@@ -163,6 +168,7 @@ class AgentCourseBuilder:
         """
         return [
             make_interpret_request_tool(self._interpreter, draft),
+            make_model_learner_tool(self._profiler, draft),
             make_extract_concepts_tool(self._extractor, draft),
             make_prerequisite_graph_tool(self._builder, draft),
             make_design_curriculum_tool(self._architect, draft),
