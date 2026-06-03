@@ -5,33 +5,13 @@ from lunaris_runtime.resilience import (
     get_llm_rate_limiter,
     retry_on_rate_limit,
 )
-from lunaris_runtime.schema import Module
+from lunaris_runtime.schema import CourseBrief, Module
 
 from .lesson_draft import LessonDraft
 from .parser import parse_lesson
+from .prompt import build_authoring_prompt
 
 logger = structlog.get_logger()
-
-_PROMPT = """Author one lesson for a course module using Merrill's First Principles.
-
-Module: "{title}"
-Learning objectives:
-{objectives}
-
-Write the lesson as FOUR phases:
-- activate: connect to prior knowledge / a relatable real-world problem
-- demonstrate: show the concept (explain it clearly) — this is the core teaching
-- apply: a guided practice step the learner does
-- integrate: how the learner transfers this to their own context
-
-For each phase, write concise prose, and list every factual sentence (claims that
-could be fact-checked) separately in "claims" so they can be verified.
-
-Respond with ONLY this JSON, no prose:
-{{"activate": {{"prose": "...", "claims": ["..."]}},
-  "demonstrate": {{"prose": "...", "claims": ["..."]}},
-  "apply": {{"prose": "...", "claims": ["..."]}},
-  "integrate": {{"prose": "...", "claims": ["..."]}}}}"""
 
 
 class ClaudeModuleAuthor:
@@ -41,7 +21,13 @@ class ClaudeModuleAuthor:
         self._model_name = model_name
         self._client: object | None = None
 
-    async def author(self, module: Module) -> LessonDraft:
+    async def author(
+        self,
+        module: Module,
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
         if self._client is None:
             from langchain_anthropic import ChatAnthropic
 
@@ -52,8 +38,9 @@ class ClaudeModuleAuthor:
                 rate_limiter=get_llm_rate_limiter(),
             )
 
-        objectives = "\n".join(f"- {o.statement}" for o in module.objectives)
-        prompt = _PROMPT.format(title=module.title, objectives=objectives)
+        # The arc is personalized when the brief/frontier are present (the agent path); the legacy
+        # orchestrator calls author(module) and gets the generic arc.
+        prompt = build_authoring_prompt(module, brief=brief, frontier=frontier)
         message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
         content = message.content if isinstance(message.content, str) else str(message.content)
         draft = parse_lesson(content)

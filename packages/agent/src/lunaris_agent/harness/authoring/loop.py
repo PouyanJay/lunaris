@@ -88,7 +88,9 @@ def build_authoring_subgraph(
         for module in draft.modules:
             if module.lessons:
                 continue  # already authored (e.g. a partial resume); only fill the gaps
-            lesson_draft = await reviser.author(module)
+            # Thread the interpreted brief + the learner's frontier so the arc is personalized —
+            # aimed at the module's competency, pitched at the level, scoped above the frontier.
+            lesson_draft = await reviser.author(module, brief=draft.brief, frontier=draft.frontier)
             module.lessons = [lesson_assembler.assemble(lesson_draft, lesson_id=f"{module.id}-l0")]
             await draft.progress.emit(
                 ProgressStage.MODULE_AUTHORED,
@@ -142,7 +144,9 @@ def build_authoring_subgraph(
             cut_texts = cut_by_module.get(module.id)
             if not cut_texts:
                 continue
-            revised = await reviser.revise(module, cut_texts)
+            revised = await reviser.revise(
+                module, cut_texts, brief=draft.brief, frontier=draft.frontier
+            )
             module.lessons = [lesson_assembler.assemble(revised, lesson_id=f"{module.id}-l0")]
         return {"prev_cut": state.get("cut", _UNSET_CUT), "round": state.get("round", 0) + 1}
 

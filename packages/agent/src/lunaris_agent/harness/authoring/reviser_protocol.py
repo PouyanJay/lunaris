@@ -9,18 +9,37 @@ adds that ``revise`` capability alongside the first-pass ``author``; the existin
 from collections.abc import Sequence
 from typing import Protocol
 
-from lunaris_runtime.schema import Module
+from lunaris_runtime.schema import CourseBrief, Module
 
 from ...subagents.module_author import LessonDraft
 
 
 class ILessonReviser(Protocol):
-    """Authors a module's lesson and can revise it given the claims the verifier cut."""
+    """Authors a module's lesson and can revise it given the claims the verifier cut.
 
-    async def author(self, module: Module) -> LessonDraft:
-        """Author the module's first-pass Merrill lesson."""
+    ``brief``/``frontier`` (the run's interpreted request + the learner's frontier) personalize the
+    arc — passed through to the author so the lesson is aimed at the module's competency, pitched at
+    the level, and scoped above the frontier (P7.3). Both are optional: omitting them yields the
+    generic arc, keeping the loop usable without an interpreted brief.
+    """
+
+    async def author(
+        self,
+        module: Module,
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
+        """Author the module's first-pass lesson arc."""
         ...
 
-    async def revise(self, module: Module, cut_claims: Sequence[str]) -> LessonDraft:
-        """Re-author the lesson, grounding or replacing the claims the verifier cut."""
+    async def revise(
+        self,
+        module: Module,
+        cut_claims: Sequence[str],
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
+        """Re-author the lesson, grounding or replacing the claims the verifier cut, arc intact."""
         ...
