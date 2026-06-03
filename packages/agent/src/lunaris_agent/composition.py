@@ -16,6 +16,7 @@ from lunaris_grounding import (
     TrafilaturaContentExtractor,
     Verifier,
     VoyageEmbedder,
+    YouTubeVideoSource,
 )
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.resilience import (
@@ -87,12 +88,15 @@ def _researcher_from_env(worker_model: str) -> IStandardResearcher:
 
 
 def _video_source_from_env() -> IVideoSource:
-    """The video source for resource curation: the shared-search fallback (P7.4-T1).
+    """The video source for resource curation: YouTube when keyed, else the shared-search fallback.
 
-    A ``YouTubeVideoSource`` (rich duration/channel signals) is selected here when a
-    ``YOUTUBE_API_KEY`` is set in P7.4-T2; for now every video query routes through the shared
-    ``ISearchProvider`` so a video is still found + vetted, just without YouTube's metadata.
+    With a ``YOUTUBE_API_KEY`` set, videos come from the YouTube Data API (guaranteed-video results
+    + channel); without one, every video query routes through the shared ``ISearchProvider`` so a
+    video is still found + vetted, just without YouTube's metadata.
     """
+    if os.getenv("YOUTUBE_API_KEY"):
+        return YouTubeVideoSource()
+    logger.info("video_source_search_fallback", reason="YOUTUBE_API_KEY unset")
     return SearchVideoSource(TavilySearchProvider())
 
 

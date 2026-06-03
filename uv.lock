@@ -1337,6 +1337,7 @@ name = "lunaris-grounding"
 version = "0.0.0"
 source = { editable = "packages/grounding" }
 dependencies = [
+    { name = "httpx" },
     { name = "langchain-anthropic" },
     { name = "langchain-voyageai" },
     { name = "lunaris-runtime" },
@@ -1348,6 +1349,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "langchain-anthropic", specifier = ">=0.3" },
     { name = "langchain-voyageai", specifier = ">=0.1" },
     { name = "lunaris-runtime", editable = "packages/runtime" },

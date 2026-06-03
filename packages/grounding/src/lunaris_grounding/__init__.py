@@ -31,6 +31,7 @@ from lunaris_grounding.discovery import (
     TavilySearchProvider,
     TrafilaturaContentExtractor,
     VideoResult,
+    YouTubeVideoSource,
     classify_domain,
     host,
 )
@@ -74,6 +75,7 @@ __all__ = [
     "Verifier",
     "VideoResult",
     "VoyageEmbedder",
+    "YouTubeVideoSource",
     "chunk_text",
     "classify_domain",
     "host",

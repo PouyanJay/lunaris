@@ -21,6 +21,7 @@ from .tavily_search_provider import TavilySearchProvider
 from .trafilatura_content_extractor import TrafilaturaContentExtractor
 from .video_result import VideoResult
 from .video_source import IVideoSource
+from .youtube_video_source import YouTubeVideoSource
 
 __all__ = [
     "ExtractedContent",
@@ -37,6 +38,7 @@ __all__ = [
     "TavilySearchProvider",
     "TrafilaturaContentExtractor",
     "VideoResult",
+    "YouTubeVideoSource",
     "classify_domain",
     "host",
 ]
