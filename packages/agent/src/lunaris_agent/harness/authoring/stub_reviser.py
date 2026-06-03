@@ -7,7 +7,7 @@ model or network.
 
 from collections.abc import Callable, Sequence
 
-from lunaris_runtime.schema import Module
+from lunaris_runtime.schema import CourseBrief, Module
 
 from ...subagents.module_author import LessonDraft
 
@@ -17,7 +17,9 @@ class StubLessonReviser:
 
     ``author_fn`` produces the first-pass draft for a module. ``revise_fn`` produces a revised
     draft given the module and the cut claims; it also receives the revision count (1-based) so a
-    test can model "fixed on the second attempt", "never fixed", or "stops improving".
+    test can model "fixed on the second attempt", "never fixed", or "stops improving". ``brief``/
+    ``frontier`` are accepted (to satisfy ``ILessonReviser``) but ignored — the scripted functions
+    are the test's control; arc personalization is covered by ``build_authoring_prompt``.
     """
 
     def __init__(
@@ -29,9 +31,22 @@ class StubLessonReviser:
         self._revise_fn = revise_fn
         self._revisions: dict[str, int] = {}
 
-    async def author(self, module: Module) -> LessonDraft:
+    async def author(
+        self,
+        module: Module,
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
         return self._author_fn(module)
 
-    async def revise(self, module: Module, cut_claims: Sequence[str]) -> LessonDraft:
+    async def revise(
+        self,
+        module: Module,
+        cut_claims: Sequence[str],
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
         self._revisions[module.id] = self._revisions.get(module.id, 0) + 1
         return self._revise_fn(module, cut_claims, self._revisions[module.id])

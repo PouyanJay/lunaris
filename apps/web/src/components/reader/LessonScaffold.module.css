@@ -1,0 +1,57 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cue {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.item {
+  position: relative;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.item::before {
+  /* No design token exists for a list-marker dot; size it locally rather than repeat a literal. */
+  --scaffold-bullet-size: 5px;
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.6em; /* optical centre of the first text line */
+  width: var(--scaffold-bullet-size);
+  height: var(--scaffold-bullet-size);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}

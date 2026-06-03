@@ -11,17 +11,23 @@ import { Button } from "../primitives/Button";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonClaims } from "./LessonClaims";
 import { LessonObjectives } from "./LessonObjectives";
+import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
-/** Merrill's First Principles phases, in teaching order, with their reader labels and a plain-language
- *  cue so a learner understands what each phase is for. */
+/** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
+ *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
+ *  example → practice → transfer — bracketed by the "expects" and "self-check" bookends. */
 const PHASES: { key: keyof MerrillSegments; label: string; cue: string }[] = [
-  { key: "activate", label: "Activate", cue: "Connect to what you already know" },
-  { key: "demonstrate", label: "Demonstrate", cue: "See the idea worked through" },
-  { key: "apply", label: "Apply", cue: "Practise it yourself" },
-  { key: "integrate", label: "Integrate", cue: "Make it your own" },
+  { key: "activate", label: "Warm-up", cue: "Reconnect with what you already know" },
+  {
+    key: "demonstrate",
+    label: "Strategies & worked example",
+    cue: "See the approach worked through",
+  },
+  { key: "apply", label: "Practice", cue: "Try it yourself" },
+  { key: "integrate", label: "Make it your own", cue: "Transfer it to your own context" },
 ];
 
 /** A lesson in course-wide reading order, carrying its owning module's title for context (lessons
@@ -30,6 +36,9 @@ const PHASES: { key: keyof MerrillSegments; label: string; cue: string }[] = [
 interface ReaderLesson {
   lesson: Lesson;
   moduleTitle: string;
+  /** The researched competency the owning module builds toward (P7.3), shown so the learner sees
+   *  what the lesson earns; null on the no-research path. */
+  competency: string | null;
   label: string;
   objectives: Objective[];
   assessment: AssessmentItem[];
@@ -59,6 +68,7 @@ function buildReaderModel(course: Course): ReaderModel {
       lessons.push({
         lesson,
         moduleTitle: module.title,
+        competency: module.competency,
         label,
         objectives: lessonIndex === 0 ? module.objectives : [],
         assessment: lessonIndex === last ? module.assessment.items : [],
@@ -90,7 +100,9 @@ interface CourseReaderProps {
 
 /** The lesson reader (Learn view): a persistent course outline beside a single focused lesson, with
  *  Prev/Next navigation, a position indicator, and a per-lesson agent regenerate action. Renders the
- *  focused lesson's Merrill phases, objectives, claims/provenance, and branded visuals. */
+ *  focused lesson as its arc (P7.3) — the competency it builds toward, the "what this lesson expects"
+ *  bookend, the relabelled teaching phases, objectives, claims/provenance, branded visuals, and the
+ *  closing self-check. */
 export function CourseReader({ course, focusRequest, onRegenerate }: CourseReaderProps) {
   // A successful regenerate swaps in the updated course locally until a different course is opened.
   const [regeneratedCourse, setRegeneratedCourse] = useState<Course | null>(null);
@@ -142,6 +154,10 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   }
 
   const focusedLessonId = current.lesson.id;
+  // The arc bookends, defaulted for courses built before P7.3 (no arc) — read once, used in both
+  // the render guard and the list below.
+  const expects = current.lesson.expects ?? [];
+  const selfCheck = current.lesson.selfCheck ?? [];
   const regenerate = async () => {
     if (!onRegenerate) return;
     setPending(true);
@@ -170,6 +186,11 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
               <h2 className={styles.lessonTitle}>{current.label}</h2>
+              {current.competency && (
+                <p className={styles.competency}>
+                  Builds toward <span className={styles.competencyName}>{current.competency}</span>
+                </p>
+              )}
             </div>
             <p className={`${styles.progress} mono`}>
               Lesson {safeIndex + 1} of {total}
@@ -177,6 +198,16 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
           </header>
 
           {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
+
+          {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
+              omitted for courses built before P7.3 (empty expects). */}
+          {expects.length > 0 && (
+            <LessonScaffold
+              title="What this lesson expects"
+              cue="What to be comfortable with before you start"
+              items={expects}
+            />
+          )}
 
           {PHASES.map(({ key, label, cue }) => {
             const segment = current.lesson.segments[key];
@@ -197,6 +228,15 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
               </section>
             );
           })}
+
+          {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
+          {selfCheck.length > 0 && (
+            <LessonScaffold
+              title="Self-check"
+              cue="Confirm you’ve got it before moving on"
+              items={selfCheck}
+            />
+          )}
 
           {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
 

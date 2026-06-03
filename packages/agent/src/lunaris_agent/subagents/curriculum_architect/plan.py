@@ -15,11 +15,16 @@ class ObjectivePlan:
 
 @dataclass(frozen=True)
 class ModulePlan:
-    """A group of KCs taught together, with their objectives. Lessons come later (Stage 4)."""
+    """A group of KCs taught together, with their objectives. Lessons come later (Stage 4).
+
+    ``competency`` is the researched target skill the module covers (P7.3) when the brief grounded
+    the standard; ``None`` on the legacy / no-research path.
+    """
 
     title: str
     kcs: list[str]
     objectives: list[ObjectivePlan]
+    competency: str | None = None
 
 
 @dataclass(frozen=True)

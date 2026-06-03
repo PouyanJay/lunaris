@@ -50,6 +50,16 @@
   white-space: nowrap;
 }
 
+.competency {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.competencyName {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
 .phase {
   display: flex;
   flex-direction: column;

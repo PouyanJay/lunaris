@@ -28,6 +28,36 @@ def test_parse_curriculum_reads_modules_objectives_and_items() -> None:
     assert plan.modules[0].objectives[0].item_prompts
 
 
+def test_parse_curriculum_reads_a_per_module_competency() -> None:
+    # Arrange — the architect tagged the module with the researched competency it builds (P7.3).
+    text = """{"modules": [
+      {"title": "Search", "competency": "Locate an element in a sorted collection efficiently.",
+       "kcs": ["bsearch"], "objectives": [
+        {"kc": "bsearch", "statement": "Given a sorted array, the learner can apply binary search",
+         "bloom_level": "apply", "item_prompts": ["Trace binary search on [1,3,5,7]."]}]}
+    ]}"""
+
+    # Act
+    plan = parse_curriculum(text, _KCS)
+
+    # Assert — the competency is carried onto the plan.
+    assert plan.modules[0].competency == "Locate an element in a sorted collection efficiently."
+
+
+def test_parse_curriculum_leaves_competency_none_when_absent() -> None:
+    # Arrange — a module with no competency tag (no-research path).
+    text = (
+        '{"modules": [{"title": "M", "kcs": ["arrays"], "objectives": ['
+        '{"kc": "arrays", "statement": "s", "bloom_level": "apply", "item_prompts": ["q"]}]}]}'
+    )
+
+    # Act
+    plan = parse_curriculum(text, _KCS)
+
+    # Assert
+    assert plan.modules[0].competency is None
+
+
 def test_parse_curriculum_rejects_objective_without_items() -> None:
     # Arrange
     text = (

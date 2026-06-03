@@ -336,15 +336,17 @@ describe("CourseReader — claims & provenance", () => {
 });
 
 describe("CourseReader — lesson body", () => {
-  it("renders the four Merrill phases of the focused lesson", () => {
+  it("renders the four teaching phases, relabelled to the lesson arc (P7.3)", () => {
     // Arrange / Act
     render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
 
-    // Assert
-    expect(screen.getByRole("heading", { name: "Activate" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Demonstrate" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Apply" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Integrate" })).toBeInTheDocument();
+    // Assert — the Merrill phases now read as the arc's teaching rhythm.
+    expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Strategies & worked example" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Practice" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Make it your own" })).toBeInTheDocument();
   });
 
   it("shows the module's Bloom-tagged objectives on its first lesson only", () => {
@@ -364,6 +366,44 @@ describe("CourseReader — lesson body", () => {
     expect(
       screen.queryByText("Locate a target in a sorted array with binary search."),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders the lesson arc: what it expects, the module competency, and a self-check (P7.3)", () => {
+    // Arrange / Act — the default course carries the arc compartments + module competency.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert — the arc opens with entry expectations and closes with a self-check, and the lesson
+    // shows the competency its module builds toward.
+    expect(screen.getByRole("heading", { name: "What this lesson expects" })).toBeInTheDocument();
+    expect(
+      screen.getByText("You can compare two numbers and recognise a sorted list."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Self-check" })).toBeInTheDocument();
+    expect(
+      screen.getByText("Can you locate 7 in a 9-element sorted array in at most 4 comparisons?"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Locate an element in a sorted collection efficiently\./),
+    ).toBeInTheDocument();
+  });
+
+  it("omits the arc compartments for a course built before P7.3 (no expects / self-check)", () => {
+    // Arrange — a pre-P7.3 lesson with empty arc fields and a module with no competency.
+    const bare = makeCourse({
+      modules: [
+        makeModule({ lessons: [makeLesson({ expects: [], selfCheck: [] })], competency: null }),
+      ],
+    });
+
+    // Act
+    render(<CourseReader course={bare} />);
+
+    // Assert — the arc sections simply do not render (no empty headings), and no competency line.
+    expect(
+      screen.queryByRole("heading", { name: "What this lesson expects" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Self-check" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Builds toward/)).not.toBeInTheDocument();
   });
 
   it("shows the assessment on the module's last lesson, with answers revealable", () => {

@@ -125,6 +125,28 @@ _RESEARCH = StandardResearch(
 )
 
 
+_COMPETENCY = "hear implied intent and hedged disagreement in speech"
+# A competency-tagged plan (P7.3): one module per concept, each mapped to the researched competency.
+_ARC_PLAN = CurriculumPlan(
+    modules=[
+        ModulePlan(
+            title=label,
+            kcs=[kc_id],
+            competency=_COMPETENCY,
+            objectives=[
+                ObjectivePlan(
+                    kc=kc_id,
+                    statement=f"Given a task, the learner can apply {label}.",
+                    bloom_level=BloomLevel.APPLY,
+                    item_prompts=["q"],
+                )
+            ],
+        )
+        for kc_id, label, _definition, _difficulty in _CONCEPT_SPECS
+    ]
+)
+
+
 def _lesson_with_claim(text: str) -> LessonDraft:
     """A minimal Merrill lesson whose demonstrate phase carries one factual claim to verify."""
     return LessonDraft(
@@ -132,6 +154,20 @@ def _lesson_with_claim(text: str) -> LessonDraft:
         demonstrate=SegmentDraft("Worked example.", [text]),
         apply=SegmentDraft("Try it yourself.", []),
         integrate=SegmentDraft("Connect it to the bigger picture.", []),
+    )
+
+
+def _arc_lesson(module: Module) -> LessonDraft:
+    """A lesson draft carrying the arc bookends (P7.3) plus a groundable claim (the happy path)."""
+    return LessonDraft(
+        activate=SegmentDraft("Recall what you already know.", []),
+        demonstrate=SegmentDraft(
+            "Worked example.", [f"{module.title} reduces the problem size each step."]
+        ),
+        apply=SegmentDraft("Try it yourself.", []),
+        integrate=SegmentDraft("Connect it to the bigger picture.", []),
+        expects=[f"You can already use {module.title}."],
+        self_check=[f"Can you apply {module.title} unaided?"],
     )
 
 
@@ -167,6 +203,7 @@ def _builder(
     *,
     profiler: StubLearnerProfiler | None = None,
     researcher: StubStandardResearcher | None = None,
+    architect: StubCurriculumArchitect | None = None,
     reviser: StubLessonReviser | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
@@ -181,7 +218,7 @@ def _builder(
         researcher=researcher or StubStandardResearcher(),
         extractor=StubConceptExtractor(Extraction(kcs=_KCS, goal_id=_GOAL_ID)),
         builder=PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)),
-        architect=StubCurriculumArchitect(_PLAN),
+        architect=architect or StubCurriculumArchitect(_PLAN),
         reviser=reviser or _reviser(),
         verifier=verifier or _verifier(),
         visual_engine=visual_engine,
@@ -314,6 +351,41 @@ async def test_agent_builds_and_persists_a_course_without_a_key(
         event.get("event") == "agent_course_run_started" and event.get("run_id") == "run-1"
         for event in logs
     )
+
+
+async def test_agent_pipeline_carries_the_lesson_arc_and_module_competency(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — the FULL scripted agent loop (not the assemblers directly): a competency-tagged plan
+    # and an arc-authoring reviser, so the arc + competency are proven through the real
+    # task→subagent→finalize boundary, not just the assembler unit (T0).
+    store = CourseStore(tmp_path)
+    builder = _builder(
+        _delegating_script(scripted_model),
+        store,
+        architect=StubCurriculumArchitect(_ARC_PLAN),
+        reviser=StubLessonReviser(_arc_lesson, lambda module, _cut, _attempt: _arc_lesson(module)),
+    )
+
+    # Act
+    course = await builder.run("demo", course_id="course-arc", run_id="run-arc")
+
+    # Assert — every module records the competency, and every authored lesson carries both bookends.
+    assert course.modules
+    assert all(module.competency == _COMPETENCY for module in course.modules)
+    for module in course.modules:
+        lesson = module.lessons[0]
+        assert lesson.expects == [f"You can already use {module.title}."]
+        assert lesson.self_check == [f"Can you apply {module.title} unaided?"]
+
+    # The arc + competency survive persistence through the real finalize path, with exact values
+    # intact (re-serialization is the most likely place a list field silently drops to []).
+    reloaded = store.load("course-arc")
+    for module in reloaded.modules:
+        assert module.competency == _COMPETENCY
+        assert module.lessons[0].expects == [f"You can already use {module.title}."]
+        assert module.lessons[0].self_check == [f"Can you apply {module.title} unaided?"]
 
 
 async def test_agent_publishes_after_the_subagent_revises_a_cut_claim(

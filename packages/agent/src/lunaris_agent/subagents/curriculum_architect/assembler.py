@@ -54,6 +54,7 @@ class CurriculumAssembler:
                     id=f"m{m_index}",
                     title=module_plan.title,
                     kcs=module_kcs,
+                    competency=module_plan.competency,
                     objectives=objectives,
                     assessment=Assessment(items=items),
                     difficulty_index=self._plan_difficulty(module_plan, difficulty),

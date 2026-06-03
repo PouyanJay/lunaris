@@ -1,10 +1,11 @@
 """The live ``ILessonReviser``: Claude authors the first pass and revises with cut-claim feedback.
 
-First-pass authoring delegates to the existing ``ClaudeModuleAuthor`` (same prompt + parser the
-orchestrator used); revision re-issues that author's prompt with an appended instruction listing the
-claims the verifier cut, so the model grounds or replaces them rather than re-emitting the same
-unsupported text. The Anthropic client is built lazily, so constructing the reviser needs no API key
-(the deterministic CI path uses the stub instead).
+First-pass authoring delegates to the existing ``ClaudeModuleAuthor`` (same arc prompt + parser);
+revision re-issues that same personalized arc prompt with the cut claims folded in (via
+``build_authoring_prompt(..., cut_claims=...)``), so the model grounds or replaces them, keeping
+the arc — expects, the four phases, and self-check — intact, and the personalization preserved.
+The Anthropic client is built lazily, so the reviser needs no API key to build (the deterministic
+CI path uses the stub instead).
 """
 
 from collections.abc import Callable, Sequence
@@ -17,33 +18,20 @@ from lunaris_runtime.resilience import (
     get_llm_rate_limiter,
     retry_on_rate_limit,
 )
-from lunaris_runtime.schema import Module
+from lunaris_runtime.schema import CourseBrief, Module
 
-from ...subagents.module_author import ClaudeModuleAuthor, LessonDraft
+from ...subagents.module_author import ClaudeModuleAuthor, LessonDraft, build_authoring_prompt
 from ...subagents.module_author.parser import parse_lesson
 
 logger = structlog.get_logger()
-
-_REVISE_PROMPT = """You previously authored a Merrill lesson for the module "{title}".
-These factual claims could not be grounded against the evidence corpus and were CUT:
-{claims}
-
-Re-author the lesson so each cut claim is either restated as a verifiable, well-known fact or
-replaced with one. Keep the four Merrill phases (activate, demonstrate, apply, integrate) and the
-rest of the lesson intact.
-
-Respond with ONLY this JSON, no prose:
-{{"activate": {{"prose": "...", "claims": ["..."]}},
-  "demonstrate": {{"prose": "...", "claims": ["..."]}},
-  "apply": {{"prose": "...", "claims": ["..."]}},
-  "integrate": {{"prose": "...", "claims": ["..."]}}}}"""
 
 
 class ClaudeLessonReviser:
     """Authors and revises a module's lesson with Claude (worker tier), lazily building its client.
 
-    Delegates first-pass authoring to ``ClaudeModuleAuthor`` so the prompt stays in one place; owns
-    only the revision prompt that feeds the cut claims back to the model.
+    Delegates first-pass authoring to ``ClaudeModuleAuthor`` so the arc prompt stays in one place;
+    revision reuses that same prompt with the cut claims folded in, so the personalization (the
+    module's competency, the level, the frontier, the voice) is preserved across the revision.
     """
 
     def __init__(
@@ -54,12 +42,25 @@ class ClaudeLessonReviser:
         self._author = ClaudeModuleAuthor(model)
         self._client: BaseChatModel | None = None
 
-    async def author(self, module: Module) -> LessonDraft:
-        return await self._author.author(module)
+    async def author(
+        self,
+        module: Module,
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
+        return await self._author.author(module, brief=brief, frontier=frontier)
 
-    async def revise(self, module: Module, cut_claims: Sequence[str]) -> LessonDraft:
-        prompt = _REVISE_PROMPT.format(
-            title=module.title, claims="\n".join(f"- {claim}" for claim in cut_claims)
+    async def revise(
+        self,
+        module: Module,
+        cut_claims: Sequence[str],
+        *,
+        brief: CourseBrief | None = None,
+        frontier: list[str] | None = None,
+    ) -> LessonDraft:
+        prompt = build_authoring_prompt(
+            module, brief=brief, frontier=frontier, cut_claims=list(cut_claims)
         )
         message = await retry_on_rate_limit(lambda: self._ensure_client().ainvoke(prompt))
         content = message.content if isinstance(message.content, str) else str(message.content)
