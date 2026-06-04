@@ -1,3 +1,4 @@
+from .budget import DiscoveryBudget
 from .claude_relevance_judge import ClaudeRelevanceJudge
 from .discoverer import SubgraphGroundingDiscoverer
 from .protocol import IGroundingDiscoverer
@@ -9,6 +10,7 @@ from .stub_relevance_judge import StubRelevanceJudge
 
 __all__ = [
     "ClaudeRelevanceJudge",
+    "DiscoveryBudget",
     "DiscoveryQuery",
     "DiscoveryReport",
     "IGroundingDiscoverer",

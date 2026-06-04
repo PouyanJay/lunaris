@@ -12,6 +12,7 @@ import structlog
 from lunaris_grounding import CorpusIngestor, IContentExtractor, ICredibilityScorer, ISearchProvider
 
 from ..draft import CourseDraft
+from .budget import DiscoveryBudget
 from .loop import build_discovery_subgraph
 from .relevance_judge import IRelevanceJudge
 from .report import DiscoveryReport
@@ -37,6 +38,7 @@ class SubgraphGroundingDiscoverer:
         judge: IRelevanceJudge,
         ingestor: CorpusIngestor,
         *,
+        budget: DiscoveryBudget | None = None,
         clock: Callable[[], str] | None = None,
     ) -> None:
         self._search = search
@@ -44,11 +46,16 @@ class SubgraphGroundingDiscoverer:
         self._scorer = scorer
         self._judge = judge
         self._ingestor = ingestor
+        self._budget = budget
         self._clock = clock
 
     async def discover(self, draft: CourseDraft) -> DiscoveryReport:
-        # Pass the injected clock through only when set; the sub-graph owns the real-time default.
-        clock_kwargs = {} if self._clock is None else {"clock": self._clock}
+        # Pass budget/clock through only when set; the sub-graph owns the default budget + clock.
+        overrides: dict[str, object] = {}
+        if self._budget is not None:
+            overrides["budget"] = self._budget
+        if self._clock is not None:
+            overrides["clock"] = self._clock
         graph = build_discovery_subgraph(
             self._search,
             self._extractor,
@@ -56,7 +63,7 @@ class SubgraphGroundingDiscoverer:
             self._judge,
             self._ingestor,
             draft,
-            **clock_kwargs,
+            **overrides,
         )
         state = await graph.ainvoke({})
         accepted = state.get("accepted", [])
