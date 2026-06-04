@@ -39,6 +39,14 @@ stop:
 check-ports:
 	@./scripts/check-ports.sh
 
+# ── Grounding corpus ─────────────────────────────────────────────────────────
+.PHONY: ingest
+
+# Bulk-ingest a folder of documents into a course's grounding corpus (P6.1 manual mode).
+# Usage: make ingest DIR=<folder> COURSE=<course_id>
+ingest:
+	@./scripts/ingest.sh
+
 # ── Testing ──────────────────────────────────────────────────────────────────
 .PHONY: test test-python test-web test-eval
 

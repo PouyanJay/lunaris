@@ -209,6 +209,41 @@ async def test_add_url_source_extracts_and_ingests(tmp_path: Path) -> None:
         assert row["url"] == "https://example.edu/dijkstra"
 
 
+async def test_re_adding_the_same_url_is_rejected_as_a_duplicate(tmp_path: Path) -> None:
+    # Arrange — a URL whose extraction succeeds; the gate keys dedup on the URL itself.
+    extractor = _FakeContentExtractor(
+        ExtractedContent(url="https://example.edu/x", text="Edges relax.", title="X")
+    )
+    transport = httpx.ASGITransport(app=_corpus_app(tmp_path, content_extractor=extractor))
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        body = {"courseId": "course-1", "kind": "url", "url": "https://example.edu/x"}
+        first = await client.post("/api/corpus/sources", json=body)
+
+        # Act — submit the same URL again.
+        second = await client.post("/api/corpus/sources", json=body)
+
+        # Assert — deduped on the URL; only one source is listed.
+        assert first.json()["accepted"] is True
+        assert second.json()["accepted"] is False
+        assert second.json()["reason"] == "already in the corpus"
+        assert len((await client.get("/api/corpus", params={"courseId": "course-1"})).json()) == 1
+
+
+async def test_oversized_upload_is_rejected(client: httpx.AsyncClient) -> None:
+    # Act — a file over the 10 MB cap is declined before it's read into the corpus.
+    oversized = b"x" * (10 * 1024 * 1024 + 1)
+    add = await client.post(
+        "/api/corpus/sources/file",
+        data={"courseId": "course-1"},
+        files={"file": ("big.txt", oversized, "text/plain")},
+    )
+
+    # Assert
+    assert add.status_code == 201
+    assert add.json()["accepted"] is False
+    assert add.json()["reason"] == "file too large"
+
+
 async def test_add_url_source_that_cannot_be_extracted_is_rejected(tmp_path: Path) -> None:
     # Arrange — the extractor returns None (unreachable / no extractable text).
     transport = httpx.ASGITransport(

@@ -43,8 +43,10 @@ from lunaris_grounding.ingest import (
     CorpusIngestor,
     DocumentExtractor,
     ExtractedDocument,
+    FolderIngestSummary,
     IDocumentExtractor,
     chunk_text,
+    ingest_directory,
 )
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
 from lunaris_grounding.retrievers import PgVectorRetriever, StubEvidenceRetriever
@@ -59,6 +61,7 @@ __all__ = [
     "Evidence",
     "ExtractedContent",
     "ExtractedDocument",
+    "FolderIngestSummary",
     "GroundingDocument",
     "IContentExtractor",
     "ICorpusStore",
@@ -91,4 +94,5 @@ __all__ = [
     "chunk_text",
     "classify_domain",
     "host",
+    "ingest_directory",
 ]
