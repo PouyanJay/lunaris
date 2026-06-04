@@ -116,6 +116,27 @@ async def get_course(course_id: str, service: CourseServiceDep) -> Course:
     return course
 
 
+@router.post("/{course_id}/rebuild", response_model=Course)
+async def rebuild_course(course_id: str, service: CourseServiceDep, response: Response) -> Course:
+    """Re-run the pipeline for an existing course, reusing its id (P6.1 re-ground).
+
+    The build re-verifies its claims against the course's CURRENT grounding corpus, so sources added
+    via the Corpus panel can turn previously-cut citations green. 404 if the course is unknown; 409
+    if the build is cancelled mid-flight. ``X-Run-Id`` correlates the rebuild across the logs.
+    """
+    existing = service.get(course_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    run_id = uuid4().hex
+    response.headers["X-Run-Id"] = run_id
+    try:
+        return await service.create(existing.topic, course_id=course_id, run_id=run_id)
+    except CourseBuildCancelledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Build was cancelled"
+        ) from exc
+
+
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_course(course_id: str, service: CourseServiceDep) -> Response:
     """Delete a course and its per-course assets (the stored course-object + its run-history row).

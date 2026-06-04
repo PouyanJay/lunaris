@@ -147,8 +147,9 @@ export interface Claim {
   verifierStatus: VerifierStatus;
 }
 
-/** A source's authority tier (mirrors TrustTier). The user sees it; the relevance judge does not. */
-export type TrustTier = "official" | "reputable" | "open" | "blocked";
+/** A source's authority tier (mirrors TrustTier). The user sees it; the relevance judge does not.
+ *  `vouched` = a source the learner supplied directly (P6.1 manual ingest). */
+export type TrustTier = "official" | "reputable" | "open" | "blocked" | "vouched";
 
 /** What KIND of source a grounding chunk is (mirrors SourceType), independent of its authority tier.
  *  snake_case values mirror the Python enum exactly (wire parity). */
@@ -263,6 +264,28 @@ export interface Citation {
   credibility?: number | null;
   sourceType?: SourceType | null;
   fetchedAt?: string | null;
+}
+
+/** A source-level row of a course's grounding corpus (P6.1; mirrors the API CorpusSourceView). */
+export interface CorpusSource {
+  sourceId: string;
+  courseId: string | null;
+  title: string | null;
+  url: string | null;
+  sourceType: SourceType | null;
+  trustTier: TrustTier | null;
+  credibility: number | null;
+  acquisitionMode: string | null;
+  fetchedAt: string | null;
+  chunkCount: number;
+}
+
+/** The gate's verdict for a submitted manual source (P6.1; mirrors the API IngestResultView). */
+export interface IngestResult {
+  accepted: boolean;
+  sourceId: string;
+  chunks: number;
+  reason: string | null;
 }
 
 export interface Course {

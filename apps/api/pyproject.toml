@@ -6,9 +6,11 @@ requires-python = ">=3.12"
 dependencies = [
     "lunaris-agent",
     "lunaris-runtime",
+    "lunaris-grounding",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "structlog>=24.4",
+    "python-multipart>=0.0.18",
 ]
 
 [build-system]
@@ -21,3 +23,4 @@ packages = ["src/lunaris_api"]
 [tool.uv.sources]
 lunaris-agent = { workspace = true }
 lunaris-runtime = { workspace = true }
+lunaris-grounding = { workspace = true }

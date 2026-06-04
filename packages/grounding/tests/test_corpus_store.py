@@ -152,6 +152,84 @@ def test_grounding_document_rejects_out_of_range_credibility() -> None:
         GroundingDocument(id="d", kc_id="kc1", content="c", embedding=(1.0,), credibility=1.5)
 
 
+async def test_list_sources_folds_chunks_by_source_and_skips_unkeyed() -> None:
+    # Arrange — two chunks of source s1, one chunk of s2, and a legacy unkeyed chunk.
+    store = InMemoryCorpusStore()
+    await store.upsert(
+        [
+            GroundingDocument(
+                id="a",
+                kc_id="kc1",
+                content="a",
+                embedding=(1.0, 0.0),
+                title="Notes",
+                trust_tier=TrustTier.VOUCHED,
+                course_id="c1",
+                source_id="s1",
+            ),
+            GroundingDocument(
+                id="b",
+                kc_id="kc1",
+                content="b",
+                embedding=(1.0, 0.0),
+                title="Notes",
+                trust_tier=TrustTier.VOUCHED,
+                course_id="c1",
+                source_id="s1",
+            ),
+            GroundingDocument(
+                id="c",
+                kc_id="kc1",
+                content="c",
+                embedding=(1.0, 0.0),
+                course_id="c1",
+                source_id="s2",
+            ),
+            _doc("legacy", "kc1", (1.0, 0.0)),  # course_id=None, source_id=None — excluded
+        ]
+    )
+
+    # Act
+    sources = await store.list_sources_for_course("c1")
+
+    # Assert — two sources; s1 folds its two chunks into one row carrying its provenance.
+    by_id = {s.source_id: s for s in sources}
+    assert set(by_id) == {"s1", "s2"}
+    assert by_id["s1"].chunk_count == 2
+    assert by_id["s1"].title == "Notes"
+    assert by_id["s1"].trust_tier is TrustTier.VOUCHED
+
+
+async def test_delete_source_removes_its_chunks_and_is_idempotent() -> None:
+    # Arrange
+    store = InMemoryCorpusStore()
+    await store.upsert(
+        [
+            GroundingDocument(
+                id="a",
+                kc_id="kc1",
+                content="a",
+                embedding=(1.0, 0.0),
+                course_id="c1",
+                source_id="s1",
+            ),
+            GroundingDocument(
+                id="b",
+                kc_id="kc1",
+                content="b",
+                embedding=(1.0, 0.0),
+                course_id="c1",
+                source_id="s1",
+            ),
+        ]
+    )
+
+    # Act / Assert — first delete removes both chunks; a repeat delete removes nothing (idempotent).
+    assert await store.delete_source("s1") == 2
+    assert await store.list_sources_for_course("c1") == []
+    assert await store.delete_source("s1") == 0
+
+
 async def test_upsert_is_idempotent_on_id() -> None:
     # Arrange
     store = InMemoryCorpusStore()

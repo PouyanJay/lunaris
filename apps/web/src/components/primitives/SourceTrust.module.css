@@ -18,6 +18,11 @@
   color: var(--danger);
 }
 
+/* User-vouched (manual ingest): the signature accent — it's the learner's own source. */
+.tier[data-tier="vouched"] {
+  color: var(--accent);
+}
+
 /* Credibility percentage: supplementary to the trust-tier word. The data text stays muted (so it
    keeps ≥4.5:1 in both themes); "low" is signalled by the ⚠ glyph + the "low" in the aria-label,
    never by colour alone. */

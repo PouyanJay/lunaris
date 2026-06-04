@@ -3,6 +3,7 @@ import math
 from lunaris_runtime.schema import Citation
 
 from lunaris_grounding.corpus.document import GroundingDocument
+from lunaris_grounding.corpus.source_summary import CorpusSourceSummary
 from lunaris_grounding.evidence import Evidence
 
 
@@ -57,6 +58,39 @@ class InMemoryCorpusStore:
             scored.append(Evidence(citation=citation, score=score))
         scored.sort(key=lambda item: item.score, reverse=True)
         return scored[:k]
+
+    async def list_sources_for_course(self, course_id: str) -> list[CorpusSourceSummary]:
+        # Fold the course's chunks into sources by source_id. Legacy/agent-path chunks (no
+        # source_id) are excluded — only manually-ingested sources are managed at source level.
+        by_source: dict[str, list[GroundingDocument]] = {}
+        for document in self._documents.values():
+            if document.course_id != course_id or document.source_id is None:
+                continue
+            by_source.setdefault(document.source_id, []).append(document)
+        return [_summarize(source_id, chunks) for source_id, chunks in by_source.items()]
+
+    async def delete_source(self, source_id: str) -> int:
+        removed = [doc_id for doc_id, doc in self._documents.items() if doc.source_id == source_id]
+        for doc_id in removed:
+            del self._documents[doc_id]
+        return len(removed)
+
+
+def _summarize(source_id: str, chunks: list[GroundingDocument]) -> CorpusSourceSummary:
+    """Fold a source's chunks into one summary (provenance from any chunk; they share it)."""
+    head = chunks[0]
+    return CorpusSourceSummary(
+        source_id=source_id,
+        course_id=head.course_id,
+        title=head.title,
+        url=head.url,
+        source_type=head.source_type,
+        trust_tier=head.trust_tier,
+        credibility=head.credibility,
+        acquisition_mode=head.acquisition_mode,
+        fetched_at=head.fetched_at,
+        chunk_count=len(chunks),
+    )
 
 
 def _cosine(left: list[float], right: tuple[float, ...]) -> float:

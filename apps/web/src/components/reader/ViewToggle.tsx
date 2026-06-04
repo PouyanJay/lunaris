@@ -2,14 +2,16 @@ import { useRef, type KeyboardEvent } from "react";
 
 import styles from "./ViewToggle.module.css";
 
-/** The ready-course canvas views: the lesson reader (Learn), the prereq-graph explorer (Map), and
- *  the replay of how the course was built (Build). */
-export type CourseView = "learn" | "map" | "build";
+/** The ready-course canvas views: the lesson reader (Learn), the prereq-graph explorer (Map), the
+ *  replay of how the course was built (Build), and the grounding corpus the claims verify against
+ *  (Corpus). */
+export type CourseView = "learn" | "map" | "build" | "corpus";
 
 const OPTIONS: { value: CourseView; label: string }[] = [
   { value: "learn", label: "Learn" },
   { value: "map", label: "Map" },
   { value: "build", label: "Build" },
+  { value: "corpus", label: "Corpus" },
 ];
 
 interface ViewToggleProps {

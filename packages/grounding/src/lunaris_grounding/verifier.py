@@ -28,8 +28,15 @@ class Verifier:
         self._assessor = assessor
 
     async def verify(
-        self, claims: list[Claim], *, risk_tier: RiskTier = RiskTier.LOW
+        self,
+        claims: list[Claim],
+        *,
+        risk_tier: RiskTier = RiskTier.LOW,
+        course_id: str | None = None,
     ) -> list[Citation]:
+        # ``course_id`` scopes retrieval to the course being built (P6.1): claims ground only
+        # against that course's own evidence. The thresholds + the independent assessor are
+        # unchanged — this narrows *which* evidence is retrieved, never how strictly it's judged.
         threshold = _HIGH_THRESHOLD if risk_tier is RiskTier.HIGH else _LOW_THRESHOLD
         citations: dict[str, Citation] = {}
 
@@ -39,7 +46,7 @@ class Verifier:
             # catch them in distinct scopes — same fail-safe outcome (CUT), but distinct
             # log events so an outage in one is never mistaken for the other.
             try:
-                evidence = await self._retriever.retrieve(claim.text)
+                evidence = await self._retriever.retrieve(claim.text, course_id=course_id)
             except Exception as exc:
                 self._cut_on_grounding_failure(claim, "claim_retrieval_unavailable", exc)
                 continue

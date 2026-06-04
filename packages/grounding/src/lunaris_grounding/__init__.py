@@ -11,6 +11,7 @@ tests run against an in-memory cosine store with a deterministic stub embedder.
 
 from lunaris_grounding.assessors import ClaudeSupportAssessor, StubSupportAssessor
 from lunaris_grounding.corpus import (
+    CorpusSourceSummary,
     GroundingDocument,
     ICorpusStore,
     InMemoryCorpusStore,
@@ -37,7 +38,16 @@ from lunaris_grounding.discovery import (
 )
 from lunaris_grounding.embeddings import IEmbedder, StubEmbedder, VoyageEmbedder
 from lunaris_grounding.evidence import Evidence, Support
-from lunaris_grounding.ingest import CandidateSource, CorpusIngestor, chunk_text
+from lunaris_grounding.ingest import (
+    CandidateSource,
+    CorpusIngestor,
+    DocumentExtractor,
+    ExtractedDocument,
+    FolderIngestSummary,
+    IDocumentExtractor,
+    chunk_text,
+    ingest_directory,
+)
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
 from lunaris_grounding.retrievers import PgVectorRetriever, StubEvidenceRetriever
 from lunaris_grounding.verifier import Verifier
@@ -46,11 +56,16 @@ __all__ = [
     "CandidateSource",
     "ClaudeSupportAssessor",
     "CorpusIngestor",
+    "CorpusSourceSummary",
+    "DocumentExtractor",
     "Evidence",
     "ExtractedContent",
+    "ExtractedDocument",
+    "FolderIngestSummary",
     "GroundingDocument",
     "IContentExtractor",
     "ICorpusStore",
+    "IDocumentExtractor",
     "IEmbedder",
     "IEvidenceRetriever",
     "ISearchProvider",
@@ -79,4 +94,5 @@ __all__ = [
     "chunk_text",
     "classify_domain",
     "host",
+    "ingest_directory",
 ]
