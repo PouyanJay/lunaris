@@ -35,6 +35,7 @@ from ..subagents.visual_agent import VisualEngine
 from .agent import build_course_agent
 from .agent_reporter import AgentReporter
 from .authoring import ILessonReviser, build_authoring_subgraph
+from .discovery import IGroundingDiscoverer
 from .draft import CourseDraft
 from .event_tap import stream_course_build
 from .progress_reporter import ProgressReporter
@@ -90,6 +91,7 @@ class AgentCourseBuilder:
         architect: ICurriculumArchitect,
         reviser: ILessonReviser,
         curator: IResourceCurator,
+        discoverer: IGroundingDiscoverer,
         verifier: Verifier,
         critic: ICritic | None = None,
         visual_engine: VisualEngine | None = None,
@@ -106,6 +108,7 @@ class AgentCourseBuilder:
         self._architect = architect
         self._reviser = reviser
         self._curator = curator
+        self._discoverer = discoverer
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
         self._visual_engine = visual_engine
@@ -193,7 +196,7 @@ class AgentCourseBuilder:
             make_extract_concepts_tool(self._extractor, draft),
             make_prerequisite_graph_tool(self._builder, draft),
             make_design_curriculum_tool(self._architect, draft),
-            make_discover_grounding_tool(draft),
+            make_discover_grounding_tool(self._discoverer, draft),
             make_curate_resources_tool(self._curator, draft),
             make_finalize_course_tool(
                 self._critic, self._store, draft, visual_engine=self._visual_engine

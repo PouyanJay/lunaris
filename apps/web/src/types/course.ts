@@ -369,7 +369,12 @@ export interface CourseRun {
 }
 
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */
-export type AgentEventKind = "reasoning" | "tool_call" | "tool_result" | "todo";
+export type AgentEventKind =
+  | "reasoning"
+  | "tool_call"
+  | "tool_result"
+  | "todo"
+  | "source_evaluated";
 
 /** One todo/plan item the agent is tracking. */
 export interface AgentTodo {
@@ -378,10 +383,26 @@ export interface AgentTodo {
 }
 
 /**
+ * One discovered source the discovery sub-graph (P6.3) scored and accepted or rejected, carried on a
+ * `source_evaluated` AgentEvent so the canvas can render a live source-vetting table (mirrors
+ * SourceEvaluation). Trust tier + credibility are shown to the user (the intended transparency).
+ */
+export interface SourceEvaluation {
+  kcId: string;
+  domain: string;
+  trustTier: TrustTier | null;
+  credibility: number | null;
+  sourceType: SourceType | null;
+  accepted: boolean;
+  reason: string;
+}
+
+/**
  * One fine-grained event from the deep agent's execution, streamed live to the transcript
  * (mirrors the AgentEvent schema, serialised camelCase). Fields are populated per `kind`:
  * `reasoning` → `text` (a whole beat) or `delta` (one streaming token chunk to append to the live
- * beat); `tool_call` → `tool` + `toolArgs`; `tool_result` → `tool` + `result`; `todo` → `todos`.
+ * beat); `tool_call` → `tool` + `toolArgs`; `tool_result` → `tool` + `result`; `todo` → `todos`;
+ * `source_evaluated` → `source` (one discovered source's vetting verdict).
  */
 export interface AgentEvent {
   kind: AgentEventKind;
@@ -396,6 +417,7 @@ export interface AgentEvent {
   toolArgs: Record<string, unknown> | null;
   result: string | null;
   todos: AgentTodo[] | null;
+  source: SourceEvaluation | null;
 }
 
 /**

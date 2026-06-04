@@ -16,6 +16,11 @@ import structlog
 from langchain_core.messages import AIMessage, BaseMessage
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.authoring import StubLessonReviser
+from lunaris_agent.harness.discovery import (
+    IGroundingDiscoverer,
+    StubGroundingDiscoverer,
+    SubgraphGroundingDiscoverer,
+)
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.event_tap import stream_course_build as real_stream_course_build
 from lunaris_agent.harness.runner import AgentCourseBuilder
@@ -43,9 +48,18 @@ from lunaris_agent.subagents.visual_agent import (
     VisualEngine,
 )
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
-from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
+from lunaris_grounding import (
+    CorpusIngestor,
+    Evidence,
+    InMemoryCorpusStore,
+    StubEmbedder,
+    StubEvidenceRetriever,
+    StubSupportAssessor,
+    Verifier,
+)
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import (
+    AcquisitionMode,
     AgentEventKind,
     BloomLevel,
     Citation,
@@ -214,6 +228,7 @@ def _builder(
     architect: StubCurriculumArchitect | None = None,
     reviser: StubLessonReviser | None = None,
     curator: StubResourceCurator | None = None,
+    discoverer: IGroundingDiscoverer | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
     stream_tokens: bool = False,
@@ -230,6 +245,7 @@ def _builder(
         architect=architect or StubCurriculumArchitect(_PLAN),
         reviser=reviser or _reviser(),
         curator=curator or StubResourceCurator(),
+        discoverer=discoverer or StubGroundingDiscoverer(),
         verifier=verifier or _verifier(),
         visual_engine=visual_engine,
         stream_tokens=stream_tokens,
@@ -870,6 +886,45 @@ async def test_agent_discovers_grounding_between_curriculum_and_authoring(
         e for e in progress_sink.events if e.stage is ProgressStage.GROUNDING_DISCOVERED
     )
     assert grounded.run_id == "run-ground"
+
+
+async def test_discovery_ingests_an_auto_source_into_the_course_corpus(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    agent_sink,
+    tmp_path: Path,
+) -> None:
+    # Arrange — the live discoverer over a shared in-memory corpus (P6.3-T0 walking skeleton): the
+    # discover_grounding stage runs the real discoverer, which ingests a graded, provenanced source
+    # into THIS course's corpus and streams a source-vetting event onto the agent channel.
+    corpus = InMemoryCorpusStore()
+    embedder = StubEmbedder()
+    discoverer = SubgraphGroundingDiscoverer(
+        CorpusIngestor(embedder, corpus),
+        clock=lambda: "2026-06-04T00:00:00+00:00",
+    )
+    builder = _builder(
+        _delegating_script(scripted_model), CourseStore(tmp_path), discoverer=discoverer
+    )
+
+    # Act
+    await builder.run("demo", course_id="course-auto", run_id="run-auto", agent=agent_sink)
+
+    # Assert — the corpus now holds an auto-acquired source for the course, with its provenance.
+    sources = await corpus.list_sources_for_course("course-auto")
+    assert sources, "discovery ingested no source into the course corpus"
+    assert all(s.acquisition_mode is AcquisitionMode.AUTO for s in sources)
+    assert all(s.course_id == "course-auto" for s in sources)
+    # The retriever can reach it scoped to this course (it is not a null-course/legacy chunk).
+    (query_embedding,) = await embedder.embed(["demo"])
+    evidence = await corpus.match(query_embedding, course_id="course-auto")
+    assert evidence, "the ingested auto source is not retrievable for its course"
+    # The discovery sub-graph streamed a structured source-vetting event, run_id-correlated, so the
+    # canvas can render the live table (P6.3-T5) — not collapsed into one opaque tool call.
+    evaluated = [e for e in agent_sink.events if e.kind is AgentEventKind.SOURCE_EVALUATED]
+    assert evaluated, "discovery emitted no SOURCE_EVALUATED event"
+    assert all(e.run_id == "run-auto" for e in evaluated)
+    assert all(e.source is not None for e in evaluated), "SOURCE_EVALUATED event missing payload"
+    assert all(e.source.accepted for e in evaluated if e.source is not None)
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:
