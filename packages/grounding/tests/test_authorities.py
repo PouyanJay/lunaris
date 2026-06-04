@@ -191,6 +191,19 @@ async def test_scorer_fills_credibility_through_ingest_to_the_citation() -> None
     assert evidence.citation.credibility == pytest.approx(0.75)
 
 
+async def test_scorer_leaves_a_urlless_untiered_source_untiered() -> None:
+    # Arrange — a source with neither a URL nor a tier (nothing to classify from).
+    scorer = CredibilityScorer(_authorities())
+    source = CandidateSource(kc_id="kc1", text="some pasted text with no provenance")
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — no tier can be resolved; it gets the un-tiered prior, never "trusted by omission".
+    assert scored.trust_tier is None
+    assert 0.0 < scored.credibility < 1.0
+
+
 async def test_scorer_preserves_an_already_vouched_source() -> None:
     # Arrange — a manually-ingested source (P6.1) arrives already VOUCHED with no credibility.
     scorer = CredibilityScorer(_authorities())

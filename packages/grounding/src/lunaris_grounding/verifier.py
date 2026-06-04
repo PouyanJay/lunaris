@@ -163,10 +163,15 @@ def _has_cross_source_agreement(evidence: list[Evidence]) -> bool:
     The plan's operationalization of cross-source agreement: count distinct *registrable* domains
     among the retrieved chunks. Grouping by registrable domain (not full host) means two subdomains
     of one site (``blog.mit.edu`` + ``courses.mit.edu``) are one voice, not corroboration — so a
-    source can't manufacture agreement from its own subdomains. Evidence with no URL can't be
+    source can't manufacture agreement from its own subdomains. A BLOCKED (denylisted) domain is
+    poison, not a corroborator, so it never counts toward agreement. Evidence with no URL can't be
     attributed to a domain and doesn't count.
     """
-    domains = {_registrable_domain(e.citation.url) for e in evidence if e.citation.url}
+    domains = {
+        _registrable_domain(e.citation.url)
+        for e in evidence
+        if e.citation.url and e.citation.trust_tier is not TrustTier.BLOCKED
+    }
     domains.discard("")
     return len(domains) >= _MIN_CORROBORATING_DOMAINS
 

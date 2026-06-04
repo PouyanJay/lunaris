@@ -117,3 +117,24 @@ async def test_a_spine_with_a_field_is_rejected_at_the_boundary(client: httpx.As
 
     # Assert
     assert response.status_code == 422
+
+
+async def test_an_out_of_vocab_enum_is_rejected_at_the_boundary(client: httpx.AsyncClient) -> None:
+    # Act — a tier outside the StrEnum vocabulary is a 422 (the request schema validates it).
+    response = await client.put(
+        "/api/source-authorities",
+        json={"domain": "example.com", "kind": "spine", "tier": "platinum"},
+    )
+
+    # Assert
+    assert response.status_code == 422
+
+
+async def test_a_blank_domain_is_rejected_at_the_boundary(client: httpx.AsyncClient) -> None:
+    # Act — an empty domain fails the min_length=1 field constraint.
+    response = await client.put(
+        "/api/source-authorities", json={"domain": "", "kind": "spine", "tier": "open"}
+    )
+
+    # Assert
+    assert response.status_code == 422
