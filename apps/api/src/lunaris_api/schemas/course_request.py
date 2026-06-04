@@ -1,5 +1,5 @@
 from lunaris_runtime.schema import Clarification
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CourseRequest(BaseModel):
@@ -11,3 +11,12 @@ class CourseRequest(BaseModel):
 
     topic: str = Field(min_length=1, max_length=200)
     clarification: Clarification | None = None
+
+    @field_validator("topic")
+    @classmethod
+    def _topic_not_blank(cls, value: str) -> str:
+        """Reject an all-whitespace topic at the boundary (``min_length`` alone admits ``"   "``),
+        so the brief endpoint never derives a blank subject/goal from it."""
+        if not value.strip():
+            raise ValueError("topic must not be blank")
+        return value

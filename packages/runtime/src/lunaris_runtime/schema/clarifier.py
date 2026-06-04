@@ -12,7 +12,7 @@ reproduces today's inferred-only build.
 from pydantic import Field
 
 from .base import CourseModel
-from .enums import DetailDepth, LanguageStyle, Level
+from .enums import ClarifierKind, DetailDepth, LanguageStyle, Level
 
 # The free-text fields fold into the brief and travel into LLM prompts, so they are bounded at the
 # schema level (defence in depth — independent of the HTTP query-param cap) against a prompt-bloat /
@@ -35,3 +35,36 @@ class Clarification(CourseModel):
     background: str = Field(default="", max_length=_MAX_FREE_TEXT_CHARS)
     detail_depth: DetailDepth | None = None
     language_style: LanguageStyle | None = None
+
+
+class ClarifierOption(CourseModel):
+    """One selectable answer for a CHOICE question; ``recommended`` marks the interpreter's guess
+    (the value pre-picked in the UI, so the zero-friction path is a single confirm)."""
+
+    value: str
+    label: str
+    recommended: bool = False
+
+
+class ClarifierQuestion(CourseModel):
+    """A single clarifier question: a closed CHOICE over ``options`` or a free-``TEXT`` field.
+
+    ``id`` names the :class:`Clarification` field the answer populates (``level`` / ``knowledge`` /
+    ``background`` / ``detail`` / ``language``); ``placeholder`` seeds a TEXT field with the guess.
+    """
+
+    id: str
+    prompt: str
+    kind: ClarifierKind
+    options: list[ClarifierOption] = Field(default_factory=list)
+    placeholder: str = ""
+
+
+class Clarifier(CourseModel):
+    """The confirm questions derived from an inferred brief (the 'infer' half of the P7.5 flow).
+
+    Server-derived (``lunaris_runtime.clarifier.build_clarifier``) so the options + the Recommended
+    pre-pick stay in lockstep with the backend enums; the web renders the questions generically.
+    """
+
+    questions: list[ClarifierQuestion]

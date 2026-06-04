@@ -11,7 +11,11 @@ import pytest
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.progress_reporter import ProgressReporter
 from lunaris_agent.harness.tools import make_interpret_request_tool
-from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter, parse_brief
+from lunaris_agent.subagents.goal_interpreter import (
+    DefaultGoalInterpreter,
+    StubGoalInterpreter,
+    parse_brief,
+)
 from lunaris_runtime.schema import (
     CourseBrief,
     DeliverableShape,
@@ -196,3 +200,21 @@ async def test_interpret_request_tool_records_the_brief_and_emits_the_stage(prog
     assert result["targetLevel"] == "advanced"
     assert [event.stage for event in progress_sink.events] == [ProgressStage.BRIEF_INTERPRETED]
     assert progress_sink.events[0].run_id == "r"
+
+
+# --- DefaultGoalInterpreter (P7.5): the key-free, topic-derived fallback for the brief endpoint ---
+
+
+async def test_default_goal_interpreter_derives_a_topic_brief_without_a_model() -> None:
+    # Arrange — no model/key; the deterministic fallback the brief endpoint uses without a key.
+    interpreter = DefaultGoalInterpreter()
+
+    # Act
+    brief = await interpreter.interpret("  Improve my English to CLB 10  ")
+
+    # Assert — a sensible default brief from the (trimmed) topic, with no inferred level/prefs, so
+    # the clarifier offers the learner the chance to fill them in.
+    assert brief.subject == "Improve my English to CLB 10"
+    assert brief.goal == "Improve my English to CLB 10"
+    assert brief.target_level == Level.NOT_APPLICABLE
+    assert brief.preferences == Preferences()

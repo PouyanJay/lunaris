@@ -1,12 +1,13 @@
 from .agent_event import AgentEvent
 from .base import CourseModel
-from .clarifier import Clarification
+from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuestion
 from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Preferences, TargetStandard
 from .course_run import CourseRun
 from .enums import (
     AgentEventKind,
     BloomLevel,
+    ClarifierKind,
     CourseStatus,
     DetailDepth,
     LanguageStyle,
@@ -73,6 +74,10 @@ __all__ = [
     "Citation",
     "Claim",
     "Clarification",
+    "Clarifier",
+    "ClarifierKind",
+    "ClarifierOption",
+    "ClarifierQuestion",
     "ComparisonRow",
     "ComparisonSpec",
     "Course",

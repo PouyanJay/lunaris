@@ -10,6 +10,11 @@ from lunaris_agent import (
     build_orchestrator,
     build_stub_orchestrator,
 )
+from lunaris_agent.subagents.goal_interpreter import (
+    ClaudeGoalInterpreter,
+    DefaultGoalInterpreter,
+    IGoalInterpreter,
+)
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryRunEventStore,
@@ -28,8 +33,9 @@ from .service import CourseService, PipelineFactory
 
 logger = structlog.get_logger()
 
-# Worker-tier model for the (cheap, short) Explain calls; overridable via the usual env knob.
-_EXPLAIN_MODEL = "claude-haiku-4-5-20251001"
+# Worker-tier model for the cheap, short calls (Explain + the P7.5 brief interpretation behind the
+# clarifier); overridable via the usual env knob. One literal so a model bump is a single edit.
+_WORKER_MODEL = "claude-haiku-4-5-20251001"
 
 # LUNARIS_PIPELINE → the per-run pipeline factory. ``agent`` (the default) is the real deep-agent
 # harness; ``stub`` is the deterministic no-key demo; ``live`` is the legacy orchestrator.
@@ -174,8 +180,33 @@ def get_explainer() -> IExplainer | None:
     if not explain_is_available():
         return None
     if _explainer is None:
-        _explainer = ClaudeExplainer(os.getenv("LUNARIS_MODEL_WORKER", _EXPLAIN_MODEL))
+        _explainer = ClaudeExplainer(os.getenv("LUNARIS_MODEL_WORKER", _WORKER_MODEL))
     return _explainer
 
 
 ExplainerDep = Annotated[IExplainer | None, Depends(get_explainer)]
+
+
+# One goal interpreter per process (built lazily on first availability), mirroring ``_explainer``.
+# NOT cached as None — a key can be added at runtime via the Settings UI, so availability is
+# re-checked each call: a present key returns the cached Claude client, an absent one the fallback.
+_goal_interpreter: ClaudeGoalInterpreter | None = None
+
+
+def get_goal_interpreter() -> IGoalInterpreter:
+    """The brief interpreter behind the P7.5 clarifier (phase 1).
+
+    The live Claude interpreter (worker tier) when an Anthropic key is reachable (same env source as
+    Explain — a key in ``.env`` or the Settings UI), else a deterministic topic-derived fallback so
+    the brief endpoint still renders the clarifier with sensible defaults without a key. The Claude
+    client is lazy, so building it makes no network call; it is cached per process like Explain.
+    """
+    global _goal_interpreter
+    if not explain_is_available():
+        return DefaultGoalInterpreter()
+    if _goal_interpreter is None:
+        _goal_interpreter = ClaudeGoalInterpreter(os.getenv("LUNARIS_MODEL_WORKER", _WORKER_MODEL))
+    return _goal_interpreter
+
+
+GoalInterpreterDep = Annotated[IGoalInterpreter, Depends(get_goal_interpreter)]

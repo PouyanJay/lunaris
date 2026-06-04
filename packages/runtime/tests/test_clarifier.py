@@ -7,9 +7,12 @@ field — folding self-reported knowledge into ``assumed_prior`` so the existing
 (which reads it) produces a sharper frontier, with no separate frontier path.
 """
 
-from lunaris_runtime.clarifier import apply_clarification
+from lunaris_runtime.clarifier import apply_clarification, build_clarifier
 from lunaris_runtime.schema import (
     Clarification,
+    Clarifier,
+    ClarifierKind,
+    ClarifierQuestion,
     CourseBrief,
     DetailDepth,
     LanguageStyle,
@@ -114,3 +117,78 @@ def test_partial_preference_answer_keeps_the_unspecified_axis_inferred() -> None
     # Assert — the answered axis lands; the unspecified one keeps the inference.
     assert merged.preferences.detail_depth == DetailDepth.CONCISE
     assert merged.preferences.language_style == LanguageStyle.BALANCED
+
+
+# --- build_clarifier (the "infer" half: derive the confirm questions from the inferred brief) ---
+
+
+def _question(clarifier: Clarifier, qid: str) -> ClarifierQuestion:
+    return next(q for q in clarifier.questions if q.id == qid)
+
+
+def _recommended(clarifier: Clarifier, qid: str) -> str:
+    """The sole recommended option value for a CHOICE question — asserting exactly one is picked."""
+    chosen = [o.value for o in _question(clarifier, qid).options if o.recommended]
+    assert len(chosen) == 1, f"expected exactly one recommended option for {qid!r}, got {chosen}"
+    return chosen[0]
+
+
+def test_build_clarifier_asks_level_plus_the_four_steering_inputs() -> None:
+    # Act
+    clarifier = build_clarifier(_inferred_brief())
+
+    # Assert — the §12.1 inputs: level (band) + current knowledge + background + detail + language.
+    assert [q.id for q in clarifier.questions] == [
+        "level",
+        "knowledge",
+        "background",
+        "detail",
+        "language",
+    ]
+
+
+def test_level_question_recommends_the_inferred_level_and_covers_every_band() -> None:
+    # Arrange — the interpreter inferred INTERMEDIATE.
+    brief = _inferred_brief()
+
+    # Act
+    level_q = _question(build_clarifier(brief), "level")
+
+    # Assert — a closed choice over all Level bands; the inferred value pre-picked exactly once.
+    assert level_q.kind == ClarifierKind.CHOICE
+    assert {o.value for o in level_q.options} == {level.value for level in Level}
+    recommended = [o for o in level_q.options if o.recommended]
+    assert [o.value for o in recommended] == [Level.INTERMEDIATE.value]
+
+
+def test_preference_questions_recommend_the_inferred_preferences() -> None:
+    # Arrange — inferred BALANCED on both axes.
+    clarifier = build_clarifier(_inferred_brief())
+
+    # Assert — each preference question pre-picks the inferred value (zero-friction one-confirm).
+    assert _question(clarifier, "detail").kind == ClarifierKind.CHOICE
+    assert _recommended(clarifier, "detail") == DetailDepth.BALANCED.value
+    assert _recommended(clarifier, "language") == LanguageStyle.BALANCED.value
+
+
+def test_text_questions_are_free_text_and_seed_knowledge_from_the_inferred_prior() -> None:
+    # Arrange — the brief inferred assumed_prior "everyday English".
+    clarifier = build_clarifier(_inferred_brief())
+
+    # Assert — knowledge + background are free-TEXT; knowledge is seeded from the inferred prior so
+    # the learner can confirm or refine it.
+    knowledge_q = _question(clarifier, "knowledge")
+    background_q = _question(clarifier, "background")
+    assert knowledge_q.kind == ClarifierKind.TEXT
+    assert background_q.kind == ClarifierKind.TEXT
+    assert "everyday English" in knowledge_q.placeholder
+    assert background_q.prompt
+    assert "engineer" in background_q.placeholder  # a concrete example hint, not just non-empty
+
+
+def test_choice_options_carry_human_labels_distinct_from_the_enum_values() -> None:
+    # Act
+    level_q = _question(build_clarifier(_inferred_brief()), "level")
+
+    # Assert — every option has a non-empty human label (the web renders labels, not enum values).
+    assert all(o.label for o in level_q.options)
