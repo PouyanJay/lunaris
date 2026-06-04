@@ -6,7 +6,7 @@ from lunaris_runtime.schema import AuthorityKind, TrustTier
 from lunaris_grounding.authorities.authority import SourceAuthority
 from lunaris_grounding.authorities.scored_source import ScoredSource
 from lunaris_grounding.authorities.store_protocol import ISourceAuthorityStore
-from lunaris_grounding.discovery.domain_trust import host
+from lunaris_grounding.discovery.domain_trust import classify_domain, host
 from lunaris_grounding.ingest.source import CandidateSource
 
 logger = structlog.get_logger()
@@ -22,7 +22,9 @@ _DEFAULT_PRIORS: Mapping[TrustTier, float] = {
     TrustTier.OPEN: 0.50,
     TrustTier.BLOCKED: 0.0,
 }
-_UNTIERED_PRIOR = 0.50
+# An un-tiered source (no tier could be resolved at all) gets the same prior as the open web — never
+# higher. Derived from the OPEN prior so the two can't silently diverge when T2 tunes the blend.
+_UNTIERED_PRIOR = _DEFAULT_PRIORS[TrustTier.OPEN]
 
 
 class CredibilityScorer:
@@ -69,16 +71,21 @@ class CredibilityScorer:
             return source.trust_tier
         if not source.url:
             return None
-        await self._ensure_index()
-        assert self._index is not None  # populated by _ensure_index
-        authority = self._lookup(host(source.url), self._index)
-        return authority.trust_tier if authority is not None else TrustTier.OPEN
+        authority = self._lookup(host(source.url), await self._ensure_index())
+        if authority is not None:
+            return authority.trust_tier
+        # No curated row: fall back to the deterministic, in-code classifier — gov/standards →
+        # OFFICIAL, academic → REPUTABLE, a denylisted domain or an internal IP (the SSRF guard) →
+        # BLOCKED, the rest → OPEN. So an authoritative domain is recognised before it is curated,
+        # and the security boundary stays in pure code rather than depending on a DB read.
+        return classify_domain(source.url)
 
-    async def _ensure_index(self) -> None:
+    async def _ensure_index(self) -> dict[str, SourceAuthority]:
         """Load + index the authorities by domain on first use (cached for the scorer's lifetime).
 
         Only SPINE and DENYLIST (global) authorities are indexed: a PACK is field-scoped and must
         not promote a source outside its field, so it stays inactive until field context arrives.
+        Returns the index (also cached on the instance) so callers get a narrowed type, no assert.
         """
         if self._index is None:
             self._index = {
@@ -86,6 +93,7 @@ class CredibilityScorer:
                 for a in await self._authorities.list_all()
                 if a.kind is not AuthorityKind.PACK
             }
+        return self._index
 
     @staticmethod
     def _lookup(domain: str, index: Mapping[str, SourceAuthority]) -> SourceAuthority | None:
