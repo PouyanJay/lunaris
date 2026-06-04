@@ -42,23 +42,215 @@ async def test_verifier_grounds_only_against_the_courses_own_corpus() -> None:
     assert foreign.verifier_status is VerifierStatus.CUT
 
 
-async def test_permissive_trust_floor_passes_a_tiered_citation() -> None:
-    # Arrange — a credible, tiered citation. The T0 trust floor is permissive (it logs the tier but
-    # never blocks), so a supported claim stays SUPPORTED. T3 makes this gate strict by risk tier;
-    # this pins the seam's current behaviour so that change is visible when it lands.
+def _tiered(
+    cid: str,
+    *,
+    tier: TrustTier | None = None,
+    credibility: float | None = None,
+    url: str | None = None,
+    score: float = 0.9,
+) -> Evidence:
+    # All-None tier/credibility simulates a pre-P6.2 Citation (un-classified legacy evidence).
     citation = Citation(
-        id="c1", title="Source", snippet="...", trust_tier=TrustTier.OPEN, credibility=0.5
+        id=cid,
+        title=f"Source {cid}",
+        snippet="...",
+        url=url,
+        trust_tier=tier,
+        credibility=credibility,
     )
-    retriever = StubEvidenceRetriever(lambda _c: [Evidence(citation=citation, score=0.9)])
+    return Evidence(citation=citation, score=score)
+
+
+# --- T3: the risk-tiered trust floor (orthogonal to the assessor-score threshold) -------------
+
+
+async def test_high_risk_floor_cuts_a_low_trust_single_source() -> None:
+    # Arrange — the assessor supports it, but the only evidence is an OPEN-tier single source with
+    # no corroboration: it must not clear the HIGH trust floor (the §4c "T3-only, don't ship" rule).
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered("c1", tier=TrustTier.OPEN, credibility=0.6, url="https://blog.example/x")
+        ]
+    )
     verifier = Verifier(retriever, StubSupportAssessor())
-    claim = Claim(text="a grounded claim")
+    claim = Claim(text="a high-stakes claim")
 
     # Act
     await verifier.verify([claim], risk_tier=RiskTier.HIGH)
 
-    # Assert — the permissive floor does not block a low-tier citation (yet).
+    # Assert — the trust floor cuts it even though the assessor's score was high.
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_high_risk_floor_accepts_a_reputable_credible_source() -> None:
+    # Arrange — a curated, credible source clears the floor at HIGH.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered(
+                "c1", tier=TrustTier.REPUTABLE, credibility=0.75, url="https://en.wikipedia.org/x"
+            )
+        ]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a high-stakes claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert
     assert claim.verifier_status is VerifierStatus.SUPPORTED
     assert claim.supported_by == "c1"
+
+
+async def test_high_risk_floor_accepts_a_vouched_source() -> None:
+    # Arrange — the learner vouched for it (manual ingest); a vouch clears the floor at HIGH.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered("c1", tier=TrustTier.VOUCHED, credibility=0.85, url="https://notes.example/x")
+        ]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a high-stakes claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+    assert claim.supported_by == "c1"
+
+
+async def test_high_risk_floor_cuts_a_reputable_source_below_the_credibility_floor() -> None:
+    # Arrange — REPUTABLE clears the tier rank, but credibility 0.69 < the 0.70 floor and there's no
+    # corroboration: the credibility arm of the HIGH gate must cut it (the AND, not just the tier).
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered(
+                "c1", tier=TrustTier.REPUTABLE, credibility=0.69, url="https://en.wikipedia.org/x"
+            )
+        ]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a high-stakes claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_high_risk_floor_cuts_an_official_source_with_no_credibility_score() -> None:
+    # Arrange — a pre-P6.2 OFFICIAL citation (tier set by classify_domain at ingest, but the scorer
+    # never ran → credibility None). Fail-secure: an unscored source can't clear the HIGH floor
+    # with no corroboration. A regression canary if the scorer/ingest order changes.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [_tiered("c1", tier=TrustTier.OFFICIAL, url="https://cdc.gov/x")]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a high-stakes claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_high_risk_floor_accepts_open_evidence_with_cross_source_agreement() -> None:
+    # Arrange — two INDEPENDENT domains corroborate the claim. Authority emerges from agreement
+    # (plan §4a): cross-source agreement clears the HIGH floor even for an open-web chosen source.
+    evidence = [
+        _tiered("c1", tier=TrustTier.OPEN, credibility=0.6, url="https://a.example/x"),
+        _tiered("c2", tier=TrustTier.OPEN, credibility=0.6, url="https://b.example/y", score=0.8),
+    ]
+    verifier = Verifier(StubEvidenceRetriever(lambda _c: evidence), StubSupportAssessor())
+    claim = Claim(text="a corroborated claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert — corroboration across two domains lifts it past the floor. (StubSupportAssessor picks
+    # the top-scoring evidence; c2 scores 0.8 < c1's 0.9, so the chosen citation is c1.)
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+    assert claim.supported_by == "c1"
+
+
+async def test_high_risk_floor_rejects_agreement_from_a_single_domain() -> None:
+    # Arrange — two chunks but the SAME domain: not independent corroboration, so the single
+    # poisoned-source case can't manufacture agreement from itself.
+    evidence = [
+        _tiered("c1", tier=TrustTier.OPEN, credibility=0.6, url="https://a.example/x"),
+        _tiered("c2", tier=TrustTier.OPEN, credibility=0.6, url="https://a.example/y", score=0.8),
+    ]
+    verifier = Verifier(StubEvidenceRetriever(lambda _c: evidence), StubSupportAssessor())
+    claim = Claim(text="a single-source claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_blocked_evidence_never_supports_even_at_low_risk() -> None:
+    # Arrange — a denylisted source. BLOCKED evidence is poison at any risk tier.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [_tiered("c1", tier=TrustTier.BLOCKED, credibility=0.0, url="https://bit.ly/x")]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a claim from a blocked source")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.LOW)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_low_risk_floor_accepts_a_single_open_source() -> None:
+    # Arrange — at LOW risk the floor only excludes blocked sources; an open-web source is recorded.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered("c1", tier=TrustTier.OPEN, credibility=0.6, url="https://blog.example/x")
+        ]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a casual claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.LOW)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+
+
+async def test_high_risk_floor_cuts_untiered_legacy_evidence() -> None:
+    # Arrange — a pre-P6.2 citation (no tier, no credibility) with no corroboration. At HIGH it
+    # can't clear the floor: un-classified evidence is treated as open web, not trusted by omission.
+    retriever = StubEvidenceRetriever(lambda _c: [_tiered("c1", url="https://legacy.example/x")])
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a high-stakes legacy claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_low_risk_accepts_untiered_legacy_evidence() -> None:
+    # Arrange — backward-compat: LOW is unchanged for un-tiered (pre-P6.2) evidence.
+    retriever = StubEvidenceRetriever(lambda _c: [_tiered("c1", url="https://legacy.example/x")])
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a casual legacy claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.LOW)
+
+    # Assert
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
 
 
 async def test_supported_claim_gets_citation_and_status() -> None:

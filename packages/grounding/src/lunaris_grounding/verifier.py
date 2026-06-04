@@ -1,6 +1,7 @@
 import structlog
-from lunaris_runtime.schema import Citation, Claim, RiskTier, VerifierStatus
+from lunaris_runtime.schema import Citation, Claim, RiskTier, TrustTier, VerifierStatus
 
+from lunaris_grounding.discovery.domain_trust import host
 from lunaris_grounding.evidence import Evidence
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
 
@@ -8,6 +9,28 @@ logger = structlog.get_logger()
 
 _HIGH_THRESHOLD = 0.85
 _LOW_THRESHOLD = 0.65
+
+# The risk-tiered trust floor (P6.2 §4c), orthogonal to the assessor-score thresholds above: those
+# gate how strongly evidence supports a claim, this gates how trustworthy the evidence is. Authority
+# order for the floor — VOUCHED (the user chose it) ranks with the curated tier; an un-tiered (pre-
+# P6.2) citation is treated as open web, never trusted by omission.
+_TIER_RANK: dict[TrustTier, int] = {
+    TrustTier.BLOCKED: 0,
+    TrustTier.OPEN: 1,
+    TrustTier.REPUTABLE: 2,
+    TrustTier.VOUCHED: 2,
+    TrustTier.OFFICIAL: 3,
+}
+_UNTIERED_RANK = _TIER_RANK[TrustTier.OPEN]
+# A HIGH-risk claim needs curated-or-better evidence (>= REPUTABLE) AND a credibility floor — or
+# (per plan §4a) cross-source agreement (>=2 independent domains), so authority can emerge from
+# agreement when no single source is curated. LOW risk only excludes blocked sources.
+_HIGH_TIER_FLOOR = _TIER_RANK[TrustTier.REPUTABLE]
+# 0.70 sits just under the REPUTABLE scorer prior (0.75) so a curated source clears it while a
+# nudged-up open-web source (max 0.65) does not; recalibrate against the T5 poisoning eval's FPR.
+_HIGH_CREDIBILITY_FLOOR = 0.70
+# Two distinct registrable domains is the minimum that precludes a source corroborating itself.
+_MIN_CORROBORATING_DOMAINS = 2
 
 
 class Verifier:
@@ -57,10 +80,11 @@ class Verifier:
                 self._cut_on_grounding_failure(claim, "claim_assessment_unavailable", exc)
                 continue
             chosen = next((e for e in evidence if e.citation.id == support.citation_id), None)
+            agreement = _has_cross_source_agreement(evidence)
             if (
                 support.score >= threshold
                 and chosen is not None
-                and self._within_trust_floor(chosen, risk_tier)
+                and self._within_trust_floor(chosen, agreement, risk_tier)
             ):
                 claim.supported_by = chosen.citation.id
                 claim.verifier_status = VerifierStatus.SUPPORTED
@@ -79,21 +103,40 @@ class Verifier:
         )
         return list(citations.values())
 
-    def _within_trust_floor(self, chosen: Evidence, risk_tier: RiskTier) -> bool:
+    def _within_trust_floor(self, chosen: Evidence, agreement: bool, risk_tier: RiskTier) -> bool:
         """Whether the chosen evidence's authority clears the risk-tiered trust floor (P6.2 §4c).
 
         Orthogonal to the assessor-score threshold above: that gates how strongly the evidence
-        supports the claim; this gates how trustworthy it is. T0 skeleton: always permissive so
-        behaviour is unchanged; the debug log keeps the decision observable. T3 makes it strict.
+        supports the claim; this gates how trustworthy it is. A blocked source is poison everywhere.
+        At LOW risk nothing else is excluded (the open web is recorded, not refused). At HIGH the
+        evidence must be curated-or-better (>= REPUTABLE, which VOUCHED clears) AND credible — or
+        corroborated across >=2 independent domains (``agreement``, over the retrieved set), so a
+        single low-trust source can't ground a high-stakes claim (the confirmation-bias trap)
+        while real cross-source agreement still can. A cut claim flows through the authoring loop's
+        existing triage to ``needs_review``.
         """
         citation = chosen.citation
+        rank = _TIER_RANK.get(citation.trust_tier, _UNTIERED_RANK)
+        credibility = citation.credibility if citation.credibility is not None else 0.0
+        passed = self._floor_ok(rank, credibility, agreement, risk_tier)
         logger.debug(
             "trust_floor_evaluated",
             risk_tier=risk_tier.value,
             tier=citation.trust_tier.value if citation.trust_tier is not None else None,
             credibility=citation.credibility,
+            cross_source_agreement=agreement,
+            passed=passed,
         )
-        return True
+        return passed
+
+    @staticmethod
+    def _floor_ok(rank: int, credibility: float, agreement: bool, risk_tier: RiskTier) -> bool:
+        if rank == _TIER_RANK[TrustTier.BLOCKED]:
+            return False  # a blocked/denylisted source never supports a claim, at any risk
+        if risk_tier is not RiskTier.HIGH:
+            return True  # LOW: the open web is recorded, only blocked is refused
+        curated_and_credible = rank >= _HIGH_TIER_FLOOR and credibility >= _HIGH_CREDIBILITY_FLOOR
+        return curated_and_credible or agreement
 
     def _cut_on_grounding_failure(self, claim: Claim, event: str, exc: Exception) -> None:
         """Fail safe: an unreachable grounding dependency CUTs the claim, never crashes.
@@ -112,3 +155,25 @@ class Verifier:
                 raise AssertionError(
                     f"publish gate violated: unsupported live claim {claim.text!r}"
                 )
+
+
+def _has_cross_source_agreement(evidence: list[Evidence]) -> bool:
+    """Whether the retrieved evidence is corroborated across >=2 independent domains (§4b).
+
+    The plan's operationalization of cross-source agreement: count distinct *registrable* domains
+    among the retrieved chunks. Grouping by registrable domain (not full host) means two subdomains
+    of one site (``blog.mit.edu`` + ``courses.mit.edu``) are one voice, not corroboration — so a
+    source can't manufacture agreement from its own subdomains. Evidence with no URL can't be
+    attributed to a domain and doesn't count.
+    """
+    domains = {_registrable_domain(e.citation.url) for e in evidence if e.citation.url}
+    domains.discard("")
+    return len(domains) >= _MIN_CORROBORATING_DOMAINS
+
+
+def _registrable_domain(url: str) -> str:
+    """A conservative eTLD+1 approximation: the last two labels of the host (``a.b.mit.edu`` →
+    ``mit.edu``). Without an eTLD list this over-merges multi-part TLDs (``bbc.co.uk`` → ``co.uk``),
+    which only *under-counts* agreement — the moat-safe direction (it cuts more, never less)."""
+    labels = host(url).split(".")
+    return ".".join(labels[-2:]) if len(labels) >= 2 else ""
