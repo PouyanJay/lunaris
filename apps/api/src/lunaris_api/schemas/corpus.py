@@ -1,17 +1,39 @@
+from typing import Literal, Self
+
 from lunaris_grounding import CorpusSourceSummary
 from lunaris_runtime.schema import AcquisitionMode, SourceType, TrustTier
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ..corpus_service import IngestOutcome
 from .base import CamelModel
 
 
-class CorpusTextRequest(CamelModel):
-    """Request body for adding a pasted/plain-text source to a course corpus (P6.1 manual mode)."""
+class CorpusSourceRequest(CamelModel):
+    """Request body for adding a pasted-text or URL source to a course corpus (P6.1 manual mode).
+
+    ``kind`` discriminates: ``text`` carries ``text``; ``url`` carries ``url``. File uploads go to
+    the separate multipart ``/sources/file`` endpoint (binary bodies aren't JSON).
+    """
 
     course_id: str = Field(min_length=1)
+    kind: Literal["text", "url"]
     title: str | None = Field(default=None, max_length=300)
-    text: str = Field(min_length=1, max_length=200_000)
+    text: str | None = Field(default=None, max_length=200_000)
+    url: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def _payload_matches_kind(self) -> Self:
+        if self.kind == "text" and not (self.text and self.text.strip()):
+            raise ValueError("kind 'text' requires non-empty text")
+        if self.kind == "url":
+            if not (self.url and self.url.strip()):
+                raise ValueError("kind 'url' requires a url")
+            # Reject non-http(s) schemes at the boundary (file://, ftp://, javascript:, …) so they
+            # never reach the fetcher; internal-IP/denylist SSRF is caught in the service via
+            # classify_domain (the shared discovery guard).
+            if not self.url.strip().lower().startswith(("http://", "https://")):
+                raise ValueError("url must be http(s)")
+        return self
 
 
 class IngestResultView(CamelModel):

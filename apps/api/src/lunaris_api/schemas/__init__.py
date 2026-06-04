@@ -1,13 +1,13 @@
 from .brief_response import BriefResponse
-from .corpus import CorpusSourceView, CorpusTextRequest, IngestResultView
+from .corpus import CorpusSourceRequest, CorpusSourceView, IngestResultView
 from .course_request import CourseRequest
 from .explain import ExplainRequest, ExplainResponse
 from .settings import SecretStatusView, SecretValue, SettingsView
 
 __all__ = [
     "BriefResponse",
+    "CorpusSourceRequest",
     "CorpusSourceView",
-    "CorpusTextRequest",
     "CourseRequest",
     "ExplainRequest",
     "ExplainResponse",

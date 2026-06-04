@@ -38,7 +38,14 @@ from lunaris_grounding.discovery import (
 )
 from lunaris_grounding.embeddings import IEmbedder, StubEmbedder, VoyageEmbedder
 from lunaris_grounding.evidence import Evidence, Support
-from lunaris_grounding.ingest import CandidateSource, CorpusIngestor, chunk_text
+from lunaris_grounding.ingest import (
+    CandidateSource,
+    CorpusIngestor,
+    DocumentExtractor,
+    ExtractedDocument,
+    IDocumentExtractor,
+    chunk_text,
+)
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
 from lunaris_grounding.retrievers import PgVectorRetriever, StubEvidenceRetriever
 from lunaris_grounding.verifier import Verifier
@@ -48,11 +55,14 @@ __all__ = [
     "ClaudeSupportAssessor",
     "CorpusIngestor",
     "CorpusSourceSummary",
+    "DocumentExtractor",
     "Evidence",
     "ExtractedContent",
+    "ExtractedDocument",
     "GroundingDocument",
     "IContentExtractor",
     "ICorpusStore",
+    "IDocumentExtractor",
     "IEmbedder",
     "IEvidenceRetriever",
     "ISearchProvider",
