@@ -23,11 +23,33 @@ the model can't talk its way past them:
 The agent reasons about *what to do next*; the moats and a deterministic finalize step guarantee
 *what ships*.
 
+## Relevant, not just correct
+
+Ordering and grounding don't make a course about the *right thing at the right level*. Ask for
+*"Improve my English to CLB 10"* (an advanced band) and a naive generator enumerates the whole subject
+from *"the English alphabet"* — coherent, correctly ordered, and useless. So Lunaris runs the front of
+the pipeline a good tutor runs first: **interpret** the request into a typed goal-for-a-learner brief →
+**research** the real standard → **model the learner's frontier** (what to skip) → **scope to the gap**
+→ design backward and **curate** vetted external resources per lesson. The moats then operate over
+*relevant, scoped* input. A learner can optionally **confirm or adjust** the inferred level / prior
+knowledge / depth / style before building (the default is one click).
+
+Honest about what this needs: the **relevance fix itself needs only an Anthropic key** — the level-aware
+scoping is prompt-driven. **Research grounding and curated resources are enhancements gated on
+`SEARCH_API_KEY`** (and an optional `YOUTUBE_API_KEY` for richer video); without them the build still
+produces a relevant, right-level course and says so (`research: unavailable`, no resources) rather than
+faking either. Full detail + the cost/budget model: [documentation/relevance-model.md](documentation/relevance-model.md).
+
 ## Architecture at a glance
 
 - **Agent harness** (`packages/agent`, `lunaris_agent.harness`) — a `create_deep_agent` planner that
-  calls the moat tools and delegates Merrill lesson authoring to a LangGraph
-  **author → verify → revise** subagent. Runs as `LUNARIS_PIPELINE=agent` (the default).
+  runs the relevance front (interpret → research → model-learner → gap-scoped extraction →
+  competency-mapped design → resource curation), calls the moat tools, and delegates Merrill lesson
+  authoring to a LangGraph **author → verify → revise** subagent. Runs as `LUNARIS_PIPELINE=agent`
+  (the default).
+- **Shared discovery** (`packages/grounding`, `lunaris_grounding.discovery`) — one search provider
+  (Tavily) + content extractor (Trafilatura) + domain-trust model, shared by research and resource
+  curation; key-gated on `SEARCH_API_KEY`, with deterministic stubs otherwise.
 - **MCP registry** (`lunaris_agent.mcp_registry`) — the moats exposed as FastMCP tools (`lunaris-mcp`).
 - **Moats** — `packages/graph` (prerequisite graph) and `packages/grounding` (retrieval + verifier;
   Supabase **pgvector** + Voyage embeddings when configured, a conservative stub otherwise).
@@ -67,8 +89,19 @@ make test       # Python + web test suites
 make lint       # ruff + typecheck + eslint gates
 ```
 
-Configuration lives in `.env` (copied from `.env.sample` on first run). A real key unlocks live
-Claude generation; adding Supabase + Voyage keys unlocks real pgvector grounding.
+Configuration lives in `.env` (copied from `.env.sample` on first run). Every external key is
+**optional** — each unlocks a live feature, and its absence falls back to a deterministic stub, so the
+no-key path always works:
+
+| Key | Unlocks | Absent |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Live Claude (the `agent`/`live` pipelines, the relevance front, every `-m eval`) | The deterministic `stub` pipeline |
+| `SEARCH_API_KEY` (Tavily) | Standard research + curated per-lesson resources (metered, per-build budget) | `research: unavailable`, no resources — the course still builds at the right level |
+| `YOUTUBE_API_KEY` | Richer video resources (duration / channel) | Video candidates via the shared search |
+| `EMBEDDINGS_API_KEY` (Voyage) + Supabase | Real pgvector grounding → claim-level citations | The verifier fails safe (cuts every claim → *Needs review*) |
+
+See [documentation/relevance-model.md](documentation/relevance-model.md) for the relevance pipeline and
+its cost/budget model.
 
 ## Development
 
