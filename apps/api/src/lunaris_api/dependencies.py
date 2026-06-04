@@ -17,8 +17,11 @@ from lunaris_agent.subagents.goal_interpreter import (
 )
 from lunaris_grounding import (
     InMemoryCorpusStore,
+    InMemorySourceAuthorityStore,
+    ISourceAuthorityStore,
     StubEmbedder,
     SupabaseCorpusStore,
+    SupabaseSourceAuthorityStore,
     VoyageEmbedder,
 )
 from lunaris_runtime.persistence import (
@@ -159,6 +162,25 @@ def get_corpus_service(settings: Annotated[Settings, Depends(get_settings)]) -> 
 
 
 CorpusServiceDep = Annotated[CorpusService, Depends(get_corpus_service)]
+
+# The editable trust config (P6.2), one per process (same singleton rationale as the corpus store):
+# an in-memory config must be shared so an added authority survives for a later list/delete within
+# the process; the Supabase store is shared so its lazy client is built once. The in-memory store is
+# the no-key fallback (empty + lost on restart — the durable, seeded config requires Supabase).
+_in_memory_authority_store = InMemorySourceAuthorityStore()
+_supabase_authority_store = SupabaseSourceAuthorityStore()
+
+
+def get_authority_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ISourceAuthorityStore:
+    """The trust-config store: Supabase (the seeded, durable table) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_authority_store
+    return _in_memory_authority_store
+
+
+AuthorityStoreDep = Annotated[ISourceAuthorityStore, Depends(get_authority_store)]
 
 # One SecretStore per secrets-file path (it owns process env + the on-disk file), so all
 # requests share the same in-memory + on-disk state. Tests override get_secret_store.

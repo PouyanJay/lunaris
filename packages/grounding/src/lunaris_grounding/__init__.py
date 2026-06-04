@@ -9,7 +9,23 @@ are all Protocols so the embedding provider, vector backend and model stay swapp
 tests run against an in-memory cosine store with a deterministic stub embedder.
 """
 
-from lunaris_grounding.assessors import ClaudeSupportAssessor, StubSupportAssessor
+from lunaris_grounding.assessors import (
+    ClaudeSupportAssessor,
+    StubSupportAssessor,
+    render_evidence,
+)
+from lunaris_grounding.authorities import (
+    CredibilityScorer,
+    ICredibilityScorer,
+    InMemorySourceAuthorityStore,
+    IScholarlyRegistry,
+    ISourceAuthorityStore,
+    ScholarlyRecord,
+    ScoredSource,
+    SourceAuthority,
+    StubScholarlyRegistry,
+    SupabaseSourceAuthorityStore,
+)
 from lunaris_grounding.corpus import (
     CorpusSourceSummary,
     GroundingDocument,
@@ -57,6 +73,7 @@ __all__ = [
     "ClaudeSupportAssessor",
     "CorpusIngestor",
     "CorpusSourceSummary",
+    "CredibilityScorer",
     "DocumentExtractor",
     "Evidence",
     "ExtractedContent",
@@ -65,25 +82,34 @@ __all__ = [
     "GroundingDocument",
     "IContentExtractor",
     "ICorpusStore",
+    "ICredibilityScorer",
     "IDocumentExtractor",
     "IEmbedder",
     "IEvidenceRetriever",
+    "IScholarlyRegistry",
     "ISearchProvider",
+    "ISourceAuthorityStore",
     "ISupportAssessor",
     "IVideoSource",
     "InMemoryCorpusStore",
+    "InMemorySourceAuthorityStore",
     "PgVectorRetriever",
     "ResearchBudget",
     "ResourceBudget",
+    "ScholarlyRecord",
+    "ScoredSource",
     "SearchResult",
     "SearchVideoSource",
+    "SourceAuthority",
     "StubContentExtractor",
     "StubEmbedder",
     "StubEvidenceRetriever",
+    "StubScholarlyRegistry",
     "StubSearchProvider",
     "StubSupportAssessor",
     "StubVideoSource",
     "SupabaseCorpusStore",
+    "SupabaseSourceAuthorityStore",
     "Support",
     "TavilySearchProvider",
     "TrafilaturaContentExtractor",
@@ -95,4 +121,5 @@ __all__ = [
     "classify_domain",
     "host",
     "ingest_directory",
+    "render_evidence",
 ]

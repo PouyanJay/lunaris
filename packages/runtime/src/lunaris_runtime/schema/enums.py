@@ -263,3 +263,34 @@ class AcquisitionMode(StrEnum):
     MANUAL = "manual"
     AUTO = "auto"
     SEED = "seed"
+
+
+class AuthorityKind(StrEnum):
+    """How an entry in the editable ``source_authorities`` config (P6.2) acts on a domain.
+
+    The authority table is a *prior, not a gate* (plan §4a): ``SPINE`` = a universally
+    authoritative domain (Wikipedia, standards bodies) good across every topic; ``PACK`` = a
+    per-field authority (paired with a ``SubjectField``) that only counts for runs in that field;
+    ``DENYLIST`` = a known-bad domain that is never ingested or shown. A SPINE/PACK hit sets the
+    domain's *tier prior* only — it never inflates the credibility score (a domain stays on-topic).
+    """
+
+    SPINE = "spine"
+    PACK = "pack"
+    DENYLIST = "denylist"
+
+
+class SubjectField(StrEnum):
+    """The subject field a course is classified into (P6.2), selecting which authority packs apply.
+
+    Authority is topic-relative (plan §4a): PubMed is authoritative for medicine and irrelevant for
+    medieval history. A run loads the matching field pack(s) + the universal spine; an unmatched
+    field falls back to spine + the topic-relative signals, degrading gracefully. ``SHARED`` tags
+    top multidisciplinary venues (Nature, Science, PNAS) that count across every field.
+    """
+
+    CS_ML = "cs_ml"
+    MEDICINE = "medicine"
+    PHYSICS = "physics"
+    CHEMISTRY = "chemistry"
+    SHARED = "shared"

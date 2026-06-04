@@ -162,6 +162,26 @@ export type SourceType =
   | "reference"
   | "web";
 
+/** How a trust-config entry acts on a domain (mirrors AuthorityKind, P6.2): a `spine` domain is
+ *  authoritative across every topic, a `pack` domain only for runs in its `field`, a `denylist`
+ *  domain is never ingested. A spine/pack hit is a tier *prior*, not a credibility boost. */
+export type AuthorityKind = "spine" | "pack" | "denylist";
+
+/** The subject field a course is classified into (mirrors SubjectField, P6.2), selecting which
+ *  authority packs apply. `shared` tags top multidisciplinary venues that count across every field. */
+export type SubjectField = "cs_ml" | "medicine" | "physics" | "chemistry" | "shared";
+
+/** One row of the editable trust config (P6.2; mirrors the API SourceAuthorityView). Identity is
+ *  `(domain, field)`. `field` is set only for a `pack`. */
+export interface SourceAuthority {
+  domain: string;
+  kind: AuthorityKind;
+  tier: TrustTier;
+  field: SubjectField | null;
+  sourceType: SourceType | null;
+  note: string | null;
+}
+
 /** The kind of a curated external learning resource (mirrors ResourceKind). */
 export type ResourceKind = "video" | "article" | "docs" | "practice" | "tool" | "reference";
 

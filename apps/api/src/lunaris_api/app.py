@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from lunaris_runtime.logging import configure_logging
 
 from .config import get_settings
-from .routers import briefs, corpus, courses, explain, health, runs
+from .routers import authorities, briefs, corpus, courses, explain, health, runs
 from .routers import settings as settings_router
 
 
@@ -30,4 +30,5 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router)
     app.include_router(explain.router)
     app.include_router(corpus.router)
+    app.include_router(authorities.router)
     return app
