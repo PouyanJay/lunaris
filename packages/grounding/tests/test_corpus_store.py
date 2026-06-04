@@ -1,4 +1,6 @@
+import pytest
 from lunaris_grounding import GroundingDocument, InMemoryCorpusStore
+from lunaris_runtime.schema import AcquisitionMode, SourceType, TrustTier
 
 
 def _doc(doc_id: str, kc_id: str, embedding: tuple[float, ...]) -> GroundingDocument:
@@ -60,6 +62,94 @@ async def test_match_filters_by_kc_id() -> None:
 
     # Assert
     assert [r.citation.id for r in results] == ["y"]
+
+
+async def test_match_carries_trust_and_provenance_onto_the_citation() -> None:
+    # Arrange — a document ingested with the full P6.0 trust/provenance set.
+    store = InMemoryCorpusStore()
+    await store.upsert(
+        [
+            GroundingDocument(
+                id="d1",
+                kc_id="kc1",
+                content="Dijkstra relaxes edges to find shortest paths.",
+                embedding=(1.0, 0.0),
+                title="Algorithms",
+                url="https://en.wikipedia.org/wiki/Dijkstra",
+                trust_tier=TrustTier.REPUTABLE,
+                credibility=0.91,
+                source_type=SourceType.REFERENCE,
+                fetched_at="2026-06-03T00:00:00Z",
+                acquisition_mode=AcquisitionMode.SEED,
+                course_id="course-1",
+            )
+        ]
+    )
+
+    # Act — retrieve through the course-scoped path real grounding uses (not the legacy whole-corpus
+    # mode), so this proves the scoping guard and the citation enrichment don't conflict.
+    [evidence] = await store.match([1.0, 0.0], k=1, course_id="course-1")
+
+    # Assert — trust/provenance constructed at acquisition flows untouched onto the citation
+    # (provenance-is-structural). course_id/acquisition_mode stay corpus-internal (not on the wire).
+    citation = evidence.citation
+    assert citation.trust_tier is TrustTier.REPUTABLE
+    assert citation.credibility == 0.91
+    assert citation.source_type is SourceType.REFERENCE
+    assert citation.fetched_at == "2026-06-03T00:00:00Z"
+
+
+async def test_match_is_scoped_to_the_active_course() -> None:
+    # Arrange — the same vector under two different courses, plus a legacy null-course doc.
+    store = InMemoryCorpusStore()
+    await store.upsert(
+        [
+            _doc("legacy", "kc1", (1.0, 0.0)),  # course_id=None (pre-P6.0 / keyless ingest)
+            GroundingDocument(
+                id="c1", kc_id="kc1", content="c1", embedding=(1.0, 0.0), course_id="course-1"
+            ),
+            GroundingDocument(
+                id="c2", kc_id="kc1", content="c2", embedding=(1.0, 0.0), course_id="course-2"
+            ),
+        ]
+    )
+
+    # Act — retrieval for course-1 must see ONLY course-1's chunk: never course-2's, never the
+    # null-course one. Owner decision: per-course scoping is structural — no cross-topic bleed.
+    results = await store.match([1.0, 0.0], k=10, course_id="course-1")
+
+    # Assert
+    assert [r.citation.id for r in results] == ["c1"]
+
+
+async def test_match_without_a_course_filter_searches_all() -> None:
+    # Arrange — two course-keyed chunks plus a legacy null-course chunk (pre-P6.0 / keyless ingest).
+    store = InMemoryCorpusStore()
+    await store.upsert(
+        [
+            _doc("legacy", "kc1", (1.0, 0.0)),  # course_id=None
+            GroundingDocument(
+                id="c1", kc_id="kc1", content="c1", embedding=(1.0, 0.0), course_id="course-1"
+            ),
+            GroundingDocument(
+                id="c2", kc_id="kc1", content="c2", embedding=(1.0, 0.0), course_id="course-2"
+            ),
+        ]
+    )
+
+    # Act — the legacy/no-course path (course_id=None) keeps today's whole-corpus behaviour, so the
+    # not-yet-wired live verifier and the MCP surface are unaffected.
+    results = await store.match([1.0, 0.0], k=10)
+
+    # Assert — every chunk comes back when no filter is supplied, including the null-course one.
+    assert {r.citation.id for r in results} == {"legacy", "c1", "c2"}
+
+
+def test_grounding_document_rejects_out_of_range_credibility() -> None:
+    # A bad credibility must fail at the entity boundary (where it's acquired), not silently flow to
+    # the citation's [0, 1] wire check deep inside match().
+    with pytest.raises(ValueError, match=r"credibility must be in \[0, 1\]"):
+        GroundingDocument(id="d", kc_id="kc1", content="c", embedding=(1.0,), credibility=1.5)
 
 
 async def test_upsert_is_idempotent_on_id() -> None:

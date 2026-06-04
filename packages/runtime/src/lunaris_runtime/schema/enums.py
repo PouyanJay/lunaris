@@ -224,3 +224,37 @@ class TrustTier(StrEnum):
     REPUTABLE = "reputable"
     OPEN = "open"
     BLOCKED = "blocked"
+
+
+class SourceType(StrEnum):
+    """What KIND of source a grounding chunk is (P6.0), independent of its domain authority tier.
+
+    ``TrustTier`` says *where* a source sits in the authority order; ``source_type`` says *what it
+    is* — a peer-reviewed paper vs a preprint vs official docs vs a reference work — so an unknown
+    journal can still read as scholarly and a slick blog on a reputable host does not coast on its
+    host. Carried on the citation for the reader; the gate that *assigns* it from page structure is
+    P6.2. ``WEB`` is the unclassified open-web default.
+    """
+
+    PEER_REVIEWED = "peer_reviewed"
+    PREPRINT = "preprint"
+    OFFICIAL = "official"
+    DATABASE = "database"
+    DOCS = "docs"
+    REFERENCE = "reference"
+    WEB = "web"
+
+
+class AcquisitionMode(StrEnum):
+    """How a grounding chunk entered the corpus (P6.0) — the provenance of its acquisition.
+
+    One corpus, three acquisition adapters writing the same shape (plan §3): ``MANUAL`` = a user
+    uploaded / pasted / named it (P6.1); ``AUTO`` = the discovery agent found it on the web (P6.3);
+    ``SEED`` = ingested from a source the build already fetched + vetted (P7.2 research / P7.4
+    resources). The mode records which adapter the chunk arrived through, so mixed provenance stays
+    auditable in one corpus.
+    """
+
+    MANUAL = "manual"
+    AUTO = "auto"
+    SEED = "seed"

@@ -1,11 +1,17 @@
 import asyncio
 import os
+from enum import Enum
 
 from lunaris_runtime.resilience import retry_on_rate_limit
 from lunaris_runtime.schema import Citation
 
 from lunaris_grounding.corpus.document import GroundingDocument
 from lunaris_grounding.evidence import Evidence
+
+
+def _enum_value(member: Enum | None) -> str | None:
+    return member.value if member is not None else None
+
 
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
@@ -53,6 +59,13 @@ class SupabaseCorpusStore:
                 "url": document.url,
                 "run_id": document.run_id,
                 "embedding": list(document.embedding),
+                # The DB columns are plain text, not jsonb — serialise each enum to its .value.
+                "source_type": _enum_value(document.source_type),
+                "trust_tier": _enum_value(document.trust_tier),
+                "credibility": document.credibility,
+                "fetched_at": document.fetched_at,
+                "acquisition_mode": _enum_value(document.acquisition_mode),
+                "course_id": document.course_id,
             }
             for document in documents
         ]
@@ -68,13 +81,17 @@ class SupabaseCorpusStore:
         k: int = 5,
         min_score: float = 0.0,
         kc_id: str | None = None,
+        course_id: str | None = None,
     ) -> list[Evidence]:
         client = self._ensure_client()
-        # The RPC treats a NULL kc_filter as "no KC filter"; make that contract explicit by
-        # only sending the key when a KC is actually requested.
+        # The RPC treats a NULL kc_filter / course_filter as "no filter"; make that contract
+        # explicit by only sending a key when that scope is actually requested (so the legacy
+        # course_id=None path stays compatible with the pre-P6.0 function signature too).
         params: dict[str, object] = {"query_embedding": embedding, "match_count": k}
         if kc_id is not None:
             params["kc_filter"] = kc_id
+        if course_id is not None:
+            params["course_filter"] = course_id
         response = await retry_on_rate_limit(
             lambda: asyncio.to_thread(lambda: client.rpc(_MATCH_FN, params).execute())  # type: ignore[attr-defined]
         )
@@ -83,11 +100,16 @@ class SupabaseCorpusStore:
             score = float(row["similarity"])
             if score < min_score:
                 continue
+            # Read defensively: against an un-migrated RPC the trust columns are absent → None.
             citation = Citation(
                 id=str(row["id"]),
                 title=row.get("title"),
                 url=row.get("url"),
                 snippet=row.get("content"),
+                trust_tier=row.get("trust_tier"),
+                credibility=row.get("credibility"),
+                source_type=row.get("source_type"),
+                fetched_at=row.get("fetched_at"),
             )
             evidence.append(Evidence(citation=citation, score=score))
         return evidence

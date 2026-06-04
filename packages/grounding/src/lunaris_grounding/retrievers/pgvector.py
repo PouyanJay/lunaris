@@ -13,7 +13,10 @@ class PgVectorRetriever:
     cosine store in tests) — both injected, so neither the embedding provider nor the vector
     backend is hardwired. ``min_score`` floors retrieval relevance; the assessor then makes
     the independent supported/cut call downstream. Searches the whole course corpus by
-    default (``kc_id=None``) since the verifier sees only the claim text.
+    default (``kc_id=None``) since the verifier sees only the claim text. ``course_id`` scopes
+    retrieval to one course's chunks (P6.0): set it and the corpus can only return evidence
+    ingested for *this* course, never another topic's; left ``None`` (the legacy path), it
+    searches the whole corpus as before.
     """
 
     def __init__(
@@ -24,17 +27,23 @@ class PgVectorRetriever:
         k: int = _DEFAULT_K,
         min_score: float = _DEFAULT_MIN_SCORE,
         kc_id: str | None = None,
+        course_id: str | None = None,
     ) -> None:
         self._embedder = embedder
         self._store = store
         self._k = k
         self._min_score = min_score
         self._kc_id = kc_id
+        self._course_id = course_id
 
     async def retrieve(self, claim_text: str) -> list[Evidence]:
         embeddings = await self._embedder.embed([claim_text])
         if not embeddings:
             return []
         return await self._store.match(
-            embeddings[0], k=self._k, min_score=self._min_score, kc_id=self._kc_id
+            embeddings[0],
+            k=self._k,
+            min_score=self._min_score,
+            kc_id=self._kc_id,
+            course_id=self._course_id,
         )

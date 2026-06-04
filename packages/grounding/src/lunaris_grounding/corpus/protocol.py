@@ -22,4 +22,5 @@ class ICorpusStore(Protocol):
         k: int = 5,
         min_score: float = 0.0,
         kc_id: str | None = None,
+        course_id: str | None = None,
     ) -> list[Evidence]: ...
