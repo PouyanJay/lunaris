@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from lunaris_runtime.logging import configure_logging
 
 from .config import get_settings
-from .routers import briefs, courses, explain, health, runs
+from .routers import briefs, corpus, courses, explain, health, runs
 from .routers import settings as settings_router
 
 
@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
         # or the preflight 400s and the fetch surfaces as a network error in the UI.
         allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
-        expose_headers=["X-Run-Id"],
+        expose_headers=["X-Run-Id", "X-Request-Id"],
     )
     app.include_router(health.router)
     app.include_router(courses.router)
@@ -29,4 +29,5 @@ def create_app() -> FastAPI:
     app.include_router(runs.router)
     app.include_router(settings_router.router)
     app.include_router(explain.router)
+    app.include_router(corpus.router)
     return app

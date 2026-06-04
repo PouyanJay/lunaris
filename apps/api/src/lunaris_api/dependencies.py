@@ -15,6 +15,12 @@ from lunaris_agent.subagents.goal_interpreter import (
     DefaultGoalInterpreter,
     IGoalInterpreter,
 )
+from lunaris_grounding import (
+    InMemoryCorpusStore,
+    StubEmbedder,
+    SupabaseCorpusStore,
+    VoyageEmbedder,
+)
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryRunEventStore,
@@ -26,6 +32,7 @@ from lunaris_runtime.persistence import (
 )
 
 from .config import Settings, get_settings
+from .corpus_service import CorpusService
 from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
 from .secrets import KNOWN_SECRETS, AnthropicProbeValidator, ISecretValidator, SecretStore
@@ -132,6 +139,26 @@ def get_course_service(
 
 
 CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
+
+# Process-wide corpus collaborators (singletons, like the run store): the in-memory corpus must be
+# shared so a manually-ingested source survives for a later list/delete within the process; the
+# Supabase store + Voyage embedder are shared so their lazy clients are built once, not per request.
+# The in-memory store is the no-key fallback (lost on restart). Tests inject their own via override.
+_in_memory_corpus_store = InMemoryCorpusStore()
+_supabase_corpus_store = SupabaseCorpusStore()
+_voyage_embedder = VoyageEmbedder()
+
+
+def get_corpus_service(settings: Annotated[Settings, Depends(get_settings)]) -> CorpusService:
+    """The manual-ingest service: real Voyage embeddings + Supabase corpus when keyed, else the
+    in-memory store + a deterministic stub embedder (so manual ingest runs offline, non-durably)."""
+    if settings.has_supabase and settings.has_embeddings:
+        return CorpusService(_supabase_corpus_store, _voyage_embedder)
+    logger.info("corpus_service_in_memory", reason="supabase/embeddings creds unset")
+    return CorpusService(_in_memory_corpus_store, StubEmbedder())
+
+
+CorpusServiceDep = Annotated[CorpusService, Depends(get_corpus_service)]
 
 # One SecretStore per secrets-file path (it owns process env + the on-disk file), so all
 # requests share the same in-memory + on-disk state. Tests override get_secret_store.

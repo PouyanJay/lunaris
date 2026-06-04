@@ -27,6 +27,7 @@ class CandidateSource:
     fetched_at: str | None = None  # ISO-8601 instant, stamped at acquisition
     acquisition_mode: AcquisitionMode | None = None
     course_id: str | None = None
+    source_id: str | None = None  # groups a source's chunks (P6.1) for source-level list/delete
 
     def __post_init__(self) -> None:
         # Validate the credibility bound at acquisition so a bad score fails here, not deep in the

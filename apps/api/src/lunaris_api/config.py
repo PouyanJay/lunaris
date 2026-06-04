@@ -26,11 +26,17 @@ class Settings:
     secrets_path: Path
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
+    embeddings_api_key: str | None = None
 
     @property
     def has_supabase(self) -> bool:
         """Whether Supabase service-role creds are present (selects the durable run history)."""
         return bool(self.supabase_url and self.supabase_service_role_key)
+
+    @property
+    def has_embeddings(self) -> bool:
+        """Whether the embeddings key is present (the durable corpus needs it to ingest)."""
+        return bool(self.embeddings_api_key)
 
 
 @lru_cache
@@ -43,4 +49,5 @@ def get_settings() -> Settings:
         secrets_path=Path(os.getenv("LUNARIS_SECRETS_PATH", ".secrets/secrets.json")),
         supabase_url=os.getenv("SUPABASE_URL") or None,
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
+        embeddings_api_key=os.getenv("EMBEDDINGS_API_KEY") or None,
     )

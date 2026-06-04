@@ -220,12 +220,15 @@ class TrustTier(StrEnum):
     extends with its richer registry/field packs. ``OFFICIAL`` = the standard's own authority or a
     government/standards body; ``REPUTABLE`` = an established institution (university, major org);
     ``OPEN`` = the general web; ``BLOCKED`` = a denylisted domain (never fetched or shown).
+    ``VOUCHED`` = a source the user supplied directly (P6.1 manual ingest) — trusted because the
+    learner chose it, not because a web domain was classified.
     """
 
     OFFICIAL = "official"
     REPUTABLE = "reputable"
     OPEN = "open"
     BLOCKED = "blocked"
+    VOUCHED = "vouched"
 
 
 class SourceType(StrEnum):

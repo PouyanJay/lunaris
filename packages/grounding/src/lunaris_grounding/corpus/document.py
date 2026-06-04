@@ -29,6 +29,7 @@ class GroundingDocument:
     fetched_at: str | None = None
     acquisition_mode: AcquisitionMode | None = None
     course_id: str | None = None
+    source_id: str | None = None  # the source this chunk came from (P6.1); shared across its chunks
 
     def __post_init__(self) -> None:
         # Mirror CandidateSource: keep the [0, 1] credibility bound an invariant of the entity.

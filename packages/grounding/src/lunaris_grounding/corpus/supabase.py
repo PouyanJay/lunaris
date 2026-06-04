@@ -4,13 +4,19 @@ from enum import Enum
 
 import structlog
 from lunaris_runtime.resilience import retry_on_rate_limit
-from lunaris_runtime.schema import Citation
+from lunaris_runtime.schema import AcquisitionMode, Citation, SourceType, TrustTier
 from pydantic import ValidationError
 
 from lunaris_grounding.corpus.document import GroundingDocument
+from lunaris_grounding.corpus.source_summary import CorpusSourceSummary
 from lunaris_grounding.evidence import Evidence
 
 logger = structlog.get_logger()
+
+# Columns the source-level list reads (P6.1) — chunk content/embedding are not needed for a summary.
+_SOURCE_COLS = (
+    "source_id,course_id,title,url,source_type,trust_tier,credibility,acquisition_mode,fetched_at"
+)
 
 
 def _enum_value(member: Enum | None) -> str | None:
@@ -80,6 +86,7 @@ class SupabaseCorpusStore:
                 "fetched_at": document.fetched_at,
                 "acquisition_mode": _enum_value(document.acquisition_mode),
                 "course_id": document.course_id,
+                "source_id": document.source_id,
             }
             for document in documents
         ]
@@ -114,6 +121,77 @@ class SupabaseCorpusStore:
                 continue
             evidence.append(Evidence(citation=_citation_from_row(row), score=score))
         return evidence
+
+    async def list_sources_for_course(self, course_id: str) -> list[CorpusSourceSummary]:
+        client = self._ensure_client()
+        response = await retry_on_rate_limit(
+            lambda: asyncio.to_thread(
+                lambda: (
+                    client.table(_TABLE)  # type: ignore[attr-defined]
+                    .select(_SOURCE_COLS)
+                    .eq("course_id", course_id)
+                    .execute()
+                )
+            )
+        )
+        return _summaries_from_rows(response.data or [])
+
+    async def delete_source(self, source_id: str) -> int:
+        client = self._ensure_client()
+        response = await retry_on_rate_limit(
+            lambda: asyncio.to_thread(
+                lambda: (
+                    client.table(_TABLE)  # type: ignore[attr-defined]
+                    .delete(count="exact")
+                    .eq("source_id", source_id)
+                    .execute()
+                )
+            )
+        )
+        return int(response.count or 0)
+
+
+def _summaries_from_rows(rows: list[dict[str, object]]) -> list[CorpusSourceSummary]:
+    """Fold chunk rows into one summary per source_id (a source's chunks share its provenance)."""
+    by_source: dict[str, list[dict[str, object]]] = {}
+    for row in rows:
+        source_id = row.get("source_id")
+        if source_id is None:
+            continue
+        by_source.setdefault(str(source_id), []).append(row)
+    return [_summary_from_rows(source_id, group) for source_id, group in by_source.items()]
+
+
+def _summary_from_rows(source_id: str, group: list[dict[str, object]]) -> CorpusSourceSummary:
+    head = group[0]
+    return CorpusSourceSummary(
+        source_id=source_id,
+        course_id=_as_str(head.get("course_id")),
+        title=_as_str(head.get("title")),
+        url=_as_str(head.get("url")),
+        source_type=_as_enum(SourceType, head.get("source_type")),
+        trust_tier=_as_enum(TrustTier, head.get("trust_tier")),
+        credibility=head.get("credibility"),  # type: ignore[arg-type]
+        acquisition_mode=_as_enum(AcquisitionMode, head.get("acquisition_mode")),
+        fetched_at=_as_str(head.get("fetched_at")),
+        chunk_count=len(group),
+    )
+
+
+def _as_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _as_enum[E: (SourceType, TrustTier, AcquisitionMode)](
+    enum_cls: type[E], value: object
+) -> E | None:
+    """Parse a DB string into an enum, degrading a corrupt/out-of-vocab value to None (no crash)."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return enum_cls(value)
+    except ValueError:
+        return None
 
 
 def _citation_from_row(row: dict[str, object]) -> Citation:

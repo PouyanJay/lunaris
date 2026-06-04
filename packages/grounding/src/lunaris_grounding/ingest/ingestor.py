@@ -57,6 +57,7 @@ class CorpusIngestor:
                 fetched_at=source.fetched_at,
                 acquisition_mode=source.acquisition_mode,
                 course_id=source.course_id,
+                source_id=source.source_id,
             )
             for (source, chunk), embedding in zip(pending, embeddings, strict=True)
         ]

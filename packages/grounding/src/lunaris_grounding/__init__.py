@@ -11,6 +11,7 @@ tests run against an in-memory cosine store with a deterministic stub embedder.
 
 from lunaris_grounding.assessors import ClaudeSupportAssessor, StubSupportAssessor
 from lunaris_grounding.corpus import (
+    CorpusSourceSummary,
     GroundingDocument,
     ICorpusStore,
     InMemoryCorpusStore,
@@ -46,6 +47,7 @@ __all__ = [
     "CandidateSource",
     "ClaudeSupportAssessor",
     "CorpusIngestor",
+    "CorpusSourceSummary",
     "Evidence",
     "ExtractedContent",
     "GroundingDocument",
