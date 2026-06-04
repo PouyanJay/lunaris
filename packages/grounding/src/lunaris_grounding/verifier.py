@@ -1,6 +1,7 @@
 import structlog
 from lunaris_runtime.schema import Citation, Claim, RiskTier, VerifierStatus
 
+from lunaris_grounding.evidence import Evidence
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
 
 logger = structlog.get_logger()
@@ -56,7 +57,11 @@ class Verifier:
                 self._cut_on_grounding_failure(claim, "claim_assessment_unavailable", exc)
                 continue
             chosen = next((e for e in evidence if e.citation.id == support.citation_id), None)
-            if support.score >= threshold and chosen is not None:
+            if (
+                support.score >= threshold
+                and chosen is not None
+                and self._within_trust_floor(chosen, risk_tier)
+            ):
                 claim.supported_by = chosen.citation.id
                 claim.verifier_status = VerifierStatus.SUPPORTED
                 citations[chosen.citation.id] = chosen.citation
@@ -73,6 +78,22 @@ class Verifier:
             cut=len(claims) - supported,
         )
         return list(citations.values())
+
+    def _within_trust_floor(self, chosen: Evidence, risk_tier: RiskTier) -> bool:
+        """Whether the chosen evidence's authority clears the risk-tiered trust floor (P6.2 §4c).
+
+        Orthogonal to the assessor-score threshold above: that gates how strongly the evidence
+        supports the claim; this gates how trustworthy it is. T0 skeleton: always permissive so
+        behaviour is unchanged; the debug log keeps the decision observable. T3 makes it strict.
+        """
+        citation = chosen.citation
+        logger.debug(
+            "trust_floor_evaluated",
+            risk_tier=risk_tier.value,
+            tier=citation.trust_tier.value if citation.trust_tier is not None else None,
+            credibility=citation.credibility,
+        )
+        return True
 
     def _cut_on_grounding_failure(self, claim: Claim, event: str, exc: Exception) -> None:
         """Fail safe: an unreachable grounding dependency CUTs the claim, never crashes.

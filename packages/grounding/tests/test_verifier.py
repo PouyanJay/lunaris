@@ -10,7 +10,7 @@ from lunaris_grounding import (
     Support,
     Verifier,
 )
-from lunaris_runtime.schema import Citation, Claim, RiskTier, VerifierStatus
+from lunaris_runtime.schema import Citation, Claim, RiskTier, TrustTier, VerifierStatus
 
 
 def _evidence(cid: str, score: float = 0.9) -> Evidence:
@@ -40,6 +40,25 @@ async def test_verifier_grounds_only_against_the_courses_own_corpus() -> None:
     assert grounded.verifier_status is VerifierStatus.SUPPORTED
     assert grounded.supported_by is not None
     assert foreign.verifier_status is VerifierStatus.CUT
+
+
+async def test_permissive_trust_floor_passes_a_tiered_citation() -> None:
+    # Arrange — a credible, tiered citation. The T0 trust floor is permissive (it logs the tier but
+    # never blocks), so a supported claim stays SUPPORTED. T3 makes this gate strict by risk tier;
+    # this pins the seam's current behaviour so that change is visible when it lands.
+    citation = Citation(
+        id="c1", title="Source", snippet="...", trust_tier=TrustTier.OPEN, credibility=0.5
+    )
+    retriever = StubEvidenceRetriever(lambda _c: [Evidence(citation=citation, score=0.9)])
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a grounded claim")
+
+    # Act
+    await verifier.verify([claim], risk_tier=RiskTier.HIGH)
+
+    # Assert — the permissive floor does not block a low-tier citation (yet).
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+    assert claim.supported_by == "c1"
 
 
 async def test_supported_claim_gets_citation_and_status() -> None:
