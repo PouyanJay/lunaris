@@ -212,7 +212,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
         </ExplainProvider>
       ) : viewMode === "corpus" ? (
-        <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} />
+        <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
       ) : (
         <CourseReader
           course={course}

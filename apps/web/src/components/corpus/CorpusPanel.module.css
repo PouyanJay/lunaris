@@ -25,6 +25,14 @@
   line-height: 1.55;
 }
 
+.regroundRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+}
+
 /* The add-source region: a hairline-bordered panel, not a floating card. */
 .add {
   display: flex;

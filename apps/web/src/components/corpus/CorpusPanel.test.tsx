@@ -51,6 +51,9 @@ function fakeServer(initial: CorpusSource[] = []) {
       sources = sources.filter((s) => s.sourceId !== id);
       return { ok: true, status: 204 };
     }
+    if (url.match(/\/api\/courses\/.+\/rebuild$/) && method === "POST") {
+      return json({ id: "course-1", topic: "demo" });
+    }
     if (url.includes("/api/corpus?")) {
       return json(sources);
     }
@@ -169,6 +172,26 @@ describe("CorpusPanel", () => {
 
     // Assert
     await waitFor(() => expect(screen.getByText(/no sources yet/i)).toBeInTheDocument());
+  });
+
+  it("re-grounds the course and reloads it", async () => {
+    // Arrange
+    const onReground = vi.fn();
+    const fetchMock = fakeServer([]);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CorpusPanel apiBaseUrl="http://test" courseId="course-1" onReground={onReground} />);
+    await waitFor(() => expect(screen.getByText(/no sources yet/i)).toBeInTheDocument());
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /re-ground course/i }));
+
+    // Assert — the rebuild endpoint was hit, the course is reloaded, and a confirmation is shown.
+    await waitFor(() => expect(onReground).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/courses\/course-1\/rebuild$/),
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(screen.getByText(/open Learn to see/i)).toBeInTheDocument();
   });
 
   it("surfaces a delete failure and keeps the source", async () => {

@@ -493,3 +493,25 @@ async def test_stream_carries_agent_transcript_frames(tmp_path: Path) -> None:
     assert beat["tool"] == "extract_concepts"
     assert beat["toolArgs"] == {"topic": "binary search"}  # camelCase wire contract
     assert beat["runId"] == run_id  # cross-layer correlation
+
+
+async def test_rebuild_reuses_the_course_id(client: httpx.AsyncClient) -> None:
+    # Arrange — build a course (stub pipeline).
+    created = await client.post("/api/courses", json={"topic": "binary search"})
+    course_id = created.json()["id"]
+    original_run_id = created.headers["X-Run-Id"]
+
+    # Act — re-ground it (re-run the pipeline reusing the same id).
+    rebuilt = await client.post(f"/api/courses/{course_id}/rebuild")
+
+    # Assert — 200, the SAME course id, and a FRESH run id (a distinct, traceable re-ground run).
+    assert rebuilt.status_code == 200
+    assert rebuilt.json()["id"] == course_id
+    assert rebuilt.headers.get("X-Run-Id")
+    assert rebuilt.headers["X-Run-Id"] != original_run_id
+
+
+async def test_rebuild_unknown_course_is_404(client: httpx.AsyncClient) -> None:
+    # Act / Assert — a well-formed but never-assigned course id (ids are uuid4().hex) → 404.
+    response = await client.post(f"/api/courses/{'0' * 32}/rebuild")
+    assert response.status_code == 404

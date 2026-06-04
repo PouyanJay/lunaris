@@ -36,14 +36,16 @@ class PgVectorRetriever:
         self._kc_id = kc_id
         self._course_id = course_id
 
-    async def retrieve(self, claim_text: str) -> list[Evidence]:
+    async def retrieve(self, claim_text: str, *, course_id: str | None = None) -> list[Evidence]:
         embeddings = await self._embedder.embed([claim_text])
         if not embeddings:
             return []
+        # A per-call course_id (the verifier passing the course being built) takes precedence over
+        # the constructor default, so one retriever instance can serve many course-scoped runs.
         return await self._store.match(
             embeddings[0],
             k=self._k,
             min_score=self._min_score,
             kc_id=self._kc_id,
-            course_id=self._course_id,
+            course_id=course_id if course_id is not None else self._course_id,
         )

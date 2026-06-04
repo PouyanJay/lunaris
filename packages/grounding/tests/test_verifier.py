@@ -1,5 +1,10 @@
 from lunaris_grounding import (
+    CandidateSource,
+    CorpusIngestor,
     Evidence,
+    InMemoryCorpusStore,
+    PgVectorRetriever,
+    StubEmbedder,
     StubEvidenceRetriever,
     StubSupportAssessor,
     Support,
@@ -10,6 +15,31 @@ from lunaris_runtime.schema import Citation, Claim, RiskTier, VerifierStatus
 
 def _evidence(cid: str, score: float = 0.9) -> Evidence:
     return Evidence(citation=Citation(id=cid, title=f"Source {cid}", snippet="..."), score=score)
+
+
+async def test_verifier_grounds_only_against_the_courses_own_corpus() -> None:
+    # Arrange — a source ingested for course c1 (the end-to-end path: ingest → corpus → retriever).
+    store = InMemoryCorpusStore()
+    text = "Dijkstra relaxes edges."
+    await CorpusIngestor(StubEmbedder(dim=64), store).ingest(
+        [CandidateSource(kc_id="kc1", text=text, course_id="c1", source_id="s1")]
+    )
+    # min_score=0.0 so the stub embedder's cosine score is never filtered out (the default floor
+    # would make this test fragile to the embedder); scoping, not relevance, is what's under test.
+    retriever = PgVectorRetriever(StubEmbedder(dim=64), store, min_score=0.0)
+    verifier = Verifier(retriever, StubSupportAssessor())
+
+    # Act — verify the SAME claim scoped to c1 (the corpus's course) vs c2 (a different course).
+    grounded = Claim(text=text)
+    await verifier.verify([grounded], course_id="c1")
+    foreign = Claim(text=text)
+    await verifier.verify([foreign], course_id="c2")
+
+    # Assert — grounded against its own course's evidence; cut for another course (no bleed). The
+    # P6.1 payoff: a build verifies against THIS course's manually-ingested corpus.
+    assert grounded.verifier_status is VerifierStatus.SUPPORTED
+    assert grounded.supported_by is not None
+    assert foreign.verifier_status is VerifierStatus.CUT
 
 
 async def test_supported_claim_gets_citation_and_status() -> None:
@@ -93,7 +123,7 @@ class _FailingRetriever:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def retrieve(self, _claim_text: str) -> list[Evidence]:
+    async def retrieve(self, _claim_text: str, *, course_id: str | None = None) -> list[Evidence]:
         self.calls += 1
         raise RuntimeError("voyageai.error.RateLimitError: 3 RPM exceeded")
 
@@ -110,7 +140,7 @@ class _SpyAssessor:
 class _PartialRetriever:
     """Fails to retrieve evidence only for claims whose text contains ``boom``."""
 
-    async def retrieve(self, claim_text: str) -> list[Evidence]:
+    async def retrieve(self, claim_text: str, *, course_id: str | None = None) -> list[Evidence]:
         if "boom" in claim_text:
             raise RuntimeError("transient grounding outage")
         return [_evidence("c1")]

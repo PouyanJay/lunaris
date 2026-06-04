@@ -87,6 +87,22 @@ export async function uploadFileSource(
   return response.json() as Promise<IngestResult>;
 }
 
+/** Re-run the course's build so it re-grounds against the current corpus (POST .../rebuild).
+ *  Heavyweight (re-runs the pipeline); the caller shows a pending state + reloads the course after. */
+export async function regroundCourse(apiBaseUrl: string, courseId: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/rebuild`, {
+      method: "POST",
+    });
+  } catch (cause) {
+    throw new CorpusError("Could not reach the course service.", { cause });
+  }
+  if (!response.ok) {
+    throw new CorpusError(`Re-grounding failed (HTTP ${response.status}).`);
+  }
+}
+
 /** Remove a source (all its chunks) from the corpus (DELETE /api/corpus/{sourceId}). */
 export async function deleteCorpusSource(apiBaseUrl: string, sourceId: string): Promise<void> {
   let response: Response;

@@ -108,7 +108,11 @@ def build_authoring_subgraph(
     async def verify(state: AuthoringState) -> AuthoringState:
         lessons = [lesson for module in draft.modules for lesson in module.lessons]
         claims = list(iter_claims(lessons))
-        citations = await verifier.verify(claims, risk_tier=draft.risk_tier)
+        # Course-scoped (P6.1): the build verifies claims against THIS course's grounding corpus
+        # (its manually-vouched sources), never another topic's evidence.
+        citations = await verifier.verify(
+            claims, risk_tier=draft.risk_tier, course_id=draft.course_id
+        )
         draft.provenance = citations
         cut = sum(len(texts) for texts in _cut_texts_by_module(draft).values())
         supported = len(claims) - cut

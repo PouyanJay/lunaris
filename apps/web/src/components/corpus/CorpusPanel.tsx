@@ -5,6 +5,7 @@ import {
   addUrlSource,
   CorpusError,
   deleteCorpusSource,
+  regroundCourse,
   uploadFileSource,
 } from "../../lib/corpus";
 import type { IngestResult } from "../../types/course";
@@ -25,14 +26,36 @@ const MODES: { value: AddMode; label: string }[] = [
 interface CorpusPanelProps {
   apiBaseUrl: string;
   courseId: string;
+  /** Reload the opened course after a re-ground, so updated (green) citations show in Learn. */
+  onReground?: () => void;
 }
 
 /** The per-course Corpus tab (P6.1): add your own trusted sources (paste / URL / file) to ground the
  *  course, and curate them. The verifier checks each claim against this corpus. */
-export function CorpusPanel({ apiBaseUrl, courseId }: CorpusPanelProps) {
+export function CorpusPanel({ apiBaseUrl, courseId, onReground }: CorpusPanelProps) {
   const { state, reload } = useCorpus(apiBaseUrl, courseId);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [regrounding, setRegrounding] = useState(false);
+  const [regroundError, setRegroundError] = useState<string | null>(null);
+  const [regrounded, setRegrounded] = useState(false);
+
+  async function onRegroundClick() {
+    setRegrounding(true);
+    setRegroundError(null);
+    setRegrounded(false);
+    try {
+      await regroundCourse(apiBaseUrl, courseId);
+      setRegrounded(true);
+      onReground?.();
+    } catch (error) {
+      setRegroundError(
+        error instanceof CorpusError ? error.message : "Couldn't re-ground the course.",
+      );
+    } finally {
+      setRegrounding(false);
+    }
+  }
 
   async function onDelete(sourceId: string) {
     setDeletingId(sourceId);
@@ -56,6 +79,21 @@ export function CorpusPanel({ apiBaseUrl, courseId }: CorpusPanelProps) {
           Add your own trusted documents — paste notes, link a page, or upload a PDF/DOCX. Every
           claim in the course is verified against this corpus.
         </p>
+        <div className={styles.regroundRow}>
+          <Button variant="primary" onClick={onRegroundClick} disabled={regrounding}>
+            {regrounding ? "Re-grounding…" : "Re-ground course"}
+          </Button>
+          {regrounded && (
+            <span className={styles.feedbackOk} role="status">
+              Re-grounded — open Learn to see the updated citations.
+            </span>
+          )}
+          {regroundError && (
+            <span className={styles.feedbackError} role="alert">
+              {regroundError}
+            </span>
+          )}
+        </div>
       </header>
 
       <AddSource apiBaseUrl={apiBaseUrl} courseId={courseId} onAdded={reload} />
