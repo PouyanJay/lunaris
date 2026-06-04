@@ -7,6 +7,7 @@ field — folding self-reported knowledge into ``assumed_prior`` so the existing
 (which reads it) produces a sharper frontier, with no separate frontier path.
 """
 
+import pytest
 from lunaris_runtime.clarifier import apply_clarification, build_clarifier
 from lunaris_runtime.schema import (
     Clarification,
@@ -192,3 +193,61 @@ def test_choice_options_carry_human_labels_distinct_from_the_enum_values() -> No
 
     # Assert — every option has a non-empty human label (the web renders labels, not enum values).
     assert all(o.label for o in level_q.options)
+
+
+# --- Variant coverage (P7.5-T4): every enum band, exhaustiveness, the no-prior fallback ---
+
+
+@pytest.mark.parametrize("level", list(Level))
+def test_confirmed_level_overrides_for_every_band(level: Level) -> None:
+    # Arrange — the inferred level is INTERMEDIATE; the learner can confirm any band.
+    brief = _inferred_brief()
+
+    # Act / Assert — each band lands as the override (including NOT_APPLICABLE).
+    assert apply_clarification(brief, Clarification(target_level=level)).target_level == level
+
+
+@pytest.mark.parametrize("level", list(Level))
+def test_build_clarifier_recommends_each_inferred_level(level: Level) -> None:
+    # Arrange — a brief inferred at each level in turn.
+    brief = _inferred_brief().model_copy(update={"target_level": level})
+
+    # Act / Assert — the level question pre-picks whatever was inferred (incl. NOT_APPLICABLE).
+    assert _recommended(build_clarifier(brief), "level") == level.value
+
+
+@pytest.mark.parametrize("detail", list(DetailDepth))
+def test_confirmed_detail_overrides_for_every_band(detail: DetailDepth) -> None:
+    # Act / Assert — each band lands on the detail axis it controls.
+    merged = apply_clarification(_inferred_brief(), Clarification(detail_depth=detail))
+    assert merged.preferences.detail_depth == detail
+
+
+@pytest.mark.parametrize("language", list(LanguageStyle))
+def test_confirmed_language_overrides_for_every_band(language: LanguageStyle) -> None:
+    # Act / Assert — each band lands on the language axis it controls.
+    merged = apply_clarification(_inferred_brief(), Clarification(language_style=language))
+    assert merged.preferences.language_style == language
+
+
+def test_preference_questions_cover_every_enum_band() -> None:
+    # A new enum value with no label would silently get no option — assert exhaustiveness.
+    clarifier = build_clarifier(_inferred_brief())
+    assert {o.value for o in _question(clarifier, "detail").options} == {
+        d.value for d in DetailDepth
+    }
+    assert {o.value for o in _question(clarifier, "language").options} == {
+        s.value for s in LanguageStyle
+    }
+
+
+def test_knowledge_placeholder_falls_back_when_no_prior_was_inferred() -> None:
+    # Arrange — a brief with no assumed_prior (the no-key DefaultGoalInterpreter shape).
+    brief = CourseBrief(subject="Knitting", goal="knit a scarf")
+
+    # Act
+    placeholder = _question(build_clarifier(brief), "knowledge").placeholder
+
+    # Assert — a non-empty fallback hint, not the (absent) inferred prior.
+    assert placeholder
+    assert "everyday English" not in placeholder

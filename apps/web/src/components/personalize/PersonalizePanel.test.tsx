@@ -79,6 +79,27 @@ describe("PersonalizePanel", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
+  it("retries after an error and recovers to the ready state", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) })
+      .mockResolvedValue({ ok: true, json: async () => makeBriefResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <PersonalizePanel
+        apiBaseUrl="http://test"
+        topic="english"
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
+
+    expect(await screen.findByText(/reach CLB 10/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("cancels without building", async () => {
     stubFetch({ ok: true, json: async () => makeBriefResponse() });
     const onCancel = vi.fn();

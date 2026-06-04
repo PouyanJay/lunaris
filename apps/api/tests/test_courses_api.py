@@ -404,6 +404,36 @@ async def test_stream_rejects_a_malformed_clarification(tmp_path: Path) -> None:
     assert response.status_code == 422
 
 
+async def test_stream_rejects_a_clarification_with_an_invalid_enum(tmp_path: Path) -> None:
+    # Act — valid JSON, but "superexpert" is not a Level.
+    response = await _send_stream_request(
+        tmp_path, {"topic": "x", "clarification": json.dumps({"targetLevel": "superexpert"})}
+    )
+
+    # Assert — schema validation at the boundary, not a 500 downstream.
+    assert response.status_code == 422
+
+
+async def test_stream_rejects_an_overlong_free_text_field(tmp_path: Path) -> None:
+    # Act — assumedKnown exceeds the schema's 1000-char cap (a prompt-bloat guard).
+    overlong = json.dumps({"assumedKnown": "x" * 1001})
+    response = await _send_stream_request(tmp_path, {"topic": "x", "clarification": overlong})
+
+    # Assert
+    assert response.status_code == 422
+
+
+async def test_stream_forwards_an_empty_clarification_object_as_defaults(tmp_path: Path) -> None:
+    # Arrange — an empty {} is a valid all-default Clarification (the identity), distinct from None.
+    from lunaris_runtime.schema import Clarification
+
+    # Act
+    forwarded = await _stream_with_clarification(tmp_path, {"topic": "x", "clarification": "{}"})
+
+    # Assert — parsed to a default Clarification (which apply_clarification treats as the identity).
+    assert forwarded == Clarification()
+
+
 async def test_create_forwards_the_clarification_from_the_post_body(tmp_path: Path) -> None:
     # Arrange — the await-full POST path carries the clarification in the JSON body.
     from lunaris_api.dependencies import get_course_service

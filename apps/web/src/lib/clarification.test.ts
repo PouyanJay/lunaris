@@ -103,4 +103,15 @@ describe("answersToClarification", () => {
       languageStyle: "balanced",
     });
   });
+
+  it("omits a missing choice answer (empty string)", () => {
+    const clarification = answersToClarification({
+      level: "",
+      detail: "balanced",
+      language: "balanced",
+    });
+
+    expect(clarification).toEqual({ detailDepth: "balanced", languageStyle: "balanced" });
+    expect(clarification.targetLevel).toBeUndefined();
+  });
 });
