@@ -21,7 +21,7 @@ from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Clarification, Course, ProgressStage, RiskTier
+from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth, ProgressStage, RiskTier
 
 from ..critic import ICritic, MinimalCritic
 from ..progress import IAgentSink, IProgressSink
@@ -132,6 +132,7 @@ class AgentCourseBuilder:
         progress: IProgressSink | None = None,
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
+        discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
     ) -> Course:
         # ``run_id`` is bound for the whole run and cleared in ``finally`` so it never leaks
         # into a later run sharing the event loop (the API reuses it across requests).
@@ -147,6 +148,7 @@ class AgentCourseBuilder:
                 run_id=run_id,
                 risk_tier=self._risk_tier,
                 clarification=clarification,
+                discovery_depth=discovery_depth,
             )
             # One stage cursor per run, shared by both reporters: the ProgressReporter advances
             # it at each stage boundary, and the AgentReporter stamps every fine event's `stage`

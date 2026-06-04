@@ -151,6 +151,10 @@ export interface Claim {
  *  `vouched` = a source the learner supplied directly (P6.1 manual ingest). */
 export type TrustTier = "official" | "reputable" | "open" | "blocked" | "vouched";
 
+/** How hard auto-discovery searches for a build (P6.3), chosen up front; mirrors DiscoveryDepth.
+ *  `standard` is the moderate one-click default; `thorough` widens the grounding budget. */
+export type DiscoveryDepth = "standard" | "thorough";
+
 /** What KIND of source a grounding chunk is (mirrors SourceType), independent of its authority tier.
  *  snake_case values mirror the Python enum exactly (wire parity). */
 export type SourceType =

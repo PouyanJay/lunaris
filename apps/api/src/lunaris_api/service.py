@@ -10,6 +10,7 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseRun,
+    DiscoveryDepth,
     ProgressEvent,
     RunEvent,
     RunStatus,
@@ -119,6 +120,7 @@ class CourseService:
         course_id: str,
         run_id: str,
         clarification: Clarification | None = None,
+        discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
     ) -> Course:
         pipeline = self._factory(self._store)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
@@ -126,7 +128,13 @@ class CourseService:
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
         # it raises CancelledError at this await without cancelling the request coroutine itself.
         task = asyncio.create_task(
-            pipeline.run(topic, course_id=course_id, run_id=run_id, clarification=clarification)
+            pipeline.run(
+                topic,
+                course_id=course_id,
+                run_id=run_id,
+                clarification=clarification,
+                discovery_depth=discovery_depth,
+            )
         )
         self._registry.register(run_id, task)
         try:
@@ -155,6 +163,7 @@ class CourseService:
         course_id: str,
         run_id: str,
         clarification: Clarification | None = None,
+        discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
     ) -> AsyncIterator[_StreamItem]:
         """Run the pipeline, yielding each progress/agent event as it happens, then the course.
 
@@ -191,6 +200,7 @@ class CourseService:
                     progress=QueueProgressSink(queue),
                     agent=QueueAgentSink(queue),
                     clarification=clarification,
+                    discovery_depth=discovery_depth,
                 )
             )
             self._registry.register(run_id, run_task)  # cancellable by a separate request

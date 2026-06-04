@@ -183,6 +183,7 @@ class _HangingPipeline:
         progress: object | None = None,
         agent: object | None = None,
         clarification: object | None = None,
+        discovery_depth: object | None = None,
     ) -> Course:
         if progress is not None:
             await progress.emit(
@@ -229,6 +230,7 @@ class _FailingPipeline:
         progress: object | None = None,
         agent: object | None = None,
         clarification: object | None = None,
+        discovery_depth: object | None = None,
     ) -> object:
         raise RuntimeError("pipeline boom")
 

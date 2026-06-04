@@ -1,5 +1,5 @@
 import type { Clarification } from "../types/clarifier";
-import type { AgentEvent, Course, ProgressEvent } from "../types/course";
+import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
 import { CourseLoadError, parseCourse } from "./loadCourse";
 
 interface StreamCourseOptions {
@@ -9,6 +9,8 @@ interface StreamCourseOptions {
   onAgent?: (event: AgentEvent) => void;
   /** The learner's opt-in confirm answers (P7.5); absent → today's inferred-only build. */
   clarification?: Clarification;
+  /** How hard auto-discovery searches (P6.3); absent → the moderate `standard` default. */
+  discoveryDepth?: DiscoveryDepth;
   /** Abort the in-flight build (e.g. the user navigates away or starts a new topic). */
   signal?: AbortSignal;
 }
@@ -24,10 +26,11 @@ interface StreamCourseOptions {
 export async function streamCourse(
   apiBaseUrl: string,
   topic: string,
-  { onProgress, onAgent, clarification, signal }: StreamCourseOptions,
+  { onProgress, onAgent, clarification, discoveryDepth, signal }: StreamCourseOptions,
 ): Promise<Course> {
   const params = new URLSearchParams({ topic });
   if (clarification) params.set("clarification", JSON.stringify(clarification));
+  if (discoveryDepth) params.set("discovery_depth", discoveryDepth);
   const url = `${apiBaseUrl}/api/courses/stream?${params}`;
   let response: Response;
   try {

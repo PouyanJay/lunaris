@@ -13,6 +13,7 @@ from lunaris_agent.harness.discovery import (
     DiscoveryBudget,
     StubRelevanceJudge,
     SubgraphGroundingDiscoverer,
+    budget_for_depth,
 )
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_grounding import (
@@ -31,6 +32,7 @@ from lunaris_runtime.schema import (
     AcquisitionMode,
     AgentEventKind,
     BloomLevel,
+    DiscoveryDepth,
     KnowledgeComponent,
     TrustTier,
 )
@@ -363,3 +365,38 @@ def test_a_discovery_budget_must_have_at_least_one_round() -> None:
     # Arrange / Act / Assert — a zero-round budget is a misconfiguration, rejected at construction.
     with pytest.raises(ValueError, match="at least one round"):
         DiscoveryBudget(max_rounds=0)
+
+
+def test_thorough_depth_widens_every_budget_knob() -> None:
+    # Arrange / Act
+    standard = budget_for_depth(DiscoveryDepth.STANDARD)
+    thorough = budget_for_depth(DiscoveryDepth.THOROUGH)
+
+    # Assert — THOROUGH searches harder on every axis (more per round, more rounds).
+    assert thorough.searches_per_round > standard.searches_per_round
+    assert thorough.fetches_per_round > standard.fetches_per_round
+    assert thorough.max_rounds > standard.max_rounds
+
+
+async def test_the_discoverer_honors_the_drafts_discovery_depth(agent_sink) -> None:
+    # Arrange — a concept reachable only on one domain (never cross-source covered) but yielding a
+    # new source each round, so the loop runs to the round ceiling. With NO constructor budget, the
+    # discoverer must pick the budget from the draft's depth — THOROUGH allows more rounds.
+    search = _OneDomainNewPathSearch()
+    corpus = InMemoryCorpusStore()
+    discoverer = SubgraphGroundingDiscoverer(
+        search,
+        _AlphaExtractor(),
+        CredibilityScorer(InMemorySourceAuthorityStore()),
+        StubRelevanceJudge(),
+        CorpusIngestor(StubEmbedder(), corpus),
+        clock=lambda: _CLOCK,
+    )
+    draft = _draft(AgentReporter("run-x", agent_sink), concepts=[_kc("alpha", "Alpha")])
+    draft.discovery_depth = DiscoveryDepth.THOROUGH
+
+    # Act
+    await discoverer.discover(draft)
+
+    # Assert — it ran the THOROUGH round ceiling (3), not the STANDARD default (2).
+    assert search.calls == budget_for_depth(DiscoveryDepth.THOROUGH).max_rounds

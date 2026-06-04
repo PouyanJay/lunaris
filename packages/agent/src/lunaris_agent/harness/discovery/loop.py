@@ -243,7 +243,10 @@ def build_discovery_subgraph(
         elif uncovered:
             await draft.agent.emit(
                 AgentEventKind.REASONING,
-                text=f"Discovery done; {len(uncovered)} concept(s) left under-corroborated.",
+                text=(
+                    f"Discovery done; {len(uncovered)} concept(s) remain thin — "
+                    "a deeper (Thorough) search could ground more."
+                ),
             )
         return {"round": round_index, "should_continue": should_continue}
 

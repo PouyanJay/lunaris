@@ -1,10 +1,17 @@
 from collections.abc import AsyncIterator
+from typing import Annotated
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from lunaris_runtime.logging import bind_request_id
-from lunaris_runtime.schema import AgentEvent, Clarification, Course, ProgressEvent
+from lunaris_runtime.schema import (
+    AgentEvent,
+    Clarification,
+    Course,
+    DiscoveryDepth,
+    ProgressEvent,
+)
 from pydantic import ValidationError
 
 from ..dependencies import CourseServiceDep
@@ -63,6 +70,7 @@ async def create_course(
             course_id=course_id,
             run_id=run_id,
             clarification=payload.clarification,
+            discovery_depth=payload.discovery_depth,
         )
     except CourseBuildCancelledError as exc:
         raise HTTPException(
@@ -75,6 +83,7 @@ async def stream_course(
     service: CourseServiceDep,
     topic: str = Query(min_length=1, max_length=200),
     clarification: str | None = Query(default=None, max_length=_MAX_CLARIFICATION_CHARS),
+    discovery_depth: Annotated[DiscoveryDepth, Query()] = DiscoveryDepth.STANDARD,
 ) -> StreamingResponse:
     """Run the pipeline for a topic and stream live build progress as Server-Sent Events.
 
@@ -92,7 +101,11 @@ async def stream_course(
 
     async def events() -> AsyncIterator[str]:
         async for kind, payload in service.stream(
-            topic, course_id=course_id, run_id=run_id, clarification=parsed_clarification
+            topic,
+            course_id=course_id,
+            run_id=run_id,
+            clarification=parsed_clarification,
+            discovery_depth=discovery_depth,
         ):
             yield _sse_frame(kind, payload)
 

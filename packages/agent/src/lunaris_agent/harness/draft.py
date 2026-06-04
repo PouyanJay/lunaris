@@ -15,6 +15,7 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseBrief,
+    DiscoveryDepth,
     KnowledgeComponent,
     Module,
     PrerequisiteGraph,
@@ -45,6 +46,9 @@ class CourseDraft:
     # interpret_request stage merges them onto the inferred brief before recording it; None (the
     # default / skipped-clarifier path) leaves the inference untouched — today's inferred build.
     clarification: Clarification | None = None
+    # How hard auto-discovery (P6.3) searches, chosen up front by the learner. STANDARD = the
+    # moderate default; THOROUGH widens the discovery budget. Read by the discovery stage only.
+    discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD
     frontier: list[str] = field(default_factory=list)
     goal_concept: str | None = None
     concepts: list[KnowledgeComponent] = field(default_factory=list)

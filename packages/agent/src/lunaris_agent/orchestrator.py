@@ -8,6 +8,7 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseStatus,
+    DiscoveryDepth,
     Lesson,
     Module,
     ProgressEvent,
@@ -68,11 +69,11 @@ class Orchestrator:
         progress: IProgressSink | None = None,
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
+        discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
     ) -> Course:
-        # ``agent`` (the rich transcript channel) and ``clarification`` (the P7.5 confirm answers)
-        # are part of the CoursePipeline contract, but the legacy single-shot orchestrator emits
-        # only coarse stages and has no interpret/brief stage to calibrate — both are unused here.
-        _ = agent, clarification
+        # All three are part of the CoursePipeline contract but unused here: the legacy single-shot
+        # orchestrator emits only coarse stages, has no brief to calibrate, and does no discovery.
+        _ = agent, clarification, discovery_depth
         bind_run_id(run_id)
         logger.info("course_run_started", topic=topic, course_id=course_id)
 

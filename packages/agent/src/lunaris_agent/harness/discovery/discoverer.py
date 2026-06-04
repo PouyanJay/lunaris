@@ -12,7 +12,7 @@ import structlog
 from lunaris_grounding import CorpusIngestor, IContentExtractor, ICredibilityScorer, ISearchProvider
 
 from ..draft import CourseDraft
-from .budget import DiscoveryBudget
+from .budget import DiscoveryBudget, budget_for_depth
 from .loop import build_discovery_subgraph
 from .relevance_judge import IRelevanceJudge
 from .report import DiscoveryReport
@@ -50,10 +50,10 @@ class SubgraphGroundingDiscoverer:
         self._clock = clock
 
     async def discover(self, draft: CourseDraft) -> DiscoveryReport:
-        # Pass budget/clock through only when set; the sub-graph owns the default budget + clock.
-        overrides: dict[str, object] = {}
-        if self._budget is not None:
-            overrides["budget"] = self._budget
+        # An explicit constructor budget (tests) wins; otherwise the chosen depth picks it.
+        overrides: dict[str, object] = {
+            "budget": self._budget or budget_for_depth(draft.discovery_depth)
+        }
         if self._clock is not None:
             overrides["clock"] = self._clock
         graph = build_discovery_subgraph(
