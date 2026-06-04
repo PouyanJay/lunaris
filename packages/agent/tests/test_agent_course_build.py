@@ -31,7 +31,7 @@ from lunaris_agent.subagents.curriculum_architect import (
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
 from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
-from lunaris_agent.subagents.resource_curator import StubResourceCurator
+from lunaris_agent.subagents.resource_curator import CuratedResources, StubResourceCurator
 from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
@@ -53,6 +53,8 @@ from lunaris_runtime.schema import (
     ProgressStage,
     ResearchSource,
     ResearchStatus,
+    Resource,
+    ResourceKind,
     StandardResearch,
     TrustTier,
     VerifierStatus,
@@ -393,6 +395,57 @@ async def test_agent_pipeline_carries_the_lesson_arc_and_module_competency(
         assert module.competency == _COMPETENCY
         assert module.lessons[0].expects == [f"You can already use {module.title}."]
         assert module.lessons[0].self_check == [f"Can you apply {module.title} unaided?"]
+
+
+def _curate_one_video(module: Module) -> CuratedResources:
+    """A stub curation: one vetted video on the demonstrate phase of every module's lesson."""
+    return CuratedResources(
+        demonstrate=[
+            Resource(
+                kind=ResourceKind.VIDEO,
+                title=f"{module.title} explained",
+                url=f"https://youtu.be/{module.id}",
+                source="youtu.be",
+                why=f"A short walkthrough of {module.title}.",
+                trust_tier=TrustTier.OPEN,
+                credibility=0.8,
+                fetched_at="2026-06-03T00:00:00Z",
+            )
+        ]
+    )
+
+
+async def test_agent_pipeline_curates_resources_onto_lesson_segments(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — the FULL scripted agent loop (the script calls curate_resources after authoring),
+    # with a curator attaching one video per module, so the per-phase resources are proven through
+    # the real curate_resources tool → finalize → persist path, not just the curator unit test (T1).
+    store = CourseStore(tmp_path)
+    builder = _builder(
+        _delegating_script(scripted_model),
+        store,
+        curator=StubResourceCurator(_curate_one_video),
+    )
+
+    # Act
+    course = await builder.run("demo", course_id="course-res", run_id="run-res")
+
+    # Assert — every module's lesson carries its curated video on the demonstrate phase, with the
+    # provenance intact, and it survives persistence.
+    assert course.modules
+    for module in course.modules:
+        resources = module.lessons[0].segments.demonstrate.resources
+        assert [r.kind for r in resources] == [ResourceKind.VIDEO]
+        assert resources[0].url == f"https://youtu.be/{module.id}"
+        assert resources[0].why.startswith("A short walkthrough")
+    reloaded = store.load("course-res")
+    for module in reloaded.modules:
+        resources = module.lessons[0].segments.demonstrate.resources
+        assert [r.kind for r in resources] == [ResourceKind.VIDEO]
+        assert resources[0].url == f"https://youtu.be/{module.id}"
+        assert resources[0].why.startswith("A short walkthrough")
 
 
 async def test_agent_publishes_after_the_subagent_revises_a_cut_claim(
