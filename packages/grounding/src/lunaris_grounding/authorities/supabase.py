@@ -13,6 +13,9 @@ _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "source_authorities"
 _COLS = "domain,kind,field,tier,source_type,note"
+# The table's unique identity, for upsert conflict resolution. NULLS NOT DISTINCT (the migration) is
+# what makes a global (field IS NULL) row a single addressable key here.
+_CONFLICT_KEY = "domain,field"
 
 
 class SupabaseSourceAuthorityStore:
@@ -56,6 +59,34 @@ class SupabaseSourceAuthorityStore:
             )
         )
         return _authorities_from_rows(response.data or [])
+
+    async def upsert(self, authority: SourceAuthority) -> None:
+        client = self._ensure_client()
+        row = {
+            "domain": authority.domain,
+            "kind": authority.kind.value,
+            "field": authority.field.value if authority.field is not None else None,
+            "tier": authority.trust_tier.value,
+            "source_type": authority.source_type.value if authority.source_type else None,
+            "note": authority.note,
+        }
+        await retry_on_rate_limit(
+            lambda: asyncio.to_thread(
+                lambda: client.table(_TABLE).upsert(row, on_conflict=_CONFLICT_KEY).execute()  # type: ignore[attr-defined]
+            )
+        )
+
+    async def delete(self, domain: str, field: SubjectField | None) -> bool:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            query = client.table(_TABLE).delete(count="exact").eq("domain", domain)  # type: ignore[attr-defined]
+            # A global row has field IS NULL; PostgREST needs is_(None), not eq(None).
+            query = query.is_("field", "null") if field is None else query.eq("field", field.value)
+            return query.execute()
+
+        response = await retry_on_rate_limit(lambda: asyncio.to_thread(_run))
+        return int(getattr(response, "count", 0) or 0) > 0
 
 
 def _authorities_from_rows(rows: list[dict[str, object]]) -> list[SourceAuthority]:

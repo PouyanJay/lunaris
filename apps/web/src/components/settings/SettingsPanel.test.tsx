@@ -13,12 +13,16 @@ const SETTINGS = {
   ],
 };
 
-/** A fetch stub: GET returns the settings; PUT returns the per-call status from `onPut`. */
+/** A fetch stub: GET returns the settings (or an empty trust config); PUT returns the per-call
+ *  status from `onPut`. The embedded TrustedSourcesPanel lists /api/source-authorities on mount. */
 function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; json: unknown }) {
-  return vi.fn(async (_url: string, init?: RequestInit) => {
+  return vi.fn(async (url: string | URL, init?: RequestInit) => {
     if (init?.method === "PUT") {
       const result = onPut(JSON.parse(String(init.body)));
       return { ok: result.ok, status: result.status ?? 200, json: async () => result.json };
+    }
+    if (url.toString().includes("/api/source-authorities")) {
+      return { ok: true, json: async () => [] };
     }
     return { ok: true, json: async () => SETTINGS };
   });
@@ -39,6 +43,8 @@ describe("SettingsPanel", () => {
     expect(screen.getByText(/set ····7777/i)).toBeInTheDocument();
     // The key input is a password field (masked).
     expect(screen.getByLabelText("Anthropic API key")).toHaveAttribute("type", "password");
+    // The embedded Trusted-sources panel mounts alongside the keys (its GET is routed in the stub).
+    expect(await screen.findByText("Source authority config")).toBeInTheDocument();
   });
 
   it("saves a key and reflects the new status", async () => {

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
 import { Button } from "../primitives/Button";
 import { SecretField } from "./SecretField";
+import { TrustedSourcesPanel } from "./TrustedSourcesPanel";
 import styles from "./Settings.module.css";
 
 interface SettingsPanelProps {
@@ -122,6 +123,7 @@ export function SettingsPanel({ apiBaseUrl, onClose }: SettingsPanelProps) {
           </>
         )}
       </section>
+      <TrustedSourcesPanel apiBaseUrl={apiBaseUrl} />
     </div>
   );
 }
