@@ -2,6 +2,7 @@ import { type BriefResponse, QUESTION_IDS } from "../types/clarifier";
 import type {
   AgentEvent,
   AgentEventKind,
+  Citation,
   Claim,
   Course,
   CourseRun,
@@ -29,6 +30,22 @@ const NO_GAGNE: GagneFlags = {
 
 function segment(prose: string, claims: Claim[] = [], resources: Resource[] = []): Segment {
   return { prose, visuals: [], claims, resources };
+}
+
+/** A grounding citation with its trust/provenance set, for reader tests (P6.0). Defaults to a
+ *  classified, high-credibility source; pass `trustTier: undefined` to model a pre-P6.0 citation. */
+export function makeCitation(overrides: Partial<Citation> = {}): Citation {
+  return {
+    id: "src-1",
+    title: "CLRS",
+    url: "https://example.org/clrs",
+    snippet: "Comparison halves the search range.",
+    trustTier: "reputable",
+    credibility: 0.91,
+    sourceType: "reference",
+    fetchedAt: "2026-06-03T00:00:00Z",
+    ...overrides,
+  };
 }
 
 /** A vetted resource with sensible defaults for reader/transcript tests. */

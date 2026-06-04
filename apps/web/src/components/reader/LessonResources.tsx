@@ -1,4 +1,5 @@
 import type { Resource } from "../../types/course";
+import { SourceTrust } from "../primitives/SourceTrust";
 import styles from "./LessonResources.module.css";
 
 interface LessonResourcesProps {
@@ -35,17 +36,7 @@ export function LessonResources({ resources }: LessonResourcesProps) {
               {resource.source && (
                 <span className={`mono ${styles.source}`}>{resource.source}</span>
               )}
-              <span className={`mono ${styles.trust}`} data-tier={resource.trustTier}>
-                {resource.trustTier}
-              </span>
-              {resource.credibility > 0 && (
-                <span
-                  className={`mono ${styles.credibility}`}
-                  aria-label={`Quality score: ${Math.round(resource.credibility * 100)}%`}
-                >
-                  {Math.round(resource.credibility * 100)}%
-                </span>
-              )}
+              <SourceTrust tier={resource.trustTier} credibility={resource.credibility} />
             </div>
           </li>
         ))}

@@ -1,4 +1,5 @@
 import type { Citation, Claim, VerifierStatus } from "../../types/course";
+import { SourceTrust } from "../primitives/SourceTrust";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
 import styles from "./LessonClaims.module.css";
 
@@ -10,7 +11,13 @@ const STATUS_TONE: Record<VerifierStatus, StatusTone> = {
   unverified: "neutral",
 };
 
-/** The grounding lineage for one claim: the citation it was supported by. */
+/** Credibility below this flags the evidence as lower-confidence in the reader. A display affordance
+ *  only — the risk-tiered trust floor that gates publication lands in P6.2. */
+const LOW_CREDIBILITY = 0.7;
+
+/** The grounding lineage for one claim: the citation it was supported by, with its trust tier +
+ *  credibility when the evidence was classified (P6.0). A pre-P6.0 / unclassified citation shows the
+ *  source alone, no trust badge. */
 function Provenance({ citation }: { citation: Citation }) {
   const label = citation.title ?? "Source";
   return (
@@ -22,6 +29,13 @@ function Provenance({ citation }: { citation: Citation }) {
         </a>
       ) : (
         <span className={styles.name}>{label}</span>
+      )}
+      {citation.trustTier && (
+        <SourceTrust
+          tier={citation.trustTier}
+          credibility={citation.credibility ?? null}
+          lowBelow={LOW_CREDIBILITY}
+        />
       )}
       {citation.snippet && <p className={styles.snippet}>“{citation.snippet}”</p>}
     </div>
