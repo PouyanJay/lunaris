@@ -101,7 +101,7 @@
   color: var(--danger);
 }
 
-/* ─── Module list (design_curriculum) ─────────────────────────────────────── */
+/* ─── Module list (design_curriculum, curate_resources) ───────────────────── */
 .modules {
   list-style: none;
   margin: 0;

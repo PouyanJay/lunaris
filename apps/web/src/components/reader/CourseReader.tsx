@@ -11,6 +11,7 @@ import { Button } from "../primitives/Button";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonClaims } from "./LessonClaims";
 import { LessonObjectives } from "./LessonObjectives";
+import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { VisualRenderer } from "./visuals/VisualRenderer";
@@ -224,6 +225,11 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
                 ))}
                 {segment.claims.length > 0 && (
                   <LessonClaims claims={segment.claims} citations={citations} />
+                )}
+                {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
+                    before P7.4 (no resources) renders nothing here. */}
+                {(segment.resources ?? []).length > 0 && (
+                  <LessonResources resources={segment.resources} />
                 )}
               </section>
             );

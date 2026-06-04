@@ -147,11 +147,37 @@ export interface Claim {
   verifierStatus: VerifierStatus;
 }
 
-/** The content of one Merrill phase: prose plus its diagrams and grounded claims. */
+/** A source's authority tier (mirrors TrustTier). The user sees it; the relevance judge does not. */
+export type TrustTier = "official" | "reputable" | "open" | "blocked";
+
+/** The kind of a curated external learning resource (mirrors ResourceKind). */
+export type ResourceKind = "video" | "article" | "docs" | "practice" | "tool" | "reference";
+
+/** A vetted external learning aid attached to a lesson phase (P7.4 — mirrors Resource, camelCase).
+ *  Suggested, not part of the verified lesson. `source` is the host shown to the learner; `trustTier`
+ *  + `credibility` are the user-facing quality signals; `fetchedAt` is provenance. */
+export interface Resource {
+  kind: ResourceKind;
+  title: string;
+  url: string;
+  source: string;
+  why: string;
+  trustTier: TrustTier;
+  /** 0..1 blended quality score. */
+  credibility: number;
+  fetchedAt: string;
+  /** For video — human-readable runtime (e.g. "12:01"). */
+  duration: string | null;
+  author: string | null;
+}
+
+/** The content of one Merrill phase: prose plus its diagrams, grounded claims, and curated aids. */
 export interface Segment {
   prose: string;
   visuals: Visual[];
   claims: Claim[];
+  /** Curated external resources attached to this phase (P7.4); may be absent on pre-P7.4 courses. */
+  resources: Resource[];
 }
 
 /** Merrill's First Principles — the four instructional phases of a lesson. */
@@ -241,6 +267,7 @@ export type ProgressStage =
   | "curriculum_designed"
   | "module_authored"
   | "claims_verified"
+  | "resources_curated"
   | "run_completed";
 
 /** One streamed build update (mirrors the ProgressEvent schema, serialised camelCase). */

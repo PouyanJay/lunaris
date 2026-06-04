@@ -1,0 +1,113 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.title {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.kind {
+  flex: none;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 1px var(--space-2);
+}
+
+.link {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.link:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+.duration {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.why {
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.source {
+  color: var(--text-muted);
+}
+
+/* Trust tier shown in the WORD, not colour alone (WCAG: never colour as the sole signal). */
+.trust {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.trust[data-tier="official"] {
+  color: var(--success);
+}
+
+.trust[data-tier="reputable"] {
+  color: var(--accent);
+}
+
+/* Credibility percentage: supplementary to the trust-tier word; muted by default. */
+.credibility {
+  color: var(--text-muted);
+}

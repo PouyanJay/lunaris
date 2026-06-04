@@ -234,6 +234,48 @@ describe("ToolCallCard per-tool renderers", () => {
     expect(screen.getByText(/running…/i)).toBeInTheDocument();
   });
 
+  it("curate_resources: shows the vetted-resource tally broken down by module", () => {
+    render(
+      <ToolCallCard
+        tool="curate_resources"
+        args={{}}
+        result={resultOf({
+          resourceCount: 3,
+          moduleCount: 2,
+          modules: [
+            { id: "m0", title: "Listening for intent", resourceCount: 2 },
+            { id: "m1", title: "Reading stance", resourceCount: 1 },
+          ],
+        })}
+      />,
+    );
+
+    expect(screen.getByText(/3 resources/i)).toBeInTheDocument();
+    expect(screen.getByText("Listening for intent")).toBeInTheDocument();
+    expect(screen.getByText("Reading stance")).toBeInTheDocument();
+    // The per-module tally surfaces too (2 on the first module, 1 on the second).
+    expect(screen.getByText(/2 resources/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 resource\b/i)).toBeInTheDocument();
+  });
+
+  it("curate_resources: degrades to an honest note when nothing met the bar", () => {
+    render(
+      <ToolCallCard
+        tool="curate_resources"
+        args={{}}
+        result={resultOf({ resourceCount: 0, moduleCount: 1, modules: [] })}
+      />,
+    );
+
+    expect(screen.getByText(/no resource met the bar/i)).toBeInTheDocument();
+  });
+
+  it("curate_resources: shows a running indicator while in flight", () => {
+    render(<ToolCallCard tool="curate_resources" args={{}} result={null} />);
+
+    expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
   it("build_prerequisite_graph: chips the concepts from ARGS even when the result is truncated", () => {
     // The real graph result is ~3.7KB and the tap clips it → unparseable. The concept chips must
     // come from the (full, untruncated) call args, marking the goal.
@@ -525,6 +567,17 @@ describe("ToolCallCard per-tool renderers", () => {
       absent: /"citations"/,
     },
     {
+      tool: "curate_resources",
+      args: {},
+      result: resultOf({
+        resourceCount: 2,
+        moduleCount: 1,
+        modules: [{ id: "m0", title: "Foundations", resourceCount: 2 }],
+      }),
+      present: "Foundations",
+      absent: /"resourceCount"/,
+    },
+    {
       tool: "task",
       args: { subagent_type: "module-author", description: "Do the thing" },
       result: "All done.",
@@ -572,6 +625,7 @@ describe("ToolCallCard per-tool renderers", () => {
     "interpret_request",
     "research_standard",
     "model_learner",
+    "curate_resources",
   ])("keeps the 'Tool call' eyebrow and mono tool name for %s", (tool) => {
     const { unmount } = render(<ToolCallCard tool={tool} args={{}} result="ok" />);
 

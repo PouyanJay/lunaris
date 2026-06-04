@@ -7,13 +7,16 @@ from lunaris_graph import ClaudePrereqJudge, PrerequisiteGraphBuilder
 from lunaris_grounding import (
     ClaudeSupportAssessor,
     IEvidenceRetriever,
+    IVideoSource,
     PgVectorRetriever,
+    SearchVideoSource,
     StubEvidenceRetriever,
     SupabaseCorpusStore,
     TavilySearchProvider,
     TrafilaturaContentExtractor,
     Verifier,
     VoyageEmbedder,
+    YouTubeVideoSource,
 )
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.resilience import (
@@ -30,6 +33,11 @@ from .subagents.curriculum_architect import ClaudeCurriculumArchitect
 from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.learner_profiler import ClaudeLearnerProfiler
 from .subagents.module_author import ClaudeModuleAuthor
+from .subagents.resource_curator import (
+    ClaudeResourceCurator,
+    IResourceCurator,
+    StubResourceCurator,
+)
 from .subagents.standard_researcher import (
     ClaudeStandardResearcher,
     IStandardResearcher,
@@ -77,6 +85,32 @@ def _researcher_from_env(worker_model: str) -> IStandardResearcher:
         )
     logger.info("standard_researcher_stubbed", reason="SEARCH_API_KEY unset")
     return StubStandardResearcher()
+
+
+def _video_source_from_env() -> IVideoSource:
+    """The video source for resource curation: YouTube when keyed, else the shared-search fallback.
+
+    With a ``YOUTUBE_API_KEY`` set, videos come from the YouTube Data API (guaranteed-video results
+    + channel); without one, every video query routes through the shared ``ISearchProvider`` so a
+    video is still found + vetted, just without YouTube's metadata.
+    """
+    if os.getenv("YOUTUBE_API_KEY"):
+        return YouTubeVideoSource()
+    logger.info("video_source_search_fallback", reason="YOUTUBE_API_KEY unset")
+    return SearchVideoSource(TavilySearchProvider())
+
+
+def _curator_from_env(worker_model: str) -> IResourceCurator:
+    """Build the live resource curator iff a search key is present, else the stub (P7.4).
+
+    Mirrors the researcher: the live curator finds + vets resources over the shared Tavily search +
+    an ``IVideoSource`` (worker tier for the relevance judge). With no ``SEARCH_API_KEY`` it returns
+    the stub, so curation degrades honestly to nothing and the no-key CI path stays deterministic.
+    """
+    if os.getenv("SEARCH_API_KEY"):
+        return ClaudeResourceCurator(worker_model, TavilySearchProvider(), _video_source_from_env())
+    logger.info("resource_curator_stubbed", reason="SEARCH_API_KEY unset")
+    return StubResourceCurator()
 
 
 def _visual_engine_from_env(worker_model: str) -> VisualEngine:
@@ -199,6 +233,7 @@ def build_agent_course_builder(
         builder=build_live_prereq_builder(worker),
         architect=ClaudeCurriculumArchitect(strong),
         reviser=ClaudeLessonReviser(worker),
+        curator=_curator_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
         stream_tokens=True,

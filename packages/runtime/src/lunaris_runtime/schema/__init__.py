@@ -16,6 +16,7 @@ from .enums import (
     ProgressStage,
     QualityFloor,
     ResearchStatus,
+    ResourceKind,
     RiskCategory,
     RiskOverride,
     RiskTier,
@@ -42,6 +43,7 @@ from .instruction import (
 from .knowledge import Citation, Edge, KnowledgeComponent, PrerequisiteGraph
 from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Probe
 from .progress import ProgressEvent
+from .resource import Resource
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .standard_research import ResearchSource, StandardResearch
@@ -108,6 +110,8 @@ __all__ = [
     "QualityFloor",
     "ResearchSource",
     "ResearchStatus",
+    "Resource",
+    "ResourceKind",
     "RiskCategory",
     "RiskOverride",
     "RiskProfile",

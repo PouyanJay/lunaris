@@ -27,7 +27,7 @@ class ProgressStage(StrEnum):
     standard is researched (grounding the brief in real competencies), the learner is modeled (the
     frontier of what they already know), concepts are extracted, the prerequisite graph is built,
     the curriculum is designed, each module is authored (one event per module), claims are verified,
-    and the run completes.
+    learning resources are curated per lesson, and the run completes.
     """
 
     RUN_STARTED = "run_started"
@@ -39,6 +39,7 @@ class ProgressStage(StrEnum):
     CURRICULUM_DESIGNED = "curriculum_designed"
     MODULE_AUTHORED = "module_authored"
     CLAIMS_VERIFIED = "claims_verified"
+    RESOURCES_CURATED = "resources_curated"
     RUN_COMPLETED = "run_completed"
 
 
@@ -169,6 +170,23 @@ class LanguageStyle(StrEnum):
     BALANCED = "balanced"
     SOPHISTICATED = "sophisticated"
     SCIENTIFIC = "scientific"
+
+
+class ResourceKind(StrEnum):
+    """The kind of a curated external learning resource attached to a lesson phase (P7.4).
+
+    A lesson is enriched with vetted aids the way a tutor points beyond the page: a ``VIDEO``
+    (lecture/explainer), an ``ARTICLE`` (long-form/explainer), ``DOCS`` (official documentation or a
+    standard), ``PRACTICE`` (exercises/quizzes/interactive), a ``TOOL`` (calculator/sandbox), or a
+    ``REFERENCE`` (cheat-sheet/glossary).
+    """
+
+    VIDEO = "video"
+    ARTICLE = "article"
+    DOCS = "docs"
+    PRACTICE = "practice"
+    TOOL = "tool"
+    REFERENCE = "reference"
 
 
 class ResearchStatus(StrEnum):

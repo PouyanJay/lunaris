@@ -15,8 +15,11 @@ _OFFICIAL_LABELS: frozenset[str] = frozenset({"gov", "mil", "int"})
 _ACADEMIC_LABELS: frozenset[str] = frozenset({"edu", "ac"})
 
 
-def _host(url: str) -> str:
-    """The lowercased host of a URL, sans port/credentials/brackets and a leading ``www.``."""
+def host(url: str) -> str:
+    """The lowercased host of a URL, sans port/credentials/brackets and a leading ``www.``.
+
+    Shared by the trust classifier and the resource curator (which shows it as a source domain).
+    """
     # urlparse only finds a host when a scheme (or a leading //) is present; prefix // for bare
     # inputs. .hostname (not netloc) strips creds, port, and IPv6 brackets correctly.
     parsed = urlparse(url if "://" in url else f"//{url}")
@@ -52,16 +55,16 @@ def classify_domain(
     standards domains are OFFICIAL, academic ones REPUTABLE, a denylist + internal IPs BLOCKED, the
     rest OPEN. A malformed URL with no host is OPEN (never crashes the research stage).
     """
-    host = _host(url)
-    if not host:
+    domain = host(url)
+    if not domain:
         return TrustTier.OPEN
-    if host in blocked or _is_internal_ip(host):
+    if domain in blocked or _is_internal_ip(domain):
         return TrustTier.BLOCKED
     hint = _normalize_hint(authority_hint)
     # Require a dot so a bare TLD (e.g. "ca") can't promote every domain under it to OFFICIAL.
-    if hint and "." in hint and (host == hint or host.endswith(f".{hint}")):
+    if hint and "." in hint and (domain == hint or domain.endswith(f".{hint}")):
         return TrustTier.OFFICIAL
-    labels = set(host.split("."))
+    labels = set(domain.split("."))
     if labels & _OFFICIAL_LABELS:
         return TrustTier.OFFICIAL
     if labels & _ACADEMIC_LABELS:

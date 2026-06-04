@@ -7,25 +7,38 @@ research-to-ground-claims stage both build on these primitives.
 """
 
 from .content_extractor import IContentExtractor
-from .domain_trust import classify_domain
+from .domain_trust import classify_domain, host
 from .extracted_content import ExtractedContent
 from .research_budget import ResearchBudget
+from .resource_budget import ResourceBudget
 from .search_provider import ISearchProvider
 from .search_result import SearchResult
+from .search_video_source import SearchVideoSource
 from .stub_content_extractor import StubContentExtractor
 from .stub_search_provider import StubSearchProvider
+from .stub_video_source import StubVideoSource
 from .tavily_search_provider import TavilySearchProvider
 from .trafilatura_content_extractor import TrafilaturaContentExtractor
+from .video_result import VideoResult
+from .video_source import IVideoSource
+from .youtube_video_source import YouTubeVideoSource
 
 __all__ = [
     "ExtractedContent",
     "IContentExtractor",
     "ISearchProvider",
+    "IVideoSource",
     "ResearchBudget",
+    "ResourceBudget",
     "SearchResult",
+    "SearchVideoSource",
     "StubContentExtractor",
     "StubSearchProvider",
+    "StubVideoSource",
     "TavilySearchProvider",
     "TrafilaturaContentExtractor",
+    "VideoResult",
+    "YouTubeVideoSource",
     "classify_domain",
+    "host",
 ]
