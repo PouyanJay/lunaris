@@ -3,9 +3,12 @@ from lunaris_runtime.schema import (
     AgentEvent,
     AgentEventKind,
     BloomLevel,
+    Citation,
     Course,
     CourseStatus,
     KnowledgeComponent,
+    SourceType,
+    TrustTier,
 )
 from pydantic import ValidationError
 
@@ -42,6 +45,52 @@ def test_knowledge_component_difficulty_is_bounded() -> None:
     # Assert
     assert kc.difficulty == 0.4
     assert kc.bloom_ceiling is BloomLevel.APPLY
+
+
+def test_citation_parses_without_trust_fields_for_backward_compat() -> None:
+    # Arrange — a pre-P6.0 wire citation (no trust/provenance keys), as older courses carry.
+    # Act
+    citation = Citation.model_validate(
+        {"id": "src-1", "title": "CLRS", "url": None, "snippet": "…"}
+    )
+
+    # Assert — it validates, with every trust field defaulting to None (the reader shows no badge).
+    assert citation.id == "src-1"
+    assert citation.trust_tier is None
+    assert citation.credibility is None
+    assert citation.source_type is None
+    assert citation.fetched_at is None
+
+
+def test_citation_carries_trust_provenance_camel_case() -> None:
+    # Arrange
+    citation = Citation(
+        id="src-1",
+        trust_tier=TrustTier.REPUTABLE,
+        credibility=0.91,
+        source_type=SourceType.REFERENCE,
+        fetched_at="2026-06-03T00:00:00Z",
+    )
+
+    # Act — the wire shape the web reader consumes.
+    payload = citation.model_dump_json(by_alias=True).replace(" ", "")
+    reloaded = Citation.model_validate_json(payload)
+
+    # Assert — camelCase keys, round-trips losslessly.
+    assert '"trustTier":"reputable"' in payload
+    assert '"sourceType":"reference"' in payload
+    assert '"fetchedAt":"2026-06-03T00:00:00Z"' in payload
+    assert reloaded == citation
+
+
+def test_citation_credibility_is_bounded() -> None:
+    # Arrange / Act / Assert — credibility is a 0..1 score; both bounds are rejected at the wire.
+    assert Citation(id="x", credibility=0.0).credibility == 0.0
+    assert Citation(id="x", credibility=1.0).credibility == 1.0
+    with pytest.raises(ValidationError):
+        Citation(id="x", credibility=1.5)
+    with pytest.raises(ValidationError):
+        Citation(id="x", credibility=-0.1)
 
 
 def test_agent_event_rejects_both_text_and_delta() -> None:

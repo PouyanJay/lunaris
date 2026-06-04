@@ -150,6 +150,17 @@ export interface Claim {
 /** A source's authority tier (mirrors TrustTier). The user sees it; the relevance judge does not. */
 export type TrustTier = "official" | "reputable" | "open" | "blocked";
 
+/** What KIND of source a grounding chunk is (mirrors SourceType), independent of its authority tier.
+ *  snake_case values mirror the Python enum exactly (wire parity). */
+export type SourceType =
+  | "peer_reviewed"
+  | "preprint"
+  | "official"
+  | "database"
+  | "docs"
+  | "reference"
+  | "web";
+
 /** The kind of a curated external learning resource (mirrors ResourceKind). */
 export type ResourceKind = "video" | "article" | "docs" | "practice" | "tool" | "reference";
 
@@ -244,6 +255,14 @@ export interface Citation {
   title: string | null;
   url: string | null;
   snippet: string | null;
+  /** Source trust/provenance (P6.0). Absent on pre-P6.0 courses; null when the evidence was never
+   *  classified — either way the reader shows no trust badge. `trustTier` + `credibility` are
+   *  rendered; `sourceType` + `fetchedAt` are carried for parity with the wire. */
+  trustTier?: TrustTier | null;
+  /** 0..1 blended quality score. */
+  credibility?: number | null;
+  sourceType?: SourceType | null;
+  fetchedAt?: string | null;
 }
 
 export interface Course {
@@ -265,6 +284,7 @@ export type ProgressStage =
   | "concepts_extracted"
   | "graph_built"
   | "curriculum_designed"
+  | "grounding_discovered"
   | "module_authored"
   | "claims_verified"
   | "resources_curated"

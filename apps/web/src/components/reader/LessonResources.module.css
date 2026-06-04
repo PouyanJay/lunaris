@@ -91,23 +91,3 @@
 .source {
   color: var(--text-muted);
 }
-
-/* Trust tier shown in the WORD, not colour alone (WCAG: never colour as the sole signal). */
-.trust {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-}
-
-.trust[data-tier="official"] {
-  color: var(--success);
-}
-
-.trust[data-tier="reputable"] {
-  color: var(--accent);
-}
-
-/* Credibility percentage: supplementary to the trust-tier word; muted by default. */
-.credibility {
-  color: var(--text-muted);
-}

@@ -242,7 +242,7 @@ def _delegating_script(
     first_narration: str = "",
 ) -> object:
     """The standard happy-path agent script: interpret → research → model learner → extract →
-    graph → curriculum → delegate → finalize.
+    graph → curriculum → discover grounding → delegate → finalize.
 
     ``first_narration`` lets a test make the agent narrate its first step (text that streams as
     tokens in token mode); it defaults to empty, leaving the deterministic tool-only turns intact.
@@ -278,6 +278,10 @@ def _delegating_script(
             AIMessage(
                 content="",
                 tool_calls=[{"name": "design_curriculum", "args": {}, "id": "t3"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "discover_grounding", "args": {}, "id": "t3a"}],
             ),
             AIMessage(
                 content="",
@@ -651,6 +655,7 @@ async def test_agent_builder_emits_transcript_events_to_the_agent_sink(
         "model_learner",
         "extract_concepts",
         "design_curriculum",
+        "discover_grounding",
         "finalize_course",
     } <= result_tools
 
@@ -835,6 +840,36 @@ async def test_agent_researches_the_standard_between_the_brief_and_the_learner(
     assert "hear implied intent in speech" in payload["competencies"]
     assert payload["sources"][0]["url"] == "https://www.canada.ca/clb-10"
     assert payload["sources"][0]["trustTier"] == "official"
+
+
+async def test_agent_discovers_grounding_between_curriculum_and_authoring(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    tmp_path: Path,
+) -> None:
+    # Arrange — the standard script now calls discover_grounding after design_curriculum and before
+    # delegating authoring (the P6 seam where the discovery sub-graph will run).
+    builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path))
+
+    # Act
+    await builder.run(
+        "demo", course_id="course-ground", run_id="run-ground", progress=progress_sink
+    )
+
+    # Assert — GROUNDING_DISCOVERED lands after the curriculum is designed and before the first
+    # lesson is authored, run_id-correlated (the corpus is prepared before claims are verified).
+    stages = [event.stage for event in progress_sink.events]
+    assert ProgressStage.GROUNDING_DISCOVERED in stages
+    assert stages.index(ProgressStage.CURRICULUM_DESIGNED) < stages.index(
+        ProgressStage.GROUNDING_DISCOVERED
+    )
+    assert stages.index(ProgressStage.GROUNDING_DISCOVERED) < stages.index(
+        ProgressStage.MODULE_AUTHORED
+    )
+    grounded = next(
+        e for e in progress_sink.events if e.stage is ProgressStage.GROUNDING_DISCOVERED
+    )
+    assert grounded.run_id == "run-ground"
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

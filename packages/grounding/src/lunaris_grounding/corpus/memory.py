@@ -30,10 +30,16 @@ class InMemoryCorpusStore:
         k: int = 5,
         min_score: float = 0.0,
         kc_id: str | None = None,
+        course_id: str | None = None,
     ) -> list[Evidence]:
         scored: list[Evidence] = []
         for document in self._documents.values():
             if kc_id is not None and document.kc_id != kc_id:
+                continue
+            # Per-course scoping (P6.0): when a course is requested, only its own chunks match —
+            # never another course's, never a null-course (legacy) chunk. Retrieval over a
+            # "close but not identical" topic must not surface that topic's evidence (no bleed).
+            if course_id is not None and document.course_id != course_id:
                 continue
             score = _cosine(embedding, document.embedding)
             if score < min_score:
@@ -43,6 +49,10 @@ class InMemoryCorpusStore:
                 title=document.title,
                 url=document.url,
                 snippet=document.content,
+                trust_tier=document.trust_tier,
+                credibility=document.credibility,
+                source_type=document.source_type,
+                fetched_at=document.fetched_at,
             )
             scored.append(Evidence(citation=citation, score=score))
         scored.sort(key=lambda item: item.score, reverse=True)

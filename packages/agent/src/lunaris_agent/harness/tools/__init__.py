@@ -1,5 +1,6 @@
 from .curate_resources import make_curate_resources_tool
 from .design_curriculum import make_design_curriculum_tool
+from .discover_grounding import make_discover_grounding_tool
 from .extract_concepts import make_extract_concepts_tool
 from .finalize_course import make_finalize_course_tool
 from .interpret_request import make_interpret_request_tool
@@ -11,6 +12,7 @@ from .verify_claims import make_verify_claims_tool
 __all__ = [
     "make_curate_resources_tool",
     "make_design_curriculum_tool",
+    "make_discover_grounding_tool",
     "make_extract_concepts_tool",
     "make_finalize_course_tool",
     "make_interpret_request_tool",

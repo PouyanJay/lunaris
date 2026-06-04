@@ -51,6 +51,12 @@ class CorpusIngestor:
                 title=source.title,
                 url=source.url,
                 run_id=run_id,
+                source_type=source.source_type,
+                trust_tier=source.trust_tier,
+                credibility=source.credibility,
+                fetched_at=source.fetched_at,
+                acquisition_mode=source.acquisition_mode,
+                course_id=source.course_id,
             )
             for (source, chunk), embedding in zip(pending, embeddings, strict=True)
         ]

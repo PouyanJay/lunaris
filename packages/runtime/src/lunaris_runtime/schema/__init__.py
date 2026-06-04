@@ -5,6 +5,7 @@ from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Preferences, TargetStandard
 from .course_run import CourseRun
 from .enums import (
+    AcquisitionMode,
     AgentEventKind,
     BloomLevel,
     ClarifierKind,
@@ -24,6 +25,7 @@ from .enums import (
     RiskTier,
     RunEventKind,
     RunStatus,
+    SourceType,
     StandardKind,
     TrustTier,
     VerifierStatus,
@@ -65,6 +67,7 @@ from .visual_spec import (
 )
 
 __all__ = [
+    "AcquisitionMode",
     "AgentEvent",
     "AgentEventKind",
     "Assessment",
@@ -127,6 +130,7 @@ __all__ = [
     "RunEventKind",
     "RunStatus",
     "Segment",
+    "SourceType",
     "StandardKind",
     "StandardResearch",
     "StepItem",

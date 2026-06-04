@@ -1,0 +1,31 @@
+/* Trust tier shown in the WORD, not colour alone (WCAG: never colour as the sole signal). */
+.tier {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.tier[data-tier="official"] {
+  color: var(--success);
+}
+
+.tier[data-tier="reputable"] {
+  color: var(--accent);
+}
+
+.tier[data-tier="blocked"] {
+  color: var(--danger);
+}
+
+/* Credibility percentage: supplementary to the trust-tier word. The data text stays muted (so it
+   keeps ≥4.5:1 in both themes); "low" is signalled by the ⚠ glyph + the "low" in the aria-label,
+   never by colour alone. */
+.credibility {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.warn {
+  color: var(--warning);
+}
