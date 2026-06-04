@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AppFrame } from "./components/AppFrame";
+import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
@@ -210,6 +211,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
           <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
         </ExplainProvider>
+      ) : viewMode === "corpus" ? (
+        <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} />
       ) : (
         <CourseReader
           course={course}

@@ -56,8 +56,8 @@ describe("ViewToggle", () => {
     expect(screen.getByRole("radio", { name: /learn/i })).toHaveFocus();
   });
 
-  it("wraps around the ends", () => {
-    // Arrange — on the first option, ArrowLeft should wrap to the last (Build).
+  it("wraps backward from the first option to the last (Corpus)", () => {
+    // Arrange
     const onChange = vi.fn();
     render(<ViewToggle value="learn" onChange={onChange} />);
     const learn = screen.getByRole("radio", { name: /learn/i });
@@ -67,10 +67,24 @@ describe("ViewToggle", () => {
     fireEvent.keyDown(learn, { key: "ArrowLeft" });
 
     // Assert
-    expect(onChange).toHaveBeenCalledWith("build");
+    expect(onChange).toHaveBeenCalledWith("corpus");
   });
 
-  it("exposes the Build view as a third option", () => {
+  it("wraps forward from the last option (Corpus) to the first (Learn)", () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<ViewToggle value="corpus" onChange={onChange} />);
+    const corpus = screen.getByRole("radio", { name: /corpus/i });
+    corpus.focus();
+
+    // Act
+    fireEvent.keyDown(corpus, { key: "ArrowRight" });
+
+    // Assert
+    expect(onChange).toHaveBeenCalledWith("learn");
+  });
+
+  it("registers the Build view as an option", () => {
     // Arrange
     const onChange = vi.fn();
     render(<ViewToggle value="learn" onChange={onChange} />);
@@ -80,6 +94,18 @@ describe("ViewToggle", () => {
 
     // Assert
     expect(onChange).toHaveBeenCalledWith("build");
+  });
+
+  it("registers the Corpus view as an option", () => {
+    // Arrange
+    const onChange = vi.fn();
+    render(<ViewToggle value="learn" onChange={onChange} />);
+
+    // Act
+    fireEvent.click(screen.getByRole("radio", { name: /corpus/i }));
+
+    // Assert
+    expect(onChange).toHaveBeenCalledWith("corpus");
   });
 
   it("keeps only the active option in the tab order (roving tabindex)", () => {
