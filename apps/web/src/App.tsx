@@ -16,6 +16,7 @@ import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
+import { PersonalizePanel } from "./components/personalize/PersonalizePanel";
 import { TopicForm } from "./components/TopicForm";
 import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
@@ -109,6 +110,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const opened = useOpenedRun(apiBaseUrl);
   const sidebarLayout = useSidebarLayout();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The topic the learner opted to personalize (P7.5): non-null shows the confirm panel in place of
+  // the topic form. Cleared on confirm/cancel and when starting a fresh course.
+  const [personalizeTopic, setPersonalizeTopic] = useState<string | null>(null);
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
@@ -160,6 +164,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const { open: openRun, close: closeRun } = opened;
   const startNewCourse = useCallback(() => {
     setSettingsOpen(false);
+    setPersonalizeTopic(null);
     closeRun();
     reset();
   }, [closeRun, reset]);
@@ -273,7 +278,28 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return buildReadyCanvas(course, reopen, runId);
     }
     if (state.status === "idle") {
-      return { title: "New course", meta: null, body: <TopicForm onGenerate={generate} /> };
+      if (personalizeTopic !== null) {
+        return {
+          title: "New course",
+          meta: null,
+          body: (
+            <PersonalizePanel
+              apiBaseUrl={apiBaseUrl}
+              topic={personalizeTopic}
+              onConfirm={(topic, clarification) => {
+                setPersonalizeTopic(null);
+                generate(topic, clarification);
+              }}
+              onCancel={() => setPersonalizeTopic(null)}
+            />
+          ),
+        };
+      }
+      return {
+        title: "New course",
+        meta: null,
+        body: <TopicForm onGenerate={generate} onPersonalize={setPersonalizeTopic} />,
+      };
     }
     if (state.status === "streaming") {
       const { runId } = state;

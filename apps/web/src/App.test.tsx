@@ -5,6 +5,7 @@ import App from "./App";
 import {
   agentFrame,
   courseFrame,
+  makeBriefResponse,
   makeCourse,
   makeRun,
   progressFrame,
@@ -93,12 +94,16 @@ describe("App — live studio (VITE_API_URL set)", () => {
     build?: unknown;
     course?: unknown;
     settings?: unknown;
+    brief?: unknown;
   }) {
     return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
       if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
         return Promise.resolve({ ok: true, status: 202 });
+      }
+      if (url.includes("/api/briefs")) {
+        return Promise.resolve({ ok: true, json: async () => handlers.brief });
       }
       if (url.includes("/api/runs")) {
         return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
@@ -130,6 +135,53 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
     // Let the sidebar's run-history fetch settle (empty) so its state update is awaited.
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
+  });
+
+  it("personalizes the build: opt in, confirm the clarifier, then stream to the ready course", async () => {
+    const fetchMock = routedFetch({
+      runs: [],
+      brief: makeBriefResponse(),
+      build: sseStreamResponse([progressFrame("run_started", 0), courseFrame(makeCourse())]),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    // Opt into the confirm step instead of the one-click Generate.
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
+    fireEvent.click(screen.getByRole("button", { name: /personalize before building/i }));
+
+    // The panel interprets the goal and offers the confirm questions (inferred level pre-picked).
+    expect(await screen.findByRole("heading", { name: /tune your course/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /intermediate/i })).toBeChecked();
+
+    // Build from the confirmed brief → the stream resolves to the ready course.
+    fireEvent.click(screen.getByRole("button", { name: /build course/i }));
+    expect(
+      await screen.findByRole("heading", { name: "How binary search works" }),
+    ).toBeInTheDocument();
+
+    // The confirmed clarification was threaded into the build stream URL (the core T2 contract).
+    const streamCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes("/api/courses/stream"),
+    );
+    expect(streamCall).toBeDefined();
+    const params = new URL(String(streamCall![0]), "http://test").searchParams;
+    expect(JSON.parse(params.get("clarification") ?? "null")).toMatchObject({
+      targetLevel: "intermediate",
+    });
+  });
+
+  it("cancels personalize back to the topic form", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [], brief: makeBriefResponse() }));
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
+    fireEvent.click(screen.getByRole("button", { name: /personalize before building/i }));
+    await screen.findByRole("heading", { name: /tune your course/i });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
   });
 
   it("shows the run-history sidebar with prior runs", async () => {

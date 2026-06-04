@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { StageTimes } from "../lib/buildTimeline";
 import { CourseLoadError } from "../lib/loadCourse";
 import { streamCourse } from "../lib/streamCourse";
+import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, ProgressEvent } from "../types/course";
 
 export type BuildState =
@@ -24,8 +25,8 @@ export type BuildState =
 
 interface CourseStream {
   state: BuildState;
-  /** Start (or restart) a live build for `topic`. */
-  generate: (topic: string) => void;
+  /** Start (or restart) a live build for `topic`, optionally with the learner's confirm answers. */
+  generate: (topic: string, clarification?: Clarification) => void;
   /** Abort any in-flight build and return to the idle topic form. */
   reset: () => void;
 }
@@ -46,7 +47,7 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
   }, []);
 
   const generate = useCallback(
-    (topic: string) => {
+    (topic: string, clarification?: Clarification) => {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -60,6 +61,7 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
       });
 
       streamCourse(apiBaseUrl, topic, {
+        ...(clarification ? { clarification } : {}),
         signal: controller.signal,
         onProgress: (event) => {
           // Stamp the stage's wall-clock arrival now (not in the reducer, which may run twice in

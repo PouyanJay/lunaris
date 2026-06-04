@@ -1,0 +1,112 @@
+/* A clarifier question — a radio group (CHOICE) or a labelled text field (TEXT). Tokens only. */
+
+.fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.legend {
+  padding: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* One selectable row — a hairline-bordered option that lights its border + a faint accent wash
+   when chosen (the radio dot already carries the accent). */
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.option:hover {
+  border-color: var(--border-strong);
+}
+
+.option:has(.radio:checked) {
+  border-color: var(--accent-500);
+  background: var(--accent-soft);
+}
+
+/* Surface keyboard focus on the whole row, not just the native dot, so the target is obvious. */
+.option:has(.radio:focus-visible) {
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+.radio {
+  accent-color: var(--accent-500);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.optionLabel {
+  flex: 1;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+/* The interpreter's pre-pick — a quiet mono tag (neutral; the accent stays on the radio dot). */
+.recommended {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.textarea {
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  resize: vertical;
+  transition: border-color var(--dur) var(--ease);
+}
+
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.textarea:hover {
+  border-color: var(--text-muted);
+}
+
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}

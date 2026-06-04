@@ -1,3 +1,4 @@
+import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, ProgressEvent } from "../types/course";
 import { CourseLoadError, parseCourse } from "./loadCourse";
 
@@ -6,6 +7,8 @@ interface StreamCourseOptions {
   onProgress?: (event: ProgressEvent) => void;
   /** Called for each fine-grained agent-transcript beat (reasoning / tool call / todo). */
   onAgent?: (event: AgentEvent) => void;
+  /** The learner's opt-in confirm answers (P7.5); absent → today's inferred-only build. */
+  clarification?: Clarification;
   /** Abort the in-flight build (e.g. the user navigates away or starts a new topic). */
   signal?: AbortSignal;
 }
@@ -14,15 +17,18 @@ interface StreamCourseOptions {
  * Generate a course for `topic` and stream its build over Server-Sent Events, invoking
  * `onProgress` per stage and resolving with the finished course (the terminal `course`
  * frame). Consumed via `fetch` + a `ReadableStream` reader rather than `EventSource` so
- * the request is abortable and testable. Network, HTTP, and "stream ended without a
- * course" failures all surface as `CourseLoadError` — one error channel for the caller.
+ * the request is abortable and testable. An optional `clarification` (the confirmed answers
+ * from the Personalize panel) rides as a JSON query param. Network, HTTP, and "stream ended
+ * without a course" failures all surface as `CourseLoadError` — one error channel for the caller.
  */
 export async function streamCourse(
   apiBaseUrl: string,
   topic: string,
-  { onProgress, onAgent, signal }: StreamCourseOptions,
+  { onProgress, onAgent, clarification, signal }: StreamCourseOptions,
 ): Promise<Course> {
-  const url = `${apiBaseUrl}/api/courses/stream?${new URLSearchParams({ topic })}`;
+  const params = new URLSearchParams({ topic });
+  if (clarification) params.set("clarification", JSON.stringify(clarification));
+  const url = `${apiBaseUrl}/api/courses/stream?${params}`;
   let response: Response;
   try {
     response = await fetch(url, signal ? { signal } : {});
