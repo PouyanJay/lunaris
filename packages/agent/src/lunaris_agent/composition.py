@@ -7,12 +7,15 @@ from lunaris_graph import ClaudePrereqJudge, PrerequisiteGraphBuilder
 from lunaris_grounding import (
     ClaudeSupportAssessor,
     CorpusIngestor,
+    CredibilityScorer,
     IEvidenceRetriever,
     IVideoSource,
+    OpenAlexScholarlyRegistry,
     PgVectorRetriever,
     SearchVideoSource,
     StubEvidenceRetriever,
     SupabaseCorpusStore,
+    SupabaseSourceAuthorityStore,
     TavilySearchProvider,
     TrafilaturaContentExtractor,
     Verifier,
@@ -90,7 +93,16 @@ def _discoverer_from_env() -> IGroundingDiscoverer:
         and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         and os.getenv("EMBEDDINGS_API_KEY")
     ):
-        return SubgraphGroundingDiscoverer(CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore()))
+        # Grade each discovered source as it lands (P6.2 scorer + the seeded authorities table),
+        # with the live OpenAlex registry (P6.3) flooring an unknown host serving a real paper to
+        # REPUTABLE — so machine-found evidence carries the same graded provenance manual uploads
+        # do. OpenAlex is keyless + best-effort; the optional OPENALEX_EMAIL joins its polite pool.
+        scorer = CredibilityScorer(
+            SupabaseSourceAuthorityStore(),
+            registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
+        )
+        ingestor = CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore(), scorer=scorer)
+        return SubgraphGroundingDiscoverer(ingestor)
     logger.info("grounding_discoverer_stubbed", reason="supabase/embeddings creds unset")
     return StubGroundingDiscoverer()
 

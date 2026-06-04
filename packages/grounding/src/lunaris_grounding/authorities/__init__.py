@@ -1,5 +1,6 @@
 from lunaris_grounding.authorities.authority import SourceAuthority
 from lunaris_grounding.authorities.memory import InMemorySourceAuthorityStore
+from lunaris_grounding.authorities.openalex_registry import OpenAlexScholarlyRegistry
 from lunaris_grounding.authorities.registry_protocol import IScholarlyRegistry
 from lunaris_grounding.authorities.scholarly_record import ScholarlyRecord
 from lunaris_grounding.authorities.scored_source import ScoredSource
@@ -15,6 +16,7 @@ __all__ = [
     "IScholarlyRegistry",
     "ISourceAuthorityStore",
     "InMemorySourceAuthorityStore",
+    "OpenAlexScholarlyRegistry",
     "ScholarlyRecord",
     "ScoredSource",
     "SourceAuthority",
