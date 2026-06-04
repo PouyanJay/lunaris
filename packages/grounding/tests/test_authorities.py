@@ -14,6 +14,7 @@ from lunaris_grounding import (
     CredibilityScorer,
     InMemoryCorpusStore,
     InMemorySourceAuthorityStore,
+    ScholarlyRecord,
     SourceAuthority,
     StubEmbedder,
 )
@@ -64,9 +65,10 @@ async def test_scorer_falls_back_to_open_for_an_unknown_domain() -> None:
     # Act
     scored = await scorer.score(source)
 
-    # Assert — an unknown domain is OPEN (earns trust later), never "trusted by omission".
+    # Assert — an unknown domain is OPEN (earns trust later), never "trusted by omission". The exact
+    # open-web credibility depends on the extraction-quality nudge, pinned in the blend tests below.
     assert scored.trust_tier is TrustTier.OPEN
-    assert scored.credibility == pytest.approx(0.50)
+    assert 0.0 < scored.credibility < 1.0
 
 
 async def test_scorer_marks_a_denylisted_domain_blocked_with_zero_credibility() -> None:
@@ -92,9 +94,10 @@ async def test_scorer_does_not_apply_a_pack_tier_without_field_context() -> None
     # Act
     scored = await scorer.score(source)
 
-    # Assert — a pack hit is inert until a run's field is plumbed through (T2/T3).
+    # Assert — a pack hit is inert until a run's field is plumbed through (T2/T3): it falls to the
+    # open-web blend (thin text → below the 0.50 prior), not the pack's OFFICIAL prior.
     assert scored.trust_tier is TrustTier.OPEN
-    assert scored.credibility == pytest.approx(0.50)
+    assert scored.credibility < 0.5
 
 
 async def test_scorer_falls_back_to_the_gov_label_heuristic_for_an_untabled_domain() -> None:
@@ -204,3 +207,100 @@ async def test_scorer_preserves_an_already_vouched_source() -> None:
     # Assert — the user's vouch is preserved (not downgraded), with the VOUCHED prior assigned.
     assert scored.trust_tier is TrustTier.VOUCHED
     assert scored.credibility == pytest.approx(0.85)
+
+
+# --- T2: the credibility blend (extraction quality) + the scholarly-registry seam --------------
+
+# A long, clean body (letters + spaces only, well past the substantive-length floor) → extraction
+# quality ~= 1.0; a single char → quality ~= 0. Used to drive the open-web nudge to its extremes.
+_SUBSTANTIVE_TEXT = "binary search halves the sorted range on every step " * 12
+
+
+async def test_blend_nudges_open_credibility_up_for_substantive_text() -> None:
+    # Arrange — an open-web domain with a clean, substantial body.
+    scorer = CredibilityScorer(_authorities())
+    source = CandidateSource(kc_id="kc1", text=_SUBSTANTIVE_TEXT, url="https://blog.example/post")
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — extraction quality nudges the open-web prior (0.50) up by the full +0.15.
+    assert scored.trust_tier is TrustTier.OPEN
+    assert scored.credibility == pytest.approx(0.65)
+
+
+async def test_blend_nudges_open_credibility_down_for_thin_text() -> None:
+    # Arrange — the same open-web domain but a one-char stub (a nav-sludge / empty-scrape proxy).
+    scorer = CredibilityScorer(_authorities())
+    source = CandidateSource(kc_id="kc1", text="t", url="https://blog.example/post")
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — thin text pushes the open-web prior down: quality ~0.002, nudge ~-0.149, so ~0.35.
+    assert scored.trust_tier is TrustTier.OPEN
+    assert scored.credibility == pytest.approx(0.3506, abs=1e-3)
+
+
+async def test_blend_does_not_penalize_a_curated_tier_for_thin_text() -> None:
+    # Arrange — a spine (REPUTABLE) source with a thin body. A curated tier is trusted at its prior;
+    # page shape does not second-guess it (only the uncertain open web is nudged).
+    scorer = CredibilityScorer(_authorities())
+    source = CandidateSource(kc_id="kc1", text="t", url="https://en.wikipedia.org/wiki/X")
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — REPUTABLE prior is returned unchanged despite the thin extraction.
+    assert scored.credibility == pytest.approx(0.75)
+
+
+async def test_blend_scores_a_blocked_source_zero_even_with_clean_text() -> None:
+    # Arrange — a denylisted domain with an otherwise pristine body.
+    scorer = CredibilityScorer(_authorities())
+    source = CandidateSource(kc_id="kc1", text=_SUBSTANTIVE_TEXT, url="https://bit.ly/x")
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — a blocked source earns no credibility, however cleanly it extracts.
+    assert scored.trust_tier is TrustTier.BLOCKED
+    assert scored.credibility == pytest.approx(0.0)
+
+
+class _RecordingRegistry:
+    """A scholarly registry that confirms a peer-reviewed record for every URL (test seam)."""
+
+    async def lookup(self, url: str) -> ScholarlyRecord | None:
+        return ScholarlyRecord(venue="Journal of Examples", doi="10.0/x")
+
+
+async def test_registry_floors_an_unknown_domain_to_reputable() -> None:
+    # Arrange — an unknown open-web domain that the registry confirms is a real peer-reviewed paper.
+    scorer = CredibilityScorer(_authorities(), registry=_RecordingRegistry())
+    source = CandidateSource(
+        kc_id="kc1", text=_SUBSTANTIVE_TEXT, url="https://unknown-journal.example/p"
+    )
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — an unknown host serving a real paper is floored to REPUTABLE, not left open web.
+    assert scored.trust_tier is TrustTier.REPUTABLE
+    assert scored.credibility == pytest.approx(0.75)
+
+
+async def test_stub_registry_leaves_an_unknown_domain_open() -> None:
+    # Arrange — the default (stub) registry resolves nothing, so the domain stays open web.
+    scorer = CredibilityScorer(_authorities())
+    source = CandidateSource(
+        kc_id="kc1", text=_SUBSTANTIVE_TEXT, url="https://unknown-journal.example/p"
+    )
+
+    # Act
+    scored = await scorer.score(source)
+
+    # Assert — no record → open web; the substantive body keeps it at the +0.15 nudge (contrast the
+    # registry-floored case above, which would be REPUTABLE at 0.75).
+    assert scored.trust_tier is TrustTier.OPEN
+    assert scored.credibility == pytest.approx(0.65)
