@@ -21,7 +21,7 @@ from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Clarification, Course, ProgressStage, RiskTier
+from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth, ProgressStage, RiskTier
 
 from ..critic import ICritic, MinimalCritic
 from ..progress import IAgentSink, IProgressSink
@@ -35,6 +35,7 @@ from ..subagents.visual_agent import VisualEngine
 from .agent import build_course_agent
 from .agent_reporter import AgentReporter
 from .authoring import ILessonReviser, build_authoring_subgraph
+from .discovery import IGroundingDiscoverer
 from .draft import CourseDraft
 from .event_tap import stream_course_build
 from .progress_reporter import ProgressReporter
@@ -90,6 +91,7 @@ class AgentCourseBuilder:
         architect: ICurriculumArchitect,
         reviser: ILessonReviser,
         curator: IResourceCurator,
+        discoverer: IGroundingDiscoverer,
         verifier: Verifier,
         critic: ICritic | None = None,
         visual_engine: VisualEngine | None = None,
@@ -106,6 +108,7 @@ class AgentCourseBuilder:
         self._architect = architect
         self._reviser = reviser
         self._curator = curator
+        self._discoverer = discoverer
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
         self._visual_engine = visual_engine
@@ -129,6 +132,7 @@ class AgentCourseBuilder:
         progress: IProgressSink | None = None,
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
+        discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
     ) -> Course:
         # ``run_id`` is bound for the whole run and cleared in ``finally`` so it never leaks
         # into a later run sharing the event loop (the API reuses it across requests).
@@ -144,6 +148,7 @@ class AgentCourseBuilder:
                 run_id=run_id,
                 risk_tier=self._risk_tier,
                 clarification=clarification,
+                discovery_depth=discovery_depth,
             )
             # One stage cursor per run, shared by both reporters: the ProgressReporter advances
             # it at each stage boundary, and the AgentReporter stamps every fine event's `stage`
@@ -193,7 +198,7 @@ class AgentCourseBuilder:
             make_extract_concepts_tool(self._extractor, draft),
             make_prerequisite_graph_tool(self._builder, draft),
             make_design_curriculum_tool(self._architect, draft),
-            make_discover_grounding_tool(draft),
+            make_discover_grounding_tool(self._discoverer, draft),
             make_curate_resources_tool(self._curator, draft),
             make_finalize_course_tool(
                 self._critic, self._store, draft, visual_engine=self._visual_engine

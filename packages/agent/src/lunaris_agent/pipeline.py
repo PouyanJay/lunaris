@@ -9,7 +9,7 @@ HTTP layer stays pipeline-agnostic.
 
 from typing import Protocol
 
-from lunaris_runtime.schema import Clarification, Course
+from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth
 
 from .progress import IAgentSink, IProgressSink
 
@@ -20,6 +20,8 @@ class CoursePipeline(Protocol):
     ``progress`` carries coarse pipeline stages, ``agent`` the fine-grained transcript feed (both
     default to a no-op sink). ``clarification`` carries the learner's opt-in confirm answers (P7.5);
     the agent pipeline folds them onto the inferred brief, the legacy orchestrator ignores them.
+    ``discovery_depth`` pre-authorizes how hard auto-discovery searches (P6.3); the agent pipeline
+    reads it, the legacy orchestrator ignores it.
     """
 
     async def run(
@@ -31,4 +33,5 @@ class CoursePipeline(Protocol):
         progress: IProgressSink | None = None,
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
+        discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
     ) -> Course: ...

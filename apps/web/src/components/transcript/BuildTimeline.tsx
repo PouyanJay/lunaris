@@ -8,6 +8,7 @@ import {
 } from "../../lib/buildTimeline";
 import { formatDuration } from "../../lib/formatDuration";
 import type { AgentEvent, ProgressEvent, ProgressStage } from "../../types/course";
+import { DiscoverySources } from "./DiscoverySources";
 import { LiveActivity } from "./LiveActivity";
 import { ReasoningBeat } from "./ReasoningBeat";
 import { TodoList } from "./TodoList";
@@ -121,6 +122,9 @@ interface PhaseNodeProps {
 
 function PhaseNode({ phase, expanded, expandable, onToggle, startedAt }: PhaseNodeProps) {
   const duration = phase.durationMs !== null ? formatDuration(phase.durationMs) : null;
+  // Split the vetted sources (rendered as one grouped table) from the reasoning/tool beats.
+  const sources = phase.entries.flatMap((entry) => (entry.kind === "source" ? [entry.source] : []));
+  const beats = phase.entries.filter((entry) => entry.kind !== "source");
   const header = (
     <>
       <span className={styles.dot} data-status={phase.status} aria-hidden="true" />
@@ -151,7 +155,10 @@ function PhaseNode({ phase, expanded, expandable, onToggle, startedAt }: PhaseNo
 
       {expanded && (
         <div className={styles.body}>
-          {phase.entries.map((entry, index) => {
+          {/* The vetted sources are grouped into one streaming table (the source-vetting view),
+              ahead of the phase's reasoning/tool beats; other phases have none. */}
+          {sources.length > 0 && <DiscoverySources sources={sources} />}
+          {beats.map((entry, index) => {
             if (entry.kind === "tool") {
               return (
                 <ToolCallCard
@@ -165,9 +172,7 @@ function PhaseNode({ phase, expanded, expandable, onToggle, startedAt }: PhaseNo
             // The live caret shows only on the active phase's latest beat while it is still
             // streaming — the visible signal the agent's reasoning is forming token-by-token.
             const isLiveCaret =
-              entry.streaming === true &&
-              phase.status === "active" &&
-              index === phase.entries.length - 1;
+              entry.streaming === true && phase.status === "active" && index === beats.length - 1;
             return <ReasoningBeat key={entry.key} text={entry.text} streaming={isLiveCaret} />;
           })}
         </div>

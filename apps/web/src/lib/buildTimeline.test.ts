@@ -375,6 +375,61 @@ describe("buildTimeline", () => {
     expect(entry).toEqual({ kind: "reasoning", key: "r-0", text: "Planning the build." });
     expect(entry).not.toHaveProperty("streaming", true);
   });
+
+  it("folds source_evaluated events into source entries under the Grounding phase", () => {
+    const phases = buildTimeline(
+      [
+        makeProgressEvent("run_started", 0),
+        makeProgressEvent("grounding_discovered", 1, { label: "Finding evidence" }),
+      ],
+      [
+        makeAgentEvent("source_evaluated", 0, {
+          stage: "grounding_discovered",
+          source: {
+            kcId: "dijkstra",
+            domain: "study.example",
+            trustTier: "reputable",
+            credibility: 0.75,
+            sourceType: "web",
+            accepted: true,
+            reason: "On topic.",
+          },
+        }),
+        makeAgentEvent("source_evaluated", 1, {
+          stage: "grounding_discovered",
+          source: {
+            kcId: "dijkstra",
+            domain: "spam.example",
+            trustTier: "open",
+            credibility: 0.3,
+            sourceType: "web",
+            accepted: false,
+            reason: "Off topic.",
+          },
+        }),
+      ],
+    );
+
+    const entries = phase(phases, "Grounding").entries;
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      kind: "source",
+      source: { domain: "study.example", accepted: true },
+    });
+    expect(entries[1]).toMatchObject({
+      kind: "source",
+      source: { domain: "spam.example", accepted: false },
+    });
+  });
+
+  it("ignores a source_evaluated event whose source payload is absent", () => {
+    const phases = buildTimeline(
+      [makeProgressEvent("grounding_discovered", 0)],
+      [makeAgentEvent("source_evaluated", 0, { stage: "grounding_discovered", source: null })],
+    );
+
+    expect(phase(phases, "Grounding").entries).toHaveLength(0);
+  });
 });
 
 describe("latestPlan", () => {

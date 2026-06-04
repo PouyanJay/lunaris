@@ -1,4 +1,4 @@
-from lunaris_runtime.schema import Clarification
+from lunaris_runtime.schema import Clarification, DiscoveryDepth
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -7,10 +7,13 @@ class CourseRequest(BaseModel):
 
     ``clarification`` (P7.5) is the optional calibrated answers from the interpret clarifier; absent
     (the default one-click build) the pipeline uses the interpreter's inference verbatim.
+    ``discovery_depth`` (P6.3) pre-authorizes how hard auto-discovery searches; STANDARD is the
+    moderate one-click default, THOROUGH widens the grounding budget.
     """
 
     topic: str = Field(min_length=1, max_length=200)
     clarification: Clarification | None = None
+    discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD
 
     @field_validator("topic")
     @classmethod

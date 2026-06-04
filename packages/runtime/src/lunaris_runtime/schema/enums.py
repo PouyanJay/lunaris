@@ -106,6 +106,7 @@ class AgentEventKind(StrEnum):
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TODO = "todo"
+    SOURCE_EVALUATED = "source_evaluated"
 
 
 class RunEventKind(StrEnum):
@@ -263,6 +264,19 @@ class AcquisitionMode(StrEnum):
     MANUAL = "manual"
     AUTO = "auto"
     SEED = "seed"
+
+
+class DiscoveryDepth(StrEnum):
+    """How hard auto-discovery (P6.3) searches for a build — a pre-authorized cost ceiling.
+
+    Chosen up front (the build can't safely pause mid-flight to ask): ``STANDARD`` is the moderate
+    one-click default; ``THOROUGH`` raises the per-round search/fetch caps + the round ceiling so
+    discovery corroborates more concepts across more domains, for a higher search cost. When a run
+    ends with concepts still thin, the canvas says so — the learner can rebuild THOROUGH to dig in.
+    """
+
+    STANDARD = "standard"
+    THOROUGH = "thorough"
 
 
 class AuthorityKind(StrEnum):

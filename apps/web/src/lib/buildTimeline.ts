@@ -1,4 +1,10 @@
-import type { AgentEvent, AgentTodo, ProgressEvent, ProgressStage } from "../types/course";
+import type {
+  AgentEvent,
+  AgentTodo,
+  ProgressEvent,
+  ProgressStage,
+  SourceEvaluation,
+} from "../types/course";
 
 /** A phase's lifecycle on the build timeline. Only the single in-flight phase is `active`. */
 export type PhaseStatus = "pending" | "active" | "done";
@@ -14,7 +20,10 @@ export type TimelineEntry =
       tool: string;
       args: Record<string, unknown> | null;
       result: string | null;
-    };
+    }
+  // One discovered source the discovery sub-graph vetted — grouped into a streaming source-vetting
+  // table within its phase, not rendered as an individual card.
+  | { kind: "source"; key: string; source: SourceEvaluation };
 
 /** One node on the timeline: a major pipeline phase, its status, a one-line summary, and the
  *  fine-grained reasoning/tool beats that fired while it was active. The agent's plan (todos) is no
@@ -114,6 +123,13 @@ function stagedEntries(agentEvents: AgentEvent[]): StagedEntry[] {
         if (text) {
           staged.push({ entry: { kind: "reasoning", key: `r-${event.sequence}`, text }, phaseKey });
         }
+      }
+    } else if (event.kind === "source_evaluated") {
+      if (event.source) {
+        staged.push({
+          entry: { kind: "source", key: `s-${event.sequence}`, source: event.source },
+          phaseKey,
+        });
       }
     } else if (event.kind === "tool_call") {
       staged.push({

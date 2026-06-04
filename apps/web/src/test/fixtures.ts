@@ -335,6 +335,7 @@ export function makeAgentEvent(
     toolArgs: null,
     result: null,
     todos: null,
+    source: null,
     ...extra,
   };
 }

@@ -1,0 +1,91 @@
+.panel {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tally {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Three columns: verdict glyph | domain | trust. The reason wraps to its own line below via
+   grid-column: 2 / -1. One hairline-divided row per vetted source. */
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.row + .row {
+  border-top: var(--border-width) solid var(--border);
+}
+
+.verdict {
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+/* Kept = success, skipped = muted (a skip is a normal outcome, not an error — never --danger). The
+   glyph (✓/✕) carries the verdict too, so colour is never the sole signal (WCAG). */
+.row[data-accepted="true"] .verdict {
+  color: var(--success);
+}
+
+.row[data-accepted="false"] .verdict {
+  color: var(--text-muted);
+}
+
+.domain {
+  font-size: var(--text-sm);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trust {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  justify-self: end;
+}
+
+.untiered {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* The one-line reason spans the full width under the row's first cells. */
+.reason {
+  grid-column: 2 / -1;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: var(--space-1);
+}

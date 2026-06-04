@@ -30,7 +30,15 @@ class _BlockingPipeline:
         self.started = asyncio.Event()
 
     async def run(  # type: ignore[no-untyped-def]
-        self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+        self,
+        topic,
+        *,
+        course_id,
+        run_id,
+        progress=None,
+        agent=None,
+        clarification=None,
+        discovery_depth=None,
     ):
         self.started.set()
         await asyncio.Event().wait()  # blocks forever; cancellation raises CancelledError here

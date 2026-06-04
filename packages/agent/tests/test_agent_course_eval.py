@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage
 from lunaris_agent.harness.authoring import StubLessonReviser
+from lunaris_agent.harness.discovery import StubGroundingDiscoverer
 from lunaris_agent.harness.runner import AgentCourseBuilder
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
 from lunaris_agent.subagents.curriculum_architect import (
@@ -193,6 +194,7 @@ async def _build(
         architect=StubCurriculumArchitect(_plan()),
         reviser=StubLessonReviser(_lesson, lambda m, _c, _a: _lesson(m)),
         curator=StubResourceCurator(),
+        discoverer=StubGroundingDiscoverer(),
         verifier=verifier or _grounding_verifier(),
     )
     return await builder.run("binary search", course_id="c-eval", run_id="r-eval")
@@ -265,6 +267,7 @@ async def test_agent_course_meets_dod_across_risk_tiers(
         architect=StubCurriculumArchitect(_plan()),
         reviser=StubLessonReviser(_lesson, lambda m, _c, _a: _lesson(m)),
         curator=StubResourceCurator(),
+        discoverer=StubGroundingDiscoverer(),
         verifier=_grounding_verifier(),
         risk_tier=RiskTier.HIGH if risk == "high" else RiskTier.LOW,
     )

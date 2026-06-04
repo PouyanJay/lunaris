@@ -6,12 +6,16 @@ import structlog
 from lunaris_graph import ClaudePrereqJudge, PrerequisiteGraphBuilder
 from lunaris_grounding import (
     ClaudeSupportAssessor,
+    CorpusIngestor,
+    CredibilityScorer,
     IEvidenceRetriever,
     IVideoSource,
+    OpenAlexScholarlyRegistry,
     PgVectorRetriever,
     SearchVideoSource,
     StubEvidenceRetriever,
     SupabaseCorpusStore,
+    SupabaseSourceAuthorityStore,
     TavilySearchProvider,
     TrafilaturaContentExtractor,
     Verifier,
@@ -26,6 +30,12 @@ from lunaris_runtime.resilience import (
 )
 
 from .harness.authoring import ClaudeLessonReviser
+from .harness.discovery import (
+    ClaudeRelevanceJudge,
+    IGroundingDiscoverer,
+    StubGroundingDiscoverer,
+    SubgraphGroundingDiscoverer,
+)
 from .harness.runner import AgentCourseBuilder
 from .orchestrator import Orchestrator
 from .subagents.concept_extractor import ClaudeConceptExtractor
@@ -70,6 +80,39 @@ def _retriever_from_env() -> IEvidenceRetriever | None:
         return PgVectorRetriever(VoyageEmbedder(), SupabaseCorpusStore())
     logger.info("grounding_retriever_stubbed", reason="supabase/embeddings creds unset")
     return None
+
+
+def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
+    """Build the live grounding discoverer iff search + corpus + embeddings creds are set (P6.3).
+
+    Discovery needs a search key (to find sources), the embeddings key (to embed them), and the
+    Supabase corpus (to ingest into the same store the verifier retrieves from). Without all three
+    it returns the stub (no source ingested), so the no-key path stays deterministic and claims fall
+    REVIEW. The discovery sub-graph grades each source with the credibility scorer — backed by the
+    seeded authorities table + the live OpenAlex registry (keyless; optional ``OPENALEX_EMAIL`` for
+    its polite pool), which floors an unknown host serving a real paper to REPUTABLE — and drops
+    off-topic ones with a label-blind worker-tier judge, so machine-found evidence is graded, not
+    just gathered.
+    """
+    if (
+        os.getenv("SEARCH_API_KEY")
+        and os.getenv("SUPABASE_URL")
+        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        and os.getenv("EMBEDDINGS_API_KEY")
+    ):
+        scorer = CredibilityScorer(
+            SupabaseSourceAuthorityStore(),
+            registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
+        )
+        return SubgraphGroundingDiscoverer(
+            TavilySearchProvider(),
+            TrafilaturaContentExtractor(),
+            scorer,
+            ClaudeRelevanceJudge(worker_model),
+            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore()),
+        )
+    logger.info("grounding_discoverer_stubbed", reason="search/supabase/embeddings creds unset")
+    return StubGroundingDiscoverer()
 
 
 def _researcher_from_env(worker_model: str) -> IStandardResearcher:
@@ -234,6 +277,7 @@ def build_agent_course_builder(
         architect=ClaudeCurriculumArchitect(strong),
         reviser=ClaudeLessonReviser(worker),
         curator=_curator_from_env(worker),
+        discoverer=_discoverer_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
         stream_tokens=True,

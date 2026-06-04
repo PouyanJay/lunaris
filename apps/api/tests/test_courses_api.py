@@ -163,7 +163,15 @@ async def test_regenerate_with_an_unsupported_pipeline_is_501(tmp_path: Path) ->
             self._store = store
 
         async def run(
-            self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+            self,
+            topic,
+            *,
+            course_id,
+            run_id,
+            progress=None,
+            agent=None,
+            clarification=None,
+            discovery_depth=None,
         ):  # type: ignore[no-untyped-def]
             return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
 
@@ -300,7 +308,15 @@ class _AgentEventPipeline:
         self._store = store
 
     async def run(  # type: ignore[no-untyped-def]
-        self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+        self,
+        topic,
+        *,
+        course_id,
+        run_id,
+        progress=None,
+        agent=None,
+        clarification=None,
+        discovery_depth=None,
     ):
         from lunaris_agent.harness.agent_reporter import AgentReporter
         from lunaris_agent.harness.progress_reporter import ProgressReporter
@@ -332,12 +348,21 @@ class _ClarificationSpyPipeline:
         self._store = store
 
     async def run(  # type: ignore[no-untyped-def]
-        self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+        self,
+        topic,
+        *,
+        course_id,
+        run_id,
+        progress=None,
+        agent=None,
+        clarification=None,
+        discovery_depth=None,
     ):
         from lunaris_agent.harness.progress_reporter import ProgressReporter
         from lunaris_runtime.schema import Course, CourseStatus, ProgressStage
 
         _ClarificationSpyPipeline.captured["clarification"] = clarification
+        _ClarificationSpyPipeline.captured["discovery_depth"] = discovery_depth
         await ProgressReporter(run_id, progress).emit(ProgressStage.RUN_STARTED, "start")
         await ProgressReporter(run_id, progress).emit(
             ProgressStage.RUN_COMPLETED, "done", status=CourseStatus.PUBLISHED
@@ -394,6 +419,40 @@ async def test_stream_without_a_clarification_forwards_none(tmp_path: Path) -> N
 
     # Assert — the pipeline is driven with no clarification (today's inferred-only build).
     assert forwarded is None
+
+
+async def test_stream_forwards_the_chosen_discovery_depth(tmp_path: Path) -> None:
+    from lunaris_runtime.schema import DiscoveryDepth
+
+    # Act — the learner pre-authorized a deeper search (P6.3).
+    response = await _send_stream_request(
+        tmp_path, {"topic": "binary search", "discovery_depth": "thorough"}
+    )
+
+    # Assert — the depth is parsed into the typed enum and threaded to the pipeline.
+    assert response.status_code == 200
+    assert _ClarificationSpyPipeline.captured["discovery_depth"] is DiscoveryDepth.THOROUGH
+
+
+async def test_stream_defaults_discovery_depth_to_standard(tmp_path: Path) -> None:
+    # Act — no discovery_depth query param (the one-click default).
+    from lunaris_runtime.schema import DiscoveryDepth
+
+    response = await _send_stream_request(tmp_path, {"topic": "binary search"})
+
+    # Assert — the pipeline runs at the moderate STANDARD depth.
+    assert response.status_code == 200
+    assert _ClarificationSpyPipeline.captured["discovery_depth"] is DiscoveryDepth.STANDARD
+
+
+async def test_stream_rejects_an_invalid_discovery_depth(tmp_path: Path) -> None:
+    # Act — an out-of-vocabulary depth.
+    response = await _send_stream_request(
+        tmp_path, {"topic": "binary search", "discovery_depth": "exhaustive"}
+    )
+
+    # Assert — rejected at the boundary by the enum-typed query param.
+    assert response.status_code == 422
 
 
 async def test_stream_rejects_a_malformed_clarification(tmp_path: Path) -> None:
@@ -462,6 +521,30 @@ async def test_create_forwards_the_clarification_from_the_post_body(tmp_path: Pa
     assert _ClarificationSpyPipeline.captured["clarification"] == Clarification(
         target_level=Level.EXPERT, background="a working engineer"
     )
+
+
+async def test_create_forwards_the_discovery_depth_from_the_post_body(tmp_path: Path) -> None:
+    # Arrange — the await-full POST path carries the chosen discovery depth (P6.3).
+    from lunaris_api.dependencies import get_course_service
+    from lunaris_api.service import CourseService
+    from lunaris_runtime.persistence import CourseStore
+    from lunaris_runtime.schema import DiscoveryDepth
+
+    _ClarificationSpyPipeline.captured = {}
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), _ClarificationSpyPipeline)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        # Act
+        response = await http.post(
+            "/api/courses", json={"topic": "binary search", "discovery_depth": "thorough"}
+        )
+
+    # Assert — parsed off the body and threaded to the pipeline as the typed enum.
+    assert response.status_code == 201
+    assert _ClarificationSpyPipeline.captured["discovery_depth"] is DiscoveryDepth.THOROUGH
 
 
 async def test_stream_carries_agent_transcript_frames(tmp_path: Path) -> None:

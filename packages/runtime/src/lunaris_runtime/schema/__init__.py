@@ -12,6 +12,7 @@ from .enums import (
     ClarifierKind,
     CourseStatus,
     DetailDepth,
+    DiscoveryDepth,
     LanguageStyle,
     Latency,
     Level,
@@ -52,6 +53,7 @@ from .progress import ProgressEvent
 from .resource import Resource
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
+from .source_evaluation import SourceEvaluation
 from .standard_research import ResearchSource, StandardResearch
 from .visual_spec import (
     ComparisonRow,
@@ -94,6 +96,7 @@ __all__ = [
     "CourseStatus",
     "DeliverableShape",
     "DetailDepth",
+    "DiscoveryDepth",
     "Edge",
     "FlowEdge",
     "FlowNode",
@@ -133,6 +136,7 @@ __all__ = [
     "RunEventKind",
     "RunStatus",
     "Segment",
+    "SourceEvaluation",
     "SourceType",
     "StandardKind",
     "StandardResearch",

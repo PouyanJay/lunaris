@@ -4,7 +4,7 @@ import type { StageTimes } from "../lib/buildTimeline";
 import { CourseLoadError } from "../lib/loadCourse";
 import { streamCourse } from "../lib/streamCourse";
 import type { Clarification } from "../types/clarifier";
-import type { AgentEvent, Course, ProgressEvent } from "../types/course";
+import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
 
 export type BuildState =
   | { status: "idle" }
@@ -21,12 +21,13 @@ export type BuildState =
     }
   // runId is carried from the streaming state so the ready course's Build tab can replay this run.
   | { status: "ready"; course: Course; runId: string | undefined }
-  | { status: "error"; message: string; topic: string };
+  // discoveryDepth is carried so a retry re-runs at the depth the learner chose, not the default.
+  | { status: "error"; message: string; topic: string; discoveryDepth: DiscoveryDepth };
 
 interface CourseStream {
   state: BuildState;
   /** Start (or restart) a live build for `topic`, optionally with the learner's confirm answers. */
-  generate: (topic: string, clarification?: Clarification) => void;
+  generate: (topic: string, clarification?: Clarification, discoveryDepth?: DiscoveryDepth) => void;
   /** Abort any in-flight build and return to the idle topic form. */
   reset: () => void;
 }
@@ -47,7 +48,7 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
   }, []);
 
   const generate = useCallback(
-    (topic: string, clarification?: Clarification) => {
+    (topic: string, clarification?: Clarification, discoveryDepth?: DiscoveryDepth) => {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -62,6 +63,7 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
 
       streamCourse(apiBaseUrl, topic, {
         ...(clarification ? { clarification } : {}),
+        ...(discoveryDepth ? { discoveryDepth } : {}),
         signal: controller.signal,
         onProgress: (event) => {
           // Stamp the stage's wall-clock arrival now (not in the reducer, which may run twice in
@@ -104,7 +106,12 @@ export function useCourseStream(apiBaseUrl: string): CourseStream {
             error instanceof CourseLoadError
               ? error.message
               : "An unexpected error occurred while building the course.";
-          setState({ status: "error", message, topic });
+          setState({
+            status: "error",
+            message,
+            topic,
+            discoveryDepth: discoveryDepth ?? "standard",
+          });
         });
     },
     [apiBaseUrl, abort],
