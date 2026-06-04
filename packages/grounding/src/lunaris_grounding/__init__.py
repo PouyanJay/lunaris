@@ -9,7 +9,11 @@ are all Protocols so the embedding provider, vector backend and model stay swapp
 tests run against an in-memory cosine store with a deterministic stub embedder.
 """
 
-from lunaris_grounding.assessors import ClaudeSupportAssessor, StubSupportAssessor
+from lunaris_grounding.assessors import (
+    ClaudeSupportAssessor,
+    StubSupportAssessor,
+    render_evidence,
+)
 from lunaris_grounding.authorities import (
     CredibilityScorer,
     ICredibilityScorer,
@@ -117,4 +121,5 @@ __all__ = [
     "classify_domain",
     "host",
     "ingest_directory",
+    "render_evidence",
 ]

@@ -9,6 +9,7 @@ from lunaris_runtime.resilience import (
     retry_on_rate_limit,
 )
 
+from lunaris_grounding.assessors.render_evidence import render_evidence
 from lunaris_grounding.evidence import Evidence, Support
 
 logger = structlog.get_logger()
@@ -63,11 +64,7 @@ class ClaudeSupportAssessor:
                 rate_limiter=get_llm_rate_limiter(),
             )
 
-        rendered = "\n".join(
-            f"- [{e.citation.id}] {e.citation.snippet or e.citation.title or e.citation.url or ''}"
-            for e in evidence
-        )
-        prompt = _PROMPT.format(claim=claim_text, evidence=rendered)
+        prompt = _PROMPT.format(claim=claim_text, evidence=render_evidence(evidence))
         message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
         content = message.content if isinstance(message.content, str) else str(message.content)
         try:
