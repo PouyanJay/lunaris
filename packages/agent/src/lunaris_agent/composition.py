@@ -31,6 +31,7 @@ from lunaris_runtime.resilience import (
 
 from .harness.authoring import ClaudeLessonReviser
 from .harness.discovery import (
+    ClaudeRelevanceJudge,
     IGroundingDiscoverer,
     StubGroundingDiscoverer,
     SubgraphGroundingDiscoverer,
@@ -81,29 +82,36 @@ def _retriever_from_env() -> IEvidenceRetriever | None:
     return None
 
 
-def _discoverer_from_env() -> IGroundingDiscoverer:
-    """Build the live grounding discoverer iff the corpus + embeddings creds are present (P6.3).
+def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
+    """Build the live grounding discoverer iff search + corpus + embeddings creds are set (P6.3).
 
-    The discoverer ingests discovered sources into the same Supabase pgvector corpus the verifier
-    retrieves from, so it needs the corpus + embeddings credentials; without them it returns the
-    stub (no source ingested), so the no-key path stays deterministic and claims fall to REVIEW.
+    Discovery needs a search key (to find sources), the embeddings key (to embed them), and the
+    Supabase corpus (to ingest into the same store the verifier retrieves from). Without all three
+    it returns the stub (no source ingested), so the no-key path stays deterministic and claims fall
+    REVIEW. The discovery sub-graph grades each source with the credibility scorer — backed by the
+    seeded authorities table + the live OpenAlex registry (keyless; optional ``OPENALEX_EMAIL`` for
+    its polite pool), which floors an unknown host serving a real paper to REPUTABLE — and drops
+    off-topic ones with a label-blind worker-tier judge, so machine-found evidence is graded, not
+    just gathered.
     """
     if (
-        os.getenv("SUPABASE_URL")
+        os.getenv("SEARCH_API_KEY")
+        and os.getenv("SUPABASE_URL")
         and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         and os.getenv("EMBEDDINGS_API_KEY")
     ):
-        # Grade each discovered source as it lands (P6.2 scorer + the seeded authorities table),
-        # with the live OpenAlex registry (P6.3) flooring an unknown host serving a real paper to
-        # REPUTABLE — so machine-found evidence carries the same graded provenance manual uploads
-        # do. OpenAlex is keyless + best-effort; the optional OPENALEX_EMAIL joins its polite pool.
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
             registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
         )
-        ingestor = CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore(), scorer=scorer)
-        return SubgraphGroundingDiscoverer(ingestor)
-    logger.info("grounding_discoverer_stubbed", reason="supabase/embeddings creds unset")
+        return SubgraphGroundingDiscoverer(
+            TavilySearchProvider(),
+            TrafilaturaContentExtractor(),
+            scorer,
+            ClaudeRelevanceJudge(worker_model),
+            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore()),
+        )
+    logger.info("grounding_discoverer_stubbed", reason="search/supabase/embeddings creds unset")
     return StubGroundingDiscoverer()
 
 
@@ -269,7 +277,7 @@ def build_agent_course_builder(
         architect=ClaudeCurriculumArchitect(strong),
         reviser=ClaudeLessonReviser(worker),
         curator=_curator_from_env(worker),
-        discoverer=_discoverer_from_env(),
+        discoverer=_discoverer_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
         stream_tokens=True,

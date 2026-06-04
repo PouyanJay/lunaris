@@ -18,6 +18,7 @@ from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.authoring import StubLessonReviser
 from lunaris_agent.harness.discovery import (
     IGroundingDiscoverer,
+    RelevanceVerdict,
     StubGroundingDiscoverer,
     SubgraphGroundingDiscoverer,
 )
@@ -50,10 +51,16 @@ from lunaris_agent.subagents.visual_agent import (
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_grounding import (
     CorpusIngestor,
+    CredibilityScorer,
     Evidence,
+    ExtractedContent,
     InMemoryCorpusStore,
+    InMemorySourceAuthorityStore,
+    SearchResult,
+    StubContentExtractor,
     StubEmbedder,
     StubEvidenceRetriever,
+    StubSearchProvider,
     StubSupportAssessor,
     Verifier,
 )
@@ -888,6 +895,15 @@ async def test_agent_discovers_grounding_between_curriculum_and_authoring(
     assert grounded.run_id == "run-ground"
 
 
+class _AcceptAllJudge:
+    """A relevance judge that keeps every source — isolates this test to the ingest + event path."""
+
+    async def is_relevant(
+        self, *, kc_label: str, kc_definition: str, text: str
+    ) -> RelevanceVerdict:
+        return RelevanceVerdict(True, "accepted (test judge)")
+
+
 async def test_discovery_ingests_an_auto_source_into_the_course_corpus(
     scripted_model: Callable[[Sequence[BaseMessage]], object],
     agent_sink,
@@ -898,7 +914,21 @@ async def test_discovery_ingests_an_auto_source_into_the_course_corpus(
     # into THIS course's corpus and streams a source-vetting event onto the agent channel.
     corpus = InMemoryCorpusStore()
     embedder = StubEmbedder()
+    # Stub search + extraction feed one fetchable page; the scorer grades it (OPEN) and an
+    # accept-all judge keeps it (the judge's own logic is covered in test_discovery_loop.py), so the
+    # live sub-graph ingests a real AUTO source end-to-end.
+    page_url = "https://example.org/grounding"
     discoverer = SubgraphGroundingDiscoverer(
+        StubSearchProvider([SearchResult(url=page_url, title="Grounding", snippet="…")]),
+        StubContentExtractor(
+            {
+                page_url: ExtractedContent(
+                    url=page_url, text="Reference material.", title="Grounding"
+                )
+            }
+        ),
+        CredibilityScorer(InMemorySourceAuthorityStore()),
+        _AcceptAllJudge(),
         CorpusIngestor(embedder, corpus),
         clock=lambda: "2026-06-04T00:00:00+00:00",
     )
