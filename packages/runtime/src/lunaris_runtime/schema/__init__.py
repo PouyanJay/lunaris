@@ -1,5 +1,6 @@
 from .agent_event import AgentEvent
 from .base import CourseModel
+from .clarifier import Clarification
 from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Preferences, TargetStandard
 from .course_run import CourseRun
@@ -71,6 +72,7 @@ __all__ = [
     "BudgetLedger",
     "Citation",
     "Claim",
+    "Clarification",
     "ComparisonRow",
     "ComparisonSpec",
     "Course",

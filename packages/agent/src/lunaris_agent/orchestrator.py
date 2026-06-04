@@ -5,6 +5,7 @@ from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import (
     Citation,
+    Clarification,
     Course,
     CourseStatus,
     Lesson,
@@ -66,10 +67,12 @@ class Orchestrator:
         run_id: str,
         progress: IProgressSink | None = None,
         agent: IAgentSink | None = None,
+        clarification: Clarification | None = None,
     ) -> Course:
-        # ``agent`` (the rich transcript channel) is part of the CoursePipeline contract but the
-        # legacy single-shot orchestrator emits only coarse stages, so it is intentionally unused.
-        _ = agent
+        # ``agent`` (the rich transcript channel) and ``clarification`` (the P7.5 confirm answers)
+        # are part of the CoursePipeline contract, but the legacy single-shot orchestrator emits
+        # only coarse stages and has no interpret/brief stage to calibrate — both are unused here.
+        _ = agent, clarification
         bind_run_id(run_id)
         logger.info("course_run_started", topic=topic, course_id=course_id)
 

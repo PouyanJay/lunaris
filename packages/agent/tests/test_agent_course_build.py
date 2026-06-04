@@ -29,7 +29,11 @@ from lunaris_agent.subagents.curriculum_architect import (
     StubCurriculumArchitect,
 )
 from lunaris_agent.subagents.goal_interpreter import StubGoalInterpreter
-from lunaris_agent.subagents.learner_profiler import LearnerProfile, StubLearnerProfiler
+from lunaris_agent.subagents.learner_profiler import (
+    ILearnerProfiler,
+    LearnerProfile,
+    StubLearnerProfiler,
+)
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_agent.subagents.resource_curator import CuratedResources, StubResourceCurator
 from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
@@ -45,6 +49,7 @@ from lunaris_runtime.schema import (
     AgentEventKind,
     BloomLevel,
     Citation,
+    Clarification,
     CourseBrief,
     CourseStatus,
     KnowledgeComponent,
@@ -204,7 +209,7 @@ def _builder(
     model: object,
     store: CourseStore,
     *,
-    profiler: StubLearnerProfiler | None = None,
+    profiler: ILearnerProfiler | None = None,
     researcher: StubStandardResearcher | None = None,
     architect: StubCurriculumArchitect | None = None,
     reviser: StubLessonReviser | None = None,
@@ -304,6 +309,61 @@ def _course_claims(course: object) -> list[object]:
     """Every claim across the course's lessons (one source of truth via iter_claims)."""
     lessons = [lesson for module in course.modules for lesson in module.lessons]
     return list(iter_claims(lessons))
+
+
+class _RecordingProfiler:
+    """A learner profiler that captures the brief it is handed, so a test can assert which brief
+    (inferred vs. clarification-merged) reached the stage that sharpens the frontier."""
+
+    def __init__(self) -> None:
+        self.seen: CourseBrief | None = None
+
+    async def profile(self, brief: CourseBrief) -> LearnerProfile:
+        self.seen = brief
+        return LearnerProfile(frontier=[])
+
+
+async def test_clarification_reaches_the_learner_profiler_through_the_full_build(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — the stub interpreter infers NOVICE (_BRIEF); an opt-in clarification confirms a
+    # higher level + reports prior knowledge. The profiler records the brief it is handed.
+    profiler = _RecordingProfiler()
+    builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path), profiler=profiler)
+
+    # Act
+    await builder.run(
+        "demo",
+        course_id="course-clar",
+        run_id="run-clar",
+        clarification=Clarification(
+            target_level=Level.ADVANCED, assumed_known="the entire beginner ladder"
+        ),
+    )
+
+    # Assert — the profiler saw the CALIBRATED brief (clarification → interpret merge → draft.brief
+    # → model_learner), proving the diagnostic reaches the stage that sharpens the frontier.
+    assert profiler.seen is not None
+    assert profiler.seen.target_level == Level.ADVANCED
+    assert "the entire beginner ladder" in profiler.seen.assumed_prior
+
+
+async def test_build_without_a_clarification_profiles_the_inferred_brief(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Arrange — the default one-click path: no clarification is passed.
+    profiler = _RecordingProfiler()
+    builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path), profiler=profiler)
+
+    # Act
+    await builder.run("demo", course_id="course-noclar", run_id="run-noclar")
+
+    # Assert — the profiler saw the interpreter's inference verbatim (the stub _BRIEF's NOVICE),
+    # i.e. the skip path is byte-for-byte today's inferred-only build.
+    assert profiler.seen is not None
+    assert profiler.seen.target_level == Level.NOVICE
 
 
 async def test_agent_builds_and_persists_a_course_without_a_key(

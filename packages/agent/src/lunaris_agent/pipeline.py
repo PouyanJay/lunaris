@@ -9,13 +9,18 @@ HTTP layer stays pipeline-agnostic.
 
 from typing import Protocol
 
-from lunaris_runtime.schema import Course
+from lunaris_runtime.schema import Clarification, Course
 
-from .progress import IProgressSink
+from .progress import IAgentSink, IProgressSink
 
 
 class CoursePipeline(Protocol):
-    """Anything that builds a course from a topic and streams progress (orchestrator or agent)."""
+    """Anything that builds a course from a topic and streams progress (orchestrator or agent).
+
+    ``progress`` carries coarse pipeline stages, ``agent`` the fine-grained transcript feed (both
+    default to a no-op sink). ``clarification`` carries the learner's opt-in confirm answers (P7.5);
+    the agent pipeline folds them onto the inferred brief, the legacy orchestrator ignores them.
+    """
 
     async def run(
         self,
@@ -24,4 +29,6 @@ class CoursePipeline(Protocol):
         course_id: str,
         run_id: str,
         progress: IProgressSink | None = None,
+        agent: IAgentSink | None = None,
+        clarification: Clarification | None = None,
     ) -> Course: ...

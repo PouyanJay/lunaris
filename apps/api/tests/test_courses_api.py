@@ -4,6 +4,7 @@ orchestrator → CourseStore → back), with the deterministic stub pipeline so 
 import json
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -161,7 +162,9 @@ async def test_regenerate_with_an_unsupported_pipeline_is_501(tmp_path: Path) ->
         def __init__(self, store: "object") -> None:
             self._store = store
 
-        async def run(self, topic, *, course_id, run_id, progress=None, agent=None):  # type: ignore[no-untyped-def]
+        async def run(
+            self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+        ):  # type: ignore[no-untyped-def]
             return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
 
     clear_correlation()
@@ -296,7 +299,9 @@ class _AgentEventPipeline:
     def __init__(self, store: "object") -> None:
         self._store = store
 
-    async def run(self, topic, *, course_id, run_id, progress=None, agent=None):  # type: ignore[no-untyped-def]
+    async def run(  # type: ignore[no-untyped-def]
+        self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+    ):
         from lunaris_agent.harness.agent_reporter import AgentReporter
         from lunaris_agent.harness.progress_reporter import ProgressReporter
         from lunaris_runtime.schema import (
@@ -314,6 +319,119 @@ class _AgentEventPipeline:
             ProgressStage.RUN_COMPLETED, "done", status=CourseStatus.PUBLISHED
         )
         return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
+
+
+class _ClarificationSpyPipeline:
+    """Records the clarification the service forwarded, proving the API parses the opt-in confirm
+    answers (P7.5) off the build request and threads them into ``pipeline.run`` (where the agent
+    pipeline folds them onto the inferred brief). Captures into a shared dict keyed by run_id."""
+
+    captured: ClassVar[dict[str, object]] = {}
+
+    def __init__(self, store: "object") -> None:
+        self._store = store
+
+    async def run(  # type: ignore[no-untyped-def]
+        self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+    ):
+        from lunaris_agent.harness.progress_reporter import ProgressReporter
+        from lunaris_runtime.schema import Course, CourseStatus, ProgressStage
+
+        _ClarificationSpyPipeline.captured["clarification"] = clarification
+        await ProgressReporter(run_id, progress).emit(ProgressStage.RUN_STARTED, "start")
+        await ProgressReporter(run_id, progress).emit(
+            ProgressStage.RUN_COMPLETED, "done", status=CourseStatus.PUBLISHED
+        )
+        return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
+
+
+async def _send_stream_request(tmp_path: Path, params: dict) -> httpx.Response:
+    """Drive the stream endpoint against the clarification spy and return the raw response.
+
+    Resets the spy's shared capture first, so every test that touches it is independent of order.
+    """
+    from lunaris_api.dependencies import get_course_service
+    from lunaris_api.service import CourseService
+    from lunaris_runtime.persistence import CourseStore
+
+    _ClarificationSpyPipeline.captured = {}
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), _ClarificationSpyPipeline)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        return await http.get("/api/courses/stream", params=params)
+
+
+async def _stream_with_clarification(tmp_path: Path, params: dict) -> "object":
+    """Drive the stream endpoint and return the clarification the spy pipeline was handed."""
+    response = await _send_stream_request(tmp_path, params)
+    assert response.status_code == 200
+    return _ClarificationSpyPipeline.captured["clarification"]
+
+
+async def test_stream_forwards_the_clarification_to_the_pipeline(tmp_path: Path) -> None:
+    # Arrange — a camelCase clarification on the build request (the web's wire shape).
+    from lunaris_runtime.schema import Clarification, Level
+
+    clarification = json.dumps({"targetLevel": "advanced", "assumedKnown": "the beginner ladder"})
+
+    # Act
+    forwarded = await _stream_with_clarification(
+        tmp_path, {"topic": "binary search", "clarification": clarification}
+    )
+
+    # Assert — parsed into the typed Clarification and threaded to the pipeline unchanged.
+    assert forwarded == Clarification(
+        target_level=Level.ADVANCED, assumed_known="the beginner ladder"
+    )
+
+
+async def test_stream_without_a_clarification_forwards_none(tmp_path: Path) -> None:
+    # Act — the default one-click path: no clarification query param.
+    forwarded = await _stream_with_clarification(tmp_path, {"topic": "binary search"})
+
+    # Assert — the pipeline is driven with no clarification (today's inferred-only build).
+    assert forwarded is None
+
+
+async def test_stream_rejects_a_malformed_clarification(tmp_path: Path) -> None:
+    # Act — not valid JSON for a Clarification.
+    response = await _send_stream_request(tmp_path, {"topic": "x", "clarification": "not-json"})
+
+    # Assert — rejected at the boundary, not silently ignored.
+    assert response.status_code == 422
+
+
+async def test_create_forwards_the_clarification_from_the_post_body(tmp_path: Path) -> None:
+    # Arrange — the await-full POST path carries the clarification in the JSON body.
+    from lunaris_api.dependencies import get_course_service
+    from lunaris_api.service import CourseService
+    from lunaris_runtime.persistence import CourseStore
+    from lunaris_runtime.schema import Clarification, Level
+
+    _ClarificationSpyPipeline.captured = {}
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), _ClarificationSpyPipeline)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        # Act
+        response = await http.post(
+            "/api/courses",
+            json={
+                "topic": "binary search",
+                "clarification": {"targetLevel": "expert", "background": "a working engineer"},
+            },
+        )
+
+    # Assert — parsed off the body and threaded to the pipeline as the typed model.
+    assert response.status_code == 201
+    assert _ClarificationSpyPipeline.captured["clarification"] == Clarification(
+        target_level=Level.EXPERT, background="a working engineer"
+    )
 
 
 async def test_stream_carries_agent_transcript_frames(tmp_path: Path) -> None:
