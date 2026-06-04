@@ -79,6 +79,24 @@ async def test_ingest_carries_trust_provenance_through_to_retrieval() -> None:
     assert await store.match(query, k=written, course_id="course-2") == []
 
 
+async def test_ingest_unclassified_source_carries_no_trust() -> None:
+    # Arrange — a source with no trust classification (the legacy / not-yet-scored path).
+    store = InMemoryCorpusStore()
+    ingestor = CorpusIngestor(StubEmbedder(dim=_DIM), store)
+    text = "An un-tiered grounding source."
+
+    # Act — ingest, then retrieve (no trust fields supplied).
+    await ingestor.ingest([CandidateSource(kc_id="kc1", text=text)])
+    [query] = await StubEmbedder(dim=_DIM).embed([text])
+    [evidence] = await store.match(query, k=1)
+
+    # Assert — the chunk stores + retrieves, with no trust fields (so the reader shows no badge).
+    assert evidence.citation.trust_tier is None
+    assert evidence.citation.credibility is None
+    assert evidence.citation.source_type is None
+    assert evidence.citation.fetched_at is None
+
+
 def test_candidate_source_rejects_out_of_range_credibility() -> None:
     # The credibility bound is validated where the source is acquired, not deferred downstream.
     with pytest.raises(ValueError, match=r"credibility must be in \[0, 1\]"):
