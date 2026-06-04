@@ -82,6 +82,32 @@
   color: var(--danger);
 }
 
+/* Opt-in secondary action — a quiet text link to the confirm step (the default stays one click). */
+.personalize {
+  align-self: flex-start;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 0;
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+
+.personalize:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.personalize:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
 /* Example topics — quiet ghost chips that pre-fill + submit. */
 .examples {
   display: flex;

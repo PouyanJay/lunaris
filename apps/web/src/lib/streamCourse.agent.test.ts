@@ -58,3 +58,47 @@ describe("streamCourse — agent transcript frames", () => {
     }
   });
 });
+
+describe("streamCourse — clarification query param (P7.5)", () => {
+  function captureUrl(): { calledUrl: () => string; restore: () => void } {
+    const original = globalThis.fetch;
+    let url = "";
+    globalThis.fetch = ((input: string) => {
+      url = String(input);
+      const body = sseStream([`event: course\ndata: ${JSON.stringify(COURSE)}\n\n`]);
+      return Promise.resolve(
+        new Response(body, { headers: { "content-type": "text/event-stream" } }),
+      );
+    }) as unknown as typeof fetch;
+    return { calledUrl: () => url, restore: () => (globalThis.fetch = original) };
+  }
+
+  it("rides the confirmed clarification as a JSON query param when present", async () => {
+    const { calledUrl, restore } = captureUrl();
+    try {
+      await streamCourse("", "English", {
+        clarification: { targetLevel: "advanced", assumedKnown: "grammar" },
+      });
+
+      const params = new URL(calledUrl(), "http://test").searchParams;
+      expect(params.get("topic")).toBe("English");
+      expect(JSON.parse(params.get("clarification") ?? "null")).toEqual({
+        targetLevel: "advanced",
+        assumedKnown: "grammar",
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  it("omits the clarification param on the default (unpersonalized) path", async () => {
+    const { calledUrl, restore } = captureUrl();
+    try {
+      await streamCourse("", "English", {});
+
+      expect(new URL(calledUrl(), "http://test").searchParams.has("clarification")).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+});

@@ -21,7 +21,7 @@ from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Course, ProgressStage, RiskTier
+from lunaris_runtime.schema import Clarification, Course, ProgressStage, RiskTier
 
 from ..critic import ICritic, MinimalCritic
 from ..progress import IAgentSink, IProgressSink
@@ -126,14 +126,22 @@ class AgentCourseBuilder:
         run_id: str,
         progress: IProgressSink | None = None,
         agent: IAgentSink | None = None,
+        clarification: Clarification | None = None,
     ) -> Course:
         # ``run_id`` is bound for the whole run and cleared in ``finally`` so it never leaks
         # into a later run sharing the event loop (the API reuses it across requests).
         bind_run_id(run_id)
         try:
             logger.info("agent_course_run_started", topic=topic, course_id=course_id)
+            # The learner's opt-in confirm answers (P7.5) ride on the draft: the interpret_request
+            # stage folds them onto the inferred brief. None (the default / skipped clarifier)
+            # leaves the interpreter's inference untouched.
             draft = CourseDraft(
-                topic=topic, course_id=course_id, run_id=run_id, risk_tier=self._risk_tier
+                topic=topic,
+                course_id=course_id,
+                run_id=run_id,
+                risk_tier=self._risk_tier,
+                clarification=clarification,
             )
             # One stage cursor per run, shared by both reporters: the ProgressReporter advances
             # it at each stage boundary, and the AgentReporter stamps every fine event's `stage`

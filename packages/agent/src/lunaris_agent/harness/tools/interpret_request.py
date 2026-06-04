@@ -9,6 +9,7 @@ timeline to render.
 """
 
 from langchain_core.tools import BaseTool, tool
+from lunaris_runtime.clarifier import apply_clarification
 from lunaris_runtime.schema import ProgressStage
 
 from ...subagents.goal_interpreter import IGoalInterpreter
@@ -32,6 +33,9 @@ def make_interpret_request_tool(interpreter: IGoalInterpreter, draft: CourseDraf
         brief so you can confirm the interpretation before extracting concepts.
         """
         brief = await interpreter.interpret(request)
+        # Fold in the learner's opt-in confirm answers (P7.5), if any. None / a skipped clarifier is
+        # the identity, so the default build records the interpreter's inference verbatim.
+        brief = apply_clarification(brief, draft.clarification)
         draft.brief = brief
         await draft.progress.emit(
             ProgressStage.BRIEF_INTERPRETED,

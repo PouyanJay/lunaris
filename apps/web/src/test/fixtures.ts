@@ -1,3 +1,4 @@
+import { type BriefResponse, QUESTION_IDS } from "../types/clarifier";
 import type {
   AgentEvent,
   AgentEventKind,
@@ -179,6 +180,67 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
       frontier: [],
       isAcyclic: true,
       topoOrder: ["comparison", "sorted_order", "binary_search"],
+    },
+    ...overrides,
+  };
+}
+
+/** The phase-1 brief endpoint response (POST /api/briefs): an inferred brief + the confirm
+ *  clarifier, each CHOICE pre-picking the inference. For Personalize-flow tests. */
+export function makeBriefResponse(overrides: Partial<BriefResponse> = {}): BriefResponse {
+  return {
+    brief: {
+      subject: "English language proficiency",
+      goal: "reach CLB 10",
+      targetLevel: "intermediate",
+      targetStandard: null,
+      assumedPrior: "everyday English",
+      deliverableShape: { lessons: null },
+      needsResearch: false,
+      preferences: { detailDepth: "balanced", languageStyle: "balanced" },
+    },
+    clarifier: {
+      questions: [
+        {
+          id: QUESTION_IDS.LEVEL,
+          prompt: "What's your current level with this?",
+          kind: "choice",
+          placeholder: "",
+          options: [
+            { value: "novice", label: "Beginner", recommended: false },
+            { value: "intermediate", label: "Intermediate", recommended: true },
+            { value: "advanced", label: "Advanced", recommended: false },
+          ],
+        },
+        {
+          id: QUESTION_IDS.KNOWLEDGE,
+          prompt: "What are you already comfortable with?",
+          kind: "text",
+          placeholder: "everyday English",
+          options: [],
+        },
+        {
+          id: QUESTION_IDS.BACKGROUND,
+          prompt: "What's your background, and why this goal?",
+          kind: "text",
+          placeholder: "what you do",
+          options: [],
+        },
+        {
+          id: QUESTION_IDS.DETAIL,
+          prompt: "How much depth do you want?",
+          kind: "choice",
+          placeholder: "",
+          options: [{ value: "balanced", label: "Balanced", recommended: true }],
+        },
+        {
+          id: QUESTION_IDS.LANGUAGE,
+          prompt: "What writing style fits you best?",
+          kind: "choice",
+          placeholder: "",
+          options: [{ value: "balanced", label: "Balanced", recommended: true }],
+        },
+      ],
     },
     ...overrides,
   };

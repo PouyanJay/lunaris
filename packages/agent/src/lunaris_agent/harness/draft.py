@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from lunaris_runtime.schema import (
     Citation,
+    Clarification,
     Course,
     CourseBrief,
     KnowledgeComponent,
@@ -40,6 +41,10 @@ class CourseDraft:
     # stages. None until interpreted, or on a path that skips it — downstream readers treat it as
     # optional.
     brief: CourseBrief | None = None
+    # The learner's opt-in confirm answers (P7.5), seeded by the runner from the build request. The
+    # interpret_request stage merges them onto the inferred brief before recording it; None (the
+    # default / skipped-clarifier path) leaves the inference untouched — today's inferred build.
+    clarification: Clarification | None = None
     frontier: list[str] = field(default_factory=list)
     goal_concept: str | None = None
     concepts: list[KnowledgeComponent] = field(default_factory=list)

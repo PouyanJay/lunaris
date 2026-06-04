@@ -172,6 +172,13 @@ class LanguageStyle(StrEnum):
     SCIENTIFIC = "scientific"
 
 
+class ClarifierKind(StrEnum):
+    """How a clarifier question is answered (P7.5): a closed CHOICE over options, or free TEXT."""
+
+    CHOICE = "choice"
+    TEXT = "text"
+
+
 class ResourceKind(StrEnum):
     """The kind of a curated external learning resource attached to a lesson phase (P7.4).
 

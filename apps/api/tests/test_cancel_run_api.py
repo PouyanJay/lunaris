@@ -29,7 +29,9 @@ class _BlockingPipeline:
     def __init__(self) -> None:
         self.started = asyncio.Event()
 
-    async def run(self, topic, *, course_id, run_id, progress=None, agent=None):  # type: ignore[no-untyped-def]
+    async def run(  # type: ignore[no-untyped-def]
+        self, topic, *, course_id, run_id, progress=None, agent=None, clarification=None
+    ):
         self.started.set()
         await asyncio.Event().wait()  # blocks forever; cancellation raises CancelledError here
         return Course(id=course_id, topic=topic)  # pragma: no cover - never reached

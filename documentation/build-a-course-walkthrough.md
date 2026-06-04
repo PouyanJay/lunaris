@@ -131,6 +131,13 @@ Dijkstra's shortest-path algorithm
 
 …and click **Generate course** (or press Enter).
 
+> **Optional — "Personalize before building…"** Under the field is an opt-in link. Click it (with a
+> topic entered) and Lunaris first *interprets* your goal and shows a short confirm panel — your level,
+> what you already know, the depth and writing style you want — each pre-picked to its best guess. Adjust
+> anything, then **Build course**; your answers steer what's taught (skip what you know) and how it's
+> written. Skipping it (just **Generate course**) uses the inference as-is. See
+> [relevance-model.md](relevance-model.md) for how those answers flow through the build.
+
 > You can also set the key in the UI instead of `.env`: sidebar → **Settings** → paste the Anthropic
 > key (write-only; it shows only set/unset + last-4). Then come back and build.
 
@@ -146,15 +153,23 @@ a fake progress bar.
 1. **A plan / todo list** appears and updates as steps complete.
 2. **Reasoning** snippets (the model's short narration).
 3. **Tool-call cards**, each with name + a result summary, in this order:
-   - `extract_concepts` → "Extracted N concepts" (you'll see ~10–16 KCs — graph, weight, greedy,
-     priority queue, relaxation, … , dijkstra).
+   - `interpret_request` → a **brief** card (subject / goal / level / assumed-prior) — Lunaris reading
+     the request as a goal before building anything.
+   - `research_standard` → grounds a named standard in its real competencies **(only with a
+     `SEARCH_API_KEY`; otherwise this shows `unavailable` and the build continues)**.
+   - `model_learner` → the inferred **frontier** (the foundations to skip). For a level-neutral topic
+     like Dijkstra it may be small or empty; for *"CLB 10"* it's the whole beginner ladder.
+   - `extract_concepts` → "Extracted N concepts", **scoped to the gap** (you'll see ~10–16 KCs for
+     Dijkstra — graph, weight, greedy, priority queue, relaxation, … , dijkstra).
    - `build_prerequisite_graph` → an **acyclic** graph; this is the moat enforcing teaching order.
-   - `design_curriculum` → "Designed curriculum: M modules".
+   - `design_curriculum` → "Designed curriculum: M modules" (mapped to competencies where researched).
    - `task → module-author` → the author→verify→revise subagent writes + grounds each lesson
      (you'll see claim-verification beats: "Verified K claims: X supported, Y cut").
+   - `curate_resources` → vetted per-lesson external resources **(only with a `SEARCH_API_KEY`;
+     otherwise no resources are attached — the verified lesson is still the spine)**.
    - `finalize_course` → "Published" *or* "Needs review".
-4. A coarse **stage rail** mirrors this: Mapping → Sequencing → Designing → Authoring → Verifying →
-   Done.
+4. A coarse **stage rail** mirrors this: Brief → Research → Learner → Mapping → Sequencing → Designing
+   → Authoring → Verifying → Resources → Done.
 
 When it finishes, the canvas hands off to the **result view**.
 
@@ -288,6 +303,6 @@ Docker projects up).
 
 ---
 
-*This doc lives in `documentation/` and is currently uncommitted — keep it, edit it, or delete it as
-you like.*
+*See also [relevance-model.md](relevance-model.md) — how Lunaris scopes a course to the right level,
+what the search keys unlock, and how it degrades honestly without them.*
 </content>

@@ -7,6 +7,7 @@ from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_runtime.persistence import CourseStore, IRunEventStore, IRunStore
 from lunaris_runtime.schema import (
     AgentEvent,
+    Clarification,
     Course,
     CourseRun,
     ProgressEvent,
@@ -111,13 +112,22 @@ class CourseService:
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
         self._registry = registry or RunRegistry()
 
-    async def create(self, topic: str, *, course_id: str, run_id: str) -> Course:
+    async def create(
+        self,
+        topic: str,
+        *,
+        course_id: str,
+        run_id: str,
+        clarification: Clarification | None = None,
+    ) -> Course:
         pipeline = self._factory(self._store)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
         # it raises CancelledError at this await without cancelling the request coroutine itself.
-        task = asyncio.create_task(pipeline.run(topic, course_id=course_id, run_id=run_id))
+        task = asyncio.create_task(
+            pipeline.run(topic, course_id=course_id, run_id=run_id, clarification=clarification)
+        )
         self._registry.register(run_id, task)
         try:
             course = await task
@@ -139,7 +149,12 @@ class CourseService:
         return course
 
     async def stream(
-        self, topic: str, *, course_id: str, run_id: str
+        self,
+        topic: str,
+        *,
+        course_id: str,
+        run_id: str,
+        clarification: Clarification | None = None,
     ) -> AsyncIterator[_StreamItem]:
         """Run the pipeline, yielding each progress/agent event as it happens, then the course.
 
@@ -175,6 +190,7 @@ class CourseService:
                     run_id=run_id,
                     progress=QueueProgressSink(queue),
                     agent=QueueAgentSink(queue),
+                    clarification=clarification,
                 )
             )
             self._registry.register(run_id, run_task)  # cancellable by a separate request

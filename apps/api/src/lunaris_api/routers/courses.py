@@ -4,7 +4,8 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from lunaris_runtime.logging import bind_request_id
-from lunaris_runtime.schema import Course, ProgressEvent
+from lunaris_runtime.schema import AgentEvent, Clarification, Course, ProgressEvent
+from pydantic import ValidationError
 
 from ..dependencies import CourseServiceDep
 from ..schemas import CourseRequest
@@ -18,8 +19,28 @@ from ..service import (
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
+# The clarification rides the GET stream as a JSON query param (the web is fetch-based, and the
+# payload is a handful of short fields). Capped so a malformed/oversized value can't bloat the URL.
+_MAX_CLARIFICATION_CHARS = 4000
 
-def _sse_frame(kind: str, payload: ProgressEvent | Course) -> str:
+
+def _parse_clarification(raw: str | None) -> Clarification | None:
+    """Parse the optional ``clarification`` query param (camelCase JSON) into the typed model.
+
+    Blank/absent → ``None`` (the default one-click build). Malformed JSON is rejected at the
+    boundary with a 422 rather than silently dropped, so a broken personalization surfaces.
+    """
+    if not raw:
+        return None
+    try:
+        return Clarification.model_validate_json(raw)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Invalid clarification"
+        ) from exc
+
+
+def _sse_frame(kind: str, payload: ProgressEvent | AgentEvent | Course) -> str:
     """Encode one stream item as an SSE frame (camelCase JSON, the web's wire contract)."""
     return f"event: {kind}\ndata: {payload.model_dump_json(by_alias=True)}\n\n"
 
@@ -37,7 +58,12 @@ async def create_course(
     run_id = uuid4().hex
     response.headers["X-Run-Id"] = run_id
     try:
-        return await service.create(payload.topic, course_id=course_id, run_id=run_id)
+        return await service.create(
+            payload.topic,
+            course_id=course_id,
+            run_id=run_id,
+            clarification=payload.clarification,
+        )
     except CourseBuildCancelledError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Build was cancelled"
@@ -48,20 +74,26 @@ async def create_course(
 async def stream_course(
     service: CourseServiceDep,
     topic: str = Query(min_length=1, max_length=200),
+    clarification: str | None = Query(default=None, max_length=_MAX_CLARIFICATION_CHARS),
 ) -> StreamingResponse:
     """Run the pipeline for a topic and stream live build progress as Server-Sent Events.
 
     EventSource-compatible (GET + query param). Emits a ``progress`` event per pipeline
     stage as it happens, then a terminal ``course`` event carrying the finished
-    camelCase course-object — so the web renders without a second fetch. The generated
+    camelCase course-object — so the web renders without a second fetch. The optional
+    ``clarification`` query param carries the learner's opt-in confirm answers (P7.5) as
+    camelCase JSON; absent, the build uses the interpreter's inference. The generated
     ``run_id`` is returned in ``X-Run-Id`` (sent before the body) for cross-layer
     correlation.
     """
     course_id = uuid4().hex
     run_id = uuid4().hex
+    parsed_clarification = _parse_clarification(clarification)
 
     async def events() -> AsyncIterator[str]:
-        async for kind, payload in service.stream(topic, course_id=course_id, run_id=run_id):
+        async for kind, payload in service.stream(
+            topic, course_id=course_id, run_id=run_id, clarification=parsed_clarification
+        ):
             yield _sse_frame(kind, payload)
 
     return StreamingResponse(
