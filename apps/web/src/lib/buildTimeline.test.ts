@@ -198,12 +198,48 @@ describe("buildTimeline", () => {
       "Concepts",
       "Graph",
       "Curriculum",
+      "Grounding",
       "Lessons",
       "Verify",
       "Resources",
       "Publish",
     ]);
     expect(phases.every((p) => p.status === "pending" && p.entries.length === 0)).toBe(true);
+  });
+
+  it("buckets the discover_grounding beats under the Grounding phase, between Curriculum and Lessons", () => {
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("curriculum_designed", 1, { label: "Designed curriculum: 3 modules" }),
+      makeProgressEvent("grounding_discovered", 2, { label: "Prepared the grounding corpus" }),
+      makeProgressEvent("module_authored", 3, { label: "Authored lesson: Module" }),
+    ];
+    const agentEvents = [
+      makeAgentEvent("tool_call", 0, { stage: "curriculum_designed", tool: "discover_grounding" }),
+      makeAgentEvent("tool_result", 1, {
+        stage: "grounding_discovered",
+        tool: "discover_grounding",
+        result: '{"status":"ready","sourceCount":0}',
+      }),
+    ];
+
+    const phases = buildTimeline(events, agentEvents);
+
+    // Grounding sits between Curriculum and Lessons on the spine (the P6 evidence step).
+    const labels = phases.map((p) => p.label);
+    expect(labels.indexOf("Curriculum")).toBeLessThan(labels.indexOf("Grounding"));
+    expect(labels.indexOf("Grounding")).toBeLessThan(labels.indexOf("Lessons"));
+
+    const grounding = phase(phases, "Grounding");
+    expect(grounding.status).toBe("done");
+    expect(grounding.summary).toBe("Prepared the grounding corpus");
+    expect(grounding.entries).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        tool: "discover_grounding",
+        result: expect.stringContaining("ready"),
+      }),
+    ]);
   });
 
   it("pairs a result with the most recent open call of the same tool", () => {

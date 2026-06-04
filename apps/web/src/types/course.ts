@@ -284,6 +284,7 @@ export type ProgressStage =
   | "concepts_extracted"
   | "graph_built"
   | "curriculum_designed"
+  | "grounding_discovered"
   | "module_authored"
   | "claims_verified"
   | "resources_curated"

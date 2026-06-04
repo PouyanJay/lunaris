@@ -42,6 +42,7 @@ from .stage_cursor import StageCursor
 from .tools import (
     make_curate_resources_tool,
     make_design_curriculum_tool,
+    make_discover_grounding_tool,
     make_extract_concepts_tool,
     make_finalize_course_tool,
     make_interpret_request_tool,
@@ -65,7 +66,8 @@ _BUILD_INSTRUCTION = (
     "interpret the request into a structured brief (a goal for a learner at a level). Then call "
     "research_standard to ground the brief's target standard in its real competencies. Then call "
     "model_learner to infer what the learner already knows (the frontier to skip). Then extract "
-    "the concepts, order them with the prerequisite-graph tool, design the curriculum, then "
+    "the concepts, order them with the prerequisite-graph tool, design the curriculum, then call "
+    "discover_grounding to prepare the evidence corpus the claims are verified against. Then "
     "delegate lesson authoring to the module-author subagent (it authors, verifies, and revises "
     "the lessons). Then call curate_resources to attach vetted external learning resources to each "
     "lesson. Finally, finalize the course."
@@ -191,6 +193,7 @@ class AgentCourseBuilder:
             make_extract_concepts_tool(self._extractor, draft),
             make_prerequisite_graph_tool(self._builder, draft),
             make_design_curriculum_tool(self._architect, draft),
+            make_discover_grounding_tool(draft),
             make_curate_resources_tool(self._curator, draft),
             make_finalize_course_tool(
                 self._critic, self._store, draft, visual_engine=self._visual_engine
