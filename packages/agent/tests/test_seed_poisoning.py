@@ -162,3 +162,45 @@ async def test_a_single_trusted_seed_grounds_a_low_risk_claim_an_empty_corpus_wo
     (seeded_summary,) = await seeded_corpus.list_sources_for_course(_COURSE)
     assert seeded_summary.acquisition_mode is AcquisitionMode.SEED
     assert seeded_summary.trust_tier is TrustTier.OFFICIAL
+
+
+async def test_an_empty_seed_list_ingests_nothing() -> None:
+    # Arrange — no research seeds (the no-key / unavailable-research path).
+    corpus = InMemoryCorpusStore()
+
+    # Act
+    report = await _seed(corpus, [])
+
+    # Assert — a no-op pass: nothing ingested, the corpus stays empty (not a partial write).
+    assert report.sources_seeded == 0
+    assert report.chunks_ingested == 0
+    assert await corpus.list_sources_for_course(_COURSE) == []
+
+
+async def test_a_blocked_seed_cannot_ground_even_a_low_risk_claim() -> None:
+    # Arrange — defense-in-depth: research drops BLOCKED domains before they ever become seeds, but
+    # if a blocked-tier source did reach the seeder, the floor must still refuse it at every risk
+    # level (BLOCKED is never evidence). LOW risk normally accepts any non-blocked source.
+    corpus = InMemoryCorpusStore()
+    claim_text = "blocked sources must never ground a claim, no matter how on-topic"
+    await _seed(
+        corpus,
+        [
+            SeedSource(
+                url="https://bit.ly/blocked",  # a denylisted shortener → BLOCKED
+                text=f"{claim_text}. Repeated for retrieval. " * 3,
+                trust_tier=TrustTier.BLOCKED,
+                fetched_at=_FETCHED_AT,
+            )
+        ],
+    )
+    claim = Claim(text=claim_text)
+
+    # Act
+    await _verifier(corpus).verify([claim], risk_tier=RiskTier.LOW, course_id=_COURSE)
+
+    # Assert — defense-in-depth, not a pre-filter: the BLOCKED chunk IS ingested (so the CUT is the
+    # floor refusing it, not an empty corpus), yet even at LOW risk it cannot ground the claim.
+    (summary,) = await corpus.list_sources_for_course(_COURSE)
+    assert summary.trust_tier is TrustTier.BLOCKED
+    assert claim.verifier_status is VerifierStatus.CUT
