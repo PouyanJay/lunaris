@@ -15,7 +15,7 @@ const FIELDS = [
   {
     name: "anthropic",
     label: "Anthropic API key",
-    hint: "Required for live course generation (real Claude). Validated when you save.",
+    hint: "Required for live course generation (real Claude). Validated when you save. Choose the Claude models in Runtime configuration below.",
     placeholder: "sk-ant-…",
   },
   {
