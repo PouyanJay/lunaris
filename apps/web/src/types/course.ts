@@ -290,6 +290,17 @@ export interface Citation {
   fetchedAt?: string | null;
 }
 
+/** How a source entered the corpus (mirrors AcquisitionMode): a learner uploaded it, the discovery
+ *  agent found it, or it was seeded from a page the build's research already fetched. */
+export type AcquisitionMode = "manual" | "auto" | "seed";
+
+/** The provenance word shown on a Corpus row, so mixed-mode corpora stay auditable at a glance. */
+export const ACQUISITION_MODE_LABEL: Record<AcquisitionMode, string> = {
+  manual: "Manual",
+  auto: "Auto",
+  seed: "Seeded",
+};
+
 /** A source-level row of a course's grounding corpus (P6.1; mirrors the API CorpusSourceView). */
 export interface CorpusSource {
   sourceId: string;
@@ -299,7 +310,7 @@ export interface CorpusSource {
   sourceType: SourceType | null;
   trustTier: TrustTier | null;
   credibility: number | null;
-  acquisitionMode: string | null;
+  acquisitionMode: AcquisitionMode | null;
   fetchedAt: string | null;
   chunkCount: number;
 }
