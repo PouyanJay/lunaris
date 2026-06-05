@@ -1,9 +1,11 @@
 """Doc-accuracy tests for the P6 grounding documentation (the docs TDD steering wheel).
 
-These tests pin the user-facing ``grounding-model.md`` to the live runtime so the docs cannot
-silently drift from the code: enum members (``AcquisitionMode``, ``TrustTier``, ``SourceType``), the
-HIGH-risk credibility floor constant, and the env vars the doc names as gating keys. No mocks — real
-enum imports, real file reads.
+These tests pin the user-facing grounding docs to the live runtime so they cannot silently drift
+from the code. They guard: enum members the doc enumerates (``AcquisitionMode``, ``TrustTier``,
+``SourceType``, ``SubjectField``), the HIGH-risk credibility floor constant, the env vars named in
+the cost story (which must exist in ``.env.sample``), relative cross-links across the documentation
+pages, the walkthrough's corpus coverage, and Python eval files the doc cites by name. No mocks —
+real enum imports, real file reads.
 
 The home for cross-cutting repo-level documentation tests; collected via ``testpaths`` in
 ``pyproject.toml``.
@@ -16,7 +18,7 @@ from pathlib import Path
 
 import pytest
 from lunaris_grounding.verifier import _HIGH_CREDIBILITY_FLOOR
-from lunaris_runtime.schema import AcquisitionMode, SourceType, TrustTier
+from lunaris_runtime.schema import AcquisitionMode, SourceType, SubjectField, TrustTier
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GROUNDING_MODEL = _REPO_ROOT / "documentation" / "grounding-model.md"
@@ -39,6 +41,9 @@ _ENV_VAR_PATTERN = re.compile(r"\b(?:[A-Z][A-Z0-9_]*_API_KEY|SUPABASE_[A-Z_]+)\b
 # A relative markdown link to another doc: the path inside ](…), skipping http(s) and pure anchors.
 _RELATIVE_LINK_PATTERN = re.compile(r"\]\((?!https?:|#)([^)]+\.md)(?:#[^)]*)?\)")
 
+# A Python module the doc cites by name (e.g. an eval proving a claim); matched to guard renames.
+_PY_FILE_PATTERN = re.compile(r"\b(\w+\.py)\b")
+
 
 def _require_doc(doc: Path) -> None:
     assert doc.exists(), f"expected documentation file is missing: {doc.relative_to(_REPO_ROOT)}"
@@ -50,7 +55,7 @@ def _read(doc: Path) -> str:
 
 
 def _normalise(text: str) -> str:
-    """Lowercase and collapse hyphens/underscores so 'peer-reviewed' matches 'peer_reviewed'."""
+    """Enum values use underscores; docs may write them with hyphens or spaces — match either."""
     return text.lower().replace("-", " ").replace("_", " ")
 
 
@@ -74,12 +79,13 @@ def _env_sample_keys(env_sample_text: str) -> set[str]:
 
 @pytest.mark.parametrize(
     "enum_cls",
-    [AcquisitionMode, TrustTier, SourceType],
-    ids=["acquisition_mode", "trust_tier", "source_type"],
+    [AcquisitionMode, TrustTier, SourceType, SubjectField],
+    ids=["acquisition_mode", "trust_tier", "source_type", "subject_field"],
 )
 def test_grounding_model_documents_every_enum_member(enum_cls: type) -> None:
-    # The trust tiers, source types, and acquisition modes are the spine of the model — the doc must
-    # name each, or it describes a model the code no longer has.
+    # The tiers, source types, modes, and field packs the doc enumerates must each name every
+    # member, or it describes a model the code no longer has. (DiscoveryDepth is omitted: its values
+    # "standard"/"thorough" are common words that match incidental prose — a vacuous assertion.)
     text = _normalise(_read(_GROUNDING_MODEL))
 
     missing = [m.value for m in enum_cls if not _documents_term(text, _normalise(m.value))]
@@ -100,6 +106,7 @@ def test_grounding_model_env_vars_exist_in_env_sample() -> None:
     declared = _env_sample_keys(_read(_ENV_SAMPLE))
     documented = set(_ENV_VAR_PATTERN.findall(_read(_GROUNDING_MODEL)))
 
+    assert documented, "expected grounding-model.md to name at least one gating env var"
     unknown = sorted(var for var in documented if var not in declared)
 
     assert not unknown, f"grounding-model.md names env vars absent from .env.sample: {unknown}"
@@ -127,7 +134,7 @@ def test_doc_relative_links_resolve(doc: Path) -> None:
     # A broken cross-link is the most common form of doc-rot; every relative .md link must resolve.
     targets = _RELATIVE_LINK_PATTERN.findall(_read(doc))
 
-    broken = sorted(link for link in targets if not (doc.parent / link).resolve().exists())
+    broken = sorted(link for link in targets if not (doc.parent / link).exists())
 
     assert not broken, f"{doc.name} has unresolved relative links: {broken}"
 
@@ -139,3 +146,16 @@ def test_walkthrough_covers_filling_the_corpus() -> None:
 
     assert "corpus" in lowered, "the walkthrough must cover the Corpus tab / filling the corpus"
     assert "grounding-model.md" in text, "the walkthrough must link grounding-model.md"
+
+
+def test_grounding_model_referenced_python_files_exist() -> None:
+    # The doc cites eval modules by name (e.g. the poisoning proofs); a rename must not orphan them.
+    cited = set(_PY_FILE_PATTERN.findall(_read(_GROUNDING_MODEL)))
+    present = {path.name for path in (_REPO_ROOT / "packages").rglob("*.py")}
+
+    assert cited, (
+        "expected grounding-model.md to cite at least one eval .py file (the poisoning proofs)"
+    )
+    missing = sorted(name for name in cited if name not in present)
+
+    assert not missing, f"grounding-model.md cites Python files that no longer exist: {missing}"
