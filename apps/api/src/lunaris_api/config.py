@@ -24,6 +24,7 @@ class Settings:
     course_dir: Path
     cors_origins: tuple[str, ...]
     secrets_path: Path
+    config_path: Path = Path(".config/config.json")
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     embeddings_api_key: str | None = None
@@ -47,6 +48,7 @@ def get_settings() -> Settings:
         course_dir=Path(os.getenv("LUNARIS_COURSE_DIR", ".courses")),
         cors_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
         secrets_path=Path(os.getenv("LUNARIS_SECRETS_PATH", ".secrets/secrets.json")),
+        config_path=Path(os.getenv("LUNARIS_CONFIG_PATH", ".config/config.json")),
         supabase_url=os.getenv("SUPABASE_URL") or None,
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
         embeddings_api_key=os.getenv("EMBEDDINGS_API_KEY") or None,

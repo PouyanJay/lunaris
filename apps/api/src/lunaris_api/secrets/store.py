@@ -12,6 +12,9 @@ KNOWN_SECRETS: dict[str, str] = {
     "voyage": "EMBEDDINGS_API_KEY",
     "supabaseUrl": "SUPABASE_URL",
     "supabaseServiceRole": "SUPABASE_SERVICE_ROLE_KEY",
+    "search": "SEARCH_API_KEY",
+    "youtube": "YOUTUBE_API_KEY",
+    "langsmith": "LANGSMITH_API_KEY",
 }
 
 
