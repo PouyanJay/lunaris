@@ -153,6 +153,9 @@ activemq-data/
 # Operator-provided secrets (API keys entered via Settings) — owner-only, never committed
 .secrets/
 
+# Operator-provided non-secret config (LangSmith/model settings via Settings) — local runtime state
+.config/
+
 # Per-feature journey tracking (specs + progress) — local only, never shipped
 .memory/
 
