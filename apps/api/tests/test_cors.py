@@ -22,7 +22,7 @@ def client() -> TestClient:
         pipeline="stub",
         course_dir=".",
         cors_origins=(_ORIGIN,),
-        secrets_path=".secrets/secrets.json",
+        env_file=".env",
     )
     return TestClient(app)
 

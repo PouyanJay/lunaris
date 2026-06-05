@@ -263,10 +263,10 @@ resolve_service_port() {
 # only when a usable key is reachable, and otherwise fall back to the stub with a clear
 # message. An explicit LUNARIS_PIPELINE always wins (no guard, operator's choice).
 
-# anthropic_key_present — 0 iff a usable ANTHROPIC_API_KEY is reachable from any of the
-# sources the API will see at startup: the process env, the .env file (loaded via
-# --env-file), or the Settings secret store (.secrets/secrets.json, applied to env on
-# API startup). The .env.sample placeholder counts as "no key".
+# anthropic_key_present — 0 iff a usable ANTHROPIC_API_KEY is reachable from a source the API
+# will see at startup: the process env or the .env file (loaded via --env-file). The .env file is
+# the single source of truth — the Settings UI now upserts secrets into it (see SecretStore), so
+# there is no separate secret-store file to probe. The .env.sample placeholder counts as "no key".
 anthropic_key_present() {
   if [ -n "${ANTHROPIC_API_KEY:-}" ] && [ "${ANTHROPIC_API_KEY}" != "$ANTHROPIC_KEY_PLACEHOLDER" ]; then
     return 0
@@ -279,10 +279,6 @@ anthropic_key_present() {
     if [ -n "$value" ] && [ "$value" != "$ANTHROPIC_KEY_PLACEHOLDER" ]; then
       return 0
     fi
-  fi
-  local secrets="${LUNARIS_SECRETS_PATH:-.secrets/secrets.json}"
-  if [ -f "$secrets" ] && grep -q "ANTHROPIC_API_KEY" "$secrets" 2>/dev/null; then
-    return 0
   fi
   return 1
 }

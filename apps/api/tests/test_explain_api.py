@@ -31,11 +31,11 @@ class _StubExplainer:
 
 def _build_client(tmp_path: Path, explainer: IExplainer | None) -> httpx.AsyncClient:
     app = create_app()
-    secrets_file = tmp_path / "secrets.json"
+    env_file = tmp_path / ".env"
     app.dependency_overrides[get_settings] = lambda: Settings(
-        pipeline="stub", course_dir=tmp_path, cors_origins=(), secrets_path=secrets_file
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=env_file
     )
-    app.dependency_overrides[get_secret_store] = lambda: SecretStore(secrets_file)
+    app.dependency_overrides[get_secret_store] = lambda: SecretStore(env_file)
     app.dependency_overrides[get_explainer] = lambda: explainer
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 

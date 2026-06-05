@@ -25,6 +25,10 @@ class SettingsView(CamelModel):
 
 
 class SecretValue(BaseModel):
-    """Request body for setting a secret. ``SecretStr`` keeps the value out of logs/reprs."""
+    """Request body for setting a secret. ``SecretStr`` keeps the value out of logs/reprs.
+
+    Note: control-char rejection is enforced in the router, not as a field validator here — a
+    Pydantic 422 echoes the offending input back in its error body, which would leak the secret.
+    """
 
     value: SecretStr

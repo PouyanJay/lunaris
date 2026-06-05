@@ -10,7 +10,12 @@ from ..dependencies import (
     pipeline_supports_lesson_regeneration,
 )
 from ..schemas import SecretStatusView, SecretValue, SettingsView
-from ..secrets import KNOWN_SECRETS, SecretStatus, SecretValidationError
+from ..secrets import (
+    KNOWN_SECRETS,
+    SecretStatus,
+    SecretValidationError,
+    contains_control_characters,
+)
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -48,6 +53,13 @@ async def set_secret(
     if name not in KNOWN_SECRETS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown secret: {name}")
     value = payload.value.get_secret_value()
+    # Guard before the probe. .env line-injection: a newline could split the value into a second
+    # KEY=value entry. The 400 detail is value-free (a Pydantic 422 would echo the value back).
+    if not value or contains_control_characters(value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Secret value must be non-empty and free of control characters.",
+        )
     try:
         await validator.validate(name, value)
     except SecretValidationError as exc:

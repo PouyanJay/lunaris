@@ -24,7 +24,7 @@ def _app(tmp_path: Path) -> FastAPI:
         pipeline="stub",
         course_dir=tmp_path,
         cors_origins=(),
-        secrets_path=tmp_path / "secrets.json",
+        env_file=tmp_path / ".env",
     )
     # One shared store for the app's lifetime, so an upsert is visible to a later list/delete (a
     # fresh instance per request would lose every write — the prod stores are process singletons).

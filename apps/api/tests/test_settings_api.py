@@ -39,11 +39,11 @@ def _restore_secret_env() -> Iterator[None]:
 
 def _client(tmp_path: Path, validator: object) -> httpx.AsyncClient:
     app = create_app()
-    secrets_file = tmp_path / "secrets.json"
+    env_file = tmp_path / ".env"
     app.dependency_overrides[get_settings] = lambda: Settings(
-        pipeline="stub", course_dir=tmp_path, cors_origins=(), secrets_path=secrets_file
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=env_file
     )
-    app.dependency_overrides[get_secret_store] = lambda: SecretStore(secrets_file)
+    app.dependency_overrides[get_secret_store] = lambda: SecretStore(env_file)
     app.dependency_overrides[get_secret_validator] = lambda: validator
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
@@ -122,6 +122,32 @@ async def test_unknown_secret_name_is_404(client: httpx.AsyncClient) -> None:
     response = await client.put("/api/settings/secrets/bogus", json={"value": "x"})
 
     assert response.status_code == 404
+
+
+async def test_control_characters_are_rejected_at_the_boundary(client: httpx.AsyncClient) -> None:
+    # A newline could inject extra lines into the .env file the secret persists to; the router
+    # rejects it with a deliberate 400 (not a Pydantic 422, which would echo the value back).
+    injected = "sk-ant-good\nSEARCH_API_KEY=evil"
+
+    put = await client.put("/api/settings/secrets/anthropic", json={"value": injected})
+
+    assert put.status_code == 400
+    assert injected not in put.text  # no part of the value is echoed back, even on rejection
+    assert "sk-ant-good" not in put.text
+    assert "evil" not in put.text
+    got = await client.get("/api/settings")
+    anthropic = next(s for s in got.json()["secrets"] if s["name"] == "anthropic")
+    assert anthropic["isSet"] is False
+
+
+async def test_empty_value_is_rejected(client: httpx.AsyncClient) -> None:
+    # An empty value must not silently persist an empty .env line / blank env var.
+    put = await client.put("/api/settings/secrets/search", json={"value": ""})
+
+    assert put.status_code == 400
+    got = await client.get("/api/settings")
+    search = next(s for s in got.json()["secrets"] if s["name"] == "search")
+    assert search["isSet"] is False
 
 
 async def test_delete_clears_a_secret(client: httpx.AsyncClient) -> None:

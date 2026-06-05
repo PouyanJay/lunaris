@@ -39,7 +39,7 @@ def _corpus_app(tmp_path: Path, *, content_extractor: IContentExtractor | None =
         pipeline="stub",
         course_dir=tmp_path,
         cors_origins=(),
-        secrets_path=tmp_path / "secrets.json",
+        env_file=tmp_path / ".env",
     )
     # A fresh in-memory corpus per app (isolated). The URL extractor is injectable so URL tests stay
     # offline; the real DocumentExtractor is used for file tests (it needs no network/key).
