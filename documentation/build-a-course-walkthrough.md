@@ -173,12 +173,13 @@ a fake progress bar.
 
 When it finishes, the canvas hands off to the **result view**.
 
-> ⚠️ **Expect status = "Needs review", and most/all claims "cut" — this is correct, not a failure.**
-> Claim grounding needs a Voyage embeddings key + an ingested corpus. Without them the verifier
-> *fails safe*: it cuts every claim rather than ship an unsupported one, so the publish gate withholds
-> "Published". The course structure, lessons, ordering, and visuals are all still real and correct —
-> only the green "supported-by-a-source" citations are absent. (To get real citations you need a paid
-> Voyage tier + corpus ingestion; out of scope here.)
+> ⚠️ **On a first run you'll likely see status = "Needs review", with most/all claims "cut" — this is
+> correct, not a failure.** Claim grounding verifies each sentence against a *corpus* of evidence; with
+> an empty corpus (and no Voyage embeddings key) the verifier *fails safe* — it cuts every claim rather
+> than ship an unsupported one, so the publish gate withholds "Published". The structure, lessons,
+> ordering, and visuals are all still real and correct — only the green "supported-by-a-source"
+> citations are absent. **[Step 5](#step-5--fill-the-corpus-so-citations-go-green) shows how to fill
+> the corpus so those citations go green** (it needs an embeddings key + Supabase).
 
 ---
 
@@ -199,7 +200,9 @@ The result view has a **Learn | Map** toggle.
 - **Branded visuals** on the Demonstrate phase — a flow / steps / comparison diagram drawn by the
   app (this is the P5 wiring; with no render toolchain you may instead see a labelled "Diagram
   source" block, which is the intended fallback).
-- **Claims with their verification status** — here mostly "cut" (see the note above).
+- **Claims with their verification status** — mostly "cut" until you ground the course
+  ([Step 5](#step-5--fill-the-corpus-so-citations-go-green)); "supported" claims carry their source +
+  its trust tier.
 - A per-lesson **Regenerate lesson** button (re-authors just that lesson via the agent).
 
 ### Map (the prerequisite graph)
@@ -214,11 +217,61 @@ visible.
 
 ---
 
-## Step 5 — Verify it for real (optional, but satisfying)
+## Step 5 — Fill the corpus so citations go green
+
+This is the P6 payoff. The verifier cuts claims it can't ground because the corpus is *empty* — so
+fill it, re-ground, and watch the citations turn green. There are **three ways** evidence enters the
+corpus (all write the same trust-graded corpus; the full model is in
+[grounding-model.md](grounding-model.md)). You'll need an embeddings key + Supabase for any of them to
+persist — set `EMBEDDINGS_API_KEY` (Voyage) in `.env` or the Settings panel (note: Voyage's free tier
+is 3 req/min — fine for a small manual upload, too slow for a whole auto-discovered corpus; a paid
+tier is needed for a full run).
+
+### 5a. Manual — upload your own trusted sources (the Corpus tab)
+
+Open a finished course and switch the canvas to the **Corpus** tab (the `Learn | Map | Build | Corpus`
+toggle). Add evidence three ways — **Paste** notes, give a **URL**, or upload a **File** (PDF / DOCX /
+MD / TXT). Each source is classified **vouched** (you chose it), deduped, embedded, and stored for
+*this* course. Then click **Re-ground course** and reopen **Learn**:
+
+**Expect:** the sources you added listed with their trust tier, and — for claims your evidence
+actually supports — citations now showing **"supported"** with the source, instead of "cut".
+
+> Operator shortcut: `make ingest DIR=./my-notes COURSE=<course-id>` ingests a whole folder.
+
+### 5b. Auto — let the system find its own evidence
+
+On the topic form, the **search depth** control (`Standard` / `Thorough`) governs auto-discovery: with
+a `SEARCH_API_KEY` set, the agent searches the web, fetches and extracts pages, scores each for trust,
+and ingests the ones that clear the bar — *before* it verifies claims. Watch it happen live in the
+**Build** canvas: a streaming source-vetting table shows each domain, its tier + credibility, and a
+✓/✕ verdict with a one-line reason. `Thorough` widens the search budget (and cost) to corroborate more
+concepts across more domains.
+
+**Expect:** with a search key, several claims ship **supported** with real citations on the first
+build — no manual upload. Without a search key the table shows the step was stubbed and the build
+continues ungrounded.
+
+### 5c. Seed — reuse what the build already read (near-free)
+
+If a `SEARCH_API_KEY` is set, the **research** stage already fetched and vetted authoritative pages to
+ground the brief. Seed mode carries that text into the corpus automatically — no second fetch, **no
+extra search key** — so the build's claims verify against the very pages it just read. You'll see a
+**Seeding** phase in the build timeline ("seeded N sources from research"). This is automatic; there's
+no button.
+
+> All three are graded by the **same** scorer and risk-tiered trust floor — a source is never trusted
+> just for being uploaded, found, or seeded. A lone open-web source that merely *agrees* with a claim
+> is still cut at HIGH risk; only a curated source or genuine cross-source agreement clears the floor.
+> That's the moat defending itself — see [grounding-model.md](grounding-model.md#the-moat-defends-itself).
+
+---
+
+## Step 6 — Verify it for real (optional, but satisfying)
 
 You don't have to trust the UI. Two independent checks:
 
-### 5a. Re-build over the API and grab the run id
+### 6a. Re-build over the API and grab the run id
 
 ```bash
 curl -s -D - -o /tmp/course.json \
@@ -230,7 +283,7 @@ curl -s -D - -o /tmp/course.json \
 **Expect:** an `x-run-id: <hex>` header (this id threads every log line), and a full course-object
 written to `/tmp/course.json`. (This is the synchronous build — it blocks ~2–4 min, then returns.)
 
-### 5b. Score it against the definition of done
+### 6b. Score it against the definition of done
 
 ```bash
 uv run lunaris-eval /tmp/course.json
@@ -243,9 +296,9 @@ shipped*, so the DoD can still report met. Exit `0` = DoD passed.
 
 ---
 
-## Step 6 — Triangulate the logs (optional)
+## Step 7 — Triangulate the logs (optional)
 
-Every layer tags its logs with the same `run_id`. Using the id from Step 5a:
+Every layer tags its logs with the same `run_id`. Using the id from Step 6a:
 
 ```bash
 grep '"run_id":"<id>"' .run-state/api.log | head -40
@@ -258,7 +311,7 @@ processor.)
 
 ---
 
-## Step 7 — Shut down
+## Step 8 — Shut down
 
 ```bash
 make stop
@@ -287,14 +340,17 @@ Docker projects up).
 | API health | `curl -s localhost:8000/api/healthz` | `{"status":"ok"}` |
 | Build via API | `POST /api/courses {"topic":"…"}` | 201 + `X-Run-Id` header |
 | Score a course | `uv run lunaris-eval <file.json>` | per-check report, exit 0 = DoD met |
+| Ground a course (manual) | Corpus tab → add source → **Re-ground**, or `make ingest DIR=… COURSE=…` | supported claims' citations go green |
 | Stop everything | `make stop` | shutdown summary; data preserved |
 
 ## Troubleshooting
 
 - **It built the binary-search course, not Dijkstra** → `make run` ran the stub. Your key is the
   placeholder/missing. Fix `.env` (Step 0b/0c) and re-run, or set the key in the UI Settings panel.
-- **Status "Needs review" / all claims cut** → expected without a Voyage key + corpus (Step 3 note).
-  The course is still correct; only source citations are absent.
+- **Status "Needs review" / all claims cut** → expected on a first run with an empty corpus (Step 3
+  note). The course is still correct; only source citations are absent. **Fill the corpus
+  ([Step 5](#step-5--fill-the-corpus-so-citations-go-green)) — manually, via auto-discovery, or the
+  seed feed — then re-ground to turn citations green.**
 - **Build is slow or 429s** → a full build is ~30–40 Claude calls; on lower tiers space out runs.
   You're on Tier-2 (1000 req/min), so this is usually fine.
 - **Docker errors on start** → Docker Desktop isn't running. Start it, wait ~10s, `make run` again.
@@ -304,5 +360,7 @@ Docker projects up).
 ---
 
 *See also [relevance-model.md](relevance-model.md) — how Lunaris scopes a course to the right level,
-what the search keys unlock, and how it degrades honestly without them.*
+what the search keys unlock, and how it degrades honestly without them — and
+[grounding-model.md](grounding-model.md) — the trust model, the three acquisition modes, and the
+corpus costs behind Step 5.*
 </content>
