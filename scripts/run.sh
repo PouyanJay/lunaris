@@ -302,8 +302,9 @@ resolve_pipeline() {
 }
 
 # start_supabase — bring up the local Supabase stack via its CLI (idempotent:
-# a second `supabase start` just reports the running stack). Migrations apply
-# on first start. Returns 0 (up), 1 (could not start).
+# a second `supabase start` just reports the running stack), then apply any
+# pending migrations (`supabase start` only runs them on a FRESH volume, so a
+# persisted one silently misses migrations added since). Returns 0 (up), 1 (no).
 start_supabase() {
   if ! command -v supabase >/dev/null 2>&1; then
     ui::warn "supabase CLI not installed — skipping the data layer"
@@ -347,6 +348,15 @@ start_supabase() {
       return 1
     fi
   fi
+
+  # Apply migrations added since this volume was created. `supabase start` runs
+  # migrations only on a FRESH volume; a persisted volume (the default — `supabase
+  # stop` keeps it) silently misses new ones, leaving a returning dev on a stale
+  # schema (grounding reads/writes then fail against missing columns/tables).
+  # `migration up` is idempotent ("up to date" when none pend); a failure warns
+  # rather than blocks, since the stack itself is already up.
+  ui::run "apply migrations (supabase migration up)" "supabase migration up" \
+    || ui::warn "migration up failed — schema may be stale; see 'supabase migration list'"
 
   if _poll_url_ready "$SUPABASE_REST" 60; then
     ui::ok "Supabase REST ready at ${SUPABASE_REST}"
