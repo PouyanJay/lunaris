@@ -34,6 +34,51 @@ describe("ToolCallCard per-tool renderers", () => {
     expect(screen.queryByText(/"goalId"/)).not.toBeInTheDocument();
   });
 
+  it("seed_grounding: shows the seeded source + chunk count from research, never raw JSON", () => {
+    render(
+      <ToolCallCard
+        tool="seed_grounding"
+        args={{}}
+        result={resultOf({ status: "ready", sourceCount: 3, chunksIngested: 27 })}
+      />,
+    );
+
+    expect(screen.getByText(/seeded 3 sources from research/i)).toBeInTheDocument();
+    expect(screen.getByText(/27 chunks/i)).toBeInTheDocument();
+    // The raw JSON dump must not leak into the transcript.
+    expect(screen.queryByText(/"chunksIngested"/)).not.toBeInTheDocument();
+  });
+
+  it("seed_grounding: singularises one source/chunk", () => {
+    render(
+      <ToolCallCard
+        tool="seed_grounding"
+        args={{}}
+        result={resultOf({ status: "ready", sourceCount: 1, chunksIngested: 1 })}
+      />,
+    );
+
+    expect(screen.getByText(/seeded 1 source from research · 1 chunk/i)).toBeInTheDocument();
+  });
+
+  it("seed_grounding: shows a running indicator while in flight", () => {
+    render(<ToolCallCard tool="seed_grounding" args={{}} result={null} />);
+
+    expect(screen.getByText(/running…/i)).toBeInTheDocument();
+  });
+
+  it("seed_grounding: reads the empty state as a fact, not a failure", () => {
+    render(
+      <ToolCallCard
+        tool="seed_grounding"
+        args={{}}
+        result={resultOf({ status: "ready", sourceCount: 0, chunksIngested: 0 })}
+      />,
+    );
+
+    expect(screen.getByText(/no research sources to seed/i)).toBeInTheDocument();
+  });
+
   it("interpret_request: renders the interpreted brief as a card, never the raw JSON", () => {
     render(
       <ToolCallCard

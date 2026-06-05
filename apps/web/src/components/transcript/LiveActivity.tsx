@@ -18,6 +18,11 @@ const VERBS: Record<string, readonly string[]> = {
   concepts_extracted: ["Reading the topic…", "Extracting concepts…", "Naming the pieces…"],
   graph_built: ["Mapping prerequisites…", "Ordering concepts…", "Untangling dependencies…"],
   curriculum_designed: ["Designing the curriculum…", "Sequencing modules…", "Setting objectives…"],
+  grounding_seeded: [
+    "Seeding the corpus…",
+    "Reusing what research found…",
+    "Drawing on the evidence…",
+  ],
   grounding_discovered: ["Preparing the corpus…", "Readying the evidence…", "Gathering grounding…"],
   module_authored: ["Authoring lessons…", "Writing worked examples…", "Composing each phase…"],
   claims_verified: ["Grounding claims…", "Weighing the evidence…", "Verifying against the corpus…"],

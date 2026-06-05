@@ -198,6 +198,7 @@ describe("buildTimeline", () => {
       "Concepts",
       "Graph",
       "Curriculum",
+      "Seeding",
       "Grounding",
       "Lessons",
       "Verify",
@@ -205,6 +206,41 @@ describe("buildTimeline", () => {
       "Publish",
     ]);
     expect(phases.every((p) => p.status === "pending" && p.entries.length === 0)).toBe(true);
+  });
+
+  it("buckets the seed_grounding beats under the Seeding phase, between Curriculum and Grounding", () => {
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("curriculum_designed", 1, { label: "Designed curriculum: 3 modules" }),
+      makeProgressEvent("grounding_seeded", 2, { label: "Seeded the corpus from research" }),
+      makeProgressEvent("grounding_discovered", 3, { label: "Prepared the grounding corpus" }),
+    ];
+    const agentEvents = [
+      makeAgentEvent("tool_call", 0, { stage: "curriculum_designed", tool: "seed_grounding" }),
+      makeAgentEvent("tool_result", 1, {
+        stage: "grounding_seeded",
+        tool: "seed_grounding",
+        result: '{"status":"ready","sourceCount":3,"chunksIngested":27}',
+      }),
+    ];
+
+    const phases = buildTimeline(events, agentEvents);
+
+    // seed first, discover the gaps next — the two corpus phases are intentionally ordered.
+    const labels = phases.map((p) => p.label);
+    expect(labels.indexOf("Curriculum")).toBeLessThan(labels.indexOf("Seeding"));
+    expect(labels.indexOf("Seeding")).toBeLessThan(labels.indexOf("Grounding"));
+
+    const seeding = phase(phases, "Seeding");
+    expect(seeding.status).toBe("done");
+    expect(seeding.summary).toBe("Seeded the corpus from research");
+    expect(seeding.entries).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        tool: "seed_grounding",
+        result: expect.stringContaining("ready"),
+      }),
+    ]);
   });
 
   it("buckets the discover_grounding beats under the Grounding phase, between Curriculum and Lessons", () => {
