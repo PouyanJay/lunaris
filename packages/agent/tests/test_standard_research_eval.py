@@ -48,7 +48,7 @@ async def test_clb_10_is_grounded_in_real_competencies_with_provenance() -> None
     )
 
     # Act
-    research = await researcher.research(brief)
+    research = (await researcher.research(brief)).research
 
     # Assert — grounding actually happened (not the honest no-source degradation), real competencies
     # were distilled, and every cited source carries structural provenance (a real URL + a stamp).

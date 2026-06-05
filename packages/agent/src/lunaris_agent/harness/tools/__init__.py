@@ -7,6 +7,7 @@ from .interpret_request import make_interpret_request_tool
 from .model_learner import make_model_learner_tool
 from .prereq_graph import make_prerequisite_graph_tool
 from .research_standard import make_research_standard_tool
+from .seed_grounding import make_seed_grounding_tool
 from .verify_claims import make_verify_claims_tool
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "make_model_learner_tool",
     "make_prerequisite_graph_tool",
     "make_research_standard_tool",
+    "make_seed_grounding_tool",
     "make_verify_claims_tool",
 ]

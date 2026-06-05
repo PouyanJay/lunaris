@@ -25,6 +25,7 @@ from lunaris_agent.harness.discovery import (
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.event_tap import stream_course_build as real_stream_course_build
 from lunaris_agent.harness.runner import AgentCourseBuilder
+from lunaris_agent.harness.seeding import GroundingSeeder, IGroundingSeeder, StubGroundingSeeder
 from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.lesson_claims import iter_claims
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
@@ -42,7 +43,7 @@ from lunaris_agent.subagents.learner_profiler import (
 )
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_agent.subagents.resource_curator import CuratedResources, StubResourceCurator
-from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
+from lunaris_agent.subagents.standard_researcher import SeedSource, StubStandardResearcher
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
     StubVisualGenerator,
@@ -235,6 +236,7 @@ def _builder(
     architect: StubCurriculumArchitect | None = None,
     reviser: StubLessonReviser | None = None,
     curator: StubResourceCurator | None = None,
+    seeder: IGroundingSeeder | None = None,
     discoverer: IGroundingDiscoverer | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
@@ -252,6 +254,7 @@ def _builder(
         architect=architect or StubCurriculumArchitect(_PLAN),
         reviser=reviser or _reviser(),
         curator=curator or StubResourceCurator(),
+        seeder=seeder or StubGroundingSeeder(),
         discoverer=discoverer or StubGroundingDiscoverer(),
         verifier=verifier or _verifier(),
         visual_engine=visual_engine,
@@ -265,7 +268,7 @@ def _delegating_script(
     first_narration: str = "",
 ) -> object:
     """The standard happy-path agent script: interpret → research → model learner → extract →
-    graph → curriculum → discover grounding → delegate → finalize.
+    graph → curriculum → seed grounding → discover grounding → delegate → finalize.
 
     ``first_narration`` lets a test make the agent narrate its first step (text that streams as
     tokens in token mode); it defaults to empty, leaving the deterministic tool-only turns intact.
@@ -301,6 +304,10 @@ def _delegating_script(
             AIMessage(
                 content="",
                 tool_calls=[{"name": "design_curriculum", "args": {}, "id": "t3"}],
+            ),
+            AIMessage(
+                content="",
+                tool_calls=[{"name": "seed_grounding", "args": {}, "id": "t3z"}],
             ),
             AIMessage(
                 content="",
@@ -955,6 +962,67 @@ async def test_discovery_ingests_an_auto_source_into_the_course_corpus(
     assert all(e.run_id == "run-auto" for e in evaluated)
     assert all(e.source is not None for e in evaluated), "SOURCE_EVALUATED event missing payload"
     assert all(e.source.accepted for e in evaluated if e.source is not None)
+
+
+async def test_seed_grounding_ingests_a_research_source_into_the_course_corpus(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    tmp_path: Path,
+) -> None:
+    # Arrange — the live seeder over a shared in-memory corpus (P6.4-T0 walking skeleton): the
+    # research stage already fetched a page (carried as a SeedSource), and seed_grounding ingests it
+    # as a SEED source into THIS course's corpus, graded by the same credibility scorer the
+    # discovery gate uses. No re-fetch — the seed carries the text the research stage already read.
+    corpus = InMemoryCorpusStore()
+    embedder = StubEmbedder()
+    researcher = StubStandardResearcher(
+        seeds=[
+            SeedSource(
+                url="https://ircc.canada.ca/clb10",
+                text="CLB 10 listening: infer implied meaning and stance in extended speech.",
+                title="CLB 10",
+                trust_tier=TrustTier.OFFICIAL,
+                fetched_at="2026-06-04T00:00:00+00:00",
+            )
+        ]
+    )
+    seeder = GroundingSeeder(
+        CorpusIngestor(embedder, corpus, scorer=CredibilityScorer(InMemorySourceAuthorityStore()))
+    )
+    builder = _builder(
+        _delegating_script(scripted_model),
+        CourseStore(tmp_path),
+        researcher=researcher,
+        seeder=seeder,
+    )
+
+    # Act
+    await builder.run("demo", course_id="course-seed", run_id="run-seed", progress=progress_sink)
+
+    # Assert — the corpus now holds a SEED source for the course, provenance intact and credibility
+    # FILLED by the ingestor's scorer: a seed is graded through the same gate, not blindly trusted.
+    sources = await corpus.list_sources_for_course("course-seed")
+    assert sources, "seeding ingested no source into the course corpus"
+    assert all(s.acquisition_mode is AcquisitionMode.SEED for s in sources)
+    assert all(s.course_id == "course-seed" for s in sources)
+    assert all(s.trust_tier is TrustTier.OFFICIAL for s in sources)  # research's tier, preserved
+    assert all(s.credibility is not None for s in sources)  # the scorer filled it at ingest
+    # The retriever can reach the seed scoped to this course (not a null-course/legacy chunk).
+    (query_embedding,) = await embedder.embed(["demo"])
+    evidence = await corpus.match(query_embedding, course_id="course-seed")
+    assert evidence, "the seeded source is not retrievable for its course"
+    # The GROUNDING_SEEDED stage lit the Grounding phase, after the curriculum and before discovery,
+    # run_id-correlated, so the live canvas can render it (P6.4-T2).
+    stages = [event.stage for event in progress_sink.events]
+    assert ProgressStage.GROUNDING_SEEDED in stages
+    assert stages.index(ProgressStage.CURRICULUM_DESIGNED) < stages.index(
+        ProgressStage.GROUNDING_SEEDED
+    )
+    assert stages.index(ProgressStage.GROUNDING_SEEDED) < stages.index(
+        ProgressStage.GROUNDING_DISCOVERED
+    )
+    seeded = next(e for e in progress_sink.events if e.stage is ProgressStage.GROUNDING_SEEDED)
+    assert seeded.run_id == "run-seed"
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

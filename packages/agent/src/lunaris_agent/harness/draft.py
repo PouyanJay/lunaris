@@ -9,6 +9,7 @@ assemble the typed ``Course``. This keeps authoritative data off the LLM's forma
 """
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from lunaris_runtime.schema import (
     Citation,
@@ -24,6 +25,9 @@ from lunaris_runtime.schema import (
 
 from .agent_reporter import AgentReporter
 from .progress_reporter import ProgressReporter
+
+if TYPE_CHECKING:
+    from ..subagents.standard_researcher import SeedSource
 
 
 @dataclass
@@ -49,6 +53,10 @@ class CourseDraft:
     # How hard auto-discovery (P6.3) searches, chosen up front by the learner. STANDARD = the
     # moderate default; THOROUGH widens the discovery budget. Read by the discovery stage only.
     discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD
+    # The pages the research stage (P7.2) already fetched + extracted, carried forward so the
+    # seed_grounding stage (P6.4) ingests them into the corpus without re-fetching. Populated by
+    # research_standard; empty on the no-key / unavailable path. Harness-only; never on the wire.
+    research_seeds: list["SeedSource"] = field(default_factory=list)
     frontier: list[str] = field(default_factory=list)
     goal_concept: str | None = None
     concepts: list[KnowledgeComponent] = field(default_factory=list)

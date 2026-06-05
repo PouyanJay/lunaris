@@ -26,9 +26,11 @@ from lunaris_runtime.schema import (
     TrustTier,
 )
 
+from .outcome import ResearchOutcome
 from .parser import parse_research
 from .prompt import build_research_prompt
 from .query import build_research_queries
+from .seed_source import SeedSource
 
 logger = structlog.get_logger()
 
@@ -95,11 +97,11 @@ class ClaudeStandardResearcher:
         self._budget = budget
         self._clock = clock
 
-    async def research(self, brief: CourseBrief) -> StandardResearch:
+    async def research(self, brief: CourseBrief) -> ResearchOutcome:
         fetched = await self._fetch(await self._gather_candidates(brief))
         if not fetched:
             logger.info("standard_research_unavailable", goal=brief.goal)
-            return StandardResearch(status=ResearchStatus.UNAVAILABLE)
+            return ResearchOutcome(research=StandardResearch(status=ResearchStatus.UNAVAILABLE))
 
         competencies, score_table = await self._distil(brief, [p.content for p in fetched])
         sources = self._build_sources(fetched)
@@ -113,9 +115,12 @@ class ClaudeStandardResearcher:
             competency_count=len(competencies),
             source_count=len(sources),
         )
-        return StandardResearch(
+        research = StandardResearch(
             status=status, competencies=competencies, score_table=score_table, sources=sources
         )
+        # The same fetched pages that grounded the brief seed the corpus (P6.4): carry their text
+        # forward so the SEED feed ingests already-paid-for evidence rather than re-fetching.
+        return ResearchOutcome(research=research, seeds=self._build_seeds(fetched))
 
     async def _gather_candidates(self, brief: CourseBrief) -> list[_Candidate]:
         """Search (within the budget), classify each hit, drop blocked, prefer highest-trust first.
@@ -187,6 +192,26 @@ class ClaudeStandardResearcher:
             )
             for page in fetched
         ]
+
+    @staticmethod
+    def _build_seeds(fetched: list[_FetchedPage]) -> tuple[SeedSource, ...]:
+        """Carry the already-fetched page text forward as corpus seed material (P6.4).
+
+        One SeedSource per fetched page, keeping the extracted text + its acquisition-time tier and
+        timestamp. Credibility is left unset on purpose — the ingestor's scorer grades each seed
+        through the same gate as every other source, so a seed earns its place rather than
+        inheriting trust from having been read during research.
+        """
+        return tuple(
+            SeedSource(
+                url=page.candidate.result.url,
+                text=page.content.text,
+                title=page.content.title or page.candidate.result.title,
+                trust_tier=page.candidate.tier,
+                fetched_at=page.fetched_at,
+            )
+            for page in fetched
+        )
 
     def _chat_model(self) -> BaseChatModel:
         if not isinstance(self._model, str):

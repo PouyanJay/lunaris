@@ -39,6 +39,7 @@ from .discovery import IGroundingDiscoverer
 from .draft import CourseDraft
 from .event_tap import stream_course_build
 from .progress_reporter import ProgressReporter
+from .seeding import IGroundingSeeder
 from .stage_cursor import StageCursor
 from .tools import (
     make_curate_resources_tool,
@@ -50,6 +51,7 @@ from .tools import (
     make_model_learner_tool,
     make_prerequisite_graph_tool,
     make_research_standard_tool,
+    make_seed_grounding_tool,
 )
 
 logger = structlog.get_logger()
@@ -68,7 +70,8 @@ _BUILD_INSTRUCTION = (
     "research_standard to ground the brief's target standard in its real competencies. Then call "
     "model_learner to infer what the learner already knows (the frontier to skip). Then extract "
     "the concepts, order them with the prerequisite-graph tool, design the curriculum, then call "
-    "discover_grounding to prepare the evidence corpus the claims are verified against. Then "
+    "seed_grounding to seed the evidence corpus from the sources research already fetched, then "
+    "discover_grounding to find any further evidence the claims are verified against. Then "
     "delegate lesson authoring to the module-author subagent (it authors, verifies, and revises "
     "the lessons). Then call curate_resources to attach vetted external learning resources to each "
     "lesson. Finally, finalize the course."
@@ -91,6 +94,7 @@ class AgentCourseBuilder:
         architect: ICurriculumArchitect,
         reviser: ILessonReviser,
         curator: IResourceCurator,
+        seeder: IGroundingSeeder,
         discoverer: IGroundingDiscoverer,
         verifier: Verifier,
         critic: ICritic | None = None,
@@ -108,6 +112,7 @@ class AgentCourseBuilder:
         self._architect = architect
         self._reviser = reviser
         self._curator = curator
+        self._seeder = seeder
         self._discoverer = discoverer
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
@@ -198,6 +203,7 @@ class AgentCourseBuilder:
             make_extract_concepts_tool(self._extractor, draft),
             make_prerequisite_graph_tool(self._builder, draft),
             make_design_curriculum_tool(self._architect, draft),
+            make_seed_grounding_tool(self._seeder, draft),
             make_discover_grounding_tool(self._discoverer, draft),
             make_curate_resources_tool(self._curator, draft),
             make_finalize_course_tool(

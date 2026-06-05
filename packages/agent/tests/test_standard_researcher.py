@@ -170,7 +170,8 @@ async def test_researcher_distills_competencies_with_provenance() -> None:
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    outcome = await researcher.research(_clb_brief())
+    research = outcome.research
 
     # Assert — grounded: competencies + score table distilled, status COMPLETE, and every source
     # (deduped across the three queries) carries structural provenance, stamped at acquisition.
@@ -185,6 +186,14 @@ async def test_researcher_distills_competencies_with_provenance() -> None:
     tiers = {source.url: source.trust_tier for source in research.sources}
     assert tiers["https://ircc.canada.ca/clb10"] is TrustTier.OFFICIAL
     assert tiers["https://example.edu/clb-guide"] is TrustTier.REPUTABLE
+    # The same fetched pages are carried as corpus seeds (P6.4) — one per fetched source, with the
+    # extracted text and acquisition-time provenance, so the SEED feed ingests them without
+    # re-fetching. Credibility is left unset on purpose (the ingestor's scorer grades each seed).
+    assert {seed.url for seed in outcome.seeds} == urls
+    assert all(seed.text for seed in outcome.seeds)
+    assert all(seed.fetched_at == _FIXED_CLOCK for seed in outcome.seeds)
+    seed_tiers = {seed.url: seed.trust_tier for seed in outcome.seeds}
+    assert seed_tiers["https://ircc.canada.ca/clb10"] is TrustTier.OFFICIAL
 
 
 async def test_researcher_is_unavailable_when_no_source_can_be_fetched() -> None:
@@ -196,12 +205,15 @@ async def test_researcher_is_unavailable_when_no_source_can_be_fetched() -> None
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    outcome = await researcher.research(_clb_brief())
+    research = outcome.research
 
-    # Assert — honest degradation: UNAVAILABLE, no fabricated sources or competencies.
+    # Assert — honest degradation: UNAVAILABLE, no fabricated sources or competencies, and no seeds
+    # (nothing was fetched, so the SEED feed has nothing to ingest).
     assert research.status is ResearchStatus.UNAVAILABLE
     assert research.sources == []
     assert research.competencies == []
+    assert outcome.seeds == ()
 
 
 async def test_researcher_is_unavailable_when_the_search_backend_raises() -> None:
@@ -214,7 +226,7 @@ async def test_researcher_is_unavailable_when_the_search_backend_raises() -> Non
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    research = (await researcher.research(_clb_brief())).research
 
     # Assert — a flaky provider degrades to UNAVAILABLE rather than aborting the build.
     assert research.status is ResearchStatus.UNAVAILABLE
@@ -235,7 +247,7 @@ async def test_researcher_is_partial_when_sources_read_but_nothing_distils() -> 
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    research = (await researcher.research(_clb_brief())).research
 
     # Assert — sources were reached but grounding was thin: PARTIAL, with the source still cited and
     # carrying its provenance (the clock injection stamps the non-COMPLETE branch too).
@@ -272,7 +284,7 @@ async def test_researcher_prefers_higher_trust_tiers_within_the_fetch_budget() -
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    research = (await researcher.research(_clb_brief())).research
 
     # Assert — the two top-tier sources, official ahead of reputable; the open ones were DROPPED
     # by the budget (not merely sorted to the back), so no unfetched source is ever cited.
@@ -301,7 +313,7 @@ async def test_researcher_never_fetches_a_blocked_domain() -> None:
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    research = (await researcher.research(_clb_brief())).research
 
     # Assert — the blocked domain yielded nothing fetchable; honest UNAVAILABLE.
     assert research.status is ResearchStatus.UNAVAILABLE
@@ -324,7 +336,7 @@ async def test_research_budget_caps_the_number_of_fetched_sources() -> None:
     )
 
     # Act
-    research = await researcher.research(_clb_brief())
+    research = (await researcher.research(_clb_brief())).research
 
     # Assert — exactly the first reputable source survives despite three being available; the budget
     # bounds the work and the result is still grounded (COMPLETE) on that one source.

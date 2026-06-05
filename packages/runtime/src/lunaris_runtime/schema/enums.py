@@ -27,8 +27,9 @@ class ProgressStage(StrEnum):
     standard is researched (grounding the brief in real competencies), the learner is modeled (the
     frontier of what they already know), concepts are extracted, the prerequisite graph is built,
     the curriculum is designed, the grounding corpus is prepared (P6 — the evidence each claim is
-    verified against), each module is authored (one event per module), claims are verified, learning
-    resources are curated per lesson, and the run completes.
+    verified against: first SEEDED from the sources the research stage already fetched, then
+    DISCOVERED fresh to fill the gaps), each module is authored (one event per module), claims are
+    verified, learning resources are curated per lesson, and the run completes.
     """
 
     RUN_STARTED = "run_started"
@@ -38,6 +39,7 @@ class ProgressStage(StrEnum):
     CONCEPTS_EXTRACTED = "concepts_extracted"
     GRAPH_BUILT = "graph_built"
     CURRICULUM_DESIGNED = "curriculum_designed"
+    GROUNDING_SEEDED = "grounding_seeded"
     GROUNDING_DISCOVERED = "grounding_discovered"
     MODULE_AUTHORED = "module_authored"
     CLAIMS_VERIFIED = "claims_verified"

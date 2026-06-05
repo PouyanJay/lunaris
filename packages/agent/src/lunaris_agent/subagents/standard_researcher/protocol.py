@@ -1,6 +1,8 @@
 from typing import Protocol
 
-from lunaris_runtime.schema import CourseBrief, StandardResearch
+from lunaris_runtime.schema import CourseBrief
+
+from .outcome import ResearchOutcome
 
 
 class IStandardResearcher(Protocol):
@@ -12,6 +14,10 @@ class IStandardResearcher(Protocol):
     standard rather than the model's approximate memory. Swappable (live researcher vs. a stub that
     returns preconfigured findings), like every other subagent collaborator, and degrades honestly
     (``UNAVAILABLE``) when no source is reachable.
+
+    Returns a :class:`ResearchOutcome` bundling the reader-facing ``StandardResearch`` with the
+    pages it already fetched (``seeds``), so the SEED feed (P6.4) can ingest them into the corpus
+    without re-fetching — the full text rides the harness-only ``seeds``, never the wire.
     """
 
-    async def research(self, brief: CourseBrief) -> StandardResearch: ...
+    async def research(self, brief: CourseBrief) -> ResearchOutcome: ...

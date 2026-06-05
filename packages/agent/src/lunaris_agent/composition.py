@@ -37,6 +37,7 @@ from .harness.discovery import (
     SubgraphGroundingDiscoverer,
 )
 from .harness.runner import AgentCourseBuilder
+from .harness.seeding import GroundingSeeder, IGroundingSeeder, StubGroundingSeeder
 from .orchestrator import Orchestrator
 from .subagents.concept_extractor import ClaudeConceptExtractor
 from .subagents.curriculum_architect import ClaudeCurriculumArchitect
@@ -113,6 +114,33 @@ def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
         )
     logger.info("grounding_discoverer_stubbed", reason="search/supabase/embeddings creds unset")
     return StubGroundingDiscoverer()
+
+
+def _seeder_from_env() -> IGroundingSeeder:
+    """Build the live grounding seeder iff the corpus + embeddings creds are set (P6.4).
+
+    Seeding needs the embeddings key (to embed the research pages) and the Supabase corpus (to
+    ingest into the same store the verifier retrieves from) — but no search key, since it reuses
+    pages the research stage already fetched. Its ingestor carries the credibility scorer (backed by
+    the seeded authorities table + the live OpenAlex registry), so each seed is graded through the
+    SAME gate as an auto-discovered source: seeded is not the same as trusted. Without the creds it
+    returns the stub (nothing ingested), so the no-key path stays deterministic and claims fall to
+    the verifier's existing behaviour.
+    """
+    if (
+        os.getenv("SUPABASE_URL")
+        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        and os.getenv("EMBEDDINGS_API_KEY")
+    ):
+        scorer = CredibilityScorer(
+            SupabaseSourceAuthorityStore(),
+            registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
+        )
+        return GroundingSeeder(
+            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore(), scorer=scorer)
+        )
+    logger.info("grounding_seeder_stubbed", reason="supabase/embeddings creds unset")
+    return StubGroundingSeeder()
 
 
 def _researcher_from_env(worker_model: str) -> IStandardResearcher:
@@ -277,6 +305,7 @@ def build_agent_course_builder(
         architect=ClaudeCurriculumArchitect(strong),
         reviser=ClaudeLessonReviser(worker),
         curator=_curator_from_env(worker),
+        seeder=_seeder_from_env(),
         discoverer=_discoverer_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
