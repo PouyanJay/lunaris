@@ -113,18 +113,85 @@ source-vetting canvas — that transparency is the entire point.
 
 ## The three acquisition modes
 
-One corpus, three adapters writing the same shape:
+There is one corpus and three adapters that fill it. **Hybrid falls out for free**: manual, auto, and
+seed all emit the *same* candidate-source shape and pass through the *same* trust gate and ingestor —
+there is never a "manual corpus" and an "auto corpus," only one corpus where every chunk's provenance
+records how it arrived (its `acquisition_mode`). Whatever the mode, the author never picks its own
+evidence: discovery is keyed to the **topic / knowledge component**, not to the sentence the author
+wrote, so the verifier independently decides whether each sentence is supported.
 
-- **manual** — you upload / paste / name a source (the Corpus tab).
-- **auto** — the discovery agent searches, fetches, vets, and ingests sources for the topic.
-- **seed** — the build ingests the pages it already fetched and vetted while researching the standard.
+### manual — you supply the source
 
-*(Detailed in T2, with the per-mode costs and key requirements.)*
+Add a document yourself from the per-course **Corpus tab** — paste text, give a URL, or upload a file
+(PDF / DOCX / MD / TXT). The source is classified **vouched** (you chose it), deduped, embedded, and
+ingested for that course. URL ingest fetches and extracts the page (with an SSRF guard); uploads are
+capped at 10 MB. The operator path `make ingest DIR=… COURSE=…` ingests a whole folder. This is the
+cold-start answer and the trust escape hatch — *upload your Dijkstra notes, re-ground, and the
+citations go green.*
+
+### auto — the system finds its own corpus
+
+The discovery agent fills the corpus before claims are verified. It runs a bounded LangGraph loop —
+**plan → search → fetch + extract → gate (score + a label-blind relevance judge) → ingest →
+reflect** — and you watch every step in the build canvas: the queries it plans, each source it finds
+with its tier + credibility, and the accept/reject verdict with a one-line reason. Found sources are
+graded by the same scorer + floor as everything else, so a machine-found page is never trusted just
+for being found. Discovery depth is **pre-authorized** up front (the build can't safely pause
+mid-flight to ask): **standard** is the one-click default; **thorough** raises the per-round
+search/fetch caps and the round ceiling to corroborate more concepts across more domains, for a higher
+search cost.
+
+### seed — reuse what the build already read
+
+The research stage (relevance front) already searches, fetches, and trust-classifies authoritative
+pages to ground the *brief* — then normally discards the text. Seed mode carries that text forward
+into the corpus instead, so the build's claims verify against the very evidence it already read. **No
+second fetch, no search key** — it reuses pages already pulled, which makes it the **near-free** half
+of a hybrid corpus. Seeded sources are graded by the same scorer + floor (seeded ≠ trusted).
 
 ## Costs & keys
 
-*(Written in T2 — what each mode costs, which keys it needs, and how it degrades without them.)*
+Every external key is optional; each unlocks a live path, and its absence falls back to a
+deterministic stub (zero network, zero cost), so the no-key path always works. The grounding-relevant
+keys:
+
+| Mode / step | Keys it needs | Cost | Without the keys |
+|---|---|---|---|
+| **claim grounding** (retrieval at verify time) | `EMBEDDINGS_API_KEY` (Voyage) + `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` | one embedding per claim, vector lookup | verifier fails safe → every claim **cut** → *Needs review* |
+| **manual** ingest | `EMBEDDINGS_API_KEY` + Supabase | one embedding per chunk | in-memory stub corpus (not persisted) |
+| **auto** discovery | `SEARCH_API_KEY` (Tavily) + `EMBEDDINGS_API_KEY` + Supabase | **metered** search + fetch (per-build budget) + embeddings | discovery stubbed — no auto corpus |
+| **seed** | `EMBEDDINGS_API_KEY` + Supabase (**no** search key) | embeddings only (reuses research fetches) | seeding stubbed — no seed corpus |
+
+Notes that keep the cost story honest:
+
+- **Search is metered and bounded.** Auto-discovery and research issue a *hard per-build budget* of
+  search + fetch calls (capped like the authoring loop's round limit); on exhaustion they degrade
+  (`partial` / `unavailable`, fewer sources) rather than running away. The caps are conservative,
+  tunable defaults.
+- **The scholarly registry (OpenAlex) is free.** Resolving a source to its peer-reviewed record costs
+  nothing — it is a free API, not a metered one.
+- **Voyage embeddings are the real recurring cost.** Every ingested chunk *and* every claim retrieval
+  embeds. Voyage's free tier is **3 requests/minute** — far too low for a full course; a **paid plan**
+  is needed for live grounding over a whole run.
+- **No key → no calls.** With the keys unset, the research / discovery / seed / retrieval steps use
+  deterministic stubs — the CI path (and a curious first run) stays free and instant.
 
 ## Honest limits
 
-*(Written in T2.)*
+- **Per-course only.** There is no shared cross-topic library and no promotion; grounding does not
+  accumulate across courses (trust beats reuse — see the scope note at the top).
+- **Voyage's free tier (3 RPM) cannot ground a whole course.** A real grounded build needs a paid
+  embeddings plan; without one, the verifier fails safe and cuts claims, and the course still ships
+  correct + ordered, just unpublished (*Needs review*).
+- **Discovery depth is chosen up front.** A fire-and-forget build can't pause to ask for more budget
+  mid-run, so depth (standard / thorough) is pre-authorized; when a run ends with concepts still thin,
+  the canvas says so and you can rebuild thorough.
+- **The denylist is hygiene, not a guarantee.** An exhaustive list of bad domains is impossible; the
+  real poisoning defense is cross-source agreement + the trust floor + the poisoning evals, not the
+  blocklist.
+
+---
+
+*See also [relevance-model.md](relevance-model.md) (keeping a course at the right level) and
+[build-a-course-walkthrough.md](build-a-course-walkthrough.md) (a hands-on run, including filling the
+corpus so citations go green).*
