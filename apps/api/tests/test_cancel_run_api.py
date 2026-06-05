@@ -139,6 +139,45 @@ async def test_cancelling_a_streaming_build_records_cancelled_and_ends_cleanly(
     assert run is not None and run.status == RunStatus.CANCELLED
 
 
+async def test_cancel_run_records_cancelled_itself(tmp_path: Path) -> None:
+    # The Terminate control cancels server-side, then drops the SSE immediately — so the stream
+    # coroutine's teardown can be cut off mid-write by the disconnect. The cancel handler must
+    # therefore record CANCELLED ITSELF (it's a stable request that isn't torn down), or the run is
+    # left stuck RUNNING. Here there is NO stream consumer at all: only cancel_run can record it.
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store, registry)
+    await run_store.start(run_id="r-1", course_id="c-1", topic="t")  # a RUNNING row
+    task: asyncio.Task[bool] = asyncio.create_task(asyncio.Event().wait())
+    registry.register("r-1", task, course_id="c-1")  # in-flight, with its course
+
+    await service.cancel_run("r-1")
+
+    run = await run_store.get(course_id="c-1")
+    assert run is not None and run.status == RunStatus.CANCELLED
+    await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_cancel_does_not_overwrite_an_already_finished_run(tmp_path: Path) -> None:
+    # The benign race: the pipeline completes the same turn the cancel arrives. The registry's
+    # done-task guard returns nothing in-flight (404), so cancel must NOT stamp CANCELLED over a
+    # run that already landed COMPLETED.
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store, registry)
+    await run_store.start(run_id="r-1", course_id="c-1", topic="t")
+    await run_store.finish(course_id="c-1", status=RunStatus.COMPLETED, kc_count=1, module_count=1)
+    done: asyncio.Task[bool] = asyncio.create_task(asyncio.sleep(0, result=True))
+    await done  # the task is finished before the cancel arrives
+    registry.register("r-1", done, course_id="c-1")
+
+    with pytest.raises(RunNotCancellableError):
+        await service.cancel_run("r-1")
+
+    run = await run_store.get(course_id="c-1")
+    assert run is not None and run.status == RunStatus.COMPLETED
+
+
 async def test_cancel_unknown_run_is_404(client: httpx.AsyncClient) -> None:
     response = await client.post("/api/runs/not-in-flight/cancel")
 
@@ -185,8 +224,8 @@ async def test_cancel_endpoint_signals_an_in_flight_task_and_returns_202(
     client: httpx.AsyncClient, registry: RunRegistry
 ) -> None:
     # Arrange — a task registered as in-flight under a run_id (stands in for a live build).
-    task: asyncio.Task[None] = asyncio.create_task(asyncio.Event().wait())  # type: ignore[arg-type]
-    registry.register("r-1", task)
+    task: asyncio.Task[bool] = asyncio.create_task(asyncio.Event().wait())
+    registry.register("r-1", task, course_id="c-1")
 
     # Act
     response = await client.post("/api/runs/r-1/cancel")

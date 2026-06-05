@@ -136,7 +136,7 @@ class CourseService:
                 discovery_depth=discovery_depth,
             )
         )
-        self._registry.register(run_id, task)
+        self._registry.register(run_id, task, course_id)
         try:
             course = await task
         except asyncio.CancelledError:
@@ -203,7 +203,9 @@ class CourseService:
                     discovery_depth=discovery_depth,
                 )
             )
-            self._registry.register(run_id, run_task)  # cancellable by a separate request
+            self._registry.register(
+                run_id, run_task, course_id
+            )  # cancellable by a separate request
             while True:
                 next_event_task = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
@@ -223,7 +225,9 @@ class CourseService:
                 break
             if run_task.cancelled():
                 # Explicitly cancelled via the registry — record CANCELLED and end the stream
-                # cleanly (no terminal course frame), distinct from the disconnect→FAILED path.
+                # cleanly (no terminal course frame), distinct from the disconnect→FAILED path. The
+                # cancel handler also records CANCELLED (disconnect-proof); a repeat write of the
+                # same terminal status is idempotent — kept for the consumer-survives-cancel case.
                 await self._record_cancelled(course_id)
                 recorded = True
                 return
@@ -375,11 +379,17 @@ class CourseService:
             raise RunHistoryUnavailableError("Build event log is unavailable") from exc
 
     async def cancel_run(self, run_id: str) -> None:
-        """Request cancellation of an in-flight run. Only signals it — the build's own task records
-        CANCELLED as it unwinds (status writes stay owned by the run's coroutine). Raises
-        RunNotCancellableError (router → 404) when nothing is in-flight."""
-        if not self._registry.cancel(run_id):
+        """Request cancellation of an in-flight run, and record CANCELLED here.
+
+        Signalling the task isn't enough: the Terminate control drops the SSE right after, so the
+        stream coroutine's teardown can be cut off by the disconnect before it writes the terminal
+        status — leaving the run stuck RUNNING. Recording it from this stable request (which isn't
+        torn down) is disconnect-proof; the stream's later write is the same status (idempotent).
+        Raises RunNotCancellableError (router → 404) when nothing is in-flight."""
+        course_id = self._registry.cancel(run_id)
+        if course_id is None:
             raise RunNotCancellableError(run_id)
+        await self._record_cancelled(course_id)
         logger.info("run_cancel_requested", run_id=run_id)
 
     async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
