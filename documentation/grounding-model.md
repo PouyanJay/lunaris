@@ -22,8 +22,94 @@ be trusted to police** — and make every claim's evidence trust **visible and a
 
 ## The trust model
 
-*(Written in T1 — the trust tiers, the credibility blend, the risk-tiered floor, and the
-moat-defends-itself guarantee.)*
+Grounding is not binary green/red. Every source carries a **trust tier**, a **source type**, and a
+**credibility score**, constructed at acquisition and flowing untouched through ingest → retrieve →
+the citation → the reader (the structural-provenance invariant). The verifier then applies a
+**risk-adaptive floor** on top of its support check, so *how trustworthy* the evidence is gates
+*whether the claim ships* — independently of how strongly the text appears to agree.
+
+### Trust tiers — *where* a source sits in the authority order
+
+A deterministic tier, classified from the source's nature (cheap, transparent, not LLM-decided):
+
+| Tier | Meaning | Assigned to |
+|---|---|---|
+| **official** | the standard's own authority or a government / standards body (`*.gov`, RFC/ISO/W3C) | auto-discovery, spine/pack hit |
+| **vouched** | a source the **user** supplied directly — trusted because the learner chose it | manual ingest |
+| **reputable** | an established institution (a university, a major organisation, `*.edu`/`*.ac`) | auto-discovery |
+| **open** | the general web — usable, but must earn trust through corroboration | auto-discovery default |
+| **blocked** | a denylisted domain (content farms, social posts, link farms) | **never** fetched or shown |
+
+An un-tiered source (one whose tier could not be resolved at all) is treated as **open** — never
+"trusted by omission."
+
+### Source types — *what* a source is
+
+Orthogonal to the tier: the tier says where a source sits, the **source type** says what it *is*, so
+an unknown journal can still read as scholarly and a slick blog on a reputable host does not coast on
+its host. The types are **peer-reviewed**, **preprint** (a notch below peer-reviewed), **official**
+docs, **database**, **docs**, **reference** works, and plain **web** (the unclassified open-web
+default). The type is carried on the citation for the reader.
+
+### The credibility score — a transparent blend, not a black box
+
+Each source gets a `credibility ∈ [0, 1]`, dominated by its **tier prior** and adjusted by signals
+the 2026 RAG-trust literature names (relevance to the topic, extraction quality, cross-source
+agreement). The priors:
+
+| Tier | Credibility prior |
+|---|---|
+| official | 0.90 |
+| vouched | 0.85 |
+| reputable | 0.75 |
+| open | 0.50 (nudged ±0.15 by extraction quality → at most 0.65) |
+| blocked | 0.00 |
+
+Only the *uncertain* open web is nudged by page shape — a clean, substantive article earns more than
+boilerplate sludge; a curated or vouched source's credibility is its prior, not second-guessed by
+shape. The blend is logged with its inputs, so a low score is always explainable.
+
+**Authority is topic-relative.** A single global allowlist is a trap: PubMed is authoritative for
+medicine and irrelevant for medieval history. So the spine (universal domains), the per-field **packs**
+(CS-ML, medicine, physics, chemistry, + a shared multidisciplinary set), and the **denylist** live in
+an *editable* `source_authorities` table — nothing is hardcoded. A pack hit sets the **tier prior
+only**; it never inflates the credibility score (a degree gets you the interview, not the job). A free
+scholarly registry (**OpenAlex**) resolves any source to its peer-reviewed record (venue, DOI,
+citations) so authority scales across every field without enumerating the world.
+
+### The risk-tiered trust floor — how the verifier uses all this
+
+The floor is **orthogonal** to the assessor-score thresholds and **AND-joined** with them, so it can
+only *tighten* the gate, never loosen it:
+
+- **LOW-risk course** — the floor only excludes **blocked** sources. (Today's behaviour, now
+  *recorded* with its trust.)
+- **HIGH-risk course** — a claim's chosen evidence must be **curated-or-better** (tier ≥ reputable,
+  which vouched clears) **and** credible (credibility ≥ **0.70**) — **or** corroborated by
+  **cross-source agreement** across **≥ 2 independent registrable domains**. So authority can *emerge
+  from agreement* when no single source is curated.
+
+A claim that fails the floor is **cut** and flows into the existing `needs_review` triage — never
+silently shipped. The threshold `0.70` sits just under the reputable prior (0.75), so a curated source
+clears it while a nudged-up open-web source (max 0.65) does not.
+
+### The moat defends itself
+
+The reason all of this exists: auto-discovery is exactly where the grounding moat could quietly invert
+from a safety check into a rubber stamp (the confirmation-bias loop in [the section above](#the-risk-this-defends-against)).
+The floor is what stops it. The poisoning-resistance evals (`test_discovery_poisoning.py`,
+`test_seed_poisoning.py`) prove it on every commit: a lone open-web source that *agrees* with a claim
+is still **cut** at HIGH risk — even when the support assessor always votes SUPPORTED — because one
+uncorroborated open source cannot clear the floor. Only genuine cross-source agreement (or a curated
+source) clears it. **Authority emerges from agreement, not from a label.**
+
+### Label-blindness (the judge sees merit, the user sees trust)
+
+Two surfaces, two rules. The LLM support-assessor and the relevance judge are kept **blind to source
+labels** — they score the *text* on its merits, never told "this is from Wikipedia" (research shows
+the label moves the judge). The trust weighting is applied **deterministically, outside** the model.
+The *user*, by contrast, sees the full tier + credibility on every citation and in the live
+source-vetting canvas — that transparency is the entire point.
 
 ## The three acquisition modes
 
