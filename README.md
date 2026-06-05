@@ -40,6 +40,24 @@ scoping is prompt-driven. **Research grounding and curated resources are enhance
 produces a relevant, right-level course and says so (`research: unavailable`, no resources) rather than
 faking either. Full detail + the cost/budget model: [documentation/relevance-model.md](documentation/relevance-model.md).
 
+## Grounded, and auditable
+
+Grounding is not a binary check. Every source the verifier draws on carries a **trust tier**
+(official / reputable / open / blocked, plus **vouched** for sources you supply), a **source type**,
+and a **credibility score** — constructed at acquisition and shown on the citation. On a HIGH-risk
+course the verifier applies a **risk-tiered trust floor**: a claim's evidence must be curated-or-better
+*and* credible, **or** corroborated across ≥2 independent domains — otherwise the claim is cut, not
+shipped. So a lone open-web page that merely *agrees* with a claim can't rubber-stamp it; **authority
+emerges from agreement, not from a label** (and the LLM judges are kept blind to source labels while
+the user sees the full trust).
+
+The corpus fills three ways, all into the same trust-graded store: **manual** (you upload / paste /
+link sources on the Corpus tab), **auto** (a discovery agent searches, vets, and ingests evidence for
+the topic — watched live), and **seed** (the build reuses the authoritative pages it already fetched
+while researching — near-free). Grounding is **per-course only** (no shared library). Full trust
+model, the three modes, and the honest cost story (search metering, Voyage embeddings, free OpenAlex):
+[documentation/grounding-model.md](documentation/grounding-model.md).
+
 ## Architecture at a glance
 
 - **Agent harness** (`packages/agent`, `lunaris_agent.harness`) — a `create_deep_agent` planner that
@@ -101,7 +119,8 @@ no-key path always works:
 | `EMBEDDINGS_API_KEY` (Voyage) + Supabase | Real pgvector grounding → claim-level citations | The verifier fails safe (cuts every claim → *Needs review*) |
 
 See [documentation/relevance-model.md](documentation/relevance-model.md) for the relevance pipeline and
-its cost/budget model.
+its cost/budget model, and [documentation/grounding-model.md](documentation/grounding-model.md) for the
+grounding trust model, the three corpus modes, and their costs.
 
 ## Development
 
