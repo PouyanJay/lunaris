@@ -10,7 +10,9 @@ import type {
   TrustTier,
 } from "../../types/course";
 import { Button } from "../primitives/Button";
+import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { SourceTrust } from "../primitives/SourceTrust";
+import { Tabs } from "../primitives/Tabs";
 import styles from "./TrustedSources.module.css";
 
 interface TrustedSourcesPanelProps {
@@ -88,6 +90,7 @@ export function TrustedSourcesPanel({ apiBaseUrl }: TrustedSourcesPanelProps) {
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "ok" | "error"; message: string } | null>(null);
+  const [pickedKind, setPickedKind] = useState<AuthorityKind | null>(null);
   const formId = useId();
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
@@ -137,17 +140,14 @@ export function TrustedSourcesPanel({ apiBaseUrl }: TrustedSourcesPanelProps) {
   }
 
   const authorities = state.status === "ready" ? state.authorities : [];
+  // Default to the first group that actually has entries; honour the user's pick once they tab.
+  const firstNonEmpty =
+    KIND_GROUPS.find((g) => authorities.some((a) => a.kind === g.kind))?.kind ?? "spine";
+  const activeKind = pickedKind ?? firstNonEmpty;
+  const activeRows = authorities.filter((a) => a.kind === activeKind);
 
   return (
-    <section className={styles.panel} aria-labelledby="trusted-sources-heading">
-      <header className={styles.header}>
-        <div>
-          <span className="eyebrow">Trusted sources</span>
-          <h2 id="trusted-sources-heading" className={styles.title}>
-            Source authority config
-          </h2>
-        </div>
-      </header>
+    <CollapsibleSection eyebrow="Trusted sources" title="Source authority config">
       <p className={styles.note}>
         The editable allow / deny list the grounding scorer reads. A spine or pack entry sets a
         domain&rsquo;s trust tier (a prior, not a credibility boost); a denylist entry is never
@@ -281,59 +281,55 @@ export function TrustedSourcesPanel({ apiBaseUrl }: TrustedSourcesPanelProps) {
         </p>
       )}
       {state.status === "ready" && (
-        <div className={styles.groups}>
-          {KIND_GROUPS.map(({ kind, heading }) => {
-            const rows = authorities.filter((a) => a.kind === kind);
-            if (rows.length === 0) return null;
-            return (
-              <div key={kind} className={styles.group}>
-                <h3 className={styles.groupHeading}>{heading}</h3>
-                <ul className={styles.list}>
-                  {rows.map((authority) => (
-                    <li
-                      key={`${authority.domain}:${authority.field ?? ""}`}
-                      className={styles.item}
+        <Tabs
+          label="Source groups"
+          tabs={KIND_GROUPS.map(({ kind, heading }) => ({ id: kind, label: heading }))}
+          activeId={activeKind}
+          onChange={(id) => setPickedKind(id as AuthorityKind)}
+          panelClassName={styles.tabPanel}
+        >
+          {activeRows.length === 0 ? (
+            <p className={styles.muted}>No entries in this group yet.</p>
+          ) : (
+            <ul className={styles.list}>
+              {activeRows.map((authority) => (
+                <li key={`${authority.domain}:${authority.field ?? ""}`} className={styles.item}>
+                  <div className={styles.itemMain}>
+                    <span className={`mono ${styles.domain}`}>{authority.domain}</span>
+                    <span className={styles.trust}>
+                      <SourceTrust tier={authority.tier} />
+                    </span>
+                    {authority.field && (
+                      <span className={styles.meta}>{fieldLabel(authority.field)}</span>
+                    )}
+                    {authority.sourceType && (
+                      <span className={styles.meta}>{sourceTypeLabel(authority.sourceType)}</span>
+                    )}
+                  </div>
+                  {authority.note && <p className={styles.itemNote}>{authority.note}</p>}
+                  <div className={styles.itemActions}>
+                    <Button
+                      type="button"
+                      onClick={() => onEdit(authority)}
+                      aria-label={`Edit ${authority.domain}`}
                     >
-                      <div className={styles.itemMain}>
-                        <span className={`mono ${styles.domain}`}>{authority.domain}</span>
-                        <span className={styles.trust}>
-                          <SourceTrust tier={authority.tier} />
-                        </span>
-                        {authority.field && (
-                          <span className={styles.meta}>{fieldLabel(authority.field)}</span>
-                        )}
-                        {authority.sourceType && (
-                          <span className={styles.meta}>
-                            {sourceTypeLabel(authority.sourceType)}
-                          </span>
-                        )}
-                      </div>
-                      {authority.note && <p className={styles.itemNote}>{authority.note}</p>}
-                      <div className={styles.itemActions}>
-                        <Button
-                          type="button"
-                          onClick={() => onEdit(authority)}
-                          aria-label={`Edit ${authority.domain}`}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="danger"
-                          onClick={() => onDelete(authority)}
-                          aria-label={`Remove ${authority.domain}`}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => onDelete(authority)}
+                      aria-label={`Remove ${authority.domain}`}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Tabs>
       )}
-    </section>
+    </CollapsibleSection>
   );
 }

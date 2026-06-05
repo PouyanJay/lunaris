@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
-import { Button } from "../primitives/Button";
+import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { SecretField } from "./SecretField";
 import { TrustedSourcesPanel } from "./TrustedSourcesPanel";
 import styles from "./Settings.module.css";
 
 interface SettingsPanelProps {
   apiBaseUrl: string;
-  onClose: () => void;
 }
 
 const FIELDS = [
@@ -45,7 +44,7 @@ type State =
 
 /** The settings surface: enter API keys (write-only — only set/unset + last4 is ever shown)
  *  and see the current pipeline mode. */
-export function SettingsPanel({ apiBaseUrl, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -78,52 +77,42 @@ export function SettingsPanel({ apiBaseUrl, onClose }: SettingsPanelProps) {
 
   return (
     <div className={styles.center}>
-      <section className={styles.panel} aria-labelledby="settings-heading">
-        <header className={styles.header}>
-          <div>
-            <span className="eyebrow">Settings</span>
-            <h2 id="settings-heading" className={styles.title}>
-              Keys &amp; configuration
-            </h2>
-          </div>
-          <Button type="button" onClick={onClose}>
-            Done
-          </Button>
-        </header>
-
-        {state.status === "loading" && <p className={styles.muted}>Loading settings…</p>}
-        {state.status === "error" && (
-          <p className={styles.error} role="alert">
-            {state.message}
-          </p>
-        )}
-        {state.status === "ready" && (
-          <>
-            <p className={styles.pipeline}>
-              Pipeline mode: <span className="mono">{state.view.pipeline}</span>
+      <div className={styles.stack}>
+        <CollapsibleSection eyebrow="Settings" title="Keys & configuration" defaultOpen={false}>
+          {state.status === "loading" && <p className={styles.muted}>Loading settings…</p>}
+          {state.status === "error" && (
+            <p className={styles.error} role="alert">
+              {state.message}
             </p>
-            <div className={styles.fields}>
-              {FIELDS.map((field) => (
-                <SecretField
-                  key={field.name}
-                  apiBaseUrl={apiBaseUrl}
-                  name={field.name}
-                  label={field.label}
-                  hint={field.hint}
-                  placeholder={field.placeholder}
-                  status={state.view.secrets.find((s) => s.name === field.name)}
-                  onSaved={onSaved}
-                />
-              ))}
-            </div>
-            <p className={styles.note}>
-              Keys are stored on the backend and never sent back to the browser — only whether
-              they&rsquo;re set and the last four characters are shown.
-            </p>
-          </>
-        )}
-      </section>
-      <TrustedSourcesPanel apiBaseUrl={apiBaseUrl} />
+          )}
+          {state.status === "ready" && (
+            <>
+              <p className={styles.pipeline}>
+                Pipeline mode: <span className="mono">{state.view.pipeline}</span>
+              </p>
+              <div className={styles.fields}>
+                {FIELDS.map((field) => (
+                  <SecretField
+                    key={field.name}
+                    apiBaseUrl={apiBaseUrl}
+                    name={field.name}
+                    label={field.label}
+                    hint={field.hint}
+                    placeholder={field.placeholder}
+                    status={state.view.secrets.find((s) => s.name === field.name)}
+                    onSaved={onSaved}
+                  />
+                ))}
+              </div>
+              <p className={styles.note}>
+                Keys are stored on the backend and never sent back to the browser — only whether
+                they&rsquo;re set and the last four characters are shown.
+              </p>
+            </>
+          )}
+        </CollapsibleSection>
+        <TrustedSourcesPanel apiBaseUrl={apiBaseUrl} />
+      </div>
     </div>
   );
 }

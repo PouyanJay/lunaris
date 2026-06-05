@@ -253,8 +253,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // settings → an opened historical run → the live build (idle / streaming / error / ready).
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
     if (settingsOpen) {
-      const body = <SettingsPanel apiBaseUrl={apiBaseUrl} onClose={() => setSettingsOpen(false)} />;
-      return { title: "Settings", meta: null, body };
+      const body = <SettingsPanel apiBaseUrl={apiBaseUrl} />;
+      const meta = (
+        <Button type="button" onClick={() => setSettingsOpen(false)}>
+          Done
+        </Button>
+      );
+      return { title: "Settings", meta, body };
     }
     if (opened.state.status === "loading") {
       return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };

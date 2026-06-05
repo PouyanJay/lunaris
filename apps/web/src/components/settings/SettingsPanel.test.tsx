@@ -31,12 +31,18 @@ function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; jso
 describe("SettingsPanel", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  // The "Keys & configuration" section starts collapsed; expand it to reach the secret fields.
+  async function expandKeys() {
+    fireEvent.click(await screen.findByRole("button", { name: /keys & configuration/i }));
+  }
+
   it("shows each secret's status without revealing values, and masks input", async () => {
     vi.stubGlobal(
       "fetch",
       stubFetch(() => ({ ok: true, json: {} })),
     );
-    render(<SettingsPanel apiBaseUrl="http://test" onClose={() => {}} />);
+    render(<SettingsPanel apiBaseUrl="http://test" />);
+    await expandKeys();
 
     expect(await screen.findByText("Anthropic API key")).toBeInTheDocument();
     // voyage is set → status shows its last4, never a value.
@@ -53,7 +59,8 @@ describe("SettingsPanel", () => {
       json: { name: "anthropic", isSet: true, last4: "WXYZ" },
     }));
     vi.stubGlobal("fetch", fetchMock);
-    render(<SettingsPanel apiBaseUrl="http://test" onClose={() => {}} />);
+    render(<SettingsPanel apiBaseUrl="http://test" />);
+    await expandKeys();
 
     fireEvent.change(await screen.findByLabelText("Anthropic API key"), {
       target: { value: "sk-ant-supersecret-WXYZ" },
@@ -76,7 +83,8 @@ describe("SettingsPanel", () => {
         json: { detail: "Anthropic rejected this API key." },
       })),
     );
-    render(<SettingsPanel apiBaseUrl="http://test" onClose={() => {}} />);
+    render(<SettingsPanel apiBaseUrl="http://test" />);
+    await expandKeys();
 
     fireEvent.change(await screen.findByLabelText("Anthropic API key"), {
       target: { value: "sk-ant-bogus" },

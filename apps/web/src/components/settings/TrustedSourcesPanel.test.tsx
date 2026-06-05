@@ -63,12 +63,14 @@ describe("TrustedSourcesPanel", () => {
     ]);
     render(<TrustedSourcesPanel apiBaseUrl={API} />);
 
+    // The spine tab is active by default (first group with entries), so its row shows.
     await waitFor(() => expect(screen.getByText("en.wikipedia.org")).toBeInTheDocument());
-    expect(screen.getByText("Universal spine")).toBeInTheDocument();
-    expect(screen.getByText("Field packs")).toBeInTheDocument();
-    expect(screen.getByText("Denylist")).toBeInTheDocument();
-    // The pack row shows its field label + its tier (scoped to the row, since "official" also
-    // appears as a <select> option in the form).
+    expect(screen.getByRole("tab", { name: "Universal spine" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Field packs" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Denylist" })).toBeInTheDocument();
+    // Switching to the Field packs tab reveals the pack row with its field label + tier (scoped to
+    // the row, since "official" also appears as a <select> option in the form).
+    fireEvent.click(screen.getByRole("tab", { name: "Field packs" }));
     const packRow = screen.getByText("pubmed.ncbi.nlm.nih.gov").closest("li") as HTMLElement;
     expect(within(packRow).getByText("Medicine")).toBeInTheDocument();
     expect(within(packRow).getByText("official")).toBeInTheDocument();
