@@ -35,6 +35,7 @@ from lunaris_runtime.persistence import (
 )
 
 from .config import Settings, get_settings
+from .config_store import ConfigStore
 from .corpus_service import CorpusService
 from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
@@ -202,6 +203,21 @@ def get_secret_validator() -> ISecretValidator:
 
 SecretStoreDep = Annotated[SecretStore, Depends(get_secret_store)]
 SecretValidatorDep = Annotated[ISecretValidator, Depends(get_secret_validator)]
+
+# One ConfigStore per config-file path (owns process env + the on-disk file), shared by requests.
+# Tests override get_config_store.
+_config_stores: dict[Path, ConfigStore] = {}
+
+
+def get_config_store(settings: Annotated[Settings, Depends(get_settings)]) -> ConfigStore:
+    """The process-wide non-secret config store for the configured config path."""
+    path = settings.config_path
+    if path not in _config_stores:
+        _config_stores[path] = ConfigStore(path)
+    return _config_stores[path]
+
+
+ConfigStoreDep = Annotated[ConfigStore, Depends(get_config_store)]
 
 
 def explain_is_available() -> bool:

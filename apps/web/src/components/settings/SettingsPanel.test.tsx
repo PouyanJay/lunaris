@@ -13,8 +13,9 @@ const SETTINGS = {
   ],
 };
 
-/** A fetch stub: GET returns the settings (or an empty trust config); PUT returns the per-call
- *  status from `onPut`. The embedded TrustedSourcesPanel lists /api/source-authorities on mount. */
+/** A fetch stub: GET returns the settings (or an empty trust config / empty runtime config); PUT
+ *  returns the per-call status from `onPut`. The embedded TrustedSourcesPanel lists
+ *  /api/source-authorities and the ConfigPanel lists /api/config on mount. */
 function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; json: unknown }) {
   return vi.fn(async (url: string | URL, init?: RequestInit) => {
     if (init?.method === "PUT") {
@@ -23,6 +24,9 @@ function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; jso
     }
     if (url.toString().includes("/api/source-authorities")) {
       return { ok: true, json: async () => [] };
+    }
+    if (url.toString().includes("/api/config")) {
+      return { ok: true, json: async () => ({ settings: [] }) };
     }
     return { ok: true, json: async () => SETTINGS };
   });
@@ -45,6 +49,10 @@ describe("SettingsPanel", () => {
     await expandKeys();
 
     expect(await screen.findByText("Anthropic API key")).toBeInTheDocument();
+    // The newer feature keys render too (extend KNOWN_SECRETS + FIELDS).
+    expect(screen.getByLabelText("Search API key (Tavily)")).toBeInTheDocument();
+    expect(screen.getByLabelText("YouTube API key")).toBeInTheDocument();
+    expect(screen.getByLabelText("LangSmith API key")).toBeInTheDocument();
     // voyage is set → status shows its last4, never a value.
     expect(screen.getByText(/set ····7777/i)).toBeInTheDocument();
     // The key input is a password field (masked).

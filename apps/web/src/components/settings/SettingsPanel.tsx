@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
+import { ConfigPanel } from "./ConfigPanel";
 import { SecretField } from "./SecretField";
 import { TrustedSourcesPanel } from "./TrustedSourcesPanel";
 import styles from "./Settings.module.css";
@@ -34,6 +35,24 @@ const FIELDS = [
     label: "Supabase service-role key",
     hint: "Service key for the data layer (grounding corpus).",
     placeholder: "sb_secret_…",
+  },
+  {
+    name: "search",
+    label: "Search API key (Tavily)",
+    hint: "Enables research, auto-discovery, resources, and the seed feed (optional).",
+    placeholder: "tvly-…",
+  },
+  {
+    name: "youtube",
+    label: "YouTube API key",
+    hint: "Richer video resources (duration / channel) — optional; falls back to search.",
+    placeholder: "AIza…",
+  },
+  {
+    name: "langsmith",
+    label: "LangSmith API key",
+    hint: "Tracing/observability (optional). Read at startup — restart to apply.",
+    placeholder: "lsv2_…",
   },
 ] as const;
 
@@ -112,6 +131,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
           )}
         </CollapsibleSection>
         <TrustedSourcesPanel apiBaseUrl={apiBaseUrl} />
+        <ConfigPanel apiBaseUrl={apiBaseUrl} />
       </div>
     </div>
   );
