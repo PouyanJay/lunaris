@@ -8,7 +8,7 @@ import {
   regroundCourse,
   uploadFileSource,
 } from "../../lib/corpus";
-import type { IngestResult } from "../../types/course";
+import { ACQUISITION_MODE_LABEL, type IngestResult } from "../../types/course";
 import { type CorpusState, useCorpus } from "../../hooks/useCorpus";
 import { Button } from "../primitives/Button";
 import { SourceTrust } from "../primitives/SourceTrust";
@@ -369,6 +369,15 @@ function SourceList({
               <div className={styles.itemMeta}>
                 {source.trustTier && (
                   <SourceTrust tier={source.trustTier} credibility={source.credibility} />
+                )}
+                {source.acquisitionMode && (
+                  <span
+                    className={`mono ${styles.provenance}`}
+                    title="How this source entered the corpus"
+                    aria-label={`Acquisition mode: ${ACQUISITION_MODE_LABEL[source.acquisitionMode]}`}
+                  >
+                    {ACQUISITION_MODE_LABEL[source.acquisitionMode]}
+                  </span>
                 )}
                 <span className={`mono ${styles.chunks}`}>
                   {source.chunkCount} chunk{source.chunkCount === 1 ? "" : "s"}

@@ -99,6 +99,29 @@ describe("CorpusPanel", () => {
     expect(screen.getByText("2 chunks")).toBeInTheDocument();
   });
 
+  it("labels each source with its acquisition provenance, so mixed-mode corpora are auditable", async () => {
+    // Arrange / Act — one source from each acquisition mode in the same course corpus.
+    vi.stubGlobal(
+      "fetch",
+      fakeServer([
+        makeSource({
+          sourceId: "m".repeat(32),
+          title: "Uploaded notes",
+          acquisitionMode: "manual",
+        }),
+        makeSource({ sourceId: "s".repeat(32), title: "Researched page", acquisitionMode: "seed" }),
+        makeSource({ sourceId: "u".repeat(32), title: "Discovered page", acquisitionMode: "auto" }),
+      ]),
+    );
+    renderPanel();
+
+    // Assert — each row carries its provenance word, one per acquisition mode.
+    await waitFor(() => expect(screen.getByText("Researched page")).toBeInTheDocument());
+    expect(screen.getByText("Manual")).toBeInTheDocument();
+    expect(screen.getByText("Seeded")).toBeInTheDocument();
+    expect(screen.getByText("Auto")).toBeInTheDocument();
+  });
+
   it("surfaces a load error, then retries on Try again", async () => {
     // Arrange — the first list load fails, the retry succeeds (empty).
     const fetchMock = vi

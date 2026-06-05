@@ -10,7 +10,7 @@ honestly to ``UNAVAILABLE`` — without calling the researcher or crashing — w
 import pytest
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_research_standard_tool
-from lunaris_agent.subagents.standard_researcher import StubStandardResearcher
+from lunaris_agent.subagents.standard_researcher import ResearchOutcome, StubStandardResearcher
 from lunaris_runtime.schema import (
     CourseBrief,
     Level,
@@ -73,7 +73,7 @@ async def test_research_standard_degrades_to_unavailable_without_a_brief() -> No
 
     # A researcher that would explode if called, proving the no-brief path never invokes it.
     class _ExplodingResearcher:
-        async def research(self, brief: CourseBrief) -> StandardResearch:
+        async def research(self, brief: CourseBrief) -> ResearchOutcome:
             raise AssertionError("researcher must not run without a brief")
 
     tool = make_research_standard_tool(_ExplodingResearcher(), draft)

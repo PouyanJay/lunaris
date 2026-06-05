@@ -487,6 +487,25 @@ const renderCurateResources: ToolRenderer = ({ parsed, pending }) => {
   );
 };
 
+/** `seed_grounding` → the near-free corpus seed: how many sources the research stage already fetched
+ *  were ingested, and into how many chunks. Degrades to an honest note when research found nothing to
+ *  reuse (the no-key / unavailable-research path), so the empty state reads as a fact, not a failure. */
+const renderSeedGrounding: ToolRenderer = ({ parsed, pending }) => {
+  if (pending) return <Pending />;
+  const sources = parsed ? asNumber(parsed.sourceCount) : null;
+  const chunks = parsed ? asNumber(parsed.chunksIngested) : null;
+  // sourceCount absent (result truncated or unparseable) — the minimal neutral sentinel; distinct
+  // from the sourceCount === 0 case below, which is the real "research found nothing to reuse" state.
+  if (sources === null) return <Stat>done</Stat>;
+  if (sources === 0) return <Stat>no research sources to seed</Stat>;
+  const chunkSuffix = chunks !== null ? ` · ${chunks} chunk${chunks === 1 ? "" : "s"}` : "";
+  return (
+    <Stat>
+      seeded {sources} source{sources === 1 ? "" : "s"} from research{chunkSuffix}
+    </Stat>
+  );
+};
+
 /** The renderer registry, keyed by tool name. A tool with no entry uses the raw fallback body. */
 const toolRenderers: Record<string, ToolRenderer> = {
   interpret_request: renderInterpretRequest,
@@ -495,6 +514,7 @@ const toolRenderers: Record<string, ToolRenderer> = {
   extract_concepts: renderExtractConcepts,
   build_prerequisite_graph: renderPrerequisiteGraph,
   design_curriculum: renderDesignCurriculum,
+  seed_grounding: renderSeedGrounding,
   curate_resources: renderCurateResources,
   finalize_course: renderFinalizeCourse,
   verify_claims: renderVerifyClaims,

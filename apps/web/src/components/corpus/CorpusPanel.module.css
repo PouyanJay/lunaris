@@ -222,6 +222,14 @@ a.itemTitle:focus-visible {
   color: var(--text-muted);
 }
 
+/* The acquisition-mode word (Manual / Auto / Seeded) — provenance, carried by the word, not colour.
+   A muted uppercase tag so mixed-provenance corpora stay auditable without competing with the tier. */
+.provenance {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
 /* Loading skeleton (shimmer, reduced-motion-safe via the shared animation). */
 .skeleton {
   list-style: none;

@@ -38,8 +38,12 @@ def make_research_standard_tool(researcher: IStandardResearcher, draft: CourseDr
         if draft.brief is None:
             research = StandardResearch(status=ResearchStatus.UNAVAILABLE)
         else:
-            research = await researcher.research(draft.brief)
+            outcome = await researcher.research(draft.brief)
+            research = outcome.research
             draft.brief = draft.brief.model_copy(update={"research": research})
+            # Carry the pages the stage already fetched forward to the seed_grounding stage (P6.4),
+            # so the corpus is seeded from evidence the build already read — no re-fetch.
+            draft.research_seeds = list(outcome.seeds)
         await draft.progress.emit(
             ProgressStage.STANDARD_RESEARCHED,
             f"Researched the standard: {research.status.value}, "
