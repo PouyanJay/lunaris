@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import { ArrayViz } from "./ArrayViz";
 import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
+import { ExamplePanel } from "./ExamplePanel";
 import { GlossaryTerm } from "./GlossaryTerm";
 import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
@@ -38,6 +39,7 @@ const baseComponents = {
   step: StepItem,
   arrayviz: ArrayViz,
   keyword: KeywordBadge,
+  examplepanel: ExamplePanel,
 } as Components;
 
 interface MarkdownProps {

@@ -28,6 +28,50 @@ const SECTION_SPLIT =
 
 type EnumKind = "decimal" | "lower-alpha";
 
+/** A quotation introduced by a writing/speech cue ("you might write: '…'") — the worked example to
+ *  lift into its own panel. Requires a sentence-length quote ending in punctuation so short quoted
+ *  terms ("the word 'mitigation'") are left in the prose. */
+const EXAMPLE_CUE =
+  /(write|writes|wrote|say|says|said|for example|for instance|e\.g\.)(\s*[:,]\s*)(["'“])([^"'”]{12,}?[.!?])(["'”])/i;
+
+/** Split a paragraph's children at a cued example quote: the lead-in (cue + colon) stays, the quote
+ *  is extracted, and the continuation follows. Returns null when there is no example quote. */
+function detectExampleQuote(
+  children: Node[],
+): { before: Node[]; quote: string; after: Node[] } | null {
+  for (let i = 0; i < children.length; i += 1) {
+    const child = children[i]!;
+    if (child.type !== "text") continue;
+    const value = child.value ?? "";
+    const match = value.match(EXAMPLE_CUE);
+    if (!match || match.index === undefined) continue;
+
+    const cueEnd = match.index + match[1]!.length + match[2]!.length;
+    const matchEnd = match.index + match[0].length;
+
+    const before: Node[] = [...children.slice(0, i)];
+    const beforeText = value.slice(0, cueEnd);
+    if (beforeText) before.push({ type: "text", value: beforeText });
+
+    const after: Node[] = [];
+    const afterText = value.slice(matchEnd);
+    if (afterText) after.push({ type: "text", value: afterText });
+    after.push(...children.slice(i + 1));
+
+    return { before, quote: match[4]!, after };
+  }
+  return null;
+}
+
+/** The example panel element (rendered as ExamplePanel). */
+function buildExamplePanel(quote: string): Node {
+  return {
+    type: "blockquote",
+    data: { hName: "examplepanel" },
+    children: [{ type: "text", value: quote }],
+  };
+}
+
 /** A paragraph that is exactly a numeric array literal of ≥3 elements ("[240, 180, 195]") — the
  *  conservative auto-detect for the array visual (a deliberately-placed array on its own line). Mixed
  *  prose keeps its inline text; the ```array fence covers the rest. */
@@ -262,6 +306,18 @@ function remarkProseStructure() {
 
       const children = (node as unknown as Node).children ?? [];
       const text = textOf(children);
+
+      const example = detectExampleQuote(children);
+      if (example) {
+        const replacement: Node[] = [];
+        if (textOf(example.before).trim())
+          replacement.push({ type: "paragraph", children: example.before });
+        replacement.push(buildExamplePanel(example.quote));
+        if (textOf(example.after).trim())
+          replacement.push({ type: "paragraph", children: example.after });
+        (parent as unknown as Node).children!.splice(index, 1, ...replacement);
+        return [SKIP, index + replacement.length];
+      }
 
       const literal = arrayLiteral(text);
       if (literal) {

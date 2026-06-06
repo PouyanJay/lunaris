@@ -133,6 +133,7 @@ const schema: Schema = {
     "arrayviz",
     "keyword",
     "mark",
+    "examplepanel",
   ],
   attributes: {
     ...defaultSchema.attributes,
