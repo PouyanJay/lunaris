@@ -9,6 +9,8 @@ import type { PluggableList } from "unified";
 import type { Root } from "mdast";
 import { visit } from "unist-util-visit";
 
+import { remarkProseStructure } from "./proseStructure";
+
 /** The lesson prose is authored as Markdown and may now carry rich blocks: admonition callouts
  *  (`:::note` … or a "Note:" lead-in), `:::details` collapsibles, `:term[word]{title="…"}` glossary
  *  tooltips, fenced code (syntax-highlighted, with a copy button via the `pre` component override),
@@ -126,6 +128,8 @@ const schema: Schema = {
     callout: ["variant"],
     glossary: ["definition"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
+    // Alpha enumerations lifted from prose render as <ol type="a">.
+    ol: ["type", "start"],
   },
 };
 
@@ -133,6 +137,7 @@ export const remarkPlugins: PluggableList = [
   remarkGfm,
   remarkMath,
   remarkDirective,
+  remarkProseStructure,
   remarkRichDirectives,
 ];
 

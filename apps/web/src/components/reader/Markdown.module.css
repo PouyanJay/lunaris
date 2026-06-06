@@ -164,6 +164,13 @@
   padding-bottom: var(--space-3);
 }
 
+/* Body blocks inside a collapsible section (lifted "Move N:" prose, lists, etc.) — spaced and held
+   to the reading measure, mirroring the top-level prose rhythm. */
+.markdown details > :not(summary) {
+  margin-top: var(--space-2);
+  max-width: 66ch;
+}
+
 .markdown summary {
   cursor: pointer;
   padding: var(--space-3) 0;
