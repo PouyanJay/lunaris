@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { StatusDot } from "../primitives/StatusDot";
 import { type Annotation, groupByPhase, verifierStatusTone } from "./annotations";
 import { ClaimProvenance } from "./ClaimProvenance";
@@ -30,6 +31,8 @@ export function AnnotationRail({
   reduceMotion = false,
 }: AnnotationRailProps) {
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const railRef = useRef<HTMLElement>(null);
+  useAutoHideScroll(railRef);
 
   // When a prose cross-link selects a claim, bring its rail entry into view.
   useEffect(() => {
@@ -40,7 +43,7 @@ export function AnnotationRail({
   const groups = groupByPhase(annotations);
 
   return (
-    <aside className={styles.rail} aria-label="Sources and checks">
+    <aside ref={railRef} className={`${styles.rail} scroller`} aria-label="Sources and checks">
       <header className={styles.head}>
         <div>
           <p className="eyebrow">Verification</p>

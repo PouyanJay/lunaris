@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
+import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
@@ -201,6 +202,8 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     railToggleRef.current?.focus();
   }, []);
   useEscapeKey(railOpen, closeRail);
+  // The reading column gets thin, auto-hiding scrollbars (fade in while scrolling, out when idle).
+  useAutoHideScroll(paneRef);
 
   if (!current) {
     return (
@@ -236,7 +239,7 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     >
       <ReaderOutline groups={groups} activeIndex={safeIndex} onSelect={setActiveIndex} />
       <div
-        className={styles.pane}
+        className={`${styles.pane} scroller`}
         ref={paneRef}
         role="region"
         aria-label="Lesson reader"
