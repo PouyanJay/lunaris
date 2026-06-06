@@ -72,6 +72,29 @@ def test_parse_visual_spec_accepts_bare_json_for_steps() -> None:
     assert spec.steps[0].title == "One"
 
 
+def test_parse_visual_spec_parses_a_before_after_spec() -> None:
+    # The before-after transformation as the agent emits it (a fenced json block).
+    spec = parse_visual_spec(
+        '```json\n{"type":"before-after","title":"Refactor",'
+        '"before":{"label":"Naive scan","content":"check every element"},'
+        '"after":{"label":"Binary search","content":"halve the range each step"}}\n```'
+    )
+
+    assert spec is not None
+    assert spec.type == "before-after"
+    assert spec.before.label == "Naive scan"
+    assert spec.after.content == "halve the range each step"
+
+
+def test_visual_prompt_advertises_the_before_after_shape() -> None:
+    # The "AI knows when to call it" hinges on the shape being documented in the generator prompt, so
+    # the model can choose the before-after variant under the coherence principle.
+    from lunaris_agent.subagents.visual_agent.claude import _PROMPT
+
+    assert "before-after:" in _PROMPT
+    assert "label, content" in _PROMPT
+
+
 def test_parse_visual_spec_returns_none_for_explicit_none() -> None:
     assert parse_visual_spec("NONE") is None
 
