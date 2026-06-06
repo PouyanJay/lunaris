@@ -23,25 +23,48 @@ describe("Stepper", () => {
     expect(screen.getByText("Body two.")).toBeInTheDocument();
   });
 
-  it("starts collapsed and expands a step body from its heading disclosure", () => {
+  it("opens the first step but collapses later ones (advertises the accordion)", () => {
     render(
-      <StepItem number="1" heading="Step 1: Gather terms">
-        <p>Body one.</p>
+      <Stepper>
+        <StepItem number="1" heading="Step 1: Gather terms">
+          <p>Body one.</p>
+        </StepItem>
+        <StepItem number="2" heading="Step 2: Draft">
+          <p>Body two.</p>
+        </StepItem>
+      </Stepper>,
+    );
+
+    // The first step is open so its body shows and the collapse affordance is visible…
+    expect(screen.getByRole("button", { name: "Step 1: Gather terms" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByText("Body one.")).toBeVisible();
+    // …while later steps start collapsed.
+    expect(screen.getByRole("button", { name: "Step 2: Draft" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByText("Body two.")).not.toBeVisible();
+  });
+
+  it("expands and collapses a later step from its heading disclosure", () => {
+    render(
+      <StepItem number="2" heading="Step 2: Draft">
+        <p>Body two.</p>
       </StepItem>,
     );
 
-    const toggle = screen.getByRole("button", { name: "Step 1: Gather terms" });
-    // Collapsed by default — a compact accordion of numbered headings.
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByText("Body one.")).not.toBeVisible();
+    const toggle = screen.getByRole("button", { name: "Step 2: Draft" });
+    expect(screen.getByText("Body two.")).not.toBeVisible();
 
-    // …expands like a details panel on click, and collapses again.
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByText("Body one.")).toBeVisible();
+    expect(screen.getByText("Body two.")).toBeVisible();
 
     fireEvent.click(toggle);
-    expect(screen.getByText("Body one.")).not.toBeVisible();
+    expect(screen.getByText("Body two.")).not.toBeVisible();
   });
 
   it("toggles a step's done state from its numbered node", () => {

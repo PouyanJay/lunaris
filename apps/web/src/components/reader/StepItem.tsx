@@ -13,11 +13,12 @@ interface StepItemProps {
 /** One step in the Stepper infographic: a numbered node beside a titled, collapsible card. Two
  *  independent controls — the numbered node is a mark-as-done toggle (pressed state + check glyph, so
  *  a learner tracks progress), and the heading is a disclosure that expands/collapses the step body.
- *  Steps start collapsed so the procedure reads as a compact accordion of numbered headings.
- *  Completion is never conveyed by colour alone (WCAG). */
+ *  The first step starts open (so the body is visible and the collapse affordance is advertised);
+ *  the rest start collapsed, reading as a compact accordion. Completion is never conveyed by colour
+ *  alone (WCAG). */
 export function StepItem({ number, heading, children }: StepItemProps) {
   const [done, setDone] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(number === "1");
   const label = number ?? "";
   const bodyId = useId();
 
