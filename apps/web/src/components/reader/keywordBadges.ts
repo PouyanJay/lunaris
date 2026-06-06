@@ -3,11 +3,13 @@ import { SKIP, visit } from "unist-util-visit";
 
 import { KEYWORD_META } from "./keywordMeta";
 
-/** Render-side rule that visualises recognised domain keywords (today: HTTP request methods) as
- *  labelled chips. It rewrites only whole-word, exact-case occurrences in plain prose text — so the
- *  uppercase "DELETE" in "DELETE removes a resource" becomes a badge while the ordinary word "delete"
- *  never does — and it leaves link text and existing badges alone. Inline code is untouched for free
- *  (its content isn't a text node). */
+/** Render-side rule that visualises attention-worthy inline tokens as labelled chips:
+ *  - recognised domain keywords (today: HTTP request methods) → a category-toned badge, and
+ *  - phonetic/symbol notation in slashes (`/p/`, `/ʃ/`) → a "symbol" chip.
+ *  It rewrites only whole-word, exact-case keyword occurrences and tightly-bounded symbol tokens in
+ *  plain prose — so the uppercase "DELETE" is badged but the word "delete" is not, and "/p/" is
+ *  tagged but "path/to/x" and "12/25/2024" are not. Link text and existing badges are left alone, and
+ *  inline code is untouched for free (its content isn't a text node). */
 
 interface Node {
   type: string;
@@ -17,14 +19,19 @@ interface Node {
 }
 
 const KEYWORDS = Object.keys(KEYWORD_META);
-const KEYWORD_PATTERN = new RegExp(`\\b(${KEYWORDS.join("|")})\\b`, "g");
+// A keyword (group 1) OR a slash-delimited symbol of 1–2 non-digit chars bounded by space/punctuation
+// (group 2). The symbol guard excludes paths and dates.
+const TOKEN_PATTERN = new RegExp(
+  `\\b(${KEYWORDS.join("|")})\\b|(?<=^|[\\s(])\\/([^\\s/0-9]{1,2})\\/(?=$|[\\s).,;:])`,
+  "g",
+);
 
-/** An inline keyword badge element (carried on `emphasis`, whose tag we override via hName). */
-function badge(keyword: string): Node {
+/** An inline chip element (carried on `emphasis`, whose tag we override to `keyword` via hName). */
+function badge(text: string, category: string): Node {
   return {
     type: "emphasis",
-    data: { hName: "keyword", hProperties: { category: KEYWORD_META[keyword]!.category } },
-    children: [{ type: "text", value: keyword }],
+    data: { hName: "keyword", hProperties: { category } },
+    children: [{ type: "text", value: text }],
   };
 }
 
@@ -37,7 +44,7 @@ function remarkKeywordBadges() {
       if (owner.type === "link" || owner.data?.hName === "keyword") return;
 
       const value = (node as unknown as Node).value ?? "";
-      const matches = [...value.matchAll(KEYWORD_PATTERN)];
+      const matches = [...value.matchAll(TOKEN_PATTERN)];
       if (matches.length === 0) return;
 
       const replacement: Node[] = [];
@@ -45,7 +52,11 @@ function remarkKeywordBadges() {
       for (const match of matches) {
         const at = match.index ?? 0;
         if (at > last) replacement.push({ type: "text", value: value.slice(last, at) });
-        replacement.push(badge(match[1]!));
+        if (match[1] !== undefined) {
+          replacement.push(badge(match[1], KEYWORD_META[match[1]]!.category));
+        } else {
+          replacement.push(badge(match[0], "symbol"));
+        }
         last = at + match[0].length;
       }
       if (last < value.length) replacement.push({ type: "text", value: value.slice(last) });

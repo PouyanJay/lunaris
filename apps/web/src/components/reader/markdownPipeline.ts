@@ -9,6 +9,7 @@ import type { PluggableList } from "unified";
 import type { Root } from "mdast";
 import { visit } from "unist-util-visit";
 
+import { remarkHighlight } from "./remarkHighlight";
 import { remarkKeywordBadges } from "./keywordBadges";
 import { remarkProseStructure } from "./proseStructure";
 
@@ -131,6 +132,7 @@ const schema: Schema = {
     "step",
     "arrayviz",
     "keyword",
+    "mark",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -152,6 +154,7 @@ export const remarkPlugins: PluggableList = [
   remarkProseStructure,
   remarkRichDirectives,
   remarkKeywordBadges,
+  remarkHighlight,
 ];
 
 export const rehypePlugins: PluggableList = [

@@ -101,6 +101,15 @@
   color: var(--text-muted);
 }
 
+/* `==highlight==` → a tinted highlight, the "attention here" mark (legible in both themes). */
+.markdown mark {
+  background: var(--accent-soft);
+  color: var(--text);
+  padding: 0.05em 0.25em;
+  border-radius: var(--radius-sm);
+  box-decoration-break: clone;
+}
+
 .markdown a {
   color: var(--accent-600);
   text-decoration: underline;

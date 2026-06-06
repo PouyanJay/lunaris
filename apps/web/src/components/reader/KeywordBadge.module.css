@@ -30,3 +30,7 @@
 .badge[data-category="meta"] {
   --tone: var(--text-muted);
 }
+/* Phonetic / symbol notation ("/p/") — an accent-toned chip that sets the symbol apart from prose. */
+.badge[data-category="symbol"] {
+  --tone: var(--accent-600);
+}
