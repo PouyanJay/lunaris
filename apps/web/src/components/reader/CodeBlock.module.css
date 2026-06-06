@@ -1,0 +1,103 @@
+/* Fenced code panel: a hairline frame with a header bar (language label + copy) over the mono body.
+   Syntax colours come from rehype-highlight's `hljs-*` tokens, mapped to our palette below. */
+.block {
+  margin: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  background: var(--bg-subtle);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.lang {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.copy {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.copy:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.copy:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--surface-raised),
+    0 0 0 4px var(--focus-ring);
+}
+
+.pre {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.pre code {
+  font-family: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* highlight.js token → token-palette mapping (no raw hex; reuses the design tokens). */
+.pre :global(.hljs-comment),
+.pre :global(.hljs-quote) {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.pre :global(.hljs-keyword),
+.pre :global(.hljs-selector-tag),
+.pre :global(.hljs-built_in),
+.pre :global(.hljs-literal) {
+  color: var(--accent-600);
+}
+.pre :global(.hljs-string),
+.pre :global(.hljs-attr),
+.pre :global(.hljs-template-variable) {
+  color: var(--success);
+}
+.pre :global(.hljs-number),
+.pre :global(.hljs-symbol),
+.pre :global(.hljs-meta) {
+  color: var(--tier-1);
+}
+.pre :global(.hljs-title),
+.pre :global(.hljs-function .hljs-title),
+.pre :global(.hljs-name) {
+  color: var(--tier-5);
+}
+.pre :global(.hljs-emphasis) {
+  font-style: italic;
+}
+.pre :global(.hljs-strong) {
+  font-weight: 600;
+}

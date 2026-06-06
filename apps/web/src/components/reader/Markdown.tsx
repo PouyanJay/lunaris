@@ -1,18 +1,22 @@
-import ReactMarkdown, { type Components } from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
-import remarkGfm from "remark-gfm";
+import "katex/dist/katex.min.css";
 
+import ReactMarkdown, { type Components } from "react-markdown";
+
+import { Callout } from "./Callout";
+import { CodeBlock } from "./CodeBlock";
+import { GlossaryTerm } from "./GlossaryTerm";
+import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import styles from "./Markdown.module.css";
 
-/** The lesson prose is authored as Markdown; render it safely with GitHub-flavoured features
- *  (lists, tables, task lists, strikethrough, autolinks) and a sanitiser so no raw/executable HTML
- *  can survive. Element styling is layered on in `markdownComponents` (T1) — this module owns the
- *  safe-by-default pipeline and the one cross-cutting rule that every link opens in a new tab. */
+/** The lesson prose is authored as Markdown; render it safely with GitHub-flavoured features and a
+ *  rich-block layer — admonition callouts, `:::details` collapsibles, glossary tooltips, fenced code
+ *  (highlighted, copyable), sandboxed `html-preview`, and KaTeX math. The unified pipeline +
+ *  sanitiser live in `markdownPipeline`; this module owns the element→component bindings and the one
+ *  cross-cutting rule that every link opens in a new tab. */
 
-const remarkPlugins = [remarkGfm];
-const rehypePlugins = [rehypeSanitize];
-
-const baseComponents: Components = {
+// `callout`/`glossary` are custom element names emitted by the remark pipeline, so the component map
+// is widened past react-markdown's intrinsic-element keys.
+const baseComponents = {
   a({ href, children, ...props }) {
     return (
       <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
@@ -20,7 +24,13 @@ const baseComponents: Components = {
       </a>
     );
   },
-};
+  // Block code is wrapped in <pre>; overriding `pre` lets one component own the copy bar / preview
+  // routing while inline `code` keeps the default chip styling.
+  pre: CodeBlock,
+  // Custom elements lowered from directives by the remark pipeline.
+  callout: Callout,
+  glossary: GlossaryTerm,
+} as Components;
 
 interface MarkdownProps {
   children: string;

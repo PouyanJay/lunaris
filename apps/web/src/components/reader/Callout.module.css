@@ -1,0 +1,61 @@
+/* Admonition panel. One box style, re-tinted per variant from the status/accent tokens — the spine
+   carries the hue, the label word + glyph carry the meaning (never colour alone). */
+.callout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-left: 3px solid var(--spine, var(--border-strong));
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--spine, var(--text-secondary));
+}
+
+.glyph {
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.body > :first-child {
+  margin-top: 0;
+}
+
+/* Per-variant spine hue (semantic tokens only). */
+.callout[data-variant="note"] {
+  --spine: var(--border-strong);
+}
+.callout[data-variant="tip"] {
+  --spine: var(--success);
+}
+.callout[data-variant="insight"] {
+  --spine: var(--accent-500);
+}
+.callout[data-variant="warning"] {
+  --spine: var(--warning);
+}
+.callout[data-variant="example"] {
+  --spine: var(--tier-1);
+}
+.callout[data-variant="key-takeaway"] {
+  --spine: var(--accent-600);
+  background: var(--accent-soft);
+}
