@@ -83,21 +83,64 @@
 /* The step card. */
 .card {
   min-width: 0;
-  padding-top: 3px; /* optical alignment of the heading baseline with the node centre */
+  padding-top: 2px; /* optical alignment of the heading baseline with the node centre */
+}
+
+/* The heading is a disclosure toggle that expands/collapses the step body. */
+.headingToggle {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.headingToggle:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  transform: rotate(0deg);
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.chevron[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+.headingToggle:hover .chevron {
+  color: var(--accent-500);
 }
 
 .heading {
-  margin: 0 0 var(--space-1);
   font-weight: 600;
   color: var(--text);
   transition: color var(--dur-fast) var(--ease);
 }
 
 .body {
+  margin-top: var(--space-1);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
   color: var(--text-secondary);
+}
+
+.body[hidden] {
+  display: none;
 }
 
 .body > :first-child {
@@ -107,7 +150,8 @@
 @media (prefers-reduced-motion: reduce) {
   .node,
   .heading,
-  .card {
+  .card,
+  .chevron {
     transition: none;
   }
 }

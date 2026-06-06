@@ -23,6 +23,24 @@ describe("Stepper", () => {
     expect(screen.getByText("Body two.")).toBeInTheDocument();
   });
 
+  it("collapses and expands a step body from its heading disclosure", () => {
+    render(
+      <StepItem number="1" heading="Step 1: Gather terms">
+        <p>Body one.</p>
+      </StepItem>,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Step 1: Gather terms" });
+    // Open by default, so the body reads like the current stepper…
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Body one.")).toBeVisible();
+
+    // …and it collapses like a details panel.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Body one.")).not.toBeVisible();
+  });
+
   it("toggles a step's done state from its numbered node", () => {
     render(
       <StepItem number="2" heading="Step 2: Draft">

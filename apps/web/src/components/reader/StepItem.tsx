@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import styles from "./Stepper.module.css";
 
@@ -10,13 +10,15 @@ interface StepItemProps {
   children?: ReactNode;
 }
 
-/** One step in the Stepper infographic: a numbered node beside a titled card. The node is a real
- *  toggle button — pressing it marks the step done (the number becomes a check and the card dims), so
- *  the learner can track progress. The completion state is conveyed by the button's pressed state and
- *  a glyph, never by colour alone (WCAG). */
+/** One step in the Stepper infographic: a numbered node beside a titled, collapsible card. Two
+ *  independent controls — the numbered node is a mark-as-done toggle (pressed state + check glyph, so
+ *  a learner tracks progress), and the heading is a disclosure that expands/collapses the step body
+ *  (open by default). Completion is never conveyed by colour alone (WCAG). */
 export function StepItem({ number, heading, children }: StepItemProps) {
   const [done, setDone] = useState(false);
+  const [open, setOpen] = useState(true);
   const label = number ?? "";
+  const bodyId = useId();
 
   return (
     <li className={`${styles.step} ${done ? styles.stepDone : ""}`}>
@@ -32,8 +34,21 @@ export function StepItem({ number, heading, children }: StepItemProps) {
         </span>
       </button>
       <div className={styles.card}>
-        {heading && <p className={styles.heading}>{heading}</p>}
-        <div className={styles.body}>{children}</div>
+        <button
+          type="button"
+          className={styles.headingToggle}
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((prev) => !prev)}
+        >
+          <span className={styles.chevron} data-open={open} aria-hidden="true">
+            ▸
+          </span>
+          <span className={styles.heading}>{heading}</span>
+        </button>
+        <div id={bodyId} className={styles.body} hidden={!open}>
+          {children}
+        </div>
       </div>
     </li>
   );
