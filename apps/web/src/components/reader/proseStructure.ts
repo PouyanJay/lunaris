@@ -28,6 +28,19 @@ const SECTION_SPLIT =
 
 type EnumKind = "decimal" | "lower-alpha";
 
+/** A paragraph that is exactly a numeric array literal of ≥3 elements ("[240, 180, 195]") — the
+ *  conservative auto-detect for the array visual (a deliberately-placed array on its own line). Mixed
+ *  prose keeps its inline text; the ```array fence covers the rest. */
+function arrayLiteral(text: string): string | null {
+  const match = text.trim().match(/^\[\s*(-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?){2,})\s*\]$/);
+  return match ? match[1]!.replace(/\s+/g, "") : null;
+}
+
+/** The indexed array visual element (rendered as ArrayViz). */
+function buildArrayViz(values: string): Node {
+  return { type: "blockquote", data: { hName: "arrayviz", hProperties: { values } }, children: [] };
+}
+
 /** The literal marker token that opens item `index` (0-based): (1)/(2)… or (a)/(b)…. */
 function markerFor(kind: EnumKind, index: number): string {
   return kind === "decimal" ? `(${index + 1})` : `(${String.fromCharCode(97 + index)})`;
@@ -248,7 +261,15 @@ function remarkProseStructure() {
       if (data?.hName === "summary") return;
 
       const children = (node as unknown as Node).children ?? [];
-      const kind = detectEnumeration(textOf(children));
+      const text = textOf(children);
+
+      const literal = arrayLiteral(text);
+      if (literal) {
+        (parent as unknown as Node).children!.splice(index, 1, buildArrayViz(literal));
+        return [SKIP, index + 1];
+      }
+
+      const kind = detectEnumeration(text);
       if (!kind) return;
 
       const { lead, items } = splitEnumeration(children, kind);

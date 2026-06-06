@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Components } from "react-markdown";
 
+import { ArrayViz } from "./ArrayViz";
 import { HtmlPreview } from "./HtmlPreview";
 import styles from "./CodeBlock.module.css";
 
@@ -50,6 +51,11 @@ export const CodeBlock: NonNullable<Components["pre"]> = ({ node, children }) =>
 
   if (language === "html-preview") {
     return <HtmlPreview html={source} />;
+  }
+
+  // An ```array fence renders as the indexed array visual (the values, on one or more lines).
+  if (language === "array") {
+    return <ArrayViz values={source.replace(/\n/g, " ")} />;
   }
 
   const onCopy = async () => {

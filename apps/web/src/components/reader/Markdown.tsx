@@ -2,6 +2,7 @@ import "katex/dist/katex.min.css";
 
 import ReactMarkdown, { type Components } from "react-markdown";
 
+import { ArrayViz } from "./ArrayViz";
 import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
 import { GlossaryTerm } from "./GlossaryTerm";
@@ -34,6 +35,7 @@ const baseComponents = {
   glossary: GlossaryTerm,
   steps: Stepper,
   step: StepItem,
+  arrayviz: ArrayViz,
 } as Components;
 
 interface MarkdownProps {
