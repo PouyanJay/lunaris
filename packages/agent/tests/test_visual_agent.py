@@ -87,8 +87,8 @@ def test_parse_visual_spec_parses_a_before_after_spec() -> None:
 
 
 def test_visual_prompt_advertises_the_before_after_shape() -> None:
-    # The "AI knows when to call it" hinges on the shape being documented in the generator prompt, so
-    # the model can choose the before-after variant under the coherence principle.
+    # The "AI knows when to call it" hinges on the shape being documented in the generator prompt,
+    # so the model can choose the before-after variant under the coherence principle.
     from lunaris_agent.subagents.visual_agent.claude import _PROMPT
 
     assert "before-after:" in _PROMPT
@@ -117,6 +117,11 @@ def test_parse_visual_spec_rejects_an_unknown_discriminator() -> None:
         ('{"type":"steps","steps":[]}', "steps"),
         ('{"type":"comparison","columns":[],"rows":[]}', "comparison"),
         ('{"type":"timeline","events":[]}', "timeline"),
+        (
+            '{"type":"before-after","before":{"label":"a","content":"b"},'
+            '"after":{"label":"c","content":"d"}}',
+            "before-after",
+        ),
     ],
 )
 def test_parse_visual_spec_covers_every_variant(payload: str, expected_type: str) -> None:
@@ -125,6 +130,11 @@ def test_parse_visual_spec_covers_every_variant(payload: str, expected_type: str
 
     assert spec is not None
     assert spec.type == expected_type
+
+
+def test_parse_visual_spec_rejects_a_before_after_missing_a_side() -> None:
+    # The gate: a half-formed transformation (no `after`) is dropped, not shipped.
+    assert parse_visual_spec('{"type":"before-after","before":{"label":"a","content":"b"}}') is None
 
 
 # ─── stub renderer ───────────────────────────────────────────────────────────

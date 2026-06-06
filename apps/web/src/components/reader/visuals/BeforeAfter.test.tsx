@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import sampleCourse from "../../../../public/sample-course.json";
+import { parseCourse } from "../../../lib/loadCourse";
 import type { TransformSide, Visual } from "../../../types/course";
 import { VisualRenderer } from "./VisualRenderer";
 
@@ -74,5 +76,36 @@ describe("BeforeAfter visual", () => {
     const panel = screen.getByRole("tabpanel");
     expect(panel).toHaveTextContent("halve the search space");
     expect(panel).not.toHaveTextContent("scan every element");
+  });
+
+  it("switches sides with the arrow keys (via the reused Tabs primitive)", () => {
+    render(<VisualRenderer visual={beforeAfterVisual()} />);
+
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
+    tabs[0]!.focus();
+    fireEvent.keyDown(tabs[0]!, { key: "ArrowRight" });
+
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("halve the search space");
+  });
+
+  it("omits the caption when a side has none", () => {
+    render(<VisualRenderer visual={beforeAfterVisual()} />);
+
+    // The default sides carry no caption, so only the prose paragraph renders.
+    expect(screen.getByRole("tabpanel").querySelectorAll("p")).toHaveLength(1);
+  });
+
+  it("renders the before-after visual embedded in the real sample course", () => {
+    // Output verification on the real artifact: the JSON survives the loader and renders the toggle.
+    const course = parseCourse(sampleCourse);
+    const visual = course.modules[0]!.lessons[0]!.segments.demonstrate.visuals[0]!;
+    expect(visual.spec?.type).toBe("before-after");
+
+    render(<VisualRenderer visual={visual} />);
+
+    const tabs = within(screen.getByRole("tablist")).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Linear scan", "Binary search"]);
+    expect(screen.getByRole("tabpanel").querySelector("pre code")).not.toBeNull();
   });
 });

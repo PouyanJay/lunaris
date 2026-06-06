@@ -132,7 +132,36 @@
             },
             "demonstrate": {
               "prose": "Worked example.",
-              "visuals": [],
+              "visuals": [
+                {
+                  "kind": "spec",
+                  "source": "",
+                  "rendered": null,
+                  "spec": {
+                    "type": "before-after",
+                    "title": "Linear scan \u2192 binary search",
+                    "before": {
+                      "label": "Linear scan",
+                      "content": "def find(xs, target):\n    for i, x in enumerate(xs):\n        if x == target:\n            return i\n    return -1",
+                      "language": "python",
+                      "caption": "O(n) \u2014 checks every element"
+                    },
+                    "after": {
+                      "label": "Binary search",
+                      "content": "def find(xs, target):\n    lo, hi = 0, len(xs) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if xs[mid] == target:\n            return mid\n        if xs[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1",
+                      "language": "python",
+                      "caption": "O(log n) \u2014 halves the range each step"
+                    }
+                  },
+                  "mayerChecks": {
+                    "coherence": false,
+                    "signaling": false,
+                    "spatialContiguity": false,
+                    "redundancy": false
+                  },
+                  "staged": null
+                }
+              ],
               "claims": [
                 {
                   "text": "Comparison reduces the problem size each step.",
