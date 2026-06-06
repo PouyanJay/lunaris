@@ -92,9 +92,28 @@ class TimelineSpec(CourseModel):
     events: list[TimelineEvent] = Field(default_factory=list)
 
 
+# ── before-after: an interactive transformation (toggle between two states) ──────
+
+
+class TransformSide(CourseModel):
+    label: str
+    content: str
+    language: str | None = None  # set => render content as code (else as prose)
+    caption: str | None = None  # optional note shown under the content
+
+
+class BeforeAfterSpec(CourseModel):
+    type: Literal["before-after"] = "before-after"
+    title: str | None = None
+    # Both sides are required — a transformation with a missing state is half-formed, so the union
+    # rejects it (the agent can't ship a broken before-after).
+    before: TransformSide
+    after: TransformSide
+
+
 # A type alias, not a class — for runtime checks switch on `.type` (or isinstance against the
 # concrete variants), never `isinstance(spec, VisualSpec)`.
 VisualSpec = Annotated[
-    FlowSpec | TreeSpec | StepsSpec | ComparisonSpec | TimelineSpec,
+    FlowSpec | TreeSpec | StepsSpec | ComparisonSpec | TimelineSpec | BeforeAfterSpec,
     Field(discriminator="type"),
 ]

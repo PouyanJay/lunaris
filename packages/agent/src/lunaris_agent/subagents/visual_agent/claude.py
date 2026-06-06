@@ -28,6 +28,8 @@ description the app draws with its own components. Use exactly ONE shape, discri
 - steps: steps [{{title, detail?}}]
 - comparison: columns [str] + rows [{{label, values: [str]}}]
 - timeline: events [{{label, detail?, when?}}]
+- before-after: before {{label, content}} + after {{label, content}} — an interactive toggle \
+between two states; choose it for a transformation (naive→optimised, before→after, problem→solution)
 
 Then add a ```mermaid block with the equivalent diagram as a fallback. Keep both to the
 essential nodes (signaling — highlight the key path)."""
