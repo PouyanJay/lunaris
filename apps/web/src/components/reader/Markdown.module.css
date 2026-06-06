@@ -1,0 +1,147 @@
+/* Token-styled rendering for the lesson's Markdown prose. Descendant selectors keep every element
+   (from react-markdown's real DOM output) on the design system — no inline styles, no per-element
+   components for pure styling. Reading-comfortable measure + leading, hairline-divided tables and
+   quotes (panels, not cards), mono for code/data. */
+.markdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.markdown > * {
+  margin: 0;
+  max-width: 66ch;
+}
+
+/* Tables and code can exceed the reading measure. */
+.markdown > .tableWrap,
+.markdown > pre {
+  max-width: 100%;
+}
+
+.markdown p {
+  line-height: 1.65;
+}
+
+/* In-lesson subheads: h2/h3 are reserved for the lesson + phase, so prose headings start at h4. */
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  margin-top: var(--space-2);
+}
+
+.markdown h4 {
+  font-size: var(--text-lg);
+}
+.markdown h5 {
+  font-size: var(--text-base);
+}
+.markdown h6 {
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.markdown li {
+  line-height: 1.6;
+}
+
+.markdown li::marker {
+  color: var(--text-muted);
+}
+
+/* GFM task list checkboxes (read-only in lesson content). */
+.markdown input[type="checkbox"] {
+  margin-right: var(--space-2);
+  accent-color: var(--accent-500);
+}
+
+.markdown strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.markdown em {
+  font-style: italic;
+}
+
+.markdown del {
+  color: var(--text-muted);
+}
+
+.markdown a {
+  color: var(--accent-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.markdown a:hover {
+  color: var(--accent-700);
+}
+
+.markdown a:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* Inline code — mono on a tinted chip. */
+.markdown :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+.markdown hr {
+  border: none;
+  border-top: var(--border-width) solid var(--border);
+  margin: var(--space-2) 0;
+}
+
+/* Tables — hairline-divided, mono numerals, sticky-free (short lesson tables). */
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown th,
+.markdown td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.markdown th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+
+.markdown blockquote {
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-style: italic;
+}

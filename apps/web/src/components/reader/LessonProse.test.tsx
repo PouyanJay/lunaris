@@ -1,55 +1,69 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { PhraseMark } from "./annotations";
 import { LessonProse } from "./LessonProse";
 
-const NO_MARKS = new Map<number, string>();
+const NO_MARKS: PhraseMark[] = [];
 
 describe("LessonProse", () => {
-  it("breaks a long single-string prose into multiple paragraphs", () => {
-    const prose =
-      "First sentence here. Second sentence here. Third sentence here. " +
-      "Move 1: a new structural section starts. It continues on.";
+  it("renders Markdown prose as rich text, not literal markers", () => {
+    const prose = "The strategy is *source with purpose* and **draft with anchors**.";
     const { container } = render(
+      <LessonProse prose={prose} marks={NO_MARKS} activeClaimId={null} onSelectClaim={() => {}} />,
+    );
+
+    expect(container.textContent).not.toContain("*");
+    expect(container.querySelector("em")?.textContent).toBe("source with purpose");
+    expect(container.querySelector("strong")?.textContent).toBe("draft with anchors");
+  });
+
+  it("renders Markdown lists", () => {
+    render(
       <LessonProse
-        prose={prose}
-        sentenceMarks={NO_MARKS}
+        prose={"Steps:\n\n- alpha\n- beta"}
+        marks={NO_MARKS}
         activeClaimId={null}
         onSelectClaim={() => {}}
       />,
     );
 
-    // The wall of text is segmented: a fixed 3-sentence cap + a cue ("Move 1:") force breaks.
-    expect(container.querySelectorAll("p").length).toBeGreaterThan(1);
+    expect(screen.getByText("alpha").closest("ul")).not.toBeNull();
   });
 
-  it("renders a matched sentence as a cross-link that selects its claim", () => {
+  it("tags the block containing a matched claim and selects it via the marker", () => {
     const onSelectClaim = vi.fn();
-    const prose = "Plain opener sentence. The matched sentence lives here.";
-    const marks = new Map<number, string>([[1, "demonstrate-0"]]);
-    render(
+    const prose = "Plain opener sentence. The matched sentence lives in this paragraph.";
+    const marks: PhraseMark[] = [
+      { claimId: "demonstrate-0", text: "The matched sentence lives in this paragraph." },
+    ];
+    const { container } = render(
       <LessonProse
         prose={prose}
-        sentenceMarks={marks}
+        marks={marks}
         activeClaimId={null}
         onSelectClaim={onSelectClaim}
       />,
     );
 
-    const link = screen.getByRole("button", { name: /show the source note for/i });
-    fireEvent.click(link);
+    // The containing paragraph is tagged as the cross-link target.
+    expect(container.querySelector('[data-claim-id="demonstrate-0"]')).not.toBeNull();
 
+    // Its marker selects the claim (bidirectional → rail).
+    const marker = screen.getByRole("button", { name: /show the source note for/i });
+    fireEvent.click(marker);
     expect(onSelectClaim).toHaveBeenCalledWith("demonstrate-0");
-    expect(screen.getByText("Plain opener sentence.")).toBeInTheDocument();
   });
 
-  it("marks the active claim's sentence as pressed", () => {
-    const prose = "Opener. The matched sentence lives here.";
-    const marks = new Map<number, string>([[1, "demonstrate-0"]]);
+  it("marks the active claim's block as pressed", () => {
+    const prose = "Opener. The matched sentence lives here in this paragraph.";
+    const marks: PhraseMark[] = [
+      { claimId: "demonstrate-0", text: "The matched sentence lives here in this paragraph." },
+    ];
     render(
       <LessonProse
         prose={prose}
-        sentenceMarks={marks}
+        marks={marks}
         activeClaimId="demonstrate-0"
         onSelectClaim={() => {}}
       />,
@@ -63,12 +77,7 @@ describe("LessonProse", () => {
 
   it("renders empty prose without crashing", () => {
     const { container } = render(
-      <LessonProse
-        prose=""
-        sentenceMarks={NO_MARKS}
-        activeClaimId={null}
-        onSelectClaim={() => {}}
-      />,
+      <LessonProse prose="" marks={NO_MARKS} activeClaimId={null} onSelectClaim={() => {}} />,
     );
     expect(container.querySelectorAll("button")).toHaveLength(0);
   });

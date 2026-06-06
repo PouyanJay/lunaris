@@ -5,7 +5,7 @@ import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { AnnotationRail } from "./AnnotationRail";
-import { buildAnnotations, type PhaseRef, sentenceMarksFor } from "./annotations";
+import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonObjectives } from "./LessonObjectives";
 import { LessonProse } from "./LessonProse";
@@ -156,8 +156,29 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
     [current, citations],
   );
+  // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
+  // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
+  const marksByPhase = useMemo(() => {
+    const byPhase = new Map<string, ReturnType<typeof phraseMarksFor>>();
+    if (current) {
+      for (const phase of PHASES) {
+        byPhase.set(
+          phase.key,
+          phraseMarksFor(annotations, phase.key, current.lesson.segments[phase.key].prose),
+        );
+      }
+    }
+    return byPhase;
+  }, [annotations, current]);
   const activeAnnotation =
     annotations.find((annotation) => annotation.id === activeClaimId) ?? null;
+
+  // Selecting a claim opens the rail (so a prose marker reveals its entry on narrow screens) and
+  // highlights it; stable so it doesn't churn the memoised prose.
+  const selectClaim = useCallback((id: string) => {
+    setActiveClaimId(id);
+    setRailOpen(true);
+  }, []);
 
   // Selecting a claim (from the rail or a prose cross-link) brings the place it refers to into view:
   // its matched sentence when there is one, else its whole phase (the best-effort fallback).
@@ -203,11 +224,6 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     } finally {
       setPending(false);
     }
-  };
-
-  const selectClaim = (id: string) => {
-    setActiveClaimId(id);
-    setRailOpen(true); // on narrow, a prose cross-link opens the drawer to reveal the entry
   };
 
   return (
@@ -281,7 +297,7 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
                 </div>
                 <LessonProse
                   prose={segment.prose}
-                  sentenceMarks={sentenceMarksFor(annotations, key)}
+                  marks={marksByPhase.get(key) ?? []}
                   activeClaimId={activeClaimId}
                   onSelectClaim={selectClaim}
                 />
