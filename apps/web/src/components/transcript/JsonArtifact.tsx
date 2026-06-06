@@ -150,7 +150,7 @@ function specSummary(spec: VisualSpec): string {
     case "timeline":
       return `timeline · ${plural(spec.events.length, "event")}`;
     case "before-after":
-      return `before/after · ${plural(2, "side")}`;
+      return "before/after · 2 sides";
   }
 }
 

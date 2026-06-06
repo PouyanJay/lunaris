@@ -89,11 +89,11 @@ describe("BeforeAfter visual", () => {
     expect(screen.getByRole("tabpanel")).toHaveTextContent("halve the search space");
   });
 
-  it("omits the caption when a side has none", () => {
+  it("omits the caption element when a side has none", () => {
     render(<VisualRenderer visual={beforeAfterVisual()} />);
 
-    // The default sides carry no caption, so only the prose paragraph renders.
-    expect(screen.getByRole("tabpanel").querySelectorAll("p")).toHaveLength(1);
+    // The default sides carry no caption, so no caption element is rendered (semantic, not a node count).
+    expect(screen.queryByTestId("side-caption")).toBeNull();
   });
 
   it("renders the before-after visual embedded in the real sample course", () => {

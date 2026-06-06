@@ -20,7 +20,11 @@ function SideBody({ side }: { side: TransformSide }) {
       ) : (
         <p className={styles.prose}>{side.content}</p>
       )}
-      {side.caption ? <p className={styles.caption}>{side.caption}</p> : null}
+      {side.caption ? (
+        <p className={styles.caption} data-testid="side-caption">
+          {side.caption}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -43,7 +47,7 @@ export function BeforeAfter({ spec }: BeforeAfterProps) {
       <Tabs
         tabs={tabs}
         activeId={activeId}
-        onChange={(id) => setActiveId(id === "after" ? "after" : "before")}
+        onChange={(id) => setActiveId(id as "before" | "after")}
         label={spec.title ?? `${spec.before.label} and ${spec.after.label}`}
         panelClassName={styles.panel}
       >
