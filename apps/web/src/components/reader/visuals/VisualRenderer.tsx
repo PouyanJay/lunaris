@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { Visual } from "../../../types/course";
+import { BeforeAfter } from "./BeforeAfter";
 import { ComparisonTable } from "./ComparisonTable";
 import { FlowDiagram } from "./FlowDiagram";
 import { MermaidFallback } from "./MermaidFallback";
@@ -22,6 +23,8 @@ function selectVisualBody(visual: Visual): ReactNode {
       return <ComparisonTable spec={spec} />;
     case "timeline":
       return <TimelineDiagram spec={spec} />;
+    case "before-after":
+      return <BeforeAfter spec={spec} />;
     default:
       return visual.source ? <MermaidFallback source={visual.source} /> : null;
   }

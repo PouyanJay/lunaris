@@ -85,6 +85,51 @@ def test_tree_spec_serializes_parent_id_as_camelcase() -> None:
     assert restored.nodes[0].parent_id == "root"
 
 
+def test_before_after_spec_round_trips_through_the_wire() -> None:
+    # Act — a raw camelCase before-after spec, the way it arrives over the wire (the interactive
+    # transformation variant: two labelled sides the reader toggles between).
+    visual = Visual.model_validate(
+        {
+            "kind": "spec",
+            "source": "",
+            "spec": {
+                "type": "before-after",
+                "title": "From linear to binary search",
+                "before": {"label": "Before", "content": "scan every element"},
+                "after": {"label": "After", "content": "halve the search space"},
+            },
+        }
+    )
+
+    # Assert — the discriminator selects the variant and the two sides survive.
+    assert visual.spec is not None
+    assert visual.spec.type == "before-after"
+    assert visual.spec.before.label == "Before"
+    assert visual.spec.after.content == "halve the search space"
+
+    # And it round-trips back through the camelCase wire unchanged.
+    restored = Visual.model_validate(visual.model_dump(by_alias=True))
+    assert restored.spec is not None
+    assert restored.spec.type == "before-after"
+    assert restored.spec.after.label == "After"
+
+
+def test_before_after_spec_requires_both_sides() -> None:
+    # Act / Assert — a before-after missing the `after` side is invalid; the parser/validator rejects
+    # it rather than shipping a half-formed transformation.
+    with pytest.raises(ValidationError):
+        Visual.model_validate(
+            {
+                "kind": "spec",
+                "source": "",
+                "spec": {
+                    "type": "before-after",
+                    "before": {"label": "Before", "content": "x"},
+                },
+            }
+        )
+
+
 def test_spec_rejects_unknown_fields() -> None:
     # Act / Assert — extra="forbid" (on CourseModel) refuses unrecognised keys, not just any error.
     with pytest.raises(ValidationError) as exc_info:

@@ -1,0 +1,24 @@
+/* Interactive before/after transformation — a tabbed toggle between two labelled states. The Tabs
+   primitive owns the tablist + roving focus; this scopes the frame and the side body. */
+.beforeAfter {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+
+.panel {
+  padding: var(--space-3) var(--space-4);
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.prose {
+  margin: 0;
+  color: var(--text-secondary);
+  white-space: pre-wrap; /* preserve authored line breaks (code/diff-style sides read intact) */
+}

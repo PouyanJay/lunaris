@@ -127,7 +127,27 @@ export interface TimelineSpec {
   events: TimelineEvent[];
 }
 
-export type VisualSpec = FlowSpec | TreeSpec | StepsSpec | ComparisonSpec | TimelineSpec;
+/** One state of a before-after transformation — a labelled side the reader toggles to. */
+export interface TransformSide {
+  label: string;
+  content: string;
+}
+/** An interactive transformation: two labelled states (e.g. naive → optimised) the reader toggles
+ *  between. Distinct from `comparison` (a static N-column table). */
+export interface BeforeAfterSpec {
+  type: "before-after";
+  title: string | null;
+  before: TransformSide;
+  after: TransformSide;
+}
+
+export type VisualSpec =
+  | FlowSpec
+  | TreeSpec
+  | StepsSpec
+  | ComparisonSpec
+  | TimelineSpec
+  | BeforeAfterSpec;
 
 /** A diagram attached to a segment. `source` is diagram-as-code (Mermaid) — the renderer's
  *  fallback; `spec` is the typed branded-renderer specification when the agent emitted one. */

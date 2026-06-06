@@ -56,6 +56,7 @@ from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
 from .standard_research import ResearchSource, StandardResearch
 from .visual_spec import (
+    BeforeAfterSpec,
     ComparisonRow,
     ComparisonSpec,
     FlowEdge,
@@ -65,6 +66,7 @@ from .visual_spec import (
     StepsSpec,
     TimelineEvent,
     TimelineSpec,
+    TransformSide,
     TreeNode,
     TreeSpec,
     VisualSpec,
@@ -76,6 +78,7 @@ __all__ = [
     "AgentEventKind",
     "Assessment",
     "AuthorityKind",
+    "BeforeAfterSpec",
     "BloomLevel",
     "Budget",
     "BudgetLedger",
@@ -146,6 +149,7 @@ __all__ = [
     "TargetStandard",
     "TimelineEvent",
     "TimelineSpec",
+    "TransformSide",
     "TreeNode",
     "TreeSpec",
     "TrustTier",

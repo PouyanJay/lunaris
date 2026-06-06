@@ -149,6 +149,8 @@ function specSummary(spec: VisualSpec): string {
       return `comparison · ${plural(spec.rows.length, "row")}`;
     case "timeline":
       return `timeline · ${plural(spec.events.length, "event")}`;
+    case "before-after":
+      return `before/after · ${plural(2, "side")}`;
   }
 }
 
