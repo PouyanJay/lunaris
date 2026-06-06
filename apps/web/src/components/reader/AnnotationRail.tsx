@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { StatusDot } from "../primitives/StatusDot";
 import { type Annotation, groupByPhase, verifierStatusTone } from "./annotations";
 import { ClaimProvenance } from "./ClaimProvenance";
@@ -12,6 +13,8 @@ interface AnnotationRailProps {
   onSelect: (id: string) => void;
   /** Rendered as a drawer on narrow screens; the close control is shown only then (CSS). */
   onClose?: () => void;
+  /** Collapse the rail to give the reading column full width (wide screens only, shown via CSS). */
+  onCollapse?: () => void;
   reduceMotion?: boolean;
 }
 
@@ -24,9 +27,12 @@ export function AnnotationRail({
   activeClaimId,
   onSelect,
   onClose,
+  onCollapse,
   reduceMotion = false,
 }: AnnotationRailProps) {
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const railRef = useRef<HTMLElement>(null);
+  useAutoHideScroll(railRef);
 
   // When a prose cross-link selects a claim, bring its rail entry into view.
   useEffect(() => {
@@ -37,12 +43,23 @@ export function AnnotationRail({
   const groups = groupByPhase(annotations);
 
   return (
-    <aside className={styles.rail} aria-label="Sources and checks">
+    <aside ref={railRef} className={`${styles.rail} scroller`} aria-label="Sources and checks">
       <header className={styles.head}>
         <div>
           <p className="eyebrow">Verification</p>
           <h3 className={styles.title}>Sources &amp; checks</h3>
         </div>
+        {onCollapse && (
+          <button
+            type="button"
+            className={styles.collapse}
+            onClick={onCollapse}
+            aria-label="Collapse sources and checks"
+            title="Collapse"
+          >
+            <span aria-hidden="true">›</span>
+          </button>
+        )}
         {onClose && (
           <button
             type="button"

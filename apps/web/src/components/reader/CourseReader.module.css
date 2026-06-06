@@ -6,6 +6,13 @@
   display: grid;
   grid-template-columns: var(--outline-width) minmax(0, 1fr) var(--rail-width);
   min-height: 0;
+  transition: grid-template-columns var(--dur) var(--ease);
+}
+
+/* While dragging the splitter, the rail must track the cursor 1:1 — drop the easing. */
+.reader.resizing {
+  transition: none;
+  user-select: none;
 }
 
 .pane {
@@ -166,20 +173,101 @@
   overflow: hidden;
 }
 
+/* Resize handle on the rail's left edge — a wide invisible hit area with a hairline that lights up on
+   hover/focus. Anchored to --rail-width so it tracks the rail as it resizes. */
+.splitter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: var(--rail-width);
+  width: 11px;
+  transform: translateX(50%);
+  z-index: 3;
+  cursor: col-resize;
+  background: transparent;
+  border: none;
+  touch-action: none;
+}
+
+.splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.splitter:hover::after,
+.splitter:focus-visible::after {
+  background: var(--accent-500);
+}
+
+.splitter:focus-visible {
+  outline: none;
+}
+
+/* When the rail is collapsed, a slim vertical tab on the right edge brings it back (wide only). */
+.railReveal {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-1);
+  writing-mode: vertical-rl;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border-strong);
+  border-right: none;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  cursor: pointer;
+}
+
+.railReveal:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.railReveal:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+.railRevealText {
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
 .scrim {
   display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .phase {
+  .phase,
+  .reader {
     transition: none;
   }
 }
 
-/* Below 1100px there isn't room for three columns — the rail collapses to a drawer. */
+/* Below 1100px there isn't room for three columns — the rail collapses to a drawer. The wide-screen
+   collapse/resize affordances don't apply there. */
 @media (max-width: 1100px) {
   .reader {
     grid-template-columns: var(--outline-width) minmax(0, 1fr);
+  }
+
+  .splitter,
+  .railReveal {
+    display: none;
   }
 
   .railToggle {

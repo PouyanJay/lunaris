@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Claim, Lesson, Visual } from "../../types/course";
+import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH } from "../../hooks/useRailLayout";
 import { makeCitation, makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 import { CourseReader } from "./CourseReader";
 
@@ -589,5 +590,37 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(document.activeElement).toBe(toggle);
+  });
+
+  it("collapses the rail on wide screens and offers a reveal control", () => {
+    // Arrange — the default course has rail annotations, so the wide-screen controls render.
+    const { container } = render(<CourseReader course={makeCourse()} />);
+    expect(container.querySelector('[data-rail-collapsed="true"]')).toBeNull();
+
+    // Act — collapse the rail.
+    fireEvent.click(screen.getByRole("button", { name: /collapse sources and checks/i }));
+
+    // Assert — the reader marks the rail collapsed and surfaces a reveal tab.
+    expect(container.querySelector('[data-rail-collapsed="true"]')).not.toBeNull();
+    const reveal = screen.getByRole("button", { name: /show sources and checks/i });
+
+    // Act / Assert — revealing restores the expanded layout.
+    fireEvent.click(reveal);
+    expect(container.querySelector('[data-rail-collapsed="true"]')).toBeNull();
+  });
+
+  it("exposes a keyboard-resizable rail splitter advertising its width bounds", () => {
+    // Arrange
+    render(<CourseReader course={makeCourse()} />);
+    const splitter = screen.getByRole("separator", { name: /resize sources and checks/i });
+    expect(splitter).toHaveAttribute("aria-valuemin", String(RAIL_MIN_WIDTH));
+    expect(splitter).toHaveAttribute("aria-valuemax", String(RAIL_MAX_WIDTH));
+    const start = Number(splitter.getAttribute("aria-valuenow"));
+
+    // Act — ArrowLeft widens the rail (it sits on the right edge).
+    fireEvent.keyDown(splitter, { key: "ArrowLeft" });
+
+    // Assert — the advertised width grows.
+    expect(Number(splitter.getAttribute("aria-valuenow"))).toBeGreaterThan(start);
   });
 });

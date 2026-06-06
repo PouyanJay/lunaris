@@ -49,6 +49,35 @@
     0 0 0 4px var(--focus-ring);
 }
 
+/* Wide-screen collapse control — the inverse of the narrow drawer's close (shown only on wide). */
+.collapse {
+  display: inline-flex;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-lg);
+  line-height: 1;
+  color: var(--text-secondary);
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.collapse:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.collapse:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
 .group {
   display: flex;
   flex-direction: column;
@@ -148,9 +177,13 @@
   }
 }
 
-/* The drawer's close control is only meaningful on narrow screens (where the rail is an overlay). */
+/* The drawer's close control is only meaningful on narrow screens (where the rail is an overlay);
+   the collapse control only on wide (where the rail is a resizable column). */
 @media (max-width: 1100px) {
   .close {
     display: inline-flex;
+  }
+  .collapse {
+    display: none;
   }
 }

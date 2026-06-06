@@ -1,3 +1,6 @@
+import { useRef } from "react";
+
+import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import styles from "./ReaderOutline.module.css";
 
 /** One lesson entry in the outline; `index` is its position in the flattened course-wide lesson
@@ -23,8 +26,10 @@ interface ReaderOutlineProps {
 /** The course outline (TOC): lessons grouped under their module titles. The active lesson is marked
  *  `aria-current`; each entry is a button so the outline is fully keyboard-operable. */
 export function ReaderOutline({ groups, activeIndex, onSelect }: ReaderOutlineProps) {
+  const outlineRef = useRef<HTMLElement>(null);
+  useAutoHideScroll(outlineRef);
   return (
-    <nav className={styles.outline} aria-label="Course outline">
+    <nav ref={outlineRef} className={`${styles.outline} scroller`} aria-label="Course outline">
       {groups.map((group) => (
         <div key={group.moduleId} className={styles.group}>
           <p className={`eyebrow ${styles.groupTitle}`}>{group.moduleTitle}</p>

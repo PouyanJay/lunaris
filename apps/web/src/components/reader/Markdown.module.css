@@ -1,0 +1,230 @@
+/* Token-styled rendering for the lesson's Markdown prose. Descendant selectors keep every element
+   (from react-markdown's real DOM output) on the design system — no inline styles, no per-element
+   components for pure styling. Reading-comfortable measure + leading, hairline-divided tables and
+   quotes (panels, not cards), mono for code/data. */
+.markdown {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.markdown > * {
+  margin: 0;
+  max-width: 66ch;
+}
+
+/* Tables and code can exceed the reading measure. */
+.markdown > .tableWrap,
+.markdown > pre {
+  max-width: 100%;
+}
+
+.markdown p {
+  line-height: 1.65;
+}
+
+/* In-lesson subheads: h2/h3 are reserved for the lesson + phase, so prose headings start at h4. */
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  margin-top: var(--space-2);
+}
+
+.markdown h4 {
+  font-size: var(--text-lg);
+}
+.markdown h5 {
+  font-size: var(--text-base);
+}
+.markdown h6 {
+  font-size: var(--text-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Nested lists tuck in a little further and tighten up. */
+.markdown li > ul,
+.markdown li > ol {
+  margin-top: var(--space-2);
+  gap: var(--space-1);
+}
+
+.markdown li {
+  line-height: 1.6;
+  padding-left: var(--space-1);
+}
+
+/* A light infographic touch on the markers — an accent chevron for bullets, accent mono numerals for
+   ordered lists (the accent stays a scalpel, only ever on the marker). */
+.markdown ul > li::marker {
+  content: "▸  ";
+  color: var(--accent-500);
+}
+
+.markdown ol > li::marker {
+  color: var(--accent-600);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* GFM task list checkboxes (read-only in lesson content). */
+.markdown input[type="checkbox"] {
+  margin-right: var(--space-2);
+  accent-color: var(--accent-500);
+}
+
+.markdown strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.markdown em {
+  font-style: italic;
+}
+
+.markdown del {
+  color: var(--text-muted);
+}
+
+/* `==highlight==` → a tinted highlight, the "attention here" mark (legible in both themes). */
+.markdown mark {
+  background: var(--accent-soft);
+  color: var(--text);
+  padding: 0.05em 0.25em;
+  border-radius: var(--radius-sm);
+  box-decoration-break: clone;
+}
+
+.markdown a {
+  color: var(--accent-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.markdown a:hover {
+  color: var(--accent-700);
+}
+
+.markdown a:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* Inline code — mono on a tinted chip. */
+.markdown :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+.markdown hr {
+  border: none;
+  border-top: var(--border-width) solid var(--border);
+  margin: var(--space-2) 0;
+}
+
+/* Tables — hairline-divided, mono numerals, sticky-free (short lesson tables). */
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.markdown th,
+.markdown td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.markdown th {
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+
+.markdown blockquote {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.markdown blockquote > :first-child {
+  margin-top: 0;
+}
+
+/* Collapsible details (lowered from `:::details[Summary]`). */
+.markdown details {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  padding: 0 var(--space-4);
+}
+
+.markdown details[open] {
+  padding-bottom: var(--space-3);
+}
+
+/* Body blocks inside a collapsible section (lifted "Move N:" prose, lists, etc.) — spaced and held
+   to the reading measure, mirroring the top-level prose rhythm. */
+.markdown details > :not(summary) {
+  margin-top: var(--space-2);
+  max-width: 66ch;
+}
+
+.markdown summary {
+  cursor: pointer;
+  padding: var(--space-3) 0;
+  font-weight: 600;
+  color: var(--text);
+  list-style-position: inside;
+}
+
+.markdown summary:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.markdown summary::marker {
+  color: var(--text-muted);
+}
+
+/* Display math sits centred on its own row; inline math rides the text baseline. */
+.markdown :global(.katex-display) {
+  margin: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--space-1) 0;
+}
+
+.markdown :global(.katex) {
+  font-size: 1.05em;
+}

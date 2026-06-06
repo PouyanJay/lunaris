@@ -1,6 +1,6 @@
 import type { Citation, Claim, MerrillSegments, VerifierStatus } from "../../types/course";
 import type { StatusTone } from "../primitives/StatusDot";
-import { matchClaimToSentence } from "./claimMatch";
+import { matchClaimToSentence, splitSentences } from "./claimMatch";
 
 export interface PhaseRef {
   key: keyof MerrillSegments;
@@ -80,16 +80,27 @@ export function groupByPhase(annotations: Annotation[]): AnnotationGroup[] {
   return groups;
 }
 
-/** For one phase, map each claim-matched sentence index → the annotation id that matched it, so the
- *  prose renderer can wrap exactly those sentences as cross-links. */
-export function sentenceMarksFor(
+/** A claim's matched sentence text + its annotation id — used by the Markdown prose renderer to
+ *  find and tag the *block* (paragraph/list-item) that contains the sentence, since rich Markdown
+ *  can't carry an exact-span wrapper. */
+export interface PhraseMark {
+  claimId: string;
+  text: string;
+}
+
+/** For one phase, the matched-sentence text of each annotation that linked to a sentence (the rest
+ *  fall back to phase-level highlight). The renderer matches these against rendered block text. */
+export function phraseMarksFor(
   annotations: Annotation[],
   phaseKey: keyof MerrillSegments,
-): Map<number, string> {
-  const marks = new Map<number, string>();
+  prose: string,
+): PhraseMark[] {
+  const sentences = splitSentences(prose);
+  const marks: PhraseMark[] = [];
   for (const annotation of annotations) {
     if (annotation.phaseKey === phaseKey && annotation.matchedSentence !== null) {
-      marks.set(annotation.matchedSentence, annotation.id);
+      const text = sentences[annotation.matchedSentence];
+      if (text) marks.push({ claimId: annotation.id, text });
     }
   }
   return marks;
