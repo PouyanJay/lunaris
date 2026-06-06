@@ -6,6 +6,7 @@ import { ArrayViz } from "./ArrayViz";
 import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
 import { GlossaryTerm } from "./GlossaryTerm";
+import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { StepItem } from "./StepItem";
 import { Stepper } from "./Stepper";
@@ -36,6 +37,7 @@ const baseComponents = {
   steps: Stepper,
   step: StepItem,
   arrayviz: ArrayViz,
+  keyword: KeywordBadge,
 } as Components;
 
 interface MarkdownProps {

@@ -9,6 +9,7 @@ import type { PluggableList } from "unified";
 import type { Root } from "mdast";
 import { visit } from "unist-util-visit";
 
+import { remarkKeywordBadges } from "./keywordBadges";
 import { remarkProseStructure } from "./proseStructure";
 
 /** The lesson prose is authored as Markdown and may now carry rich blocks: admonition callouts
@@ -122,13 +123,22 @@ function remarkRichDirectives() {
  *  (generated downstream from text) never needs to be allow-listed here. */
 const schema: Schema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), "callout", "glossary", "steps", "step", "arrayviz"],
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    "callout",
+    "glossary",
+    "steps",
+    "step",
+    "arrayviz",
+    "keyword",
+  ],
   attributes: {
     ...defaultSchema.attributes,
     callout: ["variant"],
     glossary: ["definition"],
     step: ["number", "heading"],
     arrayviz: ["values"],
+    keyword: ["category"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],
@@ -141,6 +151,7 @@ export const remarkPlugins: PluggableList = [
   remarkDirective,
   remarkProseStructure,
   remarkRichDirectives,
+  remarkKeywordBadges,
 ];
 
 export const rehypePlugins: PluggableList = [
