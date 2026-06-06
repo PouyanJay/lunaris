@@ -1,0 +1,32 @@
+.provenance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+}
+
+.link {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  color: var(--text);
+}
+
+.name {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.snippet {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-style: italic;
+}

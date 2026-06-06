@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Claim, Lesson, Visual } from "../../types/course";
-import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
+import { makeCitation, makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 import { CourseReader } from "./CourseReader";
 
 const NO_MAYER = {
@@ -446,5 +446,148 @@ describe("CourseReader — lesson body", () => {
       "aria-expanded",
       "true",
     );
+  });
+});
+
+/** A single-lesson course whose demonstrate prose contains a sentence the claim text overlaps, so
+ *  the best-effort matcher links the claim to that exact sentence (the precise-highlight path). */
+function courseWithMatchingSentence() {
+  const base = makeLesson();
+  return makeCourse({
+    modules: [
+      makeModule({
+        lessons: [
+          {
+            ...base,
+            segments: {
+              ...base.segments,
+              demonstrate: {
+                prose:
+                  "Subordinate clauses name the logical relationship between ideas. " +
+                  "Then you revise your own paragraph carefully.",
+                visuals: [],
+                claims: [
+                  {
+                    text: "Subordinate clauses name the logical relationship clearly.",
+                    supportedBy: "src-1",
+                    verifierStatus: "supported",
+                  },
+                ],
+                resources: [],
+              },
+            },
+          },
+        ],
+      }),
+    ],
+  });
+}
+
+describe("CourseReader — annotation rail & cross-highlight", () => {
+  it("lifts claims into the Sources & checks rail, out of the reading column", () => {
+    // Arrange / Act — the default course has a demonstrate claim.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert — the claim lives in the complementary rail region…
+    const rail = screen.getByRole("complementary", { name: /sources and checks/i });
+    expect(
+      within(rail).getByText("Comparison reduces the problem size each step."),
+    ).toBeInTheDocument();
+    expect(within(rail).getByText("SUPPORTED")).toBeInTheDocument();
+
+    // …and NOT inline in the reading column (the contract is "moved out of the prose").
+    const column = screen.getByRole("region", { name: /lesson reader/i });
+    expect(
+      within(column).queryByText("Comparison reduces the problem size each step."),
+    ).not.toBeInTheDocument();
+    expect(within(column).queryByText("SUPPORTED")).not.toBeInTheDocument();
+  });
+
+  it("shows the source's trust tier in the rail for a classified citation", () => {
+    // Arrange — a course whose provenance carries a classified (trust-scored) citation.
+    const course = makeCourse({
+      provenance: [makeCitation({ id: "src-1", trustTier: "reputable", credibility: 0.91 })],
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — the tier reaches the rail through the real annotation chain (never colour alone).
+    const rail = screen.getByRole("complementary", { name: /sources and checks/i });
+    expect(within(rail).getByText("reputable")).toBeInTheDocument();
+    expect(within(rail).getByText("91%")).toBeInTheDocument();
+  });
+
+  it("clears the active cross-highlight when navigating to another lesson", () => {
+    // Arrange — lesson 1 has a matchable claim; lesson 2 has none.
+    const matching = courseWithMatchingSentence();
+    const course = makeCourse({
+      modules: [
+        { ...matching.modules[0]!, id: "m1", title: "One" },
+        makeModule({ id: "m2", title: "Two", lessons: [lessonWith("l2", "Second lesson prose.")] }),
+      ],
+    });
+    render(<CourseReader course={course} />);
+    fireEvent.click(screen.getByRole("button", { name: /locate in the lesson/i }));
+    expect(screen.getByRole("button", { name: /show the source note for/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Act — advance to the next lesson.
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+
+    // Assert — the stale highlight is cleared (no marked sentence remains pressed).
+    expect(
+      screen.queryByRole("button", { name: /show the source note for/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Second lesson prose.")).toBeInTheDocument();
+  });
+
+  it("cross-highlights between a matched prose sentence and its rail entry (both directions)", () => {
+    // Arrange — a course where the claim matches a demonstrate sentence.
+    render(<CourseReader course={courseWithMatchingSentence()} />);
+    const railEntry = screen.getByRole("button", { name: /locate in the lesson/i });
+    const proseMark = screen.getByRole("button", { name: /show the source note for/i });
+    expect(railEntry).toHaveAttribute("aria-pressed", "false");
+    expect(proseMark).toHaveAttribute("aria-pressed", "false");
+
+    // Act / Assert — selecting the rail entry highlights the matched sentence.
+    fireEvent.click(railEntry);
+    expect(proseMark).toHaveAttribute("aria-pressed", "true");
+
+    // Act / Assert — selecting the prose sentence highlights the rail entry.
+    fireEvent.click(proseMark);
+    expect(railEntry).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("falls back to highlighting the whole phase when a claim has no sentence match", () => {
+    // Arrange — the default claim does not overlap its prose, so it links to the phase.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Act — select the (fallback) rail entry.
+    fireEvent.click(screen.getByRole("button", { name: /locate in the lesson/i }));
+
+    // Assert — the demonstrate phase is marked active for the highlight.
+    expect(document.querySelector('[data-phase="demonstrate"]')).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+  });
+
+  it("toggles the annotation drawer and closes it on Escape", () => {
+    // Arrange
+    render(<CourseReader course={makeCourse()} />);
+    const toggle = screen.getByRole("button", { name: /sources & checks/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    // Act / Assert — the toggle opens the drawer…
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    // …and Escape closes it and returns focus to the toggle (keyboard orientation).
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(document.activeElement).toBe(toggle);
   });
 });
