@@ -1,0 +1,113 @@
+/* Interactive step infographic — a numbered spine threads the steps, each a node beside a card. */
+.stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+/* The connector spine: a line from each node down to the next, drawn behind the nodes. */
+.step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 15px; /* node centre: 32px column → 16px, minus 1px half-line */
+  top: 32px;
+  bottom: calc(-1 * var(--space-4));
+  width: 2px;
+  background: var(--border-strong);
+}
+
+/* Numbered node — a real toggle button; pressing marks the step done. */
+.node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: var(--surface-raised);
+  border: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.node:hover {
+  border-color: var(--accent-500);
+  color: var(--text);
+}
+
+.node:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+.nodeLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Done state — the node fills in and the card recedes (glyph + fill, never colour alone). */
+.stepDone .node {
+  background: var(--accent-500);
+  border-color: var(--accent-500);
+  color: var(--accent-text);
+}
+
+.stepDone .heading {
+  color: var(--text-muted);
+}
+
+.stepDone .card {
+  opacity: 0.7;
+}
+
+/* The step card. */
+.card {
+  min-width: 0;
+  padding-top: 3px; /* optical alignment of the heading baseline with the node centre */
+}
+
+.heading {
+  margin: 0 0 var(--space-1);
+  font-weight: 600;
+  color: var(--text);
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.body > :first-child {
+  margin-top: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node,
+  .heading,
+  .card {
+    transition: none;
+  }
+}

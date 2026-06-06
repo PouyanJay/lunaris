@@ -6,6 +6,8 @@ import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
 import { GlossaryTerm } from "./GlossaryTerm";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
+import { StepItem } from "./StepItem";
+import { Stepper } from "./Stepper";
 import styles from "./Markdown.module.css";
 
 /** The lesson prose is authored as Markdown; render it safely with GitHub-flavoured features and a
@@ -27,9 +29,11 @@ const baseComponents = {
   // Block code is wrapped in <pre>; overriding `pre` lets one component own the copy bar / preview
   // routing while inline `code` keeps the default chip styling.
   pre: CodeBlock,
-  // Custom elements lowered from directives by the remark pipeline.
+  // Custom elements lowered from directives / prose structure by the remark pipeline.
   callout: Callout,
   glossary: GlossaryTerm,
+  steps: Stepper,
+  step: StepItem,
 } as Components;
 
 interface MarkdownProps {

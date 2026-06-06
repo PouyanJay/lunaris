@@ -122,11 +122,12 @@ function remarkRichDirectives() {
  *  (generated downstream from text) never needs to be allow-listed here. */
 const schema: Schema = {
   ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames ?? []), "callout", "glossary"],
+  tagNames: [...(defaultSchema.tagNames ?? []), "callout", "glossary", "steps", "step"],
   attributes: {
     ...defaultSchema.attributes,
     callout: ["variant"],
     glossary: ["definition"],
+    step: ["number", "heading"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],

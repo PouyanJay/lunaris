@@ -3,11 +3,12 @@ import { SKIP, visit } from "unist-util-visit";
 
 /** Authored lesson prose often carries structure as plain sentence text — inline enumerations like
  *  "(1) … (2) … (3) …" or "(a) … (b) … (c) …", and labelled sections like "Move 1: …", "Step 2: …".
- *  This remark transform lifts those patterns into real, interactive Markup so the reader can format
- *  them: enumerations become ordered lists, and a run of labelled sections becomes collapsible
- *  `<details>` panels (open by default) headed by their label. It is deliberately conservative — it
- *  fires only on unambiguous patterns (a sequence starting at 1/"a"; ≥2 sibling labelled sections) so
- *  ordinary prose, citations, and stray parentheses are left untouched. */
+ *  This remark transform lifts those patterns into real, interactive markup so the reader can format
+ *  them: enumerations become ordered lists, a run of sequentially-numbered labelled sections becomes
+ *  an interactive step infographic (the Stepper), and any other labelled run becomes collapsible
+ *  `<details>` panels. It is deliberately conservative — it fires only on unambiguous patterns (a
+ *  sequence starting at 1/"a"; ≥2 sibling labelled sections) so ordinary prose, citations, and stray
+ *  parentheses are left untouched. */
 
 /** Loosely-typed mdast node — we build a handful of nodes and read text off existing ones; the strict
  *  mdast unions add friction here without catching real bugs, so we keep one permissive shape. */
@@ -20,7 +21,7 @@ interface Node {
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
-const SECTION_LABEL = /^((?:Move|Step|Part|Phase|Stage|Principle|Strategy|Rule)\s+\d+)\s*:\s+/i;
+const SECTION_LABEL = /^(?:Move|Step|Part|Phase|Stage|Principle|Strategy|Rule)\s+(\d+)\s*:\s+/i;
 /** Captures the label + title sentence (up to the first period) and the rest of the paragraph. */
 const SECTION_SPLIT =
   /^((?:Move|Step|Part|Phase|Stage|Principle|Strategy|Rule)\s+\d+\s*:\s*[^.]*)\.?\s*([\s\S]*)$/i;
@@ -108,49 +109,23 @@ function buildList(items: Node[][], kind: EnumKind): Node {
   return list;
 }
 
-/** Pass 1 — group consecutive labelled paragraphs ("Move 1: …", "Move 2: …") into collapsible
- *  sections. Each section absorbs the following non-labelled blocks as its body, so multi-paragraph
- *  sections stay whole. Only fires when there are ≥2 labelled siblings (a real section structure). */
-function groupSections(root: Root): void {
-  const children = root.children as unknown as Node[];
-  const isLabel = (node: Node): boolean =>
-    node.type === "paragraph" &&
-    node.children?.[0]?.type === "text" &&
-    SECTION_LABEL.test(node.children[0].value ?? "");
-
-  if (children.filter(isLabel).length < 2) return;
-
-  const result: Node[] = [];
-  let i = 0;
-  while (i < children.length) {
-    const head = children[i]!;
-    if (!isLabel(head)) {
-      result.push(head);
-      i += 1;
-      continue;
-    }
-    let j = i + 1;
-    while (j < children.length && !isLabel(children[j]!)) j += 1;
-    result.push(buildSection(head, children.slice(i + 1, j)));
-    i = j;
-  }
-  root.children = result as unknown as Root["children"];
+/** The step number off a labelled paragraph ("Step 3: …" → 3), or null if it isn't one. */
+function sectionNumber(node: Node): number | null {
+  if (node.type !== "paragraph") return null;
+  const first = node.children?.[0];
+  if (!first || first.type !== "text") return null;
+  const match = (first.value ?? "").match(SECTION_LABEL);
+  return match ? Number(match[1]) : null;
 }
 
-/** Turn a labelled paragraph + its following body blocks into a `<details open>` whose `<summary>` is
- *  the label and title, and whose body is the remainder of the paragraph plus the trailing blocks. */
-function buildSection(head: Node, rest: Node[]): Node {
+/** Split a labelled paragraph + its following body blocks into a heading (label + title sentence) and
+ *  a body (the remainder of the paragraph plus the trailing blocks). */
+function sectionBody(head: Node, rest: Node[]): { heading: string; body: Node[] } {
   const firstText = head.children?.[0];
   const raw = firstText?.type === "text" ? (firstText.value ?? "") : "";
   const match = raw.match(SECTION_SPLIT);
-  const summaryText = (match ? match[1]! : raw).replace(/\s+$/, "");
+  const heading = (match ? match[1]! : raw).replace(/\s+$/, "");
   const remainder = match ? match[2]! : "";
-
-  const summary: Node = {
-    type: "paragraph",
-    data: { hName: "summary" },
-    children: [{ type: "text", value: summaryText }],
-  };
 
   const firstBody: Node[] = [];
   if (remainder) firstBody.push({ type: "text", value: remainder });
@@ -159,12 +134,105 @@ function buildSection(head: Node, rest: Node[]): Node {
   const body: Node[] = [];
   if (textOf(firstBody).trim()) body.push({ type: "paragraph", children: firstBody });
   body.push(...rest);
+  return { heading, body };
+}
 
+/** A single step element (rendered as the interactive StepItem). */
+function buildStep(heading: string, number: number, body: Node[]): Node {
+  return {
+    type: "blockquote",
+    data: { hName: "step", hProperties: { number: String(number), heading } },
+    children: body,
+  };
+}
+
+/** The stepper wrapper (rendered as the Stepper infographic). */
+function buildStepper(steps: Node[]): Node {
+  return { type: "blockquote", data: { hName: "steps" }, children: steps };
+}
+
+/** A collapsible `<details open>` for a non-sequential labelled section run. */
+function buildDetails(heading: string, body: Node[]): Node {
+  const summary: Node = {
+    type: "paragraph",
+    data: { hName: "summary" },
+    children: [{ type: "text", value: heading }],
+  };
   return {
     type: "blockquote", // a known handler whose tag we override to <details> via hName
     data: { hName: "details", hProperties: { open: true } },
     children: [summary, ...body],
   };
+}
+
+interface SectionBlock {
+  kind: "section";
+  number: number;
+  head: Node;
+  rest: Node[];
+}
+type Block = SectionBlock | { kind: "other"; node: Node };
+
+/** Pass 1 — group consecutive labelled paragraphs ("Step 1: …", "Move 2: …") into structure. Each
+ *  section absorbs the following non-labelled blocks as its body, so multi-paragraph sections stay
+ *  whole. A run of ≥2 consecutive sections numbered 1..N becomes an interactive stepper; any other
+ *  run becomes collapsible panels; a lone label is left as plain prose. */
+function groupSections(root: Root): void {
+  const children = root.children as unknown as Node[];
+
+  const blocks: Block[] = [];
+  let i = 0;
+  while (i < children.length) {
+    const head = children[i]!;
+    const number = sectionNumber(head);
+    if (number !== null) {
+      let j = i + 1;
+      while (j < children.length && sectionNumber(children[j]!) === null) j += 1;
+      blocks.push({ kind: "section", number, head, rest: children.slice(i + 1, j) });
+      i = j;
+    } else {
+      blocks.push({ kind: "other", node: head });
+      i += 1;
+    }
+  }
+
+  const result: Node[] = [];
+  let k = 0;
+  while (k < blocks.length) {
+    const block = blocks[k]!;
+    if (block.kind !== "section") {
+      result.push(block.node);
+      k += 1;
+      continue;
+    }
+    let m = k;
+    while (m < blocks.length && blocks[m]!.kind === "section") m += 1;
+    const run = blocks.slice(k, m) as SectionBlock[];
+    k = m;
+
+    if (run.length < 2) {
+      result.push(run[0]!.head, ...run[0]!.rest);
+      continue;
+    }
+    const sequential = run.every((section, index) => section.number === index + 1);
+    if (sequential) {
+      result.push(
+        buildStepper(
+          run.map((section) => {
+            const { heading, body } = sectionBody(section.head, section.rest);
+            return buildStep(heading, section.number, body);
+          }),
+        ),
+      );
+    } else {
+      for (const section of run) {
+        const { heading, body } = sectionBody(section.head, section.rest);
+        result.push(buildDetails(heading, body));
+      }
+    }
+  }
+
+  root.children = result as unknown as Root["children"];
 }
 
 /** Remark transform: structure labelled sections, then split inline enumerations everywhere (so

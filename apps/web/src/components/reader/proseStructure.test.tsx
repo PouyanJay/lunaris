@@ -45,22 +45,34 @@ describe("prose structure — enumerations & sections", () => {
     expect(container.querySelector("p")?.textContent).toBe(prose);
   });
 
-  it("groups labelled 'Move N:' paragraphs into collapsible sections headed by their label", () => {
+  it("renders a sequential 'Step N:' run as an interactive stepper headed by each step", () => {
     const prose =
-      "Move 1: Specialized vocabulary. Generalist dictionaries list one definition per word.\n\n" +
-      "Move 2: Strategic subordination. A sentence with one clause cannot express complex reasoning.\n\n" +
-      "Move 3: Calibrate register. Match word choice to your audience.";
+      "Step 1: Specialized vocabulary. Generalist dictionaries list one definition per word.\n\n" +
+      "Step 2: Strategic subordination. A sentence with one clause cannot express complex reasoning.\n\n" +
+      "Step 3: Calibrate register. Match word choice to your audience.";
 
     const { container } = render(<Markdown>{prose}</Markdown>);
 
-    const sections = container.querySelectorAll("details");
-    expect(sections).toHaveLength(3);
-    // Each section is a collapsible headed by its label + title; open by default so nothing hides.
-    const first = sections[0] as HTMLDetailsElement;
-    expect(first.open).toBe(true);
-    expect(first.querySelector("summary")?.textContent).toBe("Move 1: Specialized vocabulary");
-    expect(first.querySelector("summary")?.tagName).toBe("SUMMARY");
-    expect(first).toHaveTextContent("Generalist dictionaries list one definition per word.");
+    const stepper = container.querySelector('ol[aria-label="Steps"]');
+    expect(stepper).not.toBeNull();
+    const steps = within(stepper as HTMLElement).getAllByRole("listitem");
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toHaveTextContent("Step 1: Specialized vocabulary");
+    expect(steps[0]).toHaveTextContent("Generalist dictionaries list one definition per word.");
+    // Each step's node is a mark-as-done toggle (interactive + progress).
+    expect(
+      within(steps[0]!).getByRole("button", { name: /mark step 1 done/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to collapsible panels for a non-sequential labelled run", () => {
+    // Numbers 1 then 3 (not 1..N) → not a step procedure, so collapsible sections instead.
+    const prose = "Principle 1: Clarity. Say what you mean.\n\nPrinciple 3: Brevity. Then stop.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    expect(container.querySelector('ol[aria-label="Steps"]')).toBeNull();
+    expect(container.querySelectorAll("details")).toHaveLength(2);
   });
 
   it("does not sectionize a lone labelled paragraph (needs a real section run)", () => {
@@ -69,19 +81,21 @@ describe("prose structure — enumerations & sections", () => {
     const { container } = render(<Markdown>{prose}</Markdown>);
 
     expect(container.querySelector("details")).toBeNull();
+    expect(container.querySelector('ol[aria-label="Steps"]')).toBeNull();
     expect(container.querySelector("p")?.textContent).toContain("Step 1: Do the thing.");
   });
 
-  it("splits an enumeration that lives inside a labelled section's body", () => {
+  it("splits an enumeration that lives inside a step's body", () => {
     const prose =
-      "Move 1: Specialized vocabulary. To upgrade: (1) read articles; (2) note recurring terms.\n\n" +
-      "Move 2: Strategic subordination. Use subordinate clauses to show logic.";
+      "Step 1: Specialized vocabulary. To upgrade: (1) read articles; (2) note recurring terms.\n\n" +
+      "Step 2: Strategic subordination. Use subordinate clauses to show logic.";
 
     const { container } = render(<Markdown>{prose}</Markdown>);
 
-    const section = container.querySelector("details");
-    expect(section).not.toBeNull();
-    const list = within(section as HTMLElement).getByRole("list");
+    const stepper = container.querySelector('ol[aria-label="Steps"]');
+    expect(stepper).not.toBeNull();
+    const firstStep = within(stepper as HTMLElement).getAllByRole("listitem")[0]!;
+    const list = within(firstStep).getByRole("list");
     expect(within(list).getAllByRole("listitem")).toHaveLength(2);
   });
 });
