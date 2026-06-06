@@ -1,10 +1,20 @@
 import type { Resource } from "../../types/course";
 import { SourceTrust } from "../primitives/SourceTrust";
 import { ResourceThumb } from "./ResourceThumb";
+import { VideoFacade } from "./VideoFacade";
+import { youTubeId } from "./youtube";
 import styles from "./LessonResources.module.css";
 
 interface LessonResourcesProps {
   resources: Resource[];
+}
+
+/** A YouTube video plays inside the reader (facade → nocookie embed + lightbox); any other resource
+ *  keeps the decorative thumbnail, with its title link as the action. */
+function ResourceMedia({ resource }: { resource: Resource }) {
+  const videoId = resource.kind === "video" ? youTubeId(resource.url) : null;
+  if (videoId) return <VideoFacade videoId={videoId} title={resource.title} />;
+  return <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />;
 }
 
 /** The curated external resources attached to a teaching phase (P7.4) — suggested aids the learner
@@ -19,7 +29,7 @@ export function LessonResources({ resources }: LessonResourcesProps) {
       <ul className={styles.list}>
         {resources.map((resource) => (
           <li key={resource.url} className={styles.item}>
-            <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />
+            <ResourceMedia resource={resource} />
             <div className={styles.body}>
               <div className={styles.head}>
                 <a

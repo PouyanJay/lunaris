@@ -1,0 +1,81 @@
+/* Fullscreen video modal — dimmed backdrop, a centred 16:9 stage with a header bar. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--scrim);
+}
+
+.dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(64rem, 100%);
+  background: var(--surface-raised);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.close {
+  flex-shrink: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--surface-raised),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* 16:9 responsive stage. */
+.frameWrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--gray-950);
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
+}

@@ -27,3 +27,11 @@ export function youTubeId(url: string): string | null {
 export function youTubeThumbnail(id: string): string {
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 }
+
+/** The privacy-enhanced embed URL (`youtube-nocookie.com`) for in-reader playback. `autoplay` is set
+ *  only after a user gesture (a click on the facade), and `rel=0` keeps related videos in-channel. */
+export function youTubeEmbed(id: string, options: { autoplay?: boolean } = {}): string {
+  const params = new URLSearchParams({ rel: "0", modestbranding: "1" });
+  if (options.autoplay) params.set("autoplay", "1");
+  return `https://www.youtube-nocookie.com/embed/${id}?${params.toString()}`;
+}

@@ -1,0 +1,111 @@
+/* Inline video facade: a 16:9 stage holding either the poster button or the expanded player, with a
+   small "full screen" control overlaid in the corner. */
+.facade {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* The poster is a real button — the whole frame is the play target. */
+.poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: var(--bg-muted);
+  cursor: pointer;
+}
+
+.poster:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--bg-muted),
+    inset 0 0 0 4px var(--focus-ring);
+}
+
+.image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.glyph {
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+/* Play badge, centred over the poster. */
+.play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--scrim);
+  color: var(--gray-0);
+  padding-left: 3px; /* optical centring of the triangle */
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.poster:hover .play,
+.poster:focus-visible .play {
+  background: var(--accent-600);
+}
+
+.frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Corner control to open the same video in the fullscreen lightbox. */
+.expand {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--gray-0);
+  background: var(--scrim);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.expand:hover {
+  background: var(--accent-600);
+}
+
+.expand:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-muted),
+    0 0 0 4px var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play,
+  .expand {
+    transition: none;
+  }
+}
