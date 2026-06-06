@@ -5,6 +5,7 @@ orchestrator. ``make run`` still guards on a reachable key and falls back to the
 in-process default the API resolves when nothing is set."""
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from lunaris_api.config import get_settings
@@ -38,3 +39,25 @@ def test_pipeline_env_override_is_honored(monkeypatch: pytest.MonkeyPatch) -> No
 
     # Assert — the explicit toggle always wins, normalised to lower case.
     assert settings.pipeline == "stub"
+
+
+def test_env_file_defaults_to_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange — the secret store's single source of truth is .env, loaded at startup via --env-file.
+    monkeypatch.delenv("LUNARIS_ENV_FILE", raising=False)
+
+    # Act
+    settings = get_settings()
+
+    # Assert
+    assert settings.env_file == Path(".env")
+
+
+def test_env_file_override_is_honored(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange — tests point the store at a throwaway file so they never touch the real .env.
+    monkeypatch.setenv("LUNARIS_ENV_FILE", "/tmp/throwaway.env")
+
+    # Act
+    settings = get_settings()
+
+    # Assert
+    assert settings.env_file == Path("/tmp/throwaway.env")

@@ -21,7 +21,7 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         pipeline="stub",
         course_dir=tmp_path,
         cors_origins=(),
-        secrets_path=tmp_path / "secrets.json",
+        env_file=tmp_path / ".env",
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:

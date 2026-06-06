@@ -18,7 +18,7 @@ def _settings(tmp_path: Path) -> Settings:
         pipeline="stub",
         course_dir=tmp_path,
         cors_origins=(),
-        secrets_path=tmp_path / "secrets.json",
+        env_file=tmp_path / ".env",
     )
 
 

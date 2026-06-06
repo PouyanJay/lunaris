@@ -183,14 +183,14 @@ def get_authority_store(
 
 AuthorityStoreDep = Annotated[ISourceAuthorityStore, Depends(get_authority_store)]
 
-# One SecretStore per secrets-file path (it owns process env + the on-disk file), so all
-# requests share the same in-memory + on-disk state. Tests override get_secret_store.
+# One SecretStore per .env path (it owns process env + the on-disk file), so all requests share
+# the same on-disk state. Tests override get_secret_store.
 _secret_stores: dict[Path, SecretStore] = {}
 
 
 def get_secret_store(settings: Annotated[Settings, Depends(get_settings)]) -> SecretStore:
-    """The process-wide secret store for the configured secrets path."""
-    path = settings.secrets_path
+    """The process-wide secret store for the configured .env path."""
+    path = settings.env_file
     if path not in _secret_stores:
         _secret_stores[path] = SecretStore(path)
     return _secret_stores[path]

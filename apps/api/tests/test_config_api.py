@@ -30,7 +30,7 @@ def _client(tmp_path: Path) -> httpx.AsyncClient:
         pipeline="stub",
         course_dir=tmp_path,
         cors_origins=(),
-        secrets_path=tmp_path / "secrets.json",
+        env_file=tmp_path / ".env",
         config_path=config_file,
     )
     app.dependency_overrides[get_config_store] = lambda: ConfigStore(config_file)

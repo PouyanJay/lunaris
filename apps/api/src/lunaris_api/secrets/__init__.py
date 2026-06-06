@@ -1,4 +1,4 @@
-from .store import KNOWN_SECRETS, SecretStatus, SecretStore
+from .store import KNOWN_SECRETS, SecretStatus, SecretStore, contains_control_characters
 from .validator import (
     AcceptingValidator,
     AnthropicProbeValidator,
@@ -14,4 +14,5 @@ __all__ = [
     "SecretStatus",
     "SecretStore",
     "SecretValidationError",
+    "contains_control_characters",
 ]

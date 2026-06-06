@@ -23,7 +23,8 @@ class Settings:
     pipeline: str
     course_dir: Path
     cors_origins: tuple[str, ...]
-    secrets_path: Path
+    # Single source of truth for operator secrets (see SecretStore).
+    env_file: Path = Path(".env")
     config_path: Path = Path(".config/config.json")
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
@@ -47,7 +48,7 @@ def get_settings() -> Settings:
         pipeline=os.getenv("LUNARIS_PIPELINE", "agent").lower(),
         course_dir=Path(os.getenv("LUNARIS_COURSE_DIR", ".courses")),
         cors_origins=tuple(origin.strip() for origin in origins.split(",") if origin.strip()),
-        secrets_path=Path(os.getenv("LUNARIS_SECRETS_PATH", ".secrets/secrets.json")),
+        env_file=Path(os.getenv("LUNARIS_ENV_FILE", ".env")),
         config_path=Path(os.getenv("LUNARIS_CONFIG_PATH", ".config/config.json")),
         supabase_url=os.getenv("SUPABASE_URL") or None,
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
