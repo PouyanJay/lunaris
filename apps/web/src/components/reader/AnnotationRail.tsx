@@ -12,6 +12,8 @@ interface AnnotationRailProps {
   onSelect: (id: string) => void;
   /** Rendered as a drawer on narrow screens; the close control is shown only then (CSS). */
   onClose?: () => void;
+  /** Collapse the rail to give the reading column full width (wide screens only, shown via CSS). */
+  onCollapse?: () => void;
   reduceMotion?: boolean;
 }
 
@@ -24,6 +26,7 @@ export function AnnotationRail({
   activeClaimId,
   onSelect,
   onClose,
+  onCollapse,
   reduceMotion = false,
 }: AnnotationRailProps) {
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
@@ -43,6 +46,17 @@ export function AnnotationRail({
           <p className="eyebrow">Verification</p>
           <h3 className={styles.title}>Sources &amp; checks</h3>
         </div>
+        {onCollapse && (
+          <button
+            type="button"
+            className={styles.collapse}
+            onClick={onCollapse}
+            aria-label="Collapse sources and checks"
+            title="Collapse"
+          >
+            <span aria-hidden="true">›</span>
+          </button>
+        )}
         {onClose && (
           <button
             type="button"

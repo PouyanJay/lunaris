@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { AnnotationRail } from "./AnnotationRail";
@@ -119,6 +120,7 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
+  const rail = useRailLayout();
   const paneRef = useRef<HTMLDivElement>(null);
   const railToggleRef = useRef<HTMLButtonElement>(null);
   const handledFocusSeq = useRef(0);
@@ -227,7 +229,11 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   };
 
   return (
-    <div className={styles.reader}>
+    <div
+      className={`${styles.reader} ${rail.resizing ? styles.resizing : ""}`}
+      style={{ "--rail-width": rail.collapsed ? "0px" : `${rail.width}px` } as CSSProperties}
+      data-rail-collapsed={rail.collapsed ? "true" : undefined}
+    >
       <ReaderOutline groups={groups} activeIndex={safeIndex} onSelect={setActiveIndex} />
       <div
         className={styles.pane}
@@ -358,6 +364,23 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
         </article>
       </div>
 
+      {/* Drag handle between the reading column and the rail (wide screens, expanded only). Resizes
+          --rail-width 1:1 on pointer drag and via Arrow/Home/End when focused. */}
+      {!rail.collapsed && annotations.length > 0 && (
+        <div
+          className={styles.splitter}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sources and checks"
+          aria-valuenow={rail.width}
+          aria-valuemin={RAIL_MIN_WIDTH}
+          aria-valuemax={RAIL_MAX_WIDTH}
+          tabIndex={0}
+          onPointerDown={rail.startResize}
+          onKeyDown={rail.nudgeWidth}
+        />
+      )}
+
       {/* The annotation rail: a static third column on wide screens, a toggled drawer on narrow.
           One instance (no duplication) — the wrapper's class switches presentation. */}
       <div
@@ -369,9 +392,23 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
           activeClaimId={activeClaimId}
           onSelect={setActiveClaimId}
           onClose={() => setRailOpen(false)}
+          onCollapse={rail.toggleCollapsed}
           reduceMotion={reduceMotion}
         />
       </div>
+
+      {/* When collapsed on wide screens, a slim edge tab brings the rail back. */}
+      {rail.collapsed && annotations.length > 0 && (
+        <button
+          type="button"
+          className={styles.railReveal}
+          onClick={rail.toggleCollapsed}
+          aria-label="Show sources and checks"
+        >
+          <span aria-hidden="true">‹</span>
+          <span className={styles.railRevealText}>Sources &amp; checks</span>
+        </button>
+      )}
       {railOpen && (
         <button
           type="button"
