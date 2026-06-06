@@ -95,7 +95,8 @@ describe("prose structure — enumerations & sections", () => {
     const stepper = container.querySelector('ol[aria-label="Steps"]');
     expect(stepper).not.toBeNull();
     const firstStep = within(stepper as HTMLElement).getAllByRole("listitem")[0]!;
-    const list = within(firstStep).getByRole("list");
-    expect(within(list).getAllByRole("listitem")).toHaveLength(2);
+    // The step body is collapsed by default, so query its (hidden) enumeration list.
+    const list = within(firstStep).getByRole("list", { hidden: true });
+    expect(within(list).getAllByRole("listitem", { hidden: true })).toHaveLength(2);
   });
 });

@@ -23,7 +23,7 @@ describe("Stepper", () => {
     expect(screen.getByText("Body two.")).toBeInTheDocument();
   });
 
-  it("collapses and expands a step body from its heading disclosure", () => {
+  it("starts collapsed and expands a step body from its heading disclosure", () => {
     render(
       <StepItem number="1" heading="Step 1: Gather terms">
         <p>Body one.</p>
@@ -31,13 +31,16 @@ describe("Stepper", () => {
     );
 
     const toggle = screen.getByRole("button", { name: "Step 1: Gather terms" });
-    // Open by default, so the body reads like the current stepper…
+    // Collapsed by default — a compact accordion of numbered headings.
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Body one.")).not.toBeVisible();
+
+    // …expands like a details panel on click, and collapses again.
+    fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Body one.")).toBeVisible();
 
-    // …and it collapses like a details panel.
     fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByText("Body one.")).not.toBeVisible();
   });
 
