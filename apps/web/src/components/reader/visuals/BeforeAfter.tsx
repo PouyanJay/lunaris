@@ -8,11 +8,19 @@ interface BeforeAfterProps {
   spec: BeforeAfterSpec;
 }
 
-/** The visible body of one transformation side: its content as prose. */
+/** The visible body of one transformation side: code (when a language is named) or prose, plus an
+ *  optional caption. Code is React-escaped text in a `<pre>` — no syntax highlighting, no injection. */
 function SideBody({ side }: { side: TransformSide }) {
   return (
     <div className={styles.side}>
-      <p className={styles.prose}>{side.content}</p>
+      {side.language ? (
+        <pre className={styles.code} data-language={side.language}>
+          <code>{side.content}</code>
+        </pre>
+      ) : (
+        <p className={styles.prose}>{side.content}</p>
+      )}
+      {side.caption ? <p className={styles.caption}>{side.caption}</p> : null}
     </div>
   );
 }

@@ -127,10 +127,13 @@ export interface TimelineSpec {
   events: TimelineEvent[];
 }
 
-/** One state of a before-after transformation — a labelled side the reader toggles to. */
+/** One state of a before-after transformation — a labelled side the reader toggles to. `language`,
+ *  when set, marks `content` as code (rendered in a code block); `caption` is an optional note. */
 export interface TransformSide {
   label: string;
   content: string;
+  language: string | null;
+  caption: string | null;
 }
 /** An interactive transformation: two labelled states (e.g. naive → optimised) the reader toggles
  *  between. Distinct from `comparison` (a static N-column table). */

@@ -8,6 +8,7 @@ from lunaris_runtime.schema import (
     ComparisonSpec,
     FlowSpec,
     StepsSpec,
+    TransformSide,
     TreeNode,
     TreeSpec,
     Visual,
@@ -114,9 +115,37 @@ def test_before_after_spec_round_trips_through_the_wire() -> None:
     assert restored.spec.after.label == "After"
 
 
+def test_before_after_side_carries_optional_language_and_caption() -> None:
+    # Act — a code-bearing side names its language (→ rendered as code) and a caption.
+    visual = Visual.model_validate(
+        {
+            "kind": "spec",
+            "source": "",
+            "spec": {
+                "type": "before-after",
+                "before": {
+                    "label": "Naive",
+                    "content": "for x in xs: ...",
+                    "language": "python",
+                    "caption": "O(n) per lookup",
+                },
+                "after": {"label": "Binary search", "content": "lo, hi = 0, n"},
+            },
+        }
+    )
+
+    # Assert — the optional fields ride the side, and default to None when omitted.
+    assert visual.spec is not None
+    assert visual.spec.before.language == "python"
+    assert visual.spec.before.caption == "O(n) per lookup"
+    bare = TransformSide(label="x", content="y")
+    assert bare.language is None
+    assert bare.caption is None
+
+
 def test_before_after_spec_requires_both_sides() -> None:
-    # Act / Assert — a before-after missing the `after` side is invalid; the parser/validator rejects
-    # it rather than shipping a half-formed transformation.
+    # Act / Assert — a before-after missing the `after` side is invalid; the validator rejects it
+    # rather than shipping a half-formed transformation.
     with pytest.raises(ValidationError):
         Visual.model_validate(
             {

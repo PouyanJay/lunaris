@@ -20,5 +20,25 @@
 .prose {
   margin: 0;
   color: var(--text-secondary);
-  white-space: pre-wrap; /* preserve authored line breaks (code/diff-style sides read intact) */
+  white-space: pre-wrap; /* preserve authored line breaks (prose sides read intact) */
+}
+
+/* A code side — monospace, scrollable, never wrapping mid-token. */
+.code {
+  margin: 0;
+  padding: var(--space-3);
+  overflow-x: auto;
+  background: var(--bg); /* recessed against the raised before/after frame */
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.caption {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }

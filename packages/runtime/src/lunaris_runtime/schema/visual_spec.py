@@ -98,6 +98,8 @@ class TimelineSpec(CourseModel):
 class TransformSide(CourseModel):
     label: str
     content: str
+    language: str | None = None  # set => render content as code (else as prose)
+    caption: str | None = None  # optional note shown under the content
 
 
 class BeforeAfterSpec(CourseModel):
