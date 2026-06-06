@@ -26,16 +26,17 @@
 }
 
 .item {
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.body {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-}
-
-.head {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .kind {
@@ -44,10 +45,13 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  background: var(--bg-muted);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-full);
-  padding: 1px var(--space-2);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .link {

@@ -1,0 +1,156 @@
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-5) var(--space-16);
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.close {
+  display: none; /* only shown in the narrow drawer (toggled by the reader's wrapper) */
+  flex: none;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: transparent;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.close:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.groupLabel {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-left: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  scroll-margin-block: var(--space-6);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.itemActive {
+  background: var(--accent-soft);
+  border-left-color: var(--accent-500);
+}
+
+.trigger {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.trigger:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.text {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text);
+  min-width: 0;
+}
+
+.trigger:hover .text {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.approx {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.uncited {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border);
+}
+
+.empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item {
+    transition: none;
+  }
+}
+
+/* The drawer's close control is only meaningful on narrow screens (where the rail is an overlay). */
+@media (max-width: 1100px) {
+  .close {
+    display: inline-flex;
+  }
+}

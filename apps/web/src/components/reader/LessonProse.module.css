@@ -1,0 +1,57 @@
+.prose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.paragraph {
+  /* Controlled measure: ~66ch is the sweet spot for sustained reading (Bringhurst). */
+  max-width: 66ch;
+  font-size: var(--text-base);
+  /* Looser than the 1.5 used for dense UI text elsewhere — long-form reading prose wants more
+     leading for comfortable line tracking. */
+  line-height: 1.65;
+  color: var(--text);
+}
+
+/* A claim-matched sentence, rendered inline as a cross-link to its rail annotation. Reads as a soft
+   highlight, not a button — restrained until hovered/active so the prose stays calm. */
+.mark {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  padding: 0 1px;
+  margin: 0 -1px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  box-shadow: inset 0 -1px 0 var(--border-strong);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+
+.mark:hover {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -1px 0 var(--accent-500);
+}
+
+.mark:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+.markActive {
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent-500);
+  scroll-margin-block: var(--space-12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark {
+    transition: none;
+  }
+}

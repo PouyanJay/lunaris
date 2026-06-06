@@ -1,26 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type {
-  AssessmentItem,
-  Course,
-  Lesson,
-  MerrillSegments,
-  Objective,
-} from "../../types/course";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
+import { AnnotationRail } from "./AnnotationRail";
+import { buildAnnotations, type PhaseRef, sentenceMarksFor } from "./annotations";
 import { LessonAssessment } from "./LessonAssessment";
-import { LessonClaims } from "./LessonClaims";
 import { LessonObjectives } from "./LessonObjectives";
+import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
+import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
 /** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
  *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
  *  example → practice → transfer — bracketed by the "expects" and "self-check" bookends. */
-const PHASES: { key: keyof MerrillSegments; label: string; cue: string }[] = [
+const PHASES: (PhaseRef & { cue: string })[] = [
   { key: "activate", label: "Warm-up", cue: "Reconnect with what you already know" },
   {
     key: "demonstrate",
@@ -99,11 +98,13 @@ interface CourseReaderProps {
   onRegenerate?: ((lessonId: string) => Promise<Course>) | undefined;
 }
 
-/** The lesson reader (Learn view): a persistent course outline beside a single focused lesson, with
- *  Prev/Next navigation, a position indicator, and a per-lesson agent regenerate action. Renders the
- *  focused lesson as its arc (P7.3) — the competency it builds toward, the "what this lesson expects"
- *  bookend, the relabelled teaching phases, objectives, claims/provenance, branded visuals, and the
- *  closing self-check. */
+/** The lesson reader (Learn view): a persistent course outline, a clean reading column, and a
+ *  parallel "Sources & checks" rail that lifts the verifier's claims out of the prose (req 1). The
+ *  reading column renders the focused lesson as its arc (P7.3) — competency, the "expects" bookend,
+ *  the teaching phases, objectives, branded visuals, curated resources, and the closing self-check.
+ *  Selecting a rail entry highlights the place it refers to in the prose (its matched sentence, or
+ *  its phase); a prose cross-link highlights the rail entry. On narrow screens the rail collapses
+ *  behind a "Sources & checks" toggle that opens it as a drawer. */
 export function CourseReader({ course, focusRequest, onRegenerate }: CourseReaderProps) {
   // A successful regenerate swaps in the updated course locally until a different course is opened.
   const [regeneratedCourse, setRegeneratedCourse] = useState<Course | null>(null);
@@ -116,8 +117,12 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   const [activeIndex, setActiveIndex] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(false);
   const paneRef = useRef<HTMLDivElement>(null);
+  const railToggleRef = useRef<HTMLButtonElement>(null);
   const handledFocusSeq = useRef(0);
+  const reduceMotion = usePrefersReducedMotion();
 
   // Reset to the first lesson and drop any regenerate override when a different course is opened.
   useEffect(() => {
@@ -125,10 +130,11 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     setRegeneratedCourse(null);
   }, [course]);
   // On a lesson change: return to the top of the reading pane (scrollTo is optional-chained — jsdom
-  // doesn't implement it) and clear any stale regenerate error from the previous lesson.
+  // doesn't implement it), clear any stale regenerate error, and drop the cross-highlight selection.
   useEffect(() => {
     paneRef.current?.scrollTo?.({ top: 0 });
     setError(null);
+    setActiveClaimId(null);
   }, [activeIndex]);
 
   // Honour a Map drill-in once per request: jump to the lesson covering the requested concept. The
@@ -145,6 +151,33 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   // reset-on-course effect firing — keeps the focused index in range so `current` stays defined.
   const safeIndex = Math.min(activeIndex, Math.max(0, total - 1));
   const current = lessons[safeIndex];
+
+  const annotations = useMemo(
+    () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
+    [current, citations],
+  );
+  const activeAnnotation =
+    annotations.find((annotation) => annotation.id === activeClaimId) ?? null;
+
+  // Selecting a claim (from the rail or a prose cross-link) brings the place it refers to into view:
+  // its matched sentence when there is one, else its whole phase (the best-effort fallback).
+  useEffect(() => {
+    if (!activeAnnotation) return;
+    const pane = paneRef.current;
+    if (!pane) return;
+    const target =
+      activeAnnotation.matchedSentence !== null
+        ? pane.querySelector(`[data-claim-id="${activeAnnotation.id}"]`)
+        : pane.querySelector(`[data-phase="${activeAnnotation.phaseKey}"]`);
+    scrollIntoViewSafe(target, reduceMotion);
+  }, [activeAnnotation, reduceMotion]);
+
+  // The narrow-screen drawer: Esc closes it and returns focus to the toggle.
+  const closeRail = useCallback(() => {
+    setRailOpen(false);
+    railToggleRef.current?.focus();
+  }, []);
+  useEscapeKey(railOpen, closeRail);
 
   if (!current) {
     return (
@@ -172,6 +205,11 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     }
   };
 
+  const selectClaim = (id: string) => {
+    setActiveClaimId(id);
+    setRailOpen(true); // on narrow, a prose cross-link opens the drawer to reveal the entry
+  };
+
   return (
     <div className={styles.reader}>
       <ReaderOutline groups={groups} activeIndex={safeIndex} onSelect={setActiveIndex} />
@@ -193,9 +231,24 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
                 </p>
               )}
             </div>
-            <p className={`${styles.progress} mono`}>
-              Lesson {safeIndex + 1} of {total}
-            </p>
+            <div className={styles.headMeta}>
+              <p className={`${styles.progress} mono`}>
+                Lesson {safeIndex + 1} of {total}
+              </p>
+              {annotations.length > 0 && (
+                <button
+                  ref={railToggleRef}
+                  type="button"
+                  className={styles.railToggle}
+                  aria-expanded={railOpen}
+                  aria-controls="annotation-rail"
+                  onClick={() => setRailOpen((open) => !open)}
+                >
+                  Sources &amp; checks{" "}
+                  <span className={`mono ${styles.railCount}`}>{annotations.length}</span>
+                </button>
+              )}
+            </div>
           </header>
 
           {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
@@ -212,20 +265,30 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
 
           {PHASES.map(({ key, label, cue }) => {
             const segment = current.lesson.segments[key];
+            const phaseHighlighted =
+              activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
             return (
-              <section key={key} className={styles.phase} aria-label={label}>
+              <section
+                key={key}
+                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""}`}
+                aria-label={label}
+                data-phase={key}
+                data-active={phaseHighlighted ? "true" : undefined}
+              >
                 <div className={styles.phaseHead}>
+                  <p className="eyebrow">{cue}</p>
                   <h3 className={styles.phaseLabel}>{label}</h3>
-                  <p className={styles.phaseCue}>{cue}</p>
                 </div>
-                <p className={styles.prose}>{segment.prose}</p>
+                <LessonProse
+                  prose={segment.prose}
+                  sentenceMarks={sentenceMarksFor(annotations, key)}
+                  activeClaimId={activeClaimId}
+                  onSelectClaim={selectClaim}
+                />
                 {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
                 {segment.visuals.map((visual, visualIndex) => (
                   <VisualRenderer key={visualIndex} visual={visual} />
                 ))}
-                {segment.claims.length > 0 && (
-                  <LessonClaims claims={segment.claims} citations={citations} />
-                )}
                 {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
                     before P7.4 (no resources) renders nothing here. */}
                 {(segment.resources ?? []).length > 0 && (
@@ -278,6 +341,29 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
           )}
         </article>
       </div>
+
+      {/* The annotation rail: a static third column on wide screens, a toggled drawer on narrow.
+          One instance (no duplication) — the wrapper's class switches presentation. */}
+      <div
+        id="annotation-rail"
+        className={`${styles.railWrap} ${railOpen ? styles.railWrapOpen : ""}`}
+      >
+        <AnnotationRail
+          annotations={annotations}
+          activeClaimId={activeClaimId}
+          onSelect={setActiveClaimId}
+          onClose={() => setRailOpen(false)}
+          reduceMotion={reduceMotion}
+        />
+      </div>
+      {railOpen && (
+        <button
+          type="button"
+          className={styles.scrim}
+          aria-label="Close sources and checks"
+          onClick={() => setRailOpen(false)}
+        />
+      )}
     </div>
   );
 }

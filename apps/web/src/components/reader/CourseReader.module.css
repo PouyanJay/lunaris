@@ -1,9 +1,10 @@
 .reader {
   --outline-width: 248px;
+  --rail-width: 320px;
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-columns: var(--outline-width) 1fr;
+  grid-template-columns: var(--outline-width) minmax(0, 1fr) var(--rail-width);
   min-height: 0;
 }
 
@@ -14,7 +15,7 @@
 }
 
 .page {
-  max-width: 760px;
+  max-width: 720px;
   margin: 0 auto;
   padding: var(--space-8) var(--space-6) var(--space-16);
   display: flex;
@@ -44,10 +45,49 @@
   color: var(--text);
 }
 
+.headMeta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
 .progress {
   font-size: var(--text-xs);
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/* The drawer toggle — hidden while the rail is a static column (wide), shown on narrow. */
+.railToggle {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+
+.railToggle:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+
+.railToggle:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+.railCount {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
 .competency {
@@ -64,31 +104,29 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  scroll-margin-block: var(--space-12);
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur) var(--ease);
+}
+
+/* Phase-level highlight: the fallback target when a claim has no confident sentence match. */
+.phaseActive {
+  background: var(--accent-soft);
+  box-shadow: -3px 0 0 var(--accent-500);
+  margin-left: -3px;
+  padding-left: var(--space-3);
 }
 
 .phaseHead {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: 2px;
 }
 
 .phaseLabel {
-  font-size: var(--text-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--text);
-}
-
-.phaseCue {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.prose {
-  font-size: var(--text-base);
-  line-height: 1.7;
-  color: var(--text-secondary);
 }
 
 .nav {
@@ -118,6 +156,68 @@
   color: var(--text-muted);
   font-size: var(--text-sm);
   text-align: center;
+}
+
+/* The annotation rail wrapper: a static third column on wide screens. */
+.railWrap {
+  border-left: var(--border-width) solid var(--border);
+  background: var(--bg-subtle);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.scrim {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phase {
+    transition: none;
+  }
+}
+
+/* Below 1100px there isn't room for three columns — the rail collapses to a drawer. */
+@media (max-width: 1100px) {
+  .reader {
+    grid-template-columns: var(--outline-width) minmax(0, 1fr);
+  }
+
+  .railToggle {
+    display: inline-flex;
+  }
+
+  .railWrap {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(380px, 86vw);
+    z-index: var(--z-modal);
+    border-left: var(--border-width) solid var(--border-strong);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(100%);
+    transition: transform var(--dur) var(--ease-out);
+  }
+
+  .railWrapOpen {
+    transform: translateX(0);
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: var(--scrim);
+    border: none;
+    cursor: pointer;
+  }
+}
+
+@media (max-width: 1100px) and (prefers-reduced-motion: reduce) {
+  .railWrap {
+    transition: none;
+  }
 }
 
 @media (max-width: 720px) {
