@@ -51,18 +51,35 @@
 
 .markdown ul,
 .markdown ol {
-  padding-left: var(--space-5);
+  padding-left: var(--space-6);
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Nested lists tuck in a little further and tighten up. */
+.markdown li > ul,
+.markdown li > ol {
+  margin-top: var(--space-2);
   gap: var(--space-1);
 }
 
 .markdown li {
   line-height: 1.6;
+  padding-left: var(--space-1);
 }
 
-.markdown li::marker {
-  color: var(--text-muted);
+/* A light infographic touch on the markers — an accent chevron for bullets, accent mono numerals for
+   ordered lists (the accent stays a scalpel, only ever on the marker). */
+.markdown ul > li::marker {
+  content: "▸  ";
+  color: var(--accent-500);
+}
+
+.markdown ol > li::marker {
+  color: var(--accent-600);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* GFM task list checkboxes (read-only in lesson content). */
