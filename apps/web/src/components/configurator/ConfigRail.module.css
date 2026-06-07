@@ -9,6 +9,14 @@
   padding: var(--space-6) var(--space-5) var(--space-16);
 }
 
+/* The rail scrolls (overflow-y:auto), so its children must keep their natural height rather than be
+   compressed to fit. Without this, once the personalized clarifier overflows the rail, flexbox
+   shrinks the children — and the Advanced disclosure (an overflow:hidden panel, whose flex auto-min
+   is 0) collapses to its 2px border, hiding the search-depth control. flex-shrink:0 makes it scroll. */
+.rail > * {
+  flex-shrink: 0;
+}
+
 .head {
   display: flex;
   align-items: flex-start;

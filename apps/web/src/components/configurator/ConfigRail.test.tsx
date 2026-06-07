@@ -98,6 +98,18 @@ describe("ConfigRail", () => {
     expect(screen.getByRole("complementary", { name: /course setup/i })).toBeInTheDocument();
   });
 
+  it("keeps the Advanced (build) section present once the brief is ready", () => {
+    // Regression: the search-depth control must survive the brief loading — a learner who
+    // personalizes their topic must not lose the Standard/Thorough choice.
+    renderRail({ brief: ready() });
+
+    const advanced = screen.getByRole("button", { name: /advanced/i });
+    expect(advanced).toBeInTheDocument();
+    fireEvent.click(advanced);
+    expect(screen.getByRole("radio", { name: /standard/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /thorough/i })).toBeInTheDocument();
+  });
+
   it("exposes the search depth in the Advanced section and reports a change", () => {
     const onDepthChange = vi.fn();
     renderRail({ depth: "standard", onDepthChange });

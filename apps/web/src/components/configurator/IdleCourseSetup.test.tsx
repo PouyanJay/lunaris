@@ -87,6 +87,24 @@ describe("IdleCourseSetup", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
+  it("keeps the Advanced search-depth control usable after the brief is personalized", async () => {
+    // Regression for the reported bug: personalizing the topic (loading the brief + clarifier)
+    // must not drop the Standard/Thorough control from the Advanced section.
+    stubFetch({ ok: true, json: async () => makeBriefResponse() });
+    renderSetup();
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
+    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    await screen.findByText(/reach CLB 10/i); // brief is now ready, clarifier rendered
+
+    // The Advanced section is still present and its depth options are reachable.
+    const advanced = screen.getByRole("button", { name: /advanced/i });
+    expect(advanced).toBeInTheDocument();
+    fireEvent.click(advanced);
+    expect(screen.getByRole("radio", { name: /standard/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /thorough/i })).toBeInTheDocument();
+  });
+
   it("threads the chosen Thorough depth into the build", () => {
     const onGenerate = vi.fn();
     renderSetup({ onGenerate });
