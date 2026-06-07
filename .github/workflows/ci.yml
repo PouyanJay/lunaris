@@ -73,7 +73,12 @@ jobs:
           fetch-depth: 0
       - name: Fail if a secret-looking file is tracked
         run: |
-          if git ls-files | grep -E '(^|/)(\.env(\..+)?|.*\.pem|.*\.key|id_rsa)$'; then
+          # Real env/key files must never be tracked — but `.env.sample`/`.env.example` templates are fine.
+          tracked=$(git ls-files \
+            | grep -E '(^|/)(\.env(\.[^/]+)?|.*\.pem|.*\.key|id_rsa)$' \
+            | grep -vE '(^|/)\.env\.(sample|example|template)$' || true)
+          if [ -n "$tracked" ]; then
+            echo "$tracked"
             echo "::error::A secret-looking file is tracked in git — remove it and rotate the secret."
             exit 1
           fi
