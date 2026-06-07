@@ -14,7 +14,11 @@ from pathlib import Path
 import pytest
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage
-from lunaris_agent.coverage_critic import ICoverageCritic, StubCoverageCritic
+from lunaris_agent.coverage_critic import (
+    DeterministicCoverageCritic,
+    ICoverageCritic,
+    StubCoverageCritic,
+)
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.authoring import StubLessonReviser
 from lunaris_agent.harness.discovery import (
@@ -1182,6 +1186,48 @@ async def test_coverage_is_verified_at_finalize_before_the_run_completes(
     assert verified.run_id == "run-cov"
     assert verified.gap_count == 0
     assert course.status == CourseStatus.PUBLISHED
+
+
+async def test_an_unbuilt_competency_is_scoped_out_and_withheld_for_review(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    tmp_path: Path,
+) -> None:
+    # Coverage gate (CQ Phase 4.2, owner Q3): a competency the standard promised but no module
+    # builds is folded into the honest scope (excludes + scope_note) AND withholds publication
+    # (REVIEW), rather than shipping a course that silently drops part of the standard. The research
+    # stage grounds the competency; the stub plan tags no module with it, so the critic flags it.
+    # Arrange
+    store = CourseStore(tmp_path)
+    research = StandardResearch(
+        status=ResearchStatus.COMPLETE,
+        competencies=["adapt register live in speech"],
+        sources=[ResearchSource(url="https://www.canada.ca/clb-10", trust_tier=TrustTier.OFFICIAL)],
+    )
+    builder = _builder(
+        _delegating_script(scripted_model),
+        store,
+        researcher=StubStandardResearcher(research),
+        coverage_critic=DeterministicCoverageCritic(),
+    )
+
+    # Act
+    course = await builder.run(
+        "demo", course_id="course-gap", run_id="run-gap", progress=progress_sink
+    )
+
+    # Assert — the unbuilt competency is named in the honest scope (note + an excludes line), the
+    # course is withheld for review, the stage reported one gap (run_id-correlated), round-tripped.
+    assert course.scope is not None
+    assert "adapt register live in speech" in course.scope_note
+    assert any("adapt register live in speech" in line for line in course.scope.excludes)
+    assert course.status == CourseStatus.REVIEW
+    verified = next(e for e in progress_sink.events if e.stage is ProgressStage.COVERAGE_VERIFIED)
+    assert verified.run_id == "run-gap"
+    assert verified.gap_count == 1
+    reloaded = store.load("course-gap")
+    assert reloaded.status == CourseStatus.REVIEW
+    assert reloaded.scope == course.scope
 
 
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:

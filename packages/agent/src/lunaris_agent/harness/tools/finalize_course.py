@@ -56,21 +56,65 @@ def _append_coverage_caveat(caveat: str, gaps: list[str]) -> str:
     return f"{caveat} {note}".strip()
 
 
-def _apply_quality_gates(course: Course, issues: list[str], draft: CourseDraft) -> None:
+# How many uncovered competencies to name before the phrase rolls up to "and N more" — enough to be
+# specific, capped so the scope line stays scannable.
+_MAX_UNCOVERED_NAMES_LISTED = 4
+
+
+def _uncovered_names(report: CoverageReport, limit: int = _MAX_UNCOVERED_NAMES_LISTED) -> str:
+    """The unbuilt competencies as one honest, bounded phrase (caps a long list so it stays
+    scannable).
+    """
+    names = [gap.competency for gap in report.gaps]
+    if len(names) <= limit:
+        return ", ".join(names)
+    return ", ".join(names[:limit]) + f", and {len(names) - limit} more"
+
+
+def _scope_out_uncovered_competencies(course: Course, report: CoverageReport) -> None:
+    """Fold the coverage gaps into the honest scope (CQ Phase 4.2, owner Q3): a scope_note sentence
+    + an excludes line naming the promised competencies the course does not fully build, so a gap
+    becomes an honest scope cut the reader sees rather than a silent omission. No-op when clean.
+
+    ``scope_note`` is the pinned honesty guarantee — it always carries the verbatim names. The
+    excludes line is reader copy the key-gated scope polisher may later reword (it preserves the
+    line count, not its wording), so the named disclosure lives in scope_note regardless.
+    """
+    if report.is_clean:
+        return
+    listed = _uncovered_names(report)
+    note = f"It does not fully build some promised competencies: {listed}."
+    course.scope_note = f"{course.scope_note} {note}".strip()
+    if course.scope is not None:
+        line = f"Does not fully build: {listed}."
+        course.scope = course.scope.model_copy(update={"excludes": [*course.scope.excludes, line]})
+
+
+def _apply_quality_gates(
+    course: Course, issues: list[str], draft: CourseDraft, coverage_report: CoverageReport
+) -> None:
     """Set the course's scope_note + publish status from the critic, honesty, and coverage gates.
 
     Honesty gate (CQ Phase 1.6): an ungrounded research-needing goal carries an honest caveat and is
     withheld; a PARTIAL one still carries its caveat to the learner but may publish — so scope_note
     is set unconditionally (plus any resource gap, T5); only ``needs_review`` gates publication.
     The authoring loop's triage (``draft.needs_review``) withholds PUBLISHED even when the critic is
-    clean. The course arrives in REVIEW; this promotes it to PUBLISHED only when every gate passes.
+    clean. Coverage gate (CQ Phase 4.2): any promised competency the course does not build is folded
+    into the honest scope AND withholds publication. The course arrives in REVIEW; this promotes it
+    to PUBLISHED only when every gate passes.
     """
     honesty = assess_grounding_honesty(draft.brief)
     course.scope_note = _append_coverage_caveat(honesty.caveat, draft.resource_coverage_gaps)
     # The scope-realism band (CQ Phase 3.1): an honest effort/timeline + does/doesn't framing,
     # computed from the brief's abstractions so the reader can set expectations up front.
     course.scope = estimate_scope(course, draft.brief)
-    if not issues and not draft.needs_review and not honesty.needs_review:
+    _scope_out_uncovered_competencies(course, coverage_report)
+    if (
+        not issues
+        and not draft.needs_review
+        and not honesty.needs_review
+        and coverage_report.is_clean
+    ):
         course.status = CourseStatus.PUBLISHED
 
 
@@ -153,12 +197,11 @@ def make_finalize_course_tool(
             logger.info("agent_course_illustrated", run_id=draft.run_id, visuals_placed=placed)
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
-        _apply_quality_gates(course, issues, draft)
-        # Coverage gate (CQ Phase 4.2): every promised competency must be materially built. A gap is
-        # folded into the honest scope + flags review (T4); a clean report leaves the course as-is.
-        # Runs after the scope band exists so it can extend it; before the wording polish so any
-        # scoped-out competency reads in the same voice.
+        # Coverage gate (CQ Phase 4.2): every promised competency must be materially built. The
+        # report is gathered before the quality gates so a gap can both extend the scope band and
+        # withhold publication; the stage is emitted after, once the band reflects it.
         report = await coverage_critic.review(course, brief=draft.brief)
+        _apply_quality_gates(course, issues, draft, report)
         await draft.progress.emit(
             ProgressStage.COVERAGE_VERIFIED,
             _coverage_message(report),
