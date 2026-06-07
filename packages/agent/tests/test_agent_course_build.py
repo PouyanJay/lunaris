@@ -447,12 +447,12 @@ async def test_scope_band_threads_from_the_brief_to_the_finalized_course(
     # Act
     course = await builder.run("demo", course_id="course-scope", run_id="run-scope")
 
-    # Assert — a scope band reached the finalized course (effort + at least one delivers/excludes
-    # line) and round-trips through the store unchanged.
+    # Assert — a scope band reached the finalized course, the goal_type=CREDENTIAL carried all the
+    # way to the excludes content (not just a non-empty field), and it round-trips unchanged.
     assert course.scope is not None
     assert course.scope.effort
     assert course.scope.delivers
-    assert course.scope.excludes
+    assert "guarantee" in " ".join(course.scope.excludes).lower()
     assert store.load("course-scope").scope == course.scope
 
 
