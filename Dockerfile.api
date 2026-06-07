@@ -20,14 +20,15 @@ ENV UV_PYTHON_PREFERENCE=only-system \
 
 WORKDIR /app
 
-# All workspace members must be present for `--all-packages` (bare `uv sync` prunes workspace deps).
-# `apps/web` and tests are excluded via .dockerignore, so the context stays lean.
+# Copy the whole workspace (members must be present for uv to resolve), then install ONLY the API's
+# dependency closure (`--package lunaris-api`): lunaris-agent/runtime/grounding/graph + fastapi/
+# uvicorn — not the dev-only `eval` package. `apps/web` and tests are excluded via .dockerignore.
 COPY pyproject.toml uv.lock ./
 COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --all-packages --no-dev
+    uv sync --frozen --package lunaris-api --no-dev
 
 # ── runtime: slim, non-root, venv on PATH ────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
