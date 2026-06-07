@@ -314,7 +314,8 @@ class CourseService:
 
     async def _purge_course_assets(self, course_id: str) -> None:
         """Remove the stored course + run row + build-event log; not-found if neither existed."""
-        course_deleted = self._store.delete(course_id)
+        # Off-load the (possibly network-backed) delete so the event loop isn't blocked.
+        course_deleted = await asyncio.to_thread(self._store.delete, course_id)
         row_deleted = (
             await self._run_store.delete(course_id=course_id)
             if self._run_store is not None

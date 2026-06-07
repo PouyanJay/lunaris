@@ -192,7 +192,8 @@ class Orchestrator:
         """
         bind_run_id(run_id)
         try:
-            course = self._store.load(course_id)
+            # Off-load the (possibly network-backed) load so the event loop isn't blocked.
+            course = await asyncio.to_thread(self._store.load, course_id)
         except FileNotFoundError:
             return None
 

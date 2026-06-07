@@ -9,6 +9,8 @@
 -- Single-tenant for now (server-side, service_role) — there is no end-user auth model in Phase 1.
 -- Phase 2 (multi-tenancy) adds a `user_id` column + per-user RLS policies; this table is shaped so
 -- that is an additive change. Mirrors the course_runs pattern.
+--
+-- To reverse: drop table if exists public.courses;  (no data migration — the file store still works)
 create table if not exists public.courses (
     id          text primary key,            -- the course_id (uuid4().hex) GET /api/courses/{id} re-opens
     payload     jsonb not null,              -- the camelCase Course (model_dump_json by_alias)

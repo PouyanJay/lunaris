@@ -119,12 +119,38 @@ def test_load_raises_not_found_when_absent() -> None:
         store.load("ghost")
 
 
-def test_delete_reports_whether_a_row_was_removed() -> None:
+def test_save_then_load_round_trips_through_the_payload() -> None:
+    # Arrange — save into one fake (capturing the upserted payload), then load it back via another.
+    course = Course(id="abc", topic="graphs", goal_concept="kc-9")
+    saver = _FakeClient()
+    _store_with(saver).save(course)
+    upserted_payload = next(call[1] for call in saver.calls if call[0] == "upsert")["payload"]
+
+    # Act — the load reads exactly what save wrote (proves the save dump ↔ load validate agree).
+    loaded = _store_with(_FakeClient(select_data=[{"payload": upserted_payload}])).load("abc")
+
+    # Assert
+    assert loaded == course
+
+
+def test_delete_returns_true_when_a_row_was_removed() -> None:
     # Arrange — an exact-count delete that removed one row.
-    store = _store_with(_FakeClient(delete_count=1))
+    client = _FakeClient(delete_count=1)
+    store = _store_with(client)
 
     # Act
     removed = store.delete("abc")
 
-    # Assert — a count="exact" delete scoped to the id; True because a row was removed.
+    # Assert — a count="exact" delete on `courses` scoped to the id; True because a row was removed.
     assert removed is True
+    assert ("table", "courses") in client.calls
+    assert ("delete", "exact") in client.calls
+    assert ("eq", "id", "abc") in client.calls
+
+
+def test_delete_returns_false_when_no_row_exists() -> None:
+    # Arrange — nothing matched the id.
+    store = _store_with(_FakeClient(delete_count=0))
+
+    # Act / Assert — idempotent: a no-op delete reports False (caller answers 404, not 204).
+    assert store.delete("ghost") is False

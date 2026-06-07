@@ -64,7 +64,13 @@ class SupabaseCourseStore:
 
     def load(self, course_id: str) -> Course:
         client = self._ensure_client()
-        response = client.table(_TABLE).select("payload").eq("id", course_id).limit(1).execute()  # type: ignore[attr-defined]
+        response = (
+            client.table(_TABLE)  # type: ignore[attr-defined]
+            .select("payload")
+            .eq("id", course_id)
+            .limit(1)
+            .execute()
+        )
         rows = response.data or []
         if not rows:
             # The store-agnostic not-found signal the API service catches (the file store raises the

@@ -6,6 +6,7 @@ from pathlib import Path
 from lunaris_api.config import Settings
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.run_registry import RunRegistry
+from lunaris_api.service import CourseService
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryRunEventStore,
@@ -24,7 +25,7 @@ def _settings(*, supabase: bool) -> Settings:
     )
 
 
-def _service_for(settings: Settings):
+def _service_for(settings: Settings) -> CourseService:
     return get_course_service(
         settings=settings,
         run_store=InMemoryRunStore(),

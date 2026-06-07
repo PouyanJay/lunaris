@@ -212,8 +212,8 @@ def make_finalize_course_tool(
         # it). None (the no-key path) ships the deterministic band unchanged.
         if scope_polisher is not None and course.scope is not None:
             course.scope = await scope_polisher.polish(course.scope, brief=draft.brief)
-        # The store's save is synchronous (file I/O, or a blocking supabase-py call once it's the
-        # Postgres store); off-load it so the agent's event loop isn't blocked during the write.
+        # The store's save is synchronous (file I/O for the file store, a blocking supabase-py call
+        # for the Postgres store); off-load it so the agent's event loop isn't blocked on the write.
         await asyncio.to_thread(store.save, course)
         draft.course = course
         logger.info(
