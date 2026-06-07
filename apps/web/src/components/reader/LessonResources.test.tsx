@@ -36,6 +36,30 @@ describe("LessonResources", () => {
     expect(screen.getByText("82%")).toBeInTheDocument();
   });
 
+  it("plays a YouTube link in-reader even when its kind is mislabeled 'article'", () => {
+    // The curator can mislabel a youtube.com link as an article; the reader must still recognise the
+    // URL as a video — a play affordance, not a READ card — and surface "video" as the kind word.
+    render(
+      <LessonResources
+        resources={[
+          makeResource({
+            kind: "article",
+            title: "Editing for register and tone",
+            url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            source: "youtube.com",
+            duration: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /play video: editing for register and tone/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("video")).toBeInTheDocument();
+    expect(screen.queryByText("article")).not.toBeInTheDocument();
+  });
+
   it("shows a video's runtime and omits it for non-video resources", () => {
     // Arrange / Act — a video (with duration) and an article (without).
     const { rerender } = render(

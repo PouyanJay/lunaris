@@ -25,6 +25,7 @@ from .parser import CurationChoice, parse_curation
 from .prompt import build_curation_prompt
 from .search_query import SearchQuery
 from .translator import IQueryTranslator
+from .youtube import is_youtube_url
 
 logger = structlog.get_logger()
 
@@ -232,8 +233,11 @@ class ClaudeResourceCurator:
 
     @staticmethod
     def _result_to_candidate(result: SearchResult, search_query: SearchQuery) -> _Candidate:
+        # A youtube link is a video whatever kind the query asked for — reclassify it so it renders
+        # + plays as a video, not a "READ"/article card (the web reader mirrors this off the URL).
+        kind = ResourceKind.VIDEO if is_youtube_url(result.url) else search_query.kind
         return _Candidate(
-            kind=search_query.kind,
+            kind=kind,
             url=result.url,
             title=result.title,
             source=host(result.url),

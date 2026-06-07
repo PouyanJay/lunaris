@@ -206,6 +206,35 @@ async def test_curate_judges_blind_to_trust_and_stamps_provenance() -> None:
         assert tier not in prompt
 
 
+async def test_curate_forces_video_kind_for_a_youtube_search_result() -> None:
+    # Arrange — a youtube link arrives under a non-video (article) query. The deterministic classifier
+    # must override the query's kind so the reader plays it instead of rendering a READ/ARTICLE card.
+    youtube = SearchResult(
+        url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        title="Editing for register and tone",
+        snippet="annotated examples of register and tone shifts",
+    )
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "demonstrate", "why": "w", "credibility": 0.8}]}'
+    )
+    curator = ClaudeResourceCurator(
+        judge,
+        StubSearchProvider([youtube]),
+        StubVideoSource(),
+        translator=_OneQueryTranslator(
+            SearchQuery(kind=ResourceKind.ARTICLE, query="register and tone editing")
+        ),
+    )
+
+    # Act
+    curated = await curator.curate(_module(), _brief())
+
+    # Assert — the youtube result is reclassified VIDEO despite the article query.
+    kept = curated.activate + curated.demonstrate + curated.apply + curated.integrate
+    assert len(kept) == 1
+    assert kept[0].kind is ResourceKind.VIDEO
+
+
 async def test_curate_degrades_to_empty_without_calling_the_judge_when_no_candidates() -> None:
     # Arrange — empty search + empty video source (the no-key / nothing-found path).
     judge = _FakeJudge("{}")

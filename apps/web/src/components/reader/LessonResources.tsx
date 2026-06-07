@@ -1,4 +1,4 @@
-import type { Resource } from "../../types/course";
+import type { Resource, ResourceKind } from "../../types/course";
 import { SourceTrust } from "../primitives/SourceTrust";
 import { ResourceThumb } from "./ResourceThumb";
 import { VideoFacade } from "./VideoFacade";
@@ -9,10 +9,18 @@ interface LessonResourcesProps {
   resources: Resource[];
 }
 
+/** The kind a resource should *render* as: a recognisable YouTube URL is always a video, whatever the
+ *  curator labelled it (a mislabeled `kind: "article"` on a youtube.com link must still read + play as
+ *  a video, not a "READ" card). Non-YouTube resources keep their authored kind. */
+function effectiveKind(resource: Resource): ResourceKind {
+  return youTubeId(resource.url) !== null ? "video" : resource.kind;
+}
+
 /** A YouTube video plays inside the reader (facade → nocookie embed + lightbox); any other resource
- *  keeps the decorative thumbnail, with its title link as the action. */
+ *  keeps the decorative thumbnail, with its title link as the action. Keyed off the URL, not the
+ *  authored kind, so a mislabeled youtube link still plays. */
 function ResourceMedia({ resource }: { resource: Resource }) {
-  const videoId = resource.kind === "video" ? youTubeId(resource.url) : null;
+  const videoId = youTubeId(resource.url);
   if (videoId) return <VideoFacade videoId={videoId} title={resource.title} />;
   return <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />;
 }
@@ -46,7 +54,7 @@ export function LessonResources({ resources }: LessonResourcesProps) {
               </div>
               {resource.why && <p className={styles.why}>{resource.why}</p>}
               <div className={styles.meta}>
-                <span className={`mono ${styles.kind}`}>{resource.kind}</span>
+                <span className={`mono ${styles.kind}`}>{effectiveKind(resource)}</span>
                 {resource.source && (
                   <span className={`mono ${styles.source}`}>{resource.source}</span>
                 )}
