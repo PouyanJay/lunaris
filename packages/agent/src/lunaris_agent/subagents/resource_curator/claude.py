@@ -12,6 +12,8 @@ from lunaris_grounding import (
     VideoResult,
     classify_domain,
     host,
+    passes_video_guards,
+    video_quality_score,
 )
 from lunaris_runtime.resilience import build_anthropic_chat_model, retry_on_rate_limit
 from lunaris_runtime.schema import CourseBrief, Modality, Module, Resource, ResourceKind, TrustTier
@@ -36,6 +38,17 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _blend_credibility(judge: float, quality: float | None) -> float:
+    """Blend the judge's content credibility with the deterministic metric quality (CQ Phase 2 T4).
+
+    Content is primary, so the judge dominates; the video metric is a bounded weight that nudges it.
+    Candidates with no metric (non-video, or unenriched) keep the judge's score unchanged.
+    """
+    if quality is None:
+        return judge
+    return round(min(1.0, 0.7 * judge + 0.3 * quality), 2)
+
+
 @dataclass(frozen=True)
 class _Candidate:
     """A found resource candidate + its deterministically-classified trust tier, awaiting the judge.
@@ -56,6 +69,7 @@ class _Candidate:
     snippet: str = ""
     good_result_looks_like: str = ""
     level_hint: str = ""
+    quality: float | None = None  # deterministic video metric score (T4); None for non-video
 
 
 class ClaudeResourceCurator:
@@ -172,8 +186,12 @@ class ClaudeResourceCurator:
                     snippet=video.description,
                     good_result_looks_like=search_query.good_result_looks_like,
                     level_hint=search_query.level_hint,
+                    quality=video_quality_score(video),
                 )
+                # Drop the unplayable up front (the gate's hard guard, T4); soft quality signals
+                # ride along as `quality` and weight the kept resource's credibility.
                 for video in videos
+                if passes_video_guards(video)
             ]
         results = await self._safe_search(search_query.query)
         return [
@@ -240,7 +258,8 @@ class ClaudeResourceCurator:
             source=candidate.source,
             why=why,
             trust_tier=candidate.trust_tier,
-            credibility=credibility,
+            # Blend the judge's content credibility with the deterministic video metric (T4).
+            credibility=_blend_credibility(credibility, candidate.quality),
             fetched_at=fetched_at,
             duration=candidate.duration or None,
             author=candidate.author or None,

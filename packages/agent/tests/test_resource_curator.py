@@ -262,6 +262,41 @@ async def test_curate_over_retrieves_and_feeds_the_query_content_signal_to_the_j
     assert "C1" in prompt  # the level hint
 
 
+async def test_curate_drops_unplayable_videos_and_blends_the_metric_into_credibility() -> None:
+    # Arrange — two videos: one non-embeddable (dropped by the guard), one enriched + embeddable.
+    dead = VideoResult(url="https://youtu.be/dead", title="Dead", embeddable=False)
+    good = VideoResult(
+        url="https://youtu.be/good",
+        title="Good",
+        channel="Chan",
+        duration="12:00",
+        duration_seconds=720,
+        has_captions=True,
+        embeddable=True,
+    )
+    # The judge can only keep index 0 — i.e. the survivor after the guard drops the dead one.
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "demonstrate", "why": "w", "credibility": 1.0}]}'
+    )
+    curator = ClaudeResourceCurator(
+        judge,
+        StubSearchProvider(),
+        StubVideoSource([dead, good]),
+        translator=_OneQueryTranslator(SearchQuery(kind=ResourceKind.VIDEO, query="q")),
+        clock=lambda: "2026-06-03T00:00:00Z",
+    )
+
+    # Act
+    curated = await curator.curate(_module(), _brief())
+
+    # Assert — only the playable video reached the judge + was kept (the dead one was guarded out).
+    assert len(curated.demonstrate) == 1
+    kept = curated.demonstrate[0]
+    assert kept.url == "https://youtu.be/good"
+    # The deterministic metric blended into the judge's 1.0 (so the stamped credibility is < 1.0).
+    assert 0.0 < kept.credibility < 1.0
+
+
 async def test_curate_respects_the_resource_budget() -> None:
     # Arrange — two candidates the judge keeps, but a budget of one resource.
     video = VideoResult(url="https://youtu.be/a", title="A")

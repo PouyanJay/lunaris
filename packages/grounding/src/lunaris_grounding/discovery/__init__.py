@@ -20,6 +20,7 @@ from .stub_search_provider import StubSearchProvider
 from .stub_video_source import StubVideoSource
 from .tavily_search_provider import TavilySearchProvider
 from .trafilatura_content_extractor import TrafilaturaContentExtractor
+from .video_quality import passes_video_guards, video_quality_score
 from .video_result import VideoResult
 from .video_source import IVideoSource
 from .youtube_video_source import YouTubeVideoSource
@@ -42,5 +43,7 @@ __all__ = [
     "YouTubeVideoSource",
     "classify_domain",
     "host",
+    "passes_video_guards",
     "research_budget_for_brief",
+    "video_quality_score",
 ]
