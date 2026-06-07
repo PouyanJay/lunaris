@@ -30,6 +30,9 @@ description the app draws with its own components. Use exactly ONE shape, discri
 - timeline: events [{{label, detail?, when?}}]
 - before-after: before {{label, content}} + after {{label, content}} — an interactive toggle \
 between two states; choose it for a transformation (naive→optimised, before→after, problem→solution)
+- worked-example: literal {{label, content}} + improved {{label, content}} + note? — a naive \
+phrasing beside its improved rewrite with a note on why it is better; choose it for a concrete \
+"here is the weak version, the strong version, and why" teaching example
 
 Then add a ```mermaid block with the equivalent diagram as a fallback. Keep both to the
 essential nodes (signaling — highlight the key path)."""

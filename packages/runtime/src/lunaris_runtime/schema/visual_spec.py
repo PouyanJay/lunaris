@@ -111,9 +111,30 @@ class BeforeAfterSpec(CourseModel):
     after: TransformSide
 
 
+# ── worked-example: a literal phrasing shown against its improved rewrite, plus the why ───────────
+
+
+class WorkedExampleSpec(CourseModel):
+    type: Literal["worked-example"] = "worked-example"
+    title: str | None = None
+    # The literal/naive phrasing and the improved rewrite, shown side by side so the learner reads
+    # the contrast directly (unlike before-after, which the reader toggles). Both required — a
+    # one-sided worked example teaches nothing, so the union rejects it. Reuses TransformSide for
+    # parity with before-after; worked examples are prose, so a side's `language` is typically null.
+    literal: TransformSide
+    improved: TransformSide
+    note: str | None = None  # why the rewrite is better (register, tone, precision)
+
+
 # A type alias, not a class — for runtime checks switch on `.type` (or isinstance against the
 # concrete variants), never `isinstance(spec, VisualSpec)`.
 VisualSpec = Annotated[
-    FlowSpec | TreeSpec | StepsSpec | ComparisonSpec | TimelineSpec | BeforeAfterSpec,
+    FlowSpec
+    | TreeSpec
+    | StepsSpec
+    | ComparisonSpec
+    | TimelineSpec
+    | BeforeAfterSpec
+    | WorkedExampleSpec,
     Field(discriminator="type"),
 ]

@@ -74,6 +74,7 @@ from .visual_spec import (
     TreeNode,
     TreeSpec,
     VisualSpec,
+    WorkedExampleSpec,
 )
 
 __all__ = [
@@ -167,4 +168,5 @@ __all__ = [
     "Visual",
     "VisualKind",
     "VisualSpec",
+    "WorkedExampleSpec",
 ]

@@ -151,6 +151,8 @@ function specSummary(spec: VisualSpec): string {
       return `timeline · ${plural(spec.events.length, "event")}`;
     case "before-after":
       return "before/after · 2 sides";
+    case "worked-example":
+      return "worked example · literal vs improved";
   }
 }
 

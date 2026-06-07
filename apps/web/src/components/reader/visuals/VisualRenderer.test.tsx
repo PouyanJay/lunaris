@@ -112,6 +112,33 @@ describe("VisualRenderer", () => {
     expect(screen.getByText("Child")).toBeInTheDocument();
   });
 
+  it("renders a worked-example spec as a literal/improved pair with its note", () => {
+    // Arrange
+    const spec: VisualSpec = {
+      type: "worked-example",
+      title: "Worked Example 1",
+      literal: { label: "Literal", content: "We will work very hard on this.", language: null, caption: null },
+      improved: {
+        label: "With collocation",
+        content: "We will do the heavy lifting on this.",
+        language: null,
+        caption: null,
+      },
+      note: "'do the heavy lifting' suits a professional tone.",
+    };
+
+    // Act
+    render(<VisualRenderer visual={makeVisual(spec)} />);
+
+    // Assert — the caption title, both labelled sides, and the explanatory note all render.
+    expect(screen.getByText("Worked Example 1")).toBeInTheDocument();
+    expect(screen.getByText("Literal")).toBeInTheDocument();
+    expect(screen.getByText("We will work very hard on this.")).toBeInTheDocument();
+    expect(screen.getByText("With collocation")).toBeInTheDocument();
+    expect(screen.getByText("We will do the heavy lifting on this.")).toBeInTheDocument();
+    expect(screen.getByText(/suits a professional tone/)).toBeInTheDocument();
+  });
+
   it("falls back to the diagram source when there is no spec", () => {
     // Arrange / Act
     render(<VisualRenderer visual={makeVisual(null, "graph TD\n  A-->B")} />);
