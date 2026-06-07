@@ -22,10 +22,12 @@ from lunaris_grounding import (
     Verifier,
 )
 from lunaris_runtime.schema import (
+    Assessment,
     BloomLevel,
     Citation,
     CourseBrief,
     DetailDepth,
+    Item,
     LanguageStyle,
     Level,
     Module,
@@ -34,7 +36,7 @@ from lunaris_runtime.schema import (
 )
 
 
-def _module(*, competency: str | None = None) -> Module:
+def _module(*, competency: str | None = None, assessment: Assessment | None = None) -> Module:
     return Module(
         id="m0",
         title="Listening for intent",
@@ -47,6 +49,7 @@ def _module(*, competency: str | None = None) -> Module:
                 kc="intent",
             )
         ],
+        assessment=assessment or Assessment(),
         difficulty_index=0.6,
     )
 
@@ -97,6 +100,45 @@ def test_build_authoring_prompt_personalizes_from_a_researched_brief() -> None:
     assert "everyday conversation" in prompt  # the frontier the arc must sit above
     assert "sophisticated" in prompt.lower()  # the requested register
     assert "in-depth" in prompt.lower() or "in_depth" in prompt.lower()
+
+
+def test_build_authoring_prompt_authors_backward_from_the_summative_checks() -> None:
+    # Backward design (CQ Phase 4.1): the module's summative checks + gradeable pass criteria are
+    # put in front of the author, with the instruction to author the lesson so a learner can pass.
+    # Arrange
+    module = _module(
+        assessment=Assessment(
+            items=[
+                Item(
+                    id="m0-o0-i0",
+                    prompt="Decode the speaker's unstated request in this clip.",
+                    objective="intent",
+                    pass_criterion="Names the implied request and the cue that signals it.",
+                )
+            ]
+        )
+    )
+
+    # Act
+    prompt = build_authoring_prompt(module)
+
+    # Assert — the check prompt, its gradeable bar, and the backward-design instruction all reach
+    # the author (the instruction text is pinned, so the section can't silently drop).
+    assert "Decode the speaker's unstated request in this clip." in prompt
+    assert "Names the implied request and the cue that signals it." in prompt
+    assert "can PASS these summative checks" in prompt
+
+
+def test_build_authoring_prompt_omits_the_checks_section_without_assessment() -> None:
+    # A module with no assessment items (legacy / pre-P4) adds no checks section.
+    # Arrange
+    module = _module()  # assessment defaults to Assessment() → items=[]
+
+    # Act
+    prompt = build_authoring_prompt(module)
+
+    # Assert — no dangling "summative checks" header in the plain arc.
+    assert "summative check" not in prompt.lower()
 
 
 def test_build_authoring_prompt_is_generic_without_a_brief() -> None:

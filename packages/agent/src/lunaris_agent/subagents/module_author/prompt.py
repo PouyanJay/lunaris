@@ -73,6 +73,25 @@ _GROUNDING_NOTE = (
 )
 
 
+# Backward design (CQ Phase 4.1): the module's summative checks + their gradeable pass criteria are
+# put in front of the author so the lesson is written TOWARD passing them — the assessment-first
+# direction — rather than covering the topic and hoping the check is satisfied. Only rendered when
+# the curriculum carried items (a pre-P4 / legacy module simply omits the section). ``{checks}`` is
+# the pre-formatted output of ``_checks_lines``.
+_CHECKS_NOTE = (
+    "Author the lesson so a learner who studies it can PASS these summative checks — write toward "
+    "clearing each gradeable bar, not merely covering the topic:\n{checks}"
+)
+
+
+def _checks_lines(module: Module) -> str:
+    return "\n".join(
+        f"- {item.prompt}"
+        + (f"\n  Passes when: {item.pass_criterion}" if item.pass_criterion else "")
+        for item in module.assessment.items
+    )
+
+
 def _revision_note(cut_claims: list[str]) -> str:
     listed = "\n".join(f"- {claim}" for claim in cut_claims)
     return (
@@ -102,6 +121,10 @@ def build_authoring_prompt(
     re-grounds them while keeping the arc intact. With ``grounded_evidence`` (CQ Phase 1.5) the
     retrieved corpus evidence is put in front of the author so it writes claims that evidence
     supports, rather than asserting from memory and being cut afterward.
+
+    Backward design (CQ Phase 4.1): when the module carries assessment items, their summative-check
+    prompts + gradeable pass criteria are put in front of the author so the lesson is written TOWARD
+    passing them (assessment-first), not topic-first. A pre-P4 module with no items omits it.
     """
     sections = [_HEADER.format(title=module.title)]
 
@@ -118,6 +141,8 @@ def build_authoring_prompt(
 
     objectives = "\n".join(f"- {objective.statement}" for objective in module.objectives)
     sections.append(f"Learning objectives:\n{objectives}")
+    if module.assessment.items:
+        sections.append(_CHECKS_NOTE.format(checks=_checks_lines(module)))
     sections.append(_ARC_BODY)
 
     if frontier:
