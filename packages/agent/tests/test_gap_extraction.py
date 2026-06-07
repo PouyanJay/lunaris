@@ -13,6 +13,7 @@ from lunaris_agent.harness.tools import make_extract_concepts_tool
 from lunaris_agent.subagents.concept_extractor import Extraction, build_extraction_prompt
 from lunaris_runtime.schema import (
     BloomLevel,
+    CompetencyArea,
     CourseBrief,
     KnowledgeComponent,
     Level,
@@ -106,6 +107,30 @@ def test_build_extraction_prompt_grounds_in_researched_competencies() -> None:
     # is the standard's actual competencies rather than the model's memory of them.
     assert "hear implied intent in speech" in prompt
     assert "read authorial stance" in prompt
+
+
+def test_build_extraction_prompt_presents_the_competency_areas() -> None:
+    # Arrange — a non-novice brief whose research grounded a STRUCTURED framework (CQ Phase 1.3).
+    brief = CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10",
+        target_level=Level.ADVANCED,
+        research=StandardResearch(
+            status=ResearchStatus.COMPLETE,
+            areas=[
+                CompetencyArea(name="Listening", competencies=["hear implied intent in speech"])
+            ],
+            sources=[ResearchSource(url="https://www.canada.ca/clb-10")],
+        ),
+    )
+
+    # Act
+    prompt = build_extraction_prompt("English", brief, ["the alphabet"])
+
+    # Assert — the area name AND its descriptor reach the extractor, so the KC spine is proposed to
+    # cover the standard's real areas rather than the model's memory.
+    assert "Listening" in prompt
+    assert "hear implied intent in speech" in prompt
 
 
 def test_build_extraction_prompt_omits_competency_grounding_without_research() -> None:

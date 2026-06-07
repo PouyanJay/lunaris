@@ -54,11 +54,12 @@ start at their edge (Vygotsky's ZPD). For each KC give:
 
 The single most advanced KC — the goal itself — is the goal."""
 
-# Appended to the gap prompt when research grounded the standard's real competencies (P7.2): the KCs
-# should COVER these rather than the model's memory of what the target requires.
+# Appended to the gap prompt when research grounded the standard's real competency framework (P7.2;
+# CQ Phase 1.3 presents the structured AREAS): the KCs should COVER the standard's areas/descriptors
+# rather than the model's memory of what the target requires.
 _RESEARCH_GROUNDING = (
-    "\n\nThese researched competencies define the target — propose KCs that cover them, and do not "
-    "invent competencies beyond what they and the goal imply:\n{competencies}"
+    "\n\nThese researched competency areas define the target — propose KCs that cover their "
+    "descriptors, and do not invent competencies beyond what they and the goal imply:\n{framework}"
 )
 
 
@@ -66,8 +67,7 @@ def _with_research_grounding(body: str, brief: CourseBrief) -> str:
     research = brief.research
     if research is None or not research.competencies:
         return body
-    competencies = "\n".join(f"- {competency}" for competency in research.competencies)
-    return body + _RESEARCH_GROUNDING.format(competencies=competencies)
+    return body + _RESEARCH_GROUNDING.format(framework=research.grounding_outline())
 
 
 def build_extraction_prompt(topic: str, brief: CourseBrief | None, frontier: list[str]) -> str:

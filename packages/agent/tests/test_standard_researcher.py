@@ -237,6 +237,32 @@ def test_standard_research_derives_flat_competencies_from_areas() -> None:
     assert research.competencies == ["infer intent", "track stance"]
 
 
+def test_grounding_outline_renders_areas_with_descriptors() -> None:
+    # Arrange — a structured framework (CQ Phase 1.3).
+    research = StandardResearch(
+        status=ResearchStatus.PARTIAL,
+        areas=[CompetencyArea(name="Listening", competencies=["infer intent", "track stance"])],
+    )
+
+    # Act
+    outline = research.grounding_outline()
+
+    # Assert — an area-headed line with its descriptors joined (the separator is part of the shape).
+    assert "Listening: infer intent; track stance" in outline
+
+
+def test_grounding_outline_falls_back_to_flat_competencies() -> None:
+    # Arrange — no areas, only a flat competency list.
+    research = StandardResearch(status=ResearchStatus.PARTIAL, competencies=["c1", "c2"])
+
+    # Act
+    outline = research.grounding_outline()
+
+    # Assert
+    assert "c1" in outline
+    assert "c2" in outline
+
+
 # ---- the search → fetch → distil orchestration ---------------------------------------------------
 
 

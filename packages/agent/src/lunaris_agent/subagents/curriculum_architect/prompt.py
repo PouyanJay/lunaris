@@ -16,14 +16,16 @@ Rules:
 - Every objective gets at least one assessment item prompt that measures it.
 - Keep modules in the given order; do not move a KC before its prerequisites."""
 
-# Appended when research grounded the target's real competencies (P7.2): the modules are designed
-# backward from the actual standard, each competency covered by a module's objectives, and the
-# mapping is recorded structurally (P7.3) — each module tagged with the ONE competency it builds.
+# Appended when research grounded the target's real competency framework (P7.2; CQ Phase 1.3
+# presents the structured AREAS): the modules are designed backward from the actual standard, each
+# area/competency covered by a module's objectives, and the mapping is recorded structurally (P7.3)
+# — each module tagged with the ONE competency it builds.
 _COMPETENCY_MAPPING = """
-- Map the modules to these researched competencies of the target — each must be covered by at least
-  one module's objectives (backward design from the real standard). Tag each module with the ONE
-  competency it primarily builds, verbatim from this list, in a "competency" field:
-{competencies}"""
+- Map the modules to this researched competency framework of the target — each area's competencies
+  must be covered by at least one module's objectives (backward design from the real standard).
+  Tag each module with the ONE competency it primarily builds, verbatim from the framework, in a
+  "competency" field:
+{framework}"""
 
 # The base response shape. The ``<competency>`` sentinel (a non-JSON token, so the braces stay
 # normal + readable) is replaced with the per-module competency line only when research grounded the
@@ -52,9 +54,9 @@ def build_curriculum_prompt(graph: PrerequisiteGraph, brief: CourseBrief | None 
         f"{i + 1}. {kc_id} — {labels.get(kc_id, kc_id)}" for i, kc_id in enumerate(graph.topo_order)
     )
     prompt = _HEADER.format(ordered_kcs=ordered)
-    competencies = brief.research.competencies if brief is not None and brief.research else []
-    if competencies:
-        bullets = "\n".join(f"- {competency}" for competency in competencies)
-        prompt += _COMPETENCY_MAPPING.format(competencies=bullets)
-    competency_field = _COMPETENCY_FIELD if competencies else ""
+    research = brief.research if brief is not None else None
+    grounded = bool(research and research.competencies)
+    if grounded:
+        prompt += _COMPETENCY_MAPPING.format(framework=research.grounding_outline())
+    competency_field = _COMPETENCY_FIELD if grounded else ""
     return prompt + _JSON_SHAPE.replace(_COMPETENCY_SENTINEL, competency_field)

@@ -7,11 +7,15 @@ measurable objectives) stays in the existing architect subagent; the determinist
 draft, and returns a compact summary for the agent to reason over before authoring.
 """
 
+import structlog
 from langchain_core.tools import BaseTool, tool
 from lunaris_runtime.schema import ProgressStage
 
+from ...coverage import framework_coverage
 from ...subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
 from ..draft import CourseDraft
+
+logger = structlog.get_logger()
 
 
 def make_design_curriculum_tool(
@@ -45,6 +49,20 @@ def make_design_curriculum_tool(
         plan = await architect.design(draft.graph, brief=draft.brief)
         modules = curriculum_assembler.assemble(plan, draft.graph)
         draft.modules = modules
+        # Structure-derives-from-research signal (CQ Phase 1.3): when the standard was researched,
+        # surface how much of its framework the curriculum actually maps onto — drift (competencies
+        # left uncovered) is observable in the logs rather than silent. The hard gate is Phase 4.
+        research = draft.brief.research if draft.brief else None
+        if research is not None and research.competencies:
+            covered, uncovered = framework_coverage(research, modules)
+            logger.info(
+                "curriculum_competency_coverage",
+                run_id=draft.run_id,
+                covered=len(covered),
+                uncovered=len(uncovered),
+                # A few examples keep the INFO line bounded even if many competencies go uncovered.
+                uncovered_sample=uncovered[:5],
+            )
         await draft.progress.emit(
             ProgressStage.CURRICULUM_DESIGNED,
             f"Designed curriculum: {len(modules)} modules",

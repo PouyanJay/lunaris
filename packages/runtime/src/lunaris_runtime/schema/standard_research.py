@@ -68,6 +68,28 @@ class StandardResearch(CourseModel):
     score_table: list[str] = Field(default_factory=list)
     sources: list[ResearchSource] = Field(default_factory=list)
 
+    def grounding_outline(self) -> str:
+        """Prompt text of the researched framework for the extraction + curriculum prompts.
+
+        One source so structure is designed backward from the standard's real areas, not the model's
+        memory (CQ Phase 1.3). Returns area-headed lines when the framework is structured (``areas``
+        present), plain bullets from the flat competency list otherwise, and ``""`` when nothing was
+        grounded.
+        """
+        if self.areas:
+            lines: list[str] = []
+            for area in self.areas:
+                descriptors = "; ".join(area.competencies)
+                if area.name and descriptors:
+                    lines.append(f"- {area.name}: {descriptors}")
+                elif area.name:
+                    lines.append(f"- {area.name}")
+                elif descriptors:
+                    lines.append(f"- {descriptors}")
+                # a fully empty area contributes no line
+            return "\n".join(lines)
+        return "\n".join(f"- {competency}" for competency in self.competencies)
+
     @model_validator(mode="after")
     def _derive_flat_competencies(self) -> Self:
         """Keep the flat consumers (extractor/curriculum) working when only ``areas`` were supplied,
