@@ -1,0 +1,36 @@
+# Keep the API build context lean and secret-safe. The image needs only the Python workspace
+# (pyproject.toml, uv.lock, packages/*, apps/api) — everything else is excluded.
+
+# VCS + CI + tooling config
+.git/
+.github/
+.claude/
+.vscode/
+.idea/
+
+# Secrets & local runtime state (never into an image)
+.env
+.env.*
+.envrc
+.config/
+.courses/
+.memory/
+.run-state/
+
+# Python build/venv/caches
+.venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Not needed by the API image
+apps/web/
+node_modules/
+supabase/
+documentation/
+**/tests/
+*.md
+!README.md
