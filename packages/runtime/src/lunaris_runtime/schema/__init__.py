@@ -57,7 +57,7 @@ from .resource import Resource
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
-from .standard_research import ResearchSource, StandardResearch
+from .standard_research import CompetencyArea, ResearchSource, StandardResearch
 from .visual_spec import (
     BeforeAfterSpec,
     ComparisonRow,
@@ -94,6 +94,7 @@ __all__ = [
     "ClarifierQuestion",
     "ComparisonRow",
     "ComparisonSpec",
+    "CompetencyArea",
     "Course",
     "CourseBrief",
     "CourseModel",
