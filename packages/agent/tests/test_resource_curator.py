@@ -10,8 +10,11 @@ selection. Search + video + the judge are all stubbed/injected so the run is off
 from langchain_core.messages import AIMessage
 from lunaris_agent.subagents.resource_curator import (
     ClaudeResourceCurator,
+    SearchQuery,
+    build_curation_prompt,
     build_resource_queries,
 )
+from lunaris_agent.subagents.resource_curator.candidate_view import CandidateView
 from lunaris_agent.subagents.resource_curator.parser import parse_curation
 from lunaris_grounding import (
     ResourceBudget,
@@ -29,6 +32,28 @@ from lunaris_runtime.schema import (
     ResourceKind,
     TrustTier,
 )
+
+
+class _RecordingSearch:
+    """An ISearchProvider that records the max_results asked for and replays fixed results."""
+
+    def __init__(self, results: list[SearchResult]) -> None:
+        self._results = results
+        self.max_results: list[int] = []
+
+    async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        self.max_results.append(max_results)
+        return self._results
+
+
+class _OneQueryTranslator:
+    """A translator that emits one SearchQuery carrying the judge content signal (for T2 tests)."""
+
+    def __init__(self, query: SearchQuery) -> None:
+        self._query = query
+
+    async def translate(self, module, brief=None, *, modality=None, feedback=None):
+        return [self._query]
 
 
 class _FakeJudge:
@@ -171,6 +196,70 @@ async def test_curate_degrades_to_empty_without_calling_the_judge_when_no_candid
     assert curated.apply == []
     assert curated.integrate == []
     assert judge.prompts == []
+
+
+def test_build_curation_prompt_feeds_content_and_stays_blind_to_trust() -> None:
+    # Arrange — a candidate carrying the search snippet + the query's good_result + level hint.
+    views = [
+        CandidateView(
+            index=0,
+            kind=ResourceKind.VIDEO,
+            title="Some catchy title",
+            source="youtube.com",
+            url="https://youtu.be/x",
+            snippet="A worked example halving the search range each comparison.",
+            good_result_looks_like="worked example with a real trace",
+            level_hint="advanced",
+        )
+    ]
+
+    # Act
+    prompt = build_curation_prompt(_module(), views, limit=4)
+
+    # Assert — the judge sees CONTENT (snippet), the target signal, and the level — but no tier.
+    assert "halving the search range" in prompt
+    assert "worked example with a real trace" in prompt
+    assert "advanced" in prompt
+    assert "trust" not in prompt.lower()
+    for tier in ("official", "reputable", "blocked"):
+        assert tier not in prompt.lower()
+
+
+async def test_curate_over_retrieves_and_feeds_the_query_content_signal_to_the_judge() -> None:
+    # Arrange — a translator emitting one article query with a content signal; a recording search.
+    search = _RecordingSearch(
+        [
+            SearchResult(
+                url="https://b.example.edu/x", title="Title", snippet="dense authentic input"
+            )
+        ]
+    )
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "apply", "why": "w", "credibility": 0.6}]}'
+    )
+    curator = ClaudeResourceCurator(
+        judge,
+        search,
+        StubVideoSource(),
+        translator=_OneQueryTranslator(
+            SearchQuery(
+                kind=ResourceKind.ARTICLE,
+                query="advanced listening input",
+                good_result_looks_like="unscripted native-pace discussion",
+                level_hint="C1",
+            )
+        ),
+    )
+
+    # Act
+    await curator.curate(_module(), _brief())
+
+    # Assert — search over-retrieved (>4, the old fixed cap), and the judge saw the content signals.
+    assert search.max_results and search.max_results[0] > 4
+    prompt = judge.prompts[0]
+    assert "dense authentic input" in prompt  # the search snippet reaches the judge
+    assert "unscripted native-pace discussion" in prompt  # the query's good_result_looks_like
+    assert "C1" in prompt  # the level hint
 
 
 async def test_curate_respects_the_resource_budget() -> None:

@@ -21,11 +21,14 @@ from .curation import CuratedResources
 from .deterministic import DeterministicQueryTranslator
 from .parser import CurationChoice, parse_curation
 from .prompt import build_curation_prompt
+from .search_query import SearchQuery
 from .translator import IQueryTranslator
 
 logger = structlog.get_logger()
 
-_RESULTS_PER_QUERY = 4
+# Over-retrieve, then judge down to the budget (CQ Phase 2 T2): a richer pool per query lets the
+# content judge pick genuinely-fitting resources instead of settling for the first few hits.
+_RESULTS_PER_QUERY = 12
 _DEFAULT_BUDGET = ResourceBudget()
 
 
@@ -38,7 +41,9 @@ class _Candidate:
     """A found resource candidate + its deterministically-classified trust tier, awaiting the judge.
 
     Trust is classified here (not by the model) and attached AFTER selection, so the relevance judge
-    stays blind to the label (§15) while the user still sees a vetted tier.
+    stays blind to the label (§15) while the user still sees a vetted tier. The content fields
+    (``snippet`` from the result, plus ``good_result_looks_like`` + ``level_hint`` carried from the
+    query) let the judge score CONTENT + level, not the title (CQ Phase 2 T2).
     """
 
     kind: ResourceKind
@@ -48,6 +53,9 @@ class _Candidate:
     trust_tier: TrustTier
     duration: str = ""
     author: str = ""
+    snippet: str = ""
+    good_result_looks_like: str = ""
+    level_hint: str = ""
 
 
 class ClaudeResourceCurator:
@@ -136,9 +144,7 @@ class ClaudeResourceCurator:
         seen: set[str] = set()
         candidates: list[_Candidate] = []
         for search_query in queries:
-            # TODO(CQ Phase 2 T2): carry search_query.good_result_looks_like / level_hint into the
-            # candidate so the relevance judge scores CONTENT. T1 routes on kind + query only.
-            for candidate in await self._candidates_for(search_query.kind, search_query.query):
+            for candidate in await self._candidates_for(search_query):
                 if not candidate.url or candidate.url in seen:
                     continue
                 seen.add(candidate.url)
@@ -146,30 +152,39 @@ class ClaudeResourceCurator:
                     candidates.append(candidate)
         return candidates
 
-    async def _candidates_for(self, kind: ResourceKind, query: str) -> list[_Candidate]:
-        """Find candidates for one query — videos via the IVideoSource, the rest via search."""
-        if kind is ResourceKind.VIDEO:
-            videos = await self._safe_find(query)
+    async def _candidates_for(self, search_query: SearchQuery) -> list[_Candidate]:
+        """Find candidates for one query — videos via the IVideoSource, the rest via search.
+
+        Each candidate carries the query's content signal (``good_result_looks_like`` + ``level``)
+        and the result's ``snippet`` so the judge can score CONTENT + level (CQ Phase 2 T2).
+        """
+        if search_query.kind is ResourceKind.VIDEO:
+            videos = await self._safe_find(search_query.query)
             return [
                 _Candidate(
-                    kind=kind,
+                    kind=search_query.kind,
                     url=video.url,
                     title=video.title,
                     source=host(video.url),
                     trust_tier=classify_domain(video.url),
                     duration=video.duration,
                     author=video.channel,
+                    good_result_looks_like=search_query.good_result_looks_like,
+                    level_hint=search_query.level_hint,
                 )
                 for video in videos
             ]
-        results = await self._safe_search(query)
+        results = await self._safe_search(search_query.query)
         return [
             _Candidate(
-                kind=kind,
+                kind=search_query.kind,
                 url=result.url,
                 title=result.title,
                 source=host(result.url),
                 trust_tier=classify_domain(result.url),
+                snippet=result.snippet,
+                good_result_looks_like=search_query.good_result_looks_like,
+                level_hint=search_query.level_hint,
             )
             for result in results
         ]
@@ -198,7 +213,7 @@ class ClaudeResourceCurator:
 
     @staticmethod
     def _views(candidates: list[_Candidate]) -> list[CandidateView]:
-        """The judge's blind view of each candidate — kind/title/source/url, NOT the trust tier."""
+        """The judge's view of each candidate — content + level signals, NOT the tier (§15)."""
         return [
             CandidateView(
                 index=index,
@@ -206,6 +221,9 @@ class ClaudeResourceCurator:
                 title=candidate.title,
                 source=candidate.source,
                 url=candidate.url,
+                snippet=candidate.snippet,
+                good_result_looks_like=candidate.good_result_looks_like,
+                level_hint=candidate.level_hint,
             )
             for index, candidate in enumerate(candidates)
         ]
