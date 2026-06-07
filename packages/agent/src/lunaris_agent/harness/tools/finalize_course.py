@@ -24,6 +24,7 @@ from lunaris_runtime.schema import (
 from ...critic import ICritic
 from ...honesty import assess_grounding_honesty
 from ...scope import estimate_scope
+from ...subagents.scope_polisher import IScopePolisher
 from ...subagents.visual_agent import VisualEngine
 from ..draft import CourseDraft
 
@@ -109,6 +110,7 @@ def make_finalize_course_tool(
     draft: CourseDraft,
     *,
     visual_engine: VisualEngine | None = None,
+    scope_polisher: IScopePolisher | None = None,
 ) -> BaseTool:
     """Build the ``finalize_course`` tool, closed over the critic, the store, and the run draft.
 
@@ -134,6 +136,11 @@ def make_finalize_course_tool(
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
         _apply_quality_gates(course, issues, draft)
+        # Optional key-gated wording polish of the deterministic scope band (CQ Phase 3.1): refines
+        # only the delivers/excludes copy, never the effort or the line counts (reconcile enforces
+        # it). None (the no-key path) ships the deterministic band unchanged.
+        if scope_polisher is not None and course.scope is not None:
+            course.scope = await scope_polisher.polish(course.scope, brief=draft.brief)
         # CourseStore.save is synchronous file I/O; off-load it so the agent's event loop
         # is not blocked during the write (matters once the store is network-backed).
         await asyncio.to_thread(store.save, course)

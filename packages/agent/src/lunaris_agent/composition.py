@@ -50,6 +50,7 @@ from .subagents.resource_curator import (
     IResourceCurator,
     StubResourceCurator,
 )
+from .subagents.scope_polisher import ClaudeScopePolisher, IScopePolisher
 from .subagents.standard_researcher import (
     ClaudeStandardResearcher,
     IStandardResearcher,
@@ -192,6 +193,20 @@ def _curator_from_env(worker_model: str) -> IResourceCurator:
     return StubResourceCurator()
 
 
+def _scope_polisher_from_env(worker_model: str) -> IScopePolisher | None:
+    """Build the live scope-band polisher iff an Anthropic key is present, else ``None`` (CQ P3.1).
+
+    The polish step refines only the wording of the scope band's does/doesn't lines (worker tier);
+    its facts are owned by the deterministic estimator and re-asserted in code, so the model can
+    sharpen the copy but never change the effort or invent a promise. ``None`` (no key) ships the
+    deterministic band unchanged — the offline path stays byte-for-byte stable, no LLM call made.
+    """
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return ClaudeScopePolisher(worker_model)
+    logger.info("scope_polisher_disabled", reason="ANTHROPIC_API_KEY unset")
+    return None
+
+
 def _visual_engine_from_env(worker_model: str) -> VisualEngine:
     """Wire the live visual engine, choosing the renderer from the environment.
 
@@ -317,5 +332,6 @@ def build_agent_course_builder(
         discoverer=_discoverer_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
         visual_engine=_visual_engine_from_env(worker),
+        scope_polisher=_scope_polisher_from_env(worker),
         stream_tokens=True,
     )
