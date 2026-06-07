@@ -15,6 +15,7 @@ import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
+import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
@@ -247,9 +248,10 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
         tabIndex={0}
       >
         <article className={styles.page}>
-          {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so, rather
-              than presenting itself as authoritative. */}
+          {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so. */}
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
+          {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
+          {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
