@@ -46,8 +46,10 @@ describe("prose structure — enumerations & sections", () => {
 
     const { container } = render(<Markdown>{prose}</Markdown>);
 
-    // The worked example is lifted into its own panel…
-    expect(container.querySelector("aside")).not.toBeNull();
+    // The worked example is lifted into its own panel, carrying the cued quote (not some other span)…
+    expect(container.querySelector("aside")?.textContent).toContain(
+      "Source A claims that transit reduces congestion.",
+    );
     // …AND the trailing enumeration becomes an alpha-marked ordered list (not raw "(a)" text).
     const list = container.querySelector("ol");
     expect(list).toHaveAttribute("type", "a");

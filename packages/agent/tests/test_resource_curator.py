@@ -249,10 +249,13 @@ async def test_curate_forces_video_kind_for_a_youtube_search_result() -> None:
     # Act
     curated = await curator.curate(_module(), _brief())
 
-    # Assert — the youtube result is reclassified VIDEO despite the article query.
+    # Assert — the youtube result is reclassified VIDEO despite the article query, and its identity
+    # (url + title) survives the reclassification (only the kind changes, not the resource).
     kept = curated.activate + curated.demonstrate + curated.apply + curated.integrate
     assert len(kept) == 1
     assert kept[0].kind is ResourceKind.VIDEO
+    assert kept[0].url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert kept[0].title == "Editing for register and tone"
 
 
 async def test_curate_degrades_to_empty_without_calling_the_judge_when_no_candidates() -> None:

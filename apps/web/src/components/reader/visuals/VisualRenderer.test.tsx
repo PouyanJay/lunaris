@@ -144,6 +144,29 @@ describe("VisualRenderer", () => {
     expect(screen.getByText(/suits a professional tone/)).toBeInTheDocument();
   });
 
+  it("renders a worked-example spec with a null note and no why row", () => {
+    // Arrange — the renderer must forward note=null (not undefined/"") so the panel omits the row.
+    const spec: VisualSpec = {
+      type: "worked-example",
+      title: null,
+      literal: { label: "Vague", content: "The thing is bad.", language: null, caption: null },
+      improved: {
+        label: "Precise",
+        content: "Transit cuts commute time by 30%.",
+        language: null,
+        caption: null,
+      },
+      note: null,
+    };
+
+    // Act
+    render(<VisualRenderer visual={makeVisual(spec)} />);
+
+    // Assert — both sides render, but there is no "Why" note row.
+    expect(screen.getByText("Transit cuts commute time by 30%.")).toBeInTheDocument();
+    expect(screen.queryByText("Why")).not.toBeInTheDocument();
+  });
+
   it("falls back to the diagram source when there is no spec", () => {
     // Arrange / Act
     render(<VisualRenderer visual={makeVisual(null, "graph TD\n  A-->B")} />);

@@ -25,7 +25,7 @@ export function WorkedExampleBlock({
     <WorkedExample
       literal={{ label: literallabel ?? "Literal", text: literal ?? "" }}
       improved={{ label: improvedlabel ?? "Improved", text: improved ?? "" }}
-      note={note ? note : null}
+      note={note || null}
     />
   );
 }

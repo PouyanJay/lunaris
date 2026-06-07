@@ -69,7 +69,7 @@ function detectExampleQuote(
  *  fires only on the explicit "Worked Example" lead-in with two labelled quotes, so ordinary prose
  *  (and a single cued quote, which the example panel handles) is never mistaken for one. */
 const WORKED_EXAMPLE =
-  /^Worked Example\s*\d*\s*:\s*(.+?):\s*(["'“])(.+?)["'”]\s+(.+?):\s*(["'“])(.+?)["'”]\s*(?:\(([^)]+)\))?\s*$/is;
+  /^Worked Example\s*\d*\s*:\s*(?<literalLabel>.+?):\s*["'“](?<literal>.+?)["'”]\s+(?<improvedLabel>.+?):\s*["'“](?<improved>.+?)["'”]\s*(?:\((?<note>[^)]+)\))?\s*$/is;
 
 interface WorkedExampleParts {
   literalLabel: string;
@@ -79,16 +79,17 @@ interface WorkedExampleParts {
   note: string;
 }
 
-/** Parse a paragraph's flattened text into worked-example parts, or null when it isn't one. */
+/** Parse a paragraph's flattened text into worked-example parts, or null when it isn't one. Named
+ *  capture groups carry the structure so the extraction can't silently drift if the regex changes. */
 function detectWorkedExample(text: string): WorkedExampleParts | null {
-  const match = text.trim().match(WORKED_EXAMPLE);
-  if (!match) return null;
+  const groups = text.trim().match(WORKED_EXAMPLE)?.groups;
+  if (!groups) return null;
   return {
-    literalLabel: match[1]!.trim(),
-    literal: match[3]!.trim(),
-    improvedLabel: match[4]!.trim(),
-    improved: match[6]!.trim(),
-    note: (match[7] ?? "").trim(),
+    literalLabel: groups.literalLabel!.trim(),
+    literal: groups.literal!.trim(),
+    improvedLabel: groups.improvedLabel!.trim(),
+    improved: groups.improved!.trim(),
+    note: (groups.note ?? "").trim(),
   };
 }
 

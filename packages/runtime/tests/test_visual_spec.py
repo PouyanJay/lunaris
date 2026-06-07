@@ -186,26 +186,26 @@ def test_worked_example_spec_round_trips_through_the_wire() -> None:
     assert visual.spec.improved.label == "With collocation"
     assert visual.spec.note == "'do the heavy lifting' suits a professional tone."
 
-    # And it round-trips back through the camelCase wire unchanged.
+    # And it round-trips back through the camelCase wire unchanged — including the note.
     restored = Visual.model_validate(visual.model_dump(by_alias=True))
     assert restored.spec is not None
     assert restored.spec.type == "worked-example"
     assert restored.spec.improved.content == "We will do the heavy lifting on this."
+    assert restored.spec.note == "'do the heavy lifting' suits a professional tone."
 
 
-def test_worked_example_spec_requires_both_sides() -> None:
-    # Act / Assert — a worked example missing the improved side is half-formed; the validator
-    # rejects it rather than shipping a one-sided example (the contrast is the point).
+@pytest.mark.parametrize("missing", ["literal", "improved"])
+def test_worked_example_spec_requires_both_sides(missing: str) -> None:
+    # Act / Assert — a worked example missing EITHER side is half-formed; the validator rejects it
+    # rather than shipping a one-sided example (the contrast is the point).
+    sides = {
+        "literal": {"label": "Literal", "content": "x"},
+        "improved": {"label": "Improved", "content": "y"},
+    }
+    del sides[missing]
     with pytest.raises(ValidationError):
         Visual.model_validate(
-            {
-                "kind": "spec",
-                "source": "",
-                "spec": {
-                    "type": "worked-example",
-                    "literal": {"label": "Literal", "content": "x"},
-                },
-            }
+            {"kind": "spec", "source": "", "spec": {"type": "worked-example", **sides}}
         )
 
 

@@ -9,20 +9,40 @@ interface LessonResourcesProps {
   resources: Resource[];
 }
 
-/** The kind a resource should *render* as: a recognisable YouTube URL is always a video, whatever the
- *  curator labelled it (a mislabeled `kind: "article"` on a youtube.com link must still read + play as
- *  a video, not a "READ" card). Non-YouTube resources keep their authored kind. */
-function effectiveKind(resource: Resource): ResourceKind {
-  return youTubeId(resource.url) !== null ? "video" : resource.kind;
-}
-
-/** A YouTube video plays inside the reader (facade → nocookie embed + lightbox); any other resource
- *  keeps the decorative thumbnail, with its title link as the action. Keyed off the URL, not the
- *  authored kind, so a mislabeled youtube link still plays. */
-function ResourceMedia({ resource }: { resource: Resource }) {
+/** One curated resource card. A recognisable YouTube URL is always treated as a video — it plays
+ *  in-reader (facade → nocookie embed + lightbox) and reads as "video" — whatever the curator
+ *  labelled it, so a mislabeled `kind: "article"` on a youtube.com link is never a dead "READ" card.
+ *  The URL is parsed once and drives both the media and the kind word; anything else keeps its
+ *  decorative thumbnail and authored kind, with the title link as the action. */
+function ResourceCard({ resource }: { resource: Resource }) {
   const videoId = youTubeId(resource.url);
-  if (videoId) return <VideoFacade videoId={videoId} title={resource.title} />;
-  return <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />;
+  const kind: ResourceKind = videoId !== null ? "video" : resource.kind;
+
+  return (
+    <li className={styles.item}>
+      {videoId !== null ? (
+        <VideoFacade videoId={videoId} title={resource.title} />
+      ) : (
+        <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />
+      )}
+      <div className={styles.body}>
+        <div className={styles.head}>
+          <a className={styles.link} href={resource.url} target="_blank" rel="noopener noreferrer">
+            {resource.title}
+          </a>
+          {resource.duration && (
+            <span className={`mono ${styles.duration}`}>{resource.duration}</span>
+          )}
+        </div>
+        {resource.why && <p className={styles.why}>{resource.why}</p>}
+        <div className={styles.meta}>
+          <span className={`mono ${styles.kind}`}>{kind}</span>
+          {resource.source && <span className={`mono ${styles.source}`}>{resource.source}</span>}
+          <SourceTrust tier={resource.trustTier} credibility={resource.credibility} />
+        </div>
+      </div>
+    </li>
+  );
 }
 
 /** The curated external resources attached to a teaching phase (P7.4) — suggested aids the learner
@@ -36,32 +56,7 @@ export function LessonResources({ resources }: LessonResourcesProps) {
       <h4 className={styles.title}>Resources</h4>
       <ul className={styles.list}>
         {resources.map((resource) => (
-          <li key={resource.url} className={styles.item}>
-            <ResourceMedia resource={resource} />
-            <div className={styles.body}>
-              <div className={styles.head}>
-                <a
-                  className={styles.link}
-                  href={resource.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {resource.title}
-                </a>
-                {resource.duration && (
-                  <span className={`mono ${styles.duration}`}>{resource.duration}</span>
-                )}
-              </div>
-              {resource.why && <p className={styles.why}>{resource.why}</p>}
-              <div className={styles.meta}>
-                <span className={`mono ${styles.kind}`}>{effectiveKind(resource)}</span>
-                {resource.source && (
-                  <span className={`mono ${styles.source}`}>{resource.source}</span>
-                )}
-                <SourceTrust tier={resource.trustTier} credibility={resource.credibility} />
-              </div>
-            </div>
-          </li>
+          <ResourceCard key={resource.url} resource={resource} />
         ))}
       </ul>
     </section>
