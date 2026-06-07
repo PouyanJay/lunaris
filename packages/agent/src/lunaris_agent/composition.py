@@ -29,6 +29,11 @@ from lunaris_runtime.resilience import (
     get_llm_rate_limiter,
 )
 
+from .coverage_critic import (
+    ClaudeCoverageCritic,
+    DeterministicCoverageCritic,
+    ICoverageCritic,
+)
 from .harness.authoring import ClaudeLessonReviser
 from .harness.discovery import (
     ClaudeRelevanceJudge,
@@ -207,6 +212,21 @@ def _scope_polisher_from_env(worker_model: str) -> IScopePolisher | None:
     return None
 
 
+def _coverage_critic_from_env(strong_model: str) -> ICoverageCritic:
+    """Build the coverage critic (CQ Phase 4.2): the LLM judge when keyed, else the fail-safe.
+
+    The gate always runs. With an ``ANTHROPIC_API_KEY`` the primary is the ``ClaudeCoverageCritic``
+    (strong tier — coverage is a judgement call, and it already degrades to the deterministic check
+    on any failure). Without a key it is the ``DeterministicCoverageCritic`` directly — a structural
+    check that needs no model, so a keyless build still gets an honest coverage gate. Either way an
+    unresearched brief yields a clean report (nothing was promised), so the offline suite is stable.
+    """
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return ClaudeCoverageCritic(strong_model)
+    logger.info("coverage_critic_keyless", reason="ANTHROPIC_API_KEY unset")
+    return DeterministicCoverageCritic()
+
+
 def _visual_engine_from_env(worker_model: str) -> VisualEngine:
     """Wire the live visual engine, choosing the renderer from the environment.
 
@@ -331,6 +351,7 @@ def build_agent_course_builder(
         seeder=_seeder_from_env(),
         discoverer=_discoverer_from_env(worker),
         verifier=build_live_verifier(strong, retriever),
+        coverage_critic=_coverage_critic_from_env(strong),
         visual_engine=_visual_engine_from_env(worker),
         scope_polisher=_scope_polisher_from_env(worker),
         stream_tokens=True,
