@@ -134,6 +134,7 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
     topic: "How binary search works",
     goalConcept: "binary_search",
     goalType: "knowledge",
+    scopeNote: "",
     status: "review",
     provenance: [{ id: "src-1", title: "CLRS", url: "https://example.org/clrs", snippet: "…" }],
     modules: [

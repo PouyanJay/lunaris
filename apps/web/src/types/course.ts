@@ -359,6 +359,10 @@ export interface Course {
   goalConcept: string;
   /** The course-level goal classification carried from the brief (CQ Phase 1.0). */
   goalType: GoalType;
+  /** An honest caveat when a research-needing goal couldn't be grounded (CQ Phase 1.6); "" when
+   *  fully grounded or not research-needing. The reader shows it so a generic course is never
+   *  presented as an authoritative guide to the standard. */
+  scopeNote: string;
   graph: PrerequisiteGraph;
   modules: Module[];
   provenance: Citation[];

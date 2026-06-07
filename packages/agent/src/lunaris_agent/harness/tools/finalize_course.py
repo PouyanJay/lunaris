@@ -22,6 +22,7 @@ from lunaris_runtime.schema import (
 )
 
 from ...critic import ICritic
+from ...honesty import assess_grounding_honesty
 from ...subagents.visual_agent import VisualEngine
 from ..draft import CourseDraft
 
@@ -100,9 +101,14 @@ def make_finalize_course_tool(
             logger.info("agent_course_illustrated", run_id=draft.run_id, visuals_placed=placed)
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
+        # Honesty gate (CQ Phase 1.6): an ungrounded research-needing goal carries an honest caveat
+        # and is withheld; a PARTIAL one still carries its caveat to the learner but may publish —
+        # so scope_note is set unconditionally, only needs_review gates publication.
+        honesty = assess_grounding_honesty(draft.brief)
+        course.scope_note = honesty.caveat
         # The authoring loop's triage flags a course whose goal-critical claim could not be
         # grounded within budget; withhold PUBLISHED even when the structural critic is clean.
-        if not issues and not draft.needs_review:
+        if not issues and not draft.needs_review and not honesty.needs_review:
             course.status = CourseStatus.PUBLISHED
         # CourseStore.save is synchronous file I/O; off-load it so the agent's event loop
         # is not blocked during the write (matters once the store is network-backed).
