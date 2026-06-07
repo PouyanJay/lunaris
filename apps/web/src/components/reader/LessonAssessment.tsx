@@ -33,8 +33,9 @@ interface LessonAssessmentProps {
   items: AssessmentItem[];
 }
 
-/** A module's assessment, shown at the end of its final lesson — each item's prompt with its model
- *  answer revealable on demand. */
+/** A module's assessment, shown at the end of its final lesson — each item's prompt with the
+ *  gradeable bar a passing response must clear (CQ Phase 4.1) and its model answer revealable on
+ *  demand. The pass criterion is absent on pre-P4 courses, so its line is shown only when present. */
 export function LessonAssessment({ items }: LessonAssessmentProps) {
   return (
     <section className={styles.panel} aria-label="Check your understanding">
@@ -43,6 +44,11 @@ export function LessonAssessment({ items }: LessonAssessmentProps) {
         {items.map((item) => (
           <li key={item.id} className={styles.item}>
             <p className={styles.prompt}>{item.prompt}</p>
+            {item.passCriterion && (
+              <p className={styles.criterion}>
+                <span className={styles.criterionLabel}>Passes when</span> {item.passCriterion}
+              </p>
+            )}
             {item.answer && <AnswerReveal answer={item.answer} />}
           </li>
         ))}

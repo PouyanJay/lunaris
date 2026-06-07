@@ -159,6 +159,7 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
               prompt: "What is the worst-case time complexity of binary search?",
               objective: "binary_search",
               answer: "O(log n)",
+              passCriterion: "States O(log n) and explains the halving of the search space.",
             },
           ],
         },
@@ -298,6 +299,7 @@ export function makeProgressEvent(
     claimsTotal: null,
     claimsSupported: null,
     claimsCut: null,
+    gapCount: null,
     status: null,
     ...extra,
   };

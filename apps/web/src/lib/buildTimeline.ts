@@ -55,6 +55,7 @@ const PHASES: { stage: ProgressStage; label: string }[] = [
   { stage: "module_authored", label: "Lessons" },
   { stage: "claims_verified", label: "Verify" },
   { stage: "resources_curated", label: "Resources" },
+  { stage: "coverage_verified", label: "Coverage" },
   { stage: "run_completed", label: "Publish" },
 ];
 

@@ -34,6 +34,19 @@
   line-height: 1.5;
 }
 
+/* The criterion body reads as subordinate metadata (secondary, like .reveal/.answerText); the
+   inline label is lifted back to the primary colour + weight so "Passes when" stands out as the cue. */
+.criterion {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.criterionLabel {
+  font-weight: 600;
+  color: var(--text);
+}
+
 .answer {
   display: flex;
   flex-direction: column;

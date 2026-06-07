@@ -14,6 +14,7 @@ from lunaris_runtime.schema import (
 from .orchestrator import Orchestrator
 from .subagents.concept_extractor import Extraction, StubConceptExtractor
 from .subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumPlan,
     ModulePlan,
     ObjectivePlan,
@@ -101,7 +102,7 @@ def build_stub_orchestrator(store: CourseStore) -> Orchestrator:
                         kc_id,
                         f"Given a problem, the learner can apply {label.lower()}.",
                         BloomLevel.APPLY,
-                        ["q"],
+                        [AssessmentItemPlan("q")],
                     )
                 ],
             )

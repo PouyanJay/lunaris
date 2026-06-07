@@ -14,6 +14,11 @@ from pathlib import Path
 import pytest
 import structlog
 from langchain_core.messages import AIMessage, BaseMessage
+from lunaris_agent.coverage_critic import (
+    DeterministicCoverageCritic,
+    ICoverageCritic,
+    StubCoverageCritic,
+)
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.authoring import StubLessonReviser
 from lunaris_agent.harness.discovery import (
@@ -30,6 +35,7 @@ from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.lesson_claims import iter_claims
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumPlan,
     ModulePlan,
     ObjectivePlan,
@@ -128,7 +134,7 @@ _PLAN = CurriculumPlan(
                     kc=kc_id,
                     statement=f"Given a task, the learner can apply {label}.",
                     bloom_level=BloomLevel.APPLY,
-                    item_prompts=["q"],
+                    items=[AssessmentItemPlan("q")],
                 )
             ],
         )
@@ -172,7 +178,7 @@ _ARC_PLAN = CurriculumPlan(
                     kc=kc_id,
                     statement=f"Given a task, the learner can apply {label}.",
                     bloom_level=BloomLevel.APPLY,
-                    item_prompts=["q"],
+                    items=[AssessmentItemPlan("q")],
                 )
             ],
         )
@@ -244,6 +250,7 @@ def _builder(
     seeder: IGroundingSeeder | None = None,
     discoverer: IGroundingDiscoverer | None = None,
     verifier: Verifier | None = None,
+    coverage_critic: ICoverageCritic | None = None,
     visual_engine: VisualEngine | None = None,
     scope_polisher: IScopePolisher | None = None,
     stream_tokens: bool = False,
@@ -263,6 +270,7 @@ def _builder(
         seeder=seeder or StubGroundingSeeder(),
         discoverer=discoverer or StubGroundingDiscoverer(),
         verifier=verifier or _verifier(),
+        coverage_critic=coverage_critic,
         visual_engine=visual_engine,
         scope_polisher=scope_polisher,
         stream_tokens=stream_tokens,
@@ -1149,13 +1157,88 @@ async def test_seed_grounding_ingests_a_research_source_into_the_course_corpus(
     assert seeded.run_id == "run-seed"
 
 
+async def test_coverage_is_verified_at_finalize_before_the_run_completes(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    tmp_path: Path,
+) -> None:
+    # Walking skeleton (CQ Phase 4.2): the coverage critic runs at finalize as the last gate before
+    # the course publishes. COVERAGE_VERIFIED lands after resources are curated and before the run
+    # completes, run_id-correlated. The default critic is the deterministic fail-safe (no key); a
+    # clean course still emits the stage (proving the seam), and publishes.
+    # Arrange
+    builder = _builder(_delegating_script(scripted_model), CourseStore(tmp_path))
+
+    # Act
+    course = await builder.run(
+        "demo", course_id="course-cov", run_id="run-cov", progress=progress_sink
+    )
+
+    # Assert — the coverage stage is emitted in order, run_id-correlated, carrying gap_count=0 (the
+    # field flows end-to-end), and a clean build still publishes (no gap on the all-grounded path).
+    stages = [event.stage for event in progress_sink.events]
+    assert ProgressStage.COVERAGE_VERIFIED in stages
+    assert stages.index(ProgressStage.RESOURCES_CURATED) < stages.index(
+        ProgressStage.COVERAGE_VERIFIED
+    )
+    assert stages.index(ProgressStage.COVERAGE_VERIFIED) < stages.index(ProgressStage.RUN_COMPLETED)
+    verified = next(e for e in progress_sink.events if e.stage is ProgressStage.COVERAGE_VERIFIED)
+    assert verified.run_id == "run-cov"
+    assert verified.gap_count == 0
+    assert course.status == CourseStatus.PUBLISHED
+
+
+async def test_an_unbuilt_competency_is_scoped_out_and_withheld_for_review(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    progress_sink,
+    tmp_path: Path,
+) -> None:
+    # Coverage gate (CQ Phase 4.2, owner Q3): a competency the standard promised but no module
+    # builds is folded into the honest scope (excludes + scope_note) AND withholds publication
+    # (REVIEW), rather than shipping a course that silently drops part of the standard. The research
+    # stage grounds the competency; the stub plan tags no module with it, so the critic flags it.
+    # Arrange
+    store = CourseStore(tmp_path)
+    research = StandardResearch(
+        status=ResearchStatus.COMPLETE,
+        competencies=["adapt register live in speech"],
+        sources=[ResearchSource(url="https://www.canada.ca/clb-10", trust_tier=TrustTier.OFFICIAL)],
+    )
+    builder = _builder(
+        _delegating_script(scripted_model),
+        store,
+        researcher=StubStandardResearcher(research),
+        coverage_critic=DeterministicCoverageCritic(),
+    )
+
+    # Act
+    course = await builder.run(
+        "demo", course_id="course-gap", run_id="run-gap", progress=progress_sink
+    )
+
+    # Assert — the unbuilt competency is named in the honest scope (note + an excludes line), the
+    # course is withheld for review, the stage reported one gap (run_id-correlated), round-tripped.
+    assert course.scope is not None
+    assert "adapt register live in speech" in course.scope_note
+    assert any("adapt register live in speech" in line for line in course.scope.excludes)
+    assert course.status == CourseStatus.REVIEW
+    verified = next(e for e in progress_sink.events if e.stage is ProgressStage.COVERAGE_VERIFIED)
+    assert verified.run_id == "run-gap"
+    assert verified.gap_count == 1
+    reloaded = store.load("course-gap")
+    assert reloaded.status == CourseStatus.REVIEW
+    assert reloaded.scope == course.scope
+
+
 async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:
     # Arrange — the finalize tool over a draft whose prerequisite graph was never built. The moat
     # must refuse to assemble a course out of order rather than emit a malformed one. Tested
     # directly on the tool (deterministic) rather than through the agent loop, which retries a
     # failed tool call.
     draft = CourseDraft(topic="demo", course_id="course-2", run_id="run-2")
-    finalize = make_finalize_course_tool(MinimalCritic(), CourseStore(tmp_path), draft)
+    finalize = make_finalize_course_tool(
+        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
+    )
 
     # Act / Assert — the precondition fails loudly, and nothing is persisted.
     with pytest.raises(RuntimeError, match="before the prerequisite"):

@@ -13,7 +13,8 @@ class ProgressEvent(CourseModel):
 
     Stage-specific counts are optional and populated only where meaningful (e.g.
     ``kc_count``/``edge_count`` on GRAPH_BUILT, ``module_id`` on each MODULE_AUTHORED,
-    the claim tallies on CLAIMS_VERIFIED, ``status`` on RUN_COMPLETED).
+    the claim tallies on CLAIMS_VERIFIED, ``gap_count`` on COVERAGE_VERIFIED,
+    ``status`` on RUN_COMPLETED).
     """
 
     stage: ProgressStage
@@ -27,4 +28,7 @@ class ProgressEvent(CourseModel):
     claims_total: int | None = None
     claims_supported: int | None = None
     claims_cut: int | None = None
+    # The number of promised competencies left unbuilt on COVERAGE_VERIFIED (CQ Phase 4.2); 0 == a
+    # clean course. None on every other stage.
+    gap_count: int | None = None
     status: CourseStatus | None = None

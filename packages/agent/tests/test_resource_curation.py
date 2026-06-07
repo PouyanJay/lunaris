@@ -12,6 +12,7 @@ persisted course, and the RESOURCES_CURATED stage streams.
 
 from pathlib import Path
 
+from lunaris_agent.coverage_critic import StubCoverageCritic
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.progress_reporter import ProgressReporter
@@ -110,7 +111,7 @@ async def test_curate_resources_attaches_per_phase_resources_and_they_finalize(
     draft.progress = ProgressReporter("run-res", progress_sink)
     store = CourseStore(tmp_path)
     curate = make_curate_resources_tool(StubResourceCurator(_stub_curation), draft)
-    finalize = make_finalize_course_tool(MinimalCritic(), store, draft)
+    finalize = make_finalize_course_tool(MinimalCritic(), store, draft, StubCoverageCritic())
 
     # Act — the real curate tool attaches resources per phase, then finalize assembles + persists.
     await curate.ainvoke({})
@@ -153,7 +154,7 @@ async def test_an_empty_module_is_flagged_in_the_scope_note(progress_sink, tmp_p
     draft.progress = ProgressReporter("run-empty", progress_sink)
     store = CourseStore(tmp_path)
     curate = make_curate_resources_tool(StubResourceCurator(), draft)  # default → no resources
-    finalize = make_finalize_course_tool(MinimalCritic(), store, draft)
+    finalize = make_finalize_course_tool(MinimalCritic(), store, draft, StubCoverageCritic())
 
     # Act
     await curate.ainvoke({})
