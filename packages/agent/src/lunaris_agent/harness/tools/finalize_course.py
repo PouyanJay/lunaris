@@ -23,6 +23,7 @@ from lunaris_runtime.schema import (
 
 from ...critic import ICritic
 from ...honesty import assess_grounding_honesty
+from ...scope import estimate_scope
 from ...subagents.visual_agent import VisualEngine
 from ..draft import CourseDraft
 
@@ -53,6 +54,9 @@ def _apply_quality_gates(course: Course, issues: list[str], draft: CourseDraft) 
     """
     honesty = assess_grounding_honesty(draft.brief)
     course.scope_note = _append_coverage_caveat(honesty.caveat, draft.resource_coverage_gaps)
+    # The scope-realism band (CQ Phase 3.1): an honest effort/timeline + does/doesn't framing,
+    # computed from the brief's abstractions so the reader can set expectations up front.
+    course.scope = estimate_scope(course, draft.brief)
     if not issues and not draft.needs_review and not honesty.needs_review:
         course.status = CourseStatus.PUBLISHED
 

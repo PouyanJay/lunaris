@@ -427,6 +427,35 @@ async def test_goal_type_threads_from_the_brief_to_the_finalized_course(
     assert store.load("course-gt").goal_type is GoalType.CREDENTIAL
 
 
+async def test_scope_band_threads_from_the_brief_to_the_finalized_course(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Walking skeleton (CQ Phase 3.1): the finalize step computes a scope-realism band from the
+    # brief (effort/timeline + what this does / does not get you) and persists it on the course, so
+    # the reader can show an honest header band. A non-default goal_type proves the thread.
+    # Arrange
+    store = CourseStore(tmp_path)
+    brief = CourseBrief(
+        subject="AWS",
+        goal="Pass the AWS Solutions Architect exam",
+        target_level=Level.INTERMEDIATE,
+        goal_type=GoalType.CREDENTIAL,
+    )
+    builder = _builder(_delegating_script(scripted_model), store, brief=brief)
+
+    # Act
+    course = await builder.run("demo", course_id="course-scope", run_id="run-scope")
+
+    # Assert — a scope band reached the finalized course (effort + at least one delivers/excludes
+    # line) and round-trips through the store unchanged.
+    assert course.scope is not None
+    assert course.scope.effort
+    assert course.scope.delivers
+    assert course.scope.excludes
+    assert store.load("course-scope").scope == course.scope
+
+
 async def test_research_needing_goal_without_grounding_is_scoped_and_withheld(
     scripted_model: Callable[[Sequence[BaseMessage]], object],
     tmp_path: Path,

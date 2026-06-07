@@ -4,6 +4,7 @@ from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuest
 from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
 from .course_run import CourseRun
+from .course_scope import CourseScope
 from .enums import (
     AcquisitionMode,
     AgentEventKind,
@@ -99,6 +100,7 @@ __all__ = [
     "CourseBrief",
     "CourseModel",
     "CourseRun",
+    "CourseScope",
     "CourseSettings",
     "CourseStatus",
     "DeliverableShape",

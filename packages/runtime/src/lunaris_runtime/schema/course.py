@@ -1,6 +1,7 @@
 from pydantic import Field
 
 from .base import CourseModel
+from .course_scope import CourseScope
 from .enums import CourseStatus, GoalType
 from .instruction import Module
 from .knowledge import Citation, PrerequisiteGraph
@@ -19,6 +20,9 @@ class Course(CourseModel):
     # (CQ Phase 1.6): empty when fully grounded or not research-needing; the reader shows it so a
     # generic course is never presented as an authoritative guide to the standard.
     scope_note: str = ""
+    # The scope-realism band (CQ Phase 3.1): effort/timeline + what this does / does not get you,
+    # computed at finalize from the brief. None on a pre-Phase-3 / direct-assembly course = no band.
+    scope: CourseScope | None = None
     settings: CourseSettings = Field(default_factory=CourseSettings)
     risk: RiskProfile = Field(default_factory=RiskProfile)
     learner: LearnerModel = Field(default_factory=LearnerModel)
