@@ -19,13 +19,14 @@ from lunaris_runtime.resilience import (
     get_llm_rate_limiter,
     retry_on_rate_limit,
 )
-from lunaris_runtime.schema import CourseBrief, Module, Resource, ResourceKind, TrustTier
+from lunaris_runtime.schema import CourseBrief, Modality, Module, Resource, ResourceKind, TrustTier
 
 from .candidate_view import CandidateView
 from .curation import CuratedResources
+from .deterministic import DeterministicQueryTranslator
 from .parser import CurationChoice, parse_curation
 from .prompt import build_curation_prompt
-from .query import build_resource_queries
+from .translator import IQueryTranslator
 
 logger = structlog.get_logger()
 
@@ -76,6 +77,7 @@ class ClaudeResourceCurator:
         search: ISearchProvider,
         video_source: IVideoSource,
         *,
+        translator: IQueryTranslator | None = None,
         budget: ResourceBudget = _DEFAULT_BUDGET,
         clock: Callable[[], str] = _utc_now_iso,
     ) -> None:
@@ -83,11 +85,14 @@ class ClaudeResourceCurator:
         self._client: BaseChatModel | None = None
         self._search = search
         self._video_source = video_source
+        self._translator = translator or DeterministicQueryTranslator()
         self._budget = budget
         self._clock = clock
 
-    async def curate(self, module: Module, brief: CourseBrief | None = None) -> CuratedResources:
-        candidates = await self._gather(module, brief)
+    async def curate(
+        self, module: Module, brief: CourseBrief | None = None, *, modality: Modality | None = None
+    ) -> CuratedResources:
+        candidates = await self._gather(module, brief, modality)
         if not candidates:
             return CuratedResources()
         prompt = build_curation_prompt(
@@ -126,13 +131,17 @@ class ClaudeResourceCurator:
             kept += 1
         return CuratedResources(**buckets)
 
-    async def _gather(self, module: Module, brief: CourseBrief | None) -> list[_Candidate]:
-        """Run the per-kind queries (within budget), classify trust, drop blocked + duplicates."""
-        queries = build_resource_queries(module, brief)[: self._budget.max_searches]
+    async def _gather(
+        self, module: Module, brief: CourseBrief | None, modality: Modality | None
+    ) -> list[_Candidate]:
+        """Plan queries via the translator (within budget), classify trust, drop blocked + dupes."""
+        queries = (await self._translator.translate(module, brief, modality=modality))[
+            : self._budget.max_searches
+        ]
         seen: set[str] = set()
         candidates: list[_Candidate] = []
-        for kind, query in queries:
-            for candidate in await self._candidates_for(kind, query):
+        for search_query in queries:
+            for candidate in await self._candidates_for(search_query.kind, search_query.query):
                 if not candidate.url or candidate.url in seen:
                     continue
                 seen.add(candidate.url)

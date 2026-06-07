@@ -14,7 +14,11 @@ from dataclasses import fields
 from langchain_core.tools import BaseTool, tool
 from lunaris_runtime.schema import AgentEventKind, MerrillSegments, ProgressStage
 
-from ...subagents.resource_curator import CuratedResources, IResourceCurator
+from ...subagents.resource_curator import (
+    CuratedResources,
+    IResourceCurator,
+    representative_modality,
+)
 from ..draft import CourseDraft
 
 
@@ -54,7 +58,8 @@ def make_curate_resources_tool(curator: IResourceCurator, draft: CourseDraft) ->
         for module in draft.modules:
             if not module.lessons:
                 continue
-            curated = await curator.curate(module, draft.brief)
+            modality = representative_modality(module, draft.graph)
+            curated = await curator.curate(module, draft.brief, modality=modality)
             count = _attach(module.lessons[0].segments, curated)
             total += count
             per_module.append({"id": module.id, "title": module.title, "resourceCount": count})
