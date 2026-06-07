@@ -16,10 +16,10 @@ class CourseStore:
     def path_for(self, course_id: str) -> Path:
         return self._root / f"{course_id}.json"
 
-    def save(self, course: Course) -> Path:
-        path = self.path_for(course.id)
-        path.write_text(course.model_dump_json(by_alias=True, indent=2))
-        return path
+    def save(self, course: Course) -> None:
+        # Returns None to satisfy ICourseStore (the Supabase store has no path to return); the file
+        # path is available via path_for for file-store-specific callers/tests.
+        self.path_for(course.id).write_text(course.model_dump_json(by_alias=True, indent=2))
 
     def load(self, course_id: str) -> Course:
         return Course.model_validate_json(self.path_for(course_id).read_text())

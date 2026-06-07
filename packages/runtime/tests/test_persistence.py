@@ -10,11 +10,11 @@ def test_save_then_load_round_trips(tmp_path: Path) -> None:
     course = Course(id="abc", topic="graphs", goal_concept="kc-9")
 
     # Act
-    saved_path = store.save(course)
+    store.save(course)
     loaded = store.load("abc")
 
     # Assert
-    assert saved_path.exists()
+    assert store.path_for("abc").exists()
     assert loaded == course
 
 
@@ -24,7 +24,8 @@ def test_saved_file_is_camel_case_json(tmp_path: Path) -> None:
     course = Course(id="abc", topic="graphs", goal_concept="kc-9")
 
     # Act
-    text = store.save(course).read_text()
+    store.save(course)
+    text = store.path_for("abc").read_text()
 
     # Assert
     assert '"goalConcept"' in text
