@@ -15,8 +15,9 @@ export const RAIL_MAX_WIDTH = 520;
 export const RAIL_DEFAULT_WIDTH = 320;
 /** Keyboard resize step (px) per arrow-key press on the splitter. */
 const RAIL_KEYBOARD_STEP = 16;
-/** Where the rail's collapse + width preference is persisted (per-device → localStorage). */
-const STORAGE_KEY = "lunaris.reader.rail";
+/** Default localStorage key — the reader rail. Pass a distinct key for another rail surface (e.g.
+ *  the config rail) so the two persist independently and don't share collapse/width state. */
+const DEFAULT_STORAGE_KEY = "lunaris.reader.rail";
 
 export interface RailLayout {
   /** Whether the rail is collapsed (the reading column goes full-bleed on wide screens). */
@@ -43,10 +44,10 @@ const clampWidth = (width: number): number =>
   Math.min(RAIL_MAX_WIDTH, Math.max(RAIL_MIN_WIDTH, width));
 
 /** Read the persisted preference, tolerating absent/corrupt storage (falls back to the defaults). */
-function readPersisted(): PersistedLayout {
+function readPersisted(storageKey: string): PersistedLayout {
   const fallback: PersistedLayout = { collapsed: false, width: RAIL_DEFAULT_WIDTH };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<PersistedLayout>;
     return {
@@ -63,9 +64,12 @@ function readPersisted(): PersistedLayout {
  * device. The width survives a collapse (so expanding restores it) and is clamped to a sane range.
  * Resizing is driven either by a pointer drag on the splitter (1:1, transition suppressed) or the
  * keyboard when it's focused. (Narrow screens render the rail as a drawer and ignore this.)
+ *
+ * `storageKey` selects where the preference persists, so distinct rail surfaces (the reader rail vs
+ * the config rail) keep independent collapse/width state.
  */
-export function useRailLayout(): RailLayout {
-  const initial = readPersisted();
+export function useRailLayout(storageKey: string = DEFAULT_STORAGE_KEY): RailLayout {
+  const initial = readPersisted(storageKey);
   const [collapsed, setCollapsed] = useState(initial.collapsed);
   const [width, setWidth] = useState(initial.width);
   const [resizing, setResizing] = useState(false);
@@ -76,11 +80,11 @@ export function useRailLayout(): RailLayout {
   // Persist on every change — cheap, and keeps the preference durable without an explicit save.
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ collapsed, width }));
+      localStorage.setItem(storageKey, JSON.stringify({ collapsed, width }));
     } catch {
       // A storage failure (private mode / quota) must not break the layout — degrade silently.
     }
-  }, [collapsed, width]);
+  }, [storageKey, collapsed, width]);
 
   const toggleCollapsed = useCallback(() => setCollapsed((prev) => !prev), []);
 

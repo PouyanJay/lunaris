@@ -74,6 +74,14 @@ export interface BriefResponse {
   clarifier: Clarifier;
 }
 
+/** The course-setup rail's brief-load lifecycle. `blank` is the resting state (no brief read yet);
+ *  `ready` carries the interpreter's brief + the learner's working answers (keyed by question id). */
+export type BriefLoadState =
+  | { status: "blank" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; data: BriefResponse; answers: Record<string, string> };
+
 /** The learner's confirmed answers, merged onto the brief server-side before the build. */
 export interface Clarification {
   goalType?: GoalType;

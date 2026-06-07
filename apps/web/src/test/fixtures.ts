@@ -223,6 +223,19 @@ export function makeBriefResponse(overrides: Partial<BriefResponse> = {}): Brief
     clarifier: {
       questions: [
         {
+          // Mirrors the server's build_clarifier order (R0): the goal-type question comes first.
+          id: QUESTION_IDS.GOAL,
+          prompt: "What kind of outcome are you after?",
+          kind: "choice",
+          placeholder: "",
+          options: [
+            { value: "knowledge", label: "Understand a topic", recommended: false },
+            { value: "skill", label: "Build a skill", recommended: false },
+            { value: "credential", label: "Pass a credential", recommended: true },
+            { value: "behavior", label: "Change a behavior", recommended: false },
+          ],
+        },
+        {
           id: QUESTION_IDS.LEVEL,
           prompt: "What's your current level with this?",
           kind: "choice",

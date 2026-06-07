@@ -137,7 +137,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
   });
 
-  it("personalizes the build: opt in, confirm the clarifier, then stream to the ready course", async () => {
+  it("personalizes the build through the rail: read the brief, confirm, then stream to ready", async () => {
     const fetchMock = routedFetch({
       runs: [],
       brief: makeBriefResponse(),
@@ -146,42 +146,42 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    // Opt into the confirm step instead of the one-click Generate.
+    // Name a topic, then personalize it from the always-visible setup rail (not a buried modal).
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize before building/i }));
+    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
 
-    // The panel interprets the goal and offers the confirm questions (inferred level pre-picked).
-    expect(await screen.findByRole("heading", { name: /tune your course/i })).toBeInTheDocument();
+    // The rail interprets the goal and offers the confirm questions (inferred level pre-picked).
+    expect(await screen.findByText(/reach CLB 10/i)).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /intermediate/i })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: /advanced/i }));
 
     // Build from the confirmed brief → the stream resolves to the ready course.
-    fireEvent.click(screen.getByRole("button", { name: /build course/i }));
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
     expect(
       await screen.findByRole("heading", { name: "How binary search works" }),
     ).toBeInTheDocument();
 
-    // The confirmed clarification was threaded into the build stream URL (the core T2 contract).
+    // The confirmed clarification was threaded into the build stream URL (the core wiring contract).
     const streamCall = fetchMock.mock.calls.find(([input]) =>
       String(input).includes("/api/courses/stream"),
     );
     expect(streamCall).toBeDefined();
     const params = new URL(String(streamCall![0]), "http://test").searchParams;
     expect(JSON.parse(params.get("clarification") ?? "null")).toMatchObject({
-      targetLevel: "intermediate",
+      targetLevel: "advanced",
+      goalType: "credential",
     });
   });
 
-  it("cancels personalize back to the topic form", async () => {
-    vi.stubGlobal("fetch", routedFetch({ runs: [], brief: makeBriefResponse() }));
+  it("shows the persistent course-setup rail beside the topic form in the idle state", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [] }));
     render(<App />);
 
-    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize before building/i }));
-    await screen.findByRole("heading", { name: /tune your course/i });
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
+    // The rail replaces the old buried Personalize modal — it sits beside the form, always visible.
+    expect(screen.getByRole("complementary", { name: /course setup/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open settings/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
+    await screen.findByText(/no runs yet/i);
   });
 
   it("shows the run-history sidebar with prior runs", async () => {
@@ -215,7 +215,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.queryByRole("separator", { name: /resize sidebar/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /settings/i })).toBeInTheDocument();
+    // Exact match scopes to the sidebar's "Settings" — the idle rail also has an "Open Settings…".
+    expect(screen.getByRole("button", { name: /^settings$/i })).toBeInTheDocument();
 
     // Expand → the run history + splitter return.
     fireEvent.click(screen.getByRole("button", { name: /expand sidebar/i }));
