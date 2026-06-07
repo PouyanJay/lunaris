@@ -338,6 +338,8 @@ function moduleWithObjectivesAndAssessment() {
               prompt: "What is the worst-case time complexity?",
               objective: "binary_search",
               answer: "O(log n)",
+              // Required by the type; its rendering is asserted in T5 (LessonAssessment).
+              passCriterion: "States O(log n).",
             },
           ],
         },

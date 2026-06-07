@@ -20,6 +20,12 @@ class Item(CourseModel):
     prompt: str
     objective: str  # the Objective this item measures
     answer: str | None = None
+    # Backward design (CQ Phase 4.1): the explicit, concrete, gradeable bar this item is judged
+    # against — what a passing response must show ("Names >=2 AZs and a failover path"), not the
+    # unscored "does your register align?". Written before the lesson so authoring works backward
+    # from it. Scaffolding the learner reads, NOT a factual claim — the verifier never grounds it.
+    # Empty on the legacy / pre-P4 path (the reader simply shows no check line).
+    pass_criterion: str = ""
 
 
 class Assessment(CourseModel):

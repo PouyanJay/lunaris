@@ -287,6 +287,9 @@ export interface AssessmentItem {
   /** The objective/KC id this item assesses. */
   objective: string;
   answer: string | null;
+  /** Backward design (CQ Phase 4.1): the concrete, gradeable bar a passing response must clear.
+   *  Empty on pre-P4 courses (the reader shows no check line). */
+  passCriterion: string;
 }
 
 export interface Assessment {
@@ -396,6 +399,7 @@ export type ProgressStage =
   | "module_authored"
   | "claims_verified"
   | "resources_curated"
+  | "coverage_verified"
   | "run_completed";
 
 /** One streamed build update (mirrors the ProgressEvent schema, serialised camelCase). */
@@ -411,6 +415,8 @@ export interface ProgressEvent {
   claimsTotal: number | null;
   claimsSupported: number | null;
   claimsCut: number | null;
+  /** Promised competencies left unbuilt on COVERAGE_VERIFIED (CQ Phase 4.2); 0 == clean. */
+  gapCount: number | null;
   status: CourseStatus | null;
 }
 

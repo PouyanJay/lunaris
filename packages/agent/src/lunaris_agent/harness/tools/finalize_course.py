@@ -21,6 +21,7 @@ from lunaris_runtime.schema import (
     ProgressStage,
 )
 
+from ...coverage_critic import CoverageReport, ICoverageCritic
 from ...critic import ICritic
 from ...honesty import assess_grounding_honesty
 from ...scope import estimate_scope
@@ -29,6 +30,17 @@ from ...subagents.visual_agent import VisualEngine
 from ..draft import CourseDraft
 
 logger = structlog.get_logger()
+
+
+def _coverage_message(report: CoverageReport) -> str:
+    """The COVERAGE_VERIFIED stage line — in the voice of the other stage lines (a count + verdict),
+    so the build timeline reads consistently: clean, or how many promised competencies went unbuilt.
+    """
+    if report.is_clean:
+        return "Coverage verified: every promised competency is built"
+    count = len(report.gaps)
+    noun = "competency" if count == 1 else "competencies"
+    return f"Coverage gap: {count} promised {noun} not built — scoped out"
 
 
 def _append_coverage_caveat(caveat: str, gaps: list[str]) -> str:
@@ -108,11 +120,17 @@ def make_finalize_course_tool(
     critic: ICritic,
     store: CourseStore,
     draft: CourseDraft,
+    coverage_critic: ICoverageCritic,
     *,
     visual_engine: VisualEngine | None = None,
     scope_polisher: IScopePolisher | None = None,
 ) -> BaseTool:
-    """Build the ``finalize_course`` tool, closed over the critic, the store, and the run draft.
+    """Build the ``finalize_course`` tool, closed over the critics, the store, and the run draft.
+
+    The ``coverage_critic`` (CQ Phase 4.2) is always present — like the structural ``critic``, never
+    optional — because the gate always runs: the deterministic fail-safe stands in when the LLM
+    judge can't (no key). It runs as the last gate, checks every promised competency is materially
+    built, and folds any gap into the honest scope + a review flag (the COVERAGE_VERIFIED stage).
 
     When a ``visual_engine`` is wired, the assembled course is illustrated before the publish gate
     runs and before it is persisted — the agent-pipeline analogue of the Orchestrator's
@@ -136,6 +154,16 @@ def make_finalize_course_tool(
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
         _apply_quality_gates(course, issues, draft)
+        # Coverage gate (CQ Phase 4.2): every promised competency must be materially built. A gap is
+        # folded into the honest scope + flags review (T4); a clean report leaves the course as-is.
+        # Runs after the scope band exists so it can extend it; before the wording polish so any
+        # scoped-out competency reads in the same voice.
+        report = await coverage_critic.review(course, brief=draft.brief)
+        await draft.progress.emit(
+            ProgressStage.COVERAGE_VERIFIED,
+            _coverage_message(report),
+            gap_count=len(report.gaps),
+        )
         # Optional key-gated wording polish of the deterministic scope band (CQ Phase 3.1): refines
         # only the delivers/excludes copy, never the effort or the line counts (reconcile enforces
         # it). None (the no-key path) ships the deterministic band unchanged.

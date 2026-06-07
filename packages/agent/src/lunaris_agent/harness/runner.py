@@ -23,6 +23,7 @@ from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth, ProgressStage, RiskTier
 
+from ..coverage_critic import ICoverageCritic, StubCoverageCritic
 from ..critic import ICritic, MinimalCritic
 from ..progress import IAgentSink, IProgressSink
 from ..subagents.concept_extractor import IConceptExtractor
@@ -99,6 +100,7 @@ class AgentCourseBuilder:
         discoverer: IGroundingDiscoverer,
         verifier: Verifier,
         critic: ICritic | None = None,
+        coverage_critic: ICoverageCritic | None = None,
         visual_engine: VisualEngine | None = None,
         scope_polisher: IScopePolisher | None = None,
         risk_tier: RiskTier = RiskTier.LOW,
@@ -118,6 +120,10 @@ class AgentCourseBuilder:
         self._discoverer = discoverer
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
+        # The coverage gate (CQ Phase 4.2) always runs — the deterministic fail-safe / LLM judge is
+        # wired by the composition root; this default keeps the offline path clean (no gap) so a
+        # test that isn't exercising coverage builds a course unchanged.
+        self._coverage_critic = coverage_critic or StubCoverageCritic()
         self._visual_engine = visual_engine
         # The optional key-gated scope-band wording polish (CQ Phase 3.1); None → the deterministic
         # band ships unchanged (the no-key path), so the offline suite stays byte-for-byte stable.
@@ -217,6 +223,7 @@ class AgentCourseBuilder:
                 draft,
                 visual_engine=self._visual_engine,
                 scope_polisher=self._scope_polisher,
+                coverage_critic=self._coverage_critic,
             ),
         ]
 

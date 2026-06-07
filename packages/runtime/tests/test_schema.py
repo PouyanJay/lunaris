@@ -6,6 +6,7 @@ from lunaris_runtime.schema import (
     Citation,
     Course,
     CourseStatus,
+    Item,
     KnowledgeComponent,
     SourceType,
     TrustTier,
@@ -91,6 +92,37 @@ def test_citation_credibility_is_bounded() -> None:
         Citation(id="x", credibility=1.5)
     with pytest.raises(ValidationError):
         Citation(id="x", credibility=-0.1)
+
+
+def test_item_carries_gradeable_pass_criterion_camel_case() -> None:
+    # Backward design (CQ Phase 4.1): an assessment item carries an explicit, concrete, gradeable
+    # pass criterion (the summative check the lesson is authored backward from), on the wire as
+    # camelCase ``passCriterion``.
+    # Arrange
+    item = Item(
+        id="i1",
+        prompt="Design a fault-tolerant VPC for a 3-tier web app.",
+        objective="kc-vpc",
+        pass_criterion="Names ≥2 AZs and a failover path; no single point of failure.",
+    )
+
+    # Act
+    payload = item.model_dump_json(by_alias=True)
+    reloaded = Item.model_validate_json(payload)
+
+    # Assert — camelCase key (checked on a whitespace-stripped copy), round-trips losslessly.
+    assert '"passCriterion":"Names' in payload.replace(" ", "")
+    assert reloaded == item
+    assert reloaded.pass_criterion.startswith("Names")
+
+
+def test_item_parses_without_pass_criterion_for_backward_compat() -> None:
+    # Arrange — a pre-P4 wire item (no passCriterion key), as older courses carry.
+    # Act
+    item = Item.model_validate({"id": "i1", "prompt": "q", "objective": "kc"})
+
+    # Assert — it validates, the criterion defaulting to empty (the reader shows no check line).
+    assert item.pass_criterion == ""
 
 
 def test_agent_event_rejects_both_text_and_delta() -> None:

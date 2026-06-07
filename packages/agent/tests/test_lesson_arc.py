@@ -16,6 +16,7 @@ persisted course, not a hand-built one.
 from pathlib import Path
 
 import structlog
+from lunaris_agent.coverage_critic import StubCoverageCritic
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_finalize_course_tool
@@ -124,7 +125,7 @@ async def test_finalized_course_carries_the_lesson_arc_and_module_competency(
 ) -> None:
     # Arrange — a draft whose assembled module (competency-tagged) holds an arc-carrying lesson.
     draft, store = _draft_with_authored_modules(tmp_path)
-    finalize = make_finalize_course_tool(MinimalCritic(), store, draft)
+    finalize = make_finalize_course_tool(MinimalCritic(), store, draft, StubCoverageCritic())
 
     # Act — the real finalize tool assembles, gates, and persists the course. Capture the structured
     # logs so the run_id correlation at the deepest layer this skeleton exercises can be asserted.

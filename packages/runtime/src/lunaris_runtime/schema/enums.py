@@ -29,7 +29,8 @@ class ProgressStage(StrEnum):
     the curriculum is designed, the grounding corpus is prepared (P6 — the evidence each claim is
     verified against: first SEEDED from the sources the research stage already fetched, then
     DISCOVERED fresh to fill the gaps), each module is authored (one event per module), claims are
-    verified, learning resources are curated per lesson, and the run completes.
+    verified, learning resources are curated per lesson, coverage is verified (CQ Phase 4 — every
+    researched competency is materially built, or honestly scoped out), and the run completes.
     """
 
     RUN_STARTED = "run_started"
@@ -44,6 +45,7 @@ class ProgressStage(StrEnum):
     MODULE_AUTHORED = "module_authored"
     CLAIMS_VERIFIED = "claims_verified"
     RESOURCES_CURATED = "resources_curated"
+    COVERAGE_VERIFIED = "coverage_verified"
     RUN_COMPLETED = "run_completed"
 
 
