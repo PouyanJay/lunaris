@@ -36,6 +36,25 @@ describe("prose structure — enumerations & sections", () => {
     expect(within(list as HTMLElement).getAllByRole("listitem")).toHaveLength(3);
   });
 
+  it("still lifts an (a)/(b)/(c) enumeration that follows an example quote in the same paragraph", () => {
+    // The example cue ("write: '…'") splits the paragraph; the continuation holding the markers must
+    // still be re-scanned so the enumeration becomes a list rather than surviving as inline text.
+    const prose =
+      "To attribute a source, you might write: 'Source A claims that transit reduces congestion.' " +
+      "Then build a three-part structure: (a) what the sources collectively say; " +
+      "(b) where they differ and why it matters; (c) what this tells your reader.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    // The worked example is lifted into its own panel…
+    expect(container.querySelector("aside")).not.toBeNull();
+    // …AND the trailing enumeration becomes an alpha-marked ordered list (not raw "(a)" text).
+    const list = container.querySelector("ol");
+    expect(list).toHaveAttribute("type", "a");
+    expect(within(list as HTMLElement).getAllByRole("listitem")).toHaveLength(3);
+    expect(container.textContent).not.toContain("(a)");
+  });
+
   it("leaves an ordinary paragraph (no enumeration) untouched", () => {
     const prose = "A sentence with one independent clause (and an aside) cannot express much.";
 

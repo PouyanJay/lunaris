@@ -313,10 +313,14 @@ function remarkProseStructure() {
         if (textOf(example.before).trim())
           replacement.push({ type: "paragraph", children: example.before });
         replacement.push(buildExamplePanel(example.quote));
-        if (textOf(example.after).trim())
-          replacement.push({ type: "paragraph", children: example.after });
+        const hasAfter = textOf(example.after).trim().length > 0;
+        if (hasAfter) replacement.push({ type: "paragraph", children: example.after });
         (parent as unknown as Node).children!.splice(index, 1, ...replacement);
-        return [SKIP, index + replacement.length];
+        // Re-visit the split-off continuation paragraph (the last inserted node) so a following
+        // enumeration / array / second example still lifts; without this it survives as inline text.
+        return hasAfter
+          ? [SKIP, index + replacement.length - 1]
+          : [SKIP, index + replacement.length];
       }
 
       const literal = arrayLiteral(text);
