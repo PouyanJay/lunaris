@@ -135,16 +135,6 @@ def test_delivers_counts_the_modules() -> None:
     assert "6" in " ".join(scope.delivers)
 
 
-@pytest.mark.parametrize("goal_type", list(GoalType))
-def test_every_goal_type_yields_a_populated_band(goal_type: GoalType) -> None:
-    # The Genericity Rule: every goal kind produces a non-empty, topic-blind band. delivers always
-    # carries the framing + module-count lines, so a stripped line is a regression.
-    scope = estimate_scope(_course(goal_type=goal_type), _brief(goal_type=goal_type))
-    assert scope.effort
-    assert len(scope.delivers) >= 2
-    assert scope.excludes
-
-
 def test_zero_module_course_produces_a_valid_band() -> None:
     # A stub/degenerate course with no modules must still yield a sane band (the safe_modules=1
     # clamp), never crash or emit "0 modules" — the polish layer (T2) consumes this result.
@@ -166,3 +156,68 @@ def test_not_applicable_level_omits_a_level_phrase() -> None:
     # A goal with no proficiency ladder must not read "at the n/a level".
     scope = estimate_scope(_course(), _brief(target_level=Level.NOT_APPLICABLE))
     assert "n/a" not in " ".join(scope.delivers).lower()
+
+
+# --- the Genericity Rule: the band keys off abstractions, never the topic ----------------------
+
+# Five deliberately unrelated domains — the band's LOGIC (effort, line counts) must be identical
+# across them for the same abstractions, proving the estimator is topic-blind (the Genericity Rule).
+_TOPICS = [
+    "the AWS Solutions Architect exam",
+    "CLB 10 English proficiency",
+    "ABRSM Grade 5 piano",
+    "Rust ownership and borrowing",
+    "a daily mobility routine",
+]
+
+
+@pytest.mark.parametrize("goal_type", list(GoalType))
+@pytest.mark.parametrize("magnitude", list(GapMagnitude))
+def test_band_structure_is_topic_blind_for_the_same_abstractions(
+    goal_type: GoalType, magnitude: GapMagnitude
+) -> None:
+    # The effort band reads off (goal_type, magnitude, level, modules) — NOT the topic — so two
+    # courses that differ only in subject must size to the same effort and the same line counts.
+    bands = [
+        estimate_scope(
+            _course(goal_type=goal_type),
+            CourseBrief(
+                subject=topic,
+                goal=f"learn {topic}",
+                goal_type=goal_type,
+                target_level=Level.INTERMEDIATE,
+                gap=Gap(magnitude=magnitude),
+            ),
+        )
+        for topic in _TOPICS
+    ]
+    efforts = {band.effort for band in bands}
+    assert len(efforts) == 1, f"effort varied by topic: {efforts}"
+    assert len({len(band.delivers) for band in bands}) == 1
+    assert len({len(band.excludes) for band in bands}) == 1
+
+
+@pytest.mark.parametrize("goal_type", list(GoalType))
+@pytest.mark.parametrize("magnitude", list(GapMagnitude))
+def test_every_goal_type_and_magnitude_yields_a_sane_band(
+    goal_type: GoalType, magnitude: GapMagnitude
+) -> None:
+    # Full matrix: every goal kind and gap size produces a weeks band, the framing + module-count
+    # delivers lines (>=2, so a stripped line is a regression), and at least one honest limit.
+    scope = estimate_scope(
+        _course(goal_type=goal_type),
+        _brief(goal_type=goal_type, magnitude=magnitude),
+    )
+    assert re.search(r"\d+-\d+ weeks", scope.effort)
+    assert len(scope.delivers) >= 2
+    assert len(scope.excludes) >= 1
+
+
+# --- backward compatibility: a pre-Phase-3 course has no band ----------------------------------
+
+
+def test_a_course_persisted_before_phase_3_parses_with_no_scope() -> None:
+    # An old persisted course JSON has no ``scope`` key; it must parse to None (no band shown), not
+    # raise — the field is additive and optional.
+    course = Course.model_validate({"id": "old", "topic": "anything"})
+    assert course.scope is None
