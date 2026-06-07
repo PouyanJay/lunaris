@@ -4,7 +4,12 @@
  * modelled; extend as more of the course surface is built out.
  */
 
+import type { GoalType } from "./clarifier";
+
 export type BloomLevel = "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create";
+
+/** How a KC is learned (CQ Phase 1.0) — drives Phase 2's resource + media shape. */
+export type Modality = "receptive" | "productive" | "procedural" | "conceptual";
 
 export type CourseStatus =
   | "diagnosing"
@@ -23,6 +28,8 @@ export interface KnowledgeComponent {
   /** Normalised 0..1 difficulty. */
   difficulty: number;
   bloomCeiling: BloomLevel;
+  /** How this KC is learned (CQ Phase 1.0); absent on pre-Phase-1 courses. */
+  modality?: Modality | null;
   /** Citation ids grounding this KC. */
   sources: string[];
 }
@@ -350,6 +357,8 @@ export interface Course {
   id: string;
   topic: string;
   goalConcept: string;
+  /** The course-level goal classification carried from the brief (CQ Phase 1.0). */
+  goalType: GoalType;
   graph: PrerequisiteGraph;
   modules: Module[];
   provenance: Citation[];

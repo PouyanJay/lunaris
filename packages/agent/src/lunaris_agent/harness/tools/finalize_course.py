@@ -54,11 +54,16 @@ def _assemble(draft: CourseDraft) -> Course:
             f"course {draft.course_id!r}: finalize_course called before the prerequisite "
             "graph was built — call build_prerequisite_graph first"
         )
+    # The graph is a hard precondition (a nullable working field that must not become a malformed
+    # Course); the brief is not — direct-assembly paths (and several tests) build a course from a
+    # graph alone, so a missing brief falls back to the schema's own goal_type default rather than
+    # forcing every assembly site through interpret_request.
+    goal_type = draft.brief.goal_type if draft.brief else GoalType.KNOWLEDGE
     return Course(
         id=draft.course_id,
         topic=draft.topic,
         goal_concept=draft.goal_concept or "",
-        goal_type=draft.brief.goal_type if draft.brief else GoalType.KNOWLEDGE,
+        goal_type=goal_type,
         graph=draft.graph,
         modules=draft.modules or _modules_from_graph(draft.graph),
         provenance=draft.provenance,

@@ -1,6 +1,6 @@
 import pytest
-from lunaris_agent.subagents.concept_extractor import parse_extraction
-from lunaris_runtime.schema import BloomLevel
+from lunaris_agent.subagents.concept_extractor import build_extraction_prompt, parse_extraction
+from lunaris_runtime.schema import BloomLevel, Modality
 from structlog.testing import capture_logs
 
 
@@ -69,6 +69,53 @@ def test_parse_extraction_falls_back_when_goal_not_in_kcs() -> None:
     assert extraction.goal_id == "b"
     assert [kc.id for kc in extraction.kcs] == ["a", "b"]
     assert any(e["event"] == "extractor_goal_id_not_in_kcs" and e["fallback"] == "b" for e in logs)
+
+
+def test_parse_extraction_reads_per_kc_modality() -> None:
+    # Arrange — each KC declares how it is learned (CQ Phase 1.0): receptive/productive/procedural/
+    # conceptual. Phase 2 keys resource + media shape off this.
+    text = (
+        '{"goal_id": "x", "kcs": ['
+        '{"id": "x", "label": "X", "definition": "d", "difficulty": 0.5,'
+        ' "bloom_ceiling": "apply", "modality": "productive"}]}'
+    )
+
+    # Act
+    extraction = parse_extraction(text)
+
+    # Assert
+    assert extraction.kcs[0].modality is Modality.PRODUCTIVE
+
+
+def test_parse_extraction_defaults_modality_to_none_when_absent_or_unknown() -> None:
+    # Arrange — one KC omits modality, one gives an out-of-vocabulary value. Both default to None
+    # (unclassified) rather than crash — modality is optional, inferred best-effort.
+    text = (
+        '{"goal_id": "y", "kcs": ['
+        '{"id": "x", "label": "X", "definition": "d", "difficulty": 0.5},'
+        '{"id": "y", "label": "Y", "definition": "d", "difficulty": 0.6,'
+        ' "modality": "telepathic"}]}'
+    )
+
+    # Act
+    extraction = parse_extraction(text)
+
+    # Assert
+    assert extraction.kcs[0].modality is None
+    assert extraction.kcs[1].modality is None
+
+
+def test_build_extraction_prompt_requests_per_kc_modality() -> None:
+    # Arrange — the novice prompt path (no brief) must still ask for the per-KC modality field.
+    topic = "Binary search"
+
+    # Act
+    prompt = build_extraction_prompt(topic, None, [])
+
+    # Assert — the field is requested and all four values are offered to the model.
+    assert "modality" in prompt
+    for value in ("receptive", "productive", "procedural", "conceptual"):
+        assert value in prompt
 
 
 def test_parse_extraction_rejects_empty() -> None:

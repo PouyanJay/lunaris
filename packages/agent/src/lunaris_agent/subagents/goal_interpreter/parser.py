@@ -6,6 +6,9 @@ from lunaris_runtime.schema import (
     CourseBrief,
     DeliverableShape,
     DetailDepth,
+    Gap,
+    GapMagnitude,
+    GoalType,
     LanguageStyle,
     Level,
     Preferences,
@@ -55,6 +58,17 @@ def _deliverable_shape(raw: object) -> DeliverableShape:
     return DeliverableShape(lessons=count if count > 0 else None)
 
 
+def _gap(raw: object) -> Gap:
+    """The entry→target gap (CQ Phase 1.0). ``target_level`` is synced by ``CourseBrief``, so the
+    interpreter only supplies the entry level + magnitude; both default on a malformed field."""
+    if not isinstance(raw, dict):
+        return Gap()
+    return Gap(
+        entry_level=_coerce_enum(raw.get("entry_level"), Level, Level.NOT_APPLICABLE),
+        magnitude=_coerce_enum(raw.get("magnitude"), GapMagnitude, GapMagnitude.MODERATE),
+    )
+
+
 def _preferences(raw: object) -> Preferences:
     if not isinstance(raw, dict):
         return Preferences()
@@ -96,8 +110,10 @@ def parse_brief(text: str) -> CourseBrief:
     return CourseBrief(
         subject=subject,
         goal=goal,
+        goal_type=_coerce_enum(data.get("goal_type"), GoalType, GoalType.KNOWLEDGE),
         target_standard=_target_standard(data.get("target_standard")),
         target_level=_coerce_enum(data.get("target_level"), Level, Level.NOT_APPLICABLE),
+        gap=_gap(data.get("gap")),
         assumed_prior=str(data.get("assumed_prior", "")),
         audience=str(data.get("audience", "")),
         deliverable_shape=_deliverable_shape(data.get("deliverable_shape")),

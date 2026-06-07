@@ -1,7 +1,7 @@
 from pydantic import Field
 
 from .base import CourseModel
-from .enums import BloomLevel, SourceType, TrustTier
+from .enums import BloomLevel, Modality, SourceType, TrustTier
 
 
 class Citation(CourseModel):
@@ -33,6 +33,9 @@ class KnowledgeComponent(CourseModel):
     definition: str
     difficulty: float = Field(ge=0, le=1)
     bloom_ceiling: BloomLevel
+    # How this KC is learned (CQ Phase 1.0): receptive/productive/procedural/conceptual. Drives
+    # Phase 2's resource + media shape. None when the extractor left it unclassified.
+    modality: Modality | None = None
     sources: list[str] = Field(default_factory=list)  # Citation ids
 
 

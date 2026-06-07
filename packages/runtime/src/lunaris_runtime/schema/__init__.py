@@ -2,7 +2,7 @@ from .agent_event import AgentEvent
 from .base import CourseModel
 from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuestion
 from .course import Course
-from .course_brief import CourseBrief, DeliverableShape, Preferences, TargetStandard
+from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
 from .course_run import CourseRun
 from .enums import (
     AcquisitionMode,
@@ -13,10 +13,12 @@ from .enums import (
     CourseStatus,
     DetailDepth,
     DiscoveryDepth,
+    GapMagnitude,
     GoalType,
     LanguageStyle,
     Latency,
     Level,
+    Modality,
     Mode,
     Pace,
     ProgressStage,
@@ -106,6 +108,8 @@ __all__ = [
     "FlowNode",
     "FlowSpec",
     "GagneFlags",
+    "Gap",
+    "GapMagnitude",
     "GoalType",
     "Item",
     "KnowledgeComponent",
@@ -118,6 +122,7 @@ __all__ = [
     "MasteryState",
     "MayerFlags",
     "MerrillSegments",
+    "Modality",
     "Mode",
     "Module",
     "Objective",

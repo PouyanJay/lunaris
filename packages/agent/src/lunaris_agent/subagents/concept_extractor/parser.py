@@ -1,7 +1,7 @@
 import re
 
 import structlog
-from lunaris_runtime.schema import BloomLevel, KnowledgeComponent
+from lunaris_runtime.schema import BloomLevel, KnowledgeComponent, Modality
 
 from ..json_tolerant import loads_tolerant
 from .extraction import Extraction
@@ -16,6 +16,16 @@ def _coerce_bloom(value: object) -> BloomLevel:
         return BloomLevel(str(value).lower())
     except ValueError:
         return BloomLevel.APPLY
+
+
+def _coerce_modality(value: object) -> Modality | None:
+    """Map a model string to a ``Modality``, or ``None`` when absent/unknown (it is optional)."""
+    if value is None:
+        return None
+    try:
+        return Modality(str(value).strip().lower())
+    except ValueError:
+        return None
 
 
 def _clamp(value: object) -> float:
@@ -51,6 +61,7 @@ def parse_extraction(text: str) -> Extraction:
             definition=str(item.get("definition", "")),
             difficulty=_clamp(item.get("difficulty", 0.5)),
             bloom_ceiling=_coerce_bloom(item.get("bloom_ceiling")),
+            modality=_coerce_modality(item.get("modality")),
             sources=[str(s) for s in item.get("sources", [])],
         )
         for item in raw_kcs

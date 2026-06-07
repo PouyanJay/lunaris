@@ -152,7 +152,7 @@ class Level(StrEnum):
 
 
 class GoalType(StrEnum):
-    """What KIND of outcome a course's goal is (course-level, on the brief) — CQ Phase 1.0.
+    """What kind of outcome a course's goal is (course-level, on the brief) — CQ Phase 1.0.
 
     The classification the deliverable shape and research depth branch on, keyed off the goal's
     nature rather than its topic (the Genericity Rule): ``KNOWLEDGE`` = understand a body of
@@ -166,6 +166,37 @@ class GoalType(StrEnum):
     SKILL = "skill"
     CREDENTIAL = "credential"
     BEHAVIOR = "behavior"
+
+
+class GapMagnitude(StrEnum):
+    """How large the leap from the learner's entry level to the goal is (CQ Phase 1.0).
+
+    Part of the brief's ``gap`` (entry → target). Inferred from the goal's nature, not its topic:
+    ``SMALL`` = a refinement at roughly the same level; ``MODERATE`` = one band of growth;
+    ``LARGE`` = several bands or a from-scratch climb. The research-depth policy (CQ Phase 1.2)
+    earns more searches/fetches/iterations for a larger gap. Defaults to ``MODERATE``.
+    """
+
+    SMALL = "small"
+    MODERATE = "moderate"
+    LARGE = "large"
+
+
+class Modality(StrEnum):
+    """How a single knowledge component is learned (per-KC, CQ Phase 1.0).
+
+    Orthogonal to the course-level ``GoalType``: one course mixes modalities (CLB listening is
+    receptive, speaking is productive). ``RECEPTIVE`` = take in / comprehend (reading, listening);
+    ``PRODUCTIVE`` = produce / perform (writing, speaking, playing); ``PROCEDURAL`` = execute a
+    process or technique (a method, an algorithm); ``CONCEPTUAL`` = understand ideas + relations.
+    Phase 2 keys each KC's resource + media shape off this (receptive → input material, not a
+    "tutorial"). Optional — ``None`` when unclassified.
+    """
+
+    RECEPTIVE = "receptive"
+    PRODUCTIVE = "productive"
+    PROCEDURAL = "procedural"
+    CONCEPTUAL = "conceptual"
 
 
 class StandardKind(StrEnum):

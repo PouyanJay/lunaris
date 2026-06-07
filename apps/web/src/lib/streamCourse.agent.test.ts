@@ -24,6 +24,7 @@ const COURSE: Course = {
   id: "c1",
   topic: "Binary search",
   goalConcept: "binary_search",
+  goalType: "knowledge",
   graph: { nodes: [], edges: [], frontier: [], isAcyclic: true, topoOrder: [] },
   modules: [],
   provenance: [],
