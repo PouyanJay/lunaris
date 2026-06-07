@@ -14,7 +14,13 @@ from langchain_core.messages import HumanMessage
 from lunaris_agent.harness.authoring import build_authoring_subgraph
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft, build_authoring_prompt
-from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
+from lunaris_grounding import (
+    Evidence,
+    StubEvidenceRetriever,
+    StubSupportAssessor,
+    Support,
+    Verifier,
+)
 from lunaris_runtime.schema import (
     BloomLevel,
     Citation,
@@ -143,8 +149,10 @@ class _RecordingReviser:
     def __init__(self) -> None:
         self.author_briefs: list[CourseBrief | None] = []
         self.author_frontiers: list[list[str] | None] = []
+        self.author_evidence: list[str] = []
         self.revise_briefs: list[CourseBrief | None] = []
         self.revise_frontiers: list[list[str] | None] = []
+        self.revise_evidence: list[str] = []
 
     async def author(
         self,
@@ -152,9 +160,11 @@ class _RecordingReviser:
         *,
         brief: CourseBrief | None = None,
         frontier: list[str] | None = None,
+        grounded_evidence: str = "",
     ) -> LessonDraft:
         self.author_briefs.append(brief)
         self.author_frontiers.append(frontier)
+        self.author_evidence.append(grounded_evidence)
         return _arc_lesson(module)
 
     async def revise(
@@ -164,9 +174,11 @@ class _RecordingReviser:
         *,
         brief: CourseBrief | None = None,
         frontier: list[str] | None = None,
+        grounded_evidence: str = "",
     ) -> LessonDraft:
         self.revise_briefs.append(brief)
         self.revise_frontiers.append(frontier)
+        self.revise_evidence.append(grounded_evidence)
         return _arc_lesson(module)
 
 
@@ -219,3 +231,75 @@ async def test_authoring_loop_threads_brief_and_frontier_into_the_revision() -> 
     # Assert — the revision path was exercised and threaded the brief + frontier too.
     assert reviser.revise_briefs and reviser.revise_briefs[0] == draft.brief
     assert reviser.revise_frontiers[0] == draft.frontier
+
+
+# ---- grounded authoring: evidence in front of the author (CQ Phase 1.5) --------------------------
+
+
+def test_build_authoring_prompt_puts_grounded_evidence_in_front_of_the_author() -> None:
+    # Arrange
+    module = _module(competency="hear implied intent in speech")
+    evidence = "- [src::clb] CLB 10 listeners infer implied intent in extended speech."
+
+    # Act
+    prompt = build_authoring_prompt(module, grounded_evidence=evidence)
+
+    # Assert — the retrieved evidence and the "write only what it supports" instruction reach the
+    # author (so it writes from the corpus, not memory).
+    assert "src::clb" in prompt
+    assert "Ground every factual claim" in prompt
+
+
+def test_build_authoring_prompt_revision_carries_both_cut_claims_and_evidence() -> None:
+    # Arrange
+    module = _module()
+
+    # Act — a revision with both the cut claims and the retrieved evidence.
+    prompt = build_authoring_prompt(
+        module, cut_claims=["an ungrounded assertion"], grounded_evidence="- [src::e] a real fact."
+    )
+
+    # Assert — the author sees what was cut AND the evidence to rewrite it down to.
+    assert "an ungrounded assertion" in prompt
+    assert "src::e" in prompt
+
+
+async def test_author_node_grounds_the_reviser_from_the_corpus() -> None:
+    # Arrange — every claim grounds (no revision), so only the first-pass author runs; its retriever
+    # returns evidence for any query, so the author must receive rendered grounding.
+    draft = _draft_to_author()
+    reviser = _RecordingReviser()
+    graph = build_authoring_subgraph(reviser, _verifier(marker=None), draft)
+
+    # Act
+    await graph.ainvoke({"messages": [HumanMessage(content="author")]})
+
+    # Assert — the author was handed the retrieved evidence (rendered with its citation id).
+    assert reviser.author_evidence
+    assert "[src]" in reviser.author_evidence[0]
+
+
+class _AlwaysCutAssessor:
+    """Cuts every claim regardless of evidence — to force the revise path while evidence exists."""
+
+    async def assess(self, _claim_text: str, _evidence: list[Evidence]) -> Support:
+        return Support(score=0.0, citation_id=None)
+
+
+async def test_revise_node_retrieves_evidence_for_the_cut_claims() -> None:
+    # Arrange — the retriever returns evidence for any query, but the assessor cuts every claim, so
+    # the loop must revise; the revise step retrieves evidence for the cut claims (claim-repair).
+    draft = _draft_to_author()
+    reviser = _RecordingReviser()
+    retriever = StubEvidenceRetriever(
+        lambda query: [Evidence(citation=Citation(id="src", snippet=query), score=0.9)]
+    )
+    verifier = Verifier(retriever, _AlwaysCutAssessor())
+    graph = build_authoring_subgraph(reviser, verifier, draft)
+
+    # Act
+    await graph.ainvoke({"messages": [HumanMessage(content="author")]})
+
+    # Assert — revise ran and was handed retrieved evidence for the cut claims.
+    assert reviser.revise_evidence
+    assert "[src]" in reviser.revise_evidence[0]

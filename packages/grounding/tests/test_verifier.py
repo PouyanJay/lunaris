@@ -462,3 +462,13 @@ async def test_a_blocked_domain_does_not_count_toward_cross_source_agreement() -
 
     # Assert
     assert claim.verifier_status is VerifierStatus.CUT
+
+
+def test_verifier_exposes_its_retriever() -> None:
+    # The retriever is read-only on the verifier so grounded authoring (CQ Phase 1.5) can retrieve
+    # from the SAME corpus the gate checks against, without a second retriever or a loosened gate.
+    retriever = StubEvidenceRetriever(lambda claim: [])
+
+    verifier = Verifier(retriever, StubSupportAssessor())
+
+    assert verifier.retriever is retriever

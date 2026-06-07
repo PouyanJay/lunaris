@@ -20,7 +20,10 @@ class ILessonReviser(Protocol):
     ``brief``/``frontier`` (the run's interpreted request + the learner's frontier) personalize the
     arc — passed through to the author so the lesson is aimed at the module's competency, pitched at
     the level, and scoped above the frontier (P7.3). Both are optional: omitting them yields the
-    generic arc, keeping the loop usable without an interpreted brief.
+    generic arc, keeping the loop usable without an interpreted brief. ``grounded_evidence`` (CQ
+    Phase 1.5) is the corpus evidence retrieved for the module's KCs / the cut claims, rendered as
+    prompt text, so the author writes claims the evidence supports rather than from memory; empty
+    means no grounding was available.
     """
 
     async def author(
@@ -29,6 +32,7 @@ class ILessonReviser(Protocol):
         *,
         brief: CourseBrief | None = None,
         frontier: list[str] | None = None,
+        grounded_evidence: str = "",
     ) -> LessonDraft:
         """Author the module's first-pass lesson arc."""
         ...
@@ -40,6 +44,7 @@ class ILessonReviser(Protocol):
         *,
         brief: CourseBrief | None = None,
         frontier: list[str] | None = None,
+        grounded_evidence: str = "",
     ) -> LessonDraft:
         """Re-author the lesson, grounding or replacing the claims the verifier cut, arc intact."""
         ...

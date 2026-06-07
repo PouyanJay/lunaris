@@ -18,8 +18,9 @@ class StubLessonReviser:
     ``author_fn`` produces the first-pass draft for a module. ``revise_fn`` produces a revised
     draft given the module and the cut claims; it also receives the revision count (1-based) so a
     test can model "fixed on the second attempt", "never fixed", or "stops improving". ``brief``/
-    ``frontier`` are accepted (to satisfy ``ILessonReviser``) but ignored — the scripted functions
-    are the test's control; arc personalization is covered by ``build_authoring_prompt``.
+    ``frontier``/``grounded_evidence`` are accepted (to satisfy ``ILessonReviser``) but ignored —
+    the scripted functions are the test's control; arc personalization + grounding are covered by
+    ``build_authoring_prompt`` and the loop's retrieval tests.
     """
 
     def __init__(
@@ -37,6 +38,7 @@ class StubLessonReviser:
         *,
         brief: CourseBrief | None = None,
         frontier: list[str] | None = None,
+        grounded_evidence: str = "",
     ) -> LessonDraft:
         return self._author_fn(module)
 
@@ -47,6 +49,7 @@ class StubLessonReviser:
         *,
         brief: CourseBrief | None = None,
         frontier: list[str] | None = None,
+        grounded_evidence: str = "",
     ) -> LessonDraft:
         self._revisions[module.id] = self._revisions.get(module.id, 0) + 1
         return self._revise_fn(module, cut_claims, self._revisions[module.id])
