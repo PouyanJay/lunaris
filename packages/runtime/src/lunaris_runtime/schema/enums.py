@@ -151,6 +151,23 @@ class Level(StrEnum):
     NOT_APPLICABLE = "n/a"
 
 
+class GoalType(StrEnum):
+    """What KIND of outcome a course's goal is (course-level, on the brief) — CQ Phase 1.0.
+
+    The classification the deliverable shape and research depth branch on, keyed off the goal's
+    nature rather than its topic (the Genericity Rule): ``KNOWLEDGE`` = understand a body of
+    material (the document is the course); ``SKILL`` = become able to *do* something (a practised
+    capability); ``CREDENTIAL`` = pass an externally-defined exam/certification (an exam maps here,
+    not to a modality); ``BEHAVIOR`` = change an ongoing habit or practice over time. Defaults to
+    ``KNOWLEDGE`` — the shape today's content-dense document already serves.
+    """
+
+    KNOWLEDGE = "knowledge"
+    SKILL = "skill"
+    CREDENTIAL = "credential"
+    BEHAVIOR = "behavior"
+
+
 class StandardKind(StrEnum):
     """What kind of external target a goal's standard is (the brief's ``target_standard``)."""
 

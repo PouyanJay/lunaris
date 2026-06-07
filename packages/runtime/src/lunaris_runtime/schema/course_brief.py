@@ -1,7 +1,7 @@
 from pydantic import Field
 
 from .base import CourseModel
-from .enums import DetailDepth, LanguageStyle, Level, StandardKind
+from .enums import DetailDepth, GoalType, LanguageStyle, Level, StandardKind
 from .standard_research import StandardResearch
 
 
@@ -43,6 +43,8 @@ class CourseBrief(CourseModel):
 
     subject: str
     goal: str
+    # What kind of outcome the goal is (CQ Phase 1.0); shape + research depth branch on it.
+    goal_type: GoalType = GoalType.KNOWLEDGE
     target_standard: TargetStandard | None = None
     target_level: Level = Level.NOT_APPLICABLE
     assumed_prior: str = ""

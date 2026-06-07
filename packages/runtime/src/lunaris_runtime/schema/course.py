@@ -1,7 +1,7 @@
 from pydantic import Field
 
 from .base import CourseModel
-from .enums import CourseStatus
+from .enums import CourseStatus, GoalType
 from .instruction import Module
 from .knowledge import Citation, PrerequisiteGraph
 from .learner import LearnerModel
@@ -14,6 +14,7 @@ class Course(CourseModel):
     id: str
     topic: str  # the raw user query
     goal_concept: str = ""  # KnowledgeComponent id where the journey ends
+    goal_type: GoalType = GoalType.KNOWLEDGE  # carried from the brief (CQ Phase 1.0)
     settings: CourseSettings = Field(default_factory=CourseSettings)
     risk: RiskProfile = Field(default_factory=RiskProfile)
     learner: LearnerModel = Field(default_factory=LearnerModel)

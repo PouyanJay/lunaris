@@ -12,7 +12,14 @@ import asyncio
 import structlog
 from langchain_core.tools import BaseTool, tool
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Course, CourseStatus, Module, PrerequisiteGraph, ProgressStage
+from lunaris_runtime.schema import (
+    Course,
+    CourseStatus,
+    GoalType,
+    Module,
+    PrerequisiteGraph,
+    ProgressStage,
+)
 
 from ...critic import ICritic
 from ...subagents.visual_agent import VisualEngine
@@ -51,6 +58,7 @@ def _assemble(draft: CourseDraft) -> Course:
         id=draft.course_id,
         topic=draft.topic,
         goal_concept=draft.goal_concept or "",
+        goal_type=draft.brief.goal_type if draft.brief else GoalType.KNOWLEDGE,
         graph=draft.graph,
         modules=draft.modules or _modules_from_graph(draft.graph),
         provenance=draft.provenance,
