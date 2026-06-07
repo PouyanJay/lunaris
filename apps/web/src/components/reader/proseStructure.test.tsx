@@ -133,6 +133,42 @@ describe("prose structure — enumerations & sections", () => {
     ).toBeInTheDocument();
   });
 
+  it("turns an inline 'Step 1: … Step 2: …' run inside one paragraph into a stepper", () => {
+    // The steps run together inside a single flowing paragraph (no blank lines between them) — the
+    // block-level grouping misses this, so the inline run must be split out first.
+    const prose =
+      "You will now apply this strategy to your own task. Choose a passage of 200–250 words. " +
+      "Step 1: Read your passage aloud once without marking anything. Record it. " +
+      "Step 2: Listen to a native speaker model reading a similar passage. Note where they stress. " +
+      "Step 3: Go back to your own text. Underline every content word that should carry stress.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    const stepper = container.querySelector('ol[aria-label="Steps"]');
+    expect(stepper).not.toBeNull();
+    const steps = within(stepper as HTMLElement).getAllByRole("listitem");
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toHaveTextContent(
+      "Step 1: Read your passage aloud once without marking anything",
+    );
+    // The intro stays as prose above the stepper, with the inline markers gone from the flow.
+    expect(container.textContent).toContain("You will now apply this strategy to your own task.");
+    const intro = container.querySelector("p");
+    expect(intro?.textContent).not.toContain("Step 1:");
+  });
+
+  it("does not split an inline run that is not sequential from 1", () => {
+    // "Step 1:" then "Step 3:" (no "Step 2:") inside one paragraph is not a clean 1..N procedure, so
+    // it is left as ordinary prose rather than guessed into a stepper.
+    const prose =
+      "Follow the guide. Step 1: open the file. Step 3: save it. The rest is covered elsewhere.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    expect(container.querySelector('ol[aria-label="Steps"]')).toBeNull();
+    expect(container.querySelector("p")?.textContent).toContain("Step 1: open the file.");
+  });
+
   it("falls back to collapsible panels for a non-sequential labelled run", () => {
     // Numbers 1 then 3 (not 1..N) → not a step procedure, so collapsible sections instead.
     const prose = "Principle 1: Clarity. Say what you mean.\n\nPrinciple 3: Brevity. Then stop.";
