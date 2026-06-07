@@ -32,6 +32,11 @@ logger = structlog.get_logger()
 # content judge pick genuinely-fitting resources instead of settling for the first few hits.
 _RESULTS_PER_QUERY = 12
 _DEFAULT_BUDGET = ResourceBudget()
+# Fed back to the translator (rule 7) when a module's first pass finds nothing — a competency-style
+# query that returned junk gets one broader, simpler retry before the module is flagged empty (T5).
+_BROADEN_FEEDBACK = (
+    "previous queries returned 0 results; broaden and use simpler, more common phrasing"
+)
 
 
 def _utc_now_iso() -> str:
@@ -111,6 +116,11 @@ class ClaudeResourceCurator:
     ) -> CuratedResources:
         candidates = await self._gather(module, brief, modality)
         if not candidates:
+            # Zero-is-a-retry (T5): a human reformulates rather than shipping an empty module — one
+            # broader pass before giving up, so a competency-language miss isn't a silent zero.
+            candidates = await self._gather(module, brief, modality, feedback=_BROADEN_FEEDBACK)
+        if not candidates:
+            logger.info("resources_none_found", module=module.id)
             return CuratedResources()
         prompt = build_curation_prompt(
             module, self._views(candidates), limit=self._budget.max_resources
@@ -149,12 +159,20 @@ class ClaudeResourceCurator:
         return CuratedResources(**buckets)
 
     async def _gather(
-        self, module: Module, brief: CourseBrief | None, modality: Modality | None
+        self,
+        module: Module,
+        brief: CourseBrief | None,
+        modality: Modality | None,
+        feedback: str | None = None,
     ) -> list[_Candidate]:
-        """Plan queries via the translator (within budget), classify trust, drop blocked + dupes."""
-        queries = (await self._translator.translate(module, brief, modality=modality))[
-            : self._budget.max_searches
-        ]
+        """Plan queries via the translator (within budget), classify trust, drop blocked + dupes.
+
+        ``feedback`` (set on the retry pass) asks the translator to broaden when the first pass came
+        up empty (T5).
+        """
+        queries = (
+            await self._translator.translate(module, brief, modality=modality, feedback=feedback)
+        )[: self._budget.max_searches]
         seen: set[str] = set()
         candidates: list[_Candidate] = []
         for search_query in queries:

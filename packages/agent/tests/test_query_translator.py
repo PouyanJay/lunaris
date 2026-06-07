@@ -18,7 +18,7 @@ from lunaris_agent.subagents.resource_curator import (
     SearchQuery,
     representative_modality,
 )
-from lunaris_grounding import StubVideoSource
+from lunaris_grounding import SearchResult, StubVideoSource
 from lunaris_runtime.schema import (
     BloomLevel,
     CourseBrief,
@@ -41,14 +41,18 @@ class _FakeJudge:
 
 
 class _RecordingSearch:
-    """An ISearchProvider that records the queries it receives and returns nothing."""
+    """An ISearchProvider that records the queries it receives and returns one result.
+
+    Returns a (non-empty) hit so the curator's zero-is-a-retry (T5) doesn't fire — these tests are
+    about the translator seam, not the broaden-retry, which has its own coverage.
+    """
 
     def __init__(self) -> None:
         self.queries: list[str] = []
 
-    async def search(self, query: str, *, max_results: int = 5) -> list:
+    async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
         self.queries.append(query)
-        return []
+        return [SearchResult(url=f"https://example.test/{len(self.queries)}", title="hit")]
 
 
 class _RecordingTranslator:

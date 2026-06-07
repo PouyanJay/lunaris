@@ -29,6 +29,19 @@ from ..draft import CourseDraft
 logger = structlog.get_logger()
 
 
+def _append_coverage_caveat(caveat: str, gaps: list[str]) -> str:
+    """Fold any resource-coverage gaps (CQ Phase 2 T5) into the scope_note — no silent empty module.
+
+    Appends an honest sentence naming the modules that ship without curated external resources, so
+    the learner sees the gap rather than wondering why a module has no aids. Returns the caveat
+    unchanged when there are no gaps.
+    """
+    if not gaps:
+        return caveat
+    note = f"Some modules ship without curated external resources: {', '.join(gaps)}."
+    return f"{caveat} {note}".strip()
+
+
 def _modules_from_graph(graph: PrerequisiteGraph) -> list[Module]:
     """Trivial walking-skeleton assembly: one module per concept, in topological order.
 
@@ -105,7 +118,7 @@ def make_finalize_course_tool(
         # and is withheld; a PARTIAL one still carries its caveat to the learner but may publish —
         # so scope_note is set unconditionally, only needs_review gates publication.
         honesty = assess_grounding_honesty(draft.brief)
-        course.scope_note = honesty.caveat
+        course.scope_note = _append_coverage_caveat(honesty.caveat, draft.resource_coverage_gaps)
         # The authoring loop's triage flags a course whose goal-critical claim could not be
         # grounded within budget; withhold PUBLISHED even when the structural critic is clean.
         if not issues and not draft.needs_review and not honesty.needs_review:

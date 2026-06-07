@@ -56,6 +56,30 @@ class _OneQueryTranslator:
         return [self._query]
 
 
+class _FeedbackAwareTranslator:
+    """Records the feedback of each translate call (for the T5 broaden-retry test)."""
+
+    def __init__(self, query: SearchQuery) -> None:
+        self._query = query
+        self.feedbacks: list[str | None] = []
+
+    async def translate(self, module, brief=None, *, modality=None, feedback=None):
+        self.feedbacks.append(feedback)
+        return [self._query]
+
+
+class _EmptyOnFirstPassSearch:
+    """Returns nothing on the first query, then results once the broaden-retry runs (T5)."""
+
+    def __init__(self, results: list[SearchResult]) -> None:
+        self._results = results
+        self.calls = 0
+
+    async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        self.calls += 1
+        return [] if self.calls == 1 else self._results
+
+
 class _FakeJudge:
     """A chat model stand-in: records each prompt it receives and replays a fixed JSON response."""
 
@@ -295,6 +319,29 @@ async def test_curate_drops_unplayable_videos_and_blends_the_metric_into_credibi
     assert kept.url == "https://youtu.be/good"
     # The deterministic metric blended into the judge's 1.0 (so the stamped credibility is < 1.0).
     assert 0.0 < kept.credibility < 1.0
+
+
+async def test_curate_retries_with_a_broaden_feedback_when_the_first_pass_is_empty() -> None:
+    # Arrange — the first search returns nothing; the translator records the feedback it's given.
+    search = _EmptyOnFirstPassSearch(
+        [SearchResult(url="https://b.example.edu/x", title="Found on the broader pass")]
+    )
+    translator = _FeedbackAwareTranslator(SearchQuery(kind=ResourceKind.ARTICLE, query="q"))
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "apply", "why": "w", "credibility": 0.6}]}'
+    )
+    curator = ClaudeResourceCurator(judge, search, StubVideoSource(), translator=translator)
+
+    # Act
+    curated = await curator.curate(_module(), _brief())
+
+    # Assert — a second (broaden) pass ran, and it recovered a resource instead of a silent zero.
+    assert translator.feedbacks == [
+        None,
+        "previous queries returned 0 results; broaden and use simpler, more common phrasing",
+    ]
+    total = len(curated.activate + curated.demonstrate + curated.apply + curated.integrate)
+    assert total == 1
 
 
 async def test_curate_respects_the_resource_budget() -> None:

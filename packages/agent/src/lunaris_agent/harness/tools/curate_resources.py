@@ -46,6 +46,7 @@ async def _curate_all_modules(
     """
     total = 0
     per_module: list[dict[str, object]] = []
+    gaps: list[str] = []
     for module in draft.modules:
         if not module.lessons:
             continue
@@ -54,10 +55,19 @@ async def _curate_all_modules(
         count = _attach(module.lessons[0].segments, curated)
         total += count
         per_module.append({"id": module.id, "title": module.title, "resourceCount": count})
-        await draft.agent.emit(
-            AgentEventKind.REASONING,
-            text=f"Curated {count} resource(s) for “{module.title}”.",
-        )
+        if count == 0:
+            # No silent zero (T5): record the gap + say so, rather than shipping an empty module.
+            gaps.append(module.title)
+            await draft.agent.emit(
+                AgentEventKind.REASONING,
+                text=f"No suitable resources found for “{module.title}” — it ships without aids.",
+            )
+        else:
+            await draft.agent.emit(
+                AgentEventKind.REASONING,
+                text=f"Curated {count} resource(s) for “{module.title}”.",
+            )
+    draft.resource_coverage_gaps = gaps
     return total, per_module
 
 

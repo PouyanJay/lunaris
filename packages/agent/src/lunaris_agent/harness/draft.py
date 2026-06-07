@@ -66,6 +66,9 @@ class CourseDraft:
     # Set by the authoring loop's triage when a goal-critical claim could not be grounded after the
     # revise budget: finalize then withholds PUBLISHED (REVIEW) even though the publish gate passed.
     needs_review: bool = False
+    # Module titles whose curation came up empty even after the broaden-retry (CQ Phase 2 T5).
+    # finalize folds them into the course's scope_note so the learner sees the gap — no silent zero.
+    resource_coverage_gaps: list[str] = field(default_factory=list)
     course: Course | None = None
     # Stage-boundary progress emitter shared by every draft-bound tool + the authoring loop. Not a
     # constructor arg: it defaults to a no-op reporter (so tests/batch runs need no wiring) and the
