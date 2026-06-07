@@ -17,3 +17,9 @@ def test_research_budget_rejects_negative_caps() -> None:
         ResearchBudget(max_searches=-1)
     with pytest.raises(ValueError, match="non-negative"):
         ResearchBudget(max_fetches=-1)
+
+
+def test_research_budget_rejects_zero_rounds() -> None:
+    # The adaptive loop must run at least once (CQ Phase 1.1); zero rounds is a silent no-op.
+    with pytest.raises(ValueError, match="at least one round"):
+        ResearchBudget(max_rounds=0)

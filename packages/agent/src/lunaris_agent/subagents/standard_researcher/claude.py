@@ -11,6 +11,7 @@ from lunaris_grounding import (
     ResearchBudget,
     SearchResult,
     classify_domain,
+    research_budget_for_brief,
 )
 from lunaris_runtime.resilience import (
     LLM_MAX_RETRIES,
@@ -38,7 +39,6 @@ logger = structlog.get_logger()
 # How many hits to ask for per query; the per-build BUDGET (search + fetch counts) does the real
 # bounding. Candidates are preferred highest-trust-first, so a small fetch budget keeps the best.
 _RESULTS_PER_QUERY = 5
-_DEFAULT_BUDGET = ResearchBudget()
 _TIER_RANK: dict[TrustTier, int] = {
     TrustTier.OFFICIAL: 0,
     TrustTier.REPUTABLE: 1,
@@ -88,28 +88,32 @@ class ClaudeStandardResearcher:
         search: ISearchProvider,
         extractor: IContentExtractor,
         *,
-        budget: ResearchBudget = _DEFAULT_BUDGET,
+        budget: ResearchBudget | None = None,
         clock: Callable[[], str] = _utc_now_iso,
     ) -> None:
         self._model = model
         self._client: BaseChatModel | None = None
         self._search = search
         self._extractor = extractor
+        # None → size the budget to each brief at research time (CQ Phase 1.2's depth policy); an
+        # explicit budget is a pre-authorized depth ceiling for callers that already know it.
         self._budget = budget
         self._clock = clock
 
     async def research(self, brief: CourseBrief) -> ResearchOutcome:
         """Adaptively ground the brief: plan queries → search → fetch → distil a structured
         framework → deepen on the model's follow-up queries, until coverage is met, the round
-        ceiling is hit, or the search/fetch budget runs out (CQ Phase 1.1)."""
+        ceiling is hit, or the search/fetch budget runs out (CQ Phase 1.1). The budget is sized to
+        the brief (CQ Phase 1.2) unless one was injected."""
+        budget = self._budget if self._budget is not None else research_budget_for_brief(brief)
         fetched: list[_FetchedPage] = []
         seen: set[str] = set()
         queries = build_research_queries(brief)
-        remaining_searches = self._budget.max_searches
-        remaining_fetches = self._budget.max_fetches
+        remaining_searches = budget.max_searches
+        remaining_fetches = budget.max_fetches
         distillation = Distillation()
         rounds = 0
-        for _ in range(self._budget.max_rounds):
+        for _ in range(budget.max_rounds):
             round_queries = queries[:remaining_searches]
             if not round_queries or remaining_fetches <= 0:
                 break

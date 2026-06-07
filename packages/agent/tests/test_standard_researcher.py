@@ -21,10 +21,14 @@ from lunaris_grounding import (
     SearchResult,
     StubContentExtractor,
     StubSearchProvider,
+    research_budget_for_brief,
 )
 from lunaris_runtime.schema import (
     CompetencyArea,
     CourseBrief,
+    Gap,
+    GapMagnitude,
+    GoalType,
     Level,
     ResearchStatus,
     StandardKind,
@@ -44,6 +48,22 @@ def _clb_brief() -> CourseBrief:
             name="CLB 10", kind=StandardKind.EXTERNAL_STANDARD, authority_hint="ircc.canada.ca"
         ),
         target_level=Level.ADVANCED,
+        needs_research=True,
+    )
+
+
+def _demanding_clb_brief() -> CourseBrief:
+    """The CLB brief as a demanding credential goal (CQ Phase 1.2), keeping the same named standard
+    so the deterministic first query is unchanged across the two CLB fixtures."""
+    return CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10 across all four skills",
+        goal_type=GoalType.CREDENTIAL,
+        target_standard=TargetStandard(
+            name="CLB 10", kind=StandardKind.EXTERNAL_STANDARD, authority_hint="ircc.canada.ca"
+        ),
+        target_level=Level.EXPERT,
+        gap=Gap(entry_level=Level.NOVICE, magnitude=GapMagnitude.LARGE),
         needs_research=True,
     )
 
@@ -405,6 +425,95 @@ async def test_research_budget_caps_the_number_of_fetched_sources() -> None:
     assert research.sources[0].trust_tier is TrustTier.REPUTABLE
 
 
+# ---- the depth policy: budget sized to the brief (CQ Phase 1.2) ----------------------------------
+
+
+def test_research_budget_policy_scales_up_for_a_demanding_goal() -> None:
+    # Arrange — a credential goal at the ceiling with a large gap should earn deeper research than a
+    # casual knowledge intro, keyed off the brief abstractions (never the topic).
+    demanding = CourseBrief(
+        subject="AWS",
+        goal="Pass the AWS Solutions Architect exam",
+        goal_type=GoalType.CREDENTIAL,
+        target_level=Level.EXPERT,
+        gap=Gap(entry_level=Level.NOVICE, magnitude=GapMagnitude.LARGE),
+    )
+    casual = CourseBrief(
+        subject="Houseplants",
+        goal="Understand how to keep houseplants alive",
+        goal_type=GoalType.KNOWLEDGE,
+        target_level=Level.NOVICE,
+        gap=Gap(entry_level=Level.NOVICE, magnitude=GapMagnitude.SMALL),
+    )
+
+    # Act
+    deep = research_budget_for_brief(demanding)
+    shallow = research_budget_for_brief(casual)
+
+    # Assert — every dimension is at least as large for the demanding goal, and strictly deeper
+    # overall (more rounds), so depth tracks the goal rather than being a fixed 3/4 for everyone.
+    assert deep.max_searches > shallow.max_searches
+    assert deep.max_fetches > shallow.max_fetches
+    assert deep.max_rounds > shallow.max_rounds
+    assert shallow.max_rounds >= 1  # a casual goal still researches once
+
+
+def test_research_budget_policy_isolates_the_goal_type_axis() -> None:
+    # Arrange — two briefs identical except goal_type (skill vs knowledge), so any depth difference
+    # is attributable to that axis alone (the scaling test moves all three axes at once).
+    base = {"subject": "s", "goal": "g", "target_level": Level.NOVICE}
+    skill = CourseBrief(**base, goal_type=GoalType.SKILL)
+    knowledge = CourseBrief(**base, goal_type=GoalType.KNOWLEDGE)
+
+    # Act
+    skill_budget = research_budget_for_brief(skill)
+    knowledge_budget = research_budget_for_brief(knowledge)
+
+    # Assert — goal_type alone deepens the budget.
+    assert skill_budget.max_searches > knowledge_budget.max_searches
+
+
+def test_research_budget_policy_is_a_valid_budget() -> None:
+    # Arrange — the deepest possible brief (every axis at its ceiling).
+    brief = CourseBrief(
+        subject="s",
+        goal="g",
+        goal_type=GoalType.CREDENTIAL,
+        target_level=Level.EXPERT,
+        gap=Gap(magnitude=GapMagnitude.LARGE),
+    )
+
+    # Act — the policy must emit a budget the ResearchBudget guards accept (no raise).
+    budget = research_budget_for_brief(brief)
+
+    # Assert
+    assert budget.max_searches >= 3
+    assert budget.max_rounds >= 2
+
+
+async def test_researcher_with_no_explicit_budget_uses_the_brief_policy() -> None:
+    # Arrange — no explicit budget, so the researcher must size itself from the brief. A demanding
+    # credential brief earns >=2 rounds, so the follow-up round runs and the deeper page is fetched.
+    model = _scripted_model(
+        [
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]}],'
+            f' "score_table": [], "follow_up_queries": ["{_FOLLOW_UP}"]}}',
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]},'
+            '{"name": "Speaking", "competencies": ["sustain a turn"]}],'
+            '"score_table": [], "follow_up_queries": []}',
+        ]
+    )
+    # None budget → the researcher must size itself from the brief; the demanding CLB credential
+    # brief is a credential at the ceiling, so the policy grants the deepening round.
+    researcher = _deepening_fixture(model, budget=None)
+
+    # Act
+    research = (await researcher.research(_demanding_clb_brief())).research
+
+    # Assert — the policy-sized budget let the loop deepen onto the speaking page.
+    assert [area.name for area in research.areas] == ["Listening", "Speaking"]
+
+
 # ---- the adaptive deepening loop (CQ Phase 1.1) --------------------------------------------------
 
 
@@ -428,7 +537,7 @@ _FIRST_QUERY = build_research_queries(_clb_brief())[0]  # the round-1 query the 
 _FOLLOW_UP = "CLB 10 speaking descriptors"
 
 
-def _deepening_fixture(model: object, *, budget: ResearchBudget) -> ClaudeStandardResearcher:
+def _deepening_fixture(model: object, *, budget: ResearchBudget | None) -> ClaudeStandardResearcher:
     """Round 1's queries surface a shallow listening page; the model's follow-up query surfaces a
     deeper speaking page. The loop fetches the second page only if it runs the follow-up round."""
     shallow = "https://ircc.canada.ca/clb10-listening"
