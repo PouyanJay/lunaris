@@ -22,7 +22,7 @@ from lunaris_grounding import (
     VoyageEmbedder,
     YouTubeVideoSource,
 )
-from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.resilience import (
     LLM_MAX_RETRIES,
     LLM_REQUEST_TIMEOUT_S,
@@ -278,7 +278,7 @@ def build_live_verifier(
 
 
 def build_orchestrator(
-    store: CourseStore,
+    store: ICourseStore,
     *,
     worker_model: str | None = None,
     strong_model: str | None = None,
@@ -308,7 +308,7 @@ def build_orchestrator(
 
 
 def build_agent_course_builder(
-    store: CourseStore,
+    store: ICourseStore,
     *,
     worker_model: str | None = None,
     strong_model: str | None = None,

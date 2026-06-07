@@ -11,7 +11,7 @@ import asyncio
 
 import structlog
 from langchain_core.tools import BaseTool, tool
-from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import (
     Course,
     CourseStatus,
@@ -162,7 +162,7 @@ def _assemble(draft: CourseDraft) -> Course:
 
 def make_finalize_course_tool(
     critic: ICritic,
-    store: CourseStore,
+    store: ICourseStore,
     draft: CourseDraft,
     coverage_critic: ICoverageCritic,
     *,
@@ -212,8 +212,8 @@ def make_finalize_course_tool(
         # it). None (the no-key path) ships the deterministic band unchanged.
         if scope_polisher is not None and course.scope is not None:
             course.scope = await scope_polisher.polish(course.scope, brief=draft.brief)
-        # CourseStore.save is synchronous file I/O; off-load it so the agent's event loop
-        # is not blocked during the write (matters once the store is network-backed).
+        # The store's save is synchronous (file I/O for the file store, a blocking supabase-py call
+        # for the Postgres store); off-load it so the agent's event loop isn't blocked on the write.
         await asyncio.to_thread(store.save, course)
         draft.course = course
         logger.info(

@@ -20,7 +20,7 @@ from langchain_core.tools import BaseTool
 from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
-from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth, ProgressStage, RiskTier
 
 from ..coverage_critic import ICoverageCritic, StubCoverageCritic
@@ -86,7 +86,7 @@ class AgentCourseBuilder:
     def __init__(
         self,
         model: str | BaseChatModel,
-        store: CourseStore,
+        store: ICourseStore,
         *,
         interpreter: IGoalInterpreter,
         profiler: ILearnerProfiler,

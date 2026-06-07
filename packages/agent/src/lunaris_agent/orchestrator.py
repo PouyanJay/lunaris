@@ -1,8 +1,10 @@
+import asyncio
+
 import structlog
 from lunaris_graph import PrerequisiteGraphBuilder
 from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id
-from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import (
     Citation,
     Clarification,
@@ -38,7 +40,7 @@ class Orchestrator:
 
     def __init__(
         self,
-        store: CourseStore,
+        store: ICourseStore,
         extractor: IConceptExtractor,
         builder: PrerequisiteGraphBuilder,
         architect: ICurriculumArchitect,
@@ -161,7 +163,9 @@ class Orchestrator:
         else:
             course.status = CourseStatus.PUBLISHED
 
-        self._store.save(course)
+        # Off-load the (possibly network-backed) save so the event loop isn't blocked during the
+        # write — parity with the harness finalize_course tool.
+        await asyncio.to_thread(self._store.save, course)
         logger.info(
             "course_run_completed",
             course_id=course_id,
@@ -188,7 +192,8 @@ class Orchestrator:
         """
         bind_run_id(run_id)
         try:
-            course = self._store.load(course_id)
+            # Off-load the (possibly network-backed) load so the event loop isn't blocked.
+            course = await asyncio.to_thread(self._store.load, course_id)
         except FileNotFoundError:
             return None
 
@@ -223,7 +228,9 @@ class Orchestrator:
         else:
             course.status = CourseStatus.PUBLISHED
 
-        self._store.save(course)
+        # Off-load the (possibly network-backed) save so the event loop isn't blocked during the
+        # write — parity with the harness finalize_course tool.
+        await asyncio.to_thread(self._store.save, course)
         logger.info(
             "lesson_regenerated",
             course_id=course_id,
