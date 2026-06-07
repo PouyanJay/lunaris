@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator, Callable
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
-from lunaris_runtime.persistence import CourseStore, IRunEventStore, IRunStore
+from lunaris_runtime.persistence import ICourseStore, IRunEventStore, IRunStore
 from lunaris_runtime.schema import (
     AgentEvent,
     Clarification,
@@ -29,7 +29,7 @@ RUNS_LIMIT_MIN = 1
 RUNS_LIMIT_MAX = 200
 
 # Builds the per-run course pipeline (stub / live orchestrator / deep agent) from the shared store.
-PipelineFactory = Callable[[CourseStore], CoursePipeline]
+PipelineFactory = Callable[[ICourseStore], CoursePipeline]
 
 # A streamed item: a ("progress", ProgressEvent) stage, an ("agent", AgentEvent) transcript beat,
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
@@ -88,13 +88,13 @@ class CourseService:
     """Application service over the course pipeline — the API's only door to the agent.
 
     Builds a course pipeline per run via the injected factory (stub / live orchestrator / deep
-    agent) and persists through the shared ``CourseStore``, so the HTTP layer stays free of
+    agent) and persists through the shared ``ICourseStore``, so the HTTP layer stays free of
     pipeline wiring.
     """
 
     def __init__(
         self,
-        store: CourseStore,
+        store: ICourseStore,
         pipeline_factory: PipelineFactory,
         run_store: IRunStore | None = None,
         registry: RunRegistry | None = None,
@@ -313,22 +313,22 @@ class CourseService:
             raise CourseDeletionConflictError(course_id)
 
     async def _purge_course_assets(self, course_id: str) -> None:
-        """Remove the stored file + the run row + the build-event log; not-found if no file/row."""
-        file_deleted = self._store.delete(course_id)
+        """Remove the stored course + run row + build-event log; not-found if neither existed."""
+        course_deleted = self._store.delete(course_id)
         row_deleted = (
             await self._run_store.delete(course_id=course_id)
             if self._run_store is not None
             else False
         )
-        # Guard before the secondary purge: not-found is keyed on the authoritative assets (file/
-        # row), and the event-log I/O should only fire for a course that actually existed.
-        if not file_deleted and not row_deleted:
+        # Guard before the secondary purge: not-found is keyed on the authoritative assets (the
+        # course + run row); the event-log I/O should only fire for a course that actually existed.
+        if not course_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
         events_purged = await self._purge_event_log(course_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
-            file_deleted=file_deleted,
+            course_deleted=course_deleted,
             row_deleted=row_deleted,
             events_purged=events_purged,
         )

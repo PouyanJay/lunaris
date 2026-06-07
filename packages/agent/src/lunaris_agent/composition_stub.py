@@ -1,6 +1,6 @@
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
-from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import (
     BloomLevel,
     Citation,
@@ -72,7 +72,7 @@ _EDGES = [
 ]
 
 
-def build_stub_orchestrator(store: CourseStore) -> Orchestrator:
+def build_stub_orchestrator(store: ICourseStore) -> Orchestrator:
     """Composition root for the deterministic, offline pipeline.
 
     Wires the Stub subagents into an Orchestrator that builds a fixed binary-search course

@@ -161,5 +161,5 @@ async def test_delete_emits_a_structured_log_for_the_course(
     ]
     deleted = [e for e in events if e.get("event") == "course_deleted"]
     assert deleted and deleted[0]["course_id"] == course_id
-    assert deleted[0]["file_deleted"] is True and deleted[0]["row_deleted"] is True
+    assert deleted[0]["course_deleted"] is True and deleted[0]["row_deleted"] is True
     assert deleted[0]["request_id"] == request_id

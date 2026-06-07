@@ -26,10 +26,12 @@ from lunaris_grounding import (
 )
 from lunaris_runtime.persistence import (
     CourseStore,
+    ICourseStore,
     InMemoryRunEventStore,
     InMemoryRunStore,
     IRunEventStore,
     IRunStore,
+    SupabaseCourseStore,
     SupabaseRunEventStore,
     SupabaseRunStore,
 )
@@ -93,6 +95,11 @@ _supabase_run_store = SupabaseRunStore()
 _in_memory_run_event_store = InMemoryRunEventStore()
 _supabase_run_event_store = SupabaseRunEventStore()
 
+# The durable course store (one per process, same lazy-client rationale as the run store): its
+# service-role client is built on first write, so the singleton needs no network until then. The
+# file-backed store is built per-request from course_dir (cheap), so it isn't a singleton.
+_supabase_course_store = SupabaseCourseStore()
+
 # One in-flight run-task registry per process, shared across requests — the cancel request and the
 # build request must see the same in-flight set, so this MUST be a singleton.
 _run_registry = RunRegistry()
@@ -133,7 +140,11 @@ def get_course_service(
     event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
-    store = CourseStore(settings.course_dir)
+    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
+    # across replicas — the stateless-container need); the file store otherwise (offline dev).
+    store: ICourseStore = (
+        _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
+    )
     factory = _PIPELINE_FACTORIES.get(settings.pipeline)
     if factory is None:
         # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
