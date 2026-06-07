@@ -1,0 +1,92 @@
+name: CI
+
+# Gates every PR (and pushes to main) — Python, web, the API image build, and secret scanning.
+# Runs with a read-only token and NO secrets, so it is safe to run on forked-PR contributions.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.17"
+          enable-cache: true
+      # Installs the workspace incl. the dev group (pytest/ruff). The default suite is `-m "not eval"`
+      # (pyproject addopts) and runs fully offline — no Postgres service needed.
+      - run: uv sync --frozen --all-packages
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  web:
+    name: Web (typecheck + lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+
+  docker-build:
+    name: API image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Build only — proves the image is reproducible. Pushing to ACR comes in Phase 1 (cd-*.yml).
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail if a secret-looking file is tracked
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env(\..+)?|.*\.pem|.*\.key|id_rsa)$'; then
+            echo "::error::A secret-looking file is tracked in git — remove it and rotate the secret."
+            exit 1
+          fi
+          echo "No tracked secret files."
+      - name: gitleaks (new commits)
+        # Scan only the commits this event introduces — the one-time full-history sweep is done out of
+        # band, so old history can't make every PR fail. Pinned image, no license needed (public repo).
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="--log-opts=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="--log-opts=-1"
+          fi
+          docker run --rm -v "${{ github.workspace }}:/repo" \
+            ghcr.io/gitleaks/gitleaks:v8.28.0 \
+            detect --source=/repo --redact --no-banner $RANGE
