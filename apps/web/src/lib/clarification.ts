@@ -2,6 +2,7 @@ import {
   type Clarification,
   type Clarifier,
   type DetailDepth,
+  type GoalType,
   type LanguageStyle,
   type Level,
   QUESTION_IDS,
@@ -33,6 +34,8 @@ export function recommendedAnswers(clarifier: Clarifier): Record<string, string>
  */
 export function answersToClarification(answers: Record<string, string>): Clarification {
   const clarification: Clarification = {};
+  const goal = answers[QUESTION_IDS.GOAL];
+  if (goal) clarification.goalType = goal as GoalType;
   const level = answers[QUESTION_IDS.LEVEL];
   if (level) clarification.targetLevel = level as Level;
   const detail = answers[QUESTION_IDS.DETAIL];

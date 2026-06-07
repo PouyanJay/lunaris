@@ -38,13 +38,14 @@ async def test_briefs_returns_an_inferred_brief_and_the_clarifier(
     # Act — phase 1 of the infer-and-confirm flow.
     response = await client.post("/api/briefs", json={"topic": "binary search"})
 
-    # Assert — the inferred brief (camelCase) + the five confirm questions, in order.
+    # Assert — the inferred brief (camelCase) + the confirm questions, in order.
     assert response.status_code == 200
     assert response.headers["x-request-id"]  # correlation id surfaced
     body = response.json()
     # The no-key fallback (DefaultGoalInterpreter) derives the subject from the topic, end-to-end.
     assert body["brief"]["subject"] == "binary search"
     assert [q["id"] for q in body["clarifier"]["questions"]] == [
+        "goal",
         "level",
         "knowledge",
         "background",

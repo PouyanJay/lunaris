@@ -16,6 +16,7 @@ from lunaris_runtime.schema import (
     ClarifierQuestion,
     CourseBrief,
     DetailDepth,
+    GoalType,
     LanguageStyle,
     Level,
     Preferences,
@@ -27,6 +28,7 @@ def _inferred_brief() -> CourseBrief:
     return CourseBrief(
         subject="English language proficiency",
         goal="reach CLB 10",
+        goal_type=GoalType.SKILL,
         target_level=Level.INTERMEDIATE,
         assumed_prior="everyday English",
         audience="an adult learner",
@@ -50,6 +52,19 @@ def test_empty_clarification_is_the_identity_default() -> None:
 
     # Act / Assert — an all-default Clarification ("accept the inference") changes nothing.
     assert apply_clarification(brief, Clarification()) == brief
+
+
+def test_confirmed_goal_type_overrides_the_inferred_goal_type() -> None:
+    # Arrange — the interpreter inferred SKILL; the learner corrects it to CREDENTIAL (a distinct
+    # value, so the override is a real change, not a no-op).
+    brief = _inferred_brief()  # inferred SKILL
+
+    # Act
+    merged = apply_clarification(brief, Clarification(goal_type=GoalType.CREDENTIAL))
+
+    # Assert — the override lands; the original brief is untouched (pure merge).
+    assert merged.goal_type == GoalType.CREDENTIAL
+    assert brief.goal_type == GoalType.SKILL
 
 
 def test_confirmed_level_overrides_the_inferred_level() -> None:
@@ -134,12 +149,14 @@ def _recommended(clarifier: Clarifier, qid: str) -> str:
     return chosen[0]
 
 
-def test_build_clarifier_asks_level_plus_the_four_steering_inputs() -> None:
+def test_build_clarifier_asks_goal_type_level_plus_the_steering_inputs() -> None:
     # Act
     clarifier = build_clarifier(_inferred_brief())
 
-    # Assert — the §12.1 inputs: level (band) + current knowledge + background + detail + language.
+    # Assert — goal_type (CQ Phase 1) leads, then level + current knowledge + background + detail +
+    # language.
     assert [q.id for q in clarifier.questions] == [
+        "goal",
         "level",
         "knowledge",
         "background",
@@ -239,6 +256,28 @@ def test_preference_questions_cover_every_enum_band() -> None:
     assert {o.value for o in _question(clarifier, "language").options} == {
         s.value for s in LanguageStyle
     }
+
+
+@pytest.mark.parametrize("goal_type", list(GoalType))
+def test_confirmed_goal_type_overrides_for_every_kind(goal_type: GoalType) -> None:
+    # Act / Assert — each goal-type kind lands as the override.
+    merged = apply_clarification(_inferred_brief(), Clarification(goal_type=goal_type))
+    assert merged.goal_type == goal_type
+
+
+@pytest.mark.parametrize("goal_type", list(GoalType))
+def test_build_clarifier_recommends_each_inferred_goal_type(goal_type: GoalType) -> None:
+    # Arrange — a brief inferred at each goal-type in turn.
+    brief = _inferred_brief().model_copy(update={"goal_type": goal_type})
+
+    # Act / Assert — the goal question pre-picks whatever was inferred, exactly once.
+    assert _recommended(build_clarifier(brief), "goal") == goal_type.value
+
+
+def test_goal_question_covers_every_goal_type_band() -> None:
+    # A new GoalType with no label would silently get no option — assert exhaustiveness.
+    clarifier = build_clarifier(_inferred_brief())
+    assert {o.value for o in _question(clarifier, "goal").options} == {g.value for g in GoalType}
 
 
 def test_knowledge_placeholder_falls_back_when_no_prior_was_inferred() -> None:

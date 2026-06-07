@@ -6,6 +6,16 @@ import { answersToClarification, recommendedAnswers } from "./clarification";
 const CLARIFIER: Clarifier = {
   questions: [
     {
+      id: "goal",
+      prompt: "?",
+      kind: "choice",
+      placeholder: "",
+      options: [
+        { value: "knowledge", label: "Understand a topic", recommended: false },
+        { value: "credential", label: "Pass an exam", recommended: true },
+      ],
+    },
+    {
       id: "level",
       prompt: "?",
       kind: "choice",
@@ -40,6 +50,7 @@ const CLARIFIER: Clarifier = {
 describe("recommendedAnswers", () => {
   it("pre-picks the recommended option for choices and leaves text empty", () => {
     expect(recommendedAnswers(CLARIFIER)).toEqual({
+      goal: "credential",
       level: "advanced",
       knowledge: "",
       background: "",
@@ -71,6 +82,7 @@ describe("recommendedAnswers", () => {
 describe("answersToClarification", () => {
   it("maps confirmed answers onto the typed clarification (trimming text)", () => {
     const clarification = answersToClarification({
+      goal: "credential",
       level: "advanced",
       knowledge: "  solid grammar  ",
       background: "a nurse",
@@ -79,6 +91,7 @@ describe("answersToClarification", () => {
     });
 
     expect(clarification).toEqual({
+      goalType: "credential",
       targetLevel: "advanced",
       assumedKnown: "solid grammar",
       background: "a nurse",
@@ -106,6 +119,7 @@ describe("answersToClarification", () => {
 
   it("omits a missing choice answer (empty string)", () => {
     const clarification = answersToClarification({
+      goal: "",
       level: "",
       detail: "balanced",
       language: "balanced",
@@ -113,5 +127,6 @@ describe("answersToClarification", () => {
 
     expect(clarification).toEqual({ detailDepth: "balanced", languageStyle: "balanced" });
     expect(clarification.targetLevel).toBeUndefined();
+    expect(clarification.goalType).toBeUndefined();
   });
 });

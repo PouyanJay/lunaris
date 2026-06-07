@@ -76,6 +76,7 @@ export interface BriefResponse {
 
 /** The learner's confirmed answers, merged onto the brief server-side before the build. */
 export interface Clarification {
+  goalType?: GoalType;
   targetLevel?: Level;
   assumedKnown?: string;
   background?: string;
@@ -86,6 +87,7 @@ export interface Clarification {
 /** The clarifier question ids (the server's `build_clarifier` contract) — centralized so the
  *  answer→Clarification mapping references them in one place rather than scattering string literals. */
 export const QUESTION_IDS = {
+  GOAL: "goal",
   LEVEL: "level",
   KNOWLEDGE: "knowledge",
   BACKGROUND: "background",

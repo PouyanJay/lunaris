@@ -12,7 +12,7 @@ reproduces today's inferred-only build.
 from pydantic import Field
 
 from .base import CourseModel
-from .enums import ClarifierKind, DetailDepth, LanguageStyle, Level
+from .enums import ClarifierKind, DetailDepth, GoalType, LanguageStyle, Level
 
 # The free-text fields fold into the brief and travel into LLM prompts, so they are bounded at the
 # schema level (defence in depth — independent of the HTTP query-param cap) against a prompt-bloat /
@@ -23,13 +23,15 @@ _MAX_FREE_TEXT_CHARS = 1000
 class Clarification(CourseModel):
     """A learner's confirmed/adjusted answers to the interpret clarifier (opt-in; all optional).
 
-    Merged onto the inferred brief before the build. ``target_level`` confirms or overrides the
-    level; ``assumed_known`` (the learner's current topic knowledge) folds into ``assumed_prior`` so
-    the existing profiler sharpens the frontier; ``background`` folds into ``audience``;
-    ``detail_depth`` / ``language_style`` override the authoring preferences. Any field left unset
-    keeps the interpreter's inference.
+    Merged onto the inferred brief before the build. ``goal_type`` confirms or overrides what kind
+    of outcome the goal is (CQ Phase 1 — drives deliverable shape + research depth);
+    ``target_level`` confirms or overrides the level; ``assumed_known`` (the learner's current topic
+    knowledge) folds into ``assumed_prior`` so the existing profiler sharpens the frontier;
+    ``background`` folds into ``audience``; ``detail_depth`` / ``language_style`` override the
+    authoring preferences. Any field left unset keeps the interpreter's inference.
     """
 
+    goal_type: GoalType | None = None
     target_level: Level | None = None
     assumed_known: str = Field(default="", max_length=_MAX_FREE_TEXT_CHARS)
     background: str = Field(default="", max_length=_MAX_FREE_TEXT_CHARS)
@@ -49,8 +51,8 @@ class ClarifierOption(CourseModel):
 class ClarifierQuestion(CourseModel):
     """A single clarifier question: a closed CHOICE over ``options`` or a free-``TEXT`` field.
 
-    ``id`` names the :class:`Clarification` field the answer populates (``level`` / ``knowledge`` /
-    ``background`` / ``detail`` / ``language``); ``placeholder`` seeds a TEXT field with the guess.
+    ``id`` names the :class:`Clarification` field the answer populates (``goal`` / ``level`` /
+    ``knowledge`` / ``background`` / ``detail`` / ``language``); ``placeholder`` seeds a TEXT field.
     """
 
     id: str
