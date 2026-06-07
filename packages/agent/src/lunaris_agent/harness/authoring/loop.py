@@ -22,7 +22,7 @@ from langchain_core.messages import AIMessage, AnyMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
-from lunaris_grounding import Verifier
+from lunaris_grounding import Evidence, Verifier, render_evidence
 from lunaris_runtime.schema import AgentEventKind, Module, ProgressStage, RiskTier, VerifierStatus
 
 from ...lesson_claims import iter_claims
@@ -36,6 +36,8 @@ logger = structlog.get_logger()
 _REVISE_CAP = {RiskTier.LOW: 1, RiskTier.HIGH: 3}
 _HARD_CEILING = 3
 _UNSET_CUT = 1_000_000  # sentinel "previous cut" so the first round never reads as no-progress
+# Cap the grounding evidence put in front of the author so a many-KC module can't blow the prompt.
+_MAX_GROUNDING_ITEMS = 12
 
 
 class AuthoringState(TypedDict, total=False):
@@ -83,14 +85,46 @@ def build_authoring_subgraph(
     """
     lesson_assembler = assembler or LessonAssembler()
     cap = min(_REVISE_CAP[draft.risk_tier], _HARD_CEILING)
+    concepts_by_id = {kc.id: kc for kc in draft.concepts}
+
+    async def _grounding_for(queries: list[str]) -> str:
+        # Grounded authoring (CQ Phase 1.5): reuse the verifier's own retriever so the author writes
+        # from the same corpus the gate will check — no separate retriever, no loosened threshold.
+        # Best-effort: grounding is advisory, so a retrieval failure degrades to no grounding rather
+        # than crashing the build (mirrors the verifier's per-claim degradation).
+        evidence_by_id: dict[str, Evidence] = {}
+        for query in queries:
+            try:
+                hits = await verifier.retriever.retrieve(query, course_id=draft.course_id)
+            except Exception:
+                logger.warning("grounding_retrieval_failed", run_id=draft.run_id, exc_info=True)
+                continue
+            for evidence in hits:
+                evidence_by_id.setdefault(evidence.citation.id, evidence)
+        if not evidence_by_id:
+            return ""
+        return render_evidence(list(evidence_by_id.values())[:_MAX_GROUNDING_ITEMS])
+
+    def _module_queries(module: Module) -> list[str]:
+        queries: list[str] = []
+        for kc_id in module.kcs:
+            concept = concepts_by_id.get(kc_id)
+            queries.append(
+                f"{concept.label}. {concept.definition}" if concept else f"{kc_id} {module.title}"
+            )
+        return queries or [module.title]
 
     async def author(_state: AuthoringState) -> AuthoringState:
         for module in draft.modules:
             if module.lessons:
                 continue  # already authored (e.g. a partial resume); only fill the gaps
+            # Retrieve the module's per-KC evidence before authoring (CQ Phase 1.5).
+            grounding = await _grounding_for(_module_queries(module))
             # Thread the interpreted brief + the learner's frontier so the arc is personalized —
             # aimed at the module's competency, pitched at the level, scoped above the frontier.
-            lesson_draft = await reviser.author(module, brief=draft.brief, frontier=draft.frontier)
+            lesson_draft = await reviser.author(
+                module, brief=draft.brief, frontier=draft.frontier, grounded_evidence=grounding
+            )
             module.lessons = [lesson_assembler.assemble(lesson_draft, lesson_id=f"{module.id}-l0")]
             await draft.progress.emit(
                 ProgressStage.MODULE_AUTHORED,
@@ -148,8 +182,15 @@ def build_authoring_subgraph(
             cut_texts = cut_by_module.get(module.id)
             if not cut_texts:
                 continue
+            # Claim-repair (CQ Phase 1.5): retrieve evidence for the cut claims so the reviser
+            # rewrites them down to what the corpus states, not re-assert from memory.
+            grounding = await _grounding_for(cut_texts)
             revised = await reviser.revise(
-                module, cut_texts, brief=draft.brief, frontier=draft.frontier
+                module,
+                cut_texts,
+                brief=draft.brief,
+                frontier=draft.frontier,
+                grounded_evidence=grounding,
             )
             module.lessons = [lesson_assembler.assemble(revised, lesson_id=f"{module.id}-l0")]
         return {"prev_cut": state.get("cut", _UNSET_CUT), "round": state.get("round", 0) + 1}

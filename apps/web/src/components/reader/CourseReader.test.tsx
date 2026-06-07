@@ -151,6 +151,27 @@ describe("CourseReader", () => {
     expect(screen.queryByRole("button", { name: /regenerate/i })).not.toBeInTheDocument();
   });
 
+  it("shows an honest scope caveat when the course could not be grounded (CQ Phase 1.6)", () => {
+    // Arrange — a course carrying a scope note (a research-needing goal that wasn't grounded).
+    const note = "This course could not be grounded in CLB 10's real requirements.";
+    const course = makeCourse({ scopeNote: note });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — the caveat is shown as a labeled warning the learner can't miss.
+    const caveat = screen.getByRole("complementary", { name: /warning/i });
+    expect(caveat).toHaveTextContent(note);
+  });
+
+  it("shows no scope caveat when the course is grounded (empty scope note)", () => {
+    // Arrange / Act — the default fixture has an empty scopeNote.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert
+    expect(screen.queryByRole("complementary", { name: /warning/i })).not.toBeInTheDocument();
+  });
+
   it("renders an empty state when no lessons are authored", () => {
     // Arrange / Act
     render(<CourseReader course={makeCourse({ modules: [] })} />);

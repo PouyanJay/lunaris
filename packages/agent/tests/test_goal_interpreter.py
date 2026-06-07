@@ -20,6 +20,9 @@ from lunaris_runtime.schema import (
     CourseBrief,
     DeliverableShape,
     DetailDepth,
+    Gap,
+    GapMagnitude,
+    GoalType,
     LanguageStyle,
     Level,
     Preferences,
@@ -33,6 +36,8 @@ _FULL_BRIEF_JSON = """Here is the brief:
 {
   "subject": "English language proficiency",
   "goal": "reach CLB 10 across all four skills",
+  "goal_type": "credential",
+  "gap": {"entry_level": "advanced", "magnitude": "moderate"},
   "target_standard": {"name": "CLB 10", "kind": "external_standard",
                       "authority_hint": "ircc.canada.ca"},
   "target_level": "advanced",
@@ -54,6 +59,11 @@ def test_parse_brief_reads_every_field_from_prose_wrapped_json() -> None:
     # Assert — every field maps, enums coerce, and the named standard carries its authority hint.
     assert brief.subject == "English language proficiency"
     assert brief.goal == "reach CLB 10 across all four skills"
+    assert brief.goal_type is GoalType.CREDENTIAL
+    # The gap reads the inferred entry level + magnitude; its target_level is synced from the brief.
+    assert brief.gap.entry_level is Level.ADVANCED
+    assert brief.gap.target_level is Level.ADVANCED
+    assert brief.gap.magnitude is GapMagnitude.MODERATE
     assert brief.target_level is Level.ADVANCED
     assert brief.target_standard is not None
     assert brief.target_standard.name == "CLB 10"
@@ -72,6 +82,7 @@ def test_parse_brief_defaults_missing_optionals_and_bad_enums() -> None:
     # Arrange — a minimal brief with out-of-vocabulary enum values everywhere.
     text = (
         '{"subject": "Knitting", "goal": "knit a scarf", "target_level": "wizard",'
+        ' "goal_type": "telepathy", "gap": {"entry_level": "wizard", "magnitude": "epic"},'
         ' "preferences": {"detail_depth": "epic", "language_style": "alien"}}'
     )
 
@@ -80,12 +91,34 @@ def test_parse_brief_defaults_missing_optionals_and_bad_enums() -> None:
 
     # Assert — unknown enum values fall back to safe defaults; absent optionals take their defaults.
     assert brief.target_level is Level.NOT_APPLICABLE
+    assert brief.goal_type is GoalType.KNOWLEDGE
+    assert brief.gap.entry_level is Level.NOT_APPLICABLE
+    assert brief.gap.target_level is Level.NOT_APPLICABLE  # synced to the brief's target_level
+    assert brief.gap.magnitude is GapMagnitude.MODERATE
     assert brief.target_standard is None
     assert brief.deliverable_shape.lessons is None
     assert brief.needs_research is False
     assert brief.domain_field == ""
     assert brief.preferences.detail_depth is DetailDepth.BALANCED
     assert brief.preferences.language_style is LanguageStyle.BALANCED
+
+
+def test_parse_brief_syncs_gap_target_level_to_the_brief_target_level() -> None:
+    # Arrange — the model gives a gap whose target_level disagrees with the brief's target_level
+    # (a common live slip). The brief's target_level is authoritative; the gap must not drift.
+    text = (
+        '{"subject": "s", "goal": "g", "target_level": "expert",'
+        ' "gap": {"entry_level": "intermediate", "target_level": "novice", "magnitude": "large"}}'
+    )
+
+    # Act
+    brief = parse_brief(text)
+
+    # Assert — gap.target_level is forced to match the brief; entry_level + magnitude are preserved.
+    assert brief.target_level is Level.EXPERT
+    assert brief.gap.target_level is Level.EXPERT
+    assert brief.gap.entry_level is Level.INTERMEDIATE
+    assert brief.gap.magnitude is GapMagnitude.LARGE
 
 
 def test_parse_brief_drops_a_standard_without_a_name() -> None:
@@ -144,6 +177,8 @@ def test_course_brief_round_trips_through_the_camelcase_wire() -> None:
     brief = CourseBrief(
         subject="English language proficiency",
         goal="reach CLB 10",
+        goal_type=GoalType.CREDENTIAL,
+        gap=Gap(entry_level=Level.ADVANCED, magnitude=GapMagnitude.MODERATE),
         target_standard=TargetStandard(name="CLB 10", authority_hint="ircc.canada.ca"),
         target_level=Level.ADVANCED,
         deliverable_shape=DeliverableShape(lessons=6),
@@ -158,6 +193,9 @@ def test_course_brief_round_trips_through_the_camelcase_wire() -> None:
 
     # Assert — camelCase keys, string enums, and a lossless round-trip back to the model.
     assert wire["targetLevel"] == "advanced"
+    assert wire["goalType"] == "credential"
+    assert wire["gap"]["entryLevel"] == "advanced"
+    assert wire["gap"]["magnitude"] == "moderate"
     assert wire["targetStandard"]["authorityHint"] == "ircc.canada.ca"
     assert wire["deliverableShape"]["lessons"] == 6
     assert wire["preferences"]["detailDepth"] == "in_depth"

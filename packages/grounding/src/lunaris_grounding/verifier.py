@@ -51,6 +51,12 @@ class Verifier:
         self._retriever = retriever
         self._assessor = assessor
 
+    @property
+    def retriever(self) -> IEvidenceRetriever:
+        """The evidence retriever this verifier checks against, read-only (CQ Phase 1.5: grounded
+        authoring retrieves from the same corpus the gate will use)."""
+        return self._retriever
+
     async def verify(
         self,
         claims: list[Claim],

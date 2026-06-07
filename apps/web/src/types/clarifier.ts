@@ -10,6 +10,10 @@
 export type Level = "novice" | "intermediate" | "advanced" | "expert" | "n/a";
 export type DetailDepth = "concise" | "balanced" | "in_depth";
 export type LanguageStyle = "simple" | "balanced" | "sophisticated" | "scientific";
+/** What kind of outcome the goal is (CQ Phase 1.0) — the deliverable shape branches on it. */
+export type GoalType = "knowledge" | "skill" | "credential" | "behavior";
+/** How large the entry → target leap is (CQ Phase 1.0) — sizes research depth. */
+export type GapMagnitude = "small" | "moderate" | "large";
 
 export interface BriefPreferences {
   detailDepth: DetailDepth;
@@ -21,12 +25,21 @@ export interface TargetStandard {
   authorityHint: string;
 }
 
+/** The entry → target distance the course must close (CQ Phase 1.0). */
+export interface Gap {
+  entryLevel: Level;
+  targetLevel: Level;
+  magnitude: GapMagnitude;
+}
+
 /** The interpreter's reading of the request — shown as a summary at the top of the panel. */
 export interface CourseBrief {
   subject: string;
   goal: string;
+  goalType: GoalType;
   targetLevel: Level;
   targetStandard: TargetStandard | null;
+  gap: Gap;
   assumedPrior: string;
   deliverableShape: { lessons: number | null };
   needsResearch: boolean;

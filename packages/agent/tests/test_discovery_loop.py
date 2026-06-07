@@ -14,7 +14,9 @@ from lunaris_agent.harness.discovery import (
     StubRelevanceJudge,
     SubgraphGroundingDiscoverer,
     budget_for_depth,
+    discovery_budget_for,
 )
+from lunaris_agent.harness.discovery.budget_policy import _MAX_PER_ROUND
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_grounding import (
     CorpusIngestor,
@@ -400,3 +402,84 @@ async def test_the_discoverer_honors_the_drafts_discovery_depth(agent_sink) -> N
 
     # Assert — it ran the THOROUGH round ceiling (3), not the STANDARD default (2).
     assert search.calls == budget_for_depth(DiscoveryDepth.THOROUGH).max_rounds
+
+
+# ---- per-KC budget sizing (CQ Phase 1.4) --------------------------------------------------------
+
+
+@pytest.mark.parametrize("depth", [DiscoveryDepth.STANDARD, DiscoveryDepth.THOROUGH])
+def test_discovery_budget_width_tracks_the_kc_count(depth: DiscoveryDepth) -> None:
+    # Arrange — a curriculum with more KCs than the depth's fixed width floor.
+    base = budget_for_depth(depth)
+    kc_count = base.searches_per_round + 4
+
+    # Act
+    budget = discovery_budget_for(depth, kc_count)
+
+    # Assert — the per-round width is raised to cover every KC (a query + a fetch each), so the
+    # corpus is filled per-KC rather than leaving the surplus concepts unsearched.
+    assert budget.searches_per_round == kc_count
+    assert budget.fetches_per_round == kc_count
+
+
+def test_discovery_budget_never_narrows_below_the_depth_floor() -> None:
+    # Arrange — a tiny curriculum (fewer KCs than the depth floor).
+    base = budget_for_depth(DiscoveryDepth.STANDARD)
+
+    # Act
+    budget = discovery_budget_for(DiscoveryDepth.STANDARD, 2)
+
+    # Assert — the policy widens, never narrows below the depth floor.
+    assert budget.searches_per_round == base.searches_per_round
+    assert budget.fetches_per_round == base.fetches_per_round
+
+
+def test_discovery_budget_caps_a_huge_curriculum() -> None:
+    # Arrange / Act — a runaway KC count is bounded by the per-round ceiling.
+    budget = discovery_budget_for(DiscoveryDepth.STANDARD, 1000)
+
+    # Assert — clamped to the module ceiling (bound to the constant, not a stale literal).
+    assert budget.searches_per_round == _MAX_PER_ROUND
+    assert budget.fetches_per_round == _MAX_PER_ROUND
+
+
+def test_discovery_budget_rounds_come_from_the_depth() -> None:
+    # Arrange
+    expected_rounds = budget_for_depth(DiscoveryDepth.THOROUGH).max_rounds
+
+    # Act
+    budget = discovery_budget_for(DiscoveryDepth.THOROUGH, 50)
+
+    # Assert — the reflect-round count is the depth's, unaffected by the KC count.
+    assert budget.max_rounds == expected_rounds
+
+
+class _CapturingGraph:
+    """A fake compiled sub-graph that records nothing and returns an empty discovery state."""
+
+    async def ainvoke(self, _inputs: object) -> dict[str, object]:
+        return {}
+
+
+async def test_discoverer_sizes_the_budget_to_the_kc_count(monkeypatch, agent_sink) -> None:
+    # Arrange — spy on the sub-graph builder to capture the budget the discoverer chose, with no
+    # explicit budget so the KC-count policy applies. Nine KCs sit above the STANDARD width of 6.
+    captured: dict[str, DiscoveryBudget] = {}
+
+    def _spy(*_args: object, budget: DiscoveryBudget, **_kwargs: object) -> _CapturingGraph:
+        captured["budget"] = budget
+        return _CapturingGraph()
+
+    monkeypatch.setattr("lunaris_agent.harness.discovery.discoverer.build_discovery_subgraph", _spy)
+    corpus = InMemoryCorpusStore()
+    discoverer = _discoverer(results=[], pages={}, corpus=corpus)  # budget=None → policy
+    concepts = [_kc(f"k{i}", f"K{i}") for i in range(9)]
+    draft = _draft(AgentReporter("run-x", agent_sink), concepts=concepts)
+
+    # Act
+    await discoverer.discover(draft)
+
+    # Assert — the discoverer sized the per-round width AND fetches to the 9 KCs (every concept
+    # searched + fetchable in one round).
+    assert captured["budget"].searches_per_round == 9
+    assert captured["budget"].fetches_per_round == 9

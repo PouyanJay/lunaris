@@ -74,6 +74,7 @@ from lunaris_runtime.schema import (
     Clarification,
     CourseBrief,
     CourseStatus,
+    GoalType,
     KnowledgeComponent,
     Level,
     Module,
@@ -83,6 +84,7 @@ from lunaris_runtime.schema import (
     Resource,
     ResourceKind,
     StandardResearch,
+    TargetStandard,
     TrustTier,
     VerifierStatus,
 )
@@ -231,6 +233,7 @@ def _builder(
     model: object,
     store: CourseStore,
     *,
+    brief: CourseBrief | None = None,
     profiler: ILearnerProfiler | None = None,
     researcher: StubStandardResearcher | None = None,
     architect: StubCurriculumArchitect | None = None,
@@ -246,7 +249,7 @@ def _builder(
     return AgentCourseBuilder(
         model,
         store,
-        interpreter=StubGoalInterpreter(_BRIEF),
+        interpreter=StubGoalInterpreter(brief or _BRIEF),
         profiler=profiler or StubLearnerProfiler(LearnerProfile(frontier=[])),
         researcher=researcher or StubStandardResearcher(),
         extractor=StubConceptExtractor(Extraction(kcs=_KCS, goal_id=_GOAL_ID)),
@@ -398,6 +401,57 @@ async def test_build_without_a_clarification_profiles_the_inferred_brief(
     # i.e. the skip path is byte-for-byte today's inferred-only build.
     assert profiler.seen is not None
     assert profiler.seen.target_level == Level.NOVICE
+
+
+async def test_goal_type_threads_from_the_brief_to_the_finalized_course(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Walking skeleton (CQ Phase 1): goal_type must thread brief → draft → finalize → Course and
+    # survive persistence. CREDENTIAL (non-default) proves the thread, not the field's default.
+    # Arrange
+    store = CourseStore(tmp_path)
+    brief = CourseBrief(
+        subject="AWS",
+        goal="Pass the AWS Solutions Architect exam",
+        target_level=Level.INTERMEDIATE,
+        goal_type=GoalType.CREDENTIAL,
+    )
+    builder = _builder(_delegating_script(scripted_model), store, brief=brief)
+
+    # Act
+    course = await builder.run("demo", course_id="course-gt", run_id="run-gt")
+
+    # Assert — the classification reached the finalized course and round-trips through the store.
+    assert course.goal_type is GoalType.CREDENTIAL
+    assert store.load("course-gt").goal_type is GoalType.CREDENTIAL
+
+
+async def test_research_needing_goal_without_grounding_is_scoped_and_withheld(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Honesty gate (CQ Phase 1.6): a goal that needs_research but whose research came back
+    # UNAVAILABLE (the stub researcher, no key) must NOT publish as if grounded — it carries an
+    # honest scope caveat and is withheld for review.
+    # Arrange
+    store = CourseStore(tmp_path)
+    brief = CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10",
+        needs_research=True,
+        target_standard=TargetStandard(name="CLB 10"),
+    )
+    builder = _builder(_delegating_script(scripted_model), store, brief=brief)
+
+    # Act
+    course = await builder.run("demo", course_id="course-honest", run_id="run-honest")
+
+    # Assert — an honest caveat naming the standard, withheld from publication, and it survives
+    # persistence (the learner sees the caveat, not a course dressed as grounded).
+    assert "CLB 10" in course.scope_note
+    assert course.status == CourseStatus.REVIEW
+    assert store.load("course-honest").scope_note == course.scope_note
 
 
 async def test_agent_builds_and_persists_a_course_without_a_key(

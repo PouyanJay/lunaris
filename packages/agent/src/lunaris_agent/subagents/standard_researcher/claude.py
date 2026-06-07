@@ -11,6 +11,7 @@ from lunaris_grounding import (
     ResearchBudget,
     SearchResult,
     classify_domain,
+    research_budget_for_brief,
 )
 from lunaris_runtime.resilience import (
     LLM_MAX_RETRIES,
@@ -26,8 +27,9 @@ from lunaris_runtime.schema import (
     TrustTier,
 )
 
+from .distillation import Distillation
 from .outcome import ResearchOutcome
-from .parser import parse_research
+from .parser import parse_distillation
 from .prompt import build_research_prompt
 from .query import build_research_queries
 from .seed_source import SeedSource
@@ -37,7 +39,6 @@ logger = structlog.get_logger()
 # How many hits to ask for per query; the per-build BUDGET (search + fetch counts) does the real
 # bounding. Candidates are preferred highest-trust-first, so a small fetch budget keeps the best.
 _RESULTS_PER_QUERY = 5
-_DEFAULT_BUDGET = ResearchBudget()
 _TIER_RANK: dict[TrustTier, int] = {
     TrustTier.OFFICIAL: 0,
     TrustTier.REPUTABLE: 1,
@@ -87,50 +88,86 @@ class ClaudeStandardResearcher:
         search: ISearchProvider,
         extractor: IContentExtractor,
         *,
-        budget: ResearchBudget = _DEFAULT_BUDGET,
+        budget: ResearchBudget | None = None,
         clock: Callable[[], str] = _utc_now_iso,
     ) -> None:
         self._model = model
         self._client: BaseChatModel | None = None
         self._search = search
         self._extractor = extractor
+        # None → size the budget to each brief at research time (CQ Phase 1.2's depth policy); an
+        # explicit budget is a pre-authorized depth ceiling for callers that already know it.
         self._budget = budget
         self._clock = clock
 
     async def research(self, brief: CourseBrief) -> ResearchOutcome:
-        fetched = await self._fetch(await self._gather_candidates(brief))
+        """Adaptively ground the brief: plan queries → search → fetch → distil a structured
+        framework → deepen on the model's follow-up queries, until coverage is met, the round
+        ceiling is hit, or the search/fetch budget runs out (CQ Phase 1.1). The budget is sized to
+        the brief (CQ Phase 1.2) unless one was injected."""
+        budget = self._budget if self._budget is not None else research_budget_for_brief(brief)
+        fetched: list[_FetchedPage] = []
+        seen: set[str] = set()
+        queries = build_research_queries(brief)
+        remaining_searches = budget.max_searches
+        remaining_fetches = budget.max_fetches
+        distillation = Distillation()
+        rounds = 0
+        for _ in range(budget.max_rounds):
+            round_queries = queries[:remaining_searches]
+            if not round_queries or remaining_fetches <= 0:
+                break
+            remaining_searches -= len(round_queries)
+            candidates = (await self._gather(brief, round_queries, seen))[:remaining_fetches]
+            # Charge the budget per fetch ATTEMPT (the cost ceiling), not per usable page, so sites
+            # that reliably fail to extract can't be re-tried until the budget is silently drained.
+            remaining_fetches -= len(candidates)
+            fetched.extend(await self._fetch(candidates))
+            if not fetched:
+                # Nothing readable yet and no distillation to propose follow-ups — degrade honestly
+                # rather than calling the model on no evidence.
+                break
+            rounds += 1
+            distillation = await self._distil(brief, [page.content for page in fetched])
+            queries = distillation.follow_up_queries  # deepen on the gaps the model flagged
+
         if not fetched:
             logger.info("standard_research_unavailable", goal=brief.goal)
             return ResearchOutcome(research=StandardResearch(status=ResearchStatus.UNAVAILABLE))
 
-        competencies, score_table = await self._distil(brief, [p.content for p in fetched])
         sources = self._build_sources(fetched)
         # COMPLETE only when the sources actually yielded competencies; sources-but-nothing-found
         # is honest PARTIAL (the schema invariant guarantees COMPLETE always cites a source).
-        status = ResearchStatus.COMPLETE if competencies else ResearchStatus.PARTIAL
+        status = ResearchStatus.COMPLETE if distillation.competencies else ResearchStatus.PARTIAL
         logger.info(
             "standard_research_completed",
             goal=brief.goal,
             status=status.value,
-            competency_count=len(competencies),
+            rounds=rounds,
+            area_count=len(distillation.areas),
+            competency_count=len(distillation.competencies),
             source_count=len(sources),
         )
         research = StandardResearch(
-            status=status, competencies=competencies, score_table=score_table, sources=sources
+            status=status,
+            areas=distillation.areas,
+            competencies=distillation.competencies,
+            score_table=distillation.score_table,
+            sources=sources,
         )
         # The same fetched pages that grounded the brief seed the corpus (P6.4): carry their text
         # forward so the SEED feed ingests already-paid-for evidence rather than re-fetching.
         return ResearchOutcome(research=research, seeds=self._build_seeds(fetched))
 
-    async def _gather_candidates(self, brief: CourseBrief) -> list[_Candidate]:
-        """Search (within the budget), classify each hit, drop blocked, prefer highest-trust first.
+    async def _gather(
+        self, brief: CourseBrief, queries: list[str], seen: set[str]
+    ) -> list[_Candidate]:
+        """Search the round's queries, classify each hit, drop blocked, prefer highest-trust first.
 
-        Returns the top ``max_fetches`` candidates so the fetch step spends its budget on the most
-        authoritative sources; de-duplicated by URL, best-effort per query.
+        De-duplicates by URL across rounds via ``seen`` (mutated here); the caller truncates to the
+        remaining fetch budget so the round spends it on the most authoritative sources.
         """
-        queries = build_research_queries(brief)[: self._budget.max_searches]
         authority = brief.target_standard.authority_hint if brief.target_standard else ""
-        seen: set[str] = set()
         candidates: list[_Candidate] = []
         for query in queries:
             for result in await self._safe_search(query):
@@ -142,7 +179,7 @@ class ClaudeStandardResearcher:
                     candidates.append(_Candidate(result, tier))
         # .get with a past-the-end default keeps the sort total if TrustTier ever gains a member.
         candidates.sort(key=lambda candidate: _TIER_RANK.get(candidate.tier, len(_TIER_RANK)))
-        return candidates[: self._budget.max_fetches]
+        return candidates
 
     async def _safe_search(self, query: str) -> list[SearchResult]:
         try:
@@ -171,14 +208,13 @@ class ClaudeStandardResearcher:
             logger.warning("standard_research_extract_failed", url=url, exc_info=True)
             return None
 
-    async def _distil(
-        self, brief: CourseBrief, pages: list[ExtractedContent]
-    ) -> tuple[list[str], list[str]]:
-        """Ask the model to distil competencies + score lines from the fetched pages (one call)."""
+    async def _distil(self, brief: CourseBrief, pages: list[ExtractedContent]) -> Distillation:
+        """Ask the model to distil a structured framework + follow-up queries from the fetched pages
+        (one call per round, re-distilling over all pages read so far)."""
         prompt = build_research_prompt(brief, pages)
         message = await retry_on_rate_limit(lambda: self._chat_model().ainvoke(prompt))
         raw = message.content if isinstance(message.content, str) else str(message.content)
-        return parse_research(raw)
+        return parse_distillation(raw)
 
     @staticmethod
     def _build_sources(fetched: list[_FetchedPage]) -> list[ResearchSource]:

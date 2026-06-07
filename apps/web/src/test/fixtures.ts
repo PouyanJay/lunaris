@@ -133,6 +133,8 @@ export function makeCourse(overrides: Partial<Course> = {}): Course {
     id: "course-test",
     topic: "How binary search works",
     goalConcept: "binary_search",
+    goalType: "knowledge",
+    scopeNote: "",
     status: "review",
     provenance: [{ id: "src-1", title: "CLRS", url: "https://example.org/clrs", snippet: "…" }],
     modules: [
@@ -209,8 +211,10 @@ export function makeBriefResponse(overrides: Partial<BriefResponse> = {}): Brief
     brief: {
       subject: "English language proficiency",
       goal: "reach CLB 10",
+      goalType: "credential",
       targetLevel: "intermediate",
       targetStandard: null,
+      gap: { entryLevel: "intermediate", targetLevel: "intermediate", magnitude: "moderate" },
       assumedPrior: "everyday English",
       deliverableShape: { lessons: null },
       needsResearch: false,

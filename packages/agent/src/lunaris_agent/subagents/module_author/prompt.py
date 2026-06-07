@@ -62,6 +62,17 @@ def _frontier_line(frontier: list[str]) -> str:
     )
 
 
+# Grounded authoring (CQ Phase 1.5): the evidence retrieved for this module's KCs is put IN FRONT of
+# the author so it writes claims the corpus supports — instead of asserting from memory and letting
+# the verifier cut what the corpus can't back. The verifier stays the independent gate behind this.
+_GROUNDING_NOTE = (
+    "Ground every factual claim in the retrieved evidence below (the course's own corpus). Write "
+    "claims this evidence supports; do NOT assert facts it does not back — an unsupported claim is "
+    "cut by the verifier. Prefer fewer, well-grounded claims over many ungrounded ones.\n"
+    "Retrieved evidence:\n{evidence}"
+)
+
+
 def _revision_note(cut_claims: list[str]) -> str:
     listed = "\n".join(f"- {claim}" for claim in cut_claims)
     return (
@@ -78,6 +89,7 @@ def build_authoring_prompt(
     brief: CourseBrief | None = None,
     frontier: list[str] | None = None,
     cut_claims: list[str] | None = None,
+    grounded_evidence: str = "",
 ) -> str:
     """The lesson-authoring prompt: a personalized arc (expects → strategies → worked example →
     practice → self-check) that mirrors the standard's competency, not a generic climb (P7.3).
@@ -87,7 +99,9 @@ def build_authoring_prompt(
     ``expects`` sits (so foundations beneath the learner's edge are not re-taught); and
     ``brief.preferences`` steer the register + depth. Without a brief it degrades to a generic arc
     (the legacy / novice path). With ``cut_claims`` a revision note is folded in so the author
-    re-grounds them while keeping the arc intact.
+    re-grounds them while keeping the arc intact. With ``grounded_evidence`` (CQ Phase 1.5) the
+    retrieved corpus evidence is put in front of the author so it writes claims that evidence
+    supports, rather than asserting from memory and being cut afterward.
     """
     sections = [_HEADER.format(title=module.title)]
 
@@ -110,6 +124,8 @@ def build_authoring_prompt(
         sections.append(_frontier_line(frontier))
     if brief is not None and (voice := _voice_line(brief)):
         sections.append(voice)
+    if grounded_evidence:
+        sections.append(_GROUNDING_NOTE.format(evidence=grounded_evidence))
     if cut_claims:
         sections.append(_revision_note(cut_claims))
 

@@ -10,6 +10,7 @@ from .content_extractor import IContentExtractor
 from .domain_trust import classify_domain, host
 from .extracted_content import ExtractedContent
 from .research_budget import ResearchBudget
+from .research_budget_policy import research_budget_for_brief
 from .resource_budget import ResourceBudget
 from .search_provider import ISearchProvider
 from .search_result import SearchResult
@@ -41,4 +42,5 @@ __all__ = [
     "YouTubeVideoSource",
     "classify_domain",
     "host",
+    "research_budget_for_brief",
 ]

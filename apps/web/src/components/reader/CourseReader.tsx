@@ -7,6 +7,7 @@ import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRa
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { AnnotationRail } from "./AnnotationRail";
+import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonObjectives } from "./LessonObjectives";
@@ -246,6 +247,9 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
         tabIndex={0}
       >
         <article className={styles.page}>
+          {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so, rather
+              than presenting itself as authoritative. */}
+          {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>

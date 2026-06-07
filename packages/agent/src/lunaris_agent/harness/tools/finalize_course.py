@@ -12,9 +12,17 @@ import asyncio
 import structlog
 from langchain_core.tools import BaseTool, tool
 from lunaris_runtime.persistence import CourseStore
-from lunaris_runtime.schema import Course, CourseStatus, Module, PrerequisiteGraph, ProgressStage
+from lunaris_runtime.schema import (
+    Course,
+    CourseStatus,
+    GoalType,
+    Module,
+    PrerequisiteGraph,
+    ProgressStage,
+)
 
 from ...critic import ICritic
+from ...honesty import assess_grounding_honesty
 from ...subagents.visual_agent import VisualEngine
 from ..draft import CourseDraft
 
@@ -47,10 +55,16 @@ def _assemble(draft: CourseDraft) -> Course:
             f"course {draft.course_id!r}: finalize_course called before the prerequisite "
             "graph was built — call build_prerequisite_graph first"
         )
+    # The graph is a hard precondition (a nullable working field that must not become a malformed
+    # Course); the brief is not — direct-assembly paths (and several tests) build a course from a
+    # graph alone, so a missing brief falls back to the schema's own goal_type default rather than
+    # forcing every assembly site through interpret_request.
+    goal_type = draft.brief.goal_type if draft.brief else GoalType.KNOWLEDGE
     return Course(
         id=draft.course_id,
         topic=draft.topic,
         goal_concept=draft.goal_concept or "",
+        goal_type=goal_type,
         graph=draft.graph,
         modules=draft.modules or _modules_from_graph(draft.graph),
         provenance=draft.provenance,
@@ -87,9 +101,14 @@ def make_finalize_course_tool(
             logger.info("agent_course_illustrated", run_id=draft.run_id, visuals_placed=placed)
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
+        # Honesty gate (CQ Phase 1.6): an ungrounded research-needing goal carries an honest caveat
+        # and is withheld; a PARTIAL one still carries its caveat to the learner but may publish —
+        # so scope_note is set unconditionally, only needs_review gates publication.
+        honesty = assess_grounding_honesty(draft.brief)
+        course.scope_note = honesty.caveat
         # The authoring loop's triage flags a course whose goal-critical claim could not be
         # grounded within budget; withhold PUBLISHED even when the structural critic is clean.
-        if not issues and not draft.needs_review:
+        if not issues and not draft.needs_review and not honesty.needs_review:
             course.status = CourseStatus.PUBLISHED
         # CourseStore.save is synchronous file I/O; off-load it so the agent's event loop
         # is not blocked during the write (matters once the store is network-backed).

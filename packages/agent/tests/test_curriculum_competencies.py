@@ -7,6 +7,7 @@ tells the architect to align modules to the researched competencies when the bri
 passes the draft's brief into the architect so the threading actually reaches it.
 """
 
+from lunaris_agent.coverage import framework_coverage
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_design_curriculum_tool
 from lunaris_agent.subagents.curriculum_architect import (
@@ -17,10 +18,12 @@ from lunaris_agent.subagents.curriculum_architect import (
 )
 from lunaris_runtime.schema import (
     BloomLevel,
+    CompetencyArea,
     CourseBrief,
     Edge,
     KnowledgeComponent,
     Level,
+    Module,
     PrerequisiteGraph,
     ResearchSource,
     ResearchStatus,
@@ -73,8 +76,9 @@ def test_build_curriculum_prompt_maps_modules_to_researched_competencies() -> No
     # Act
     prompt = build_curriculum_prompt(_graph(), brief)
 
-    # Assert — the architect is told to map modules to those competencies, and they appear verbatim.
-    assert "Map the modules to these researched competencies" in prompt
+    # Assert — the architect is told to map modules to the researched framework, and the
+    # competencies appear verbatim (a flat-only brief renders as a flat outline).
+    assert "Map the modules to this researched competency framework" in prompt
     assert "hear implied intent in speech" in prompt
     assert "adapt register live in speech" in prompt
     # The ordered KCs still drive the grouping (backward design over the validated order).
@@ -116,6 +120,52 @@ def test_build_curriculum_prompt_omits_mapping_for_partial_research_with_no_comp
     prompt = build_curriculum_prompt(_graph(), brief)
 
     assert "competenc" not in prompt.lower()
+
+
+def test_build_curriculum_prompt_presents_the_competency_areas() -> None:
+    # Arrange — research with a STRUCTURED framework (areas + descriptors), CQ Phase 1.3.
+    brief = CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10",
+        target_level=Level.ADVANCED,
+        research=StandardResearch(
+            status=ResearchStatus.COMPLETE,
+            areas=[
+                CompetencyArea(name="Listening", competencies=["hear implied intent in speech"]),
+                CompetencyArea(name="Speaking", competencies=["adapt register live in speech"]),
+            ],
+            sources=[ResearchSource(url="https://www.canada.ca/clb-10")],
+        ),
+    )
+
+    # Act
+    prompt = build_curriculum_prompt(_graph(), brief)
+
+    # Assert — both area names AND both descriptors reach the architect, so modules are designed
+    # backward from the standard's real areas, not a flat undifferentiated list.
+    assert "Listening" in prompt
+    assert "Speaking" in prompt
+    assert "hear implied intent in speech" in prompt
+    assert "adapt register live in speech" in prompt
+
+
+def test_framework_coverage_splits_covered_and_uncovered_competencies() -> None:
+    # Arrange — three researched competencies; the curriculum tags two modules, one with a verbatim
+    # competency and one with an invented tag (structure that drifted from the research).
+    research = StandardResearch(
+        status=ResearchStatus.PARTIAL, competencies=["alpha", "beta", "gamma"]
+    )
+    modules = [
+        Module(id="m1", title="M1", competency="alpha"),
+        Module(id="m2", title="M2", competency="invented"),
+    ]
+
+    # Act
+    covered, uncovered = framework_coverage(research, modules)
+
+    # Assert — only the verbatim-tagged competency is covered; the rest are flagged, in order.
+    assert covered == ["alpha"]
+    assert uncovered == ["beta", "gamma"]
 
 
 async def test_design_curriculum_tool_passes_the_brief_to_the_architect() -> None:

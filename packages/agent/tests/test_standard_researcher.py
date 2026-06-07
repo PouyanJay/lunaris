@@ -8,10 +8,11 @@ COMPLETE/PARTIAL/UNAVAILABLE status, honest degradation — is proven without a 
 """
 
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
 from lunaris_agent.subagents.standard_researcher import (
     ClaudeStandardResearcher,
     build_research_queries,
+    parse_distillation,
     parse_research,
 )
 from lunaris_grounding import (
@@ -20,12 +21,18 @@ from lunaris_grounding import (
     SearchResult,
     StubContentExtractor,
     StubSearchProvider,
+    research_budget_for_brief,
 )
 from lunaris_runtime.schema import (
+    CompetencyArea,
     CourseBrief,
+    Gap,
+    GapMagnitude,
+    GoalType,
     Level,
     ResearchStatus,
     StandardKind,
+    StandardResearch,
     TargetStandard,
     TrustTier,
 )
@@ -41,6 +48,22 @@ def _clb_brief() -> CourseBrief:
             name="CLB 10", kind=StandardKind.EXTERNAL_STANDARD, authority_hint="ircc.canada.ca"
         ),
         target_level=Level.ADVANCED,
+        needs_research=True,
+    )
+
+
+def _demanding_clb_brief() -> CourseBrief:
+    """The CLB brief as a demanding credential goal (CQ Phase 1.2), keeping the same named standard
+    so the deterministic first query is unchanged across the two CLB fixtures."""
+    return CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10 across all four skills",
+        goal_type=GoalType.CREDENTIAL,
+        target_standard=TargetStandard(
+            name="CLB 10", kind=StandardKind.EXTERNAL_STANDARD, authority_hint="ircc.canada.ca"
+        ),
+        target_level=Level.EXPERT,
+        gap=Gap(entry_level=Level.NOVICE, magnitude=GapMagnitude.LARGE),
         needs_research=True,
     )
 
@@ -155,6 +178,89 @@ def test_parse_research_degrades_to_empty_on_garbage_rather_than_raising() -> No
     # Non-string list items are coerced/stripped; blanks dropped.
     competencies, _score = parse_research('{"competencies": ["  keep  ", "", 42]}')
     assert competencies == ["keep", "42"]
+
+
+# ---- the structured competency framework (CQ Phase 1.1) ------------------------------------------
+
+
+def test_parse_distillation_reads_structured_competency_areas() -> None:
+    # Arrange — the adaptive distil returns a framework: named areas, each with descriptors, plus
+    # follow-up queries for thin areas (CQ Phase 1.1).
+    text = (
+        '{"areas": ['
+        '{"name": "Listening", "competencies": ["infer implied intent", "track stance"]},'
+        '{"name": "Writing", "competencies": ["sustain a formal register"]}],'
+        '"score_table": ["CELPIP 10"], "follow_up_queries": ["CLB 10 speaking descriptors"]}'
+    )
+
+    # Act
+    distillation = parse_distillation(text)
+
+    # Assert — areas carry their descriptors; competencies is the flattened view; follow-ups parsed.
+    assert [area.name for area in distillation.areas] == ["Listening", "Writing"]
+    assert distillation.areas[0].competencies == ["infer implied intent", "track stance"]
+    assert distillation.competencies == [
+        "infer implied intent",
+        "track stance",
+        "sustain a formal register",
+    ]
+    assert distillation.score_table == ["CELPIP 10"]
+    assert distillation.follow_up_queries == ["CLB 10 speaking descriptors"]
+
+
+def test_parse_distillation_falls_back_to_flat_competencies() -> None:
+    # Arrange — an older/flat response with no areas. The parser keeps the flat competencies so the
+    # researcher still grounds (back-compat with the pre-framework shape).
+    text = '{"competencies": ["hear implied intent", "read stance"], "score_table": []}'
+
+    # Act
+    distillation = parse_distillation(text)
+
+    # Assert
+    assert distillation.areas == []
+    assert distillation.competencies == ["hear implied intent", "read stance"]
+    assert distillation.follow_up_queries == []
+
+
+def test_standard_research_derives_flat_competencies_from_areas() -> None:
+    # Arrange — a framework with only areas; a repeated descriptor exercises dedup/order-preserving.
+    areas = [
+        CompetencyArea(name="Listening", competencies=["infer intent", "track stance"]),
+        CompetencyArea(name="Listening dup", competencies=["infer intent"]),
+    ]
+
+    # Act
+    research = StandardResearch(status=ResearchStatus.PARTIAL, areas=areas)
+
+    # Assert — the validator flattens areas into competencies for the flat consumers
+    # (extractor/curriculum) until they read areas directly.
+    assert research.competencies == ["infer intent", "track stance"]
+
+
+def test_grounding_outline_renders_areas_with_descriptors() -> None:
+    # Arrange — a structured framework (CQ Phase 1.3).
+    research = StandardResearch(
+        status=ResearchStatus.PARTIAL,
+        areas=[CompetencyArea(name="Listening", competencies=["infer intent", "track stance"])],
+    )
+
+    # Act
+    outline = research.grounding_outline()
+
+    # Assert — an area-headed line with its descriptors joined (the separator is part of the shape).
+    assert "Listening: infer intent; track stance" in outline
+
+
+def test_grounding_outline_falls_back_to_flat_competencies() -> None:
+    # Arrange — no areas, only a flat competency list.
+    research = StandardResearch(status=ResearchStatus.PARTIAL, competencies=["c1", "c2"])
+
+    # Act
+    outline = research.grounding_outline()
+
+    # Assert
+    assert "c1" in outline
+    assert "c2" in outline
 
 
 # ---- the search → fetch → distil orchestration ---------------------------------------------------
@@ -343,3 +449,185 @@ async def test_research_budget_caps_the_number_of_fetched_sources() -> None:
     assert research.status is ResearchStatus.COMPLETE
     assert [source.url for source in research.sources] == ["https://a.edu/x"]
     assert research.sources[0].trust_tier is TrustTier.REPUTABLE
+
+
+# ---- the depth policy: budget sized to the brief (CQ Phase 1.2) ----------------------------------
+
+
+def test_research_budget_policy_scales_up_for_a_demanding_goal() -> None:
+    # Arrange — a credential goal at the ceiling with a large gap should earn deeper research than a
+    # casual knowledge intro, keyed off the brief abstractions (never the topic).
+    demanding = CourseBrief(
+        subject="AWS",
+        goal="Pass the AWS Solutions Architect exam",
+        goal_type=GoalType.CREDENTIAL,
+        target_level=Level.EXPERT,
+        gap=Gap(entry_level=Level.NOVICE, magnitude=GapMagnitude.LARGE),
+    )
+    casual = CourseBrief(
+        subject="Houseplants",
+        goal="Understand how to keep houseplants alive",
+        goal_type=GoalType.KNOWLEDGE,
+        target_level=Level.NOVICE,
+        gap=Gap(entry_level=Level.NOVICE, magnitude=GapMagnitude.SMALL),
+    )
+
+    # Act
+    deep = research_budget_for_brief(demanding)
+    shallow = research_budget_for_brief(casual)
+
+    # Assert — every dimension is at least as large for the demanding goal, and strictly deeper
+    # overall (more rounds), so depth tracks the goal rather than being a fixed 3/4 for everyone.
+    assert deep.max_searches > shallow.max_searches
+    assert deep.max_fetches > shallow.max_fetches
+    assert deep.max_rounds > shallow.max_rounds
+    assert shallow.max_rounds >= 1  # a casual goal still researches once
+
+
+def test_research_budget_policy_isolates_the_goal_type_axis() -> None:
+    # Arrange — two briefs identical except goal_type (skill vs knowledge), so any depth difference
+    # is attributable to that axis alone (the scaling test moves all three axes at once).
+    base = {"subject": "s", "goal": "g", "target_level": Level.NOVICE}
+    skill = CourseBrief(**base, goal_type=GoalType.SKILL)
+    knowledge = CourseBrief(**base, goal_type=GoalType.KNOWLEDGE)
+
+    # Act
+    skill_budget = research_budget_for_brief(skill)
+    knowledge_budget = research_budget_for_brief(knowledge)
+
+    # Assert — goal_type alone deepens the budget.
+    assert skill_budget.max_searches > knowledge_budget.max_searches
+
+
+def test_research_budget_policy_is_a_valid_budget() -> None:
+    # Arrange — the deepest possible brief (every axis at its ceiling).
+    brief = CourseBrief(
+        subject="s",
+        goal="g",
+        goal_type=GoalType.CREDENTIAL,
+        target_level=Level.EXPERT,
+        gap=Gap(magnitude=GapMagnitude.LARGE),
+    )
+
+    # Act — the policy must emit a budget the ResearchBudget guards accept (no raise).
+    budget = research_budget_for_brief(brief)
+
+    # Assert
+    assert budget.max_searches >= 3
+    assert budget.max_rounds >= 2
+
+
+async def test_researcher_with_no_explicit_budget_uses_the_brief_policy() -> None:
+    # Arrange — no explicit budget, so the researcher must size itself from the brief. A demanding
+    # credential brief earns >=2 rounds, so the follow-up round runs and the deeper page is fetched.
+    model = _scripted_model(
+        [
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]}],'
+            f' "score_table": [], "follow_up_queries": ["{_FOLLOW_UP}"]}}',
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]},'
+            '{"name": "Speaking", "competencies": ["sustain a turn"]}],'
+            '"score_table": [], "follow_up_queries": []}',
+        ]
+    )
+    # None budget → the researcher must size itself from the brief; the demanding CLB credential
+    # brief is a credential at the ceiling, so the policy grants the deepening round.
+    researcher = _deepening_fixture(model, budget=None)
+
+    # Act
+    research = (await researcher.research(_demanding_clb_brief())).research
+
+    # Assert — the policy-sized budget let the loop deepen onto the speaking page.
+    assert [area.name for area in research.areas] == ["Listening", "Speaking"]
+
+
+# ---- the adaptive deepening loop (CQ Phase 1.1) --------------------------------------------------
+
+
+class _QueryKeyedSearch:
+    """A search provider whose results depend on the query — so a deeper follow-up query can surface
+    a page the first-round queries did not, exercising the adaptive loop."""
+
+    def __init__(self, by_query: dict[str, list[SearchResult]]) -> None:
+        self._by_query = by_query
+
+    async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        return self._by_query.get(query, [])
+
+
+def _scripted_model(messages: list[str]) -> GenericFakeChatModel:
+    msgs: list[BaseMessage] = [AIMessage(content=text) for text in messages]
+    return GenericFakeChatModel(messages=iter(msgs))
+
+
+_FIRST_QUERY = build_research_queries(_clb_brief())[0]  # the round-1 query the fixture keys on
+_FOLLOW_UP = "CLB 10 speaking descriptors"
+
+
+def _deepening_fixture(model: object, *, budget: ResearchBudget | None) -> ClaudeStandardResearcher:
+    """Round 1's queries surface a shallow listening page; the model's follow-up query surfaces a
+    deeper speaking page. The loop fetches the second page only if it runs the follow-up round."""
+    shallow = "https://ircc.canada.ca/clb10-listening"
+    deep = "https://ircc.canada.ca/clb10-speaking"
+    search = _QueryKeyedSearch(
+        {
+            _FIRST_QUERY: [SearchResult(url=shallow, title="CLB 10 listening")],
+            _FOLLOW_UP: [SearchResult(url=deep, title="CLB 10 speaking")],
+        }
+    )
+    extractor = StubContentExtractor(
+        {
+            shallow: ExtractedContent(url=shallow, text="CLB 10 listening descriptors.", title="L"),
+            deep: ExtractedContent(url=deep, text="CLB 10 speaking descriptors.", title="S"),
+        }
+    )
+    return ClaudeStandardResearcher(
+        model, search, extractor, budget=budget, clock=lambda: _FIXED_CLOCK
+    )
+
+
+async def test_researcher_deepens_on_follow_up_queries_within_budget() -> None:
+    # Arrange — round 1 distils a thin listening area + proposes a follow-up query; round 2 then
+    # distils a richer two-area framework once the deeper speaking page is fetched.
+    model = _scripted_model(
+        [
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]}],'
+            f' "score_table": [], "follow_up_queries": ["{_FOLLOW_UP}"]}}',
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]},'
+            '{"name": "Speaking", "competencies": ["sustain a turn"]}],'
+            '"score_table": [], "follow_up_queries": []}',
+        ]
+    )
+    researcher = _deepening_fixture(model, budget=ResearchBudget(max_searches=6, max_fetches=6))
+
+    # Act
+    research = (await researcher.research(_clb_brief())).research
+
+    # Assert — the loop ran the follow-up query, fetched the deeper page, and the final framework
+    # covers both areas with provenance from both rounds.
+    assert research.status is ResearchStatus.COMPLETE
+    assert [area.name for area in research.areas] == ["Listening", "Speaking"]
+    assert "sustain a turn" in research.competencies
+    urls = {source.url for source in research.sources}
+    assert "https://ircc.canada.ca/clb10-speaking" in urls
+
+
+async def test_research_max_rounds_one_does_not_deepen() -> None:
+    # Arrange — same follow-up signal, but a single-round budget: the deeper page must never be
+    # fetched, proving max_rounds bounds the adaptive loop (the cost ceiling CQ Phase 1.2 sizes).
+    model = _scripted_model(
+        [
+            '{"areas": [{"name": "Listening", "competencies": ["infer intent"]}],'
+            f' "score_table": [], "follow_up_queries": ["{_FOLLOW_UP}"]}}',
+        ]
+    )
+    researcher = _deepening_fixture(
+        model, budget=ResearchBudget(max_searches=6, max_fetches=6, max_rounds=1)
+    )
+
+    # Act
+    research = (await researcher.research(_clb_brief())).research
+
+    # Assert — only the first-round page; the follow-up round never ran.
+    assert [area.name for area in research.areas] == ["Listening"]
+    urls = {source.url for source in research.sources}
+    assert "https://ircc.canada.ca/clb10-speaking" not in urls

@@ -2,7 +2,7 @@ from .agent_event import AgentEvent
 from .base import CourseModel
 from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuestion
 from .course import Course
-from .course_brief import CourseBrief, DeliverableShape, Preferences, TargetStandard
+from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
 from .course_run import CourseRun
 from .enums import (
     AcquisitionMode,
@@ -13,9 +13,12 @@ from .enums import (
     CourseStatus,
     DetailDepth,
     DiscoveryDepth,
+    GapMagnitude,
+    GoalType,
     LanguageStyle,
     Latency,
     Level,
+    Modality,
     Mode,
     Pace,
     ProgressStage,
@@ -54,7 +57,7 @@ from .resource import Resource
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
-from .standard_research import ResearchSource, StandardResearch
+from .standard_research import CompetencyArea, ResearchSource, StandardResearch
 from .visual_spec import (
     BeforeAfterSpec,
     ComparisonRow,
@@ -91,6 +94,7 @@ __all__ = [
     "ClarifierQuestion",
     "ComparisonRow",
     "ComparisonSpec",
+    "CompetencyArea",
     "Course",
     "CourseBrief",
     "CourseModel",
@@ -105,6 +109,9 @@ __all__ = [
     "FlowNode",
     "FlowSpec",
     "GagneFlags",
+    "Gap",
+    "GapMagnitude",
+    "GoalType",
     "Item",
     "KnowledgeComponent",
     "LanguageStyle",
@@ -116,6 +123,7 @@ __all__ = [
     "MasteryState",
     "MayerFlags",
     "MerrillSegments",
+    "Modality",
     "Mode",
     "Module",
     "Objective",

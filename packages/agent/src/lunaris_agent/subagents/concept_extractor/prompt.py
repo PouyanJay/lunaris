@@ -8,7 +8,13 @@ _SCOPED_LEVELS = frozenset({Level.INTERMEDIATE, Level.ADVANCED, Level.EXPERT})
 _KC_JSON_RESPONSE_SHAPE = (
     "Respond with ONLY this JSON, no prose:\n"
     '{"goal_id": "<id>", "kcs": [{"id": "...", "label": "...", "definition": "...",\n'
-    '"difficulty": 0.0, "bloom_ceiling": "apply"}]}'
+    '"difficulty": 0.0, "bloom_ceiling": "apply", "modality": "conceptual"}]}'
+)
+
+# Appended to each prompt's per-KC field list — one authoritative copy of the modality instruction.
+_MODALITY_FIELD = (
+    "  - modality: how this KC is learned — one of receptive (take in/comprehend), productive "
+    "(produce/perform), procedural (execute a process), conceptual (understand ideas)"
 )
 
 _NOVICE_PROMPT = """Decompose a learning topic into its atomic knowledge components (KCs).
@@ -23,6 +29,7 @@ likely need first. For each KC give:
   - definition: one sentence
   - difficulty: 0.0 (most basic) to 1.0 (the topic itself)
   - bloom_ceiling: one of remember, understand, apply, analyze, evaluate, create
+{modality_field}
 
 The single most advanced KC — the topic itself — is the goal."""
 
@@ -43,14 +50,16 @@ start at their edge (Vygotsky's ZPD). For each KC give:
   - definition: one sentence
   - difficulty: 0.0 (easiest of the gap) to 1.0 (the goal itself)
   - bloom_ceiling: one of remember, understand, apply, analyze, evaluate, create
+{modality_field}
 
 The single most advanced KC — the goal itself — is the goal."""
 
-# Appended to the gap prompt when research grounded the standard's real competencies (P7.2): the KCs
-# should COVER these rather than the model's memory of what the target requires.
+# Appended to the gap prompt when research grounded the standard's real competency framework (P7.2;
+# CQ Phase 1.3 presents the structured AREAS): the KCs should COVER the standard's areas/descriptors
+# rather than the model's memory of what the target requires.
 _RESEARCH_GROUNDING = (
-    "\n\nThese researched competencies define the target — propose KCs that cover them, and do not "
-    "invent competencies beyond what they and the goal imply:\n{competencies}"
+    "\n\nThese researched competency areas define the target — propose KCs that cover their "
+    "descriptors, and do not invent competencies beyond what they and the goal imply:\n{framework}"
 )
 
 
@@ -58,8 +67,7 @@ def _with_research_grounding(body: str, brief: CourseBrief) -> str:
     research = brief.research
     if research is None or not research.competencies:
         return body
-    competencies = "\n".join(f"- {competency}" for competency in research.competencies)
-    return body + _RESEARCH_GROUNDING.format(competencies=competencies)
+    return body + _RESEARCH_GROUNDING.format(framework=research.grounding_outline())
 
 
 def build_extraction_prompt(topic: str, brief: CourseBrief | None, frontier: list[str]) -> str:
@@ -79,8 +87,9 @@ def build_extraction_prompt(topic: str, brief: CourseBrief | None, frontier: lis
             level=brief.target_level.value,
             assumed_prior=brief.assumed_prior or "the foundations beneath the target level",
             frontier=known,
+            modality_field=_MODALITY_FIELD,
         )
         body = _with_research_grounding(body, brief)
     else:
-        body = _NOVICE_PROMPT.format(topic=topic)
+        body = _NOVICE_PROMPT.format(topic=topic, modality_field=_MODALITY_FIELD)
     return f"{body}\n\n{_KC_JSON_RESPONSE_SHAPE}"

@@ -20,10 +20,17 @@ Read what the request implies and respond with a structured brief. Infer honestl
 do NOT invent the contents of any named standard (a later step researches those). Fields:
   - subject: the broad subject area (e.g. "English language proficiency")
   - goal: the concrete outcome the learner wants (e.g. "reach CLB 10 across all four skills")
+  - goal_type: what KIND of outcome the goal is — one of "knowledge" (understand a body of
+    material), "skill" (become able to DO something), "credential" (pass an exam/certification —
+    an exam maps here), "behavior" (change an ongoing habit/practice); default "knowledge"
   - target_standard: if the goal names an external standard, exam, or certification, an object
     {{"name": "...", "kind": "external_standard|certification|exam|informal",
     "authority_hint": "the body that defines it, e.g. ircc.canada.ca"}}; otherwise null
   - target_level: one of novice, intermediate, advanced, expert, or "n/a"
+  - gap: how far the learner must travel — an object {{"entry_level":
+    "novice|intermediate|advanced|expert|n/a", "magnitude": "small|moderate|large"}}; entry_level is
+    where they start (below target_level), magnitude sizes the leap (small = a refinement, large = a
+    from-scratch climb). Do NOT include a target in the gap — it is taken from target_level above
   - assumed_prior: one sentence on what the learner most likely already knows, given the goal+level
   - audience: one short phrase describing who this learner is
   - deliverable_shape: {{"lessons": <integer or null>}} — lift an explicit lesson count if the
@@ -36,7 +43,8 @@ do NOT invent the contents of any named standard (a later step researches those)
     default "balanced" for both
 
 Respond with ONLY this JSON, no prose:
-{{"subject": "...", "goal": "...", "target_standard": null, "target_level": "n/a",
+{{"subject": "...", "goal": "...", "goal_type": "knowledge", "target_standard": null,
+"target_level": "n/a", "gap": {{"entry_level": "n/a", "magnitude": "moderate"}},
 "assumed_prior": "...", "audience": "...", "deliverable_shape": {{"lessons": null}},
 "needs_research": false, "domain_field": "...",
 "preferences": {{"detail_depth": "balanced", "language_style": "balanced"}}}}"""

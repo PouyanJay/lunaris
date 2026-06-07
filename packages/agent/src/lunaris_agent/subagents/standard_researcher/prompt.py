@@ -13,18 +13,23 @@ Subject: "{subject}"
 Target level: {level}
 
 Below are excerpts from authoritative sources. Using ONLY what they state (do not invent
-requirements they do not support), extract:
-  - competencies: the specific competency descriptors that DEFINE reaching this target at this level
-    — what a learner must be able to DO — as short phrases. Exclude foundational basics beneath the
-    level.
+requirements they do not support), distil a STRUCTURED competency framework:
+  - areas: the standard's competency AREAS, each an object {{"name": "<area>",
+    "competencies": ["..."]}}. Group the specific descriptors that DEFINE reaching this target at
+    this level — what a learner must be able to DO — under the area they belong to (e.g. Listening,
+    Writing; or for a technical standard, its real domains). Exclude foundational basics beneath the
+    level. Use the standard's own area names where the sources give them.
   - score_table: any concrete score/threshold lines the sources give (e.g. "CELPIP 10",
     "IELTS 8.5"), each as a short string. Empty if the sources give none.
+  - follow_up_queries: if the sources cover some areas only thinly (few or no descriptors), propose
+    1-3 narrow search queries that would surface the missing detail. Empty if coverage is complete.
 
 Sources:
 {sources}
 
 Respond with ONLY this JSON, no prose:
-{{"competencies": ["..."], "score_table": ["..."]}}"""
+{{"areas": [{{"name": "...", "competencies": ["..."]}}], "score_table": ["..."],
+"follow_up_queries": ["..."]}}"""
 
 
 def build_research_prompt(brief: CourseBrief, contents: Sequence[ExtractedContent]) -> str:

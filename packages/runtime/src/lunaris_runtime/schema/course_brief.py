@@ -1,7 +1,9 @@
-from pydantic import Field
+from typing import Self
+
+from pydantic import Field, model_validator
 
 from .base import CourseModel
-from .enums import DetailDepth, LanguageStyle, Level, StandardKind
+from .enums import DetailDepth, GapMagnitude, GoalType, LanguageStyle, Level, StandardKind
 from .standard_research import StandardResearch
 
 
@@ -30,6 +32,20 @@ class Preferences(CourseModel):
     language_style: LanguageStyle = LanguageStyle.BALANCED
 
 
+class Gap(CourseModel):
+    """The distance a course must close: from the learner's entry level to the goal (CQ Phase 1.0).
+
+    ``entry_level`` is where the learner starts, ``target_level`` mirrors the brief's authoritative
+    ``target_level`` (kept in sync by ``CourseBrief``), and ``magnitude`` sizes the leap. The
+    research-depth policy (CQ Phase 1.2) scales a build's search/fetch budget off the gap, so a
+    from-scratch credential climb earns more grounding than a same-level refinement.
+    """
+
+    entry_level: Level = Level.NOT_APPLICABLE
+    target_level: Level = Level.NOT_APPLICABLE
+    magnitude: GapMagnitude = GapMagnitude.MODERATE
+
+
 class CourseBrief(CourseModel):
     """The interpreted request: a goal for a learner at a level, not a subject to enumerate.
 
@@ -43,8 +59,13 @@ class CourseBrief(CourseModel):
 
     subject: str
     goal: str
+    # What kind of outcome the goal is (CQ Phase 1.0); shape + research depth branch on it.
+    goal_type: GoalType = GoalType.KNOWLEDGE
     target_standard: TargetStandard | None = None
     target_level: Level = Level.NOT_APPLICABLE
+    # Entry → target distance the course must close (CQ Phase 1.0); sizes research depth. The
+    # gap's target_level is kept in sync with target_level below — the brief's field is canonical.
+    gap: Gap = Field(default_factory=Gap)
     assumed_prior: str = ""
     audience: str = ""
     deliverable_shape: DeliverableShape = Field(default_factory=DeliverableShape)
@@ -53,3 +74,15 @@ class CourseBrief(CourseModel):
     preferences: Preferences = Field(default_factory=Preferences)
     # Grounded by the research stage (P7.2): None until researched, or on a path that skips it.
     research: StandardResearch | None = None
+
+    @model_validator(mode="after")
+    def _sync_gap_target_level(self) -> Self:
+        """Keep ``gap.target_level`` equal to the authoritative ``target_level`` (no drift).
+
+        The interpreter infers the gap's entry level + magnitude; its target is not an independent
+        input but a view of the brief's ``target_level``, so a model that omits or disagrees on it
+        can't desync the two.
+        """
+        if self.gap.target_level is not self.target_level:
+            self.gap = self.gap.model_copy(update={"target_level": self.target_level})
+        return self
