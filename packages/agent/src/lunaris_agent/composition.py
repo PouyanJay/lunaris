@@ -45,6 +45,7 @@ from .subagents.goal_interpreter import ClaudeGoalInterpreter
 from .subagents.learner_profiler import ClaudeLearnerProfiler
 from .subagents.module_author import ClaudeModuleAuthor
 from .subagents.resource_curator import (
+    ClaudeQueryTranslator,
     ClaudeResourceCurator,
     IResourceCurator,
     StubResourceCurator,
@@ -175,11 +176,18 @@ def _curator_from_env(worker_model: str) -> IResourceCurator:
     """Build the live resource curator iff a search key is present, else the stub (P7.4).
 
     Mirrors the researcher: the live curator finds + vets resources over the shared Tavily search +
-    an ``IVideoSource`` (worker tier for the relevance judge). With no ``SEARCH_API_KEY`` it returns
-    the stub, so curation degrades honestly to nothing and the no-key CI path stays deterministic.
+    an ``IVideoSource`` (worker tier for the relevance judge). The query translator (CQ Phase 2,
+    worker tier) rewrites each competency into domain search vernacular before the search. With no
+    ``SEARCH_API_KEY`` it returns the stub, so curation degrades honestly to nothing and the no-key
+    CI path stays deterministic.
     """
     if os.getenv("SEARCH_API_KEY"):
-        return ClaudeResourceCurator(worker_model, TavilySearchProvider(), _video_source_from_env())
+        return ClaudeResourceCurator(
+            worker_model,
+            TavilySearchProvider(),
+            _video_source_from_env(),
+            translator=ClaudeQueryTranslator(worker_model),
+        )
     logger.info("resource_curator_stubbed", reason="SEARCH_API_KEY unset")
     return StubResourceCurator()
 

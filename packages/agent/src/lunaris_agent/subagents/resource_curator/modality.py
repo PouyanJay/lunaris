@@ -22,4 +22,5 @@ def representative_modality(module: Module, graph: PrerequisiteGraph | None) -> 
         return None
     counts = Counter(modalities)
     order = list(Modality)
-    return max(modalities, key=lambda modality: (counts[modality], -order.index(modality)))
+    # Iterate the distinct modalities (Counter keys): most common wins, ties → earliest enum member.
+    return max(counts, key=lambda modality: (counts[modality], -order.index(modality)))

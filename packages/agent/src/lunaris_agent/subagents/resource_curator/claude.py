@@ -13,12 +13,7 @@ from lunaris_grounding import (
     classify_domain,
     host,
 )
-from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
-    retry_on_rate_limit,
-)
+from lunaris_runtime.resilience import build_anthropic_chat_model, retry_on_rate_limit
 from lunaris_runtime.schema import CourseBrief, Modality, Module, Resource, ResourceKind, TrustTier
 
 from .candidate_view import CandidateView
@@ -141,6 +136,8 @@ class ClaudeResourceCurator:
         seen: set[str] = set()
         candidates: list[_Candidate] = []
         for search_query in queries:
+            # TODO(CQ Phase 2 T2): carry search_query.good_result_looks_like / level_hint into the
+            # candidate so the relevance judge scores CONTENT. T1 routes on kind + query only.
             for candidate in await self._candidates_for(search_query.kind, search_query.query):
                 if not candidate.url or candidate.url in seen:
                     continue
@@ -234,12 +231,5 @@ class ClaudeResourceCurator:
         if not isinstance(self._model, str):
             return self._model
         if self._client is None:
-            from langchain_anthropic import ChatAnthropic
-
-            self._client = ChatAnthropic(
-                model=self._model,
-                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-                max_retries=LLM_MAX_RETRIES,
-                rate_limiter=get_llm_rate_limiter(),
-            )
+            self._client = build_anthropic_chat_model(self._model)
         return self._client

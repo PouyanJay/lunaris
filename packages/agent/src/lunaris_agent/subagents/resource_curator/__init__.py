@@ -1,4 +1,5 @@
 from .claude import ClaudeResourceCurator
+from .claude_translator import ClaudeQueryTranslator
 from .curation import CuratedResources
 from .deterministic import DeterministicQueryTranslator
 from .modality import representative_modality
@@ -10,6 +11,7 @@ from .stub import StubResourceCurator
 from .translator import IQueryTranslator
 
 __all__ = [
+    "ClaudeQueryTranslator",
     "ClaudeResourceCurator",
     "CuratedResources",
     "DeterministicQueryTranslator",

@@ -36,6 +36,31 @@ def _attach(lesson_segments: MerrillSegments, curated: CuratedResources) -> int:
     return attached
 
 
+async def _curate_all_modules(
+    curator: IResourceCurator, draft: CourseDraft
+) -> tuple[int, list[dict[str, object]]]:
+    """Curate + attach resources for every authored module; return the total + per-module summary.
+
+    Resolves each module's representative ``modality`` from the graph (CQ Phase 2) so the curator
+    can shape its searches, skips modules with no authored lesson, and emits a per-module beat.
+    """
+    total = 0
+    per_module: list[dict[str, object]] = []
+    for module in draft.modules:
+        if not module.lessons:
+            continue
+        modality = representative_modality(module, draft.graph)
+        curated = await curator.curate(module, draft.brief, modality=modality)
+        count = _attach(module.lessons[0].segments, curated)
+        total += count
+        per_module.append({"id": module.id, "title": module.title, "resourceCount": count})
+        await draft.agent.emit(
+            AgentEventKind.REASONING,
+            text=f"Curated {count} resource(s) for “{module.title}”.",
+        )
+    return total, per_module
+
+
 def make_curate_resources_tool(curator: IResourceCurator, draft: CourseDraft) -> BaseTool:
     """Build the ``curate_resources`` tool, closed over the curator and the run draft.
 
@@ -53,20 +78,7 @@ def make_curate_resources_tool(curator: IResourceCurator, draft: CourseDraft) ->
         attaches the best resources to the most relevant lesson phase; the resources are recorded on
         the draft automatically — you do NOT pass them back. Returns a per-module count summary.
         """
-        total = 0
-        per_module: list[dict[str, object]] = []
-        for module in draft.modules:
-            if not module.lessons:
-                continue
-            modality = representative_modality(module, draft.graph)
-            curated = await curator.curate(module, draft.brief, modality=modality)
-            count = _attach(module.lessons[0].segments, curated)
-            total += count
-            per_module.append({"id": module.id, "title": module.title, "resourceCount": count})
-            await draft.agent.emit(
-                AgentEventKind.REASONING,
-                text=f"Curated {count} resource(s) for “{module.title}”.",
-            )
+        total, per_module = await _curate_all_modules(curator, draft)
         await draft.progress.emit(
             ProgressStage.RESOURCES_CURATED,
             f"Curated {total} learning resource(s) across {len(per_module)} module(s)",
