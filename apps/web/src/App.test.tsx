@@ -184,6 +184,40 @@ describe("App — live studio (VITE_API_URL set)", () => {
     await screen.findByText(/no runs yet/i);
   });
 
+  it("opens the Settings canvas from the rail's operator pointer", async () => {
+    // The Settings canvas mounts the config + trusted-sources panels, which fetch their own
+    // endpoints — route them all so their async state settles within the awaited assertions.
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0]) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
+        });
+      }
+      if (url.includes("/api/source-authorities")) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      if (url.includes("/api/config")) {
+        return Promise.resolve({ ok: true, json: async () => ({ settings: [] }) });
+      }
+      if (url.includes("/api/runs")) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
+      throw new Error(`unhandled URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText(/no runs yet/i);
+
+    // The operator tier points to Settings rather than duplicating admin controls in the rail.
+    fireEvent.click(screen.getByRole("button", { name: /open settings/i }));
+
+    // findBy awaits the canvas switch + the panels' fetches settling (no act warnings).
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /done/i })).toBeInTheDocument();
+  });
+
   it("shows the run-history sidebar with prior runs", async () => {
     vi.stubGlobal(
       "fetch",

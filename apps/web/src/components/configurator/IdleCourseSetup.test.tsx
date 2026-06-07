@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeBriefResponse } from "../../test/fixtures";
+import type { BriefResponse, GoalType } from "../../types/clarifier";
 import { IdleCourseSetup } from "./IdleCourseSetup";
 
 function stubFetch(response: { ok: boolean; status?: number; json: () => Promise<unknown> }) {
@@ -164,4 +165,60 @@ describe("IdleCourseSetup", () => {
       screen.queryByRole("button", { name: /close course setup overlay/i }),
     ).not.toBeInTheDocument();
   });
+});
+
+// The journey's final task: parametrize the threading over goal types (the Genericity Rule — the
+// rail must be goal-type-blind, never wired to one outcome shape) and the depth override.
+describe("IdleCourseSetup — variant coverage across goal types", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A brief whose goal-type clarifier recommends `goalType` (so the inference pre-picks it).
+   *  Built immutably so it never mutates the fixture, even if `makeBriefResponse` later shares state. */
+  function briefForGoal(goalType: GoalType): BriefResponse {
+    const base = makeBriefResponse();
+    return {
+      brief: { ...base.brief, goalType },
+      clarifier: {
+        questions: base.clarifier.questions.map((question) =>
+          question.id === "goal"
+            ? {
+                ...question,
+                options: question.options.map((option) => ({
+                  ...option,
+                  recommended: option.value === goalType,
+                })),
+              }
+            : question,
+        ),
+      },
+    };
+  }
+
+  const GOAL_TYPES: GoalType[] = ["knowledge", "skill", "credential", "behavior"];
+
+  it.each(GOAL_TYPES)(
+    "threads the inferred goal_type '%s' and the Thorough depth override into the build",
+    async (goalType) => {
+      stubFetch({ ok: true, json: async () => briefForGoal(goalType) });
+      const onGenerate = vi.fn();
+      renderSetup({ onGenerate });
+
+      fireEvent.change(screen.getByLabelText("Topic"), { target: { value: `topic-${goalType}` } });
+      fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+      // The fixture always carries the "CLB 10" goal text; the variant covers the inferred GOAL
+      // option (goal_type), not the goal prose — this just waits for the ready brief to render.
+      await screen.findByText(/reach CLB 10/i);
+
+      // Override the smart default depth, then build with the confirmed (inferred) goal type.
+      fireEvent.click(screen.getByRole("button", { name: /advanced/i }));
+      fireEvent.click(screen.getByRole("radio", { name: /thorough/i }));
+      fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+      expect(onGenerate).toHaveBeenCalledWith(
+        `topic-${goalType}`,
+        expect.objectContaining({ goalType }),
+        "thorough",
+      );
+    },
+  );
 });
