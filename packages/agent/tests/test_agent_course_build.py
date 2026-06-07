@@ -31,6 +31,7 @@ from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.lesson_claims import iter_claims
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumPlan,
     ModulePlan,
     ObjectivePlan,
@@ -129,7 +130,7 @@ _PLAN = CurriculumPlan(
                     kc=kc_id,
                     statement=f"Given a task, the learner can apply {label}.",
                     bloom_level=BloomLevel.APPLY,
-                    item_prompts=["q"],
+                    items=[AssessmentItemPlan("q")],
                 )
             ],
         )
@@ -173,7 +174,7 @@ _ARC_PLAN = CurriculumPlan(
                     kc=kc_id,
                     statement=f"Given a task, the learner can apply {label}.",
                     bloom_level=BloomLevel.APPLY,
-                    item_prompts=["q"],
+                    items=[AssessmentItemPlan("q")],
                 )
             ],
         )

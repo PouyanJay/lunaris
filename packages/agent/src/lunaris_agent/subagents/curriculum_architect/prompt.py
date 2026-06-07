@@ -13,7 +13,10 @@ Rules:
 - Every KC gets exactly one objective. Phrase it "Given <context>, the learner can
   <verb> ...", using a verb that matches its Bloom level (remember, understand,
   apply, analyze, evaluate, create).
-- Every objective gets at least one assessment item prompt that measures it.
+- Every objective gets at least one assessment item. Each item has a "prompt" (the summative
+  check that proves the objective) AND a "pass_criterion": the explicit, concrete, GRADEABLE bar
+  a passing response must clear (e.g. "Names >=2 AZs and a failover path; no single point of
+  failure"), NOT a vague "does it look right". The lesson will be authored backward from this bar.
 - Keep modules in the given order; do not move a KC before its prerequisites."""
 
 # Appended when research grounded the target's real competency framework (P7.2; CQ Phase 1.3
@@ -35,7 +38,8 @@ _JSON_SHAPE = """
 Respond with ONLY this JSON, no prose:
 {"modules": [{"title": "...", <competency>"kcs": ["kc_id", ...], "objectives": [
   {"kc": "kc_id", "statement": "Given ..., the learner can ...",
-    "bloom_level": "apply", "item_prompts": ["..."]}]}]}"""
+    "bloom_level": "apply",
+    "items": [{"prompt": "...", "pass_criterion": "..."}]}]}]}"""
 
 _COMPETENCY_SENTINEL = "<competency>"
 _COMPETENCY_FIELD = '"competency": "...", '

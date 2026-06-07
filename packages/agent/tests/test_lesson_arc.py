@@ -21,6 +21,7 @@ from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumAssembler,
     CurriculumPlan,
     ModulePlan,
@@ -77,13 +78,13 @@ def _plan() -> CurriculumPlan:
                         kc="intent",
                         statement="Given audio, the learner can analyze implied intent.",
                         bloom_level=BloomLevel.ANALYZE,
-                        item_prompts=["Identify the speaker's unstated request."],
+                        items=[AssessmentItemPlan("Identify the speaker's unstated request.")],
                     ),
                     ObjectivePlan(
                         kc="stance",
                         statement="Given a text, the learner can analyze authorial stance.",
                         bloom_level=BloomLevel.ANALYZE,
-                        item_prompts=["State the author's position and its evidence."],
+                        items=[AssessmentItemPlan("State the author's position and its evidence.")],
                     ),
                 ],
             )

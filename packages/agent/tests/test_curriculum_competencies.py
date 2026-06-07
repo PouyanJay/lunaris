@@ -11,6 +11,7 @@ from lunaris_agent.coverage import framework_coverage
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_design_curriculum_tool
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumPlan,
     ModulePlan,
     ObjectivePlan,
@@ -92,6 +93,15 @@ def test_build_curriculum_prompt_asks_for_a_per_module_competency_field_with_res
 
     assert '"competency"' in prompt
     assert "tag each module" in prompt.lower()
+
+
+def test_build_curriculum_prompt_asks_for_a_gradeable_pass_criterion() -> None:
+    # Backward design (CQ Phase 4.1): the architect must write a concrete, gradeable pass criterion
+    # for each item — present regardless of research, since every objective gets a measurable check.
+    prompt = build_curriculum_prompt(_graph(), None)
+
+    assert "pass_criterion" in prompt
+    assert "gradeable" in prompt.lower()
 
 
 def test_build_curriculum_prompt_is_plain_backward_design_without_research() -> None:
@@ -192,13 +202,13 @@ async def test_design_curriculum_tool_passes_the_brief_to_the_architect() -> Non
                                 kc="intent",
                                 statement="Given audio, the learner can infer intent.",
                                 bloom_level=BloomLevel.ANALYZE,
-                                item_prompts=["q"],
+                                items=[AssessmentItemPlan("q")],
                             ),
                             ObjectivePlan(
                                 kc="stance",
                                 statement="Given text, the learner can identify stance.",
                                 bloom_level=BloomLevel.ANALYZE,
-                                item_prompts=["q"],
+                                items=[AssessmentItemPlan("q")],
                             ),
                         ],
                     )

@@ -33,9 +33,16 @@ class CurriculumAssembler:
             items: list[Item] = []
             for o_index, obj in enumerate(module_plan.objectives):
                 item_ids: list[str] = []
-                for i_index, prompt in enumerate(obj.item_prompts):
+                for i_index, item in enumerate(obj.items):
                     item_id = f"m{m_index}-o{o_index}-i{i_index}"
-                    items.append(Item(id=item_id, prompt=prompt, objective=obj.kc))
+                    items.append(
+                        Item(
+                            id=item_id,
+                            prompt=item.prompt,
+                            objective=obj.kc,
+                            pass_criterion=item.pass_criterion,
+                        )
+                    )
                     item_ids.append(item_id)
                 if not item_ids:
                     raise ValueError(f"objective for KC {obj.kc!r} has no items")

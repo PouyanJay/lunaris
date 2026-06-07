@@ -19,6 +19,7 @@ from lunaris_agent.harness.runner import AgentCourseBuilder
 from lunaris_agent.harness.seeding import StubGroundingSeeder
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumPlan,
     ModulePlan,
     ObjectivePlan,
@@ -92,7 +93,7 @@ def _plan() -> CurriculumPlan:
                         kc=i,
                         statement=f"Apply {lbl}.",
                         bloom_level=BloomLevel.APPLY,
-                        item_prompts=["q"],
+                        items=[AssessmentItemPlan("q")],
                     )
                 ],
             )

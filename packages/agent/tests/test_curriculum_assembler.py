@@ -1,4 +1,5 @@
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumAssembler,
     CurriculumPlan,
     ModulePlan,
@@ -41,7 +42,10 @@ def _plan() -> CurriculumPlan:
                 kcs=["arrays"],
                 objectives=[
                     ObjectivePlan(
-                        "arrays", "Given a list, describe indexing", BloomLevel.UNDERSTAND, ["q1"]
+                        "arrays",
+                        "Given a list, describe indexing",
+                        BloomLevel.UNDERSTAND,
+                        [AssessmentItemPlan("q1")],
                     )
                 ],
             ),
@@ -53,7 +57,7 @@ def _plan() -> CurriculumPlan:
                         "bsearch",
                         "Given a sorted array, apply binary search",
                         BloomLevel.APPLY,
-                        ["q2", "q3"],
+                        [AssessmentItemPlan("q2"), AssessmentItemPlan("q3")],
                     )
                 ],
             ),
@@ -71,6 +75,39 @@ def test_assemble_links_objectives_to_items() -> None:
         for objective in module.objectives:
             assert objective.assessed_by
             assert set(objective.assessed_by) <= item_ids
+
+
+def test_assemble_stamps_the_gradeable_pass_criterion_onto_items() -> None:
+    # Backward design (CQ Phase 4.1): the architect's per-item pass criterion is stamped onto the
+    # assembled assessment Item, so the lesson can be authored backward from a concrete check.
+    plan = CurriculumPlan(
+        modules=[
+            ModulePlan(
+                title="Search",
+                kcs=["bsearch"],
+                objectives=[
+                    ObjectivePlan(
+                        "bsearch",
+                        "Given a sorted array, apply binary search",
+                        BloomLevel.APPLY,
+                        [
+                            AssessmentItemPlan(
+                                "Trace it on [1,3,5,7].", "Finds 5 in <=3 comparisons."
+                            )
+                        ],
+                    )
+                ],
+            )
+        ]
+    )
+
+    # Act
+    modules = CurriculumAssembler().assemble(plan, _graph())
+
+    # Assert — the criterion rides onto the typed Item, paired with its prompt.
+    item = modules[0].assessment.items[0]
+    assert item.prompt == "Trace it on [1,3,5,7]."
+    assert item.pass_criterion == "Finds 5 in <=3 comparisons."
 
 
 def test_assemble_sets_non_decreasing_difficulty_index() -> None:

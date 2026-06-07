@@ -5,6 +5,7 @@ import pytest
 from lunaris_agent.orchestrator import Orchestrator
 from lunaris_agent.subagents.concept_extractor import Extraction, StubConceptExtractor
 from lunaris_agent.subagents.curriculum_architect import (
+    AssessmentItemPlan,
     CurriculumPlan,
     ModulePlan,
     ObjectivePlan,
@@ -54,7 +55,10 @@ def _curriculum_plan() -> CurriculumPlan:
                 kcs=[kc_id],
                 objectives=[
                     ObjectivePlan(
-                        kc_id, f"Given X, the learner can apply {kc_id}", BloomLevel.APPLY, ["q"]
+                        kc_id,
+                        f"Given X, the learner can apply {kc_id}",
+                        BloomLevel.APPLY,
+                        [AssessmentItemPlan("q")],
                     )
                 ],
             )

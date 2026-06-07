@@ -3,7 +3,7 @@ import re
 from lunaris_runtime.schema import BloomLevel
 
 from ..json_tolerant import loads_tolerant
-from .plan import CurriculumPlan, ModulePlan, ObjectivePlan
+from .plan import AssessmentItemPlan, CurriculumPlan, ModulePlan, ObjectivePlan
 
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -37,6 +37,33 @@ def _has_bloom_verb(statement: str, level: BloomLevel) -> bool:
     return any(verb in lowered for verb in _BLOOM_VERBS[level])
 
 
+def _parse_items(obj: dict) -> list[AssessmentItemPlan]:
+    """Read an objective's assessment items (CQ Phase 4.1: prompt + gradeable pass criterion).
+
+    Accepts the structured shape ``items: [{prompt, pass_criterion}]``; falls back to the legacy
+    ``item_prompts: ["..."]`` (bare strings → empty criterion) so a pre-P4 response still parses.
+    Blank prompts are skipped. A structured item may also be a bare string (a tolerant slip). A
+    non-list ``items`` (e.g. the model emitted a bare string) is ignored, not character-iterated.
+    """
+    raw_items = obj.get("items", [])
+    items: list[AssessmentItemPlan] = []
+    for raw in raw_items if isinstance(raw_items, list) else []:
+        if isinstance(raw, dict):
+            prompt = str(raw.get("prompt", "")).strip()
+            if prompt:
+                items.append(AssessmentItemPlan(prompt, str(raw.get("pass_criterion", "")).strip()))
+        elif stripped := str(raw).strip():
+            items.append(AssessmentItemPlan(stripped))
+    if not items:
+        legacy = obj.get("item_prompts", [])
+        items = [
+            AssessmentItemPlan(stripped)
+            for p in (legacy if isinstance(legacy, list) else [])
+            if (stripped := str(p).strip())
+        ]
+    return items
+
+
 def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
     """Parse the architect's JSON into a validated ``CurriculumPlan``.
 
@@ -64,15 +91,15 @@ def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
             kc = str(obj["kc"])
             if kc not in known_kc_ids:
                 raise ValueError(f"objective targets unknown KC {kc!r}")
-            prompts = [str(p) for p in obj.get("item_prompts", []) if str(p).strip()]
-            if not prompts:
+            items = _parse_items(obj)
+            if not items:
                 raise ValueError(f"objective for KC {kc!r} has no assessment items")
             objectives.append(
                 ObjectivePlan(
                     kc=kc,
                     statement=str(obj.get("statement", "")),
                     bloom_level=_coerce_bloom(obj.get("bloom_level")),
-                    item_prompts=prompts,
+                    items=items,
                 )
             )
             seen_kcs.add(kc)
