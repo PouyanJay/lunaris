@@ -67,4 +67,15 @@ describe("useRailLayout", () => {
 
     expect(result.current.width).toBe(RAIL_DEFAULT_WIDTH);
   });
+
+  it("persists independently per storage key, so two rails don't share state", () => {
+    // The reader rail and the config rail are distinct surfaces — collapsing one must not collapse
+    // the other. Each owns its own persisted preference, keyed by the storageKey argument.
+    const reader = renderHook(() => useRailLayout("lunaris.reader.rail"));
+    act(() => reader.result.current.toggleCollapsed());
+    reader.unmount();
+
+    const config = renderHook(() => useRailLayout("lunaris.config.rail"));
+    expect(config.result.current.collapsed).toBe(false);
+  });
 });

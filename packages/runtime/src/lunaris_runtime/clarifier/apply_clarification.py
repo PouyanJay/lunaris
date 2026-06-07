@@ -20,6 +20,8 @@ def apply_clarification(brief: CourseBrief, clarification: Clarification | None)
         return brief
 
     updates: dict[str, object] = {}
+    if clarification.goal_type is not None:
+        updates["goal_type"] = clarification.goal_type
     if clarification.target_level is not None:
         updates["target_level"] = clarification.target_level
 

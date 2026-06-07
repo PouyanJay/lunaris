@@ -17,8 +17,7 @@ import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
-import { PersonalizePanel } from "./components/personalize/PersonalizePanel";
-import { TopicForm } from "./components/TopicForm";
+import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
 import { useCourse } from "./hooks/useCourse";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useTheme, type ThemeProps } from "./hooks/useTheme";
@@ -31,7 +30,7 @@ import { fetchSettings } from "./lib/settings";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useDeleteRun } from "./hooks/useDeleteRun";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
-import type { Course, CourseRun, CourseStatus, DiscoveryDepth } from "./types/course";
+import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
@@ -111,13 +110,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const opened = useOpenedRun(apiBaseUrl);
   const sidebarLayout = useSidebarLayout();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // The topic the learner opted to personalize (P7.5): non-null shows the confirm panel in place of
-  // the topic form. Carries the chosen discovery depth (P6.3) so it survives the confirm step.
-  // Cleared on confirm/cancel and when starting a fresh course.
-  const [personalizeTopic, setPersonalizeTopic] = useState<{
-    topic: string;
-    discoveryDepth: DiscoveryDepth;
-  } | null>(null);
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
@@ -169,7 +161,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const { open: openRun, close: closeRun } = opened;
   const startNewCourse = useCallback(() => {
     setSettingsOpen(false);
-    setPersonalizeTopic(null);
     closeRun();
     reset();
   }, [closeRun, reset]);
@@ -290,33 +281,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return buildReadyCanvas(course, reopen, runId);
     }
     if (state.status === "idle") {
-      if (personalizeTopic !== null) {
-        return {
-          title: "New course",
-          meta: null,
-          body: (
-            <PersonalizePanel
-              apiBaseUrl={apiBaseUrl}
-              topic={personalizeTopic.topic}
-              onConfirm={(topic, clarification) => {
-                const { discoveryDepth } = personalizeTopic;
-                setPersonalizeTopic(null);
-                generate(topic, clarification, discoveryDepth);
-              }}
-              onCancel={() => setPersonalizeTopic(null)}
-            />
-          ),
-        };
-      }
       return {
         title: "New course",
         meta: null,
         body: (
-          <TopicForm
-            onGenerate={(topic, discoveryDepth) => generate(topic, undefined, discoveryDepth)}
-            onPersonalize={(topic, discoveryDepth) =>
-              setPersonalizeTopic({ topic, discoveryDepth })
-            }
+          <IdleCourseSetup
+            apiBaseUrl={apiBaseUrl}
+            onGenerate={generate}
+            onOpenSettings={() => setSettingsOpen(true)}
           />
         ),
       };
