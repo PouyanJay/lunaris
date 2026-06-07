@@ -43,6 +43,7 @@ from lunaris_agent.subagents.learner_profiler import (
 )
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_agent.subagents.resource_curator import CuratedResources, StubResourceCurator
+from lunaris_agent.subagents.scope_polisher import IScopePolisher
 from lunaris_agent.subagents.standard_researcher import SeedSource, StubStandardResearcher
 from lunaris_agent.subagents.visual_agent import (
     StubDiagramRenderer,
@@ -73,6 +74,7 @@ from lunaris_runtime.schema import (
     Citation,
     Clarification,
     CourseBrief,
+    CourseScope,
     CourseStatus,
     GoalType,
     KnowledgeComponent,
@@ -243,6 +245,7 @@ def _builder(
     discoverer: IGroundingDiscoverer | None = None,
     verifier: Verifier | None = None,
     visual_engine: VisualEngine | None = None,
+    scope_polisher: IScopePolisher | None = None,
     stream_tokens: bool = False,
 ) -> AgentCourseBuilder:
     """Construct the agent course builder over the no-key stub subagents + real moats."""
@@ -261,6 +264,7 @@ def _builder(
         discoverer=discoverer or StubGroundingDiscoverer(),
         verifier=verifier or _verifier(),
         visual_engine=visual_engine,
+        scope_polisher=scope_polisher,
         stream_tokens=stream_tokens,
     )
 
@@ -425,6 +429,72 @@ async def test_goal_type_threads_from_the_brief_to_the_finalized_course(
     # Assert — the classification reached the finalized course and round-trips through the store.
     assert course.goal_type is GoalType.CREDENTIAL
     assert store.load("course-gt").goal_type is GoalType.CREDENTIAL
+
+
+async def test_scope_band_threads_from_the_brief_to_the_finalized_course(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Walking skeleton (CQ Phase 3.1): the finalize step computes a scope-realism band from the
+    # brief (effort/timeline + what this does / does not get you) and persists it on the course, so
+    # the reader can show an honest header band. A non-default goal_type proves the thread.
+    # Arrange
+    store = CourseStore(tmp_path)
+    brief = CourseBrief(
+        subject="AWS",
+        goal="Pass the AWS Solutions Architect exam",
+        target_level=Level.INTERMEDIATE,
+        goal_type=GoalType.CREDENTIAL,
+    )
+    builder = _builder(_delegating_script(scripted_model), store, brief=brief)
+
+    # Act
+    course = await builder.run("demo", course_id="course-scope", run_id="run-scope")
+
+    # Assert — a scope band reached the finalized course, the goal_type=CREDENTIAL carried all the
+    # way to the excludes content (not just a non-empty field), and it round-trips unchanged.
+    assert course.scope is not None
+    assert course.scope.effort
+    assert course.scope.delivers
+    assert "guarantee" in " ".join(course.scope.excludes).lower()
+    assert store.load("course-scope").scope == course.scope
+
+
+class _RewordingPolisher:
+    """A well-behaved scope polisher: rewrites the band's lines (preserving their count) while
+    keeping the deterministic effort fact — proves the finalize tool actually invokes the injected
+    polisher and persists its result. (Drift-discarding is unit-tested on ClaudeScopePolisher.)"""
+
+    async def polish(self, scope: CourseScope, *, brief: CourseBrief | None) -> CourseScope:
+        return CourseScope(
+            effort=scope.effort,  # a faithful polisher never changes the effort fact
+            delivers=[f"POLISHED: {line}" for line in scope.delivers],
+            excludes=[f"POLISHED: {line}" for line in scope.excludes],
+        )
+
+
+async def test_scope_band_is_wording_polished_when_a_polisher_is_wired(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # Hybrid path (CQ Phase 3.1): with a polisher wired, finalize refines the band's WORDING; the
+    # deterministic effort fact is preserved, and the polished band is persisted.
+    # Arrange
+    store = CourseStore(tmp_path)
+    builder = _builder(
+        _delegating_script(scripted_model), store, scope_polisher=_RewordingPolisher()
+    )
+
+    # Act
+    course = await builder.run("demo", course_id="course-polish", run_id="run-polish")
+
+    # Assert — every line was polished, the effort still reads as the deterministic band, and the
+    # polished result round-trips through the store.
+    assert course.scope is not None
+    assert all(line.startswith("POLISHED:") for line in course.scope.delivers)
+    assert all(line.startswith("POLISHED:") for line in course.scope.excludes)
+    assert "week" in course.scope.effort.lower()  # the deterministic effort, untouched by polish
+    assert store.load("course-polish").scope == course.scope
 
 
 async def test_research_needing_goal_without_grounding_is_scoped_and_withheld(

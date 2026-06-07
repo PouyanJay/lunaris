@@ -172,6 +172,56 @@ describe("CourseReader", () => {
     expect(screen.queryByRole("complementary", { name: /warning/i })).not.toBeInTheDocument();
   });
 
+  it("shows the scope-realism band at the course entry (CQ Phase 3.1)", () => {
+    // Arrange — a course carrying a computed scope band.
+    const course = makeCourse({
+      scope: {
+        effort: "About 4-9 weeks of self-paced study (~20-35 hours).",
+        delivers: ["A structured understanding of binary search."],
+        excludes: ["It will not certify you."],
+      },
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — the band mounts and its data flows through (per-item rendering is covered in
+    // ScopeBand.test.tsx; here we prove the integration).
+    const band = screen.getByRole("region", { name: /course scope/i });
+    expect(within(band).getByText(/4-9 weeks/)).toBeInTheDocument();
+    expect(
+      within(band).getByText("A structured understanding of binary search."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no scope band when the course has none (pre-Phase-3 course)", () => {
+    // Arrange / Act — the default fixture omits `scope`.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert
+    expect(screen.queryByRole("region", { name: /course scope/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the scope band only at the entry, not on a later lesson", () => {
+    // Arrange — a multi-lesson course with a scope band.
+    const course = multiLessonCourse();
+    course.scope = {
+      effort: "About 3-6 weeks of self-paced study (~12-20 hours).",
+      delivers: ["A working grasp of the foundations."],
+      excludes: ["It will not certify you."],
+    };
+    render(<CourseReader course={course} />);
+
+    // Assert (precondition) — the band is visible on the entry lesson.
+    expect(screen.getByRole("region", { name: /course scope/i })).toBeInTheDocument();
+
+    // Act — advance to the next lesson.
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+
+    // Assert — the orientation band is an entry header, not repeated on every lesson.
+    expect(screen.queryByRole("region", { name: /course scope/i })).not.toBeInTheDocument();
+  });
+
   it("renders an empty state when no lessons are authored", () => {
     // Arrange / Act
     render(<CourseReader course={makeCourse({ modules: [] })} />);

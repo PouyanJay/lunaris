@@ -30,6 +30,7 @@ from ..subagents.curriculum_architect import ICurriculumArchitect
 from ..subagents.goal_interpreter import IGoalInterpreter
 from ..subagents.learner_profiler import ILearnerProfiler
 from ..subagents.resource_curator import IResourceCurator
+from ..subagents.scope_polisher import IScopePolisher
 from ..subagents.standard_researcher import IStandardResearcher
 from ..subagents.visual_agent import VisualEngine
 from .agent import build_course_agent
@@ -99,6 +100,7 @@ class AgentCourseBuilder:
         verifier: Verifier,
         critic: ICritic | None = None,
         visual_engine: VisualEngine | None = None,
+        scope_polisher: IScopePolisher | None = None,
         risk_tier: RiskTier = RiskTier.LOW,
         stream_tokens: bool = False,
     ) -> None:
@@ -117,6 +119,9 @@ class AgentCourseBuilder:
         self._verifier = verifier
         self._critic = critic or MinimalCritic()
         self._visual_engine = visual_engine
+        # The optional key-gated scope-band wording polish (CQ Phase 3.1); None → the deterministic
+        # band ships unchanged (the no-key path), so the offline suite stays byte-for-byte stable.
+        self._scope_polisher = scope_polisher
         self._risk_tier = risk_tier
         # Token-by-token reasoning streaming: enabled only for a real streaming model (the live
         # composition root sets it). The scripted no-key model keeps the deterministic ``updates``
@@ -207,7 +212,11 @@ class AgentCourseBuilder:
             make_discover_grounding_tool(self._discoverer, draft),
             make_curate_resources_tool(self._curator, draft),
             make_finalize_course_tool(
-                self._critic, self._store, draft, visual_engine=self._visual_engine
+                self._critic,
+                self._store,
+                draft,
+                visual_engine=self._visual_engine,
+                scope_polisher=self._scope_polisher,
             ),
         ]
 

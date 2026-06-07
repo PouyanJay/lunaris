@@ -353,6 +353,17 @@ export interface IngestResult {
   reason: string | null;
 }
 
+/** The scope-realism band (CQ Phase 3.1): an honest effort/timeline + what this course does and
+ *  does not get you, computed at finalize from the brief. `null` on a pre-Phase-3 course → no band. */
+export interface CourseScope {
+  /** Human-readable effort/timeline band, e.g. "~6–10 weeks · self-paced". "" = unknown. */
+  effort: string;
+  /** What the course DOES get you — concrete outcomes, one line each. */
+  delivers: string[];
+  /** What it does NOT get you — honest exclusions, one line each. */
+  excludes: string[];
+}
+
 export interface Course {
   id: string;
   topic: string;
@@ -363,6 +374,8 @@ export interface Course {
    *  fully grounded or not research-needing. The reader shows it so a generic course is never
    *  presented as an authoritative guide to the standard. */
   scopeNote: string;
+  /** The scope-realism band (CQ Phase 3.1); null/absent on pre-Phase-3 courses → reader shows no band. */
+  scope?: CourseScope | null;
   graph: PrerequisiteGraph;
   modules: Module[];
   provenance: Citation[];
