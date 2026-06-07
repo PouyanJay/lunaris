@@ -7,8 +7,10 @@ class SearchVideoSource:
 
     When no ``YOUTUBE_API_KEY`` is set, video candidates come from the same general web search as
     articles/docs — so a video query still returns candidates (the curator + trust gate vet them),
-    just without the rich duration/channel signals the YouTube Data API exposes. Best-effort: a
-    search failure is swallowed-and-logged by the underlying provider, surfacing as an empty list.
+    just without the rich duration/channel/stats signals the YouTube Data API exposes. The search
+    ``snippet`` is carried as the ``description`` so the content judge (CQ Phase 2 T2) still has
+    something to score on. Best-effort: a search failure is swallowed-and-logged by the underlying
+    provider, surfacing as an empty list.
     """
 
     def __init__(self, search: ISearchProvider) -> None:
@@ -16,4 +18,7 @@ class SearchVideoSource:
 
     async def find(self, query: str, *, max_results: int = 5) -> list[VideoResult]:
         results = await self._search.search(query, max_results=max_results)
-        return [VideoResult(url=result.url, title=result.title) for result in results]
+        return [
+            VideoResult(url=result.url, title=result.title, description=result.snippet)
+            for result in results
+        ]

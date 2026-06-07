@@ -10,8 +10,11 @@ selection. Search + video + the judge are all stubbed/injected so the run is off
 from langchain_core.messages import AIMessage
 from lunaris_agent.subagents.resource_curator import (
     ClaudeResourceCurator,
+    SearchQuery,
+    build_curation_prompt,
     build_resource_queries,
 )
+from lunaris_agent.subagents.resource_curator.candidate_view import CandidateView
 from lunaris_agent.subagents.resource_curator.parser import parse_curation
 from lunaris_grounding import (
     ResourceBudget,
@@ -29,6 +32,52 @@ from lunaris_runtime.schema import (
     ResourceKind,
     TrustTier,
 )
+
+
+class _RecordingSearch:
+    """An ISearchProvider that records the max_results asked for and replays fixed results."""
+
+    def __init__(self, results: list[SearchResult]) -> None:
+        self._results = results
+        self.max_results: list[int] = []
+
+    async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        self.max_results.append(max_results)
+        return self._results
+
+
+class _OneQueryTranslator:
+    """A translator that emits one SearchQuery carrying the judge content signal (for T2 tests)."""
+
+    def __init__(self, query: SearchQuery) -> None:
+        self._query = query
+
+    async def translate(self, module, brief=None, *, modality=None, feedback=None):
+        return [self._query]
+
+
+class _FeedbackAwareTranslator:
+    """Records the feedback of each translate call (for the T5 broaden-retry test)."""
+
+    def __init__(self, query: SearchQuery) -> None:
+        self._query = query
+        self.feedbacks: list[str | None] = []
+
+    async def translate(self, module, brief=None, *, modality=None, feedback=None):
+        self.feedbacks.append(feedback)
+        return [self._query]
+
+
+class _EmptyOnFirstPassSearch:
+    """Returns nothing on the first query, then results once the broaden-retry runs (T5)."""
+
+    def __init__(self, results: list[SearchResult]) -> None:
+        self._results = results
+        self.calls = 0
+
+    async def search(self, query: str, *, max_results: int = 5) -> list[SearchResult]:
+        self.calls += 1
+        return [] if self.calls == 1 else self._results
 
 
 class _FakeJudge:
@@ -171,6 +220,130 @@ async def test_curate_degrades_to_empty_without_calling_the_judge_when_no_candid
     assert curated.apply == []
     assert curated.integrate == []
     assert judge.prompts == []
+
+
+def test_build_curation_prompt_feeds_content_and_stays_blind_to_trust() -> None:
+    # Arrange — a candidate carrying the search snippet + the query's good_result + level hint.
+    views = [
+        CandidateView(
+            index=0,
+            kind=ResourceKind.VIDEO,
+            title="Some catchy title",
+            source="youtube.com",
+            url="https://youtu.be/x",
+            snippet="A worked example halving the search range each comparison.",
+            good_result_looks_like="worked example with a real trace",
+            level_hint="advanced",
+        )
+    ]
+
+    # Act
+    prompt = build_curation_prompt(_module(), views, limit=4)
+
+    # Assert — the judge sees CONTENT (snippet), the target signal, and the level — but no tier.
+    assert "halving the search range" in prompt
+    assert "worked example with a real trace" in prompt
+    assert "advanced" in prompt
+    assert "trust" not in prompt.lower()
+    for tier in ("official", "reputable", "blocked"):
+        assert tier not in prompt.lower()
+
+
+async def test_curate_over_retrieves_and_feeds_the_query_content_signal_to_the_judge() -> None:
+    # Arrange — a translator emitting one article query with a content signal; a recording search.
+    search = _RecordingSearch(
+        [
+            SearchResult(
+                url="https://b.example.edu/x", title="Title", snippet="dense authentic input"
+            )
+        ]
+    )
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "apply", "why": "w", "credibility": 0.6}]}'
+    )
+    curator = ClaudeResourceCurator(
+        judge,
+        search,
+        StubVideoSource(),
+        translator=_OneQueryTranslator(
+            SearchQuery(
+                kind=ResourceKind.ARTICLE,
+                query="advanced listening input",
+                good_result_looks_like="unscripted native-pace discussion",
+                level_hint="C1",
+            )
+        ),
+    )
+
+    # Act
+    await curator.curate(_module(), _brief())
+
+    # Assert — search over-retrieved (a real pool, well above the old fixed cap of 4), and the judge
+    # saw the content signals.
+    assert search.max_results and search.max_results[0] >= 10
+    prompt = judge.prompts[0]
+    assert "dense authentic input" in prompt  # the search snippet reaches the judge
+    assert "unscripted native-pace discussion" in prompt  # the query's good_result_looks_like
+    assert "C1" in prompt  # the level hint
+
+
+async def test_curate_drops_unplayable_videos_and_blends_the_metric_into_credibility() -> None:
+    # Arrange — two videos: one non-embeddable (dropped by the guard), one enriched + embeddable.
+    dead = VideoResult(url="https://youtu.be/dead", title="Dead", embeddable=False)
+    good = VideoResult(
+        url="https://youtu.be/good",
+        title="Good",
+        channel="Chan",
+        duration="12:00",
+        duration_seconds=720,
+        has_captions=True,
+        embeddable=True,
+    )
+    # The judge can only keep index 0 — i.e. the survivor after the guard drops the dead one.
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "demonstrate", "why": "w", "credibility": 1.0}]}'
+    )
+    curator = ClaudeResourceCurator(
+        judge,
+        StubSearchProvider(),
+        StubVideoSource([dead, good]),
+        translator=_OneQueryTranslator(SearchQuery(kind=ResourceKind.VIDEO, query="q")),
+        clock=lambda: "2026-06-03T00:00:00Z",
+    )
+
+    # Act
+    curated = await curator.curate(_module(), _brief())
+
+    # Assert — only the playable video reached the judge + was kept (the dead one was guarded out).
+    assert len(curated.demonstrate) == 1
+    kept = curated.demonstrate[0]
+    assert kept.url == "https://youtu.be/good"
+    # The deterministic metric (healthy duration + captions → 0.75) blended into the judge's 1.0:
+    # round(0.7*1.0 + 0.3*0.75, 2) = 0.92 — pinned so a scorer/blend regression can't slip through.
+    assert kept.credibility == 0.92
+
+
+async def test_curate_retries_with_a_broaden_feedback_when_the_first_pass_is_empty() -> None:
+    # Arrange — the first search returns nothing; the translator records the feedback it's given.
+    search = _EmptyOnFirstPassSearch(
+        [SearchResult(url="https://b.example.edu/x", title="Found on the broader pass")]
+    )
+    translator = _FeedbackAwareTranslator(SearchQuery(kind=ResourceKind.ARTICLE, query="q"))
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "apply", "why": "w", "credibility": 0.6}]}'
+    )
+    curator = ClaudeResourceCurator(judge, search, StubVideoSource(), translator=translator)
+
+    # Act
+    curated = await curator.curate(_module(), _brief())
+
+    # Assert — a second (broaden) pass ran, and it recovered a resource instead of a silent zero.
+    assert translator.feedbacks == [
+        None,
+        "previous queries returned 0 results; broaden and use simpler, more common phrasing",
+    ]
+    total = len(curated.activate + curated.demonstrate + curated.apply + curated.integrate)
+    assert total == 1
 
 
 async def test_curate_respects_the_resource_budget() -> None:

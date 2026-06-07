@@ -143,3 +143,25 @@ async def test_curate_resources_attaches_per_phase_resources_and_they_finalize(
     # The curation stage streamed to the build canvas.
     stages = [event.stage for event in progress_sink.events]
     assert ProgressStage.RESOURCES_CURATED in stages
+
+
+async def test_an_empty_module_is_flagged_in_the_scope_note(progress_sink, tmp_path: Path) -> None:
+    # Arrange — a draft whose curator finds nothing for the module (the silent-zero case, T5).
+    draft = CourseDraft(topic="Improve my English", course_id="course-empty", run_id="run-empty")
+    draft.graph = _graph()
+    draft.modules = [_module_with_lesson()]
+    draft.progress = ProgressReporter("run-empty", progress_sink)
+    store = CourseStore(tmp_path)
+    curate = make_curate_resources_tool(StubResourceCurator(), draft)  # default → no resources
+    finalize = make_finalize_course_tool(MinimalCritic(), store, draft)
+
+    # Act
+    await curate.ainvoke({})
+    await finalize.ainvoke({})
+
+    # Assert — the empty module is recorded as a gap and folded into the course's scope_note (no
+    # silent zero), and the lesson still ships its verified content (resources are aids).
+    assert draft.resource_coverage_gaps == ["Listening for intent"]
+    assert draft.course is not None
+    assert "Listening for intent" in (draft.course.scope_note or "")
+    assert "without curated external resources" in (draft.course.scope_note or "")

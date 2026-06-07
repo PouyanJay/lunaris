@@ -21,6 +21,7 @@ factory (only the live path needs it), so ``lunaris_runtime``'s declared depende
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
     from langchain_core.rate_limiters import BaseRateLimiter
 
 # Per-request timeout (seconds). Individual Claude calls complete well under this; the bound exists
@@ -59,3 +60,20 @@ def get_llm_rate_limiter() -> "BaseRateLimiter":
             max_bucket_size=max(1.0, rps),
         )
     return _rate_limiter
+
+
+def build_anthropic_chat_model(model_id: str) -> "BaseChatModel":
+    """A live ``ChatAnthropic`` wired with the shared hardening — the one place the knobs are set.
+
+    Every live Claude adapter needs the same timeout + bounded retries + shared rate limiter; this
+    factory bundles them so each adapter's ``_chat_model`` is a one-liner rather than a copy. It
+    imports ``langchain_anthropic`` lazily so only the live path pays for it (tests inject a model).
+    """
+    from langchain_anthropic import ChatAnthropic
+
+    return ChatAnthropic(
+        model=model_id,
+        default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+        max_retries=LLM_MAX_RETRIES,
+        rate_limiter=get_llm_rate_limiter(),
+    )

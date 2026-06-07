@@ -12,29 +12,52 @@ from lunaris_grounding import (
     VideoResult,
     classify_domain,
     host,
+    passes_video_guards,
+    video_quality_score,
 )
-from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
-    retry_on_rate_limit,
-)
-from lunaris_runtime.schema import CourseBrief, Module, Resource, ResourceKind, TrustTier
+from lunaris_runtime.resilience import build_anthropic_chat_model, retry_on_rate_limit
+from lunaris_runtime.schema import CourseBrief, Modality, Module, Resource, ResourceKind, TrustTier
 
 from .candidate_view import CandidateView
 from .curation import CuratedResources
+from .deterministic import DeterministicQueryTranslator
 from .parser import CurationChoice, parse_curation
 from .prompt import build_curation_prompt
-from .query import build_resource_queries
+from .search_query import SearchQuery
+from .translator import IQueryTranslator
 
 logger = structlog.get_logger()
 
-_RESULTS_PER_QUERY = 4
+# Over-retrieve, then judge down to the budget (CQ Phase 2 T2): a richer pool per query lets the
+# content judge pick genuinely-fitting resources instead of settling for the first few hits.
+_RESULTS_PER_QUERY = 12
 _DEFAULT_BUDGET = ResourceBudget()
+# Fed back to the translator (rule 7) when a module's first pass finds nothing — a competency-style
+# query that returned junk gets one broader, simpler retry before the module is flagged empty (T5).
+_BROADEN_FEEDBACK = (
+    "previous queries returned 0 results; broaden and use simpler, more common phrasing"
+)
+# Credibility blend (T4): content is primary so the judge dominates; the deterministic video metric
+# is a bounded nudge. Weights sum to 1; rounded to 2 dp for a stable stamped score.
+_JUDGE_WEIGHT = 0.7
+_METRIC_WEIGHT = 0.3
+_CREDIBILITY_PRECISION = 2
 
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _blend_credibility(judge: float, quality: float | None) -> float:
+    """Blend the judge's content credibility with the deterministic metric quality (CQ Phase 2 T4).
+
+    Content is primary, so the judge dominates; the video metric is a bounded weight that nudges it.
+    Candidates with no metric (non-video, or unenriched) keep the judge's score unchanged.
+    """
+    if quality is None:
+        return judge
+    blended = _JUDGE_WEIGHT * judge + _METRIC_WEIGHT * quality
+    return round(min(1.0, blended), _CREDIBILITY_PRECISION)
 
 
 @dataclass(frozen=True)
@@ -42,7 +65,9 @@ class _Candidate:
     """A found resource candidate + its deterministically-classified trust tier, awaiting the judge.
 
     Trust is classified here (not by the model) and attached AFTER selection, so the relevance judge
-    stays blind to the label (§15) while the user still sees a vetted tier.
+    stays blind to the label (§15) while the user still sees a vetted tier. The content fields
+    (``snippet`` from the result, plus ``good_result_looks_like`` + ``level_hint`` carried from the
+    query) let the judge score CONTENT + level, not the title (CQ Phase 2 T2).
     """
 
     kind: ResourceKind
@@ -52,6 +77,10 @@ class _Candidate:
     trust_tier: TrustTier
     duration: str = ""
     author: str = ""
+    snippet: str = ""
+    good_result_looks_like: str = ""
+    level_hint: str = ""
+    quality: float | None = None  # deterministic video metric score (T4); None for non-video
 
 
 class ClaudeResourceCurator:
@@ -76,6 +105,7 @@ class ClaudeResourceCurator:
         search: ISearchProvider,
         video_source: IVideoSource,
         *,
+        translator: IQueryTranslator | None = None,
         budget: ResourceBudget = _DEFAULT_BUDGET,
         clock: Callable[[], str] = _utc_now_iso,
     ) -> None:
@@ -83,12 +113,20 @@ class ClaudeResourceCurator:
         self._client: BaseChatModel | None = None
         self._search = search
         self._video_source = video_source
+        self._translator = translator or DeterministicQueryTranslator()
         self._budget = budget
         self._clock = clock
 
-    async def curate(self, module: Module, brief: CourseBrief | None = None) -> CuratedResources:
-        candidates = await self._gather(module, brief)
+    async def curate(
+        self, module: Module, brief: CourseBrief | None = None, *, modality: Modality | None = None
+    ) -> CuratedResources:
+        candidates = await self._gather(module, brief, modality)
         if not candidates:
+            # Zero-is-a-retry (T5): a human reformulates rather than shipping an empty module — one
+            # broader pass before giving up, so a competency-language miss isn't a silent zero.
+            candidates = await self._gather(module, brief, modality, feedback=_BROADEN_FEEDBACK)
+        if not candidates:
+            logger.info("resources_none_found", module=module.id)
             return CuratedResources()
         prompt = build_curation_prompt(
             module, self._views(candidates), limit=self._budget.max_resources
@@ -126,13 +164,25 @@ class ClaudeResourceCurator:
             kept += 1
         return CuratedResources(**buckets)
 
-    async def _gather(self, module: Module, brief: CourseBrief | None) -> list[_Candidate]:
-        """Run the per-kind queries (within budget), classify trust, drop blocked + duplicates."""
-        queries = build_resource_queries(module, brief)[: self._budget.max_searches]
+    async def _gather(
+        self,
+        module: Module,
+        brief: CourseBrief | None,
+        modality: Modality | None,
+        feedback: str | None = None,
+    ) -> list[_Candidate]:
+        """Plan queries via the translator (within budget), classify trust, drop blocked + dupes.
+
+        ``feedback`` (set on the retry pass) asks the translator to broaden when the first pass came
+        up empty (T5).
+        """
+        queries = (
+            await self._translator.translate(module, brief, modality=modality, feedback=feedback)
+        )[: self._budget.max_searches]
         seen: set[str] = set()
         candidates: list[_Candidate] = []
-        for kind, query in queries:
-            for candidate in await self._candidates_for(kind, query):
+        for search_query in queries:
+            for candidate in await self._candidates_for(search_query):
                 if not candidate.url or candidate.url in seen:
                     continue
                 seen.add(candidate.url)
@@ -140,33 +190,58 @@ class ClaudeResourceCurator:
                     candidates.append(candidate)
         return candidates
 
-    async def _candidates_for(self, kind: ResourceKind, query: str) -> list[_Candidate]:
-        """Find candidates for one query — videos via the IVideoSource, the rest via search."""
-        if kind is ResourceKind.VIDEO:
-            videos = await self._safe_find(query)
-            return [
-                _Candidate(
-                    kind=kind,
-                    url=video.url,
-                    title=video.title,
-                    source=host(video.url),
-                    trust_tier=classify_domain(video.url),
-                    duration=video.duration,
-                    author=video.channel,
-                )
-                for video in videos
-            ]
-        results = await self._safe_search(query)
+    async def _candidates_for(self, search_query: SearchQuery) -> list[_Candidate]:
+        """Find candidates for one query — videos via the IVideoSource, the rest via search.
+
+        Each candidate carries the query's content signal (``good_result_looks_like`` + ``level``)
+        and the result's ``snippet`` so the judge can score CONTENT + level (CQ Phase 2 T2).
+        """
+        if search_query.kind is ResourceKind.VIDEO:
+            return await self._video_candidates(search_query)
+        return await self._search_candidates(search_query)
+
+    async def _video_candidates(self, search_query: SearchQuery) -> list[_Candidate]:
+        """Video candidates: drop the unplayable up front (hard guard, T4), score the rest (T4)."""
+        videos = await self._safe_find(search_query.query)
         return [
-            _Candidate(
-                kind=kind,
-                url=result.url,
-                title=result.title,
-                source=host(result.url),
-                trust_tier=classify_domain(result.url),
-            )
-            for result in results
+            self._video_to_candidate(video, search_query)
+            for video in videos
+            if passes_video_guards(video)
         ]
+
+    async def _search_candidates(self, search_query: SearchQuery) -> list[_Candidate]:
+        """Article/practice/docs candidates from the shared search (no per-video metric)."""
+        results = await self._safe_search(search_query.query)
+        return [self._result_to_candidate(result, search_query) for result in results]
+
+    @staticmethod
+    def _video_to_candidate(video: VideoResult, search_query: SearchQuery) -> _Candidate:
+        return _Candidate(
+            kind=search_query.kind,
+            url=video.url,
+            title=video.title,
+            source=host(video.url),
+            trust_tier=classify_domain(video.url),
+            duration=video.duration,
+            author=video.channel,
+            snippet=video.description,
+            good_result_looks_like=search_query.good_result_looks_like,
+            level_hint=search_query.level_hint,
+            quality=video_quality_score(video),
+        )
+
+    @staticmethod
+    def _result_to_candidate(result: SearchResult, search_query: SearchQuery) -> _Candidate:
+        return _Candidate(
+            kind=search_query.kind,
+            url=result.url,
+            title=result.title,
+            source=host(result.url),
+            trust_tier=classify_domain(result.url),
+            snippet=result.snippet,
+            good_result_looks_like=search_query.good_result_looks_like,
+            level_hint=search_query.level_hint,
+        )
 
     async def _safe_search(self, query: str) -> list[SearchResult]:
         try:
@@ -192,7 +267,7 @@ class ClaudeResourceCurator:
 
     @staticmethod
     def _views(candidates: list[_Candidate]) -> list[CandidateView]:
-        """The judge's blind view of each candidate — kind/title/source/url, NOT the trust tier."""
+        """The judge's view of each candidate — content + level signals, NOT the tier (§15)."""
         return [
             CandidateView(
                 index=index,
@@ -200,6 +275,9 @@ class ClaudeResourceCurator:
                 title=candidate.title,
                 source=candidate.source,
                 url=candidate.url,
+                snippet=candidate.snippet,
+                good_result_looks_like=candidate.good_result_looks_like,
+                level_hint=candidate.level_hint,
             )
             for index, candidate in enumerate(candidates)
         ]
@@ -215,7 +293,8 @@ class ClaudeResourceCurator:
             source=candidate.source,
             why=why,
             trust_tier=candidate.trust_tier,
-            credibility=credibility,
+            # Blend the judge's content credibility with the deterministic video metric (T4).
+            credibility=_blend_credibility(credibility, candidate.quality),
             fetched_at=fetched_at,
             duration=candidate.duration or None,
             author=candidate.author or None,
@@ -225,12 +304,5 @@ class ClaudeResourceCurator:
         if not isinstance(self._model, str):
             return self._model
         if self._client is None:
-            from langchain_anthropic import ChatAnthropic
-
-            self._client = ChatAnthropic(
-                model=self._model,
-                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-                max_retries=LLM_MAX_RETRIES,
-                rate_limiter=get_llm_rate_limiter(),
-            )
+            self._client = build_anthropic_chat_model(self._model)
         return self._client

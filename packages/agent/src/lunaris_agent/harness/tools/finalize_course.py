@@ -29,6 +29,34 @@ from ..draft import CourseDraft
 logger = structlog.get_logger()
 
 
+def _append_coverage_caveat(caveat: str, gaps: list[str]) -> str:
+    """Fold any resource-coverage gaps (CQ Phase 2 T5) into the scope_note — no silent empty module.
+
+    Appends an honest sentence naming the modules that ship without curated external resources, so
+    the learner sees the gap rather than wondering why a module has no aids. Returns the caveat
+    unchanged when there are no gaps.
+    """
+    if not gaps:
+        return caveat
+    note = f"Some modules ship without curated external resources: {', '.join(gaps)}."
+    return f"{caveat} {note}".strip()
+
+
+def _apply_quality_gates(course: Course, issues: list[str], draft: CourseDraft) -> None:
+    """Set the course's scope_note + publish status from the critic, honesty, and coverage gates.
+
+    Honesty gate (CQ Phase 1.6): an ungrounded research-needing goal carries an honest caveat and is
+    withheld; a PARTIAL one still carries its caveat to the learner but may publish — so scope_note
+    is set unconditionally (plus any resource gap, T5); only ``needs_review`` gates publication.
+    The authoring loop's triage (``draft.needs_review``) withholds PUBLISHED even when the critic is
+    clean. The course arrives in REVIEW; this promotes it to PUBLISHED only when every gate passes.
+    """
+    honesty = assess_grounding_honesty(draft.brief)
+    course.scope_note = _append_coverage_caveat(honesty.caveat, draft.resource_coverage_gaps)
+    if not issues and not draft.needs_review and not honesty.needs_review:
+        course.status = CourseStatus.PUBLISHED
+
+
 def _modules_from_graph(graph: PrerequisiteGraph) -> list[Module]:
     """Trivial walking-skeleton assembly: one module per concept, in topological order.
 
@@ -101,15 +129,7 @@ def make_finalize_course_tool(
             logger.info("agent_course_illustrated", run_id=draft.run_id, visuals_placed=placed)
         course.status = CourseStatus.REVIEW
         issues = critic.review(course)
-        # Honesty gate (CQ Phase 1.6): an ungrounded research-needing goal carries an honest caveat
-        # and is withheld; a PARTIAL one still carries its caveat to the learner but may publish —
-        # so scope_note is set unconditionally, only needs_review gates publication.
-        honesty = assess_grounding_honesty(draft.brief)
-        course.scope_note = honesty.caveat
-        # The authoring loop's triage flags a course whose goal-critical claim could not be
-        # grounded within budget; withhold PUBLISHED even when the structural critic is clean.
-        if not issues and not draft.needs_review and not honesty.needs_review:
-            course.status = CourseStatus.PUBLISHED
+        _apply_quality_gates(course, issues, draft)
         # CourseStore.save is synchronous file I/O; off-load it so the agent's event loop
         # is not blocked during the write (matters once the store is network-backed).
         await asyncio.to_thread(store.save, course)

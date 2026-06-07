@@ -52,7 +52,9 @@ from lunaris_grounding.discovery import (
     YouTubeVideoSource,
     classify_domain,
     host,
+    passes_video_guards,
     research_budget_for_brief,
+    video_quality_score,
 )
 from lunaris_grounding.embeddings import IEmbedder, StubEmbedder, VoyageEmbedder
 from lunaris_grounding.evidence import Evidence, Support
@@ -124,6 +126,8 @@ __all__ = [
     "classify_domain",
     "host",
     "ingest_directory",
+    "passes_video_guards",
     "render_evidence",
     "research_budget_for_brief",
+    "video_quality_score",
 ]
