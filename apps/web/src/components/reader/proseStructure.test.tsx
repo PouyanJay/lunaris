@@ -55,6 +55,28 @@ describe("prose structure — enumerations & sections", () => {
     expect(container.textContent).not.toContain("(a)");
   });
 
+  it("lifts a 'Worked Example' paragraph into a literal/improved box with its note", () => {
+    // The shape already-built courses authored as flat prose: a label, a literal phrasing, an
+    // improved rewrite, and a parenthetical why. It must upgrade into the shared WorkedExample panel.
+    const prose =
+      "Worked Example 1: Literal: 'We will work very hard on this problem.' " +
+      "With collocation: 'We will do the heavy lifting on this problem.' " +
+      "(The collocation 'do the heavy lifting' means to undertake the most difficult work, " +
+      "and suits a professional tone.)";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    // Both labelled sides are present…
+    expect(within(container).getByText("Literal")).toBeInTheDocument();
+    expect(within(container).getByText("With collocation")).toBeInTheDocument();
+    expect(container.textContent).toContain("We will work very hard on this problem.");
+    expect(container.textContent).toContain("We will do the heavy lifting on this problem.");
+    // …the why note rides along…
+    expect(container.textContent).toMatch(/suits a professional tone/);
+    // …and the raw "Worked Example 1:" lead-in is gone (it was lifted, not left as flat prose).
+    expect(container.textContent).not.toContain("Worked Example 1:");
+  });
+
   it("leaves an ordinary paragraph (no enumeration) untouched", () => {
     const prose = "A sentence with one independent clause (and an aside) cannot express much.";
 

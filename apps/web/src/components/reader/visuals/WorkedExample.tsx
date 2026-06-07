@@ -25,14 +25,14 @@ export function WorkedExample({ literal, improved, note }: WorkedExampleProps) {
   return (
     <div className={styles.example}>
       <div className={styles.pair}>
-        <section className={styles.side} aria-label={literal.label}>
+        <div className={styles.side}>
           <p className={`mono ${styles.label}`}>{literal.label}</p>
           <p className={styles.text}>{literal.text}</p>
-        </section>
-        <section className={`${styles.side} ${styles.improved}`} aria-label={improved.label}>
+        </div>
+        <div className={`${styles.side} ${styles.improved}`}>
           <p className={`mono ${styles.label}`}>{improved.label}</p>
           <p className={styles.text}>{improved.text}</p>
-        </section>
+        </div>
       </div>
       {note ? (
         <p className={styles.note}>

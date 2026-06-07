@@ -11,6 +11,7 @@ import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { StepItem } from "./StepItem";
 import { Stepper } from "./Stepper";
+import { WorkedExampleBlock } from "./WorkedExampleBlock";
 import styles from "./Markdown.module.css";
 
 /** The lesson prose is authored as Markdown; render it safely with GitHub-flavoured features and a
@@ -40,6 +41,7 @@ const baseComponents = {
   arrayviz: ArrayViz,
   keyword: KeywordBadge,
   examplepanel: ExamplePanel,
+  workedexample: WorkedExampleBlock,
 } as Components;
 
 interface MarkdownProps {

@@ -63,6 +63,54 @@ function detectExampleQuote(
   return null;
 }
 
+/** A flat-prose worked example — `Worked Example N: <labelA>: '…' <labelB>: '…' (why)` — the shape
+ *  already-built courses authored before the typed `worked-example` visual existed. Both labelled
+ *  sides are quoted phrasings; the trailing parenthetical (optional) is the "why". Conservative: it
+ *  fires only on the explicit "Worked Example" lead-in with two labelled quotes, so ordinary prose
+ *  (and a single cued quote, which the example panel handles) is never mistaken for one. */
+const WORKED_EXAMPLE =
+  /^Worked Example\s*\d*\s*:\s*(.+?):\s*(["'“])(.+?)["'”]\s+(.+?):\s*(["'“])(.+?)["'”]\s*(?:\(([^)]+)\))?\s*$/is;
+
+interface WorkedExampleParts {
+  literalLabel: string;
+  literal: string;
+  improvedLabel: string;
+  improved: string;
+  note: string;
+}
+
+/** Parse a paragraph's flattened text into worked-example parts, or null when it isn't one. */
+function detectWorkedExample(text: string): WorkedExampleParts | null {
+  const match = text.trim().match(WORKED_EXAMPLE);
+  if (!match) return null;
+  return {
+    literalLabel: match[1]!.trim(),
+    literal: match[3]!.trim(),
+    improvedLabel: match[4]!.trim(),
+    improved: match[6]!.trim(),
+    note: (match[7] ?? "").trim(),
+  };
+}
+
+/** The worked-example element (rendered as WorkedExampleBlock → the shared WorkedExample panel). The
+ *  parts ride as element attributes — escaped text, vetted by the sanitiser's allow-list. */
+function buildWorkedExample(parts: WorkedExampleParts): Node {
+  return {
+    type: "blockquote",
+    data: {
+      hName: "workedexample",
+      hProperties: {
+        literallabel: parts.literalLabel,
+        literal: parts.literal,
+        improvedlabel: parts.improvedLabel,
+        improved: parts.improved,
+        note: parts.note,
+      },
+    },
+    children: [],
+  };
+}
+
 /** The example panel element (rendered as ExamplePanel). */
 function buildExamplePanel(quote: string): Node {
   return {
@@ -306,6 +354,14 @@ function remarkProseStructure() {
 
       const children = (node as unknown as Node).children ?? [];
       const text = textOf(children);
+
+      // A flat-prose worked example lifts whole into its own panel — checked first so its quoted
+      // sides are never partially eaten by the single-quote example-panel splitter below.
+      const worked = detectWorkedExample(text);
+      if (worked) {
+        (parent as unknown as Node).children!.splice(index, 1, buildWorkedExample(worked));
+        return [SKIP, index + 1];
+      }
 
       const example = detectExampleQuote(children);
       if (example) {
