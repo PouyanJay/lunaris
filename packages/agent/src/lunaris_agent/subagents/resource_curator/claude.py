@@ -37,6 +37,11 @@ _DEFAULT_BUDGET = ResourceBudget()
 _BROADEN_FEEDBACK = (
     "previous queries returned 0 results; broaden and use simpler, more common phrasing"
 )
+# Credibility blend (T4): content is primary so the judge dominates; the deterministic video metric
+# is a bounded nudge. Weights sum to 1; rounded to 2 dp for a stable stamped score.
+_JUDGE_WEIGHT = 0.7
+_METRIC_WEIGHT = 0.3
+_CREDIBILITY_PRECISION = 2
 
 
 def _utc_now_iso() -> str:
@@ -51,7 +56,8 @@ def _blend_credibility(judge: float, quality: float | None) -> float:
     """
     if quality is None:
         return judge
-    return round(min(1.0, 0.7 * judge + 0.3 * quality), 2)
+    blended = _JUDGE_WEIGHT * judge + _METRIC_WEIGHT * quality
+    return round(min(1.0, blended), _CREDIBILITY_PRECISION)
 
 
 @dataclass(frozen=True)
@@ -191,40 +197,51 @@ class ClaudeResourceCurator:
         and the result's ``snippet`` so the judge can score CONTENT + level (CQ Phase 2 T2).
         """
         if search_query.kind is ResourceKind.VIDEO:
-            videos = await self._safe_find(search_query.query)
-            return [
-                _Candidate(
-                    kind=search_query.kind,
-                    url=video.url,
-                    title=video.title,
-                    source=host(video.url),
-                    trust_tier=classify_domain(video.url),
-                    duration=video.duration,
-                    author=video.channel,
-                    snippet=video.description,
-                    good_result_looks_like=search_query.good_result_looks_like,
-                    level_hint=search_query.level_hint,
-                    quality=video_quality_score(video),
-                )
-                # Drop the unplayable up front (the gate's hard guard, T4); soft quality signals
-                # ride along as `quality` and weight the kept resource's credibility.
-                for video in videos
-                if passes_video_guards(video)
-            ]
-        results = await self._safe_search(search_query.query)
+            return await self._video_candidates(search_query)
+        return await self._search_candidates(search_query)
+
+    async def _video_candidates(self, search_query: SearchQuery) -> list[_Candidate]:
+        """Video candidates: drop the unplayable up front (hard guard, T4), score the rest (T4)."""
+        videos = await self._safe_find(search_query.query)
         return [
-            _Candidate(
-                kind=search_query.kind,
-                url=result.url,
-                title=result.title,
-                source=host(result.url),
-                trust_tier=classify_domain(result.url),
-                snippet=result.snippet,
-                good_result_looks_like=search_query.good_result_looks_like,
-                level_hint=search_query.level_hint,
-            )
-            for result in results
+            self._video_to_candidate(video, search_query)
+            for video in videos
+            if passes_video_guards(video)
         ]
+
+    async def _search_candidates(self, search_query: SearchQuery) -> list[_Candidate]:
+        """Article/practice/docs candidates from the shared search (no per-video metric)."""
+        results = await self._safe_search(search_query.query)
+        return [self._result_to_candidate(result, search_query) for result in results]
+
+    @staticmethod
+    def _video_to_candidate(video: VideoResult, search_query: SearchQuery) -> _Candidate:
+        return _Candidate(
+            kind=search_query.kind,
+            url=video.url,
+            title=video.title,
+            source=host(video.url),
+            trust_tier=classify_domain(video.url),
+            duration=video.duration,
+            author=video.channel,
+            snippet=video.description,
+            good_result_looks_like=search_query.good_result_looks_like,
+            level_hint=search_query.level_hint,
+            quality=video_quality_score(video),
+        )
+
+    @staticmethod
+    def _result_to_candidate(result: SearchResult, search_query: SearchQuery) -> _Candidate:
+        return _Candidate(
+            kind=search_query.kind,
+            url=result.url,
+            title=result.title,
+            source=host(result.url),
+            trust_tier=classify_domain(result.url),
+            snippet=result.snippet,
+            good_result_looks_like=search_query.good_result_looks_like,
+            level_hint=search_query.level_hint,
+        )
 
     async def _safe_search(self, query: str) -> list[SearchResult]:
         try:

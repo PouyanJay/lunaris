@@ -278,8 +278,9 @@ async def test_curate_over_retrieves_and_feeds_the_query_content_signal_to_the_j
     # Act
     await curator.curate(_module(), _brief())
 
-    # Assert — search over-retrieved (>4, the old fixed cap), and the judge saw the content signals.
-    assert search.max_results and search.max_results[0] > 4
+    # Assert — search over-retrieved (a real pool, well above the old fixed cap of 4), and the judge
+    # saw the content signals.
+    assert search.max_results and search.max_results[0] >= 10
     prompt = judge.prompts[0]
     assert "dense authentic input" in prompt  # the search snippet reaches the judge
     assert "unscripted native-pace discussion" in prompt  # the query's good_result_looks_like
@@ -317,8 +318,9 @@ async def test_curate_drops_unplayable_videos_and_blends_the_metric_into_credibi
     assert len(curated.demonstrate) == 1
     kept = curated.demonstrate[0]
     assert kept.url == "https://youtu.be/good"
-    # The deterministic metric blended into the judge's 1.0 (so the stamped credibility is < 1.0).
-    assert 0.0 < kept.credibility < 1.0
+    # The deterministic metric (healthy duration + captions → 0.75) blended into the judge's 1.0:
+    # round(0.7*1.0 + 0.3*0.75, 2) = 0.92 — pinned so a scorer/blend regression can't slip through.
+    assert kept.credibility == 0.92
 
 
 async def test_curate_retries_with_a_broaden_feedback_when_the_first_pass_is_empty() -> None:

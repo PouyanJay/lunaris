@@ -12,7 +12,7 @@ resources are suggested aids, so a module that yields none simply keeps its veri
 from dataclasses import fields
 
 from langchain_core.tools import BaseTool, tool
-from lunaris_runtime.schema import AgentEventKind, MerrillSegments, ProgressStage
+from lunaris_runtime.schema import AgentEventKind, MerrillSegments, Module, ProgressStage
 
 from ...subagents.resource_curator import (
     CuratedResources,
@@ -36,37 +36,39 @@ def _attach(lesson_segments: MerrillSegments, curated: CuratedResources) -> int:
     return attached
 
 
+async def _curate_one_module(curator: IResourceCurator, draft: CourseDraft, module: Module) -> int:
+    """Curate + attach one module's resources, emitting a per-module beat; return the kept count.
+
+    Resolves the module's representative ``modality`` from the graph (CQ Phase 2) so the curator can
+    shape its searches. A zero count means no aid cleared the bar — say so (no silent zero, T5).
+    """
+    modality = representative_modality(module, draft.graph)
+    curated = await curator.curate(module, draft.brief, modality=modality)
+    count = _attach(module.lessons[0].segments, curated)
+    if count == 0:
+        text = f"No suitable resources found for “{module.title}” — it ships without aids."
+    else:
+        text = f"Curated {count} resource(s) for “{module.title}”."
+    await draft.agent.emit(AgentEventKind.REASONING, text=text)
+    return count
+
+
 async def _curate_all_modules(
     curator: IResourceCurator, draft: CourseDraft
 ) -> tuple[int, list[dict[str, object]]]:
-    """Curate + attach resources for every authored module; return the total + per-module summary.
-
-    Resolves each module's representative ``modality`` from the graph (CQ Phase 2) so the curator
-    can shape its searches, skips modules with no authored lesson, and emits a per-module beat.
-    """
+    """Curate every authored module; record the empty ones as coverage gaps (T5). Returns the total
+    + per-module summary."""
     total = 0
     per_module: list[dict[str, object]] = []
     gaps: list[str] = []
     for module in draft.modules:
         if not module.lessons:
             continue
-        modality = representative_modality(module, draft.graph)
-        curated = await curator.curate(module, draft.brief, modality=modality)
-        count = _attach(module.lessons[0].segments, curated)
+        count = await _curate_one_module(curator, draft, module)
         total += count
         per_module.append({"id": module.id, "title": module.title, "resourceCount": count})
         if count == 0:
-            # No silent zero (T5): record the gap + say so, rather than shipping an empty module.
             gaps.append(module.title)
-            await draft.agent.emit(
-                AgentEventKind.REASONING,
-                text=f"No suitable resources found for “{module.title}” — it ships without aids.",
-            )
-        else:
-            await draft.agent.emit(
-                AgentEventKind.REASONING,
-                text=f"Curated {count} resource(s) for “{module.title}”.",
-            )
     draft.resource_coverage_gaps = gaps
     return total, per_module
 

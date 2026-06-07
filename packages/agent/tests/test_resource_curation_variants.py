@@ -123,6 +123,6 @@ async def test_abstract_competency_zero_recovers_via_broaden_retry(
 
     # Assert — the broaden pass fired and a resource was recovered (no silent zero) per variant.
     assert translator.feedbacks[0] is None
-    assert translator.feedbacks[1] is not None  # the broaden retry
+    assert "broaden" in (translator.feedbacks[1] or "")  # the broaden retry actually fired
     total = len(curated.activate + curated.demonstrate + curated.apply + curated.integrate)
     assert total == 1

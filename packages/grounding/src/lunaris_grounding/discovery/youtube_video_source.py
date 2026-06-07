@@ -28,6 +28,7 @@ _VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 _WATCH_URL = "https://www.youtube.com/watch?v="
 _TIMEOUT_S = 10.0  # a YouTube call is a single light GET; don't hang a build on a slow response
 _ENRICH_PART = "snippet,contentDetails,statistics,status"
+_VIDEOS_LIST_MAX_IDS = 50  # YouTube Data API: one videos.list call accepts at most 50 ids (1 unit)
 # Quality pre-filters applied at search time (CQ Phase 2 T3) — cheap to set, narrow the pool before
 # the (more expensive) enrichment + content judge. relevanceLanguage biases ranking (not a hard
 # filter), so an English course's results surface English first; videoEmbeddable/safeSearch drop the
@@ -68,7 +69,8 @@ def _iso8601_to_seconds(duration: str) -> int | None:
     if match is None or not any(match.groups()):
         return None
     hours, minutes, seconds = (int(part) if part else 0 for part in match.groups())
-    return hours * 3600 + minutes * 60 + seconds
+    total = hours * 3600 + minutes * 60 + seconds
+    return total or None  # PT0S (a scheduled/pre-live stream) carries no real duration signal
 
 
 def _format_duration(total_seconds: int | None) -> str:
@@ -176,7 +178,11 @@ class YouTubeVideoSource:
 
     async def _enrich(self, video_ids: list[str], api_key: str) -> dict[str, dict[str, object]]:
         """Batch one ``videos.list`` (≤50 ids, 1 quota unit) for the rich signals; {} on failure."""
-        params = {"part": _ENRICH_PART, "id": ",".join(video_ids[:50]), "key": api_key}
+        params = {
+            "part": _ENRICH_PART,
+            "id": ",".join(video_ids[:_VIDEOS_LIST_MAX_IDS]),
+            "key": api_key,
+        }
         try:
             return _enrichment_by_id(await self._get(_VIDEOS_URL, params))
         except Exception:
