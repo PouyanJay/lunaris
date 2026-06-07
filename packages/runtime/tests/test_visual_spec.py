@@ -194,8 +194,8 @@ def test_worked_example_spec_round_trips_through_the_wire() -> None:
 
 
 def test_worked_example_spec_requires_both_sides() -> None:
-    # Act / Assert — a worked example missing the improved side is half-formed; the validator rejects
-    # it rather than shipping a one-sided example (the contrast is the point).
+    # Act / Assert — a worked example missing the improved side is half-formed; the validator
+    # rejects it rather than shipping a one-sided example (the contrast is the point).
     with pytest.raises(ValidationError):
         Visual.model_validate(
             {

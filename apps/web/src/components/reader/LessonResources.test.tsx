@@ -60,6 +60,48 @@ describe("LessonResources", () => {
     expect(screen.queryByText("article")).not.toBeInTheDocument();
   });
 
+  it("recognises a youtu.be short link as a video even when mislabeled 'docs'", () => {
+    render(
+      <LessonResources
+        resources={[
+          makeResource({
+            kind: "docs",
+            title: "Register and tone, short",
+            url: "https://youtu.be/dQw4w9WgXcQ",
+            source: "youtu.be",
+            duration: null,
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /play video: register and tone, short/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("video")).toBeInTheDocument();
+    expect(screen.queryByText("docs")).not.toBeInTheDocument();
+  });
+
+  it("leaves a genuine non-YouTube article as a READ card with its kind word", () => {
+    render(
+      <LessonResources
+        resources={[
+          makeResource({
+            kind: "article",
+            title: "Reading stance",
+            url: "https://example.edu/stance",
+            source: "example.edu",
+            duration: null,
+          }),
+        ]}
+      />,
+    );
+
+    // No play button — it is a real article, shown as its authored kind.
+    expect(screen.queryByRole("button", { name: /play video/i })).not.toBeInTheDocument();
+    expect(screen.getByText("article")).toBeInTheDocument();
+  });
+
   it("shows a video's runtime and omits it for non-video resources", () => {
     // Arrange / Act — a video (with duration) and an article (without).
     const { rerender } = render(

@@ -77,6 +77,31 @@ describe("prose structure — enumerations & sections", () => {
     expect(container.textContent).not.toContain("Worked Example 1:");
   });
 
+  it("lifts a 'Worked Example' with curly quotes and no note", () => {
+    const prose =
+      "Worked Example 2: Vague: “The thing is bad.” Precise: “Transit cuts commute time by 30%.”";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    expect(within(container).getByText("Vague")).toBeInTheDocument();
+    expect(within(container).getByText("Precise")).toBeInTheDocument();
+    expect(container.textContent).toContain("Transit cuts commute time by 30%.");
+    // No parenthetical → no "Why" note row.
+    expect(within(container).queryByText("Why")).not.toBeInTheDocument();
+  });
+
+  it("does not lift a malformed 'Worked Example' that lacks a second labelled side", () => {
+    // Only one labelled quote — not a literal-vs-improved contrast, so it is left as ordinary prose
+    // (the example-panel splitter may still quote it, but it is never a worked-example panel).
+    const prose = "Worked Example: Note that you might write: 'Keep it short and concrete.'";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    // No two-sided worked-example box — the improved-side label is absent.
+    expect(within(container).queryByText("Why")).not.toBeInTheDocument();
+    expect(container.textContent).toContain("Keep it short and concrete.");
+  });
+
   it("leaves an ordinary paragraph (no enumeration) untouched", () => {
     const prose = "A sentence with one independent clause (and an aside) cannot express much.";
 

@@ -117,7 +117,12 @@ describe("VisualRenderer", () => {
     const spec: VisualSpec = {
       type: "worked-example",
       title: "Worked Example 1",
-      literal: { label: "Literal", content: "We will work very hard on this.", language: null, caption: null },
+      literal: {
+        label: "Literal",
+        content: "We will work very hard on this.",
+        language: null,
+        caption: null,
+      },
       improved: {
         label: "With collocation",
         content: "We will do the heavy lifting on this.",
