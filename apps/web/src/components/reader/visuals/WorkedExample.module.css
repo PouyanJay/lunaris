@@ -1,0 +1,88 @@
+/* Worked example — one hairline-divided panel holding the literal phrasing beside its improved
+   rewrite, with a "why" note below. No nested cards: a single outer border, hairline dividers
+   between regions, and the accent reserved for the improved side. */
+.example {
+  background: var(--surface-raised);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Hairline divider between the two sides rather than a second border level. */
+.side + .side {
+  border-left: var(--border-width) solid var(--border);
+}
+
+/* The improved side carries the lone accent — a soft tint; its label is accented below. */
+.improved {
+  background: var(--accent-soft);
+}
+
+.label {
+  margin: 0;
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.improved .label {
+  color: var(--accent-600);
+}
+
+.text {
+  margin: 0;
+  font-style: italic;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* The strong version reads as the resolved answer — upright and full-contrast. */
+.improved .text {
+  font-style: normal;
+  color: var(--text);
+}
+
+.note {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.noteMark {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-600);
+}
+
+/* Stack on narrow viewports; the side divider becomes a top hairline. */
+@media (max-width: 560px) {
+  .pair {
+    grid-template-columns: 1fr;
+  }
+  .side + .side {
+    border-left: none;
+    border-top: var(--border-width) solid var(--border);
+  }
+}

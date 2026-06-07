@@ -7,6 +7,7 @@ import { FlowDiagram } from "./FlowDiagram";
 import { MermaidFallback } from "./MermaidFallback";
 import { StepsDiagram } from "./StepsDiagram";
 import { TimelineDiagram } from "./TimelineDiagram";
+import { WorkedExample } from "./WorkedExample";
 import styles from "./visuals.module.css";
 
 /** Pick the renderer for a visual: a typed `spec` draws with the branded components; otherwise the
@@ -25,6 +26,14 @@ function selectVisualBody(visual: Visual): ReactNode {
       return <TimelineDiagram spec={spec} />;
     case "before-after":
       return <BeforeAfter spec={spec} />;
+    case "worked-example":
+      return (
+        <WorkedExample
+          literal={{ label: spec.literal.label, text: spec.literal.content }}
+          improved={{ label: spec.improved.label, text: spec.improved.content }}
+          note={spec.note}
+        />
+      );
     default:
       return visual.source ? <MermaidFallback source={visual.source} /> : null;
   }

@@ -7,6 +7,7 @@ the trust tier, §15) → attaches the kept resources to the chosen phases with 
 selection. Search + video + the judge are all stubbed/injected so the run is offline + repeatable.
 """
 
+import pytest
 from langchain_core.messages import AIMessage
 from lunaris_agent.subagents.resource_curator import (
     ClaudeResourceCurator,
@@ -16,6 +17,7 @@ from lunaris_agent.subagents.resource_curator import (
 )
 from lunaris_agent.subagents.resource_curator.candidate_view import CandidateView
 from lunaris_agent.subagents.resource_curator.parser import parse_curation
+from lunaris_agent.subagents.resource_curator.youtube import is_youtube_url
 from lunaris_grounding import (
     ResourceBudget,
     SearchResult,
@@ -204,6 +206,56 @@ async def test_curate_judges_blind_to_trust_and_stamps_provenance() -> None:
     assert "trust" not in prompt
     for tier in ("official", "reputable", "blocked"):
         assert tier not in prompt
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", True),
+        ("https://youtube.com/watch?v=x", True),
+        ("https://m.youtube.com/watch?v=x", True),
+        ("https://youtu.be/dQw4w9WgXcQ", True),
+        ("https://www.youtube-nocookie.com/embed/x", True),
+        ("https://example.edu/stance", False),
+        ("https://vimeo.com/12345", False),
+        ("not a url", False),
+    ],
+)
+def test_is_youtube_url_recognises_video_hosts(url: str, expected: bool) -> None:
+    # Mirrors the web reader's youTubeId host set so both layers agree on what is a playable video.
+    assert is_youtube_url(url) is expected
+
+
+async def test_curate_forces_video_kind_for_a_youtube_search_result() -> None:
+    # Arrange — a youtube link arrives under a non-video (article) query. The deterministic
+    # classifier must override the kind so the reader plays it, not render a READ/ARTICLE card.
+    youtube = SearchResult(
+        url="https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        title="Editing for register and tone",
+        snippet="annotated examples of register and tone shifts",
+    )
+    judge = _FakeJudge(
+        '{"selected": [{"index": 0, "phase": "demonstrate", "why": "w", "credibility": 0.8}]}'
+    )
+    curator = ClaudeResourceCurator(
+        judge,
+        StubSearchProvider([youtube]),
+        StubVideoSource(),
+        translator=_OneQueryTranslator(
+            SearchQuery(kind=ResourceKind.ARTICLE, query="register and tone editing")
+        ),
+    )
+
+    # Act
+    curated = await curator.curate(_module(), _brief())
+
+    # Assert — the youtube result is reclassified VIDEO despite the article query, and its identity
+    # (url + title) survives the reclassification (only the kind changes, not the resource).
+    kept = curated.activate + curated.demonstrate + curated.apply + curated.integrate
+    assert len(kept) == 1
+    assert kept[0].kind is ResourceKind.VIDEO
+    assert kept[0].url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+    assert kept[0].title == "Editing for register and tone"
 
 
 async def test_curate_degrades_to_empty_without_calling_the_judge_when_no_candidates() -> None:

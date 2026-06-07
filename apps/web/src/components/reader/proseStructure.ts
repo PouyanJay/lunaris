@@ -21,10 +21,15 @@ interface Node {
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
-const SECTION_LABEL = /^(?:Move|Step|Part|Phase|Stage|Principle|Strategy|Rule)\s+(\d+)\s*:\s+/i;
+// The labelled-section words a step procedure may use — shared by the block-level grouping and the
+// inline splitter (below) so the two never drift.
+const SECTION_WORDS = "Move|Step|Part|Phase|Stage|Principle|Strategy|Rule";
+const SECTION_LABEL = new RegExp(`^(?:${SECTION_WORDS})\\s+(\\d+)\\s*:\\s+`, "i");
 /** Captures the label + title sentence (up to the first period) and the rest of the paragraph. */
-const SECTION_SPLIT =
-  /^((?:Move|Step|Part|Phase|Stage|Principle|Strategy|Rule)\s+\d+\s*:\s*[^.]*)\.?\s*([\s\S]*)$/i;
+const SECTION_SPLIT = new RegExp(
+  `^((?:${SECTION_WORDS})\\s+\\d+\\s*:\\s*[^.]*)\\.?\\s*([\\s\\S]*)$`,
+  "i",
+);
 
 type EnumKind = "decimal" | "lower-alpha";
 
@@ -61,6 +66,55 @@ function detectExampleQuote(
     return { before, quote: match[4]!, after };
   }
   return null;
+}
+
+/** A flat-prose worked example — `Worked Example N: <labelA>: '…' <labelB>: '…' (why)` — the shape
+ *  already-built courses authored before the typed `worked-example` visual existed. Both labelled
+ *  sides are quoted phrasings; the trailing parenthetical (optional) is the "why". Conservative: it
+ *  fires only on the explicit "Worked Example" lead-in with two labelled quotes, so ordinary prose
+ *  (and a single cued quote, which the example panel handles) is never mistaken for one. */
+const WORKED_EXAMPLE =
+  /^Worked Example\s*\d*\s*:\s*(?<literalLabel>.+?):\s*["'“](?<literal>.+?)["'”]\s+(?<improvedLabel>.+?):\s*["'“](?<improved>.+?)["'”]\s*(?:\((?<note>[^)]+)\))?\s*$/is;
+
+interface WorkedExampleParts {
+  literalLabel: string;
+  literal: string;
+  improvedLabel: string;
+  improved: string;
+  note: string;
+}
+
+/** Parse a paragraph's flattened text into worked-example parts, or null when it isn't one. Named
+ *  capture groups carry the structure so the extraction can't silently drift if the regex changes. */
+function detectWorkedExample(text: string): WorkedExampleParts | null {
+  const groups = text.trim().match(WORKED_EXAMPLE)?.groups;
+  if (!groups) return null;
+  return {
+    literalLabel: groups.literalLabel!.trim(),
+    literal: groups.literal!.trim(),
+    improvedLabel: groups.improvedLabel!.trim(),
+    improved: groups.improved!.trim(),
+    note: (groups.note ?? "").trim(),
+  };
+}
+
+/** The worked-example element (rendered as WorkedExampleBlock → the shared WorkedExample panel). The
+ *  parts ride as element attributes — escaped text, vetted by the sanitiser's allow-list. */
+function buildWorkedExample(parts: WorkedExampleParts): Node {
+  return {
+    type: "blockquote",
+    data: {
+      hName: "workedexample",
+      hProperties: {
+        literallabel: parts.literalLabel,
+        literal: parts.literal,
+        improvedlabel: parts.improvedLabel,
+        improved: parts.improved,
+        note: parts.note,
+      },
+    },
+    children: [],
+  };
 }
 
 /** The example panel element (rendered as ExamplePanel). */
@@ -194,6 +248,111 @@ function sectionBody(head: Node, rest: Node[]): { heading: string; body: Node[] 
   return { heading, body };
 }
 
+/** The marker that opens inline section `n` ("Step 1:", "Move 2:") anywhere in running text. Cached
+ *  (no `g`/`y` flag, so reuse is safe) since the same handful of numbers recur across every paragraph. */
+const inlineMarkerCache = new Map<number, RegExp>();
+function inlineSectionMarker(n: number): RegExp {
+  let marker = inlineMarkerCache.get(n);
+  if (!marker) {
+    marker = new RegExp(`\\b(?:${SECTION_WORDS})\\s+${n}\\s*:`, "i");
+    inlineMarkerCache.set(n, marker);
+  }
+  return marker;
+}
+
+/** True when a paragraph's flattened text runs a sequential section labelling inline — "Step 1: …
+ *  Step 2: …" within one paragraph, rather than one label per block. Conservative: it needs both the
+ *  first and second markers present and in order, so a lone "Step 1:" or a stray "step 2" is left be. */
+function hasInlineSectionRun(text: string): boolean {
+  const first = text.search(inlineSectionMarker(1));
+  if (first === -1) return false;
+  const second = text.search(inlineSectionMarker(2));
+  return second > first;
+}
+
+/** Split a paragraph's inline children at each sequential section marker. Unlike `splitEnumeration`,
+ *  which strips its `(1)`/`(a)` tokens, this KEEPS the marker at the head of each segment — Pass 1's
+ *  `sectionNumber` must read "Step N:" off the front of the resulting paragraph, so it can't be
+ *  removed. Returns the lead-in (text before the first marker) and one segment per labelled section. */
+function splitInlineSections(children: Node[]): { lead: Node[]; sections: Node[][] } {
+  const segments: Node[][] = [[]];
+  let next = 1;
+  let current = segments[0]!;
+
+  for (const child of children) {
+    if (child.type !== "text") {
+      current.push(child);
+      continue;
+    }
+    let value = child.value ?? "";
+    for (;;) {
+      const match = value.match(inlineSectionMarker(next));
+      if (!match || match.index === undefined) break;
+      const before = value.slice(0, match.index);
+      if (before) current.push({ type: "text", value: before });
+      const segment: Node[] = [];
+      segments.push(segment);
+      current = segment;
+      value = value.slice(match.index);
+      next += 1;
+    }
+    if (value) current.push({ type: "text", value });
+  }
+
+  return { lead: segments[0]!, sections: segments.slice(1) };
+}
+
+/** Drop leading whitespace off a segment's first text node (so "Step N:" sits at the very start, for
+ *  the section-label match), preserving the inline nodes that follow. */
+function trimLeading(nodes: Node[]): Node[] {
+  const out = nodes.map((node) => ({ ...node }));
+  const first = out[0];
+  if (first?.type === "text") first.value = (first.value ?? "").replace(/^\s+/, "");
+  return out.filter((node) => !(node.type === "text" && node.value === ""));
+}
+
+/** Drop trailing whitespace off a segment's last text node (the mirror of `trimLeading`, for the
+ *  lead-in that sits before the first marker), preserving the inline nodes before it. */
+function trimTrailing(nodes: Node[]): Node[] {
+  const out = nodes.map((node) => ({ ...node }));
+  const last = out[out.length - 1];
+  if (last?.type === "text") last.value = (last.value ?? "").replace(/\s+$/, "");
+  return out.filter((node) => !(node.type === "text" && node.value === ""));
+}
+
+/** Pass 0 — explode a paragraph that runs an inline section sequence ("… Step 1: … Step 2: …") into a
+ *  lead-in paragraph plus one paragraph per "Step N: …" segment, so the block-level grouping (Pass 1)
+ *  then turns the run into a stepper. The block path already handles one-label-per-paragraph; this
+ *  makes the same procedure work when an author wrote the steps inline in a single flowing paragraph. */
+function splitInlineSectionParagraphs(root: Root): void {
+  const children = root.children as unknown as Node[];
+  const result: Node[] = [];
+
+  for (const node of children) {
+    if (node.type !== "paragraph" || (node as Node).data?.hName) {
+      result.push(node);
+      continue;
+    }
+    const kids = (node as unknown as Node).children ?? [];
+    if (!hasInlineSectionRun(textOf(kids))) {
+      result.push(node);
+      continue;
+    }
+    const { lead, sections } = splitInlineSections(kids);
+    if (sections.length < 2) {
+      result.push(node);
+      continue;
+    }
+    const leadTrimmed = trimTrailing(lead);
+    if (textOf(leadTrimmed).trim()) result.push({ type: "paragraph", children: leadTrimmed });
+    for (const segment of sections) {
+      result.push({ type: "paragraph", children: trimLeading(segment) });
+    }
+  }
+
+  root.children = result as unknown as Root["children"];
+}
+
 /** A single step element (rendered as the interactive StepItem). */
 function buildStep(heading: string, number: number, body: Node[]): Node {
   return {
@@ -296,6 +455,7 @@ function groupSections(root: Root): void {
  *  enumerations inside a section's body still become lists). */
 function remarkProseStructure() {
   return (tree: Root): void => {
+    splitInlineSectionParagraphs(tree);
     groupSections(tree);
 
     visit(tree, "paragraph", (node, index, parent) => {
@@ -307,16 +467,28 @@ function remarkProseStructure() {
       const children = (node as unknown as Node).children ?? [];
       const text = textOf(children);
 
+      // A flat-prose worked example lifts whole into its own panel — checked first so its quoted
+      // sides are never partially eaten by the single-quote example-panel splitter below.
+      const worked = detectWorkedExample(text);
+      if (worked) {
+        (parent as unknown as Node).children!.splice(index, 1, buildWorkedExample(worked));
+        return [SKIP, index + 1];
+      }
+
       const example = detectExampleQuote(children);
       if (example) {
         const replacement: Node[] = [];
         if (textOf(example.before).trim())
           replacement.push({ type: "paragraph", children: example.before });
         replacement.push(buildExamplePanel(example.quote));
-        if (textOf(example.after).trim())
-          replacement.push({ type: "paragraph", children: example.after });
+        const hasAfter = textOf(example.after).trim().length > 0;
+        if (hasAfter) replacement.push({ type: "paragraph", children: example.after });
         (parent as unknown as Node).children!.splice(index, 1, ...replacement);
-        return [SKIP, index + replacement.length];
+        // Re-visit the split-off continuation paragraph (the last inserted node) so a following
+        // enumeration / array / second example still lifts; without this it survives as inline text.
+        return hasAfter
+          ? [SKIP, index + replacement.length - 1]
+          : [SKIP, index + replacement.length];
       }
 
       const literal = arrayLiteral(text);

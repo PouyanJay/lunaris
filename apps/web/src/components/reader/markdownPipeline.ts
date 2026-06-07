@@ -134,6 +134,7 @@ const schema: Schema = {
     "keyword",
     "mark",
     "examplepanel",
+    "workedexample",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -142,6 +143,7 @@ const schema: Schema = {
     step: ["number", "heading"],
     arrayviz: ["values"],
     keyword: ["category"],
+    workedexample: ["literallabel", "literal", "improvedlabel", "improved", "note"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],

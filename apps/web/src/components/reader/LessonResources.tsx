@@ -1,4 +1,4 @@
-import type { Resource } from "../../types/course";
+import type { Resource, ResourceKind } from "../../types/course";
 import { SourceTrust } from "../primitives/SourceTrust";
 import { ResourceThumb } from "./ResourceThumb";
 import { VideoFacade } from "./VideoFacade";
@@ -9,12 +9,40 @@ interface LessonResourcesProps {
   resources: Resource[];
 }
 
-/** A YouTube video plays inside the reader (facade → nocookie embed + lightbox); any other resource
- *  keeps the decorative thumbnail, with its title link as the action. */
-function ResourceMedia({ resource }: { resource: Resource }) {
-  const videoId = resource.kind === "video" ? youTubeId(resource.url) : null;
-  if (videoId) return <VideoFacade videoId={videoId} title={resource.title} />;
-  return <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />;
+/** One curated resource card. A recognisable YouTube URL is always treated as a video — it plays
+ *  in-reader (facade → nocookie embed + lightbox) and reads as "video" — whatever the curator
+ *  labelled it, so a mislabeled `kind: "article"` on a youtube.com link is never a dead "READ" card.
+ *  The URL is parsed once and drives both the media and the kind word; anything else keeps its
+ *  decorative thumbnail and authored kind, with the title link as the action. */
+function ResourceCard({ resource }: { resource: Resource }) {
+  const videoId = youTubeId(resource.url);
+  const kind: ResourceKind = videoId !== null ? "video" : resource.kind;
+
+  return (
+    <li className={styles.item}>
+      {videoId !== null ? (
+        <VideoFacade videoId={videoId} title={resource.title} />
+      ) : (
+        <ResourceThumb kind={resource.kind} url={resource.url} title={resource.title} />
+      )}
+      <div className={styles.body}>
+        <div className={styles.head}>
+          <a className={styles.link} href={resource.url} target="_blank" rel="noopener noreferrer">
+            {resource.title}
+          </a>
+          {resource.duration && (
+            <span className={`mono ${styles.duration}`}>{resource.duration}</span>
+          )}
+        </div>
+        {resource.why && <p className={styles.why}>{resource.why}</p>}
+        <div className={styles.meta}>
+          <span className={`mono ${styles.kind}`}>{kind}</span>
+          {resource.source && <span className={`mono ${styles.source}`}>{resource.source}</span>}
+          <SourceTrust tier={resource.trustTier} credibility={resource.credibility} />
+        </div>
+      </div>
+    </li>
+  );
 }
 
 /** The curated external resources attached to a teaching phase (P7.4) — suggested aids the learner
@@ -28,32 +56,7 @@ export function LessonResources({ resources }: LessonResourcesProps) {
       <h4 className={styles.title}>Resources</h4>
       <ul className={styles.list}>
         {resources.map((resource) => (
-          <li key={resource.url} className={styles.item}>
-            <ResourceMedia resource={resource} />
-            <div className={styles.body}>
-              <div className={styles.head}>
-                <a
-                  className={styles.link}
-                  href={resource.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {resource.title}
-                </a>
-                {resource.duration && (
-                  <span className={`mono ${styles.duration}`}>{resource.duration}</span>
-                )}
-              </div>
-              {resource.why && <p className={styles.why}>{resource.why}</p>}
-              <div className={styles.meta}>
-                <span className={`mono ${styles.kind}`}>{resource.kind}</span>
-                {resource.source && (
-                  <span className={`mono ${styles.source}`}>{resource.source}</span>
-                )}
-                <SourceTrust tier={resource.trustTier} credibility={resource.credibility} />
-              </div>
-            </div>
-          </li>
+          <ResourceCard key={resource.url} resource={resource} />
         ))}
       </ul>
     </section>

@@ -151,13 +151,26 @@ export interface BeforeAfterSpec {
   after: TransformSide;
 }
 
+/** A worked example: a literal/naive phrasing shown beside its improved rewrite, with a note on why
+ *  the rewrite is better. Reuses `TransformSide` for parity with before-after; worked examples are
+ *  prose, so a side's `language` is typically null. Shown side by side (the contrast is the point) —
+ *  distinct from `before-after`, which the reader toggles between. */
+export interface WorkedExampleSpec {
+  type: "worked-example";
+  title: string | null;
+  literal: TransformSide;
+  improved: TransformSide;
+  note: string | null;
+}
+
 export type VisualSpec =
   | FlowSpec
   | TreeSpec
   | StepsSpec
   | ComparisonSpec
   | TimelineSpec
-  | BeforeAfterSpec;
+  | BeforeAfterSpec
+  | WorkedExampleSpec;
 
 /** A diagram attached to a segment. `source` is diagram-as-code (Mermaid) — the renderer's
  *  fallback; `spec` is the typed branded-renderer specification when the agent emitted one. */

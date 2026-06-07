@@ -159,6 +159,56 @@ def test_before_after_spec_requires_both_sides() -> None:
         )
 
 
+def test_worked_example_spec_round_trips_through_the_wire() -> None:
+    # Act — a raw worked-example spec the way it arrives over the wire: a literal phrasing, an
+    # improved rewrite, and the note that explains why the rewrite is better.
+    visual = Visual.model_validate(
+        {
+            "kind": "spec",
+            "source": "",
+            "spec": {
+                "type": "worked-example",
+                "title": "Worked Example 1",
+                "literal": {"label": "Literal", "content": "We will work very hard on this."},
+                "improved": {
+                    "label": "With collocation",
+                    "content": "We will do the heavy lifting on this.",
+                },
+                "note": "'do the heavy lifting' suits a professional tone.",
+            },
+        }
+    )
+
+    # Assert — the discriminator selects the variant; both sides + the note survive.
+    assert visual.spec is not None
+    assert visual.spec.type == "worked-example"
+    assert visual.spec.literal.content == "We will work very hard on this."
+    assert visual.spec.improved.label == "With collocation"
+    assert visual.spec.note == "'do the heavy lifting' suits a professional tone."
+
+    # And it round-trips back through the camelCase wire unchanged — including the note.
+    restored = Visual.model_validate(visual.model_dump(by_alias=True))
+    assert restored.spec is not None
+    assert restored.spec.type == "worked-example"
+    assert restored.spec.improved.content == "We will do the heavy lifting on this."
+    assert restored.spec.note == "'do the heavy lifting' suits a professional tone."
+
+
+@pytest.mark.parametrize("missing", ["literal", "improved"])
+def test_worked_example_spec_requires_both_sides(missing: str) -> None:
+    # Act / Assert — a worked example missing EITHER side is half-formed; the validator rejects it
+    # rather than shipping a one-sided example (the contrast is the point).
+    sides = {
+        "literal": {"label": "Literal", "content": "x"},
+        "improved": {"label": "Improved", "content": "y"},
+    }
+    del sides[missing]
+    with pytest.raises(ValidationError):
+        Visual.model_validate(
+            {"kind": "spec", "source": "", "spec": {"type": "worked-example", **sides}}
+        )
+
+
 def test_spec_rejects_unknown_fields() -> None:
     # Act / Assert — extra="forbid" (on CourseModel) refuses unrecognised keys, not just any error.
     with pytest.raises(ValidationError) as exc_info:

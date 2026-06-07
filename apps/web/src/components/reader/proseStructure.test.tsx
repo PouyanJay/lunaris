@@ -36,6 +36,74 @@ describe("prose structure — enumerations & sections", () => {
     expect(within(list as HTMLElement).getAllByRole("listitem")).toHaveLength(3);
   });
 
+  it("still lifts an (a)/(b)/(c) enumeration that follows an example quote in the same paragraph", () => {
+    // The example cue ("write: '…'") splits the paragraph; the continuation holding the markers must
+    // still be re-scanned so the enumeration becomes a list rather than surviving as inline text.
+    const prose =
+      "To attribute a source, you might write: 'Source A claims that transit reduces congestion.' " +
+      "Then build a three-part structure: (a) what the sources collectively say; " +
+      "(b) where they differ and why it matters; (c) what this tells your reader.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    // The worked example is lifted into its own panel, carrying the cued quote (not some other span)…
+    expect(container.querySelector("aside")?.textContent).toContain(
+      "Source A claims that transit reduces congestion.",
+    );
+    // …AND the trailing enumeration becomes an alpha-marked ordered list (not raw "(a)" text).
+    const list = container.querySelector("ol");
+    expect(list).toHaveAttribute("type", "a");
+    expect(within(list as HTMLElement).getAllByRole("listitem")).toHaveLength(3);
+    expect(container.textContent).not.toContain("(a)");
+  });
+
+  it("lifts a 'Worked Example' paragraph into a literal/improved box with its note", () => {
+    // The shape already-built courses authored as flat prose: a label, a literal phrasing, an
+    // improved rewrite, and a parenthetical why. It must upgrade into the shared WorkedExample panel.
+    const prose =
+      "Worked Example 1: Literal: 'We will work very hard on this problem.' " +
+      "With collocation: 'We will do the heavy lifting on this problem.' " +
+      "(The collocation 'do the heavy lifting' means to undertake the most difficult work, " +
+      "and suits a professional tone.)";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    // Both labelled sides are present…
+    expect(within(container).getByText("Literal")).toBeInTheDocument();
+    expect(within(container).getByText("With collocation")).toBeInTheDocument();
+    expect(container.textContent).toContain("We will work very hard on this problem.");
+    expect(container.textContent).toContain("We will do the heavy lifting on this problem.");
+    // …the why note rides along…
+    expect(container.textContent).toMatch(/suits a professional tone/);
+    // …and the raw "Worked Example 1:" lead-in is gone (it was lifted, not left as flat prose).
+    expect(container.textContent).not.toContain("Worked Example 1:");
+  });
+
+  it("lifts a 'Worked Example' with curly quotes and no note", () => {
+    const prose =
+      "Worked Example 2: Vague: “The thing is bad.” Precise: “Transit cuts commute time by 30%.”";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    expect(within(container).getByText("Vague")).toBeInTheDocument();
+    expect(within(container).getByText("Precise")).toBeInTheDocument();
+    expect(container.textContent).toContain("Transit cuts commute time by 30%.");
+    // No parenthetical → no "Why" note row.
+    expect(within(container).queryByText("Why")).not.toBeInTheDocument();
+  });
+
+  it("does not lift a malformed 'Worked Example' that lacks a second labelled side", () => {
+    // Only one labelled quote — not a literal-vs-improved contrast, so it is left as ordinary prose
+    // (the example-panel splitter may still quote it, but it is never a worked-example panel).
+    const prose = "Worked Example: Note that you might write: 'Keep it short and concrete.'";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    // No two-sided worked-example box — the improved-side label is absent.
+    expect(within(container).queryByText("Why")).not.toBeInTheDocument();
+    expect(container.textContent).toContain("Keep it short and concrete.");
+  });
+
   it("leaves an ordinary paragraph (no enumeration) untouched", () => {
     const prose = "A sentence with one independent clause (and an aside) cannot express much.";
 
@@ -63,6 +131,42 @@ describe("prose structure — enumerations & sections", () => {
     expect(
       within(steps[0]!).getByRole("button", { name: /mark step 1 done/i }),
     ).toBeInTheDocument();
+  });
+
+  it("turns an inline 'Step 1: … Step 2: …' run inside one paragraph into a stepper", () => {
+    // The steps run together inside a single flowing paragraph (no blank lines between them) — the
+    // block-level grouping misses this, so the inline run must be split out first.
+    const prose =
+      "You will now apply this strategy to your own task. Choose a passage of 200–250 words. " +
+      "Step 1: Read your passage aloud once without marking anything. Record it. " +
+      "Step 2: Listen to a native speaker model reading a similar passage. Note where they stress. " +
+      "Step 3: Go back to your own text. Underline every content word that should carry stress.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    const stepper = container.querySelector('ol[aria-label="Steps"]');
+    expect(stepper).not.toBeNull();
+    const steps = within(stepper as HTMLElement).getAllByRole("listitem");
+    expect(steps).toHaveLength(3);
+    expect(steps[0]).toHaveTextContent(
+      "Step 1: Read your passage aloud once without marking anything",
+    );
+    // The intro stays as prose above the stepper, with the inline markers gone from the flow.
+    expect(container.textContent).toContain("You will now apply this strategy to your own task.");
+    const intro = container.querySelector("p");
+    expect(intro?.textContent).not.toContain("Step 1:");
+  });
+
+  it("does not split an inline run that is not sequential from 1", () => {
+    // "Step 1:" then "Step 3:" (no "Step 2:") inside one paragraph is not a clean 1..N procedure, so
+    // it is left as ordinary prose rather than guessed into a stepper.
+    const prose =
+      "Follow the guide. Step 1: open the file. Step 3: save it. The rest is covered elsewhere.";
+
+    const { container } = render(<Markdown>{prose}</Markdown>);
+
+    expect(container.querySelector('ol[aria-label="Steps"]')).toBeNull();
+    expect(container.querySelector("p")?.textContent).toContain("Step 1: open the file.");
   });
 
   it("falls back to collapsible panels for a non-sequential labelled run", () => {
