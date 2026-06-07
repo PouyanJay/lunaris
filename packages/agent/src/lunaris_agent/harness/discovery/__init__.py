@@ -1,4 +1,5 @@
 from .budget import DiscoveryBudget, budget_for_depth
+from .budget_policy import discovery_budget_for
 from .claude_relevance_judge import ClaudeRelevanceJudge
 from .discoverer import SubgraphGroundingDiscoverer
 from .protocol import IGroundingDiscoverer
@@ -21,4 +22,5 @@ __all__ = [
     "SubgraphGroundingDiscoverer",
     "budget_for_depth",
     "build_discovery_queries",
+    "discovery_budget_for",
 ]

@@ -12,7 +12,8 @@ import structlog
 from lunaris_grounding import CorpusIngestor, IContentExtractor, ICredibilityScorer, ISearchProvider
 
 from ..draft import CourseDraft
-from .budget import DiscoveryBudget, budget_for_depth
+from .budget import DiscoveryBudget
+from .budget_policy import discovery_budget_for
 from .loop import build_discovery_subgraph
 from .relevance_judge import IRelevanceJudge
 from .report import DiscoveryReport
@@ -50,9 +51,12 @@ class SubgraphGroundingDiscoverer:
         self._clock = clock
 
     async def discover(self, draft: CourseDraft) -> DiscoveryReport:
-        # An explicit constructor budget (tests) wins; otherwise the chosen depth picks it.
+        # An explicit constructor budget (tests) wins; otherwise the budget is sized to the chosen
+        # depth AND the curriculum's KC count (CQ Phase 1.4), so every concept is searched + fetched
+        # each round rather than a fixed width leaving most KCs ungrounded.
         overrides: dict[str, object] = {
-            "budget": self._budget or budget_for_depth(draft.discovery_depth)
+            "budget": self._budget
+            or discovery_budget_for(draft.discovery_depth, len(draft.concepts))
         }
         if self._clock is not None:
             overrides["clock"] = self._clock
