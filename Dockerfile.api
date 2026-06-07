@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+#
+# Container image for the Lunaris API (apps/api → `lunaris_api.main:app`).
+# Multi-stage: a builder resolves the uv workspace into a venv; the runtime stage carries only the
+# venv + source, runs as non-root, and liveness-probes /api/healthz. Built in CI (no push) and, from
+# Phase 1, pushed to ACR and run on Azure Container Apps.
+
+# ── builder: resolve + install the workspace into /app/.venv ─────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+# Pinned uv (matches the repo's local toolchain) copied from the official image — no pip bootstrap.
+COPY --from=ghcr.io/astral-sh/uv:0.11.17 /uv /usr/local/bin/uv
+
+# Use the image's system Python (never let uv download its own — keeps the venv interpreter path
+# identical across stages), copy installs (cache mount can't be hard-linked), and compile bytecode.
+ENV UV_PYTHON_PREFERENCE=only-system \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
+WORKDIR /app
+
+# All workspace members must be present for `--all-packages` (bare `uv sync` prunes workspace deps).
+# `apps/web` and tests are excluded via .dockerignore, so the context stays lean.
+COPY pyproject.toml uv.lock ./
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --all-packages --no-dev
+
+# ── runtime: slim, non-root, venv on PATH ────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    LUNARIS_ENV=production
+
+# Unprivileged runtime user (the container never needs root).
+RUN useradd --create-home --uid 1000 app
+WORKDIR /app
+COPY --from=builder --chown=app:app /app /app
+USER app
+
+EXPOSE 8000
+
+# Liveness probe — the API's own /api/healthz ({"status":"ok"}), no extra tooling needed.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+    CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/healthz', timeout=2).status==200 else 1)"
+
+CMD ["uvicorn", "lunaris_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
