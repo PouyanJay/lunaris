@@ -33,7 +33,11 @@ class _FakeResponse:
 
 
 class _FakeClient:
-    """Records each GET and replays a payload, or raises a configured transport error."""
+    """Records each GET and replays a payload, or raises a configured transport error.
+
+    Returns the same payload for any URL (search.list + videos.list share it) — fine for the
+    search-only assertions; the enrichment tests use ``_RoutingClient`` to return distinct payloads.
+    """
 
     def __init__(self, payload: dict | None = None, error: Exception | None = None) -> None:
         self._payload = payload or {}
@@ -45,6 +49,47 @@ class _FakeClient:
         if self._error is not None:
             raise self._error
         return _FakeResponse(self._payload)
+
+
+class _RoutingClient:
+    """Routes ``search``/``videos`` GETs to distinct payloads; ``videos_error`` fails enrichment."""
+
+    def __init__(
+        self,
+        search_payload: dict,
+        videos_payload: dict | None = None,
+        *,
+        videos_error: Exception | None = None,
+    ) -> None:
+        self._search_payload = search_payload
+        self._videos_payload = videos_payload or {}
+        self._videos_error = videos_error
+        self.calls: list[tuple[str, dict]] = []
+
+    async def get(self, url: str, *, params: dict) -> _FakeResponse:
+        self.calls.append((url, params))
+        if "/videos" in url:
+            if self._videos_error is not None:
+                raise self._videos_error
+            return _FakeResponse(self._videos_payload)
+        return _FakeResponse(self._search_payload)
+
+
+_ENRICHED = {
+    "items": [
+        {
+            "id": "abc123",
+            "snippet": {
+                "description": "A worked example halving the search range each comparison.",
+                "channelId": "UC_chan",
+                "publishedAt": "2024-01-02T00:00:00Z",
+            },
+            "contentDetails": {"duration": "PT12M1S", "caption": "true"},
+            "statistics": {"viewCount": "150000", "likeCount": "4200"},
+            "status": {"embeddable": True},
+        }
+    ]
+}
 
 
 async def test_parses_search_results_and_sends_a_keyed_video_query(
@@ -100,3 +145,70 @@ async def test_is_best_effort_on_a_transport_failure(monkeypatch: pytest.MonkeyP
 
     # Assert — the failure is swallowed; the curator simply finds no video.
     assert videos == []
+
+
+async def test_search_sends_quality_prefilters(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    client = _RoutingClient(_PAYLOAD, _ENRICHED)
+    source = YouTubeVideoSource(client=client)
+
+    # Act
+    await source.find("hear implied intent")
+
+    # Assert — the search call narrows the pool up front (CQ Phase 2 T3).
+    _url, search_params = client.calls[0]
+    assert search_params["relevanceLanguage"] == "en"
+    assert search_params["videoEmbeddable"] == "true"
+    assert search_params["safeSearch"] == "moderate"
+
+
+async def test_enriches_each_video_via_a_batched_videos_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — search returns one video; videos.list returns its rich detail.
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    client = _RoutingClient(_PAYLOAD, _ENRICHED)
+    source = YouTubeVideoSource(client=client)
+
+    # Act
+    videos = await source.find("hear implied intent")
+
+    # Assert — the result carries the enriched content + scorer signals.
+    assert len(videos) == 1
+    video = videos[0]
+    assert video.description.startswith("A worked example")
+    assert video.duration_seconds == 721  # PT12M1S
+    assert video.duration == "12:01"
+    assert video.has_captions is True
+    assert video.view_count == 150000
+    assert video.like_count == 4200
+    assert video.channel_id == "UC_chan"
+    assert video.embeddable is True
+
+    # The enrichment was a single batched, keyed videos.list over the search's ids.
+    videos_calls = [c for c in client.calls if "/videos" in c[0]]
+    assert len(videos_calls) == 1
+    _url, videos_params = videos_calls[0]
+    assert videos_params["id"] == "abc123"
+    assert "contentDetails" in videos_params["part"]
+    assert videos_params["key"] == "test-key"
+
+
+async def test_enrichment_failure_degrades_to_search_basics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — search succeeds, videos.list raises.
+    monkeypatch.setenv("YOUTUBE_API_KEY", "test-key")
+    client = _RoutingClient(_PAYLOAD, videos_error=RuntimeError("quota"))
+    source = YouTubeVideoSource(client=client)
+
+    # Act
+    videos = await source.find("hear implied intent")
+
+    # Assert — the title + channel survive (the basics); enrichment is simply absent, never a raise.
+    assert len(videos) == 1
+    assert videos[0].title == "Implied intent, decoded"
+    assert videos[0].channel == "EnglishPro"
+    assert videos[0].duration_seconds is None
+    assert videos[0].description == ""

@@ -169,6 +169,7 @@ class ClaudeResourceCurator:
                     trust_tier=classify_domain(video.url),
                     duration=video.duration,
                     author=video.channel,
+                    snippet=video.description,
                     good_result_looks_like=search_query.good_result_looks_like,
                     level_hint=search_query.level_hint,
                 )
