@@ -1,9 +1,7 @@
 import jwt
 
+from ._supabase import AUDIENCE
 from .auth_error import AuthError
-
-# Supabase stamps end-user access tokens with this audience.
-_AUDIENCE = "authenticated"
 
 
 class JwtUserVerifier:
@@ -19,7 +17,7 @@ class JwtUserVerifier:
 
     def verify(self, token: str) -> str:
         try:
-            claims = jwt.decode(token, self._secret, algorithms=["HS256"], audience=_AUDIENCE)
+            claims = jwt.decode(token, self._secret, algorithms=["HS256"], audience=AUDIENCE)
         except jwt.PyJWTError as exc:
             # Keep the message generic — the library text (e.g. "Signature verification failed") is
             # preserved via the chained cause for debugging, never surfaced to callers or logs.

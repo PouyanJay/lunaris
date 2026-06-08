@@ -113,6 +113,19 @@ async def test_get_me_expired_token_returns_401(client: httpx.AsyncClient) -> No
     assert response.status_code == 401
 
 
+async def test_get_me_unsupported_alg_returns_401(client: httpx.AsyncClient) -> None:
+    # Arrange — a valid signature but an algorithm no verifier is wired for (HS256-only here)
+    now = int(time.time())
+    payload = {"sub": _TEST_USER_ID, "aud": "authenticated", "iat": now, "exp": now + 3600}
+    token = jwt.encode(payload, _JWT_SECRET, algorithm="HS512")
+
+    # Act
+    response = await client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+
+    # Assert
+    assert response.status_code == 401
+
+
 async def test_get_me_wrong_audience_returns_401(client: httpx.AsyncClient) -> None:
     # Arrange — a non-end-user token (Supabase also issues anon/service_role audiences)
     token = _mint_token(aud="anon")

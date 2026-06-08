@@ -1,4 +1,5 @@
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, get_type_hints
 
@@ -37,7 +38,13 @@ from lunaris_runtime.persistence import (
 )
 from structlog.contextvars import bind_contextvars
 
-from .auth import AuthError, IUserVerifier, JwtUserVerifier
+from .auth import (
+    AuthError,
+    CompositeUserVerifier,
+    IUserVerifier,
+    JwksUserVerifier,
+    JwtUserVerifier,
+)
 from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
@@ -290,17 +297,30 @@ def get_goal_interpreter() -> IGoalInterpreter:
 GoalInterpreterDep = Annotated[IGoalInterpreter, Depends(get_goal_interpreter)]
 
 
+@lru_cache
+def _build_user_verifier(secret: str | None, supabase_url: str | None) -> IUserVerifier | None:
+    """Compose the token verifier from config, cached per (secret, url) so the JWKS client's key
+    cache is reused across requests instead of refetched each call.
+
+    HS256 (local / shared secret) and asymmetric ES256/RS256 (cloud JWKS) can both be present; the
+    composite routes each token to the right one by its header ``alg``. None when neither is set.
+    """
+    hs256 = JwtUserVerifier(secret) if secret else None
+    asymmetric = JwksUserVerifier(supabase_url) if supabase_url else None
+    if hs256 is None and asymmetric is None:
+        return None
+    return CompositeUserVerifier(hs256=hs256, asymmetric=asymmetric)
+
+
 def get_jwt_verifier(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> IUserVerifier | None:
-    """The end-user token verifier, or None when no JWT secret is configured (auth unavailable).
+    """The end-user token verifier, or None when auth is unconfigured (fails closed with 503).
 
-    The composition seam: today an HS256 verifier; a JWKS/ES256 sibling slots in here without
-    touching ``require_user_id``. None makes protected routes fail closed with a 503.
+    The composition seam: HS256 for local/shared-secret, JWKS/ES256 for cloud — chosen per token by
+    the composite, so ``require_user_id`` never depends on a concrete verifier.
     """
-    if not settings.supabase_jwt_secret:
-        return None
-    return JwtUserVerifier(settings.supabase_jwt_secret)
+    return _build_user_verifier(settings.supabase_jwt_secret, settings.supabase_url)
 
 
 JwtVerifierDep = Annotated[IUserVerifier | None, Depends(get_jwt_verifier)]
