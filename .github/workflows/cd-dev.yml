@@ -1,0 +1,120 @@
+name: CD (dev)
+
+# Continuous deployment to the DEV environment on every push to main.
+#
+# Build-once-promote (§5 of the Azure plan): this workflow builds the API image, tags it by commit
+# SHA, pushes it to ACR, and records the digest as an artifact + summary so cd-prod.yml can promote
+# the *exact same* image to prod — prod never rebuilds.
+#
+# Auth to Azure is via GitHub OIDC federation (no stored cloud credentials). The federated identity
+# is scoped to `environment:dev`, so this job MUST run with `environment: dev` for the token exchange
+# to succeed.
+#
+# The platform (main.bicep — ACR, Key Vault, Managed Identity, ACA env, role assignments) is
+# bootstrap infra deployed out-of-band by an Owner. CD is least-privilege (Contributor) and only
+# rolls a new Container App revision via app.bicep; its platform wiring comes from `dev` env vars.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # request the OIDC token for azure/login
+  contents: read
+
+concurrency:
+  group: cd-dev
+  cancel-in-progress: false # never interrupt an in-flight deploy
+
+jobs:
+  deploy:
+    name: Build, migrate & deploy (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+    outputs:
+      image: ${{ steps.image.outputs.ref }}
+      digest: ${{ steps.build.outputs.digest }}
+    env:
+      # Mapped from the secret so step-level `if:` can test presence (the `secrets` context is not
+      # available in `if:`). Empty until the user adds a CI-scoped Supabase token (NEXT STEP 2).
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compute image reference
+        id: image
+        run: echo "ref=${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: ACR login
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build & push API image (linux/amd64)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          platforms: linux/amd64 # ACA runs amd64; the GitHub runner is amd64-native
+          push: true
+          tags: ${{ steps.image.outputs.ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Setup Supabase CLI
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Push DB migrations (dev)
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: |
+          supabase link --project-ref "${{ vars.SUPABASE_PROJECT_REF }}" \
+            --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      - name: Warn if migrations were skipped
+        if: env.SUPABASE_ACCESS_TOKEN == ''
+        run: echo "::warning::SUPABASE_ACCESS_TOKEN not set — skipped 'supabase db push'. Add a CI-scoped token to the dev environment to enable automated migrations."
+
+      - name: Deploy Container App (app.bicep)
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-dev-app-${{ github.run_number }}" \
+            --template-file infra/app.bicep \
+            --parameters \
+              env=dev \
+              image="${{ steps.image.outputs.ref }}" \
+              managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
+              managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              keyVaultUri="${{ vars.KEYVAULT_URI }}" \
+              supabaseUrl="${{ vars.SUPABASE_URL }}" \
+              corsOrigins="${{ vars.CORS_ORIGINS }}" \
+              pipeline="${{ vars.PIPELINE_MODE }}"
+
+      - name: Deployment summary
+        run: |
+          FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-dev-api \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          {
+            echo "### Dev deploy ✅"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Image | \`${{ steps.image.outputs.ref }}\` |"
+            echo "| Digest | \`${{ steps.build.outputs.digest }}\` |"
+            echo "| Pipeline | \`${{ vars.PIPELINE_MODE }}\` |"
+            echo "| URL | https://$FQDN |"
+          } >> "$GITHUB_STEP_SUMMARY"
