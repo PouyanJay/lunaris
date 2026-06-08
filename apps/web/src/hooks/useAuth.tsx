@@ -62,7 +62,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signUp: async (email, password) => {
         if (!supabase) unconfigured();
-        const { data, error } = await supabase.auth.signUp({ email, password });
+        // Send the confirmation link back to THIS origin (prod / dev / localhost), not the
+        // project's default Site URL. supabase-js (detectSessionInUrl) then parses the returned
+        // #access_token and establishes the session. The origin must be in the project's redirect
+        // allow-list (Auth → URL Configuration) or Supabase falls back to the Site URL.
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: window.location.origin },
+        });
         if (error) throw error;
         return { needsConfirmation: data.session === null };
       },
