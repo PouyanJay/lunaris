@@ -61,7 +61,7 @@ class SupabaseRunEventStore:
             self._client = create_client(url, key)
         return self._client
 
-    async def append(self, *, events: Sequence[RunEvent]) -> None:
+    async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None:
         if not events:
             return  # an empty flush must never issue a no-op insert
         client = self._ensure_client()
@@ -72,27 +72,30 @@ class SupabaseRunEventStore:
                 "seq": event.seq,
                 "kind": event.kind.value,
                 "payload": event.payload,
+                # Stamp the owner (Phase 2) — the build writes via service-role, so the right
+                # user_id here is what lets RLS enforce for any later user-JWT client.
+                **({"user_id": owner_id} if owner_id is not None else {}),
             }
             for event in events
         ]
         await asyncio.to_thread(lambda: client.table(_TABLE).insert(rows).execute())  # type: ignore[attr-defined]
 
-    async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
+    async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         client = self._ensure_client()
         rows: list[dict[str, object]] = []
         for page_index in range(_MAX_PAGES):
             start = page_index * _PAGE_SIZE
             end = start + _PAGE_SIZE - 1
-            response = await asyncio.to_thread(
-                lambda s=start, e=end: (
-                    client.table(_TABLE)  # type: ignore[attr-defined]
-                    .select("*")
-                    .eq("run_id", run_id)
-                    .order("seq")
-                    .range(s, e)
-                    .execute()
-                )
-            )
+
+            def _run(s: int = start, e: int = end) -> object:
+                query = client.table(_TABLE).select("*").eq("run_id", run_id)  # type: ignore[attr-defined]
+                if owner_id is not None:
+                    query = query.eq(
+                        "user_id", owner_id
+                    )  # another user's transcript reads as empty
+                return query.order("seq").range(s, e).execute()
+
+            response = await asyncio.to_thread(_run)
             page = response.data or []
             rows.extend(page)
             if len(page) < _PAGE_SIZE:  # a short (or empty) page is the last one
@@ -102,18 +105,18 @@ class SupabaseRunEventStore:
             logger.warning("run_events_read_hit_page_ceiling", run_id=run_id, pages=_MAX_PAGES)
         return [self._to_run_event(row) for row in rows]
 
-    async def delete_for_course(self, *, course_id: str) -> int:
+    async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
         client = self._ensure_client()
+
         # Ask PostgREST for an exact count so the "how many were deleted?" answer doesn't depend on
         # the client's implicit return-representation default (which could change to minimal).
-        response = await asyncio.to_thread(
-            lambda: (
-                client.table(_TABLE)  # type: ignore[attr-defined]
-                .delete(count="exact")
-                .eq("course_id", course_id)
-                .execute()
-            )
-        )
+        def _run() -> object:
+            query = client.table(_TABLE).delete(count="exact").eq("course_id", course_id)  # type: ignore[attr-defined]
+            if owner_id is not None:
+                query = query.eq("user_id", owner_id)  # only purge the caller's own events
+            return query.execute()
+
+        response = await asyncio.to_thread(_run)
         return response.count or 0
 
     @staticmethod

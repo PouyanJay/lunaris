@@ -104,7 +104,8 @@ jobs:
               supabaseUrl="${{ vars.SUPABASE_URL }}" \
               corsOrigins="${{ vars.CORS_ORIGINS }}" \
               pipeline="${{ vars.PIPELINE_MODE }}" \
-              withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}"
+              withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}" \
+              withByok="${{ vars.WITH_BYOK || 'false' }}"
 
       - name: Deployment summary
         run: |
@@ -139,6 +140,10 @@ jobs:
         working-directory: apps/web
         env:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
+          # Turns on the web AuthGate + supabase-js login. Must be present at build time or the SPA
+          # ships auth-disabled while the API (SUPABASE_URL set) requires tokens → every route 401s.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
       - name: Deploy to Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:

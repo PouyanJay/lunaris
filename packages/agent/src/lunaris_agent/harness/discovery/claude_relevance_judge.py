@@ -3,9 +3,7 @@ import re
 import structlog
 from langchain_core.language_models import BaseChatModel
 from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
+    build_anthropic_chat_model,
     retry_on_rate_limit,
 )
 
@@ -76,12 +74,5 @@ class ClaudeRelevanceJudge:
         if not isinstance(self._model, str):
             return self._model
         if self._client is None:
-            from langchain_anthropic import ChatAnthropic
-
-            self._client = ChatAnthropic(
-                model=self._model,
-                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-                max_retries=LLM_MAX_RETRIES,
-                rate_limiter=get_llm_rate_limiter(),
-            )
+            self._client = build_anthropic_chat_model(self._model)
         return self._client

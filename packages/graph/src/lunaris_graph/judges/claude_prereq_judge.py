@@ -3,9 +3,7 @@ import re
 
 import structlog
 from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
+    build_anthropic_chat_model,
     retry_on_rate_limit,
 )
 from lunaris_runtime.schema import KnowledgeComponent
@@ -56,14 +54,7 @@ class ClaudePrereqJudge:
         self, prerequisite: KnowledgeComponent, dependent: KnowledgeComponent
     ) -> PrereqVerdict:
         if self._client is None:
-            from langchain_anthropic import ChatAnthropic
-
-            self._client = ChatAnthropic(
-                model=self._model_name,
-                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-                max_retries=LLM_MAX_RETRIES,
-                rate_limiter=get_llm_rate_limiter(),
-            )
+            self._client = build_anthropic_chat_model(self._model_name)
 
         prompt = _PROMPT.format(
             a_label=prerequisite.label,

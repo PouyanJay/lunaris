@@ -22,6 +22,13 @@ class SettingsView(CamelModel):
     # Whether plain-language "Explain" is available (an Anthropic key is reachable); the web hides
     # the Explain affordance when False rather than offering a button that 503s.
     supports_explain: bool
+    # Whether per-user BYOK is configured (a master key + Supabase). When True the web manages keys
+    # through the authed per-user /api/credentials surface instead of this file-backed secret store.
+    byok_enabled: bool
+    # Whether runtime config is per-user (auth is configured). When True /api/config serves the
+    # caller's own model selection (LangSmith is operator-only and absent from the surface); when
+    # False it's the process-wide file store (single-user dev, incl. LangSmith).
+    per_user_config_enabled: bool
 
 
 class SecretValue(BaseModel):

@@ -1284,10 +1284,12 @@ name = "lunaris-api"
 version = "0.0.0"
 source = { editable = "apps/api" }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "lunaris-agent" },
     { name = "lunaris-grounding" },
     { name = "lunaris-runtime" },
+    { name = "pyjwt", extra = ["crypto"] },
     { name = "python-multipart" },
     { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1295,10 +1297,12 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "lunaris-agent", editable = "packages/agent" },
     { name = "lunaris-grounding", editable = "packages/grounding" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
     { name = "python-multipart", specifier = ">=0.0.18" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },

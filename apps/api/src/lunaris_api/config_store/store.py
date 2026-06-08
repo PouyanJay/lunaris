@@ -62,6 +62,38 @@ class ConfigSetting:
     restart_required: bool
 
 
+def validate_config_value(name: str, value: str) -> str:
+    """Trim + validate one config value against its kind. Shared by the file store and the per-user
+    service so both reject the same way; it also guards the key against ``KNOWN_CONFIG`` (the
+    per-user service narrows to its own surface BEFORE calling this). Raises ``ConfigKeyError``
+    (unknown key) / ``ConfigError`` (bad value)."""
+    if name not in KNOWN_CONFIG:
+        raise ConfigKeyError(f"Unknown config key: {name}")
+    cleaned = value.strip()
+    if _KINDS[name] == "toggle":
+        if cleaned not in ("true", "false"):
+            raise ConfigError(f"{name} must be 'true' or 'false'")
+        return cleaned
+    # Model ids are free-form — a new model needs no backend release; the UI offers a shortlist.
+    if not cleaned:
+        raise ConfigError(f"{name} must not be empty")
+    if len(cleaned) > _MAX_VALUE_LEN:
+        raise ConfigError(f"{name} is too long (max {_MAX_VALUE_LEN} chars)")
+    return cleaned
+
+
+def build_config_setting(name: str, value: str | None) -> ConfigSetting:
+    """A ``ConfigSetting`` for ``name`` carrying ``value`` (or its default when ``None``) — the one
+    place a stored value is paired with its default/kind/restart metadata."""
+    return ConfigSetting(
+        name=name,
+        value=value if value is not None else _DEFAULTS[name],
+        default=_DEFAULTS[name],
+        kind=_KINDS[name],
+        restart_required=name in _RESTART_REQUIRED,
+    )
+
+
 class ConfigStore:
     """A persisted store for non-secret runtime configuration (local-dev operator settings).
 
@@ -80,8 +112,7 @@ class ConfigStore:
         return [self._setting(name) for name in KNOWN_CONFIG]
 
     def set(self, name: str, value: str) -> ConfigSetting:
-        self._require_known(name)
-        cleaned = self._validate(name, value)
+        cleaned = validate_config_value(name, value)
         self._values[name] = cleaned
         self._persist()
         os.environ[KNOWN_CONFIG[name]] = cleaned
@@ -90,31 +121,7 @@ class ConfigStore:
     # --- internals ----------------------------------------------------------
 
     def _setting(self, name: str) -> ConfigSetting:
-        return ConfigSetting(
-            name=name,
-            value=self._values.get(name, _DEFAULTS[name]),
-            default=_DEFAULTS[name],
-            kind=_KINDS[name],
-            restart_required=name in _RESTART_REQUIRED,
-        )
-
-    def _require_known(self, name: str) -> None:
-        if name not in KNOWN_CONFIG:
-            raise ConfigKeyError(f"Unknown config key: {name}")
-
-    def _validate(self, name: str, value: str) -> str:
-        cleaned = value.strip()
-        if _KINDS[name] == "toggle":
-            if cleaned not in ("true", "false"):
-                raise ConfigError(f"{name} must be 'true' or 'false'")
-            return cleaned
-        # "model" and "text": any non-empty string within the length cap (model ids are free-form,
-        # so a new model needs no backend release — the UI just offers a known shortlist).
-        if not cleaned:
-            raise ConfigError(f"{name} must not be empty")
-        if len(cleaned) > _MAX_VALUE_LEN:
-            raise ConfigError(f"{name} is too long (max {_MAX_VALUE_LEN} chars)")
-        return cleaned
+        return build_config_setting(name, self._values.get(name))
 
     def _load(self) -> dict[str, str]:
         if not self._path.exists():

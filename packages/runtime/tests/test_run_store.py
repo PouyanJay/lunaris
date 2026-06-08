@@ -61,20 +61,81 @@ async def test_finish_without_start_is_a_noop() -> None:
     assert await store.list_recent() == []
 
 
+# --- per-user scoping (Phase 2): each owner sees only their own runs ----------------------------
+
+
+async def test_list_recent_returns_only_the_owners_runs() -> None:
+    # Arrange — two users each start a run.
+    store = InMemoryRunStore()
+    await store.start(run_id="r-a", course_id="c-a", topic="A", owner_id="user-a")
+    await store.start(run_id="r-b", course_id="c-b", topic="B", owner_id="user-b")
+
+    # Act / Assert — each owner sees only their own; an unscoped (auth-off) read sees both.
+    assert [r.id for r in await store.list_recent(owner_id="user-a")] == ["c-a"]
+    assert [r.id for r in await store.list_recent(owner_id="user-b")] == ["c-b"]
+    assert {r.id for r in await store.list_recent()} == {"c-a", "c-b"}
+
+
+async def test_get_is_owner_scoped() -> None:
+    # Arrange — A owns the run.
+    store = InMemoryRunStore()
+    await store.start(run_id="r-a", course_id="c-a", topic="A", owner_id="user-a")
+
+    # Act / Assert — B can't see it; A can.
+    assert await store.get(course_id="c-a", owner_id="user-b") is None
+    assert await store.get(course_id="c-a", owner_id="user-a") is not None
+
+
+async def test_delete_is_owner_scoped() -> None:
+    # Arrange — A owns the run.
+    store = InMemoryRunStore()
+    await store.start(run_id="r-a", course_id="c-a", topic="A", owner_id="user-a")
+
+    # Act / Assert — B can't delete it; A can.
+    assert await store.delete(course_id="c-a", owner_id="user-b") is False
+    assert await store.delete(course_id="c-a", owner_id="user-a") is True
+
+
+async def test_finish_does_not_touch_another_owners_run() -> None:
+    # Arrange — A's run is RUNNING.
+    store = InMemoryRunStore()
+    await store.start(run_id="r-a", course_id="c-a", topic="A", owner_id="user-a")
+
+    # Act — B tries to finish it (best-effort no-op for a row they don't own).
+    await store.finish(
+        course_id="c-a",
+        status=RunStatus.COMPLETED,
+        kc_count=9,
+        module_count=9,
+        owner_id="user-b",
+    )
+
+    # Assert — A's run is untouched (still RUNNING, no counts).
+    a_run = await store.get(course_id="c-a", owner_id="user-a")
+    assert a_run is not None
+    assert a_run.status == RunStatus.RUNNING
+    assert a_run.kc_count == 0
+
+
 # --- SupabaseRunStore: column mapping + query shape, proven without a live DB --------------------
 
 
 class _FakeResponse:
-    def __init__(self, data: list[dict[str, object]]) -> None:
+    def __init__(self, data: list[dict[str, object]], count: int | None = None) -> None:
         self.data = data
+        self.count = count
 
 
 class _FakeQuery:
-    """Records the supabase-py builder chain and returns canned rows on execute()."""
+    """Records the supabase-py builder chain and returns canned rows (or a count) on execute()."""
 
-    def __init__(self, calls: list[tuple], select_data: list[dict[str, object]]) -> None:
+    def __init__(
+        self, calls: list[tuple], select_data: list[dict[str, object]], delete_count: int
+    ) -> None:
         self._calls = calls
         self._select_data = select_data
+        self._delete_count = delete_count
+        self._is_delete = False
 
     def upsert(self, row: dict[str, object]) -> "_FakeQuery":
         self._calls.append(("upsert", row))
@@ -82,6 +143,11 @@ class _FakeQuery:
 
     def update(self, patch: dict[str, object]) -> "_FakeQuery":
         self._calls.append(("update", patch))
+        return self
+
+    def delete(self, count: str | None = None) -> "_FakeQuery":
+        self._is_delete = True
+        self._calls.append(("delete", count))
         return self
 
     def eq(self, column: str, value: object) -> "_FakeQuery":
@@ -101,17 +167,22 @@ class _FakeQuery:
         return self
 
     def execute(self) -> _FakeResponse:
+        if self._is_delete:
+            return _FakeResponse([], count=self._delete_count)
         return _FakeResponse(self._select_data)
 
 
 class _FakeClient:
-    def __init__(self, select_data: list[dict[str, object]] | None = None) -> None:
+    def __init__(
+        self, select_data: list[dict[str, object]] | None = None, delete_count: int = 0
+    ) -> None:
         self.calls: list[tuple] = []
         self._select_data = select_data or []
+        self._delete_count = delete_count
 
     def table(self, name: str) -> _FakeQuery:
         self.calls.append(("table", name))
-        return _FakeQuery(self.calls, self._select_data)
+        return _FakeQuery(self.calls, self._select_data, self._delete_count)
 
 
 def _store_with(client: _FakeClient) -> SupabaseRunStore:
@@ -195,3 +266,68 @@ async def test_supabase_list_recent_maps_rows_newest_first() -> None:
     assert runs[0].created_at.year == 2026
     assert ("order", "created_at", True) in client.calls
     assert ("limit", 10) in client.calls
+
+
+async def test_supabase_start_stamps_the_owner_when_scoped() -> None:
+    # Arrange
+    client = _FakeClient()
+    store = _store_with(client)
+
+    # Act
+    await store.start(run_id="r-1", course_id="c-1", topic="graphs", owner_id="user-7")
+
+    # Assert — the upserted row carries user_id (so RLS enforces for any later user-JWT client).
+    upserts = [call[1] for call in client.calls if call[0] == "upsert"]
+    assert upserts[0]["user_id"] == "user-7"
+
+
+async def test_supabase_start_omits_user_id_when_unscoped() -> None:
+    # Arrange
+    client = _FakeClient()
+    store = _store_with(client)
+
+    # Act — auth off (owner_id None) leaves the row owner-less (today's behavior).
+    await store.start(run_id="r-1", course_id="c-1", topic="graphs")
+
+    # Assert
+    upserts = [call[1] for call in client.calls if call[0] == "upsert"]
+    assert "user_id" not in upserts[0]
+
+
+async def test_supabase_list_recent_filters_by_owner() -> None:
+    # Arrange
+    client = _FakeClient(select_data=[])
+    store = _store_with(client)
+
+    # Act
+    await store.list_recent(limit=10, owner_id="user-7")
+
+    # Assert — the read is constrained to the caller's rows.
+    assert ("eq", "user_id", "user-7") in client.calls
+
+
+async def test_supabase_finish_filters_by_owner() -> None:
+    # Arrange
+    client = _FakeClient()
+    store = _store_with(client)
+
+    # Act
+    await store.finish(
+        course_id="c-1", status=RunStatus.COMPLETED, kc_count=1, module_count=1, owner_id="user-7"
+    )
+
+    # Assert — the UPDATE only touches a row the caller owns.
+    assert ("eq", "user_id", "user-7") in client.calls
+
+
+async def test_supabase_delete_filters_by_owner() -> None:
+    # Arrange
+    client = _FakeClient(delete_count=1)
+    store = _store_with(client)
+
+    # Act
+    removed = await store.delete(course_id="c-1", owner_id="user-7")
+
+    # Assert — the DELETE only removes the caller's own row.
+    assert removed is True
+    assert ("eq", "user_id", "user-7") in client.calls

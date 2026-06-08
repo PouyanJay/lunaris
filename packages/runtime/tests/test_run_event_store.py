@@ -77,6 +77,39 @@ async def test_delete_for_unknown_course_is_a_noop() -> None:
     assert len(await store.list_for_run(run_id="r-1")) == 1
 
 
+# --- per-user scoping (Phase 2): another user's transcript reads as empty -----------------------
+
+
+async def test_list_for_run_is_empty_for_a_non_owner() -> None:
+    # Arrange — A's run leaves a transcript.
+    store = InMemoryRunEventStore()
+    await store.append(events=[_event("r-1", "c-1", 0, RunEventKind.PROGRESS)], owner_id="user-a")
+
+    # Act / Assert — B (a guessed run_id) sees nothing; A sees their own; unscoped sees it too.
+    assert await store.list_for_run(run_id="r-1", owner_id="user-b") == []
+    assert len(await store.list_for_run(run_id="r-1", owner_id="user-a")) == 1
+    assert len(await store.list_for_run(run_id="r-1")) == 1
+
+
+async def test_delete_for_course_only_purges_the_owners_runs() -> None:
+    # Arrange — two users built courses that (pathologically) share a course_id.
+    store = InMemoryRunEventStore()
+    await store.append(
+        events=[_event("r-a", "shared", 0, RunEventKind.PROGRESS)], owner_id="user-a"
+    )
+    await store.append(
+        events=[_event("r-b", "shared", 0, RunEventKind.PROGRESS)], owner_id="user-b"
+    )
+
+    # Act — A purges their course; B's identically-keyed log must survive.
+    removed = await store.delete_for_course(course_id="shared", owner_id="user-a")
+
+    # Assert
+    assert removed == 1
+    assert await store.list_for_run(run_id="r-a", owner_id="user-a") == []
+    assert len(await store.list_for_run(run_id="r-b", owner_id="user-b")) == 1
+
+
 # --- SupabaseRunEventStore: column mapping + query shape, proven without a live DB ---------------
 
 
@@ -283,3 +316,44 @@ async def test_supabase_delete_for_course_returns_the_exact_count() -> None:
     assert ("table", "run_events") in client.calls
     assert ("delete", "exact") in client.calls
     assert ("eq", "course_id", "c-1") in client.calls
+
+
+async def test_supabase_append_stamps_the_owner_on_every_row_when_scoped() -> None:
+    # Arrange
+    client = _FakeClient()
+    store = _store_with(client)
+    events = [
+        RunEvent(run_id="r-1", course_id="c-1", seq=0, kind=RunEventKind.PROGRESS, payload={}),
+        RunEvent(run_id="r-1", course_id="c-1", seq=1, kind=RunEventKind.AGENT, payload={}),
+    ]
+
+    # Act
+    await store.append(events=events, owner_id="user-7")
+
+    # Assert — every inserted row carries user_id (so RLS enforces for any later user-JWT client).
+    inserted = next(call[1] for call in client.calls if call[0] == "insert")
+    assert all(row["user_id"] == "user-7" for row in inserted)
+
+
+async def test_supabase_list_for_run_filters_by_owner() -> None:
+    # Arrange
+    client = _FakeClient(select_data=[])
+    store = _store_with(client)
+
+    # Act
+    await store.list_for_run(run_id="r-1", owner_id="user-7")
+
+    # Assert — the read only returns the caller's own events.
+    assert ("eq", "user_id", "user-7") in client.calls
+
+
+async def test_supabase_delete_for_course_filters_by_owner() -> None:
+    # Arrange
+    client = _FakeClient(delete_count=1)
+    store = _store_with(client)
+
+    # Act
+    await store.delete_for_course(course_id="c-1", owner_id="user-7")
+
+    # Assert — the purge only removes the caller's own events.
+    assert ("eq", "user_id", "user-7") in client.calls

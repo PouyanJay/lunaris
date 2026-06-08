@@ -20,6 +20,8 @@ factory (only the live path needs it), so ``lunaris_runtime``'s declared depende
 
 from typing import TYPE_CHECKING
 
+from lunaris_runtime.credentials import resolve_secret
+
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
     from langchain_core.rate_limiters import BaseRateLimiter
@@ -68,11 +70,21 @@ def build_anthropic_chat_model(model_id: str) -> "BaseChatModel":
     Every live Claude adapter needs the same timeout + bounded retries + shared rate limiter; this
     factory bundles them so each adapter's ``_chat_model`` is a one-liner rather than a copy. It
     imports ``langchain_anthropic`` lazily so only the live path pays for it (tests inject a model).
+
+    This is also the single Anthropic key-injection point (BYOK): ``api_key`` is resolved from the
+    current run's credential scope when one is active (the tenant's own key), else from the process
+    environment (admin/eval/single-user). Passing ``None`` is identical to the prior behaviour —
+    ``ChatAnthropic`` then reads ``ANTHROPIC_API_KEY`` itself — and only happens with no scope and
+    no env key set, the same failure as before; a tenant build is refused upstream when its key is
+    missing, so a scoped build always has a non-``None`` key here.
+
+    The key value is never logged here; redaction at the structlog layer covers it regardless.
     """
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(
         model=model_id,
+        api_key=resolve_secret("ANTHROPIC_API_KEY"),
         default_request_timeout=LLM_REQUEST_TIMEOUT_S,
         max_retries=LLM_MAX_RETRIES,
         rate_limiter=get_llm_rate_limiter(),

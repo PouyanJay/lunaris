@@ -136,6 +136,28 @@ describe("ConfigPanel", () => {
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/must not be empty/i));
   });
+
+  it("describes the scope as per-account when per-user config is on", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetch((name, value) => ({ ...findSetting(name), value })),
+    );
+    render(<ConfigPanel apiBaseUrl="http://test" perUserConfig />);
+    await expandConfig();
+
+    expect(await screen.findByText(/models your own builds use/i)).toBeInTheDocument();
+  });
+
+  it("describes the scope as operator-wide when per-user config is off", async () => {
+    vi.stubGlobal(
+      "fetch",
+      stubFetch((name, value) => ({ ...findSetting(name), value })),
+    );
+    render(<ConfigPanel apiBaseUrl="http://test" />);
+    await expandConfig();
+
+    expect(await screen.findByText(/applied to every build on this server/i)).toBeInTheDocument();
+  });
 });
 
 function findSetting(name: string) {

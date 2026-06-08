@@ -20,14 +20,16 @@ class _RecordingStore:
 
     def __init__(self) -> None:
         self.batches: list[list[RunEvent]] = []
+        self.owner_ids: list[str | None] = []
 
-    async def append(self, *, events: Sequence[RunEvent]) -> None:
+    async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None:
         self.batches.append(list(events))
+        self.owner_ids.append(owner_id)
 
-    async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
+    async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         return [event for batch in self.batches for event in batch]
 
-    async def delete_for_course(self, *, course_id: str) -> int:
+    async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
         return 0
 
 
@@ -117,14 +119,26 @@ async def test_course_frame_is_never_recorded() -> None:
     assert store.batches == []
 
 
+async def test_owner_id_is_stamped_on_every_flush() -> None:
+    # Arrange — a recorder bound to an owner (Phase 2 per-user scoping).
+    store = _RecordingStore()
+    recorder = RunEventRecorder(store, run_id="r1", course_id="c1", owner_id="user-7", batch_size=1)
+
+    # Act — a phase beat flushes immediately at batch_size=1.
+    await recorder.record(_progress(ProgressStage.RUN_STARTED))
+
+    # Assert — the append carried the owner, so the persisted events are scoped to that user.
+    assert store.owner_ids == ["user-7"]
+
+
 class _FailingStore:
-    async def append(self, *, events: Sequence[RunEvent]) -> None:
+    async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None:
         raise RuntimeError("event log is down")
 
-    async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
+    async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         return []
 
-    async def delete_for_course(self, *, course_id: str) -> int:
+    async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
         return 0
 
 

@@ -22,12 +22,10 @@ from lunaris_grounding import (
     VoyageEmbedder,
     YouTubeVideoSource,
 )
+from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.persistence import ICourseStore
-from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
-)
+from lunaris_runtime.resilience import build_anthropic_chat_model
+from lunaris_runtime.run_config import resolve_config
 
 from .coverage_critic import (
     ClaudeCoverageCritic,
@@ -83,7 +81,7 @@ def _retriever_from_env() -> IEvidenceRetriever | None:
     if (
         os.getenv("SUPABASE_URL")
         and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and os.getenv("EMBEDDINGS_API_KEY")
+        and resolve_secret("EMBEDDINGS_API_KEY")
     ):
         return PgVectorRetriever(VoyageEmbedder(), SupabaseCorpusStore())
     logger.info("grounding_retriever_stubbed", reason="supabase/embeddings creds unset")
@@ -103,10 +101,10 @@ def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
     just gathered.
     """
     if (
-        os.getenv("SEARCH_API_KEY")
+        resolve_secret("SEARCH_API_KEY")
         and os.getenv("SUPABASE_URL")
         and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and os.getenv("EMBEDDINGS_API_KEY")
+        and resolve_secret("EMBEDDINGS_API_KEY")
     ):
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
@@ -137,7 +135,7 @@ def _seeder_from_env() -> IGroundingSeeder:
     if (
         os.getenv("SUPABASE_URL")
         and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and os.getenv("EMBEDDINGS_API_KEY")
+        and resolve_secret("EMBEDDINGS_API_KEY")
     ):
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
@@ -157,7 +155,7 @@ def _researcher_from_env(worker_model: str) -> IStandardResearcher:
     adapters (worker tier for distillation). With no ``SEARCH_API_KEY`` it returns the stub, so
     research degrades honestly to UNAVAILABLE and the no-key CI path stays deterministic.
     """
-    if os.getenv("SEARCH_API_KEY"):
+    if resolve_secret("SEARCH_API_KEY"):
         return ClaudeStandardResearcher(
             worker_model, TavilySearchProvider(), TrafilaturaContentExtractor()
         )
@@ -172,7 +170,7 @@ def _video_source_from_env() -> IVideoSource:
     + channel); without one, every video query routes through the shared ``ISearchProvider`` so a
     video is still found + vetted, just without YouTube's metadata.
     """
-    if os.getenv("YOUTUBE_API_KEY"):
+    if resolve_secret("YOUTUBE_API_KEY"):
         return YouTubeVideoSource()
     logger.info("video_source_search_fallback", reason="YOUTUBE_API_KEY unset")
     return SearchVideoSource(TavilySearchProvider())
@@ -187,7 +185,7 @@ def _curator_from_env(worker_model: str) -> IResourceCurator:
     ``SEARCH_API_KEY`` it returns the stub, so curation degrades honestly to nothing and the no-key
     CI path stays deterministic.
     """
-    if os.getenv("SEARCH_API_KEY"):
+    if resolve_secret("SEARCH_API_KEY"):
         return ClaudeResourceCurator(
             worker_model,
             TavilySearchProvider(),
@@ -206,7 +204,7 @@ def _scope_polisher_from_env(worker_model: str) -> IScopePolisher | None:
     sharpen the copy but never change the effort or invent a promise. ``None`` (no key) ships the
     deterministic band unchanged — the offline path stays byte-for-byte stable, no LLM call made.
     """
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if resolve_secret("ANTHROPIC_API_KEY"):
         return ClaudeScopePolisher(worker_model)
     logger.info("scope_polisher_disabled", reason="ANTHROPIC_API_KEY unset")
     return None
@@ -221,7 +219,7 @@ def _coverage_critic_from_env(strong_model: str) -> ICoverageCritic:
     check that needs no model, so a keyless build still gets an honest coverage gate. Either way an
     unresearched brief yields a clean report (nothing was promised), so the offline suite is stable.
     """
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if resolve_secret("ANTHROPIC_API_KEY"):
         return ClaudeCoverageCritic(strong_model)
     logger.info("coverage_critic_keyless", reason="ANTHROPIC_API_KEY unset")
     return DeterministicCoverageCritic()
@@ -259,7 +257,7 @@ def _visual_engine_from_env(worker_model: str) -> VisualEngine:
 
 def build_live_prereq_builder(worker_model: str | None = None) -> PrerequisiteGraphBuilder:
     """The live prerequisite-graph builder (Claude judge) — shared by the orchestrator + MCP."""
-    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
+    worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
     return PrerequisiteGraphBuilder(ClaudePrereqJudge(worker))
 
 
@@ -272,7 +270,7 @@ def build_live_verifier(
     Falls back to the conservative stub retriever (cuts every claim) when the corpus/embeddings
     creds are unset, so it stays runnable offline.
     """
-    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
     grounding = retriever or _retriever_from_env() or StubEvidenceRetriever()
     return Verifier(grounding, ClaudeSupportAssessor(strong))
 
@@ -293,8 +291,8 @@ def build_orchestrator(
     corpus + embeddings creds are set; otherwise it falls back to the conservative stub
     (every claim cut). Pass an explicit ``retriever`` to override either path (e.g. tests).
     """
-    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
-    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
+    strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
 
     extractor = ClaudeConceptExtractor(worker)
     builder = build_live_prereq_builder(worker)
@@ -324,19 +322,19 @@ def build_agent_course_builder(
     set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed. The
     planner client is built explicitly (not as a bare model id) so it carries a request timeout —
     otherwise ``create_deep_agent`` would build an un-timed client and a stalled socket would hang
-    the whole run. ``stream_tokens=True`` because this planner is a real streaming model: the agent
-    reasoning streams token-by-token to the UI (the no-key path keeps the deterministic beats).
-    """
-    from langchain_anthropic import ChatAnthropic
+    the whole run. It routes through ``build_anthropic_chat_model`` so it picks up the current run's
+    BYOK Anthropic key (the tenant's own) alongside the shared hardening. ``stream_tokens=True``
+    because this planner is a real streaming model: the agent reasoning streams token-by-token to
+    the UI (the no-key path keeps the deterministic beats).
 
-    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
-    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
-    planner = ChatAnthropic(
-        model=strong,
-        default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-        max_retries=LLM_MAX_RETRIES,
-        rate_limiter=get_llm_rate_limiter(),
-    )
+    BYOK invariant: this factory is called per run inside the caller's credential scope, so the
+    adapters it builds (which read their key lazily, on first call) resolve the CURRENT tenant's
+    key. Each run gets a fresh set of adapters — never reuse a built builder across runs, or a
+    cached client would serve the first tenant's key to the next.
+    """
+    worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
+    strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
+    planner = build_anthropic_chat_model(strong)
     return AgentCourseBuilder(
         planner,
         store,

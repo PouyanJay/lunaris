@@ -6,7 +6,10 @@ from lunaris_runtime.schema import Course
 class CourseStore:
     """File-backed store for the course-object — the harness virtual FS in MVP.
 
-    Persists each course as ``<id>.json`` (camelCase, the web-facing contract).
+    Persists each course as ``<id>.json`` (camelCase, the web-facing contract). This is the
+    single-user offline-dev store, so it ignores ``owner_id`` (per-user isolation is the
+    Supabase store's job in a deployed, authenticated setup); the parameter is accepted only to
+    satisfy ``ICourseStore`` so it is interchangeable with the scoped Supabase store.
     """
 
     def __init__(self, root: Path) -> None:
@@ -16,13 +19,13 @@ class CourseStore:
     def path_for(self, course_id: str) -> Path:
         return self._root / f"{course_id}.json"
 
-    def save(self, course: Course) -> None:
+    def save(self, course: Course, *, owner_id: str | None = None) -> None:
         self.path_for(course.id).write_text(course.model_dump_json(by_alias=True, indent=2))
 
-    def load(self, course_id: str) -> Course:
+    def load(self, course_id: str, *, owner_id: str | None = None) -> Course:
         return Course.model_validate_json(self.path_for(course_id).read_text())
 
-    def delete(self, course_id: str) -> bool:
+    def delete(self, course_id: str, *, owner_id: str | None = None) -> bool:
         """Delete the stored course file. Idempotent: a missing file is not an error.
 
         Returns ``True`` if a file was removed, ``False`` if it was already absent — so the caller

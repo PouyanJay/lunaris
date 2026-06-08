@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 import type { SourceAuthority, SubjectField } from "../types/course";
 
 /** A failure reaching or using the trust-config API (network or non-OK response). */
@@ -15,7 +16,10 @@ export async function fetchAuthorities(
 ): Promise<SourceAuthority[]> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/source-authorities`, signal ? { signal } : undefined);
+    response = await authedFetch(
+      `${apiBaseUrl}/api/source-authorities`,
+      signal ? { signal } : undefined,
+    );
   } catch (cause) {
     throw new AuthoritiesError("Could not reach the trust-config service.", { cause });
   }
@@ -32,7 +36,7 @@ export async function upsertAuthority(
 ): Promise<SourceAuthority> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/source-authorities`, {
+    response = await authedFetch(`${apiBaseUrl}/api/source-authorities`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(authority),
@@ -59,7 +63,9 @@ export async function deleteAuthority(
   if (field !== null) query.set("field", field);
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/source-authorities?${query}`, { method: "DELETE" });
+    response = await authedFetch(`${apiBaseUrl}/api/source-authorities?${query}`, {
+      method: "DELETE",
+    });
   } catch (cause) {
     throw new AuthoritiesError("Could not reach the trust-config service.", { cause });
   }

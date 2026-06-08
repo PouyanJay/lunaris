@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 /** Thrown when an explanation can't be produced (network, HTTP, or the service is unavailable). */
 export class ExplainError extends Error {}
 
@@ -13,7 +14,7 @@ export async function explainBlob(
 ): Promise<string> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/explain`, {
+    response = await authedFetch(`${apiBaseUrl}/api/explain`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(context ? { content, context } : { content }),

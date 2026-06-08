@@ -158,6 +158,29 @@ async def test_cancel_run_records_cancelled_itself(tmp_path: Path) -> None:
     await asyncio.gather(task, return_exceptions=True)
 
 
+async def test_cancel_is_owner_scoped(tmp_path: Path) -> None:
+    # Per-user isolation (Phase 2): a user must not be able to terminate another user's build by
+    # guessing its run_id. A non-owner cancel is indistinguishable from "nothing in-flight" (404)
+    # and must leave the task running; the owner can still cancel it.
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store, registry)
+    await run_store.start(run_id="r-1", course_id="c-1", topic="t", owner_id="user-a")
+    task: asyncio.Task[bool] = asyncio.create_task(asyncio.Event().wait())
+    registry.register("r-1", task, course_id="c-1", owner_id="user-a")
+
+    # A non-owner is refused and the build keeps running.
+    with pytest.raises(RunNotCancellableError):
+        await service.cancel_run("r-1", owner_id="user-b")
+    assert not task.cancelled()
+
+    # The owner cancels successfully.
+    await service.cancel_run("r-1", owner_id="user-a")
+    run = await run_store.get(course_id="c-1", owner_id="user-a")
+    assert run is not None and run.status == RunStatus.CANCELLED
+    await asyncio.gather(task, return_exceptions=True)
+
+
 async def test_cancel_does_not_overwrite_an_already_finished_run(tmp_path: Path) -> None:
     # The benign race: the pipeline completes the same turn the cancel arrives. The registry's
     # done-task guard returns nothing in-flight (404), so cancel must NOT stamp CANCELLED over a

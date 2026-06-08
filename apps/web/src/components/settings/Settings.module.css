@@ -119,3 +119,32 @@
   color: var(--text-muted);
   line-height: 1.5;
 }
+
+/* BYOK credential field: the footer carries inline feedback (left) + the remove/confirm action
+   (right). A reserved min-height keeps the row from shifting when feedback toggles. */
+.fieldFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--space-5); /* reserve one feedback row so toggling it doesn't shift layout */
+}
+
+.feedbackOk {
+  font-size: var(--text-xs);
+  color: var(--success);
+}
+
+.feedbackError {
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+/* The two-step remove confirm sits inline (no modal) and stays keyboard-operable. */
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}

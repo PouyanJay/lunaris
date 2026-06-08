@@ -1,5 +1,4 @@
-import os
-
+from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.resilience import retry_on_rate_limit
 
 _DEFAULT_MODEL = "voyage-3.5"
@@ -28,7 +27,7 @@ class VoyageEmbedder:
         if self._client is None:
             from langchain_voyageai import VoyageAIEmbeddings
 
-            api_key = os.environ.get(self._api_key_env)
+            api_key = resolve_secret(self._api_key_env)
             if not api_key:
                 raise RuntimeError(f"{self._api_key_env} is not set; cannot embed with Voyage AI")
             self._client = VoyageAIEmbeddings(model=self._model_name, api_key=api_key)

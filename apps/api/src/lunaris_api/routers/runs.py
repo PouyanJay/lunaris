@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.schema import CourseRun, RunEvent
 
-from ..dependencies import CourseServiceDep
+from ..dependencies import CourseServiceDep, OptionalUserIdDep
 from ..service import (
     RUNS_LIMIT_DEFAULT,
     RUNS_LIMIT_MAX,
@@ -19,16 +19,18 @@ router = APIRouter(prefix="/api/runs", tags=["runs"])
 @router.get("", response_model=list[CourseRun])
 async def list_runs(
     service: CourseServiceDep,
+    owner_id: OptionalUserIdDep,
     limit: int = Query(default=RUNS_LIMIT_DEFAULT, ge=RUNS_LIMIT_MIN, le=RUNS_LIMIT_MAX),
 ) -> list[CourseRun]:
     """List recent course-build runs, newest first — the sidebar's history feed.
 
-    503 when the history backend is unreachable: an ``HTTPException`` is handled inside the CORS
-    middleware, so the error response keeps its CORS headers and the sidebar shows its recoverable
-    Retry state — unlike an unhandled 500, which escapes CORS and reads as a network failure.
+    Scoped to the caller when auth is configured (each user sees only their own runs). 503 when the
+    history backend is unreachable: an ``HTTPException`` is handled inside the CORS middleware, so
+    the error response keeps its CORS headers and the sidebar shows its recoverable Retry state —
+    unlike an unhandled 500, which escapes CORS and reads as a network failure.
     """
     try:
-        return await service.list_runs(limit=limit)
+        return await service.list_runs(limit=limit, owner_id=owner_id)
     except RunHistoryUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -37,16 +39,18 @@ async def list_runs(
 
 
 @router.get("/{run_id}/events", response_model=list[RunEvent])
-async def list_run_events(run_id: str, service: CourseServiceDep) -> list[RunEvent]:
+async def list_run_events(
+    run_id: str, service: CourseServiceDep, owner_id: OptionalUserIdDep
+) -> list[RunEvent]:
     """Replay a past build: the run's persisted event log, in emission order (camelCase wire).
 
     An empty list (200) means the run left no trace — a course built before this shipped, or whose
-    best-effort log writes all failed; the web shows a "no build record" state. 503 when the log
-    backend is unreachable (kept inside the CORS middleware, like the run-history list), so the
-    replay view shows a recoverable error rather than a network failure.
+    best-effort log writes all failed (and, when auth is on, another user's run, which reads as
+    empty). 503 when the log backend is unreachable (kept inside the CORS middleware, like the
+    run-history list), so the replay view shows a recoverable error rather than a network failure.
     """
     try:
-        return await service.list_run_events(run_id)
+        return await service.list_run_events(run_id, owner_id=owner_id)
     except RunHistoryUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -55,7 +59,9 @@ async def list_run_events(run_id: str, service: CourseServiceDep) -> list[RunEve
 
 
 @router.post("/{run_id}/cancel", status_code=status.HTTP_202_ACCEPTED)
-async def cancel_run(run_id: str, service: CourseServiceDep) -> Response:
+async def cancel_run(
+    run_id: str, service: CourseServiceDep, owner_id: OptionalUserIdDep
+) -> Response:
     """Request cancellation of an in-flight build. 202 Accepted once signalled (the run flips to
     CANCELLED as its task unwinds); 404 when the run isn't in-flight (unknown or already terminal).
     A request_id is bound + returned in X-Request-Id for cross-layer log correlation.
@@ -64,7 +70,7 @@ async def cancel_run(run_id: str, service: CourseServiceDep) -> Response:
     bind_request_id(request_id)
     headers = {"X-Request-Id": request_id}
     try:
-        await service.cancel_run(run_id)
+        await service.cancel_run(run_id, owner_id=owner_id)
     except RunNotCancellableError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

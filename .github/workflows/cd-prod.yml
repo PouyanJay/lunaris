@@ -96,7 +96,8 @@ jobs:
               supabaseUrl="${{ vars.SUPABASE_URL }}" \
               corsOrigins="${{ vars.CORS_ORIGINS }}" \
               pipeline="${{ vars.PIPELINE_MODE }}" \
-              withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}"
+              withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}" \
+              withByok="${{ vars.WITH_BYOK || 'false' }}"
 
       - name: Deployment summary
         run: |
@@ -110,3 +111,33 @@ jobs:
             echo "| Promoted SHA | \`${{ steps.sha.outputs.value }}\` |"
             echo "| URL | https://$FQDN |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  web:
+    name: Build & deploy SPA (prod)
+    runs-on: ubuntu-latest
+    environment: prod
+    # Built with the prod API host + the prod Supabase auth config, then uploaded to the prod SWA.
+    # Without VITE_SUPABASE_* the SPA would ship auth-disabled while the prod API requires tokens.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      - name: Deploy to Static Web Apps (prod)
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_SWA_DEPLOY_TOKEN }}
+          action: upload
+          app_location: apps/web/dist
+          skip_app_build: true
+          skip_api_build: true

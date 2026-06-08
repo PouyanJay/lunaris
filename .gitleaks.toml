@@ -1,0 +1,17 @@
+# gitleaks configuration — extends the default ruleset with an allowlist for test fixtures.
+#
+# The hermetic API tests hardcode FAKE secrets — an HS256 JWT signing secret and the tokens minted
+# from it — so the real auth path runs with no live Supabase. These are sample values, never real
+# credentials: production secrets live in Key Vault / environment variables and never in the repo.
+# Production code remains fully scanned; only the test trees are allowlisted.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures contain only fake/sample secrets (HS256 test JWT secret + minted tokens)."
+paths = [
+  '''.*/tests/.*''',
+  '''.*\.test\.(ts|tsx)$''',
+  '''.*\.spec\.(ts|tsx)$''',
+]

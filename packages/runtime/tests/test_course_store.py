@@ -154,3 +154,60 @@ def test_delete_returns_false_when_no_row_exists() -> None:
 
     # Act / Assert — idempotent: a no-op delete reports False (caller answers 404, not 204).
     assert store.delete("ghost") is False
+
+
+# --- per-user scoping (Phase 2): the owner is stamped on write, filtered on read/delete ---------
+
+
+def test_save_stamps_the_owner_when_scoped() -> None:
+    # Arrange
+    course = Course(id="abc", topic="graphs", goal_concept="kc-9")
+    client = _FakeClient()
+    store = _store_with(client)
+
+    # Act
+    store.save(course, owner_id="user-7")
+
+    # Assert — the upserted row carries user_id, so RLS enforces for any later user-JWT client.
+    upserts = [call[1] for call in client.calls if call[0] == "upsert"]
+    assert upserts[0]["user_id"] == "user-7"
+
+
+def test_save_omits_user_id_when_unscoped() -> None:
+    # Arrange
+    course = Course(id="abc", topic="graphs", goal_concept="kc-9")
+    client = _FakeClient()
+
+    # Act — auth off (owner_id None) leaves the row owner-less (today's behavior).
+    _store_with(client).save(course)
+
+    # Assert
+    upserts = [call[1] for call in client.calls if call[0] == "upsert"]
+    assert "user_id" not in upserts[0]
+
+
+def test_load_filters_by_owner_when_scoped() -> None:
+    # Arrange
+    course = Course(id="abc", topic="graphs", goal_concept="kc-9")
+    payload = course.model_dump(by_alias=True, mode="json")
+    client = _FakeClient(select_data=[{"payload": payload}])
+    store = _store_with(client)
+
+    # Act
+    store.load("abc", owner_id="user-7")
+
+    # Assert — the read is constrained to both the id and the owner.
+    assert ("eq", "id", "abc") in client.calls
+    assert ("eq", "user_id", "user-7") in client.calls
+
+
+def test_delete_filters_by_owner_when_scoped() -> None:
+    # Arrange
+    client = _FakeClient(delete_count=1)
+    store = _store_with(client)
+
+    # Act
+    store.delete("abc", owner_id="user-7")
+
+    # Assert — only the owner's row can be deleted.
+    assert ("eq", "user_id", "user-7") in client.calls

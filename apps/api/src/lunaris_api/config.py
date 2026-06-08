@@ -29,6 +29,10 @@ class Settings:
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     embeddings_api_key: str | None = None
+    supabase_jwt_secret: str | None = None
+    # Base64 AES master key for BYOK at-rest encryption (Phase 2), injected from the secret manager
+    # as an env var — never the .env, never the DB. Absent ⇒ BYOK is off (no per-user key storage).
+    key_enc_master: str | None = None
 
     @property
     def has_supabase(self) -> bool:
@@ -36,9 +40,21 @@ class Settings:
         return bool(self.supabase_url and self.supabase_service_role_key)
 
     @property
+    def has_byok(self) -> bool:
+        """Whether BYOK is configured — a master key AND Supabase to persist encrypted keys to."""
+        return bool(self.key_enc_master and self.has_supabase)
+
+    @property
     def has_embeddings(self) -> bool:
         """Whether the embeddings key is present (the durable corpus needs it to ingest)."""
         return bool(self.embeddings_api_key)
+
+    @property
+    def has_auth(self) -> bool:
+        """Whether end-user auth is configured (an HS256 secret and/or a JWKS URL → a verifier
+        exists). When True, runtime config is per-user (DB); when False, it's the file store
+        (single-user dev). Mirrors the verifier composition in ``_build_user_verifier``."""
+        return bool(self.supabase_jwt_secret or self.supabase_url)
 
 
 @lru_cache
@@ -53,4 +69,6 @@ def get_settings() -> Settings:
         supabase_url=os.getenv("SUPABASE_URL") or None,
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
         embeddings_api_key=os.getenv("EMBEDDINGS_API_KEY") or None,
+        supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET") or None,
+        key_enc_master=os.getenv("LUNARIS_KEY_ENC_MASTER") or None,
     )

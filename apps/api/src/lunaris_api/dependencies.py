@@ -1,9 +1,11 @@
+import hashlib
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, get_type_hints
 
 import structlog
-from fastapi import Depends
+from fastapi import Depends, Header, HTTPException, status
 from lunaris_agent import (
     LessonRegenerator,
     build_agent_course_builder,
@@ -35,14 +37,41 @@ from lunaris_runtime.persistence import (
     SupabaseRunEventStore,
     SupabaseRunStore,
 )
+from structlog.contextvars import bind_contextvars
 
+from .auth import (
+    AuthError,
+    CompositeUserVerifier,
+    IUserVerifier,
+    JwksUserVerifier,
+    JwtUserVerifier,
+)
 from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
+from .credential_vault import CredentialVault
 from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
-from .secrets import KNOWN_SECRETS, AnthropicProbeValidator, ISecretValidator, SecretStore
-from .service import CourseService, PipelineFactory
+from .secrets import (
+    BYOK_PROVIDERS,
+    KNOWN_SECRETS,
+    AnthropicProbeValidator,
+    ICredentialStore,
+    InMemoryCredentialStore,
+    ISecretValidator,
+    SecretCipher,
+    SecretStore,
+    SupabaseCredentialStore,
+    build_secret_cipher,
+)
+from .service import ConfigResolver, CourseService, CredentialResolver, PipelineFactory
+from .user_config import (
+    PER_USER_CONFIG,
+    InMemoryUserConfigStore,
+    IUserConfigStore,
+    SupabaseUserConfigStore,
+    UserConfigService,
+)
 
 logger = structlog.get_logger()
 
@@ -133,28 +162,6 @@ def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) ->
     return _in_memory_run_event_store
 
 
-def get_course_service(
-    settings: Annotated[Settings, Depends(get_settings)],
-    run_store: Annotated[IRunStore, Depends(get_run_store)],
-    registry: Annotated[RunRegistry, Depends(get_run_registry)],
-    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
-) -> CourseService:
-    """Compose the CourseService for the configured pipeline (overridable in tests)."""
-    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
-    # across replicas — the stateless-container need); the file store otherwise (offline dev).
-    store: ICourseStore = (
-        _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
-    )
-    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
-    if factory is None:
-        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
-        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
-        factory = build_orchestrator
-    return CourseService(store, factory, run_store, registry, event_store)
-
-
-CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
-
 # Process-wide corpus collaborators (singletons, like the run store): the in-memory corpus must be
 # shared so a manually-ingested source survives for a later list/delete within the process; the
 # Supabase store + Voyage embedder are shared so their lazy clients are built once, not per request.
@@ -214,6 +221,157 @@ def get_secret_validator() -> ISecretValidator:
 
 SecretStoreDep = Annotated[SecretStore, Depends(get_secret_store)]
 SecretValidatorDep = Annotated[ISecretValidator, Depends(get_secret_validator)]
+
+# Process-wide BYOK credential stores (singletons, like the run/corpus stores): the in-memory store
+# must be shared so a key set in one request survives for the next within the process; the Supabase
+# store is shared so its lazy service-role client is built once. The in-memory store is the no-key
+# fallback (lost on restart). Tests inject their own via the get_credential_store override.
+_in_memory_credential_store = InMemoryCredentialStore()
+_supabase_credential_store = SupabaseCredentialStore()
+
+
+def get_credential_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ICredentialStore:
+    """The BYOK credential store: Supabase (durable, RLS server-only) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_credential_store
+    return _in_memory_credential_store
+
+
+# Cipher cache keyed on a SHA-256 digest of the master key — NOT the key itself, so the raw base64
+# secret is never retained as a cache key (an lru_cache would keep it in its wrapper dict). The
+# AES-GCM context is built once per key and reused across requests.
+_cipher_by_key_digest: dict[bytes, SecretCipher] = {}
+
+
+def _build_cipher(master_key_b64: str | None) -> SecretCipher | None:
+    """The at-rest cipher for the configured master key, or ``None`` when BYOK is off. A
+    present-but-malformed key raises ``MasterKeyUnavailableError`` (a loud deployment error)."""
+    if not master_key_b64:
+        return None
+    digest = hashlib.sha256(master_key_b64.encode()).digest()
+    if digest not in _cipher_by_key_digest:
+        cipher = build_secret_cipher(master_key_b64)
+        assert cipher is not None  # non-empty key → build_secret_cipher returns a cipher or raises
+        _cipher_by_key_digest[digest] = cipher
+    return _cipher_by_key_digest[digest]
+
+
+def get_credential_vault(
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[ICredentialStore, Depends(get_credential_store)],
+    validator: SecretValidatorDep,
+) -> CredentialVault | None:
+    """The BYOK vault, or ``None`` when BYOK is unconfigured (no master key) → the route 503s. The
+    cipher is the gate: present ⇒ BYOK is on; the store + validator compose with it."""
+    cipher = _build_cipher(settings.key_enc_master)
+    if cipher is None:
+        return None
+    return CredentialVault(store=store, cipher=cipher, validator=validator)
+
+
+CredentialVaultDep = Annotated[CredentialVault | None, Depends(get_credential_vault)]
+
+# Process-wide per-user config stores (singletons, like the credential/run stores): the in-memory
+# store must be shared so a value set in one request survives the next within the process; the
+# Supabase store is shared so its lazy service-role client is built once. In-memory is the no-DB
+# fallback (auth-on hermetic tests / dev without Supabase).
+_in_memory_user_config_store = InMemoryUserConfigStore()
+_supabase_user_config_store = SupabaseUserConfigStore()
+
+
+def get_user_config_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IUserConfigStore:
+    """The per-user config store: Supabase (durable, owner-scoped RLS) when keyed, else memory."""
+    if settings.has_supabase:
+        return _supabase_user_config_store
+    return _in_memory_user_config_store
+
+
+UserConfigStoreDep = Annotated[IUserConfigStore, Depends(get_user_config_store)]
+
+
+def get_user_config_service(store: UserConfigStoreDep) -> UserConfigService:
+    """The per-user runtime-config surface (model selection) for ``/api/config`` when auth is on."""
+    return UserConfigService(store)
+
+
+UserConfigServiceDep = Annotated[UserConfigService, Depends(get_user_config_service)]
+
+
+def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:
+    """A per-run resolver over the per-user config store: user_id → {env-var name: value} for the
+    model keys the user has set. Bound into the build's run-config scope so the build uses the
+    tenant's chosen models; an unset key is omitted (→ the run-config env/default fallback)."""
+
+    async def resolve(user_id: str) -> dict[str, str]:
+        stored = await store.get_all(user_id=user_id)
+        return {
+            PER_USER_CONFIG[key]: value for key, value in stored.items() if key in PER_USER_CONFIG
+        }
+
+    return resolve
+
+
+def _byok_credential_resolver(vault: CredentialVault) -> CredentialResolver:
+    """A per-run resolver over the vault: user_id → {env-var name: decrypted key} for keys they set.
+
+    A provider the user hasn't set is omitted (its env-var key absent), so a missing required key
+    surfaces as a refused build and an optional one degrades the capability honestly."""
+
+    async def resolve(user_id: str) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        for provider in BYOK_PROVIDERS:
+            key = await vault.reveal(user_id=user_id, provider=provider)
+            if key:
+                resolved[KNOWN_SECRETS[provider]] = key
+        return resolved
+
+    return resolve
+
+
+def get_course_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    run_store: Annotated[IRunStore, Depends(get_run_store)],
+    registry: Annotated[RunRegistry, Depends(get_run_registry)],
+    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
+    vault: CredentialVaultDep,
+    user_config_store: UserConfigStoreDep,
+) -> CourseService:
+    """Compose the CourseService for the configured pipeline (overridable in tests)."""
+    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
+    # across replicas — the stateless-container need); the file store otherwise (offline dev).
+    store: ICourseStore = (
+        _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
+    )
+    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
+    if factory is None:
+        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
+        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
+        factory = build_orchestrator
+    # BYOK on (a vault is configured) → builds run on the caller's own keys; off → on the process
+    # environment (admin/single-user), keeping today's behaviour.
+    resolver = _byok_credential_resolver(vault) if vault is not None else None
+    # Per-user config (model selection) when auth is on → builds run on the tenant's chosen models;
+    # off → the process env / code defaults. Gated on has_auth (a verifier exists) — note this can
+    # diverge from has_supabase: with a JWKS URL but no service-role key, the resolver is wired yet
+    # the store is the in-memory fallback. Cheap to always wire (the store is lazy); the resolver
+    # only fires for an owned build.
+    config_resolver = _runtime_config_resolver(user_config_store) if settings.has_auth else None
+    return CourseService(
+        store,
+        factory,
+        run_store,
+        registry,
+        event_store,
+        credential_resolver=resolver,
+        config_resolver=config_resolver,
+    )
+
+
+CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
 
 # One ConfigStore per config-file path (owns process env + the on-disk file), shared by requests.
 # Tests override get_config_store.
@@ -286,3 +444,94 @@ def get_goal_interpreter() -> IGoalInterpreter:
 
 
 GoalInterpreterDep = Annotated[IGoalInterpreter, Depends(get_goal_interpreter)]
+
+
+@lru_cache
+def _build_user_verifier(secret: str | None, supabase_url: str | None) -> IUserVerifier | None:
+    """Compose the token verifier from config, cached per (secret, url) so the JWKS client's key
+    cache is reused across requests instead of refetched each call.
+
+    HS256 (local / shared secret) and asymmetric ES256/RS256 (cloud JWKS) can both be present; the
+    composite routes each token to the right one by its header ``alg``. None when neither is set.
+    """
+    hs256 = JwtUserVerifier(secret) if secret else None
+    asymmetric = JwksUserVerifier(supabase_url) if supabase_url else None
+    if hs256 is None and asymmetric is None:
+        return None
+    return CompositeUserVerifier(hs256=hs256, asymmetric=asymmetric)
+
+
+def get_jwt_verifier(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IUserVerifier | None:
+    """The end-user token verifier, or None when auth is unconfigured (fails closed with 503).
+
+    The composition seam: HS256 for local/shared-secret, JWKS/ES256 for cloud — chosen per token by
+    the composite, so ``require_user_id`` never depends on a concrete verifier.
+    """
+    return _build_user_verifier(settings.supabase_jwt_secret, settings.supabase_url)
+
+
+JwtVerifierDep = Annotated[IUserVerifier | None, Depends(get_jwt_verifier)]
+
+_UNAUTHENTICATED_HEADERS = {"WWW-Authenticate": "Bearer"}
+
+
+def require_user_id(
+    verifier: JwtVerifierDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> str:
+    """Authenticate the caller from the ``Authorization: Bearer`` token and return their user id.
+
+    401 on a missing/malformed/invalid/expired token; 503 when no JWT secret is configured (a
+    deployment error, not a client one). Binds ``user_id`` to the logging context so every
+    downstream log line for the request carries it alongside ``request_id``/``run_id``.
+    """
+    if verifier is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        logger.warning("auth_failed", reason="missing_token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+            headers=_UNAUTHENTICATED_HEADERS,
+        )
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        user_id = verifier.verify(token)
+    except AuthError as exc:
+        logger.warning("auth_failed", reason="invalid_token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers=_UNAUTHENTICATED_HEADERS,
+        ) from exc
+    bind_contextvars(user_id=user_id)
+    return user_id
+
+
+CurrentUserIdDep = Annotated[str, Depends(require_user_id)]
+
+
+def optional_user_id(
+    verifier: JwtVerifierDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> str | None:
+    """The owner id for per-user data scoping — ``None`` when auth is not configured.
+
+    The server-side mirror of the frontend ``AuthGate``: when auth is OFF (no verifier configured)
+    this returns ``None`` so the user-data routes stay open and unscoped — byte-for-byte today's
+    single-user behavior. When auth is ON it is mandatory: a missing/invalid token is a 401 (via
+    ``require_user_id``), and a valid one yields the caller's id, which the service stamps on writes
+    and filters reads by. So "optional" means *optional only while auth is unconfigured*, never a
+    per-request opt-out once a deployment turns auth on.
+    """
+    if verifier is None:
+        return None
+    return require_user_id(verifier, authorization)
+
+
+OptionalUserIdDep = Annotated[str | None, Depends(optional_user_id)]

@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 /** Config API client. Unlike secrets, these values ARE shown — we read them back and edit them. */
 
 export type ConfigKind = "toggle" | "text" | "model";
@@ -21,7 +22,7 @@ export class ConfigError extends Error {
 async function request(input: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(input, init);
+    response = await authedFetch(input, init);
   } catch (cause) {
     throw new ConfigError("Could not reach the configuration service.", { cause });
   }

@@ -1,7 +1,7 @@
 import asyncio
-import os
 
 import structlog
+from lunaris_runtime.credentials import resolve_secret
 
 from .search_result import SearchResult
 
@@ -60,7 +60,7 @@ class TavilySearchProvider:
         if self._client is None:
             from tavily import TavilyClient
 
-            api_key = os.environ.get(self._api_key_env)
+            api_key = resolve_secret(self._api_key_env)
             if not api_key:
                 raise RuntimeError(f"{self._api_key_env} is not set; cannot search with Tavily")
             self._client = TavilyClient(api_key=api_key)

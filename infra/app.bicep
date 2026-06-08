@@ -35,6 +35,9 @@ param pipeline string = 'stub'
 @description('When true, also inject the LLM/search provider keys from Key Vault (needed by the agent/live pipeline). Each referenced secret MUST already exist in the vault or the deploy fails.')
 param withProviderKeys bool = false
 
+@description('When true, inject the BYOK AES master key from Key Vault as LUNARIS_KEY_ENC_MASTER (enables per-tenant encrypted key storage + the authed Settings keys panel). The secret MUST already exist in the vault or the deploy fails.')
+param withByok bool = false
+
 @description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')
 param minReplicas int = (env == 'prod') ? 1 : 0
 param maxReplicas int = 3
@@ -68,6 +71,20 @@ var providerEnvAll = [for k in providerKeys: { name: k.envVar, secretRef: k.secr
 
 var providerSecrets = withProviderKeys ? providerSecretsAll : []
 var providerEnv = withProviderKeys ? providerEnvAll : []
+
+// BYOK master key (per-tenant key encryption) — one Key Vault secret mapped to LUNARIS_KEY_ENC_MASTER,
+// wired only when withByok is set. Read from env only by the API (never the DB, never .env).
+var byokSecretName = 'lunaris-key-enc-master'
+var byokSecrets = withByok
+  ? [
+      {
+        name: byokSecretName
+        keyVaultUrl: '${keyVaultUri}secrets/${byokSecretName}'
+        identity: managedIdentityResourceId
+      }
+    ]
+  : []
+var byokEnv = withByok ? [{ name: 'LUNARIS_KEY_ENC_MASTER', secretRef: byokSecretName }] : []
 
 var baseSecrets = [
   {
@@ -110,7 +127,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       registries: [
         { server: acrLoginServer, identity: managedIdentityResourceId }
       ]
-      secrets: concat(baseSecrets, providerSecrets)
+      secrets: concat(baseSecrets, providerSecrets, byokSecrets)
     }
     template: {
       containers: [
@@ -121,7 +138,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json(cpu)
             memory: memory
           }
-          env: concat(baseEnv, providerEnv)
+          env: concat(baseEnv, providerEnv, byokEnv)
         }
       ]
       scale: {

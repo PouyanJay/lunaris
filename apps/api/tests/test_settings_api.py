@@ -63,6 +63,65 @@ async def test_settings_start_all_unset(client: httpx.AsyncClient) -> None:
     assert body["pipeline"] == "stub"
 
 
+async def test_settings_reports_byok_disabled_without_a_master_key(
+    client: httpx.AsyncClient,
+) -> None:
+    # The default client has no master key configured, so BYOK is off and the web shows the
+    # file-backed keys panel rather than the per-user /api/credentials surface.
+    body = (await client.get("/api/settings")).json()
+
+    assert body["byokEnabled"] is False
+
+
+async def _byok_enabled_for(tmp_path: Path, **settings_kwargs: object) -> bool:
+    """Build the app over a custom Settings and return the reported byokEnabled flag."""
+    env_file = tmp_path / ".env"
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=env_file, **settings_kwargs
+    )
+    app.dependency_overrides[get_secret_store] = lambda: SecretStore(env_file)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        return (await client.get("/api/settings")).json()["byokEnabled"]
+
+
+async def test_settings_reports_byok_enabled_when_master_key_and_supabase_present(
+    tmp_path: Path,
+) -> None:
+    # A master key AND Supabase creds turn BYOK on.
+    enabled = await _byok_enabled_for(
+        tmp_path,
+        supabase_url="http://supabase.test",
+        supabase_service_role_key="service-role",
+        key_enc_master="bWFzdGVyLWtleQ==",
+    )
+
+    assert enabled is True
+
+
+async def test_settings_reports_byok_disabled_with_master_key_but_no_supabase(
+    tmp_path: Path,
+) -> None:
+    # BYOK needs somewhere to persist the encrypted keys — a master key alone isn't enough.
+    enabled = await _byok_enabled_for(tmp_path, key_enc_master="bWFzdGVyLWtleQ==")
+
+    assert enabled is False
+
+
+async def test_settings_reports_byok_disabled_with_supabase_but_no_master_key(
+    tmp_path: Path,
+) -> None:
+    # Supabase without the encryption master key can't encrypt at rest → BYOK stays off.
+    enabled = await _byok_enabled_for(
+        tmp_path,
+        supabase_url="http://supabase.test",
+        supabase_service_role_key="service-role",
+    )
+
+    assert enabled is False
+
+
 async def test_settings_exposes_lesson_regeneration_capability(client: httpx.AsyncClient) -> None:
     # The reader hides the "Regenerate lesson" action when the active pipeline can't honour it
     # (returns 501) rather than offering a button that always fails. The stub pipeline is the

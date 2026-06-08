@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AppFrame } from "./components/AppFrame";
+import { AuthGate } from "./components/auth/AuthGate";
+import { AuthProvider } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
@@ -372,9 +374,17 @@ export default function App() {
   const apiBaseUrl = import.meta.env.VITE_API_URL;
   // App-wide light/dark theme (default light), so both surfaces switch from the one toggle.
   const { theme, toggle } = useTheme();
-  return apiBaseUrl ? (
-    <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
-  ) : (
-    <SeedApp theme={theme} onToggleTheme={toggle} />
+  // The studio (live API) is gated behind login when Supabase is configured; the offline seed is
+  // always open. AuthProvider wraps both so the rail's account control can read the session.
+  return (
+    <AuthProvider>
+      {apiBaseUrl ? (
+        <AuthGate>
+          <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
+        </AuthGate>
+      ) : (
+        <SeedApp theme={theme} onToggleTheme={toggle} />
+      )}
+    </AuthProvider>
   );
 }
