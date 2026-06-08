@@ -87,6 +87,7 @@ jobs:
             --template-file infra/app.bicep \
             --parameters \
               env=prod \
+              location="${{ vars.LOCATION }}" \
               image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
               managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
               managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
