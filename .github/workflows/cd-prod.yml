@@ -93,7 +93,8 @@ jobs:
               keyVaultUri="${{ vars.KEYVAULT_URI }}" \
               supabaseUrl="${{ vars.SUPABASE_URL }}" \
               corsOrigins="${{ vars.CORS_ORIGINS }}" \
-              pipeline="${{ vars.PIPELINE_MODE }}"
+              pipeline="${{ vars.PIPELINE_MODE }}" \
+              withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}"
 
       - name: Deployment summary
         run: |
