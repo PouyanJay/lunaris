@@ -99,6 +99,20 @@ jobs:
               withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}" \
               withByok="${{ vars.WITH_BYOK || 'false' }}"
 
+      # app.bicep's ingress block doesn't carry customDomains, so a deploy resets ingress and drops
+      # the api.lunaris.pouyan.ai binding — restore it here (idempotent). DNS (CNAME + asuid TXT) and
+      # the managed cert already exist on the env, so add+bind just re-attach them.
+      - name: Restore API custom domain
+        if: vars.API_CUSTOM_DOMAIN != ''
+        run: |
+          ENV_NAME=$(basename "${{ vars.ACA_ENV_ID }}")
+          az containerapp hostname add -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+            --hostname "${{ vars.API_CUSTOM_DOMAIN }}" 2>/dev/null || true
+          az containerapp hostname bind -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+            --hostname "${{ vars.API_CUSTOM_DOMAIN }}" \
+            --environment "$ENV_NAME" \
+            --certificate "${{ vars.API_CUSTOM_DOMAIN_CERT }}"
+
       - name: Deployment summary
         run: |
           FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
