@@ -91,11 +91,20 @@ export function Sidebar({
 
       {user && !collapsed && (
         <div className={styles.account}>
+          <span className={styles.avatar} aria-hidden="true">
+            {(user.email ?? "?").charAt(0)}
+          </span>
           <span className={styles.accountEmail} title={user.email ?? undefined}>
             {user.email}
           </span>
-          <button type="button" className={styles.signOut} onClick={() => void signOut()}>
-            Sign out
+          <button
+            type="button"
+            className={styles.railAction}
+            onClick={() => void signOut()}
+            aria-label={`Sign out ${user.email ?? ""}`.trim()}
+            title="Sign out"
+          >
+            <SignOutIcon />
           </button>
         </div>
       )}
@@ -119,6 +128,9 @@ export function Sidebar({
             onClick={onOpenSettings}
             aria-current={settingsActive ? "page" : undefined}
           >
+            <span className={styles.navIcon} aria-hidden="true">
+              <GearIcon />
+            </span>
             Settings
           </button>
         )}
