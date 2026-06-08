@@ -28,8 +28,9 @@ interface SidebarProps extends ThemeProps {
 
 /** The instrument rail: brand, the primary "New course" action, the run-history feed, and the
  *  Settings nav — hairline-divided regions, not floating cards. Collapses to a mini icon rail: the
- *  brand + collapse toggle and the New course / Settings actions stay (as icons), the run history is
- *  hidden until expanded. The toggle stays mounted across the transition so keyboard focus persists. */
+ *  brand mark and wordmark drop away, leaving the collapse toggle and the New course / Settings
+ *  actions (as icons); the run history is hidden until expanded. The toggle stays mounted across the
+ *  transition so keyboard focus persists. */
 export function Sidebar({
   runs,
   onReloadRuns,
@@ -50,7 +51,7 @@ export function Sidebar({
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
       <div className={styles.brand}>
-        <BrandMark size={24} />
+        {!collapsed && <BrandMark size={24} />}
         {!collapsed && <span className={styles.wordmark}>Lunaris</span>}
         <SidebarToggle collapsed={collapsed} onClick={onToggleCollapse} />
       </div>
