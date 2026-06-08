@@ -36,12 +36,15 @@ class RunEventRecorder:
         *,
         run_id: str,
         course_id: str,
+        owner_id: str | None = None,
         cap: int = CAP_PER_RUN,
         batch_size: int = BATCH_SIZE,
     ) -> None:
         self._store = store
         self._run_id = run_id
         self._course_id = course_id
+        # The owner this run's events belong to (Phase 2). None = unscoped (auth-off / single-user).
+        self._owner_id = owner_id
         self._cap = cap
         self._batch_size = batch_size
         self._buffer: list[RunEvent] = []
@@ -87,7 +90,7 @@ class RunEventRecorder:
         batch = self._buffer
         self._buffer = []
         try:
-            await self._store.append(events=batch)
+            await self._store.append(events=batch, owner_id=self._owner_id)
         except Exception:
             logger.warning(
                 "run_events_append_failed",

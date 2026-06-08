@@ -12,16 +12,31 @@ class IRunStore(Protocol):
     are an in-memory fallback (no-key/CI) and the Supabase-backed index (production). Recording is
     best-effort at the call site — a failed history write must never break a build — so
     implementations may raise; the caller swallows.
+
+    ``owner_id`` (Phase 2 per-user scoping) is the authenticated caller's id: ``start`` stamps it on
+    the row, the reads/writes constrain to it (``list_recent`` returns only the caller's runs, and
+    finish/get/delete only touch a row the caller owns). ``None`` means unscoped — the auth-off /
+    single-user path, byte-for-byte today's behavior.
     """
 
-    async def start(self, *, run_id: str, course_id: str, topic: str) -> None: ...
-
-    async def finish(
-        self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
+    async def start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
     ) -> None: ...
 
-    async def list_recent(self, *, limit: int = 50) -> list[CourseRun]: ...
+    async def finish(
+        self,
+        *,
+        course_id: str,
+        status: RunStatus,
+        kc_count: int,
+        module_count: int,
+        owner_id: str | None = None,
+    ) -> None: ...
 
-    async def get(self, *, course_id: str) -> CourseRun | None: ...
+    async def list_recent(
+        self, *, limit: int = 50, owner_id: str | None = None
+    ) -> list[CourseRun]: ...
 
-    async def delete(self, *, course_id: str) -> bool: ...
+    async def get(self, *, course_id: str, owner_id: str | None = None) -> CourseRun | None: ...
+
+    async def delete(self, *, course_id: str, owner_id: str | None = None) -> bool: ...

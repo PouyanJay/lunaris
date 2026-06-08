@@ -4,7 +4,12 @@ from collections.abc import AsyncIterator, Callable
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
-from lunaris_runtime.persistence import ICourseStore, IRunEventStore, IRunStore
+from lunaris_runtime.persistence import (
+    ICourseStore,
+    IRunEventStore,
+    IRunStore,
+    OwnerScopedCourseStore,
+)
 from lunaris_runtime.schema import (
     AgentEvent,
     Clarification,
@@ -113,6 +118,17 @@ class CourseService:
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
         self._registry = registry or RunRegistry()
 
+    def _store_for(self, owner_id: str | None) -> ICourseStore:
+        """The course store the pipeline writes through, scoped to the owner (Phase 2).
+
+        A scoped caller gets an ``OwnerScopedCourseStore`` so a plain ``store.save(course)`` deep in
+        the harness stamps their ``user_id`` without threading owner_id into the agent. ``None``
+        (auth off) returns the shared store unwrapped — byte-for-byte today's behavior.
+        """
+        if owner_id is None:
+            return self._store
+        return OwnerScopedCourseStore(self._store, owner_id)
+
     async def create(
         self,
         topic: str,
@@ -121,9 +137,10 @@ class CourseService:
         run_id: str,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        owner_id: str | None = None,
     ) -> Course:
-        pipeline = self._factory(self._store)
-        await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
+        pipeline = self._factory(self._store_for(owner_id))
+        await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
         # it raises CancelledError at this await without cancelling the request coroutine itself.
@@ -136,24 +153,24 @@ class CourseService:
                 discovery_depth=discovery_depth,
             )
         )
-        self._registry.register(run_id, task, course_id)
+        self._registry.register(run_id, task, course_id, owner_id)
         try:
             course = await task
         except asyncio.CancelledError:
             if self._registry.was_cancelled(run_id):
                 # Convert to a domain error: a raw CancelledError (BaseException) would escape
                 # Starlette and drop the connection with no response. The router maps this → 409.
-                await self._record_cancelled(course_id)
+                await self._record_cancelled(course_id, owner_id=owner_id)
                 raise CourseBuildCancelledError(run_id) from None
             # Not a registry cancel — this request coroutine itself is being torn down; let it go.
-            await self._record_failure(course_id)
+            await self._record_failure(course_id, owner_id=owner_id)
             raise
         except Exception:
-            await self._record_failure(course_id)
+            await self._record_failure(course_id, owner_id=owner_id)
             raise
         finally:
             self._registry.discard(run_id)
-        await self._record_finish(course)
+        await self._record_finish(course, owner_id=owner_id)
         return course
 
     async def stream(
@@ -164,6 +181,7 @@ class CourseService:
         run_id: str,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        owner_id: str | None = None,
     ) -> AsyncIterator[_StreamItem]:
         """Run the pipeline, yielding each progress/agent event as it happens, then the course.
 
@@ -188,10 +206,12 @@ class CourseService:
         # Persists each forwarded beat to the replayable build log: buffered, flushed in best-effort
         # batches at phase boundaries (so a crash mid-build still replays up to the last boundary),
         # capped per run, and drained in the ``finally`` below. Never blocks a yield.
-        recorder = RunEventRecorder(self._event_store, run_id=run_id, course_id=course_id)
-        await self._record_start(run_id=run_id, course_id=course_id, topic=topic)
+        recorder = RunEventRecorder(
+            self._event_store, run_id=run_id, course_id=course_id, owner_id=owner_id
+        )
+        await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         try:
-            pipeline = self._factory(self._store)
+            pipeline = self._factory(self._store_for(owner_id))
             run_task = asyncio.create_task(
                 pipeline.run(
                     topic,
@@ -204,8 +224,8 @@ class CourseService:
                 )
             )
             self._registry.register(
-                run_id, run_task, course_id
-            )  # cancellable by a separate request
+                run_id, run_task, course_id, owner_id
+            )  # cancellable by a separate request (scoped to the owner)
             while True:
                 next_event_task = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
@@ -228,16 +248,16 @@ class CourseService:
                 # cleanly (no terminal course frame), distinct from the disconnect→FAILED path. The
                 # cancel handler also records CANCELLED (disconnect-proof); a repeat write of the
                 # same terminal status is idempotent — kept for the consumer-survives-cancel case.
-                await self._record_cancelled(course_id)
+                await self._record_cancelled(course_id, owner_id=owner_id)
                 recorded = True
                 return
             course = run_task.result()  # .result() propagates a pipeline failure here
-            await self._record_finish(course)
+            await self._record_finish(course, owner_id=owner_id)
             recorded = True
             yield ("course", course)
         except Exception:
             logger.error("course_stream_failed", course_id=course_id, run_id=run_id, exc_info=True)
-            await self._record_failure(course_id)
+            await self._record_failure(course_id, owner_id=owner_id)
             recorded = True
             raise
         finally:
@@ -260,24 +280,24 @@ class CourseService:
                 # best-effort (never raise).
                 if cancelled:
                     event = "run_recorded_cancelled_on_disconnect"
-                    await self._record_cancelled(course_id)
+                    await self._record_cancelled(course_id, owner_id=owner_id)
                 else:
                     event = "run_recorded_failed_on_disconnect"
-                    await self._record_failure(course_id)
+                    await self._record_failure(course_id, owner_id=owner_id)
                 logger.info(event, course_id=course_id, run_id=run_id)
 
-    def get(self, course_id: str) -> Course | None:
+    def get(self, course_id: str, *, owner_id: str | None = None) -> Course | None:
         # An unsafe id can't name a stored course (ids are uuid4().hex); treat it as not-found
         # rather than let it reach path_for — the same traversal guard delete_course applies.
         if not _is_safe_course_id(course_id):
             return None
         try:
-            return self._store.load(course_id)
+            return self._store.load(course_id, owner_id=owner_id)
         except FileNotFoundError:
             return None
 
     async def regenerate_lesson(
-        self, course_id: str, lesson_id: str, *, run_id: str
+        self, course_id: str, lesson_id: str, *, run_id: str, owner_id: str | None = None
     ) -> Course | None:
         """Re-author one lesson of an existing course and return the updated course.
 
@@ -286,38 +306,43 @@ class CourseService:
         """
         if not _is_safe_course_id(course_id):
             return None  # unsafe id can't name a stored course → not-found (router → 404)
-        pipeline = self._factory(self._store)
+        pipeline = self._factory(self._store_for(owner_id))
         if not isinstance(pipeline, LessonRegenerator):
             raise LessonRegenerationUnsupportedError(type(pipeline).__name__)
         return await pipeline.regenerate_lesson(course_id, lesson_id, run_id=run_id)
 
-    async def delete_course(self, course_id: str) -> None:
+    async def delete_course(self, course_id: str, *, owner_id: str | None = None) -> None:
         """Delete a course and its per-course assets: the stored course-object + run-history row.
 
         Guards (one door for all callers): rejects an unsafe id before touching the filesystem;
         refuses to delete a course whose run is still building (cancel it first); raises not-found
         if neither asset exists. Otherwise idempotent — clearing a stray file or row alone succeeds.
+
+        Scoped to ``owner_id`` (Phase 2): every asset delete is owner-filtered, so a user deleting
+        another's course finds nothing (not-found) and never touches the other user's data.
         """
         if not _is_safe_course_id(course_id):
             raise InvalidCourseIdError(course_id)
-        await self._ensure_not_running(course_id)
-        await self._purge_course_assets(course_id)
+        await self._ensure_not_running(course_id, owner_id=owner_id)
+        await self._purge_course_assets(course_id, owner_id=owner_id)
 
-    async def _ensure_not_running(self, course_id: str) -> None:
+    async def _ensure_not_running(self, course_id: str, *, owner_id: str | None = None) -> None:
         """Block deleting a course whose build is still in progress. With no run store wired there's
         no run history and so no live build to protect, so the guard is intentionally skipped."""
         if self._run_store is None:
             return
-        run = await self._run_store.get(course_id=course_id)
+        run = await self._run_store.get(course_id=course_id, owner_id=owner_id)
         if run is not None and run.status == RunStatus.RUNNING:
             raise CourseDeletionConflictError(course_id)
 
-    async def _purge_course_assets(self, course_id: str) -> None:
+    async def _purge_course_assets(self, course_id: str, *, owner_id: str | None = None) -> None:
         """Remove the stored course + run row + build-event log; not-found if neither existed."""
         # Off-load the (possibly network-backed) delete so the event loop isn't blocked.
-        course_deleted = await asyncio.to_thread(self._store.delete, course_id)
+        course_deleted = await asyncio.to_thread(
+            lambda: self._store.delete(course_id, owner_id=owner_id)
+        )
         row_deleted = (
-            await self._run_store.delete(course_id=course_id)
+            await self._run_store.delete(course_id=course_id, owner_id=owner_id)
             if self._run_store is not None
             else False
         )
@@ -325,7 +350,7 @@ class CourseService:
         # course + run row); the event-log I/O should only fire for a course that actually existed.
         if not course_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
-        events_purged = await self._purge_event_log(course_id)
+        events_purged = await self._purge_event_log(course_id, owner_id=owner_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
@@ -334,18 +359,20 @@ class CourseService:
             events_purged=events_purged,
         )
 
-    async def _purge_event_log(self, course_id: str) -> int:
+    async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
         """Best-effort: a purge failure must never block the user's delete (the build-event log is
         non-authoritative operational data)."""
         if self._event_store is None:
             return 0
         try:
-            return await self._event_store.delete_for_course(course_id=course_id)
+            return await self._event_store.delete_for_course(course_id=course_id, owner_id=owner_id)
         except Exception:
             logger.warning("run_events_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
-    async def list_runs(self, *, limit: int = RUNS_LIMIT_DEFAULT) -> list[CourseRun]:
+    async def list_runs(
+        self, *, limit: int = RUNS_LIMIT_DEFAULT, owner_id: str | None = None
+    ) -> list[CourseRun]:
         """Return an empty list when no run store is wired (batch / no-history callers), so the
         endpoint degrades gracefully instead of failing. ``limit`` is clamped to a sane range for
         direct callers; the HTTP router already validates it upstream.
@@ -354,7 +381,7 @@ class CourseService:
             return []
         bounded = max(RUNS_LIMIT_MIN, min(limit, RUNS_LIMIT_MAX))
         try:
-            return await self._run_store.list_recent(limit=bounded)
+            return await self._run_store.list_recent(limit=bounded, owner_id=owner_id)
         except Exception as exc:
             # A configured backend that fails to read is a real outage — surface it (vs. a silent
             # empty list, which would lie "no runs yet"). Logged with the run_id from contextvars so
@@ -362,24 +389,25 @@ class CourseService:
             logger.warning("run_history_list_failed", limit=bounded, exc_info=True)
             raise RunHistoryUnavailableError("Run history backend is unavailable") from exc
 
-    async def list_run_events(self, run_id: str) -> list[RunEvent]:
+    async def list_run_events(self, run_id: str, *, owner_id: str | None = None) -> list[RunEvent]:
         """Return a run's persisted build log in emission order (for timeline replay).
 
         Empty when no event store is wired or the run left no trace (a course built before Phase B,
         or one whose log writes all failed) — the UI renders a "no build record" state, not an
-        error. A configured store that fails to *read* is a real outage → a
-        ``RunHistoryUnavailableError`` (router → 503), mirroring ``list_runs`` (a silent empty list
-        would lie "never built").
+        error. Scoped to ``owner_id`` (Phase 2): another user's transcript reads as empty, so a
+        guessed ``run_id`` discloses nothing. A configured store that fails to *read* is a real
+        outage → a ``RunHistoryUnavailableError`` (router → 503), mirroring ``list_runs`` (a silent
+        empty list would lie "never built").
         """
         if self._event_store is None:
             return []
         try:
-            return await self._event_store.list_for_run(run_id=run_id)
+            return await self._event_store.list_for_run(run_id=run_id, owner_id=owner_id)
         except Exception as exc:
             logger.warning("run_events_list_failed", run_id=run_id, exc_info=True)
             raise RunHistoryUnavailableError("Build event log is unavailable") from exc
 
-    async def cancel_run(self, run_id: str) -> None:
+    async def cancel_run(self, run_id: str, *, owner_id: str | None = None) -> None:
         """Request cancellation of an in-flight run, and record CANCELLED here.
 
         Signalling the task isn't enough: the Terminate control drops the SSE right after, so the
@@ -387,24 +415,28 @@ class CourseService:
         status — leaving the run stuck RUNNING. Recording it from this stable request (which isn't
         torn down) is disconnect-proof; the stream's later write is the same status (idempotent).
         Raises RunNotCancellableError (router → 404) when nothing is in-flight."""
-        course_id = self._registry.cancel(run_id)
+        course_id = self._registry.cancel(run_id, owner_id)
         if course_id is None:
             raise RunNotCancellableError(run_id)
-        await self._record_cancelled(course_id)
+        await self._record_cancelled(course_id, owner_id=owner_id)
         logger.info("run_cancel_requested", run_id=run_id)
 
-    async def _record_start(self, *, run_id: str, course_id: str, topic: str) -> None:
+    async def _record_start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
+    ) -> None:
         """Record the run as ``RUNNING`` — best-effort (a history failure never breaks a build)."""
         if self._run_store is None:
             return
         try:
-            await self._run_store.start(run_id=run_id, course_id=course_id, topic=topic)
+            await self._run_store.start(
+                run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id
+            )
         except Exception:
             logger.warning(
                 "run_history_start_failed", course_id=course_id, run_id=run_id, exc_info=True
             )
 
-    async def _record_finish(self, course: Course) -> None:
+    async def _record_finish(self, course: Course, *, owner_id: str | None = None) -> None:
         """Mark the run COMPLETED with the artifact's KC/module counts — best-effort."""
         if self._run_store is None:
             return
@@ -414,28 +446,37 @@ class CourseService:
                 status=RunStatus.COMPLETED,
                 kc_count=len(course.graph.nodes),
                 module_count=len(course.modules),
+                owner_id=owner_id,
             )
         except Exception:
             logger.warning("run_history_finish_failed", course_id=course.id, exc_info=True)
 
-    async def _record_failure(self, course_id: str) -> None:
+    async def _record_failure(self, course_id: str, *, owner_id: str | None = None) -> None:
         """Mark the run FAILED — best-effort (a no-op if the start row was never written)."""
         if self._run_store is None:
             return
         try:
             await self._run_store.finish(
-                course_id=course_id, status=RunStatus.FAILED, kc_count=0, module_count=0
+                course_id=course_id,
+                status=RunStatus.FAILED,
+                kc_count=0,
+                module_count=0,
+                owner_id=owner_id,
             )
         except Exception:
             logger.warning("run_history_mark_failed_error", course_id=course_id, exc_info=True)
 
-    async def _record_cancelled(self, course_id: str) -> None:
+    async def _record_cancelled(self, course_id: str, *, owner_id: str | None = None) -> None:
         """Mark the run CANCELLED — best-effort (a no-op if the start row was never written)."""
         if self._run_store is None:
             return
         try:
             await self._run_store.finish(
-                course_id=course_id, status=RunStatus.CANCELLED, kc_count=0, module_count=0
+                course_id=course_id,
+                status=RunStatus.CANCELLED,
+                kc_count=0,
+                module_count=0,
+                owner_id=owner_id,
             )
         except Exception:
             logger.warning("run_history_mark_cancelled_error", course_id=course_id, exc_info=True)

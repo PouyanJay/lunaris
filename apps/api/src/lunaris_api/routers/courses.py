@@ -14,7 +14,7 @@ from lunaris_runtime.schema import (
 )
 from pydantic import ValidationError
 
-from ..dependencies import CourseServiceDep
+from ..dependencies import CourseServiceDep, OptionalUserIdDep
 from ..schemas import CourseRequest
 from ..service import (
     CourseBuildCancelledError,
@@ -54,12 +54,16 @@ def _sse_frame(kind: str, payload: ProgressEvent | AgentEvent | Course) -> str:
 
 @router.post("", response_model=Course, status_code=status.HTTP_201_CREATED)
 async def create_course(
-    payload: CourseRequest, service: CourseServiceDep, response: Response
+    payload: CourseRequest,
+    service: CourseServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
 ) -> Course:
     """Run the pipeline for a topic and return the finished course-object (await_full).
 
     The generated ``run_id`` is returned in the ``X-Run-Id`` header so a single run can be
-    triangulated across every layer's logs. 409 if the build is cancelled mid-flight.
+    triangulated across every layer's logs. 409 if the build is cancelled mid-flight. When auth is
+    configured the build is stamped with the caller's id (and anonymous callers get a 401).
     """
     course_id = uuid4().hex
     run_id = uuid4().hex
@@ -71,6 +75,7 @@ async def create_course(
             run_id=run_id,
             clarification=payload.clarification,
             discovery_depth=payload.discovery_depth,
+            owner_id=owner_id,
         )
     except CourseBuildCancelledError as exc:
         raise HTTPException(
@@ -81,6 +86,7 @@ async def create_course(
 @router.get("/stream")
 async def stream_course(
     service: CourseServiceDep,
+    owner_id: OptionalUserIdDep,
     topic: str = Query(min_length=1, max_length=200),
     clarification: str | None = Query(default=None, max_length=_MAX_CLARIFICATION_CHARS),
     discovery_depth: Annotated[DiscoveryDepth, Query()] = DiscoveryDepth.STANDARD,
@@ -106,6 +112,7 @@ async def stream_course(
             run_id=run_id,
             clarification=parsed_clarification,
             discovery_depth=discovery_depth,
+            owner_id=owner_id,
         ):
             yield _sse_frame(kind, payload)
 
@@ -121,29 +128,36 @@ async def stream_course(
 
 
 @router.get("/{course_id}", response_model=Course)
-async def get_course(course_id: str, service: CourseServiceDep) -> Course:
-    """Fetch a previously generated course-object by id."""
-    course = service.get(course_id)
+async def get_course(
+    course_id: str, service: CourseServiceDep, owner_id: OptionalUserIdDep
+) -> Course:
+    """Fetch a previously generated course-object by id (only the caller's own when auth is on)."""
+    course = service.get(course_id, owner_id=owner_id)
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     return course
 
 
 @router.post("/{course_id}/rebuild", response_model=Course)
-async def rebuild_course(course_id: str, service: CourseServiceDep, response: Response) -> Course:
+async def rebuild_course(
+    course_id: str, service: CourseServiceDep, response: Response, owner_id: OptionalUserIdDep
+) -> Course:
     """Re-run the pipeline for an existing course, reusing its id (P6.1 re-ground).
 
     The build re-verifies its claims against the course's CURRENT grounding corpus, so sources added
-    via the Corpus panel can turn previously-cut citations green. 404 if the course is unknown; 409
-    if the build is cancelled mid-flight. ``X-Run-Id`` correlates the rebuild across the logs.
+    via the Corpus panel can turn previously-cut citations green. 404 if the course is unknown (or
+    owned by another user); 409 if the build is cancelled mid-flight. ``X-Run-Id`` correlates the
+    rebuild across the logs.
     """
-    existing = service.get(course_id)
+    existing = service.get(course_id, owner_id=owner_id)
     if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     run_id = uuid4().hex
     response.headers["X-Run-Id"] = run_id
     try:
-        return await service.create(existing.topic, course_id=course_id, run_id=run_id)
+        return await service.create(
+            existing.topic, course_id=course_id, run_id=run_id, owner_id=owner_id
+        )
     except CourseBuildCancelledError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Build was cancelled"
@@ -151,7 +165,9 @@ async def rebuild_course(course_id: str, service: CourseServiceDep, response: Re
 
 
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_course(course_id: str, service: CourseServiceDep) -> Response:
+async def delete_course(
+    course_id: str, service: CourseServiceDep, owner_id: OptionalUserIdDep
+) -> Response:
     """Delete a course and its per-course assets (the stored course-object + its run-history row).
 
     400 if the id isn't the safe shape; 409 if the run is still building (cancel it first); 404 if
@@ -162,7 +178,7 @@ async def delete_course(course_id: str, service: CourseServiceDep) -> Response:
     bind_request_id(request_id)
     headers = {"X-Request-Id": request_id}
     try:
-        await service.delete_course(course_id)
+        await service.delete_course(course_id, owner_id=owner_id)
     except InvalidCourseIdError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid course id", headers=headers
@@ -182,17 +198,24 @@ async def delete_course(course_id: str, service: CourseServiceDep) -> Response:
 
 @router.post("/{course_id}/lessons/{lesson_id}/regenerate", response_model=Course)
 async def regenerate_lesson(
-    course_id: str, lesson_id: str, service: CourseServiceDep, response: Response
+    course_id: str,
+    lesson_id: str,
+    service: CourseServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
 ) -> Course:
     """Re-author a single lesson with the agent and return the updated course-object.
 
     The new ``run_id`` is surfaced in ``X-Run-Id`` for cross-layer correlation. 404 if the course
-    or lesson is unknown; 501 if the active pipeline can't regenerate a single lesson.
+    or lesson is unknown (or owned by another user); 501 if the active pipeline can't regenerate a
+    single lesson.
     """
     run_id = uuid4().hex
     response.headers["X-Run-Id"] = run_id
     try:
-        course = await service.regenerate_lesson(course_id, lesson_id, run_id=run_id)
+        course = await service.regenerate_lesson(
+            course_id, lesson_id, run_id=run_id, owner_id=owner_id
+        )
     except LessonRegenerationUnsupportedError as exc:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,

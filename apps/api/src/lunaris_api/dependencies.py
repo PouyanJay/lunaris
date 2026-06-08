@@ -365,3 +365,24 @@ def require_user_id(
 
 
 CurrentUserIdDep = Annotated[str, Depends(require_user_id)]
+
+
+def optional_user_id(
+    verifier: JwtVerifierDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> str | None:
+    """The owner id for per-user data scoping — ``None`` when auth is not configured.
+
+    The server-side mirror of the frontend ``AuthGate``: when auth is OFF (no verifier configured)
+    this returns ``None`` so the user-data routes stay open and unscoped — byte-for-byte today's
+    single-user behavior. When auth is ON it is mandatory: a missing/invalid token is a 401 (via
+    ``require_user_id``), and a valid one yields the caller's id, which the service stamps on writes
+    and filters reads by. So "optional" means *optional only while auth is unconfigured*, never a
+    per-request opt-out once a deployment turns auth on.
+    """
+    if verifier is None:
+        return None
+    return require_user_id(verifier, authorization)
+
+
+OptionalUserIdDep = Annotated[str | None, Depends(optional_user_id)]

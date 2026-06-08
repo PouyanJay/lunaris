@@ -47,19 +47,29 @@ class SupabaseRunStore:
             self._client = create_client(url, key)
         return self._client
 
-    async def start(self, *, run_id: str, course_id: str, topic: str) -> None:
+    async def start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
+    ) -> None:
         client = self._ensure_client()
         # Upsert so a retried run with the same course_id refreshes the row rather than 409-ing.
-        row = {
+        row: dict[str, object] = {
             "id": course_id,
             "run_id": run_id,
             "topic": topic,
             "status": RunStatus.RUNNING.value,
         }
+        if owner_id is not None:
+            row["user_id"] = owner_id  # stamp the owner (Phase 2) — see SupabaseCourseStore.save
         await asyncio.to_thread(lambda: client.table(_TABLE).upsert(row).execute())  # type: ignore[attr-defined]
 
     async def finish(
-        self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
+        self,
+        *,
+        course_id: str,
+        status: RunStatus,
+        kc_count: int,
+        module_count: int,
+        owner_id: str | None = None,
     ) -> None:
         client = self._ensure_client()
         patch = {
@@ -68,49 +78,52 @@ class SupabaseRunStore:
             "module_count": module_count,
             "updated_at": datetime.now(UTC).isoformat(),
         }
-        await asyncio.to_thread(
-            lambda: client.table(_TABLE).update(patch).eq("id", course_id).execute()  # type: ignore[attr-defined]
-        )
 
-    async def list_recent(self, *, limit: int = 50) -> list[CourseRun]:
+        def _run() -> object:
+            query = client.table(_TABLE).update(patch).eq("id", course_id)  # type: ignore[attr-defined]
+            if owner_id is not None:
+                query = query.eq("user_id", owner_id)  # only finish a row the caller owns
+            return query.execute()
+
+        await asyncio.to_thread(_run)
+
+    async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:
         client = self._ensure_client()
-        response = await asyncio.to_thread(
-            lambda: (
-                client.table(_TABLE)  # type: ignore[attr-defined]
-                .select("*")
-                .order("created_at", desc=True)
-                .limit(limit)
-                .execute()
-            )
-        )
+
+        def _run() -> object:
+            query = client.table(_TABLE).select("*")  # type: ignore[attr-defined]
+            if owner_id is not None:
+                query = query.eq("user_id", owner_id)  # the sidebar shows only the caller's runs
+            return query.order("created_at", desc=True).limit(limit).execute()
+
+        response = await asyncio.to_thread(_run)
         return [self._to_course_run(row) for row in (response.data or [])]
 
-    async def get(self, *, course_id: str) -> CourseRun | None:
+    async def get(self, *, course_id: str, owner_id: str | None = None) -> CourseRun | None:
         client = self._ensure_client()
-        response = await asyncio.to_thread(
-            lambda: (
-                client.table(_TABLE)  # type: ignore[attr-defined]
-                .select("*")
-                .eq("id", course_id)
-                .limit(1)
-                .execute()
-            )
-        )
+
+        def _run() -> object:
+            query = client.table(_TABLE).select("*").eq("id", course_id)  # type: ignore[attr-defined]
+            if owner_id is not None:
+                query = query.eq("user_id", owner_id)
+            return query.limit(1).execute()
+
+        response = await asyncio.to_thread(_run)
         rows = response.data or []
         return self._to_course_run(rows[0]) if rows else None
 
-    async def delete(self, *, course_id: str) -> bool:
+    async def delete(self, *, course_id: str, owner_id: str | None = None) -> bool:
         client = self._ensure_client()
+
         # Ask PostgREST for an exact count so the "did anything get deleted?" answer doesn't depend
         # on the client's implicit return-representation default (which could change to minimal).
-        response = await asyncio.to_thread(
-            lambda: (
-                client.table(_TABLE)  # type: ignore[attr-defined]
-                .delete(count="exact")
-                .eq("id", course_id)
-                .execute()
-            )
-        )
+        def _run() -> object:
+            query = client.table(_TABLE).delete(count="exact").eq("id", course_id)  # type: ignore[attr-defined]
+            if owner_id is not None:
+                query = query.eq("user_id", owner_id)  # only the owner can delete their run row
+            return query.execute()
+
+        response = await asyncio.to_thread(_run)
         return (response.count or 0) > 0
 
     @staticmethod

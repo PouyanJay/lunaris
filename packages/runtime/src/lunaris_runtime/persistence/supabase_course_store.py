@@ -49,28 +49,30 @@ class SupabaseCourseStore:
             self._client = create_client(url, key)
         return self._client
 
-    def save(self, course: Course) -> None:
+    def save(self, course: Course, *, owner_id: str | None = None) -> None:
         client = self._ensure_client()
         # Upsert so re-finalizing the same course_id REPLACES its row (parity with the file store's
         # overwrite). The payload is the by-alias dump in JSON mode (datetimes/enums → JSON-native),
         # i.e. the same shape model_dump_json(by_alias=True) writes to disk.
-        row = {
+        row: dict[str, object] = {
             "id": course.id,
             "payload": course.model_dump(by_alias=True, mode="json"),
             "status": course.status.value,
             "updated_at": datetime.now(UTC).isoformat(),
         }
+        if owner_id is not None:
+            # Stamp the owner (Phase 2). The build writes via the service-role client (bypasses RLS,
+            # as a background build can outlive the user's JWT), so isolation rides on writing the
+            # right user_id here — that is what makes RLS enforce for any later user-JWT client.
+            row["user_id"] = owner_id
         client.table(_TABLE).upsert(row).execute()  # type: ignore[attr-defined]
 
-    def load(self, course_id: str) -> Course:
+    def load(self, course_id: str, *, owner_id: str | None = None) -> Course:
         client = self._ensure_client()
-        response = (
-            client.table(_TABLE)  # type: ignore[attr-defined]
-            .select("payload")
-            .eq("id", course_id)
-            .limit(1)
-            .execute()
-        )
+        query = client.table(_TABLE).select("payload").eq("id", course_id)  # type: ignore[attr-defined]
+        if owner_id is not None:
+            query = query.eq("user_id", owner_id)  # a course owned by another user reads as absent
+        response = query.limit(1).execute()
         rows = response.data or []
         if not rows:
             # The store-agnostic not-found signal the API service catches (the file store raises the
@@ -78,11 +80,12 @@ class SupabaseCourseStore:
             raise FileNotFoundError(course_id)
         return Course.model_validate(rows[0]["payload"])
 
-    def delete(self, course_id: str) -> bool:
+    def delete(self, course_id: str, *, owner_id: str | None = None) -> bool:
         client = self._ensure_client()
         # Ask PostgREST for an exact count so "did anything get deleted?" doesn't depend on the
         # client's implicit return-representation default. Mirrors SupabaseRunStore.delete.
-        response = (
-            client.table(_TABLE).delete(count="exact").eq("id", course_id).execute()  # type: ignore[attr-defined]
-        )
+        query = client.table(_TABLE).delete(count="exact").eq("id", course_id)  # type: ignore[attr-defined]
+        if owner_id is not None:
+            query = query.eq("user_id", owner_id)  # only the owner can delete their course
+        response = query.execute()
         return (response.count or 0) > 0
