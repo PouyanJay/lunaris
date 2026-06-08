@@ -1,3 +1,4 @@
+import hashlib
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -48,9 +49,20 @@ from .auth import (
 from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
+from .credential_vault import CredentialVault
 from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
-from .secrets import KNOWN_SECRETS, AnthropicProbeValidator, ISecretValidator, SecretStore
+from .secrets import (
+    KNOWN_SECRETS,
+    AnthropicProbeValidator,
+    ICredentialStore,
+    InMemoryCredentialStore,
+    ISecretValidator,
+    SecretCipher,
+    SecretStore,
+    SupabaseCredentialStore,
+    build_secret_cipher,
+)
 from .service import CourseService, PipelineFactory
 
 logger = structlog.get_logger()
@@ -223,6 +235,57 @@ def get_secret_validator() -> ISecretValidator:
 
 SecretStoreDep = Annotated[SecretStore, Depends(get_secret_store)]
 SecretValidatorDep = Annotated[ISecretValidator, Depends(get_secret_validator)]
+
+# Process-wide BYOK credential stores (singletons, like the run/corpus stores): the in-memory store
+# must be shared so a key set in one request survives for the next within the process; the Supabase
+# store is shared so its lazy service-role client is built once. The in-memory store is the no-key
+# fallback (lost on restart). Tests inject their own via the get_credential_store override.
+_in_memory_credential_store = InMemoryCredentialStore()
+_supabase_credential_store = SupabaseCredentialStore()
+
+
+def get_credential_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ICredentialStore:
+    """The BYOK credential store: Supabase (durable, RLS server-only) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_credential_store
+    return _in_memory_credential_store
+
+
+# Cipher cache keyed on a SHA-256 digest of the master key — NOT the key itself, so the raw base64
+# secret is never retained as a cache key (an lru_cache would keep it in its wrapper dict). The
+# AES-GCM context is built once per key and reused across requests.
+_cipher_by_key_digest: dict[bytes, SecretCipher] = {}
+
+
+def _build_cipher(master_key_b64: str | None) -> SecretCipher | None:
+    """The at-rest cipher for the configured master key, or ``None`` when BYOK is off. A
+    present-but-malformed key raises ``MasterKeyUnavailableError`` (a loud deployment error)."""
+    if not master_key_b64:
+        return None
+    digest = hashlib.sha256(master_key_b64.encode()).digest()
+    if digest not in _cipher_by_key_digest:
+        cipher = build_secret_cipher(master_key_b64)
+        assert cipher is not None  # non-empty key → build_secret_cipher returns a cipher or raises
+        _cipher_by_key_digest[digest] = cipher
+    return _cipher_by_key_digest[digest]
+
+
+def get_credential_vault(
+    settings: Annotated[Settings, Depends(get_settings)],
+    store: Annotated[ICredentialStore, Depends(get_credential_store)],
+    validator: SecretValidatorDep,
+) -> CredentialVault | None:
+    """The BYOK vault, or ``None`` when BYOK is unconfigured (no master key) → the route 503s. The
+    cipher is the gate: present ⇒ BYOK is on; the store + validator compose with it."""
+    cipher = _build_cipher(settings.key_enc_master)
+    if cipher is None:
+        return None
+    return CredentialVault(store=store, cipher=cipher, validator=validator)
+
+
+CredentialVaultDep = Annotated[CredentialVault | None, Depends(get_credential_vault)]
 
 # One ConfigStore per config-file path (owns process env + the on-disk file), shared by requests.
 # Tests override get_config_store.
