@@ -30,11 +30,19 @@ class Settings:
     supabase_service_role_key: str | None = None
     embeddings_api_key: str | None = None
     supabase_jwt_secret: str | None = None
+    # Base64 AES master key for BYOK at-rest encryption (Phase 2), injected from the secret manager
+    # as an env var — never the .env, never the DB. Absent ⇒ BYOK is off (no per-user key storage).
+    key_enc_master: str | None = None
 
     @property
     def has_supabase(self) -> bool:
         """Whether Supabase service-role creds are present (selects the durable run history)."""
         return bool(self.supabase_url and self.supabase_service_role_key)
+
+    @property
+    def has_byok(self) -> bool:
+        """Whether BYOK is configured — a master key AND Supabase to persist encrypted keys to."""
+        return bool(self.key_enc_master and self.has_supabase)
 
     @property
     def has_embeddings(self) -> bool:
@@ -55,4 +63,5 @@ def get_settings() -> Settings:
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
         embeddings_api_key=os.getenv("EMBEDDINGS_API_KEY") or None,
         supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET") or None,
+        key_enc_master=os.getenv("LUNARIS_KEY_ENC_MASTER") or None,
     )

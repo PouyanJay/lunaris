@@ -1284,6 +1284,7 @@ name = "lunaris-api"
 version = "0.0.0"
 source = { editable = "apps/api" }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "lunaris-agent" },
     { name = "lunaris-grounding" },
@@ -1296,6 +1297,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "lunaris-agent", editable = "packages/agent" },
     { name = "lunaris-grounding", editable = "packages/grounding" },
