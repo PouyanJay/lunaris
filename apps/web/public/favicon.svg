@@ -1,0 +1,13 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Lunaris">
+  <!-- App-icon treatment: amber rounded tile with the dark Lunaris crescent+dot, scaled to fit
+       with padding (centred about 32,32). Mirrors the in-app BrandMark geometry, inverted. -->
+  <rect width="64" height="64" rx="14" fill="#e8a33d" />
+  <g transform="translate(32 32) scale(0.66) translate(-32 -32)" fill="#1a1206">
+    <mask id="fav-moon">
+      <rect width="64" height="64" fill="#fff" />
+      <circle cx="32" cy="22" r="21" fill="#000" />
+    </mask>
+    <circle cx="32" cy="34" r="22" mask="url(#fav-moon)" />
+    <circle cx="32" cy="26" r="8" />
+  </g>
+</svg>
