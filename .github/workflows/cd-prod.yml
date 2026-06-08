@@ -1,0 +1,109 @@
+name: CD (prod)
+
+# Gated promotion to PROD. Build-once-promote (§5): this workflow NEVER rebuilds — it copies the
+# exact image already built & validated in dev (by commit SHA) from the dev ACR into the prod ACR via
+# `az acr import`, then rolls a prod Container App revision from that same artifact.
+#
+# Gated by the `prod` GitHub Environment (required reviewer), so a human approves every prod release.
+# Auth is OIDC federated to `environment:prod`.
+#
+# PREREQUISITES (land in Phase-1 NEXT STEP 4, once Supabase Pro billing is on):
+#   • rg-lunaris-prod platform deployed (main.bicep env=prod) → fills the prod env vars below.
+#   • prod SP (lunaris-github-cd-prod) granted: Contributor on rg-lunaris-prod, AcrPush on prod ACR,
+#     and AcrPull on the DEV ACR (so `az acr import` can read the source image).
+#   • prod env secrets: AZURE_CLIENT_ID (done), SUPABASE_DB_PASSWORD, SUPABASE_ACCESS_TOKEN.
+#   • prod env vars: RESOURCE_GROUP, ACR_NAME, ACR_LOGIN_SERVER, ACA_ENV_ID, MI_RESOURCE_ID,
+#     KEYVAULT_URI, SUPABASE_URL, SUPABASE_PROJECT_REF, PIPELINE_MODE, CORS_ORIGINS, DEV_ACR_LOGIN_SERVER.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: "Commit SHA of the dev-validated image to promote (defaults to current main)."
+        required: false
+        default: ""
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: cd-prod
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote to prod
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve image SHA
+        id: sha
+        run: |
+          SHA="${{ github.event.inputs.image_sha }}"
+          [ -z "$SHA" ] && SHA="${{ github.sha }}"
+          echo "value=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Promote image (dev ACR -> prod ACR, same tag)
+        run: |
+          az acr import \
+            --name "${{ vars.ACR_NAME }}" \
+            --source "${{ vars.DEV_ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
+            --image "lunaris-api:${{ steps.sha.outputs.value }}" \
+            --force
+
+      - name: Setup Supabase CLI
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Push DB migrations (prod)
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: |
+          supabase link --project-ref "${{ vars.SUPABASE_PROJECT_REF }}" \
+            --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      - name: Deploy Container App (app.bicep, prod)
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-prod-app-${{ github.run_number }}" \
+            --template-file infra/app.bicep \
+            --parameters \
+              env=prod \
+              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
+              managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
+              managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              keyVaultUri="${{ vars.KEYVAULT_URI }}" \
+              supabaseUrl="${{ vars.SUPABASE_URL }}" \
+              corsOrigins="${{ vars.CORS_ORIGINS }}" \
+              pipeline="${{ vars.PIPELINE_MODE }}"
+
+      - name: Deployment summary
+        run: |
+          FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          {
+            echo "### Prod promote ✅"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Promoted SHA | \`${{ steps.sha.outputs.value }}\` |"
+            echo "| URL | https://$FQDN |"
+          } >> "$GITHUB_STEP_SUMMARY"
