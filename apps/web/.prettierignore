@@ -2,3 +2,5 @@ dist
 coverage
 # Generated course artifact (emitted from the Python pipeline)
 public/sample-course.json
+# SVG assets — prettier has no SVG parser (errors on `prettier --check .`)
+*.svg
