@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 /** Run-history API client. Reads the recent course-build runs that feed the sidebar, and a single
  *  run's persisted build-event log for replay. */
 
@@ -15,7 +16,7 @@ export class RunsError extends Error {
 export async function fetchRuns(apiBaseUrl: string, signal?: AbortSignal): Promise<CourseRun[]> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/runs`, signal ? { signal } : undefined);
+    response = await authedFetch(`${apiBaseUrl}/api/runs`, signal ? { signal } : undefined);
   } catch (cause) {
     throw new RunsError("Could not reach the run history.", { cause });
   }
@@ -35,7 +36,7 @@ export async function fetchRunEvents(
 ): Promise<RunEvent[]> {
   let response: Response;
   try {
-    response = await fetch(
+    response = await authedFetch(
       `${apiBaseUrl}/api/runs/${encodeURIComponent(runId)}/events`,
       signal ? { signal } : undefined,
     );

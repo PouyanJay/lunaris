@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
 import { CourseLoadError, parseCourse } from "./loadCourse";
@@ -34,7 +35,7 @@ export async function streamCourse(
   const url = `${apiBaseUrl}/api/courses/stream?${params}`;
   let response: Response;
   try {
-    response = await fetch(url, signal ? { signal } : {});
+    response = await authedFetch(url, signal ? { signal } : {});
   } catch (cause) {
     throw new CourseLoadError("Could not reach the course service.", { cause });
   }

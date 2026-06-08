@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 import type { Course } from "../types/course";
 
 /** Where the explorer reads the course-object from. A static artifact today; swap for an
@@ -50,7 +51,7 @@ export async function loadCourse(
 ): Promise<Course> {
   let response: Response;
   try {
-    response = await fetch(url, signal ? { signal } : undefined);
+    response = await authedFetch(url, signal ? { signal } : undefined);
   } catch (cause) {
     throw new CourseLoadError("Could not reach the course service.", { cause });
   }
@@ -68,7 +69,7 @@ export async function generateCourse(
 ): Promise<Course> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/courses`, {
+    response = await authedFetch(`${apiBaseUrl}/api/courses`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ topic }),
@@ -92,7 +93,7 @@ export async function fetchCourseById(
 ): Promise<Course> {
   let response: Response;
   try {
-    response = await fetch(
+    response = await authedFetch(
       `${apiBaseUrl}/api/courses/${encodeURIComponent(id)}`,
       signal ? { signal } : undefined,
     );
@@ -121,7 +122,7 @@ export async function regenerateLesson(
   const url = `${apiBaseUrl}/api/courses/${lessonPath}/regenerate`;
   let response: Response;
   try {
-    response = await fetch(url, { method: "POST", ...(signal ? { signal } : {}) });
+    response = await authedFetch(url, { method: "POST", ...(signal ? { signal } : {}) });
   } catch (cause) {
     throw new CourseLoadError("Could not reach the course service.", { cause });
   }
@@ -141,7 +142,7 @@ export async function deleteCourse(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/courses/${encodeURIComponent(id)}`, {
+    response = await authedFetch(`${apiBaseUrl}/api/courses/${encodeURIComponent(id)}`, {
       method: "DELETE",
       ...(signal ? { signal } : {}),
     });
@@ -166,7 +167,7 @@ export async function cancelRun(
 ): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/runs/${encodeURIComponent(runId)}/cancel`, {
+    response = await authedFetch(`${apiBaseUrl}/api/runs/${encodeURIComponent(runId)}/cancel`, {
       method: "POST",
       ...(signal ? { signal } : {}),
     });

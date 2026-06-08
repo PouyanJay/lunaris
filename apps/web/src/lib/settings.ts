@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 /** Settings API client. Secrets are write-only: we send values but only ever read back
  *  status (set/unset + last4) — the value never comes back over the wire. */
 
@@ -28,7 +29,7 @@ export class SettingsError extends Error {
 async function request(input: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(input, init);
+    response = await authedFetch(input, init);
   } catch (cause) {
     throw new SettingsError("Could not reach the settings service.", { cause });
   }

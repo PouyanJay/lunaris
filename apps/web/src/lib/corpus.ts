@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 import type { CorpusSource, IngestResult } from "../types/course";
 
 /** A failure reaching or using the corpus API (network or non-OK response). */
@@ -14,7 +15,7 @@ async function postSource(
 ): Promise<IngestResult> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/corpus/sources`, {
+    response = await authedFetch(`${apiBaseUrl}/api/corpus/sources`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -37,7 +38,10 @@ export async function fetchCorpusSources(
   const query = new URLSearchParams({ courseId });
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/corpus?${query}`, signal ? { signal } : undefined);
+    response = await authedFetch(
+      `${apiBaseUrl}/api/corpus?${query}`,
+      signal ? { signal } : undefined,
+    );
   } catch (cause) {
     throw new CorpusError("Could not reach the corpus service.", { cause });
   }
@@ -77,7 +81,10 @@ export async function uploadFileSource(
   form.append("file", file);
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/corpus/sources/file`, { method: "POST", body: form });
+    response = await authedFetch(`${apiBaseUrl}/api/corpus/sources/file`, {
+      method: "POST",
+      body: form,
+    });
   } catch (cause) {
     throw new CorpusError("Could not reach the corpus service.", { cause });
   }
@@ -92,9 +99,12 @@ export async function uploadFileSource(
 export async function regroundCourse(apiBaseUrl: string, courseId: string): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/rebuild`, {
-      method: "POST",
-    });
+    response = await authedFetch(
+      `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/rebuild`,
+      {
+        method: "POST",
+      },
+    );
   } catch (cause) {
     throw new CorpusError("Could not reach the course service.", { cause });
   }
@@ -107,7 +117,7 @@ export async function regroundCourse(apiBaseUrl: string, courseId: string): Prom
 export async function deleteCorpusSource(apiBaseUrl: string, sourceId: string): Promise<void> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/corpus/${encodeURIComponent(sourceId)}`, {
+    response = await authedFetch(`${apiBaseUrl}/api/corpus/${encodeURIComponent(sourceId)}`, {
       method: "DELETE",
     });
   } catch (cause) {

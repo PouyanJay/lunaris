@@ -3,6 +3,7 @@ import { BrandMark } from "./BrandMark";
 import { RunList } from "./RunList";
 import { SidebarToggle } from "./SidebarToggle";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "../../hooks/useAuth";
 import type { RunsState } from "../../hooks/useRuns";
 import type { ThemeProps } from "../../hooks/useTheme";
 import type { CourseRun } from "../../types/course";
@@ -45,6 +46,7 @@ export function Sidebar({
   theme,
   onToggleTheme,
 }: SidebarProps) {
+  const { user, signOut } = useAuth();
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
       <div className={styles.brand}>
@@ -86,6 +88,17 @@ export function Sidebar({
         </nav>
       )}
 
+      {user && !collapsed && (
+        <div className={styles.account}>
+          <span className={styles.accountEmail} title={user.email ?? undefined}>
+            {user.email}
+          </span>
+          <button type="button" className={styles.signOut} onClick={() => void signOut()}>
+            Sign out
+          </button>
+        </div>
+      )}
+
       <div className={styles.footer}>
         {collapsed ? (
           <button
@@ -108,9 +121,34 @@ export function Sidebar({
             Settings
           </button>
         )}
+        {user && collapsed && (
+          <button
+            type="button"
+            className={styles.railAction}
+            onClick={() => void signOut()}
+            aria-label={`Sign out ${user.email ?? ""}`.trim()}
+            title="Sign out"
+          >
+            <SignOutIcon />
+          </button>
+        )}
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
     </div>
+  );
+}
+
+function SignOutIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6M10.5 11l3-3-3-3M13 8H6"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

@@ -1,3 +1,4 @@
+import { authedFetch } from "./apiClient";
 import type { BriefResponse } from "../types/clarifier";
 import { CourseLoadError, isRecord } from "./loadCourse";
 
@@ -13,7 +14,7 @@ export async function fetchBrief(
 ): Promise<BriefResponse> {
   let response: Response;
   try {
-    response = await fetch(`${apiBaseUrl}/api/briefs`, {
+    response = await authedFetch(`${apiBaseUrl}/api/briefs`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ topic }),
