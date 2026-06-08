@@ -14,13 +14,15 @@ Hermetic like ``test_user_isolation_api`` (HS256 tokens, no live Supabase); the 
 is a fake so no cipher/store is needed.
 """
 
-import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import httpx
-import jwt
 import pytest
+from _auth import JWT_SECRET as _JWT_SECRET
+from _auth import USER_A as _USER_A
+from _auth import USER_B as _USER_B
+from _auth import auth_headers as _auth
 from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
@@ -30,16 +32,6 @@ from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import InMemoryRunEventStore, InMemoryRunStore
 from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth
-
-_JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long-xxxx"
-_USER_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-_USER_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-
-
-def _auth(sub: str) -> dict[str, str]:
-    now = int(time.time())
-    payload = {"sub": sub, "aud": "authenticated", "iat": now, "exp": now + 3600}
-    return {"Authorization": f"Bearer {jwt.encode(payload, _JWT_SECRET, algorithm='HS256')}"}
 
 
 class _RecordingPipeline:

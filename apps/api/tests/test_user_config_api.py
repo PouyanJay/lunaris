@@ -5,11 +5,13 @@ the process env); LangSmith is operator-only and absent. With auth off it falls 
 store (single-user dev). A build runs on the tenant's chosen model via the run-config scope.
 """
 
-import time
 from pathlib import Path
 
 import httpx
-import jwt
+from _auth import JWT_SECRET as _JWT_SECRET
+from _auth import USER_A as _USER_A
+from _auth import USER_B as _USER_B
+from _auth import auth_headers as _auth
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import _runtime_config_resolver, get_user_config_store
@@ -17,16 +19,6 @@ from lunaris_api.service import CourseService
 from lunaris_api.user_config import InMemoryUserConfigStore
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.run_config import resolve_config
-
-_JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long-xxxx"
-_USER_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-_USER_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-
-
-def _auth(sub: str) -> dict[str, str]:
-    now = int(time.time())
-    payload = {"sub": sub, "aud": "authenticated", "iat": now, "exp": now + 3600}
-    return {"Authorization": f"Bearer {jwt.encode(payload, _JWT_SECRET, algorithm='HS256')}"}
 
 
 def _client(tmp_path: Path, *, jwt_secret: str | None) -> httpx.AsyncClient:
