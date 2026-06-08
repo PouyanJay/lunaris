@@ -38,8 +38,6 @@ jobs:
     name: Promote to prod
     runs-on: ubuntu-latest
     environment: prod
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,17 +64,20 @@ jobs:
             --force
 
       - name: Setup Supabase CLI
-        if: env.SUPABASE_ACCESS_TOKEN != ''
+        if: vars.SUPABASE_DB_POOLER_HOST != ''
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
+      # Push migrations over the IPv4 session pooler with `--db-url` (DB password only — no token).
       - name: Push DB migrations (prod)
-        if: env.SUPABASE_ACCESS_TOKEN != ''
+        if: vars.SUPABASE_DB_POOLER_HOST != ''
+        env:
+          PGPW: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
-          supabase link --project-ref "${{ vars.SUPABASE_PROJECT_REF }}" \
-            --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
-          supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          ENCPW=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PGPW'],safe=''))")
+          URL="postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${ENCPW}@${{ vars.SUPABASE_DB_POOLER_HOST }}:5432/postgres"
+          supabase db push --db-url "$URL"
 
       - name: Deploy Container App (app.bicep, prod)
         run: |
