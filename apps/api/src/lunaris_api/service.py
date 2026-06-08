@@ -286,21 +286,17 @@ class CourseService:
         The pipeline runs in a background task feeding one shared queue (coarse ``progress`` stages
         and fine-grained ``agent`` transcript beats, interleaved in emission order); we forward each
         item as it lands and, once the run completes, drain any tail and yield the finished
-        course-object. The run task is always cancelled on early exit (a disconnected client) so a
-        dropped SSE stream never leaks a running pipeline.
+        course-object.
 
-        A pipeline failure is logged here with ``run_id`` (so a truncated stream is still
-        triangulatable across layers) and re-raised; the client-visible error frame is a
-        later refinement. On client disconnect the consumer is cancelled mid-build — the run is
-        recorded FAILED on the way out so it is never left stuck RUNNING in history.
+        The build is a **durable background task** that records its own terminal status when
+        ``pipeline.run()`` finishes (see ``_run_recording_status``), so a course that completes
+        after the client has navigated away is still recorded COMPLETED — not left stuck RUNNING. A
+        client disconnect therefore does NOT cancel the build; only an explicit Terminate
+        (``cancel_run``, from a stable request that records CANCELLED) does. This generator is a
+        pure viewer: it forwards events and the final course frame to a still-connected client and
+        re-raises a pipeline failure (logged with ``run_id``) for the client error frame.
         """
         queue: asyncio.Queue[StreamItem] = asyncio.Queue()
-        run_task: asyncio.Task[Course] | None = None
-        # Tracks whether a terminal status (COMPLETED/FAILED) was recorded. A client disconnect
-        # throws GeneratorExit/CancelledError (both BaseException, NOT Exception) at the suspended
-        # ``yield``, bypassing the ``except Exception`` below; the ``finally`` uses this flag to
-        # record FAILED for an interrupted run instead of leaving it stuck RUNNING.
-        recorded = False
         # Persists each forwarded beat to the replayable build log: buffered, flushed in best-effort
         # batches at phase boundaries (so a crash mid-build still replays up to the last boundary),
         # capped per run, and drained in the ``finally`` below. Never blocks a yield.
@@ -313,13 +309,14 @@ class CourseService:
         credentials = await self._resolve_run_credentials(owner_id)
         config = await self._resolve_run_config(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
-        try:
-            # The credential + config scopes wrap only the factory + create_task (no yields inside),
-            # so the run task inherits the tenant's keys + model choices as a context copy while the
-            # generator's own context — the one live across each yield — never retains them.
-            with self._credential_scope(credentials), self._config_scope(config):
-                pipeline = self._factory(self._store_for(owner_id))
-                run_task = asyncio.create_task(
+        # The credential + config scopes wrap only the factory + create_task (no yields inside), so
+        # the run task inherits the tenant's keys + model choices as a context copy while the
+        # generator's own context — the one live across each yield — never retains them. The
+        # terminal status is recorded by the task itself (_run_recording_status), disconnect-proof.
+        with self._credential_scope(credentials), self._config_scope(config):
+            pipeline = self._factory(self._store_for(owner_id))
+            run_task = asyncio.create_task(
+                self._run_recording_status(
                     pipeline.run(
                         topic,
                         course_id=course_id,
@@ -328,11 +325,17 @@ class CourseService:
                         agent=QueueAgentSink(queue),
                         clarification=clarification,
                         discovery_depth=discovery_depth,
-                    )
+                    ),
+                    course_id=course_id,
+                    run_id=run_id,
+                    owner_id=owner_id,
                 )
-                self._registry.register(
-                    run_id, run_task, course_id, owner_id
-                )  # cancellable by a separate request (scoped to the owner)
+            )
+            self._registry.register(
+                run_id, run_task, course_id, owner_id
+            )  # cancellable by a separate request (scoped to the owner)
+        next_event_task: asyncio.Task[StreamItem] | None = None
+        try:
             while True:
                 next_event_task = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
@@ -350,48 +353,58 @@ class CourseService:
                     await recorder.record(item)
                     yield item
                 break
+            # The run task already recorded its own terminal status; the generator only surfaces the
+            # result to a still-connected client.
             if run_task.cancelled():
-                # Explicitly cancelled via the registry — record CANCELLED and end the stream
-                # cleanly (no terminal course frame), distinct from the disconnect→FAILED path. The
-                # cancel handler also records CANCELLED (disconnect-proof); a repeat write of the
-                # same terminal status is idempotent — kept for the consumer-survives-cancel case.
-                await self._record_cancelled(course_id, owner_id=owner_id)
-                recorded = True
-                return
+                return  # explicit Terminate (cancel_run recorded CANCELLED) — no course frame
             course = run_task.result()  # .result() propagates a pipeline failure here
-            await self._record_finish(course, owner_id=owner_id)
-            recorded = True
             yield ("course", course)
         except Exception:
             logger.error("course_stream_failed", course_id=course_id, run_id=run_id, exc_info=True)
-            await self._record_failure(course_id, owner_id=owner_id)
-            recorded = True
             raise
         finally:
-            # Drain the buffered build-log tail on every terminal path (success, failure, cancel,
-            # or disconnect) so a run's last batch is persisted; best-effort, safe to await here
-            # (no ``yield`` in ``finally``).
+            # Flush the buffered build-log tail (best-effort, safe to await — no ``yield`` here).
+            # The build task is intentionally NOT cancelled on a client disconnect: it runs to
+            # completion as a durable background job and records its own terminal status, so a
+            # course finished after the client left is COMPLETED rather than stuck RUNNING. Only an
+            # explicit Terminate (cancel_run) cancels it.
             await recorder.flush()
-            # Capture intent before discard clears it, so a disconnect that races ahead of the
-            # post-loop cancelled-branch still lands CANCELLED for an explicitly cancelled run.
-            cancelled = self._registry.was_cancelled(run_id)
+            # Cancel the pending queue.get() so the abandoned read doesn't keep the queue (and the
+            # events the background build is still producing) alive after the generator is gone.
+            if next_event_task is not None and not next_event_task.done():
+                next_event_task.cancel()
+
+    async def _run_recording_status(
+        self, coro: Awaitable[Course], *, course_id: str, run_id: str, owner_id: str | None
+    ) -> Course:
+        """Run a build to completion and record its terminal status — disconnect-proof.
+
+        The build runs as a background task that outlives any SSE consumer, so the terminal status
+        is written HERE when ``pipeline.run()`` finishes (COMPLETED on success, FAILED on error),
+        not by the stream generator (which may be abandoned when the client navigates away). An
+        explicit Terminate cancels the task; ``cancel_run`` already records CANCELLED from its
+        stable request, so a CancelledError is re-raised without overwriting it. The registry entry
+        is discarded here (not in the generator) so a background build stays cancellable until it
+        actually ends. History writes are best-effort (a failure never breaks the build)."""
+        try:
+            course = await coro
+        except asyncio.CancelledError:
+            # Explicit Terminate cancels via the registry, which records CANCELLED from its stable
+            # request — don't overwrite it. A cancel from anywhere else (loop shutdown, a future
+            # caller) isn't covered there, so record FAILED rather than leave the run stuck RUNNING.
+            if not self._registry.was_cancelled(run_id):
+                await self._record_failure(course_id, owner_id=owner_id)
+            raise
+        except Exception:
+            await self._record_failure(course_id, owner_id=owner_id)
+            raise
+        else:
+            await self._record_finish(course, owner_id=owner_id)
+            return course
+        finally:
+            # Discard here (not in the generator) so a background build stays cancellable until it
+            # actually ends; the was_cancelled read above runs first, before this clears it.
             self._registry.discard(run_id)
-            if run_task is not None and not run_task.done():
-                run_task.cancel()
-            if not recorded:
-                # The consumer was cancelled before the run reached a terminal event, so neither
-                # branch above ran — the run would otherwise stay stuck RUNNING in history. Record a
-                # terminal status on the way out: CANCELLED for an explicit cancel (the Terminate
-                # control), else FAILED for a plain client disconnect. Awaiting here is safe during
-                # async-gen finalization (we don't ``yield`` in ``finally``); both writes are
-                # best-effort (never raise).
-                if cancelled:
-                    event = "run_recorded_cancelled_on_disconnect"
-                    await self._record_cancelled(course_id, owner_id=owner_id)
-                else:
-                    event = "run_recorded_failed_on_disconnect"
-                    await self._record_failure(course_id, owner_id=owner_id)
-                logger.info(event, course_id=course_id, run_id=run_id)
 
     def get(self, course_id: str, *, owner_id: str | None = None) -> Course | None:
         # An unsafe id can't name a stored course (ids are uuid4().hex); treat it as not-found
