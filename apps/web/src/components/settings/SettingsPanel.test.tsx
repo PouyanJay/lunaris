@@ -5,6 +5,7 @@ import { SettingsPanel } from "./SettingsPanel";
 
 const SETTINGS = {
   pipeline: "stub",
+  byokEnabled: false,
   secrets: [
     { name: "anthropic", isSet: false, last4: null },
     { name: "voyage", isSet: true, last4: "7777" },
@@ -100,5 +101,32 @@ describe("SettingsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /save anthropic api key/i }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/rejected/i));
+  });
+
+  it("shows the per-user BYOK keys panel when BYOK is enabled", async () => {
+    // Arrange — settings report BYOK on; the credentials endpoint serves the per-user statuses.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const href = url.toString();
+        if (href.includes("/api/credentials")) {
+          return {
+            ok: true,
+            json: async () => [{ provider: "anthropic", isSet: false, last4: null }],
+          };
+        }
+        if (href.includes("/api/source-authorities")) return { ok: true, json: async () => [] };
+        if (href.includes("/api/config")) return { ok: true, json: async () => ({ settings: [] }) };
+        return { ok: true, json: async () => ({ ...SETTINGS, byokEnabled: true }) };
+      }),
+    );
+    render(<SettingsPanel apiBaseUrl="http://test" />);
+    await expandKeys();
+
+    // The BYOK panel renders the tenant-key providers (incl. a Test action), and NOT the
+    // platform-only Supabase fields the legacy file-store panel shows.
+    expect(await screen.findByLabelText("Anthropic API key")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test Anthropic API key" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Supabase URL")).not.toBeInTheDocument();
   });
 });

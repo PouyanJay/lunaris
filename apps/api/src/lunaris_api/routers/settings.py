@@ -38,6 +38,7 @@ def get_settings_view(
         pipeline=settings.pipeline,
         supports_lesson_regeneration=pipeline_supports_lesson_regeneration(settings.pipeline),
         supports_explain=explain_is_available(),
+        byok_enabled=settings.has_byok,
     )
 
 

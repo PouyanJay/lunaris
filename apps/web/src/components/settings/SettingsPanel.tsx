@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { ConfigPanel } from "./ConfigPanel";
+import { CredentialsPanel } from "./CredentialsPanel";
 import { SecretField } from "./SecretField";
 import { TrustedSourcesPanel } from "./TrustedSourcesPanel";
 import styles from "./Settings.module.css";
@@ -109,24 +110,32 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
               <p className={styles.pipeline}>
                 Pipeline mode: <span className="mono">{state.view.pipeline}</span>
               </p>
-              <div className={styles.fields}>
-                {FIELDS.map((field) => (
-                  <SecretField
-                    key={field.name}
-                    apiBaseUrl={apiBaseUrl}
-                    name={field.name}
-                    label={field.label}
-                    hint={field.hint}
-                    placeholder={field.placeholder}
-                    status={state.view.secrets.find((s) => s.name === field.name)}
-                    onSaved={onSaved}
-                  />
-                ))}
-              </div>
-              <p className={styles.note}>
-                Keys are stored on the backend and never sent back to the browser — only whether
-                they&rsquo;re set and the last four characters are shown.
-              </p>
+              {/* When BYOK is on, each tenant manages their own keys via the authed per-user
+                  credentials API; otherwise the single-tenant file-backed secret store is used. */}
+              {state.view.byokEnabled ? (
+                <CredentialsPanel apiBaseUrl={apiBaseUrl} />
+              ) : (
+                <>
+                  <div className={styles.fields}>
+                    {FIELDS.map((field) => (
+                      <SecretField
+                        key={field.name}
+                        apiBaseUrl={apiBaseUrl}
+                        name={field.name}
+                        label={field.label}
+                        hint={field.hint}
+                        placeholder={field.placeholder}
+                        status={state.view.secrets.find((s) => s.name === field.name)}
+                        onSaved={onSaved}
+                      />
+                    ))}
+                  </div>
+                  <p className={styles.note}>
+                    Keys are stored on the backend and never sent back to the browser — only whether
+                    they&rsquo;re set and the last four characters are shown.
+                  </p>
+                </>
+              )}
             </>
           )}
         </CollapsibleSection>

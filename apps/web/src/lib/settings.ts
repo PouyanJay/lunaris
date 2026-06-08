@@ -17,6 +17,9 @@ export interface SettingsView {
   /** Whether plain-language "Explain" is available (an Anthropic key is reachable). The transcript
    *  hides the Explain affordance when false rather than offering a button that 503s. */
   supportsExplain: boolean;
+  /** Whether per-user BYOK is configured. When true the Keys panel manages the tenant's own keys
+   *  via the authed /api/credentials surface; when false it uses the file-backed secret store. */
+  byokEnabled: boolean;
 }
 
 export class SettingsError extends Error {

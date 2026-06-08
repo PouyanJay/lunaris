@@ -22,6 +22,9 @@ class SettingsView(CamelModel):
     # Whether plain-language "Explain" is available (an Anthropic key is reachable); the web hides
     # the Explain affordance when False rather than offering a button that 503s.
     supports_explain: bool
+    # Whether per-user BYOK is configured (a master key + Supabase). When True the web manages keys
+    # through the authed per-user /api/credentials surface instead of this file-backed secret store.
+    byok_enabled: bool
 
 
 class SecretValue(BaseModel):
