@@ -123,9 +123,12 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(false);
+  // The course outline is a static left column on desktop; on phones it opens as a left drawer.
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const rail = useRailLayout();
   const paneRef = useRef<HTMLDivElement>(null);
   const railToggleRef = useRef<HTMLButtonElement>(null);
+  const outlineToggleRef = useRef<HTMLButtonElement>(null);
   const handledFocusSeq = useRef(0);
   const reduceMotion = usePrefersReducedMotion();
 
@@ -204,6 +207,28 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
     railToggleRef.current?.focus();
   }, []);
   useEscapeKey(railOpen, closeRail);
+
+  // The phone outline drawer: Esc closes it and returns focus to its toggle; selecting a lesson
+  // closes it so the chosen lesson isn't hidden behind the drawer.
+  const closeOutline = useCallback(() => {
+    setOutlineOpen(false);
+    outlineToggleRef.current?.focus();
+  }, []);
+  useEscapeKey(outlineOpen, closeOutline);
+  const selectLesson = useCallback((index: number) => {
+    setActiveIndex(index);
+    setOutlineOpen(false);
+  }, []);
+  // Lock body scroll while the outline drawer is open (phones), so the lesson behind the scrim
+  // doesn't scroll under it — mirrors the shell's nav-drawer behavior.
+  useEffect(() => {
+    if (!outlineOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [outlineOpen]);
   // The reading column gets thin, auto-hiding scrollbars (fade in while scrolling, out when idle).
   useAutoHideScroll(paneRef);
 
@@ -239,7 +264,12 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
       style={{ "--rail-width": rail.collapsed ? "0px" : `${rail.width}px` } as CSSProperties}
       data-rail-collapsed={rail.collapsed ? "true" : undefined}
     >
-      <ReaderOutline groups={groups} activeIndex={safeIndex} onSelect={setActiveIndex} />
+      <ReaderOutline
+        groups={groups}
+        activeIndex={safeIndex}
+        onSelect={selectLesson}
+        className={`${styles.outlineDrawer} ${outlineOpen ? styles.outlineDrawerOpen : ""}`.trim()}
+      />
       <div
         className={`${styles.pane} scroller`}
         ref={paneRef}
@@ -248,6 +278,24 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
         tabIndex={0}
       >
         <article className={styles.page}>
+          {/* Phone-only reader bar: opens the lesson outline (a drawer on small screens) and shows
+              the reading position. Hidden on desktop where the outline is a static column. */}
+          <div className={styles.readerBar}>
+            <button
+              ref={outlineToggleRef}
+              type="button"
+              className={styles.outlineToggle}
+              aria-expanded={outlineOpen}
+              aria-controls="reader-outline"
+              onClick={() => setOutlineOpen(true)}
+            >
+              <ListIcon />
+              Lessons
+            </button>
+            <span className={`${styles.barProgress} mono`}>
+              {safeIndex + 1} / {total}
+            </span>
+          </div>
           {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so. */}
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
           {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
@@ -426,6 +474,29 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
           onClick={() => setRailOpen(false)}
         />
       )}
+      {/* Phone outline drawer scrim — only shown at the phone breakpoint (CSS), dims behind the
+          off-canvas lesson list. */}
+      {outlineOpen && (
+        <button
+          type="button"
+          className={styles.outlineScrim}
+          aria-label="Close lessons"
+          onClick={closeOutline}
+        />
+      )}
     </div>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M8 6.5h12M8 12h12M8 17.5h12M4 6.5h.01M4 12h.01M4 17.5h.01"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

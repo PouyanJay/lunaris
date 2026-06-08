@@ -195,3 +195,19 @@
     transition: none;
   }
 }
+
+/* Phone: a ≥44px drawer toggle, a slightly wider drawer, and notch clearance on the right edge. */
+@media (max-width: 768px) {
+  .drawerBar {
+    padding: var(--space-3) var(--space-4) 0;
+  }
+  .drawerToggle {
+    min-height: 44px;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+  }
+  .railWrap {
+    width: min(400px, 92vw);
+    padding-right: env(safe-area-inset-right);
+  }
+}

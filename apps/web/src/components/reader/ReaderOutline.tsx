@@ -21,15 +21,22 @@ interface ReaderOutlineProps {
   groups: OutlineGroup[];
   activeIndex: number;
   onSelect: (index: number) => void;
+  /** Extra classes for the outline root — the reader uses this to turn it into a drawer on phones. */
+  className?: string | undefined;
 }
 
 /** The course outline (TOC): lessons grouped under their module titles. The active lesson is marked
  *  `aria-current`; each entry is a button so the outline is fully keyboard-operable. */
-export function ReaderOutline({ groups, activeIndex, onSelect }: ReaderOutlineProps) {
+export function ReaderOutline({ groups, activeIndex, onSelect, className }: ReaderOutlineProps) {
   const outlineRef = useRef<HTMLElement>(null);
   useAutoHideScroll(outlineRef);
   return (
-    <nav ref={outlineRef} className={`${styles.outline} scroller`} aria-label="Course outline">
+    <nav
+      ref={outlineRef}
+      id="reader-outline"
+      className={`${styles.outline} scroller ${className ?? ""}`.trim()}
+      aria-label="Course outline"
+    >
       {groups.map((group) => (
         <div key={group.moduleId} className={styles.group}>
           <p className={`eyebrow ${styles.groupTitle}`}>{group.moduleTitle}</p>

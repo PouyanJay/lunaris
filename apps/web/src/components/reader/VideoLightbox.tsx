@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { FOCUSABLE_SELECTOR_WITH_IFRAME } from "../../lib/focusable";
 import { youTubeEmbed } from "./youtube";
 import styles from "./VideoLightbox.module.css";
 
@@ -9,8 +10,6 @@ interface VideoLightboxProps {
   title: string;
   onClose: () => void;
 }
-
-const FOCUSABLE = 'button:not([disabled]), iframe, [href], [tabindex]:not([tabindex="-1"])';
 
 /** A fullscreen modal that plays a YouTube video on a dimmed backdrop: focus-trapped, Esc / backdrop
  *  click to close, focus restored to the trigger on close (WCAG 2.2). The iframe is created only when
@@ -36,7 +35,9 @@ export function VideoLightbox({ videoId, title, onClose }: VideoLightboxProps) {
         return;
       }
       if (event.key !== "Tab" || dialogRef.current === null) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR_WITH_IFRAME),
+      );
       if (focusable.length === 0) return;
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;

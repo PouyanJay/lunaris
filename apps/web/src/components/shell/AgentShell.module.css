@@ -85,6 +85,39 @@
   min-height: var(--header-height);
 }
 
+/* The mobile nav trigger — hidden on desktop (the rail is always docked there), a 44px tap target
+   on phones where the rail is an off-canvas drawer. */
+.menuButton {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: calc(-1 * var(--space-2));
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.menuButton:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+.menuButton:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* The dim layer behind the open drawer — only ever shown at the phone breakpoint. */
+.scrim {
+  display: none;
+}
+
 /* The contextual title styled as an oversized eyebrow label — uppercase, tracked, muted — matching
    the canvas "Build a course" treatment (kept at the title size, AA-legible secondary tone). */
 .title {
@@ -110,6 +143,63 @@
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+/* ─── Phone (≤768px): the rail becomes an off-canvas drawer ────────────────────
+   The sidebar leaves the flex flow (fixed, off-screen left) so the canvas gets the full width; the
+   menu button reveals it over a scrim. Content-first, per the mobile nav decision. */
+@media (max-width: 768px) {
+  .menuButton {
+    display: inline-flex;
+  }
+  .header {
+    /* Tighter side padding; the menu button supplies the left affordance. */
+    padding: var(--space-3) var(--space-4);
+    /* Let dense header meta (view tabs + status) wrap below the title instead of overflowing. */
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+  /* Drop the view tabs + status onto their own second row so the title keeps the full first row
+     beside the menu button; the tabs scroll horizontally there if they exceed the width. */
+  .meta {
+    flex-basis: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .title {
+    flex: 1;
+  }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(320px, 86vw);
+    /* Sit above the canvas + scrim; respect a notch on the left edge in landscape. */
+    z-index: var(--z-modal);
+    padding-left: env(safe-area-inset-left);
+    border-right: var(--border-width) solid var(--border);
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .sidebar[data-drawer-open] {
+    transform: translateX(0);
+  }
+  /* No drag-resize on touch — the drawer replaces it. */
+  .resizer {
+    display: none;
+  }
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    border: none;
+    background: var(--scrim);
+    cursor: pointer;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

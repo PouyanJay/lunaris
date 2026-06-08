@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
+import { FOCUSABLE_SELECTOR } from "../../lib/focusable";
 import { Button } from "../primitives/Button";
 import styles from "./ConfirmDialog.module.css";
 
@@ -19,8 +20,6 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
 }
-
-const FOCUSABLE = 'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 /** A modal confirmation for an irreversible action: focus-trapped, Esc / backdrop click to cancel,
  *  focus restored to the trigger on close. Confirm-before (never optimistic). Tokens only. */
@@ -62,7 +61,9 @@ export function ConfirmDialog({
         return;
       }
       if (event.key !== "Tab" || dialogRef.current === null) return;
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      );
       if (focusable.length === 0) return;
       const first = focusable[0]!;
       const last = focusable[focusable.length - 1]!;
