@@ -55,11 +55,16 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Cross-registry import in the same AD tenant: pass the SOURCE registry via --registry (its
+      # resource ID) so az authenticates the source pull with the caller's AAD identity (the prod SP
+      # has AcrPull on the dev ACR). Without --registry, --source <loginServer>/... is treated as an
+      # external/credentialless source and 401s for an SP. --source is then repo:tag (no host).
       - name: Promote image (dev ACR -> prod ACR, same tag)
         run: |
           az acr import \
             --name "${{ vars.ACR_NAME }}" \
-            --source "${{ vars.DEV_ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
+            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
+            --source "lunaris-api:${{ steps.sha.outputs.value }}" \
             --image "lunaris-api:${{ steps.sha.outputs.value }}" \
             --force
 
