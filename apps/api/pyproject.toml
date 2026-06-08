@@ -11,6 +11,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "structlog>=24.4",
     "python-multipart>=0.0.18",
+    "pyjwt[crypto]>=2.9",
 ]
 
 [build-system]

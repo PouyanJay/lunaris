@@ -29,6 +29,7 @@ class Settings:
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     embeddings_api_key: str | None = None
+    supabase_jwt_secret: str | None = None
 
     @property
     def has_supabase(self) -> bool:
@@ -53,4 +54,5 @@ def get_settings() -> Settings:
         supabase_url=os.getenv("SUPABASE_URL") or None,
         supabase_service_role_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY") or None,
         embeddings_api_key=os.getenv("EMBEDDINGS_API_KEY") or None,
+        supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET") or None,
     )

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Annotated, get_type_hints
 
 import structlog
-from fastapi import Depends
+from fastapi import Depends, Header, HTTPException, status
 from lunaris_agent import (
     LessonRegenerator,
     build_agent_course_builder,
@@ -35,7 +35,9 @@ from lunaris_runtime.persistence import (
     SupabaseRunEventStore,
     SupabaseRunStore,
 )
+from structlog.contextvars import bind_contextvars
 
+from .auth import AuthError, IUserVerifier, JwtUserVerifier
 from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
@@ -286,3 +288,60 @@ def get_goal_interpreter() -> IGoalInterpreter:
 
 
 GoalInterpreterDep = Annotated[IGoalInterpreter, Depends(get_goal_interpreter)]
+
+
+def get_jwt_verifier(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IUserVerifier | None:
+    """The end-user token verifier, or None when no JWT secret is configured (auth unavailable).
+
+    The composition seam: today an HS256 verifier; a JWKS/ES256 sibling slots in here without
+    touching ``require_user_id``. None makes protected routes fail closed with a 503.
+    """
+    if not settings.supabase_jwt_secret:
+        return None
+    return JwtUserVerifier(settings.supabase_jwt_secret)
+
+
+JwtVerifierDep = Annotated[IUserVerifier | None, Depends(get_jwt_verifier)]
+
+_UNAUTHENTICATED_HEADERS = {"WWW-Authenticate": "Bearer"}
+
+
+def require_user_id(
+    verifier: JwtVerifierDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> str:
+    """Authenticate the caller from the ``Authorization: Bearer`` token and return their user id.
+
+    401 on a missing/malformed/invalid/expired token; 503 when no JWT secret is configured (a
+    deployment error, not a client one). Binds ``user_id`` to the logging context so every
+    downstream log line for the request carries it alongside ``request_id``/``run_id``.
+    """
+    if verifier is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        logger.warning("auth_failed", reason="missing_token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+            headers=_UNAUTHENTICATED_HEADERS,
+        )
+    token = authorization.removeprefix("Bearer ").strip()
+    try:
+        user_id = verifier.verify(token)
+    except AuthError as exc:
+        logger.warning("auth_failed", reason="invalid_token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers=_UNAUTHENTICATED_HEADERS,
+        ) from exc
+    bind_contextvars(user_id=user_id)
+    return user_id
+
+
+CurrentUserIdDep = Annotated[str, Depends(require_user_id)]
