@@ -116,6 +116,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: managedEnvironmentId
     configuration: {
       activeRevisionsMode: 'Single'
+      // NOTE: this ingress block does not declare customDomains, so each deploy resets ingress and
+      // drops any bound custom domain. cd-prod re-binds api.lunaris.pouyan.ai (+ its managed cert)
+      // after every deploy via the "Restore API custom domain" step. dev has no custom domain.
       ingress: {
         external: true
         targetPort: 8000
