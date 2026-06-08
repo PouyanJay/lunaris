@@ -132,6 +132,8 @@
   margin-top: auto;
   border-top: var(--border-width) solid var(--border);
   padding: var(--space-2);
+  /* Clear the home indicator when the rail is a full-height drawer on a notched phone. */
+  padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
   flex: none;
   display: flex;
   align-items: center;

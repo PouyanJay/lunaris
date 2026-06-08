@@ -154,6 +154,18 @@ body,
   height: 100%;
 }
 
+/* The app frame fills the *dynamic* viewport so mobile browser chrome (collapsing address bar) never
+   clips or overflows the shell. Falls back to the 100% above where dvh is unsupported. Only the
+   outermost container uses dvh — inner elements stay on % to avoid reflow jank as the bar animates. */
+#root {
+  height: 100dvh;
+}
+
+html {
+  /* Stop iOS from re-scaling text on rotate / input focus. */
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -163,6 +175,33 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Kill the 300ms double-tap delay on controls (does NOT block page pinch-zoom — accessibility safe). */
+button,
+a,
+input,
+select,
+textarea,
+summary,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* ─── Responsive breakpoints (conventions; CSS can't read tokens in @media) ───
+   ≤768px  = phone:  left sidebar + reader outline become drawers, content goes full-width,
+                     controls ≥44px, inputs 16px, safe-area insets applied.
+   ≤1100px = narrow: right rails (annotations, course-setup) become drawers (pre-existing).
+   720/560 = component-level tweaks (reader outline width, worked-example stacking).
+
+   Inputs must be ≥16px on phones or iOS Safari zooms the page on focus. Scoped to the phone
+   breakpoint so desktop keeps its denser 13–15px controls. */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }
 
 h1,

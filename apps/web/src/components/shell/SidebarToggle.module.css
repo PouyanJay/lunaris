@@ -20,3 +20,11 @@
   background: var(--bg-muted);
   color: var(--text);
 }
+
+/* On phones the rail is an off-canvas drawer, not a collapsible mini-rail, so the collapse toggle
+   has no role there — hide it. */
+@media (max-width: 768px) {
+  .toggle {
+    display: none;
+  }
+}

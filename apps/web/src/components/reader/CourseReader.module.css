@@ -251,6 +251,49 @@
   display: none;
 }
 
+/* Phone-only reader bar (opens the outline drawer + shows position); hidden on desktop. */
+.readerBar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.outlineToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.outlineToggle:hover {
+  color: var(--text);
+  background: var(--bg-muted);
+}
+.outlineToggle:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+.barProgress {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.outlineScrim {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .phase,
   .reader {
@@ -311,5 +354,66 @@
 @media (max-width: 720px) {
   .reader {
     --outline-width: 180px;
+  }
+}
+
+/* ─── Phone (≤768px): content-first — outline becomes a left drawer ─────────────
+   The grid drops to a single content column (the rail is already a drawer ≤1100px and the outline
+   becomes one here), so the lesson fills the width. The outline + its toggle/scrim mirror the
+   annotation-rail drawer pattern. */
+@media (max-width: 768px) {
+  .reader {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .readerBar {
+    display: flex;
+  }
+
+  /* The bar carries the reading position on mobile; drop the duplicate in the head. */
+  .progress {
+    display: none;
+  }
+
+  .page {
+    padding: var(--space-5) var(--space-4) var(--space-12);
+    gap: var(--space-6);
+  }
+
+  .lessonTitle {
+    font-size: var(--text-xl);
+  }
+
+  /* The outline nav (still rendered as a child of .reader) goes off-canvas left and slides in. */
+  .outlineDrawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: min(300px, 82vw);
+    z-index: var(--z-modal);
+    padding-left: max(var(--space-3), env(safe-area-inset-left));
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .outlineDrawerOpen {
+    transform: translateX(0);
+  }
+
+  .outlineScrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background: var(--scrim);
+    border: none;
+    cursor: pointer;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .outlineDrawer {
+    transition: none;
   }
 }

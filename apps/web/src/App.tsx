@@ -26,6 +26,7 @@ import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
+import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { fetchSettings } from "./lib/settings";
@@ -111,6 +112,17 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
   const sidebarLayout = useSidebarLayout();
+  // Phone layout: the rail becomes an off-canvas drawer (the desktop collapse/resize chrome is hidden
+  // by CSS). Track the breakpoint so the drawer always shows the full rail, never the mini icon-rail.
+  const isMobile = useMediaQuery(MOBILE_QUERY);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const openMobileNav = useCallback(() => setMobileNavOpen(true), []);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
+  // Closing the drawer is a no-op on desktop, but if the viewport grows past the breakpoint while the
+  // drawer is open, drop the open state so it can't linger as a stuck overlay.
+  useEffect(() => {
+    if (!isMobile) setMobileNavOpen(false);
+  }, [isMobile]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
@@ -161,18 +173,25 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   }, [streamingRunId, reloadRuns]);
 
   const { open: openRun, close: closeRun } = opened;
+  // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
     setSettingsOpen(false);
+    setMobileNavOpen(false);
     closeRun();
     reset();
   }, [closeRun, reset]);
   const selectRun = useCallback(
     (run: CourseRun) => {
       setSettingsOpen(false);
+      setMobileNavOpen(false);
       openRun(run);
     },
     [openRun],
   );
+  const openSettings = useCallback(() => {
+    setSettingsOpen(true);
+    setMobileNavOpen(false);
+  }, []);
   // Drill from a Map concept into its lesson: switch to the reader and request that lesson's focus.
   const openLessonForKc = useCallback((kc: string) => {
     focusSeq.current += 1;
@@ -228,9 +247,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       runs={runsState}
       onReloadRuns={reloadRuns}
       onNewCourse={startNewCourse}
-      onOpenSettings={() => setSettingsOpen(true)}
+      onOpenSettings={openSettings}
       settingsActive={settingsOpen}
-      collapsed={sidebarLayout.collapsed}
+      collapsed={isMobile ? false : sidebarLayout.collapsed}
       onToggleCollapse={sidebarLayout.toggleCollapsed}
       onSelectRun={selectRun}
       onDeleteRun={deleteRun.request}
@@ -287,11 +306,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         title: "New course",
         meta: null,
         body: (
-          <IdleCourseSetup
-            apiBaseUrl={apiBaseUrl}
-            onGenerate={generate}
-            onOpenSettings={() => setSettingsOpen(true)}
-          />
+          <IdleCourseSetup apiBaseUrl={apiBaseUrl} onGenerate={generate} onOpenSettings={openSettings} />
         ),
       };
     }
@@ -335,7 +350,15 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
 
   return (
     <>
-      <AgentShell sidebar={sidebar} title={canvas.title} meta={canvas.meta} layout={sidebarLayout}>
+      <AgentShell
+        sidebar={sidebar}
+        title={canvas.title}
+        meta={canvas.meta}
+        layout={sidebarLayout}
+        mobileNavOpen={mobileNavOpen}
+        onOpenMobileNav={openMobileNav}
+        onCloseMobileNav={closeMobileNav}
+      >
         {canvas.body}
       </AgentShell>
       <ConfirmDialog

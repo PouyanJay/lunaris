@@ -697,3 +697,46 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     expect(Number(splitter.getAttribute("aria-valuenow"))).toBeGreaterThan(start);
   });
 });
+
+describe("CourseReader — outline drawer (mobile)", () => {
+  const lessonsToggle = () => screen.getByRole("button", { name: /^lessons$/i });
+
+  it("opens the lesson outline from the reader-bar toggle", () => {
+    // Arrange
+    render(<CourseReader course={multiLessonCourse()} />);
+    expect(lessonsToggle()).toHaveAttribute("aria-expanded", "false");
+
+    // Act
+    fireEvent.click(lessonsToggle());
+
+    // Assert — the toggle advertises the open drawer.
+    expect(lessonsToggle()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("navigates and closes the drawer when a lesson is picked from it", () => {
+    // Arrange — open the outline.
+    render(<CourseReader course={multiLessonCourse()} />);
+    fireEvent.click(lessonsToggle());
+
+    // Act — pick a lesson from the open outline.
+    const outline = screen.getByRole("navigation", { name: /course outline/i });
+    fireEvent.click(within(outline).getByRole("button", { name: /lesson 3/i }));
+
+    // Assert — the chosen lesson shows and the drawer has closed behind it.
+    expect(screen.getByText("Prose for lesson three.")).toBeInTheDocument();
+    expect(lessonsToggle()).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes the outline drawer on Escape and returns focus to the toggle", () => {
+    // Arrange
+    render(<CourseReader course={multiLessonCourse()} />);
+    fireEvent.click(lessonsToggle());
+
+    // Act
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    // Assert
+    expect(lessonsToggle()).toHaveAttribute("aria-expanded", "false");
+    expect(lessonsToggle()).toHaveFocus();
+  });
+});
