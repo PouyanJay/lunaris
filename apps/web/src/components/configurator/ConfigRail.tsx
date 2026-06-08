@@ -1,10 +1,9 @@
-import { useId, useRef } from "react";
+import { useId, useRef, useState } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import type { BriefLoadState } from "../../types/clarifier";
 import type { DiscoveryDepth } from "../../types/course";
 import { Button } from "../primitives/Button";
-import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { ClarifierQuestionField } from "../personalize/ClarifierQuestionField";
 import styles from "./ConfigRail.module.css";
 
@@ -57,13 +56,17 @@ export function ConfigRail({
   const railRef = useRef<HTMLElement>(null);
   const learnerTitleId = useId();
   const depthName = useId();
+  const buildBodyId = useId();
+  // Build controls are progressively disclosed — collapsed by default so the rail leads with
+  // personalization, not knobs.
+  const [buildOpen, setBuildOpen] = useState(false);
   // The rail's own thin, auto-hiding scrollbar (matches the reader rail).
   useAutoHideScroll(railRef);
 
   return (
     <aside ref={railRef} className={`${styles.rail} scroller`} aria-label="Course setup">
       <header className={styles.head}>
-        <div>
+        <div className={styles.headText}>
           <p className="eyebrow">Configure</p>
           <h2 className={styles.title}>Course setup</h2>
         </div>
@@ -91,10 +94,10 @@ export function ConfigRail({
       </header>
 
       {/* Tier 1 — learner personalization, always visible. */}
-      <section className={styles.tier} aria-labelledby={learnerTitleId}>
-        <div className={styles.tierHead}>
+      <section className={styles.section} aria-labelledby={learnerTitleId}>
+        <div className={styles.sectionHead}>
           <p className="eyebrow">Personalize</p>
-          <h3 id={learnerTitleId} className={styles.tierTitle}>
+          <h3 id={learnerTitleId} className={styles.sectionTitle}>
             For you
           </h3>
         </div>
@@ -104,7 +107,7 @@ export function ConfigRail({
         )}
 
         {brief.status === "blank" && topic.trim() !== "" && (
-          <div className={styles.stack}>
+          <div className={styles.sectionBody}>
             <p className={styles.muted}>
               We&rsquo;ll read your goal and pre-fill the details &mdash; confirm or adjust them, then
               build. Skip this and we&rsquo;ll use the inference.
@@ -122,7 +125,7 @@ export function ConfigRail({
         )}
 
         {brief.status === "error" && (
-          <div className={styles.stack}>
+          <div className={styles.sectionBody}>
             <p className={styles.error} role="alert">
               {brief.message}
             </p>
@@ -133,7 +136,7 @@ export function ConfigRail({
         )}
 
         {brief.status === "ready" && (
-          <div className={styles.stack}>
+          <div className={styles.sectionBody}>
             <p className={styles.read}>
               We read this as{" "}
               <strong>{brief.data.brief.goal || brief.data.brief.subject}</strong>.
@@ -152,36 +155,59 @@ export function ConfigRail({
         )}
       </section>
 
-      {/* Tier 2 — build controls behind a disclosure. Only knobs with a real backend effect ship. */}
-      <CollapsibleSection eyebrow="Build" title="Advanced" defaultOpen={false}>
-        <fieldset className={styles.depth}>
-          <legend className={styles.depthLegend}>Search depth</legend>
-          <div className={styles.depthOptions}>
-            {DEPTHS.map(({ value, label, hint }) => (
-              <label key={value} className={styles.depthOption}>
-                <input
-                  type="radio"
-                  name={depthName}
-                  className={styles.depthRadio}
-                  value={value}
-                  checked={depth === value}
-                  onChange={() => onDepthChange(value)}
-                />
-                <span className={styles.depthLabel}>{label}</span>
-                <span className={styles.depthHint}>{hint}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      </CollapsibleSection>
+      {/* Tier 2 — build controls behind a flush disclosure (matches the section rhythm, not a card).
+          Only knobs with a real backend effect ship. */}
+      <section className={styles.section}>
+        <h3 className={styles.disclosureHeading}>
+          <button
+            type="button"
+            className={styles.disclosure}
+            aria-expanded={buildOpen}
+            aria-controls={buildBodyId}
+            onClick={() => setBuildOpen((open) => !open)}
+          >
+            <span className={styles.sectionHead}>
+              <span className="eyebrow">Build</span>
+              <span className={styles.sectionTitle}>Advanced</span>
+            </span>
+            <span className={styles.chevron} data-open={buildOpen} aria-hidden="true" />
+          </button>
+        </h3>
+        <div id={buildBodyId} className={styles.sectionBody} hidden={!buildOpen}>
+          <fieldset className={styles.depth}>
+            <legend className={styles.depthLegend}>Search depth</legend>
+            <div className={styles.depthOptions}>
+              {DEPTHS.map(({ value, label, hint }) => (
+                <label key={value} className={styles.depthOption}>
+                  <input
+                    type="radio"
+                    name={depthName}
+                    className={styles.depthRadio}
+                    value={value}
+                    checked={depth === value}
+                    onChange={() => onDepthChange(value)}
+                  />
+                  <span className={styles.depthLabel}>{label}</span>
+                  <span className={styles.depthHint}>{hint}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+      </section>
 
       {/* Tier 3 — operator/admin lives in Settings; point there rather than duplicate it. */}
-      <section className={styles.operator}>
-        <p className="eyebrow">Operator</p>
-        <p className={styles.muted}>Keys, pipeline, and trusted sources live in Settings.</p>
-        <Button variant="secondary" onClick={onOpenSettings}>
-          Open Settings&hellip;
-        </Button>
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <p className="eyebrow">Operator</p>
+          <h3 className={styles.sectionTitle}>Keys &amp; sources</h3>
+        </div>
+        <div className={styles.sectionBody}>
+          <p className={styles.muted}>Keys, pipeline, and trusted sources live in Settings.</p>
+          <Button variant="secondary" onClick={onOpenSettings}>
+            Open Settings&hellip;
+          </Button>
+        </div>
       </section>
     </aside>
   );

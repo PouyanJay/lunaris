@@ -3,10 +3,9 @@
 .rail {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
   height: 100%;
   overflow-y: auto;
-  padding: var(--space-6) var(--space-5) var(--space-16);
+  padding: var(--space-5) var(--space-5) var(--space-16);
 }
 
 /* The rail scrolls (overflow-y:auto), so its children must keep their natural height rather than be
@@ -22,12 +21,18 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  padding-bottom: var(--space-3);
+  padding-bottom: var(--space-4);
   border-bottom: var(--border-width) solid var(--border);
 }
 
+.headText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .title {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--text);
 }
@@ -88,30 +93,92 @@
     0 0 0 4px var(--focus-ring);
 }
 
-/* A tier — a labelled region of the setup. Hairline-divided, not floating cards. */
-.tier {
+/* Every setup region shares one rhythm: an eyebrow + title head over a body, welded to its neighbours
+   by a single hairline. No floating cards — one border level for the whole rail. */
+.section {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding: var(--space-5) 0;
+  border-bottom: var(--border-width) solid var(--border);
 }
 
-.tierHead {
+.section:last-child {
+  border-bottom: none;
+}
+
+.sectionHead {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.tierTitle {
-  font-size: var(--text-base);
+.sectionTitle {
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text);
 }
 
-.stack {
+.sectionBody {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   align-items: flex-start;
+}
+
+/* The disclosure body uses `hidden` to collapse — an explicit display rule would otherwise win over
+   the attribute's default `display: none`, leaving the body visible when collapsed. */
+.sectionBody[hidden] {
+  display: none;
+}
+
+/* Tier 2's disclosure header — the same eyebrow + title as a static section head, but a full-width
+   toggle with a chevron. Flush (no border/fill) so it reads as a section, not a card. */
+.disclosureHeading {
+  margin: 0;
+  font: inherit;
+}
+
+.disclosure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.disclosure:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 2px var(--bg-subtle),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* A chevron that points down at rest and rotates up when the body is open. */
+.chevron {
+  margin-left: auto;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(45deg);
+  transition: transform var(--dur) var(--ease);
+}
+
+.disclosure:hover .chevron {
+  border-color: var(--text-secondary);
+}
+
+.chevron[data-open="true"] {
+  transform: rotate(-135deg);
 }
 
 .muted {
@@ -220,18 +287,9 @@
   line-height: 1.5;
 }
 
-/* Operator tier — a pointer to Settings, divided from the tiers above by a hairline. */
-.operator {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  align-items: flex-start;
-  padding-top: var(--space-5);
-  border-top: var(--border-width) solid var(--border);
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .depthOption {
+  .depthOption,
+  .chevron {
     transition: none;
   }
 }
