@@ -95,6 +95,7 @@ jobs:
             --template-file infra/app.bicep \
             --parameters \
               env=dev \
+              location="${{ vars.LOCATION }}" \
               image="${{ steps.image.outputs.ref }}" \
               managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
               managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
