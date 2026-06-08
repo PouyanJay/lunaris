@@ -64,7 +64,14 @@ from .secrets import (
     SupabaseCredentialStore,
     build_secret_cipher,
 )
-from .service import CourseService, CredentialResolver, PipelineFactory
+from .service import ConfigResolver, CourseService, CredentialResolver, PipelineFactory
+from .user_config import (
+    PER_USER_CONFIG,
+    InMemoryUserConfigStore,
+    IUserConfigStore,
+    SupabaseUserConfigStore,
+    UserConfigService,
+)
 
 logger = structlog.get_logger()
 
@@ -266,6 +273,47 @@ def get_credential_vault(
 
 CredentialVaultDep = Annotated[CredentialVault | None, Depends(get_credential_vault)]
 
+# Process-wide per-user config stores (singletons, like the credential/run stores): the in-memory
+# store must be shared so a value set in one request survives the next within the process; the
+# Supabase store is shared so its lazy service-role client is built once. In-memory is the no-DB
+# fallback (auth-on hermetic tests / dev without Supabase).
+_in_memory_user_config_store = InMemoryUserConfigStore()
+_supabase_user_config_store = SupabaseUserConfigStore()
+
+
+def get_user_config_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IUserConfigStore:
+    """The per-user config store: Supabase (durable, owner-scoped RLS) when keyed, else memory."""
+    if settings.has_supabase:
+        return _supabase_user_config_store
+    return _in_memory_user_config_store
+
+
+UserConfigStoreDep = Annotated[IUserConfigStore, Depends(get_user_config_store)]
+
+
+def get_user_config_service(store: UserConfigStoreDep) -> UserConfigService:
+    """The per-user runtime-config surface (model selection) for ``/api/config`` when auth is on."""
+    return UserConfigService(store)
+
+
+UserConfigServiceDep = Annotated[UserConfigService, Depends(get_user_config_service)]
+
+
+def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:
+    """A per-run resolver over the per-user config store: user_id → {env-var name: value} for the
+    model keys the user has set. Bound into the build's run-config scope so the build uses the
+    tenant's chosen models; an unset key is omitted (→ the run-config env/default fallback)."""
+
+    async def resolve(user_id: str) -> dict[str, str]:
+        stored = await store.get_all(user_id=user_id)
+        return {
+            PER_USER_CONFIG[key]: value for key, value in stored.items() if key in PER_USER_CONFIG
+        }
+
+    return resolve
+
 
 def _byok_credential_resolver(vault: CredentialVault) -> CredentialResolver:
     """A per-run resolver over the vault: user_id → {env-var name: decrypted key} for keys they set.
@@ -290,6 +338,7 @@ def get_course_service(
     registry: Annotated[RunRegistry, Depends(get_run_registry)],
     event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
     vault: CredentialVaultDep,
+    user_config_store: UserConfigStoreDep,
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
@@ -305,8 +354,20 @@ def get_course_service(
     # BYOK on (a vault is configured) → builds run on the caller's own keys; off → on the process
     # environment (admin/single-user), keeping today's behaviour.
     resolver = _byok_credential_resolver(vault) if vault is not None else None
+    # Per-user config (model selection) when auth is on → builds run on the tenant's chosen models;
+    # off → the process env / code defaults. Gated on has_auth (a verifier exists) — note this can
+    # diverge from has_supabase: with a JWKS URL but no service-role key, the resolver is wired yet
+    # the store is the in-memory fallback. Cheap to always wire (the store is lazy); the resolver
+    # only fires for an owned build.
+    config_resolver = _runtime_config_resolver(user_config_store) if settings.has_auth else None
     return CourseService(
-        store, factory, run_store, registry, event_store, credential_resolver=resolver
+        store,
+        factory,
+        run_store,
+        registry,
+        event_store,
+        credential_resolver=resolver,
+        config_resolver=config_resolver,
     )
 
 

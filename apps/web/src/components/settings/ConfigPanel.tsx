@@ -9,6 +9,9 @@ import styles from "./Config.module.css";
 
 interface ConfigPanelProps {
   apiBaseUrl: string;
+  /** When true, the panel describes its settings as the signed-in user's own; when false, as
+   *  process-wide operator config. (The settings rendered are whatever the API returns.) */
+  perUserConfig?: boolean;
 }
 
 const LABELS: Record<string, string> = {
@@ -33,7 +36,7 @@ type Feedback = { tone: "ok" | "error"; message: string };
 /** The non-secret Configuration section: LangSmith tracing/project + the strong/worker model tiers,
  *  each shown with its current value + default. LangSmith vars are read at startup, so a change is
  *  flagged "restart to apply"; model vars take effect on the next build. */
-export function ConfigPanel({ apiBaseUrl }: ConfigPanelProps) {
+export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<Record<string, Feedback>>({});
@@ -56,6 +59,11 @@ export function ConfigPanel({ apiBaseUrl }: ConfigPanelProps) {
 
   return (
     <CollapsibleSection eyebrow="Configuration" title="Runtime configuration" defaultOpen={false}>
+      <p className={styles.muted}>
+        {perUserConfig
+          ? "The Claude models your own builds use."
+          : "Operator configuration applied to every build on this server."}
+      </p>
       {state.status === "loading" && <p className={styles.muted}>Loading configuration…</p>}
       {state.status === "error" && (
         <div className={styles.stateBlock} role="alert">

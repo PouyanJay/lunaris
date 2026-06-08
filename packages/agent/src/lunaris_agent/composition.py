@@ -25,6 +25,7 @@ from lunaris_grounding import (
 from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.resilience import build_anthropic_chat_model
+from lunaris_runtime.run_config import resolve_config
 
 from .coverage_critic import (
     ClaudeCoverageCritic,
@@ -256,7 +257,7 @@ def _visual_engine_from_env(worker_model: str) -> VisualEngine:
 
 def build_live_prereq_builder(worker_model: str | None = None) -> PrerequisiteGraphBuilder:
     """The live prerequisite-graph builder (Claude judge) — shared by the orchestrator + MCP."""
-    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
+    worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
     return PrerequisiteGraphBuilder(ClaudePrereqJudge(worker))
 
 
@@ -269,7 +270,7 @@ def build_live_verifier(
     Falls back to the conservative stub retriever (cuts every claim) when the corpus/embeddings
     creds are unset, so it stays runnable offline.
     """
-    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
     grounding = retriever or _retriever_from_env() or StubEvidenceRetriever()
     return Verifier(grounding, ClaudeSupportAssessor(strong))
 
@@ -290,8 +291,8 @@ def build_orchestrator(
     corpus + embeddings creds are set; otherwise it falls back to the conservative stub
     (every claim cut). Pass an explicit ``retriever`` to override either path (e.g. tests).
     """
-    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
-    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
+    strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
 
     extractor = ClaudeConceptExtractor(worker)
     builder = build_live_prereq_builder(worker)
@@ -331,8 +332,8 @@ def build_agent_course_builder(
     key. Each run gets a fresh set of adapters — never reuse a built builder across runs, or a
     cached client would serve the first tenant's key to the next.
     """
-    worker = worker_model or os.getenv("LUNARIS_MODEL_WORKER", _DEFAULT_WORKER)
-    strong = strong_model or os.getenv("LUNARIS_MODEL_STRONG", _DEFAULT_STRONG)
+    worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
+    strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
     planner = build_anthropic_chat_model(strong)
     return AgentCourseBuilder(
         planner,

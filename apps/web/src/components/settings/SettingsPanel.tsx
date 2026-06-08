@@ -140,7 +140,10 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
           )}
         </CollapsibleSection>
         <TrustedSourcesPanel apiBaseUrl={apiBaseUrl} />
-        <ConfigPanel apiBaseUrl={apiBaseUrl} />
+        <ConfigPanel
+          apiBaseUrl={apiBaseUrl}
+          perUserConfig={state.status === "ready" && state.view.perUserConfigEnabled}
+        />
       </div>
     </div>
   );

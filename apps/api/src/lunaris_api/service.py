@@ -12,6 +12,7 @@ from lunaris_runtime.persistence import (
     IRunStore,
     OwnerScopedCourseStore,
 )
+from lunaris_runtime.run_config import run_config
 from lunaris_runtime.schema import (
     AgentEvent,
     Clarification,
@@ -42,6 +43,12 @@ PipelineFactory = Callable[[ICourseStore], CoursePipeline]
 # set (absent providers omitted). Wired from the CredentialVault when BYOK is configured; None when
 # BYOK is off (then builds run on the process environment — the admin/single-user/test path).
 CredentialResolver = Callable[[str], Awaitable[Mapping[str, str]]]
+
+# Resolves a user's non-secret runtime config for a run: user_id → {env-var name: value} for the
+# config keys they've set (absent keys omitted → the run-config env/default fallback). Same shape as
+# CredentialResolver but a distinct concept (non-secret model selection); None when config is not
+# per-user (auth off) → builds read the process env, today's behaviour.
+ConfigResolver = Callable[[str], Awaitable[Mapping[str, str]]]
 
 # The one provider key a build cannot run without: every pipeline tier calls Claude. When BYOK is on
 # and the caller hasn't set it, the build is refused up front rather than failing mid-stream. Other
@@ -126,12 +133,16 @@ class CourseService:
         event_store: IRunEventStore | None = None,
         *,
         credential_resolver: CredentialResolver | None = None,
+        config_resolver: ConfigResolver | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
         # Resolves the owner's BYOK keys per run (None when BYOK is off → builds use the process
         # environment).
         self._credential_resolver = credential_resolver
+        # Resolves the owner's non-secret config (model selection) per run (None when config isn't
+        # per-user → builds read the process env / code defaults).
+        self._config_resolver = config_resolver
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -182,6 +193,23 @@ class CourseService:
             return nullcontext()
         return run_credentials(credentials)
 
+    async def _resolve_run_config(self, owner_id: str | None) -> Mapping[str, str] | None:
+        """The owner's non-secret config (model selection) to bind for this run, or ``None`` to read
+        the process env / code defaults. ``None`` when the build is unowned (auth off) or no config
+        resolver is wired. Unlike credentials there is no required key — every config has a default,
+        so an unset value degrades to the env/code default, never a refusal."""
+        if owner_id is None or self._config_resolver is None:
+            return None
+        return await self._config_resolver(owner_id)
+
+    @staticmethod
+    def _config_scope(config: Mapping[str, str] | None) -> AbstractContextManager[None]:
+        """The run's config context: the tenant's model choices when present, else a no-op. Entered
+        alongside ``_credential_scope`` around the factory + create_task."""
+        if config is None:
+            return nullcontext()
+        return run_config(config)
+
     async def assert_build_credentials(self, *, owner_id: str | None) -> None:
         """Pre-flight the BYOK requirement before a streamed build starts: raises (router → 400)
         when the required key is missing, returns nothing, binds nothing.
@@ -203,15 +231,16 @@ class CourseService:
         owner_id: str | None = None,
     ) -> Course:
         # Resolve the owner's BYOK keys (refuses up front if the required key is missing) before any
-        # run is recorded, so a refused build leaves no history row.
+        # run is recorded, so a refused build leaves no history row, plus their model config.
         credentials = await self._resolve_run_credentials(owner_id)
+        config = await self._resolve_run_config(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
         # it raises CancelledError at this await without cancelling the request coroutine itself.
-        # The credential scope wraps the factory + create_task so the task inherits the tenant's
-        # keys (a context copy); the lazily-built adapters then read them, never the platform env.
-        with self._credential_scope(credentials):
+        # The credential + config scopes wrap the factory + create_task so the task inherits the
+        # tenant's keys + model choices (a context copy); the adapters then read them, not the env.
+        with self._credential_scope(credentials), self._config_scope(config):
             pipeline = self._factory(self._store_for(owner_id))
             task = asyncio.create_task(
                 pipeline.run(
@@ -282,12 +311,13 @@ class CourseService:
         # also pre-flights this via ``assert_build_credentials`` so the refusal is a clean 400
         # before the SSE commits; resolving again here keeps the decrypted keys inside the service.
         credentials = await self._resolve_run_credentials(owner_id)
+        config = await self._resolve_run_config(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         try:
-            # The credential scope wraps only the factory + create_task (no yields inside), so the
-            # run task inherits the tenant's keys as a context copy while the generator's own
-            # context — the one live across each yield — never retains them.
-            with self._credential_scope(credentials):
+            # The credential + config scopes wrap only the factory + create_task (no yields inside),
+            # so the run task inherits the tenant's keys + model choices as a context copy while the
+            # generator's own context — the one live across each yield — never retains them.
+            with self._credential_scope(credentials), self._config_scope(config):
                 pipeline = self._factory(self._store_for(owner_id))
                 run_task = asyncio.create_task(
                     pipeline.run(
@@ -391,7 +421,8 @@ class CourseService:
         if not isinstance(pipeline, LessonRegenerator):
             raise LessonRegenerationUnsupportedError(type(pipeline).__name__)
         credentials = await self._resolve_run_credentials(owner_id)
-        with self._credential_scope(credentials):
+        config = await self._resolve_run_config(owner_id)
+        with self._credential_scope(credentials), self._config_scope(config):
             return await pipeline.regenerate_lesson(course_id, lesson_id, run_id=run_id)
 
     async def delete_course(self, course_id: str, *, owner_id: str | None = None) -> None:

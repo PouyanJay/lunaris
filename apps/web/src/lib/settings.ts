@@ -20,6 +20,10 @@ export interface SettingsView {
   /** Whether per-user BYOK is configured. When true the Keys panel manages the tenant's own keys
    *  via the authed /api/credentials surface; when false it uses the file-backed secret store. */
   byokEnabled: boolean;
+  /** Whether runtime config is per-user (auth is on). When true the Configuration panel shows the
+   *  caller's own model selection (LangSmith is operator-only and absent); when false it's the
+   *  process-wide file store (single-user dev, incl. LangSmith). */
+  perUserConfigEnabled: boolean;
 }
 
 export class SettingsError extends Error {

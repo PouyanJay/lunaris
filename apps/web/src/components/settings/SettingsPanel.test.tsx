@@ -6,6 +6,7 @@ import { SettingsPanel } from "./SettingsPanel";
 const SETTINGS = {
   pipeline: "stub",
   byokEnabled: false,
+  perUserConfigEnabled: false,
   secrets: [
     { name: "anthropic", isSet: false, last4: null },
     { name: "voyage", isSet: true, last4: "7777" },

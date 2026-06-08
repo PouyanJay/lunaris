@@ -7,6 +7,7 @@ from lunaris_api.config import Settings
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
+from lunaris_api.user_config import InMemoryUserConfigStore
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryRunEventStore,
@@ -32,6 +33,7 @@ def _service_for(settings: Settings) -> CourseService:
         registry=RunRegistry(),
         event_store=InMemoryRunEventStore(),
         vault=None,
+        user_config_store=InMemoryUserConfigStore(),
     )
 
 

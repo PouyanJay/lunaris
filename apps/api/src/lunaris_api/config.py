@@ -49,6 +49,13 @@ class Settings:
         """Whether the embeddings key is present (the durable corpus needs it to ingest)."""
         return bool(self.embeddings_api_key)
 
+    @property
+    def has_auth(self) -> bool:
+        """Whether end-user auth is configured (an HS256 secret and/or a JWKS URL → a verifier
+        exists). When True, runtime config is per-user (DB); when False, it's the file store
+        (single-user dev). Mirrors the verifier composition in ``_build_user_verifier``."""
+        return bool(self.supabase_jwt_secret or self.supabase_url)
+
 
 @lru_cache
 def get_settings() -> Settings:
