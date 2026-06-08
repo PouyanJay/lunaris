@@ -1,8 +1,9 @@
 """Integration tests for the delivery API — they traverse the real layers (HTTP → service →
 orchestrator → CourseStore → back), with the deterministic stub pipeline so no key is needed."""
 
+import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import ClassVar
 
@@ -10,7 +11,11 @@ import httpx
 import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
+from lunaris_api.run_registry import RunRegistry
+from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
+from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
+from lunaris_runtime.schema import RunStatus
 
 
 @pytest.fixture
@@ -245,23 +250,35 @@ async def test_stream_blank_topic_is_rejected(client: httpx.AsyncClient) -> None
     assert response.status_code == 422  # query-param validation at the boundary
 
 
-async def test_stream_cancels_pipeline_on_early_disconnect(tmp_path: Path) -> None:
-    # Arrange — drive the service's stream directly so we can abandon it mid-flight,
-    # the way a disconnecting EventSource client does.
-    from lunaris_agent import build_stub_orchestrator
-    from lunaris_api.service import CourseService
-    from lunaris_runtime.persistence import CourseStore
-
-    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator)
+async def test_stream_continues_build_after_early_disconnect(
+    tmp_path: Path,
+    releasable_build: tuple[Callable[[object], object], asyncio.Event],
+) -> None:
+    # Arrange — a gated build so we can deterministically abandon the stream mid-flight (the way a
+    # disconnecting EventSource client does) before the build finishes. The build is a durable
+    # background job: a disconnect must NOT cancel it; it runs to completion and records its status.
+    factory, release = releasable_build
+    run_store = InMemoryRunStore()
+    registry = RunRegistry()
+    service = CourseService(CourseStore(tmp_path), factory, run_store, registry)
     stream = service.stream("binary search", course_id="c-cancel", run_id="run-cancel")
 
-    # Act — consume one progress event, then close the generator early (client gone).
+    # Act — consume one progress event, capture the durable build task, then close the generator
+    # early (client gone). aclose must be prompt and idempotent, and must NOT cancel the build.
     kind, _payload = await stream.__anext__()
     assert kind == "progress"
-    await stream.aclose()  # runs the finally → cancels the background run task
-
-    # Assert — aclose returns promptly without hanging or raising; a second close is a no-op.
+    build_task = registry.task_for("run-cancel")
+    assert build_task is not None
     await stream.aclose()
+    await stream.aclose()  # idempotent: a second close is a no-op
+
+    # Assert — released, the build finishes on its own and records COMPLETED (disconnect-proof),
+    # rather than being killed by the disconnect. Await the task directly (deterministic).
+    release.set()
+    await build_task
+    runs = await run_store.list_recent()
+    assert runs[0].status is RunStatus.COMPLETED
+    assert runs[0].module_count > 0
 
 
 async def test_stream_run_id_correlates_to_pipeline_logs(

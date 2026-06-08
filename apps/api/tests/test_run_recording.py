@@ -5,7 +5,7 @@ Recording is best-effort: a build must succeed even when the history write fails
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 import httpx
@@ -13,10 +13,11 @@ import pytest
 from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.dependencies import get_course_service
+from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
-from lunaris_runtime.schema import Course, CourseRun, ProgressEvent, ProgressStage, RunStatus
+from lunaris_runtime.schema import CourseRun, RunStatus
 
 
 def _client_for(service: CourseService) -> httpx.ASGITransport:
@@ -163,56 +164,39 @@ async def test_history_finish_failure_does_not_break_a_build(
     assert any(e.get("event") == "run_history_finish_failed" for e in events)
 
 
-class _HangingPipeline:
-    """A pipeline that emits one progress event then blocks forever.
-
-    Simulates a build still in flight when the client disconnects: the stream is recorded RUNNING
-    and has yielded a beat, but the run task is mid-flight when the consumer is cancelled — so the
-    run must be recorded terminal on the way out rather than left stuck RUNNING.
-    """
-
-    def __init__(self, store: object) -> None:
-        self._store = store
-
-    async def run(
-        self,
-        topic: str,
-        *,
-        course_id: str,
-        run_id: str,
-        progress: object | None = None,
-        agent: object | None = None,
-        clarification: object | None = None,
-        discovery_depth: object | None = None,
-    ) -> Course:
-        if progress is not None:
-            await progress.emit(
-                ProgressEvent(stage=ProgressStage.RUN_STARTED, label="Starting", run_id=run_id)
-            )
-        await asyncio.Event().wait()  # never set → blocks until the run task is cancelled
-        raise AssertionError("unreachable")  # pragma: no cover
-
-
-async def test_stream_records_failed_run_when_client_disconnects_mid_build(tmp_path: Path) -> None:
-    # Arrange — a build still in flight: the pipeline emits one event, then blocks. The run is
-    # recorded RUNNING at the top of stream() before any event is yielded.
+async def test_stream_records_completed_run_when_build_finishes_after_disconnect(
+    tmp_path: Path,
+    releasable_build: tuple[Callable[[object], object], asyncio.Event],
+) -> None:
+    """Regression: a build that finishes *after* the SSE consumer abandons the stream must be
+    recorded COMPLETED — not left stuck RUNNING. The build is a durable background task that records
+    its own terminal status; a disconnect no longer cancels it."""
+    # Arrange — a build parked mid-flight (recorded RUNNING) until we release it.
     clear_correlation()
+    factory, release = releasable_build
     run_store = InMemoryRunStore()
-    service = CourseService(CourseStore(tmp_path), _HangingPipeline, run_store)
+    registry = RunRegistry()
+    service = CourseService(CourseStore(tmp_path), factory, run_store, registry)
 
-    # Act — consume the first event (build is now mid-flight, recorded RUNNING), then close the
-    # stream the way a client disconnect does: aclose() throws GeneratorExit into the async gen at
-    # its suspended yield, bypassing the except-Exception block.
+    # Act — consume the first beat (build is mid-flight, RUNNING), capture the durable build task,
+    # then close the stream the way a disconnecting client does, BEFORE the course frame.
     stream = service.stream("graphs", course_id="c1", run_id="r1")
     kind, _payload = await stream.__anext__()
-    assert kind == "progress"  # mid-flight: a beat was forwarded
-    running = await run_store.list_recent()
-    assert running[0].status is RunStatus.RUNNING  # precondition: stuck-RUNNING is what we fix
+    assert kind == "progress"
+    assert (await run_store.list_recent())[0].status is RunStatus.RUNNING  # precondition
+    build_task = registry.task_for("r1")
+    assert build_task is not None
     await stream.aclose()
 
-    # Assert — the run is recorded terminal (FAILED), not left stuck RUNNING in history (the bug).
+    # Release the parked build and await it directly (deterministic — no polling): with no consumer
+    # attached it must still run to completion and record its OWN terminal status.
+    release.set()
+    await build_task
+
+    # Assert — recorded COMPLETED (the build really finished), not stuck RUNNING and not FAILED.
     runs = await run_store.list_recent()
-    assert runs[0].status is RunStatus.FAILED
+    assert runs[0].status is RunStatus.COMPLETED
+    assert runs[0].module_count > 0
 
 
 class _FailingPipeline:

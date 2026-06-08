@@ -57,6 +57,11 @@ class RunRegistry:
         task.cancel()
         return self._course_ids.get(run_id)
 
+    def task_for(self, run_id: str) -> asyncio.Task[Any] | None:
+        """The in-flight task for a run, or ``None`` when unknown or already finished (its teardown
+        calls ``discard``). A read-only handle for awaiting/observing a background build."""
+        return self._tasks.get(run_id)
+
     def was_cancelled(self, run_id: str) -> bool:
         """Whether this run was explicitly cancelled (vs a client disconnect or a pipeline error).
         The build's teardown reads this to record CANCELLED rather than FAILED."""
