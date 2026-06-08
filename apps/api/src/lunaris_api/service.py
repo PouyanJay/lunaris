@@ -1,9 +1,11 @@
 import asyncio
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import AbstractContextManager, nullcontext
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
+from lunaris_runtime.credentials import run_credentials
 from lunaris_runtime.persistence import (
     ICourseStore,
     IRunEventStore,
@@ -35,6 +37,16 @@ RUNS_LIMIT_MAX = 200
 
 # Builds the per-run course pipeline (stub / live orchestrator / deep agent) from the shared store.
 PipelineFactory = Callable[[ICourseStore], CoursePipeline]
+
+# Resolves a user's BYOK provider keys for a run: user_id → {env-var name: key} for the keys they've
+# set (absent providers omitted). Wired from the CredentialVault when BYOK is configured; None when
+# BYOK is off (then builds run on the process environment — the admin/single-user/test path).
+CredentialResolver = Callable[[str], Awaitable[Mapping[str, str]]]
+
+# The one provider key a build cannot run without: every pipeline tier calls Claude. When BYOK is on
+# and the caller hasn't set it, the build is refused up front rather than failing mid-stream. Other
+# keys (embeddings/search/youtube) are optional — their absence degrades the capability honestly.
+_REQUIRED_KEY_ENV = "ANTHROPIC_API_KEY"
 
 # A streamed item: a ("progress", ProgressEvent) stage, an ("agent", AgentEvent) transcript beat,
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
@@ -80,6 +92,14 @@ class CourseBuildCancelledError(CourseServiceError):
     and drop the connection with no response) into a domain error the router maps to a 409."""
 
 
+class ProviderKeyRequiredError(CourseServiceError):
+    """Raised when a BYOK tenant starts a build without their required (Anthropic) key set.
+
+    Only fires when BYOK is configured (a credential resolver is wired) and the build is owned: the
+    tenant pays their own LLM bill, so a build can't fall back to the platform key. Router → 400 so
+    the web can prompt the user to set their key in Settings. Never carries the key value."""
+
+
 # A safe course_id is a non-empty run of [A-Za-z0-9_-] — no path separators, dots, or ``..`` that
 # could escape the course directory when the id becomes ``<id>.json``. Real ids are uuid4().hex.
 _SAFE_COURSE_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -104,9 +124,14 @@ class CourseService:
         run_store: IRunStore | None = None,
         registry: RunRegistry | None = None,
         event_store: IRunEventStore | None = None,
+        *,
+        credential_resolver: CredentialResolver | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
+        # Resolves the owner's BYOK keys per run (None when BYOK is off → builds use the process
+        # environment).
+        self._credential_resolver = credential_resolver
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -129,6 +154,44 @@ class CourseService:
             return self._store
         return OwnerScopedCourseStore(self._store, owner_id)
 
+    async def _resolve_run_credentials(self, owner_id: str | None) -> Mapping[str, str] | None:
+        """The owner's BYOK keys to bind for this run, or ``None`` to run on the process env.
+
+        ``None`` when the build is unowned (auth off) OR no resolver is wired (BYOK off) — both keep
+        today's behaviour: the adapters read ``os.environ``. With BYOK on and an owned build, the
+        keys are decrypted from the vault; a missing required (Anthropic) key refuses the build
+        (``ProviderKeyRequiredError``) so the tenant never silently falls back to the platform key.
+        """
+        if owner_id is None or self._credential_resolver is None:
+            return None
+        credentials = await self._credential_resolver(owner_id)
+        if _REQUIRED_KEY_ENV not in credentials:
+            # Raise bare — the exception carries no owner_id/value, so it can't leak the user id or
+            # a key into ``str(exc)`` / logs; the router supplies the only user-visible message.
+            raise ProviderKeyRequiredError
+        return credentials
+
+    @staticmethod
+    def _credential_scope(credentials: Mapping[str, str] | None) -> AbstractContextManager[None]:
+        """The run's credential context: the tenant keys when present, else a no-op (env fallback).
+
+        Enter it around the pipeline factory + ``asyncio.create_task`` so the run task inherits a
+        context copy carrying the keys; the parent context never retains them (no leak across an
+        async generator's yields)."""
+        if credentials is None:
+            return nullcontext()
+        return run_credentials(credentials)
+
+    async def assert_build_credentials(self, *, owner_id: str | None) -> None:
+        """Pre-flight the BYOK requirement before a streamed build starts: raises (router → 400)
+        when the required key is missing, returns nothing, binds nothing.
+
+        The SSE response commits its status + headers before the body, so a missing-key refusal must
+        surface here rather than mid-stream. ``stream`` resolves again at build time (cheap) to bind
+        the keys — kept separate so the decrypted values stay inside the service, never passed back
+        through the router."""
+        await self._resolve_run_credentials(owner_id)
+
     async def create(
         self,
         topic: str,
@@ -139,21 +202,27 @@ class CourseService:
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
         owner_id: str | None = None,
     ) -> Course:
-        pipeline = self._factory(self._store_for(owner_id))
+        # Resolve the owner's BYOK keys (refuses up front if the required key is missing) before any
+        # run is recorded, so a refused build leaves no history row.
+        credentials = await self._resolve_run_credentials(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
         # it raises CancelledError at this await without cancelling the request coroutine itself.
-        task = asyncio.create_task(
-            pipeline.run(
-                topic,
-                course_id=course_id,
-                run_id=run_id,
-                clarification=clarification,
-                discovery_depth=discovery_depth,
+        # The credential scope wraps the factory + create_task so the task inherits the tenant's
+        # keys (a context copy); the lazily-built adapters then read them, never the platform env.
+        with self._credential_scope(credentials):
+            pipeline = self._factory(self._store_for(owner_id))
+            task = asyncio.create_task(
+                pipeline.run(
+                    topic,
+                    course_id=course_id,
+                    run_id=run_id,
+                    clarification=clarification,
+                    discovery_depth=discovery_depth,
+                )
             )
-        )
-        self._registry.register(run_id, task, course_id, owner_id)
+            self._registry.register(run_id, task, course_id, owner_id)
         try:
             course = await task
         except asyncio.CancelledError:
@@ -209,23 +278,31 @@ class CourseService:
         recorder = RunEventRecorder(
             self._event_store, run_id=run_id, course_id=course_id, owner_id=owner_id
         )
+        # Resolve the owner's BYOK keys (refuses up front if the required key is missing). The route
+        # also pre-flights this via ``assert_build_credentials`` so the refusal is a clean 400
+        # before the SSE commits; resolving again here keeps the decrypted keys inside the service.
+        credentials = await self._resolve_run_credentials(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         try:
-            pipeline = self._factory(self._store_for(owner_id))
-            run_task = asyncio.create_task(
-                pipeline.run(
-                    topic,
-                    course_id=course_id,
-                    run_id=run_id,
-                    progress=QueueProgressSink(queue),
-                    agent=QueueAgentSink(queue),
-                    clarification=clarification,
-                    discovery_depth=discovery_depth,
+            # The credential scope wraps only the factory + create_task (no yields inside), so the
+            # run task inherits the tenant's keys as a context copy while the generator's own
+            # context — the one live across each yield — never retains them.
+            with self._credential_scope(credentials):
+                pipeline = self._factory(self._store_for(owner_id))
+                run_task = asyncio.create_task(
+                    pipeline.run(
+                        topic,
+                        course_id=course_id,
+                        run_id=run_id,
+                        progress=QueueProgressSink(queue),
+                        agent=QueueAgentSink(queue),
+                        clarification=clarification,
+                        discovery_depth=discovery_depth,
+                    )
                 )
-            )
-            self._registry.register(
-                run_id, run_task, course_id, owner_id
-            )  # cancellable by a separate request (scoped to the owner)
+                self._registry.register(
+                    run_id, run_task, course_id, owner_id
+                )  # cancellable by a separate request (scoped to the owner)
             while True:
                 next_event_task = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
@@ -302,14 +379,20 @@ class CourseService:
         """Re-author one lesson of an existing course and return the updated course.
 
         Returns ``None`` if the course or lesson is unknown. Raises the unsupported error if the
-        active pipeline can't regenerate a single lesson (e.g. the deep-agent builder).
+        active pipeline can't regenerate a single lesson (e.g. the deep-agent builder), or
+        ``ProviderKeyRequiredError`` when a BYOK tenant's required key is unset. Like a full build,
+        the re-author runs in the owner's credential scope so it uses the tenant's own keys.
         """
         if not _is_safe_course_id(course_id):
             return None  # unsafe id can't name a stored course → not-found (router → 404)
         pipeline = self._factory(self._store_for(owner_id))
+        # Support check before the credential check: an unsupported pipeline is a 501 regardless of
+        # keys, and constructing it above touches no key (the clients are lazy).
         if not isinstance(pipeline, LessonRegenerator):
             raise LessonRegenerationUnsupportedError(type(pipeline).__name__)
-        return await pipeline.regenerate_lesson(course_id, lesson_id, run_id=run_id)
+        credentials = await self._resolve_run_credentials(owner_id)
+        with self._credential_scope(credentials):
+            return await pipeline.regenerate_lesson(course_id, lesson_id, run_id=run_id)
 
     async def delete_course(self, course_id: str, *, owner_id: str | None = None) -> None:
         """Delete a course and its per-course assets: the stored course-object + run-history row.

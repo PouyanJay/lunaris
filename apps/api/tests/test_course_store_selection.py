@@ -31,6 +31,7 @@ def _service_for(settings: Settings) -> CourseService:
         run_store=InMemoryRunStore(),
         registry=RunRegistry(),
         event_store=InMemoryRunEventStore(),
+        vault=None,
     )
 
 

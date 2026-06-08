@@ -53,6 +53,7 @@ from .credential_vault import CredentialVault
 from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
 from .secrets import (
+    BYOK_PROVIDERS,
     KNOWN_SECRETS,
     AnthropicProbeValidator,
     ICredentialStore,
@@ -63,7 +64,7 @@ from .secrets import (
     SupabaseCredentialStore,
     build_secret_cipher,
 )
-from .service import CourseService, PipelineFactory
+from .service import CourseService, CredentialResolver, PipelineFactory
 
 logger = structlog.get_logger()
 
@@ -153,28 +154,6 @@ def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) ->
         return _supabase_run_event_store
     return _in_memory_run_event_store
 
-
-def get_course_service(
-    settings: Annotated[Settings, Depends(get_settings)],
-    run_store: Annotated[IRunStore, Depends(get_run_store)],
-    registry: Annotated[RunRegistry, Depends(get_run_registry)],
-    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
-) -> CourseService:
-    """Compose the CourseService for the configured pipeline (overridable in tests)."""
-    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
-    # across replicas — the stateless-container need); the file store otherwise (offline dev).
-    store: ICourseStore = (
-        _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
-    )
-    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
-    if factory is None:
-        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
-        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
-        factory = build_orchestrator
-    return CourseService(store, factory, run_store, registry, event_store)
-
-
-CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
 
 # Process-wide corpus collaborators (singletons, like the run store): the in-memory corpus must be
 # shared so a manually-ingested source survives for a later list/delete within the process; the
@@ -286,6 +265,52 @@ def get_credential_vault(
 
 
 CredentialVaultDep = Annotated[CredentialVault | None, Depends(get_credential_vault)]
+
+
+def _byok_credential_resolver(vault: CredentialVault) -> CredentialResolver:
+    """A per-run resolver over the vault: user_id → {env-var name: decrypted key} for keys they set.
+
+    A provider the user hasn't set is omitted (its env-var key absent), so a missing required key
+    surfaces as a refused build and an optional one degrades the capability honestly."""
+
+    async def resolve(user_id: str) -> dict[str, str]:
+        resolved: dict[str, str] = {}
+        for provider in BYOK_PROVIDERS:
+            key = await vault.reveal(user_id=user_id, provider=provider)
+            if key:
+                resolved[KNOWN_SECRETS[provider]] = key
+        return resolved
+
+    return resolve
+
+
+def get_course_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    run_store: Annotated[IRunStore, Depends(get_run_store)],
+    registry: Annotated[RunRegistry, Depends(get_run_registry)],
+    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
+    vault: CredentialVaultDep,
+) -> CourseService:
+    """Compose the CourseService for the configured pipeline (overridable in tests)."""
+    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
+    # across replicas — the stateless-container need); the file store otherwise (offline dev).
+    store: ICourseStore = (
+        _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
+    )
+    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
+    if factory is None:
+        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
+        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
+        factory = build_orchestrator
+    # BYOK on (a vault is configured) → builds run on the caller's own keys; off → on the process
+    # environment (admin/single-user), keeping today's behaviour.
+    resolver = _byok_credential_resolver(vault) if vault is not None else None
+    return CourseService(
+        store, factory, run_store, registry, event_store, credential_resolver=resolver
+    )
+
+
+CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
 
 # One ConfigStore per config-file path (owns process env + the on-disk file), shared by requests.
 # Tests override get_config_store.

@@ -1,8 +1,8 @@
-import os
 import re
 from typing import Protocol
 
 import structlog
+from lunaris_runtime.credentials import resolve_secret
 
 from .video_result import VideoResult
 
@@ -150,7 +150,7 @@ class YouTubeVideoSource:
         self._client = client
 
     async def find(self, query: str, *, max_results: int = 5) -> list[VideoResult]:
-        api_key = os.environ.get(self._api_key_env)
+        api_key = resolve_secret(self._api_key_env)
         if not api_key:
             logger.warning("youtube_search_unkeyed", reason=f"{self._api_key_env} unset")
             return []

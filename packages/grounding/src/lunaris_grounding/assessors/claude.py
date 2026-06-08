@@ -3,9 +3,7 @@ import re
 
 import structlog
 from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
+    build_anthropic_chat_model,
     retry_on_rate_limit,
 )
 
@@ -55,14 +53,7 @@ class ClaudeSupportAssessor:
             return Support(score=0.0, citation_id=None)
 
         if self._client is None:
-            from langchain_anthropic import ChatAnthropic
-
-            self._client = ChatAnthropic(
-                model=self._model_name,
-                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-                max_retries=LLM_MAX_RETRIES,
-                rate_limiter=get_llm_rate_limiter(),
-            )
+            self._client = build_anthropic_chat_model(self._model_name)
 
         prompt = _PROMPT.format(claim=claim_text, evidence=render_evidence(evidence))
         message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
