@@ -28,7 +28,16 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
         {fallbacks.map((capability, index) => (
           <span key={capability.capability}>
             {index > 0 && (index === fallbacks.length - 1 ? " and " : ", ")}
-            {LABELS[capability.capability]} (<span className="mono">{capability.provider}</span>)
+            {LABELS[capability.capability]} (<span className="mono">{capability.provider}</span>
+            {capability.compute && (
+              <span
+                className={styles.compute}
+                aria-label={`running on ${capability.compute.toUpperCase()}`}
+              >
+                {capability.compute.toUpperCase()}
+              </span>
+            )}
+            )
           </span>
         ))}
         . Quality and verification are reduced.

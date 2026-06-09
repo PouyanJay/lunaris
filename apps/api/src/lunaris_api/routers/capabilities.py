@@ -1,6 +1,9 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 
 from ..capabilities import CapabilityStatus, resolve_capabilities
+from ..config import Settings, get_settings
 from ..dependencies import CredentialVaultDep, OptionalUserIdDep, SecretStoreDep
 from ..schemas import CapabilityStatusView
 
@@ -9,7 +12,10 @@ router = APIRouter(prefix="/api/capabilities", tags=["capabilities"])
 
 def _to_view(status_: CapabilityStatus) -> CapabilityStatusView:
     return CapabilityStatusView(
-        capability=status_.capability, mode=status_.mode, provider=status_.provider
+        capability=status_.capability,
+        mode=status_.mode,
+        provider=status_.provider,
+        compute=status_.compute.value if status_.compute is not None else None,
     )
 
 
@@ -18,6 +24,7 @@ async def get_capabilities(
     owner_id: OptionalUserIdDep,
     vault: CredentialVaultDep,
     store: SecretStoreDep,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> list[CapabilityStatusView]:
     """Which provider each key-gated capability is using RIGHT NOW: its keyed provider (live) or its
     keyless local fallback. The web shows a Draft badge per fallback capability; a capability flips
@@ -32,4 +39,7 @@ async def get_capabilities(
         set_names = {s.provider for s in statuses if s.is_set}
     else:
         set_names = {s.name for s in store.statuses() if s.is_set}
-    return [_to_view(c) for c in resolve_capabilities(lambda name: name in set_names)]
+    resolved = resolve_capabilities(
+        lambda name: name in set_names, compute=settings.keyless_compute
+    )
+    return [_to_view(c) for c in resolved]

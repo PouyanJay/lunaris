@@ -24,6 +24,21 @@
   color: var(--text-secondary);
 }
 
+/* A small CPU/GPU chip on the local-inference fallback — the compute kind reads as mono data. */
+.compute {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent-700);
+  background: var(--bg);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
 /* A quiet text action — opens Settings so the user can add keys (which clears this banner). */
 .action {
   flex: none;

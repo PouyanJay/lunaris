@@ -31,6 +31,10 @@ class CapabilitySpec:
     env_var: str
     live_label: str
     fallback_label: str
+    # Whether the keyless fallback runs on the local model-inference server (the GPU/CPU-bound one),
+    # vs. a keyless web service (e.g. DuckDuckGo). Only inference-backed fallbacks carry a compute
+    # (GPU/CPU) badge in the Draft UI. The LLM is GPU-acceleratable today; embeddings stay CPU.
+    runs_on_local_inference: bool = False
 
 
 # Order is the stable UI order for both indicators. ``secret_id`` matches the API's KNOWN_SECRETS,
@@ -43,6 +47,7 @@ CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
         env_var="ANTHROPIC_API_KEY",
         live_label="Anthropic Claude",
         fallback_label="Qwen2.5-3B (local)",
+        runs_on_local_inference=True,
     ),
     CapabilitySpec(
         capability=CapabilityName.EMBEDDINGS,

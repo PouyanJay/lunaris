@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from lunaris_runtime.schema import ComputeKind
+
 _DEFAULT_ORIGINS = (
     "http://localhost:5173,http://localhost:4173,http://localhost:4174,"
     "http://localhost:4175,http://localhost:4176"
@@ -40,6 +42,10 @@ class Settings:
     draft_tier_enabled: bool = True
     draft_daily_cap: int = 10
     draft_max_concurrent: int = 1
+    # Where the keyless local inference runs — CPU (default) or GPU. The image self-selects at boot;
+    # this declares it for the Draft UI's compute badge, set per environment to match where the
+    # inference app is deployed. Any other env value falls back to CPU.
+    keyless_compute: ComputeKind = ComputeKind.CPU
 
     @property
     def has_supabase(self) -> bool:
@@ -81,6 +87,7 @@ def get_settings() -> Settings:
         draft_tier_enabled=_env_flag("LUNARIS_DRAFT_TIER_ENABLED", default=True),
         draft_daily_cap=_env_int("LUNARIS_DRAFT_DAILY_CAP", default=10),
         draft_max_concurrent=_env_int("LUNARIS_DRAFT_MAX_CONCURRENT", default=1),
+        keyless_compute=_env_compute("LUNARIS_KEYLESS_COMPUTE", default=ComputeKind.CPU),
     )
 
 
@@ -108,3 +115,9 @@ def _env_int(name: str, *, default: int) -> int:
     except ValueError:
         return default
     return value if value >= 0 else default
+
+
+def _env_compute(name: str, *, default: ComputeKind) -> ComputeKind:
+    """The keyless compute kind ("cpu"/"gpu") from env ``name``; any other value → ``default``."""
+    raw = (os.getenv(name) or "").strip().lower()
+    return ComputeKind(raw) if raw in (ComputeKind.CPU, ComputeKind.GPU) else default

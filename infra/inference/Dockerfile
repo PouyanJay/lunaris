@@ -18,8 +18,12 @@
 # than the 4 GiB Consumption ceiling — move to a workload-profiles environment with a memory-heavy
 # or GPU profile (deploy inference.bicep with gpuWorkloadProfileName), which needs the matching quota.
 
-# Prebuilt CPU llama.cpp server (mainline — no fork needed for a standard model). Pin a tag in real use.
-FROM ghcr.io/ggml-org/llama.cpp:server
+# Prebuilt CUDA llama.cpp server (mainline — no fork needed for a standard model). Pin a tag in real
+# use. The CUDA build runs on CPU when no GPU is attached AND offloads to the GPU when one is — so a
+# single image serves both the scale-to-zero CPU Consumption profile and a GPU workload profile. The
+# entrypoint (entrypoint.sh) probes for the GPU and sets --n-gpu-layers accordingly; CPU stays the
+# default. (The CPU-only `:server` tag could never use a GPU, so this image is the auto-adapting one.)
+FROM ghcr.io/ggml-org/llama.cpp:server-cuda
 
 # The keyless chat model: Qwen2.5-3B-Instruct, Q4_K_M (~1.9GB, the official Qwen GGUF, verified to
 # exist). Override at build time to swap: --build-arg MODEL_URL=… --build-arg MODEL_FILE=…
@@ -32,17 +36,15 @@ RUN mkdir -p /models && \
 
 EXPOSE 8080
 
-# --host 0.0.0.0 so ACA ingress can reach it; --port 8080 matches the app's default base URL; the
-# served model id "qwen2.5-3b-instruct" matches LUNARIS_FALLBACK_LLM_MODEL. The memory caps matter on
-# the 4 GiB Consumption container: --parallel 1 bounds the KV cache and -fit off stops llama.cpp's
-# auto-fit from sizing to the NODE's RAM (which OOM-kills the smaller container).
-#
-# --ctx-size 16384: a full deep-agent build accumulates planner context (todo list + tool results)
-# that overflowed an 8192 window mid-build (400 exceed_context_size_error). Qwen2.5-3B is GQA-light
-# (2 KV heads, head_dim 128, 36 layers) → its KV cache at 16384 is only ~0.6 GiB, so model (~1.9 GiB)
-# + KV + buffers fits the 4 GiB container with headroom (still well under n_ctx_train = 32768). The
-# app also bounds prompts to this window via the keyless model profile (see build_keyless_chat_model),
-# so summarization keeps the planner under the limit regardless.
-ENTRYPOINT ["/app/llama-server", "--host", "0.0.0.0", "--port", "8080", \
-            "--model", "/models/qwen2.5-3b-instruct-q4_k_m.gguf", "--alias", "qwen2.5-3b-instruct", \
-            "--ctx-size", "16384", "--parallel", "1", "-fit", "off"]
+# The launch flags (host/port/model/--ctx-size 16384/--parallel 1/-fit off) live in entrypoint.sh,
+# which also picks CPU vs GPU at boot. Notes carried from there:
+#   - port 8080 + served id "qwen2.5-3b-instruct" match the app's LUNARIS_FALLBACK_LLM_* defaults.
+#   - the memory guards matter on the 4 GiB Consumption container: --parallel 1 bounds the KV cache,
+#     -fit off stops llama.cpp auto-fit from sizing to the NODE's RAM (which OOM-kills it).
+#   - --ctx-size 16384: a full deep-agent build accumulates planner context that overflowed an 8192
+#     window (400 exceed_context_size_error). Qwen2.5-3B is GQA-light (2 KV heads, head_dim 128, 36
+#     layers) → KV @16384 ~0.6 GiB, so model (~1.9 GiB) + KV + buffers fits 4 GiB (n_ctx_train 32768).
+#     The app also bounds prompts to this window via the keyless model profile.
+COPY infra/inference/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]

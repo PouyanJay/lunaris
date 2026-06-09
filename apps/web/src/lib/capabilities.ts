@@ -8,6 +8,9 @@ export interface CapabilityStatus {
   capability: CapabilityName;
   mode: CapabilityMode;
   provider: string;
+  /** For a keyless fallback that runs on the local model server (the LLM): whether inference is on
+   *  GPU or CPU. Absent/null for live capabilities and keyless web services (search/video). */
+  compute?: "cpu" | "gpu" | null;
 }
 
 /** Human label per capability — shared by the live settings badge and the per-course build tag so

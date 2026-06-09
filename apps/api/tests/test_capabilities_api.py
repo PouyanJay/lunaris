@@ -13,6 +13,7 @@ from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_secret_store, get_secret_validator
 from lunaris_api.secrets import KNOWN_SECRETS, SecretStore
+from lunaris_runtime.schema import ComputeKind
 
 
 @pytest.fixture(autouse=True)
@@ -27,11 +28,19 @@ def _restore_secret_env() -> Iterator[None]:
 
 
 @pytest.fixture
-async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> AsyncIterator[httpx.AsyncClient]:
+    # Indirect param overrides the keyless compute kind (default "cpu"); the GPU test passes "gpu".
+    compute = ComputeKind(getattr(request, "param", "cpu"))
     app = create_app()
     env_file = tmp_path / ".env"
     app.dependency_overrides[get_settings] = lambda: Settings(
-        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=env_file
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(),
+        env_file=env_file,
+        keyless_compute=compute,
     )
     app.dependency_overrides[get_secret_store] = lambda: SecretStore(env_file)
     app.dependency_overrides[get_secret_validator] = lambda: AcceptingValidator()
@@ -63,3 +72,33 @@ async def test_capability_flips_to_live_when_its_key_is_set(client: httpx.AsyncC
     assert caps["llm"]["provider"] == "Anthropic Claude"
     # The others stay on their fallbacks — the badge is per-capability, not all-or-nothing.
     assert caps["embeddings"]["mode"] == "fallback"
+
+
+async def test_llm_fallback_carries_compute_others_do_not(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/api/capabilities")).json()
+
+    caps = {c["capability"]: c for c in body}
+    # The local LLM fallback declares where its inference runs; the default is CPU.
+    assert caps["llm"]["compute"] == "cpu"
+    # Embeddings (a separate CPU service) and the keyless web services carry no compute badge.
+    assert caps["embeddings"]["compute"] is None
+    assert caps["search"]["compute"] is None
+    assert caps["video"]["compute"] is None
+
+
+@pytest.mark.parametrize("client", ["gpu"], indirect=True)
+async def test_llm_fallback_reports_gpu_when_configured(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/api/capabilities")).json()
+
+    caps = {c["capability"]: c for c in body}
+    assert caps["llm"]["compute"] == "gpu"
+
+
+async def test_live_llm_carries_no_compute(client: httpx.AsyncClient) -> None:
+    await client.put("/api/settings/secrets/anthropic", json={"value": "sk-ant-live-key-4242"})
+
+    body = (await client.get("/api/capabilities")).json()
+
+    caps = {c["capability"]: c for c in body}
+    # Compute is only meaningful for the keyless local fallback — a keyed LLM runs on hosted Claude.
+    assert caps["llm"]["compute"] is None
