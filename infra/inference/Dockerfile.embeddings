@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+#
+# Keyless EMBEDDINGS server for Lunaris (keyless-fallbacks T8): a llama.cpp server in --embeddings
+# mode that exposes an OpenAI-compatible /v1/embeddings for the keyless embedder (voyage-4-nano), so
+# a keyless build can ground + retrieve without an embeddings API key.
+#
+# CPU, not GPU: the nano embedder is light, so this runs as a cheap CPU Container App (see
+# infra/embeddings.bicep) — separate from the GPU chat server because llama.cpp's --embeddings mode
+# is exclusive with generation. The app points LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL at this endpoint.
+#
+# Serves:
+#   - POST /v1/embeddings   (the grounding retriever / discoverer / seeder)
+#   - GET  /health          (200 ready / 503 loading)
+#
+# NOTE (unverified on Azure): the CPU base tag, the voyage-4-nano GGUF URL, and llama.cpp's embedding
+# compatibility for this model must be confirmed before relying on this. A vetted starting point.
+
+# CPU llama.cpp server (no CUDA — embeddings are light). Pin a specific tag in real use.
+FROM ghcr.io/ggml-org/llama.cpp:server
+
+# The keyless embedder. Override at build time to swap the model:
+#   --build-arg MODEL_URL=… --build-arg MODEL_FILE=…
+ARG MODEL_URL="https://huggingface.co/voyageai/voyage-4-nano-gguf/resolve/main/voyage-4-nano.gguf"
+ARG MODEL_FILE="voyage-4-nano.gguf"
+ENV MODEL_PATH="/models/${MODEL_FILE}"
+
+RUN mkdir -p /models && \
+    curl -fSL "${MODEL_URL}" -o "${MODEL_PATH}"
+
+EXPOSE 8080
+
+# --embeddings turns the server into an embedding endpoint; --pooling mean is the usual sentence-
+# embedding pooling. The served model id "voyage-4-nano" matches LUNARIS_FALLBACK_EMBEDDINGS_MODEL.
+ENTRYPOINT ["/app/llama-server", "--host", "0.0.0.0", "--port", "8080", \
+            "--model", "/models/voyage-4-nano.gguf", "--alias", "voyage-4-nano", \
+            "--embeddings", "--pooling", "mean"]
