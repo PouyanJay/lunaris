@@ -56,27 +56,28 @@ operate over *relevant, right-level* input rather than the whole subject.
 | **Model provider** | **Anthropic Claude**, two tiers — strong `claude-opus-4-8` (planner, curriculum architect, claim assessor) and worker `claude-haiku-4-5-20251001` (extraction, interpretation, authoring, revision, discovery, curation). Routed by `ModelRouter` / `ModelTier`. | Cheap bulk work goes to the worker; only planning and judgement spend the strong model. Tiers are swappable and settable in-app. |
 | **Prerequisite ordering (Moat A)** | Deterministic graph builder, topological sort | Guarantees acyclicity + a teaching order the model is forced to trust. |
 | **Grounding / retrieval (Moat B)** | **Supabase Postgres + pgvector**, **Voyage AI** embeddings, a claim-level `Verifier`, trust-tiered sources | Each claim is embedded, retrieved against the per-course corpus, and marked `SUPPORTED` (with a citation) or `CUT`. Authority emerges from corroboration, not from a label. |
-| **Research & resource discovery** | **Tavily** search + **Trafilatura** extraction + a domain-trust model (`lunaris_grounding.discovery`); optional **YouTube Data API** for video | Fills the corpus and curates per-lesson resources from vetted external sources. Key-gated, with deterministic stubs when no key is present. |
+| **Research & resource discovery** | **Tavily** search + **Trafilatura** extraction + a domain-trust model (`lunaris_grounding.discovery`); optional **YouTube Data API** for video | Fills the corpus and curates per-lesson resources from vetted external sources. Key-gated, falling back to **DuckDuckGo** search and general video search when keys are absent (see fallback table below). |
 | **Capability registry** | **FastMCP** (`lunaris-mcp`) | Exposes the moats as MCP tools that call the *same* cores as the in-process LangChain tools, so the two surfaces never drift. |
 | **Course schema & persistence** | **Pydantic** schema (`packages/runtime`), `CourseStore`, structlog with correlation IDs + secret redaction | One typed `Course` object, serialized camelCase, with auditable run events. |
 | **API** | **FastAPI** / uvicorn (`apps/api`) | `POST /api/courses`, an SSE build stream, a live agent transcript; selects the pipeline via `LUNARIS_PIPELINE`. |
 | **Web** | **Vite + React + TypeScript** (`apps/web`) | A studio with run history, a live agent transcript, a lesson **Reader** (Merrill phases, claims-with-sources), and a prerequisite-graph **Map**. |
 | **Eval** | `lunaris-eval` (offline checkers) | Independent verification of the definition of done: prerequisite order + factuality. |
 
-**Graceful degradation is a first-class property.** Every external key is optional; its absence falls
-back to a deterministic stub so the no-key path always works:
+**Graceful degradation is a first-class property.** Every external key is optional. Rather than
+failing — or silently faking — the absence of a key, each capability **falls back to an alternative
+provider** so the no-key path still produces a real course:
 
 > ⚠️ **Active development.** The fallback / key-gated degradation mechanism is currently being
-> reworked. The table below reflects the intended behavior, but the exact fallback paths (and the
-> automatic pipeline selection in §3.4) may change — treat this section as a moving target until it
-> settles.
+> reworked. The model is moving **away from deterministic stubs toward alternate real providers**
+> (table below). The exact providers, model sizes, and the automatic pipeline selection in §3.4 may
+> still change — treat this section as a moving target until it settles.
 
-| Key | Unlocks | Absent |
+| Capability | Primary (key present) | Fallback (key absent) |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Live Claude (`agent`/`live` pipelines) | Deterministic `stub` pipeline |
-| `SEARCH_API_KEY` (Tavily) | Research + curated resources | `research: unavailable`, no resources — course still builds at the right level |
-| `YOUTUBE_API_KEY` | Richer video metadata | Video candidates via the shared search |
-| `EMBEDDINGS_API_KEY` (Voyage) + Supabase | Real pgvector grounding → citations | Verifier fails safe (cuts every claim → *Needs review*) |
+| **LLM** | Anthropic Claude — `ANTHROPIC_API_KEY` | **PrismML** |
+| **Embeddings** | Voyage AI — `EMBEDDINGS_API_KEY` | **Voyage nano**, 1024-dim |
+| **Search** | Tavily — `SEARCH_API_KEY` | **DuckDuckGo** |
+| **Video resources** | YouTube Data API — `YOUTUBE_API_KEY` | **Regular (general) video search** |
 
 ---
 
