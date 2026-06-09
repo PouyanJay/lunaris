@@ -1,13 +1,13 @@
-"""Readiness probe for the keyless LLM endpoint — the serverless GPU (keyless-fallbacks T8).
+"""Readiness probe for the keyless model endpoint (keyless-fallbacks T8).
 
-The keyless model runs on a self-hosted, scale-to-zero GPU endpoint, so the first build after idle
-waits while the GPU provisions (the replica scales from zero, then the model loads into VRAM). This
-turns that wait into a signal the UI can show, from a single fast health check:
+The keyless model runs on a self-hosted, scale-to-zero endpoint (CPU by default; GPU optional), so
+the first build after idle waits while it provisions (the replica scales from zero, then the model
+loads). This turns that wait into a signal the UI can show, from a single fast health check:
 
 - **READY** — the endpoint answered 200; the model is loaded and can serve.
 - **PROVISIONING** — it's warming up: a 503 (llama.cpp's "loading model"), or the short probe timed
   out while a scaled-to-zero replica spins up (the probe itself nudges the cold start along).
-- **UNREACHABLE** — nothing answered (no endpoint wired, wrong URL): there is no GPU to provision.
+- **UNREACHABLE** — nothing answered (no endpoint wired, wrong URL): there is no server to reach.
 
 Best-effort: every failure maps to a status, never an exception. A probe callable can be injected
 for tests, so the default ``httpx`` path is never exercised under test.
@@ -34,12 +34,12 @@ HealthGet = Callable[[str], Awaitable[int]]
 
 
 class ReadinessStatus(StrEnum):
-    """Whether the keyless GPU endpoint can serve right now."""
+    """Whether the keyless model endpoint can serve right now."""
 
     READY = "ready"
     PROVISIONING = "provisioning"
     UNREACHABLE = "unreachable"
-    # The caller's LLM is keyed (a hosted API), so there is no GPU to provision. Set by the API
+    # The caller's LLM is keyed (a hosted API), so there is no local server to provision. Set by API
     # layer, which knows the caller's key state; the probe itself never returns this.
     NOT_APPLICABLE = "not_applicable"
 

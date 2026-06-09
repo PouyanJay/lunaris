@@ -8,8 +8,8 @@ from ..schemas import KeylessReadinessView
 
 router = APIRouter(prefix="/api/keyless", tags=["keyless"])
 
-# The LLM capability's secret id — its presence means the caller's LLM is a hosted API (no GPU to
-# provision). Read from the one shared capability table so it can't drift from the badge/build tag.
+# The LLM capability's secret id — its presence means the caller's LLM is a hosted API (no local
+# server to provision). Read from the shared capability table so it can't drift from the badge/tag.
 _LLM_SECRET_ID = next(s.secret_id for s in CAPABILITY_SPECS if s.capability is CapabilityName.LLM)
 
 
@@ -30,12 +30,12 @@ async def get_keyless_readiness(
     vault: CredentialVaultDep,
     store: SecretStoreDep,
 ) -> KeylessReadinessView:
-    """Whether the keyless serverless-GPU endpoint can serve right now, so the web can show a
-    "Provisioning GPU…" state on a keyless build instead of a silent wait.
+    """Whether the keyless model endpoint can serve right now, so the web can show a
+    "Provisioning…" state on a keyless build instead of a silent wait.
 
-    A caller whose LLM is keyed gets ``not_applicable`` (a hosted API — no GPU), and the endpoint
-    does NOT probe (so it never needlessly wakes a non-existent GPU). A keyless caller gets the live
-    health probe: ``ready`` / ``provisioning`` (waking or loading) / ``unreachable`` (none wired).
+    A caller whose LLM is keyed gets ``not_applicable`` (a hosted API — no local server), and the
+    endpoint does NOT probe (so it never needlessly wakes a non-existent server). A keyless caller
+    gets the live health probe: ``ready`` / ``provisioning`` (waking or loading) / ``unreachable``.
     """
     if await _llm_is_keyed(owner_id, vault, store):
         return KeylessReadinessView(status=ReadinessStatus.NOT_APPLICABLE.value)

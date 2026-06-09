@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import { KeylessProvisioningBanner } from "./KeylessProvisioningBanner";
 
 describe("KeylessProvisioningBanner", () => {
-  it("shows a provisioning notice while the GPU is waking", () => {
+  it("shows a provisioning notice while the model is waking", () => {
     render(<KeylessProvisioningBanner status="provisioning" />);
     const banner = screen.getByRole("status");
-    expect(banner).toHaveTextContent(/waking up the local gpu/i);
+    expect(banner).toHaveTextContent(/waking up the local model/i);
     expect(banner).toHaveTextContent(/30–60s/);
     expect(screen.getByText("PROVISIONING")).toBeInTheDocument();
   });

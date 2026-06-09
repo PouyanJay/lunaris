@@ -38,7 +38,7 @@ param withProviderKeys bool = false
 @description('When true, inject the BYOK AES master key from Key Vault as LUNARIS_KEY_ENC_MASTER (enables per-tenant encrypted key storage + the authed Settings keys panel). The secret MUST already exist in the vault or the deploy fails.')
 param withByok bool = false
 
-@description('Keyless (Draft) build tier on/off. False (the default until a keyless inference endpoint is wired) makes an unkeyed build a clean "add a key" 403 instead of failing mid-build with no model server. Flip to true once the serverless-GPU inference app is deployed (keyless-fallbacks T6/T8).')
+@description('Keyless (Draft) build tier on/off. False (the default until a keyless inference endpoint is wired) makes an unkeyed build a clean "add a key" 403 instead of failing mid-build with no model server. Flip to true once the keyless inference app is deployed (keyless-fallbacks T6/T8).')
 param draftTierEnabled bool = false
 
 @description('Internal base URL of the keyless chat endpoint (the inference.bicep app, e.g. https://lunaris-<env>-inference.internal…/v1). Empty = use the in-process default (localhost) — i.e. no keyless backend in this deployment.')

@@ -181,9 +181,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   useEffect(() => {
     if (streamingRunId) reloadRuns();
   }, [streamingRunId, reloadRuns]);
-  // While a keyless build is active, the self-hosted GPU may be scaling from zero — poll its
-  // readiness so the build view can show a "Provisioning GPU…" notice instead of a silent stall.
-  // Only when the LLM is on its keyless fallback (a keyed build never touches the GPU → the endpoint
+  // While a keyless build is active, the self-hosted model server may be scaling from zero — poll
+  // its readiness so the build view can show a "Provisioning…" notice instead of a silent stall.
+  // Only when the LLM is on its keyless fallback (a keyed build never touches it → the endpoint
   // returns not_applicable and the banner stays hidden anyway, but gating here avoids needless polls).
   const llmIsFallback = capabilities.some((c) => c.capability === "llm" && c.mode === "fallback");
   const buildActive = state.status === "streaming" || opened.state.status === "building";
