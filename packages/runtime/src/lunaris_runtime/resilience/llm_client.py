@@ -61,6 +61,20 @@ _FALLBACK_PLACEHOLDER_KEY = "no-key-required"
 _DEFAULT_FALLBACK_REQUEST_TIMEOUT_S = 900.0
 _DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S = 600.0
 
+# The keyless model's context window, in tokens — must match the served endpoint's --ctx-size
+# (16384 on the deployed llama.cpp container). A small local model has a *tiny* window next to a
+# hosted Claude's, and the deep-agent planner accumulates context (todo list + tool results) that
+# silently overflowed it mid-build (400 exceed_context_size_error). Advertising the window via the
+# model's `profile` makes deepagents size its summarization to a fraction of it (summarize before
+# the limit) instead of its fixed 170k-token fallback for unknown models — which never fires in 16k.
+_DEFAULT_FALLBACK_CONTEXT_TOKENS = 16384
+# Tokens reserved for the model's own response so input + output stay within the window; the profile
+# advertises `window - reserve` as the max *input*. 2048 is a conservative bound for a build's
+# tool-call / structured-output responses, which rarely run longer.
+_FALLBACK_RESPONSE_RESERVE_TOKENS = 2048
+# Floor for the advertised input budget, so a misconfigured (tiny) window can't drive it to zero.
+_FALLBACK_MIN_INPUT_TOKENS = 1024
+
 _rate_limiter: "BaseRateLimiter | None" = None
 
 
@@ -79,6 +93,22 @@ def _env_float(name: str, default: float) -> float:
     except (ValueError, OverflowError):
         return default
     return value if math.isfinite(value) and value > 0 else default
+
+
+def _env_int(name: str, default: int) -> int:
+    """A positive int from env ``name``, falling back to ``default`` when unset or invalid.
+
+    Like ``_env_float`` but for integer-valued knobs (e.g. token counts): a non-integer or
+    non-positive value defaults safely rather than crashing or silently truncating a float.
+    """
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def get_llm_rate_limiter() -> "BaseRateLimiter":
@@ -148,6 +178,9 @@ def build_keyless_chat_model() -> "BaseChatModel":
     """
     from .repaired_chat_model import RepairingChatOpenAI
 
+    window = _env_int("LUNARIS_FALLBACK_LLM_CONTEXT_TOKENS", _DEFAULT_FALLBACK_CONTEXT_TOKENS)
+    max_input_tokens = max(_FALLBACK_MIN_INPUT_TOKENS, window - _FALLBACK_RESPONSE_RESERVE_TOKENS)
+
     return RepairingChatOpenAI(
         model=os.getenv("LUNARIS_FALLBACK_LLM_MODEL", _DEFAULT_FALLBACK_MODEL),
         base_url=os.getenv("LUNARIS_FALLBACK_LLM_BASE_URL", _DEFAULT_FALLBACK_BASE_URL),
@@ -159,4 +192,7 @@ def build_keyless_chat_model() -> "BaseChatModel":
         ),
         max_retries=LLM_MAX_RETRIES,
         rate_limiter=get_llm_rate_limiter(),
+        # Advertise the small context window so the deep-agent harness summarizes a fraction before
+        # the limit instead of overflowing it (deepagents falls back to a 170k trigger otherwise).
+        profile={"max_input_tokens": max_input_tokens},
     )
