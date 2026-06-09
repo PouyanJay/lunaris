@@ -8,8 +8,10 @@ from lunaris_grounding import (
     ClaudeSupportAssessor,
     CorpusIngestor,
     CredibilityScorer,
+    IEmbedder,
     IEvidenceRetriever,
     IVideoSource,
+    LocalEmbedder,
     OpenAlexScholarlyRegistry,
     PgVectorRetriever,
     SearchVideoSource,
@@ -72,19 +74,29 @@ _DEFAULT_WORKER = "claude-haiku-4-5-20251001"
 _DEFAULT_STRONG = "claude-opus-4-8"
 
 
-def _retriever_from_env() -> IEvidenceRetriever | None:
-    """Build the real pgvector retriever iff the corpus + embeddings creds are present.
+def _embedder_from_env() -> IEmbedder:
+    """The embedder for a run: Voyage when its key is set, else the keyless local fallback (nano).
 
-    Returns ``None`` (→ the verifier falls back to the conservative stub that cuts every
-    claim) when Supabase or the embeddings key is unset, so the pipeline still runs offline.
+    Embeddings are no longer key-gated: with no key the run uses the local nano fallback (over an
+    OpenAI-compatible endpoint), so grounding still works keyless. Nano and Voyage are different
+    vector spaces, so a corpus ingests + queries under one embedder; a switch means re-grounding.
     """
-    if (
-        os.getenv("SUPABASE_URL")
-        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and resolve_secret("EMBEDDINGS_API_KEY")
-    ):
-        return PgVectorRetriever(VoyageEmbedder(), SupabaseCorpusStore())
-    logger.info("grounding_retriever_stubbed", reason="supabase/embeddings creds unset")
+    if resolve_secret("EMBEDDINGS_API_KEY"):
+        return VoyageEmbedder()
+    logger.info("embedder_local_fallback", reason="EMBEDDINGS_API_KEY unset")
+    return LocalEmbedder()
+
+
+def _retriever_from_env() -> IEvidenceRetriever | None:
+    """Build the real pgvector retriever iff the Supabase corpus is present.
+
+    Embeddings are keyless (Voyage when keyed, else the local nano fallback), so this gates only on
+    the Supabase corpus store. Returns ``None`` (→ the verifier falls back to the conservative stub
+    that cuts every claim) only when Supabase is unset, so the pipeline still runs corpus-less.
+    """
+    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
+        return PgVectorRetriever(_embedder_from_env(), SupabaseCorpusStore())
+    logger.info("grounding_retriever_stubbed", reason="supabase corpus unset")
     return None
 
 
@@ -104,7 +116,6 @@ def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
         resolve_secret("SEARCH_API_KEY")
         and os.getenv("SUPABASE_URL")
         and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and resolve_secret("EMBEDDINGS_API_KEY")
     ):
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
@@ -115,9 +126,9 @@ def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
             TrafilaturaContentExtractor(),
             scorer,
             ClaudeRelevanceJudge(worker_model),
-            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore()),
+            CorpusIngestor(_embedder_from_env(), SupabaseCorpusStore()),
         )
-    logger.info("grounding_discoverer_stubbed", reason="search/supabase/embeddings creds unset")
+    logger.info("grounding_discoverer_stubbed", reason="search/supabase creds unset")
     return StubGroundingDiscoverer()
 
 
@@ -132,19 +143,15 @@ def _seeder_from_env() -> IGroundingSeeder:
     returns the stub (nothing ingested), so the no-key path stays deterministic and claims fall to
     the verifier's existing behaviour.
     """
-    if (
-        os.getenv("SUPABASE_URL")
-        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and resolve_secret("EMBEDDINGS_API_KEY")
-    ):
+    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
             registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
         )
         return GroundingSeeder(
-            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore(), scorer=scorer)
+            CorpusIngestor(_embedder_from_env(), SupabaseCorpusStore(), scorer=scorer)
         )
-    logger.info("grounding_seeder_stubbed", reason="supabase/embeddings creds unset")
+    logger.info("grounding_seeder_stubbed", reason="supabase corpus unset")
     return StubGroundingSeeder()
 
 
