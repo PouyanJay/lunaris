@@ -29,6 +29,17 @@ class CapabilityMode(StrEnum):
     FALLBACK = "fallback"
 
 
+class ComputeKind(StrEnum):
+    """Where the keyless local inference runs — CPU by default, GPU when one is available.
+
+    A keyless ("Draft") build's local model server self-selects GPU vs CPU at boot (it offloads to
+    the GPU only when the host exposes one); this records which it is, for the Draft UI to surface.
+    """
+
+    CPU = "cpu"
+    GPU = "gpu"
+
+
 class CourseStatus(StrEnum):
     DIAGNOSING = "diagnosing"
     MAPPING = "mapping"

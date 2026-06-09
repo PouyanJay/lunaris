@@ -30,6 +30,24 @@ describe("DraftModeBanner", () => {
     expect(banner).not.toHaveTextContent("Voyage");
   });
 
+  it("shows the compute kind (GPU/CPU) for the local model fallback only", () => {
+    render(
+      <DraftModeBanner
+        capabilities={[
+          { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)", compute: "gpu" },
+          // No compute field — a keyless web service, not local inference.
+          { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
+        ]}
+      />,
+    );
+
+    // The LLM fallback shows its compute as a single accessible chip; the web service (no compute)
+    // gets none — so exactly one chip is present, reading "GPU".
+    const chips = screen.getAllByLabelText(/running on/i);
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent("GPU");
+  });
+
   it("renders nothing once every capability is live (the banner clears when keys are set)", () => {
     const { container } = render(<DraftModeBanner capabilities={LIVE} />);
 
