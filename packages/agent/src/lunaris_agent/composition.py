@@ -24,7 +24,7 @@ from lunaris_grounding import (
 )
 from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.persistence import ICourseStore
-from lunaris_runtime.resilience import build_anthropic_chat_model
+from lunaris_runtime.resilience import build_chat_model
 from lunaris_runtime.run_config import resolve_config
 
 from .coverage_critic import (
@@ -322,7 +322,7 @@ def build_agent_course_builder(
     set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed. The
     planner client is built explicitly (not as a bare model id) so it carries a request timeout —
     otherwise ``create_deep_agent`` would build an un-timed client and a stalled socket would hang
-    the whole run. It routes through ``build_anthropic_chat_model`` so it picks up the current run's
+    the whole run. It routes through ``build_chat_model`` so it picks up the current run's
     BYOK Anthropic key (the tenant's own) alongside the shared hardening. ``stream_tokens=True``
     because this planner is a real streaming model: the agent reasoning streams token-by-token to
     the UI (the no-key path keeps the deterministic beats).
@@ -334,7 +334,7 @@ def build_agent_course_builder(
     """
     worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
     strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
-    planner = build_anthropic_chat_model(strong)
+    planner = build_chat_model(strong)
     return AgentCourseBuilder(
         planner,
         store,

@@ -1,5 +1,5 @@
 from lunaris_runtime.resilience import (
-    build_anthropic_chat_model,
+    build_chat_model,
     retry_on_rate_limit,
 )
 
@@ -49,7 +49,7 @@ class ClaudeVisualGenerator:
 
     async def generate(self, concept: str, context: str) -> VisualDraft | None:
         if self._client is None:
-            self._client = build_anthropic_chat_model(self._model_name)
+            self._client = build_chat_model(self._model_name)
 
         prompt = _PROMPT.format(concept=concept, context=context)
         message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]

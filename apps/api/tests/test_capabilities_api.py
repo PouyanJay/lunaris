@@ -53,7 +53,7 @@ async def test_capabilities_are_fallback_when_no_keys_are_set(client: httpx.Asyn
     assert caps["search"]["mode"] == "fallback"
     assert caps["video"]["mode"] == "fallback"
     # The fallback provider is named so the UI can say which one is in effect.
-    assert caps["llm"]["provider"] == "Qwen3-4B (local)"
+    assert caps["llm"]["provider"] == "Bonsai 8B (1-bit, local)"
     assert caps["search"]["provider"] == "DuckDuckGo"
 
 

@@ -3,7 +3,7 @@ import re
 import structlog
 from langchain_core.language_models import BaseChatModel
 from lunaris_runtime.resilience import (
-    build_anthropic_chat_model,
+    build_chat_model,
     retry_on_rate_limit,
 )
 
@@ -74,5 +74,5 @@ class ClaudeRelevanceJudge:
         if not isinstance(self._model, str):
             return self._model
         if self._client is None:
-            self._client = build_anthropic_chat_model(self._model)
+            self._client = build_chat_model(self._model)
         return self._client

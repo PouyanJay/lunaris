@@ -39,7 +39,7 @@ class CapabilityStatus:
 # capability → (secret id that enables the live provider, live label, keyless-fallback label).
 # The secret ids match KNOWN_SECRETS so presence drives the mode.
 _PROVIDERS: dict[CapabilityName, tuple[str, str, str]] = {
-    CapabilityName.LLM: ("anthropic", "Anthropic Claude", "Qwen3-4B (local)"),
+    CapabilityName.LLM: ("anthropic", "Anthropic Claude", "Bonsai 8B (1-bit, local)"),
     CapabilityName.EMBEDDINGS: ("voyage", "Voyage", "voyage-4-nano (local)"),
     CapabilityName.SEARCH: ("search", "Tavily", "DuckDuckGo"),
     CapabilityName.VIDEO: ("youtube", "YouTube", "Web search"),

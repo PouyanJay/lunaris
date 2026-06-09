@@ -15,7 +15,7 @@ from lunaris_grounding import (
     passes_video_guards,
     video_quality_score,
 )
-from lunaris_runtime.resilience import build_anthropic_chat_model, retry_on_rate_limit
+from lunaris_runtime.resilience import build_chat_model, retry_on_rate_limit
 from lunaris_runtime.schema import CourseBrief, Modality, Module, Resource, ResourceKind, TrustTier
 
 from .candidate_view import CandidateView
@@ -308,5 +308,5 @@ class ClaudeResourceCurator:
         if not isinstance(self._model, str):
             return self._model
         if self._client is None:
-            self._client = build_anthropic_chat_model(self._model)
+            self._client = build_chat_model(self._model)
         return self._client

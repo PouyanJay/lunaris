@@ -39,6 +39,15 @@ LLM_MAX_RETRIES = 2
 # ``LUNARIS_LLM_RPS`` on the base 50/min tier (e.g. 0.7); raise it on a higher tier.
 _DEFAULT_LLM_RPS = 12.0
 
+# Keyless local LLM fallback (PrismML Bonsai 8B by default), reached over an OpenAI-compatible
+# endpoint when no Anthropic key is configured. The defaults target a local llama.cpp / ``bonsai``
+# server; both are overridable so swapping the model or runtime is a one-line env change.
+_DEFAULT_FALLBACK_BASE_URL = "http://localhost:8080/v1"
+_DEFAULT_FALLBACK_MODEL = "bonsai-8b"
+# llama.cpp ignores the key, but the OpenAI client requires a non-empty value. A placeholder, NOT a
+# secret — the whole point of the fallback is that it needs no API key.
+_FALLBACK_PLACEHOLDER_KEY = "no-key-required"
+
 _rate_limiter: "BaseRateLimiter | None" = None
 
 
@@ -64,28 +73,54 @@ def get_llm_rate_limiter() -> "BaseRateLimiter":
     return _rate_limiter
 
 
-def build_anthropic_chat_model(model_id: str) -> "BaseChatModel":
-    """A live ``ChatAnthropic`` wired with the shared hardening — the one place the knobs are set.
+def build_chat_model(model_id: str) -> "BaseChatModel":
+    """The hardened chat model for a run — the one place the LLM provider is chosen.
 
-    Every live Claude adapter needs the same timeout + bounded retries + shared rate limiter; this
-    factory bundles them so each adapter's ``_chat_model`` is a one-liner rather than a copy. It
-    imports ``langchain_anthropic`` lazily so only the live path pays for it (tests inject a model).
+    Two paths, both wired with the same timeout + bounded retries + shared rate limiter:
 
-    This is also the single Anthropic key-injection point (BYOK): ``api_key`` is resolved from the
-    current run's credential scope when one is active (the tenant's own key), else from the process
-    environment (admin/eval/single-user). Passing ``None`` is identical to the prior behaviour —
-    ``ChatAnthropic`` then reads ``ANTHROPIC_API_KEY`` itself — and only happens with no scope and
-    no env key set, the same failure as before; a tenant build is refused upstream when its key is
-    missing, so a scoped build always has a non-``None`` key here.
+    1. **Live (Anthropic key present).** A ``ChatAnthropic`` on ``model_id``. This is the single
+       Anthropic key-injection point (BYOK): the key is resolved from the current run's credential
+       scope when one is active (the tenant's own key), else from the process environment
+       (admin/eval/single-user). ``langchain_anthropic`` is imported lazily so only the live path
+       pays for it.
+    2. **Keyless fallback (no Anthropic key anywhere).** A local OpenAI-compatible endpoint (PrismML
+       Bonsai 8B by default) so a keyless account still builds (a labelled "Draft"). ``model_id``
+       (a Claude id) is ignored in favour of the configured fallback model. No API key is needed.
 
     The key value is never logged here; redaction at the structlog layer covers it regardless.
     """
+    anthropic_key = resolve_secret("ANTHROPIC_API_KEY")
+    if not anthropic_key:  # None or "" → no live key → the keyless fallback, not a blank-key Claude
+        return _build_fallback_chat_model()
+
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(
         model=model_id,
-        api_key=resolve_secret("ANTHROPIC_API_KEY"),
+        api_key=anthropic_key,
         default_request_timeout=LLM_REQUEST_TIMEOUT_S,
+        max_retries=LLM_MAX_RETRIES,
+        rate_limiter=get_llm_rate_limiter(),
+    )
+
+
+def _build_fallback_chat_model() -> "BaseChatModel":
+    """The keyless local fallback model over an OpenAI-compatible endpoint (Bonsai 8B by default).
+
+    Base URL + model id come from ``LUNARIS_FALLBACK_LLM_BASE_URL`` / ``LUNARIS_FALLBACK_LLM_MODEL``
+    (defaults target a local llama.cpp / ``bonsai`` server), so swapping the model or runtime is a
+    one-line env change. The ``api_key`` is a non-secret placeholder — the endpoint ignores it.
+    ``langchain_openai`` is imported lazily so only the fallback path pays for it.
+    """
+    import os
+
+    from langchain_openai import ChatOpenAI
+
+    return ChatOpenAI(
+        model=os.getenv("LUNARIS_FALLBACK_LLM_MODEL", _DEFAULT_FALLBACK_MODEL),
+        base_url=os.getenv("LUNARIS_FALLBACK_LLM_BASE_URL", _DEFAULT_FALLBACK_BASE_URL),
+        api_key=_FALLBACK_PLACEHOLDER_KEY,
+        timeout=LLM_REQUEST_TIMEOUT_S,
         max_retries=LLM_MAX_RETRIES,
         rate_limiter=get_llm_rate_limiter(),
     )
