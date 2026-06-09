@@ -60,3 +60,10 @@
     animation: none;
   }
 }
+
+/* Phone: trim the skeleton's outer gutter to match the timeline it stands in for. */
+@media (max-width: 768px) {
+  .skeleton {
+    padding: var(--space-5) var(--space-4);
+  }
+}

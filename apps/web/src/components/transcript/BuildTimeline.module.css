@@ -187,3 +187,11 @@ button.header:hover .label {
     transition: none;
   }
 }
+
+/* Phone: trim the outer gutter so the spine + beats keep their full width. Wide nested artifacts
+   (JSON, tool cards) scroll inside their own bordered boxes, so they never push the page sideways. */
+@media (max-width: 768px) {
+  .timeline {
+    padding: 0 var(--space-4) var(--space-4);
+  }
+}

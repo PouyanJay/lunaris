@@ -152,3 +152,10 @@
   font-size: var(--text-sm);
   color: var(--danger);
 }
+
+/* Phone: the add/replace inputs and selects (all share .input) become ≥44px tap targets. */
+@media (max-width: 768px) {
+  .input {
+    height: 44px;
+  }
+}

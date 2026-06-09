@@ -114,3 +114,11 @@
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
 }
+
+/* Phone: the editable control + select become ≥44px tap targets (WCAG 2.5.5). */
+@media (max-width: 768px) {
+  .input,
+  .select {
+    height: 44px;
+  }
+}

@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
 
+import { MOBILE_QUERY, useMediaQuery } from "../../hooks/useMediaQuery";
 import { buildGraphLayout, type KcNodeData } from "../../lib/graphLayout";
 import type { Course } from "../../types/course";
 import { GraphLegend } from "./GraphLegend";
@@ -40,6 +41,9 @@ export function PrereqGraphExplorer({ course, onOpenLesson }: PrereqGraphExplore
   const [nodes, setNodes, onNodesChange] = useNodesState(layout.nodes);
   const [edges, , onEdgesChange] = useEdgesState(layout.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // On phones the minimap is noise on a tiny canvas and the legend would collide with the bottom-left
+  // zoom controls — drop the minimap and lift the legend to the top-left instead.
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   // Re-seed when the course changes (e.g. after a reload). Clearing selectedId here is what
   // keeps the selection-reflection effect below from re-applying a stale selection: by the
@@ -81,16 +85,18 @@ export function PrereqGraphExplorer({ course, onOpenLesson }: PrereqGraphExplore
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="var(--border)" />
           <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            zoomable
-            nodeColor={minimapColor}
-            // React Flow paints the mask into an SVG <path fill>, which can't read a CSS var,
-            // so this tracks --bg (#090a0c) as a literal; keep in sync if the page bg changes.
-            maskColor="rgba(9, 10, 12, 0.6)"
-            className={styles.minimap}
-          />
-          <Panel position="bottom-left">
+          {!isMobile && (
+            <MiniMap
+              pannable
+              zoomable
+              nodeColor={minimapColor}
+              // React Flow paints the mask into an SVG <path fill>, which can't read a CSS var,
+              // so this tracks --bg (#090a0c) as a literal; keep in sync if the page bg changes.
+              maskColor="rgba(9, 10, 12, 0.6)"
+              className={styles.minimap}
+            />
+          )}
+          <Panel position={isMobile ? "top-left" : "bottom-left"}>
             <GraphLegend />
           </Panel>
         </ReactFlow>

@@ -268,3 +268,21 @@ a.itemTitle:focus-visible {
     animation: none;
   }
 }
+
+/* Phone: tighten the outer gutter, give inputs ≥44px height, and let the Paste/URL/File toggle span
+   the full width as three equal ≥44px tap targets instead of a tight inline cluster. */
+@media (max-width: 768px) {
+  .panel {
+    padding: var(--space-4);
+  }
+  .input {
+    height: 44px;
+  }
+  .modes {
+    align-self: stretch;
+  }
+  .mode {
+    flex: 1;
+    height: 44px;
+  }
+}
