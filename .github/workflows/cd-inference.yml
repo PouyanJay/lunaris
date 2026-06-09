@@ -1,0 +1,91 @@
+name: CD (inference images)
+
+# Builds + pushes the keyless inference images (the chat GPU server + the embeddings CPU server) to
+# ACR, SHA-tagged, for keyless ("Draft") builds (keyless-fallbacks T8).
+#
+# MANUAL (workflow_dispatch), not on every push: these images are large (a CUDA base + a model
+# download) and change rarely (only when their Dockerfile or the model changes), so building them on
+# every main push would bloat each deploy. Run this when you (re)build the inference images.
+#
+# This workflow only BUILDS + PUSHES the images. The first deploy of the Container Apps themselves is
+# manual (infra/inference.bicep needs a GPU workload-profile name + region/quota confirmed for your
+# subscription — see infra/inference/README.md). Once the apps exist, point them at a new image with
+# `az containerapp update --image <ref>` or by re-running the bicep with the new image ref.
+#
+# Auth is GitHub OIDC federation scoped to `environment: dev` (same as cd-dev), so the ACR push
+# reuses the dev federated identity. Unverified end-to-end until a GPU profile is available.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write # request the OIDC token for azure/login
+  contents: read
+
+concurrency:
+  group: cd-inference
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build & push inference images
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compute image references
+        id: image
+        run: |
+          echo "chat=${{ vars.ACR_LOGIN_SERVER }}/lunaris-inference:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "embeddings=${{ vars.ACR_LOGIN_SERVER }}/lunaris-embeddings:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: ACR login
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build & push chat image (Bonsai 8B, GPU)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/inference/Dockerfile
+          platforms: linux/amd64 # ACA runs amd64
+          push: true
+          tags: ${{ steps.image.outputs.chat }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push embeddings image (voyage-4-nano, CPU)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/inference/Dockerfile.embeddings
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.embeddings }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Keyless inference images pushed ✅"
+            echo ""
+            echo "| Service | Image |"
+            echo "|---|---|"
+            echo "| Chat (GPU)        | \`${{ steps.image.outputs.chat }}\` |"
+            echo "| Embeddings (CPU)  | \`${{ steps.image.outputs.embeddings }}\` |"
+            echo ""
+            echo "Next: deploy \`infra/inference.bicep\` (chat, needs a GPU workload profile) and"
+            echo "\`infra/embeddings.bicep\` (CPU) with these image refs, then set the API's"
+            echo "\`keylessLlmBaseUrl\` / \`keylessEmbeddingsBaseUrl\` and flip"
+            echo "\`LUNARIS_DRAFT_TIER_ENABLED=true\`. See infra/inference/README.md."
+          } >> "$GITHUB_STEP_SUMMARY"

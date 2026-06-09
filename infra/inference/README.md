@@ -12,14 +12,15 @@ serverless GPU** (scale-to-zero), so you pay for GPU **only while a build runs**
 
 ## What runs
 
-| Service | Model | Compute | Endpoint env var (on the API) |
-|---|---|---|---|
-| Chat | Bonsai 8B (1-bit GGUF) | **GPU**, scale-to-zero | `LUNARIS_FALLBACK_LLM_BASE_URL` |
-| Embeddings | voyage-4-nano | CPU (light) | `LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL` |
+| Service | Model | Compute | Endpoint env var (on the API) | Artifacts |
+|---|---|---|---|---|
+| Chat | Bonsai 8B (1-bit GGUF) | **GPU**, scale-to-zero | `LUNARIS_FALLBACK_LLM_BASE_URL` | `Dockerfile` + `inference.bicep` |
+| Embeddings | voyage-4-nano | CPU (light) | `LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL` | `Dockerfile.embeddings` + `../embeddings.bicep` |
 
 They're **two services** because llama.cpp's `--embeddings` mode is exclusive with generation. The
-chat server is the heavy/GPU one; embeddings is small enough for a cheap CPU container app (run a
-second `llama-server --embeddings` from a similar Dockerfile, internal ingress, on `:8080/v1`).
+chat server is the heavy/GPU one (`Dockerfile` → `inference.bicep`); embeddings is light enough for a
+cheap CPU container app (`Dockerfile.embeddings` → `infra/embeddings.bicep`). Both expose
+`:8080/v1` + `/health` over internal-only ingress.
 
 Bonsai being 1-bit (~1.2–1.5 GB) is what makes this cheap: the image and VRAM load are small, so a
 cold start is dominated by **GPU provisioning**, not model loading.
@@ -38,19 +39,26 @@ cold start is dominated by **GPU provisioning**, not model loading.
 1. **Ship the app with the Draft tier OFF** (`draftTierEnabled = false`, the default in `app.bicep`).
    An unkeyed user then gets a clean *"Draft builds are disabled — add a provider key"* `403`,
    instead of a build that starts and dies at the first model call because no GPU is wired yet.
-2. **Build + push the inference image(s)** to ACR (CD, like the API):
-   `docker build -f infra/inference/Dockerfile -t <acr>/lunaris-inference:<sha> .`
-3. **Deploy `infra/inference.bicep`** with a serverless GPU workload profile available in your region:
+2. **Build + push both inference images** to ACR — run the **`CD (inference images)`** workflow
+   (`.github/workflows/cd-inference.yml`, manual `workflow_dispatch`). It builds the chat (GPU) and
+   embeddings (CPU) images, SHA-tagged, and prints the two image refs in its summary.
+3. **Deploy the two Container Apps** with those image refs:
    ```
+   # Chat — needs a serverless GPU workload profile available in your region:
    az deployment group create -g rg-lunaris-<env> -f infra/inference.bicep \
      -p env=<env> image=<acr>/lunaris-inference:<sha> \
         managedEnvironmentId=<…> managedIdentityResourceId=<…> acrLoginServer=<…> \
-        gpuWorkloadProfileName=<your-consumption-GPU-profile>
+        gpuWorkloadProfileName=<your-consumption-GPU-profile>   # → outputs internalChatBaseUrl
+
+   # Embeddings — CPU, no GPU profile:
+   az deployment group create -g rg-lunaris-<env> -f infra/embeddings.bicep \
+     -p env=<env> image=<acr>/lunaris-embeddings:<sha> \
+        managedEnvironmentId=<…> managedIdentityResourceId=<…> acrLoginServer=<…>
+        # → outputs internalEmbeddingsBaseUrl
    ```
-   It outputs `internalChatBaseUrl` (the internal `…/v1` URL).
-4. **Point the API at it and flip the tier on** — redeploy `app.bicep` with:
+4. **Point the API at them and flip the tier on** — redeploy `app.bicep` with:
    `draftTierEnabled = true`, `keylessLlmBaseUrl = <internalChatBaseUrl>`,
-   `keylessEmbeddingsBaseUrl = <embeddings service …/v1>`.
+   `keylessEmbeddingsBaseUrl = <internalEmbeddingsBaseUrl>`.
 5. **Verify** with the pre-flight smoke check (it also warms the GPU):
    `python -m lunaris_runtime.resilience.smoke_check` → expect `ok`.
 
