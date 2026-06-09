@@ -8,3 +8,10 @@ class RejectingValidator:
 
     async def validate(self, name: str, value: str) -> None:
         raise SecretValidationError("provider rejected the key")
+
+
+class AcceptingValidator:
+    """An ``ISecretValidator`` that accepts every key — for tests not exercising the probe."""
+
+    async def validate(self, name: str, value: str) -> None:
+        return None

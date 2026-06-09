@@ -102,6 +102,25 @@ async def test_a_keyed_capability_is_tagged_live(tmp_path: Path) -> None:
     assert search.mode is CapabilityMode.FALLBACK
 
 
+async def test_rebuilding_with_a_key_updates_the_persisted_build_tag(tmp_path: Path) -> None:
+    # The per-course tag persists but is not frozen: a rebuild re-captures it, so a Draft course
+    # rebuilt once a key is set stops advertising the fallback. Re-using the course id is what a
+    # rebuild does (same course, fresh run), so the second finalize overwrites the first's tag.
+    store = CourseStore(tmp_path)
+
+    # Arrange — the course exists from a keyless first build (the tag records the LLM fallback).
+    with run_credentials({}):
+        await _finalize_tool(_draft_with_graph("course-rebuilt", "run-1"), store).ainvoke({})
+    assert _tag(store.load("course-rebuilt"), CapabilityName.LLM).mode is CapabilityMode.FALLBACK
+
+    # Act — rebuild the same course id with a key now in scope.
+    with run_credentials({"ANTHROPIC_API_KEY": "sk-now-keyed"}):
+        await _finalize_tool(_draft_with_graph("course-rebuilt", "run-2"), store).ainvoke({})
+
+    # Assert — the persisted tag flipped to live; the stale fallback tag is gone.
+    assert _tag(store.load("course-rebuilt"), CapabilityName.LLM).mode is CapabilityMode.LIVE
+
+
 async def test_finalize_logs_the_fallback_capabilities_run_id_correlated(tmp_path: Path) -> None:
     # The provenance is diagnosable from the structured log: a thin Draft course can be explained by
     # which capabilities ran keyless, correlated by run_id, with no key value ever logged.

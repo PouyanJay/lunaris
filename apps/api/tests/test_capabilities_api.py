@@ -8,15 +8,11 @@ from pathlib import Path
 
 import httpx
 import pytest
+from _doubles import AcceptingValidator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_secret_store, get_secret_validator
 from lunaris_api.secrets import KNOWN_SECRETS, SecretStore
-
-
-class _AcceptingValidator:
-    async def validate(self, name: str, value: str) -> None:
-        return None
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +34,7 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=env_file
     )
     app.dependency_overrides[get_secret_store] = lambda: SecretStore(env_file)
-    app.dependency_overrides[get_secret_validator] = lambda: _AcceptingValidator()
+    app.dependency_overrides[get_secret_validator] = lambda: AcceptingValidator()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
         yield http_client
