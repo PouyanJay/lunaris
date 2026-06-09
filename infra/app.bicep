@@ -44,7 +44,7 @@ param draftTierEnabled bool = false
 @description('Internal base URL of the keyless chat endpoint (the inference.bicep app, e.g. https://lunaris-<env>-inference.internal…/v1). Empty = use the in-process default (localhost) — i.e. no keyless backend in this deployment.')
 param keylessLlmBaseUrl string = ''
 
-@description('Internal base URL of the keyless embeddings endpoint (the voyage-4-nano service). Empty = the localhost default.')
+@description('Internal base URL of the keyless embeddings endpoint (the bge-large-en-v1.5 service). Empty = the localhost default.')
 param keylessEmbeddingsBaseUrl string = ''
 
 @description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')

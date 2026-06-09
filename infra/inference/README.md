@@ -15,7 +15,7 @@ serverless GPU** (scale-to-zero), so you pay for GPU **only while a build runs**
 | Service | Model | Compute | Endpoint env var (on the API) | Artifacts |
 |---|---|---|---|---|
 | Chat | Bonsai 8B (1-bit GGUF) | **GPU**, scale-to-zero | `LUNARIS_FALLBACK_LLM_BASE_URL` | `Dockerfile` + `inference.bicep` |
-| Embeddings | voyage-4-nano | CPU (light) | `LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL` | `Dockerfile.embeddings` + `../embeddings.bicep` |
+| Embeddings | bge-large-en-v1.5 | CPU (light) | `LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL` | `Dockerfile.embeddings` + `../embeddings.bicep` |
 
 They're **two services** because llama.cpp's `--embeddings` mode is exclusive with generation. The
 chat server is the heavy/GPU one (`Dockerfile` → `inference.bicep`); embeddings is light enough for a

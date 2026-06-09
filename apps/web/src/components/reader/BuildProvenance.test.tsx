@@ -6,7 +6,7 @@ import { BuildProvenance } from "./BuildProvenance";
 
 const KEYLESS: CapabilityBuildTag[] = [
   { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
-  { capability: "embeddings", mode: "fallback", provider: "voyage-4-nano (local)" },
+  { capability: "embeddings", mode: "fallback", provider: "BGE-large (local)" },
   { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
   { capability: "video", mode: "fallback", provider: "Web search" },
 ];

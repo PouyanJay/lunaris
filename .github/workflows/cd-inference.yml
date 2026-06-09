@@ -63,7 +63,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build & push embeddings image (voyage-4-nano, CPU)
+      - name: Build & push embeddings image (bge-large-en-v1.5, CPU)
         uses: docker/build-push-action@v6
         with:
           context: .

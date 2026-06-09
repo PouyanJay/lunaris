@@ -1,5 +1,5 @@
 """The keyless embeddings fallback: when no Voyage key is set, embed over a local OpenAI-compatible
-endpoint (voyage-4-nano), pinned to the corpus's 1024 dims, with no API key."""
+endpoint (bge-large-en-v1.5, natively 1024-d to match the corpus), with no API key."""
 
 from typing import ClassVar
 
@@ -28,7 +28,7 @@ async def test_local_embedder_uses_a_keyless_openai_compatible_endpoint(monkeypa
 
     kwargs = _SpyOpenAIEmbeddings.last_kwargs
     assert kwargs["base_url"] == "http://localhost:8080/v1"
-    assert kwargs["model"] == "voyage-4-nano"
+    assert kwargs["model"] == "bge-large-en-v1.5"
     assert kwargs["dimensions"] == 1024  # matches the vector(1024) corpus column
     assert kwargs["api_key"] == "no-key-required"  # a placeholder, not a secret
     assert len(vectors[0]) == 1024
@@ -42,9 +42,9 @@ async def test_local_embedder_returns_no_vectors_for_empty_input() -> None:
 async def test_local_embedder_honours_env_overrides(monkeypatch) -> None:
     monkeypatch.setattr(langchain_openai, "OpenAIEmbeddings", _SpyOpenAIEmbeddings)
     monkeypatch.setenv("LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL", "http://gpu-host:9999/v1")
-    monkeypatch.setenv("LUNARIS_FALLBACK_EMBEDDINGS_MODEL", "voyage-4-lite")
+    monkeypatch.setenv("LUNARIS_FALLBACK_EMBEDDINGS_MODEL", "gte-large")
 
     await LocalEmbedder().embed(["x"])
 
     assert _SpyOpenAIEmbeddings.last_kwargs["base_url"] == "http://gpu-host:9999/v1"
-    assert _SpyOpenAIEmbeddings.last_kwargs["model"] == "voyage-4-lite"
+    assert _SpyOpenAIEmbeddings.last_kwargs["model"] == "gte-large"
