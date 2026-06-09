@@ -8,14 +8,6 @@ export interface SecretStatus {
   last4: string | null;
 }
 
-/** Which provider a key-gated capability is using right now: its keyed provider ("live") or its
- *  keyless local fallback. Flips to "live" the moment the capability's key is stored. */
-export interface CapabilityStatus {
-  capability: "llm" | "embeddings" | "search" | "video";
-  mode: "live" | "fallback";
-  provider: string;
-}
-
 export interface SettingsView {
   secrets: SecretStatus[];
   pipeline: string;
@@ -32,8 +24,6 @@ export interface SettingsView {
    *  caller's own model selection (LangSmith is operator-only and absent); when false it's the
    *  process-wide file store (single-user dev, incl. LangSmith). */
   perUserConfigEnabled: boolean;
-  /** Per-capability active provider (live vs keyless fallback). Drives the Draft-mode badges. */
-  capabilities: CapabilityStatus[];
 }
 
 export class SettingsError extends Error {

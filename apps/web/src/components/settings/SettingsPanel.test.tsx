@@ -13,13 +13,14 @@ const SETTINGS = {
     { name: "supabaseUrl", isSet: false, last4: null },
     { name: "supabaseServiceRole", isSet: false, last4: null },
   ],
-  capabilities: [
-    { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
-    { capability: "embeddings", mode: "live", provider: "Voyage" },
-    { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
-    { capability: "video", mode: "fallback", provider: "Web search" },
-  ],
 };
+
+const CAPABILITIES = [
+  { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
+  { capability: "embeddings", mode: "live", provider: "Voyage" },
+  { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
+  { capability: "video", mode: "fallback", provider: "Web search" },
+];
 
 /** A fetch stub: GET returns the settings (or an empty trust config / empty runtime config); PUT
  *  returns the per-call status from `onPut`. The embedded TrustedSourcesPanel lists
@@ -32,6 +33,9 @@ function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; jso
     }
     if (url.toString().includes("/api/source-authorities")) {
       return { ok: true, json: async () => [] };
+    }
+    if (url.toString().includes("/api/capabilities")) {
+      return { ok: true, json: async () => CAPABILITIES };
     }
     if (url.toString().includes("/api/config")) {
       return { ok: true, json: async () => ({ settings: [] }) };

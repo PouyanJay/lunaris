@@ -6,9 +6,9 @@ with a recording pipeline that reads the run scope, proving:
 
 - the tenant's Anthropic key reaches the build (and the platform env key does not leak into it);
 - two users' builds run on their own keys (isolation);
-- an optional key the user hasn't set is absent in the scope (honest degradation, not a fallback);
-- a build is refused with a clean 400 — both await-full and pre-stream — when the required key is
-  unset, so a tenant without keys can't start a (failing) paid build.
+- an optional key the user hasn't set is absent in the scope (honest degradation);
+- a build with NO keys is not refused — it runs keyless (a "Draft" build), the scope carrying no
+  Anthropic key so the adapter falls back to the local model instead of 400-ing.
 
 Hermetic like ``test_user_isolation_api`` (HS256 tokens, no live Supabase); the credential resolver
 is a fake so no cipher/store is needed.
@@ -27,7 +27,7 @@ from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_course_service
-from lunaris_api.service import CourseService, ProviderKeyRequiredError
+from lunaris_api.service import CourseService
 from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import InMemoryRunEventStore, InMemoryRunStore
@@ -172,25 +172,25 @@ async def test_optional_key_absent_in_scope_does_not_fall_back_to_env(
     assert sink["search"] is None
 
 
-async def test_build_refused_400_when_required_key_unset(
+async def test_build_runs_keyless_in_draft_when_required_key_unset(
     tmp_path: Path, _env_anthropic: None
 ) -> None:
-    # The tenant has set no keys → the await-full build is refused before it starts.
+    # The tenant has set no keys → the await-full build is NOT refused; it runs keyless (Draft),
+    # the run scope carrying no Anthropic key so the adapter falls back to the local model.
     sink: dict[str, str | None] = {}
     resolver = _resolver_returning({_USER_A: {}})
 
     async with _build_client(tmp_path, resolver=resolver, sink=sink) as client:
         response = await client.post("/api/courses", json={"topic": "x"}, headers=_auth(_USER_A))
 
-    assert response.status_code == 400
-    assert "Anthropic" in response.json()["detail"]
-    assert sink == {}  # the pipeline never ran
+    assert response.status_code == 201, response.text
+    assert sink["anthropic"] is None  # built without a key → keyless fallback, not a refusal
 
 
-async def test_stream_refused_400_before_streaming_when_required_key_unset(
+async def test_stream_runs_keyless_in_draft_when_required_key_unset(
     tmp_path: Path, _env_anthropic: None
 ) -> None:
-    # The SSE pre-flight returns a clean 400 (not an error frame mid-stream).
+    # The SSE build streams (200) rather than refusing — keyless is a Draft build, not a 400.
     sink: dict[str, str | None] = {}
     resolver = _resolver_returning({_USER_A: {}})
 
@@ -199,9 +199,8 @@ async def test_stream_refused_400_before_streaming_when_required_key_unset(
             "/api/courses/stream", params={"topic": "x"}, headers=_auth(_USER_A)
         )
 
-    assert response.status_code == 400
-    assert "Anthropic" in response.json()["detail"]  # the action-prompting message, not a 422
-    assert sink == {}  # the pipeline never ran
+    assert response.status_code == 200
+    assert sink["anthropic"] is None  # the stream ran the pipeline keyless
 
 
 async def test_no_resolver_runs_on_env_with_no_scope(tmp_path: Path, _env_anthropic: None) -> None:
@@ -244,10 +243,10 @@ async def test_regenerate_runs_in_the_tenant_scope(tmp_path: Path, _env_anthropi
     assert sink["anthropic"] == "key-for-a"
 
 
-async def test_regenerate_refused_when_required_key_unset(
+async def test_regenerate_runs_keyless_in_draft_when_required_key_unset(
     tmp_path: Path, _env_anthropic: None
 ) -> None:
-    # A BYOK tenant with no keys can't regenerate, exactly as they can't build.
+    # A BYOK tenant with no keys can still regenerate, exactly as they can still build — keyless.
     sink: dict[str, str | None] = {}
     service = CourseService(
         _file_store(tmp_path),
@@ -255,6 +254,6 @@ async def test_regenerate_refused_when_required_key_unset(
         credential_resolver=_resolver_returning({_USER_A: {}}),
     )
 
-    with pytest.raises(ProviderKeyRequiredError):
-        await service.regenerate_lesson("course-1", "lesson-1", run_id="run-1", owner_id=_USER_A)
-    assert sink == {}  # the pipeline never ran
+    await service.regenerate_lesson("course-1", "lesson-1", run_id="run-1", owner_id=_USER_A)
+
+    assert sink["anthropic"] is None  # regenerated without a key → keyless fallback

@@ -45,9 +45,9 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
 
 
 async def test_capabilities_are_fallback_when_no_keys_are_set(client: httpx.AsyncClient) -> None:
-    body = (await client.get("/api/settings")).json()
+    body = (await client.get("/api/capabilities")).json()
 
-    caps = {c["capability"]: c for c in body["capabilities"]}
+    caps = {c["capability"]: c for c in body}
     assert caps["llm"]["mode"] == "fallback"
     assert caps["embeddings"]["mode"] == "fallback"
     assert caps["search"]["mode"] == "fallback"
@@ -60,9 +60,9 @@ async def test_capabilities_are_fallback_when_no_keys_are_set(client: httpx.Asyn
 async def test_capability_flips_to_live_when_its_key_is_set(client: httpx.AsyncClient) -> None:
     await client.put("/api/settings/secrets/anthropic", json={"value": "sk-ant-live-key-4242"})
 
-    body = (await client.get("/api/settings")).json()
+    body = (await client.get("/api/capabilities")).json()
 
-    caps = {c["capability"]: c for c in body["capabilities"]}
+    caps = {c["capability"]: c for c in body}
     assert caps["llm"]["mode"] == "live"
     assert caps["llm"]["provider"] == "Anthropic Claude"
     # The others stay on their fallbacks — the badge is per-capability, not all-or-nothing.

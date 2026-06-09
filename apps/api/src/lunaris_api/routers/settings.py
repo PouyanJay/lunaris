@@ -2,7 +2,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..capabilities import CapabilityStatus, resolve_capabilities
 from ..config import Settings, get_settings
 from ..dependencies import (
     SecretStoreDep,
@@ -10,7 +9,7 @@ from ..dependencies import (
     explain_is_available,
     pipeline_supports_lesson_regeneration,
 )
-from ..schemas import CapabilityStatusView, SecretStatusView, SecretValue, SettingsView
+from ..schemas import SecretStatusView, SecretValue, SettingsView
 from ..secrets import (
     KNOWN_SECRETS,
     SecretStatus,
@@ -25,12 +24,6 @@ def _to_view(status_: SecretStatus) -> SecretStatusView:
     return SecretStatusView(name=status_.name, is_set=status_.is_set, last4=status_.last4)
 
 
-def _to_capability_view(status_: CapabilityStatus) -> CapabilityStatusView:
-    return CapabilityStatusView(
-        capability=status_.capability, mode=status_.mode, provider=status_.provider
-    )
-
-
 @router.get("", response_model=SettingsView)
 def get_settings_view(
     store: SecretStoreDep,
@@ -40,18 +33,13 @@ def get_settings_view(
 
     Never returns a secret value — only whether it is set and its last four characters.
     """
-    statuses = store.statuses()
-    set_names = {s.name for s in statuses if s.is_set}
     return SettingsView(
-        secrets=[_to_view(s) for s in statuses],
+        secrets=[_to_view(s) for s in store.statuses()],
         pipeline=settings.pipeline,
         supports_lesson_regeneration=pipeline_supports_lesson_regeneration(settings.pipeline),
         supports_explain=explain_is_available(),
         byok_enabled=settings.has_byok,
         per_user_config_enabled=settings.has_auth,
-        capabilities=[
-            _to_capability_view(c) for c in resolve_capabilities(lambda name: name in set_names)
-        ],
     )
 
 

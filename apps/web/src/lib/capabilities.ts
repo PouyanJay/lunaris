@@ -1,0 +1,25 @@
+import { authedFetch } from "./apiClient";
+
+/** Which provider a key-gated capability is using right now: its keyed provider ("live") or its
+ *  keyless local fallback. Flips to "live" the moment the capability's key is stored. Tenant-aware
+ *  under BYOK (reads the caller's own keys). */
+export interface CapabilityStatus {
+  capability: "llm" | "embeddings" | "search" | "video";
+  mode: "live" | "fallback";
+  provider: string;
+}
+
+/** Fetch the per-capability live/fallback status. Best-effort: a failure resolves to an empty list
+ *  (the Draft banner simply doesn't show) rather than throwing into the app shell. */
+export async function fetchCapabilities(
+  apiBaseUrl: string,
+  signal?: AbortSignal,
+): Promise<CapabilityStatus[]> {
+  const response = await authedFetch(
+    `${apiBaseUrl}/api/capabilities`,
+    signal ? { signal } : undefined,
+  );
+  if (!response.ok) return [];
+  const body = await response.json();
+  return Array.isArray(body) ? (body as CapabilityStatus[]) : [];
+}

@@ -1,4 +1,4 @@
-import type { CapabilityStatus } from "../../lib/settings";
+import type { CapabilityStatus } from "../../lib/capabilities";
 import styles from "./CapabilityBadges.module.css";
 
 const LABELS: Record<CapabilityStatus["capability"], string> = {

@@ -1,0 +1,63 @@
+/* A hairline band (not a floating card) tinted with the single accent — the one "this is Draft"
+   signal. Sits at the top of the canvas body; the accent left edge reads as a status rail. */
+.banner {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--accent-soft);
+  border-bottom: var(--border-width) solid var(--border);
+  border-left: 2px solid var(--accent-500);
+}
+
+.eyebrow {
+  color: var(--accent-600);
+  flex: none;
+}
+
+.text {
+  flex: 1;
+  min-width: 12rem;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* A quiet text action — opens Settings so the user can add keys (which clears this banner). */
+.action {
+  flex: none;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent-600);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.action:hover {
+  color: var(--accent-700);
+}
+
+.action:focus-visible {
+  outline: none;
+  border-radius: var(--radius-sm);
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+@media (max-width: 768px) {
+  .banner {
+    padding: var(--space-3) var(--space-4);
+  }
+  .action {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

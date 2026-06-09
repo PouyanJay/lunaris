@@ -25,7 +25,9 @@ import { useCourseStream } from "./hooks/useCourseStream";
 import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
+import { useCapabilities } from "./hooks/useCapabilities";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
+import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
@@ -124,6 +126,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     if (!isMobile) setMobileNavOpen(false);
   }, [isMobile]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Per-capability live/fallback status drives the Draft-mode banner; refetch when Settings closes so
+  // a key the user just added flips its capability back to live and the banner clears.
+  const { capabilities, reload: reloadCapabilities } = useCapabilities(apiBaseUrl);
+  useEffect(() => {
+    if (!settingsOpen) reloadCapabilities();
+  }, [settingsOpen, reloadCapabilities]);
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
@@ -354,6 +362,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         sidebar={sidebar}
         title={canvas.title}
         meta={canvas.meta}
+        banner={
+          <DraftModeBanner
+            capabilities={capabilities}
+            onOpenSettings={settingsOpen ? undefined : openSettings}
+          />
+        }
         layout={sidebarLayout}
         mobileNavOpen={mobileNavOpen}
         onOpenMobileNav={openMobileNav}

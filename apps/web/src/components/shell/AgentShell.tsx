@@ -20,6 +20,8 @@ interface AgentShellProps {
   title: string;
   /** Right-aligned canvas-header content — status, metrics, view actions. */
   meta?: ReactNode;
+  /** Optional band rendered between the header and the body (e.g. the Draft-mode banner). */
+  banner?: ReactNode;
   children: ReactNode;
   /** Collapse + resizable-width state for the rail (owned by the studio, see useSidebarLayout). */
   layout: SidebarLayout;
@@ -44,6 +46,7 @@ export function AgentShell({
   sidebar,
   title,
   meta,
+  banner,
   children,
   layout,
   mobileNavOpen,
@@ -141,6 +144,7 @@ export function AgentShell({
           </h1>
           {meta && <div className={styles.meta}>{meta}</div>}
         </header>
+        {banner}
         <main id={CANVAS_ID} className={styles.body}>
           {children}
         </main>

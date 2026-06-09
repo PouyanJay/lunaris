@@ -7,6 +7,7 @@ from .routers import (
     app_config,
     authorities,
     briefs,
+    capabilities,
     corpus,
     courses,
     credentials,
@@ -45,4 +46,5 @@ def create_app() -> FastAPI:
     app.include_router(authorities.router)
     app.include_router(app_config.router)
     app.include_router(credentials.router)
+    app.include_router(capabilities.router)
     return app
