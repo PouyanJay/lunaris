@@ -13,6 +13,7 @@ from .routers import (
     credentials,
     explain,
     health,
+    keyless,
     me,
     runs,
 )
@@ -47,4 +48,5 @@ def create_app() -> FastAPI:
     app.include_router(app_config.router)
     app.include_router(credentials.router)
     app.include_router(capabilities.router)
+    app.include_router(keyless.router)
     return app
