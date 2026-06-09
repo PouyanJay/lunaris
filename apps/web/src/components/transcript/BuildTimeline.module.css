@@ -194,4 +194,11 @@ button.header:hover .label {
   .timeline {
     padding: 0 var(--space-4) var(--space-4);
   }
+  /* The pinned plan is tall on a phone (a full agent todo list) and would otherwise own the whole
+     viewport, hiding the phase history beneath it. Cap it and let it scroll inside, so the timeline
+     stays visible below the pin. */
+  .plan {
+    max-height: 38vh;
+    overflow-y: auto;
+  }
 }

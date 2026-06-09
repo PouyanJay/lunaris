@@ -23,6 +23,9 @@ describe("VideoFacade", () => {
     expect(frame).not.toBeNull();
     expect(frame.src).toContain("youtube-nocookie.com/embed/dQw4w9WgXcQ");
     expect(frame.src).toContain("autoplay=1");
+    // The nocookie player needs the origin as Referer to validate the embed (prod sets
+    // Referrer-Policy: same-origin, which would otherwise strip it → Error 153).
+    expect(frame.getAttribute("referrerpolicy")).toBe("strict-origin-when-cross-origin");
   });
 
   it("opens a focus-trapped fullscreen lightbox and closes on Escape", () => {
@@ -32,7 +35,9 @@ describe("VideoFacade", () => {
 
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveAttribute("aria-modal", "true");
-    expect(dialog.querySelector("iframe")?.getAttribute("src")).toContain("nocookie");
+    const frame = dialog.querySelector("iframe");
+    expect(frame?.getAttribute("src")).toContain("nocookie");
+    expect(frame?.getAttribute("referrerpolicy")).toBe("strict-origin-when-cross-origin");
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();

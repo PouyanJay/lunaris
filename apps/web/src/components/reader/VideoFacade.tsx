@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { VideoLightbox } from "./VideoLightbox";
-import { youTubeEmbed, youTubeThumbnail } from "./youtube";
+import { YOUTUBE_EMBED_REFERRER_POLICY, youTubeEmbed, youTubeThumbnail } from "./youtube";
 import styles from "./VideoFacade.module.css";
 
 interface VideoFacadeProps {
@@ -28,6 +28,7 @@ export function VideoFacade({ videoId, title }: VideoFacadeProps) {
           className={styles.frame}
           src={youTubeEmbed(videoId, { autoplay: true })}
           title={title}
+          referrerPolicy={YOUTUBE_EMBED_REFERRER_POLICY}
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
         />

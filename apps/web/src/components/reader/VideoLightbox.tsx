@@ -2,7 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { FOCUSABLE_SELECTOR_WITH_IFRAME } from "../../lib/focusable";
-import { youTubeEmbed } from "./youtube";
+import { YOUTUBE_EMBED_REFERRER_POLICY, youTubeEmbed } from "./youtube";
 import styles from "./VideoLightbox.module.css";
 
 interface VideoLightboxProps {
@@ -80,6 +80,7 @@ export function VideoLightbox({ videoId, title, onClose }: VideoLightboxProps) {
             className={styles.frame}
             src={youTubeEmbed(videoId, { autoplay: true })}
             title={title}
+            referrerPolicy={YOUTUBE_EMBED_REFERRER_POLICY}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
           />
