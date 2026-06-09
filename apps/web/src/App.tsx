@@ -26,6 +26,8 @@ import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useRuns } from "./hooks/useRuns";
 import { useCapabilities } from "./hooks/useCapabilities";
+import { useKeylessReadiness } from "./hooks/useKeylessReadiness";
+import { KeylessProvisioningBanner } from "./components/KeylessProvisioningBanner";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
 import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
@@ -179,6 +181,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   useEffect(() => {
     if (streamingRunId) reloadRuns();
   }, [streamingRunId, reloadRuns]);
+  // While a keyless build is active, the self-hosted GPU may be scaling from zero — poll its
+  // readiness so the build view can show a "Provisioning GPU…" notice instead of a silent stall.
+  // Only when the LLM is on its keyless fallback (a keyed build never touches the GPU → the endpoint
+  // returns not_applicable and the banner stays hidden anyway, but gating here avoids needless polls).
+  const llmIsFallback = capabilities.some((c) => c.capability === "llm" && c.mode === "fallback");
+  const buildActive = state.status === "streaming" || opened.state.status === "building";
+  const keylessReadiness = useKeylessReadiness(apiBaseUrl, buildActive && llmIsFallback);
 
   const { open: openRun, close: closeRun } = opened;
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
@@ -290,11 +299,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         title: topic,
         meta: <StatusDot label="building" tone="accent" live />,
         body: (
-          <BuildingState
-            onRecheck={opened.recheck}
-            onCancel={() => cancellation.cancel(runId)}
-            cancelling={cancellation.cancellingRunId === runId}
-          />
+          <>
+            <KeylessProvisioningBanner status={keylessReadiness} />
+            <BuildingState
+              onRecheck={opened.recheck}
+              onCancel={() => cancellation.cancel(runId)}
+              cancelling={cancellation.cancellingRunId === runId}
+            />
+          </>
         ),
       };
     }
@@ -329,14 +341,17 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           </>
         ),
         body: (
-          <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-            <BuildTimeline
-              topic={state.topic}
-              events={state.events}
-              agentEvents={state.agentEvents}
-              stageTimes={state.stageTimes}
-            />
-          </ExplainProvider>
+          <>
+            <KeylessProvisioningBanner status={keylessReadiness} />
+            <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+              <BuildTimeline
+                topic={state.topic}
+                events={state.events}
+                agentEvents={state.agentEvents}
+                stageTimes={state.stageTimes}
+              />
+            </ExplainProvider>
+          </>
         ),
       };
     }
