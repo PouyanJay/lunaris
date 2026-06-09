@@ -18,6 +18,7 @@ The values live here so they are set in one place. ``langchain_core`` is importe
 factory (only the live path needs it), so ``lunaris_runtime``'s declared dependencies stay light.
 """
 
+import os
 from typing import TYPE_CHECKING
 
 from lunaris_runtime.credentials import resolve_secret
@@ -60,8 +61,6 @@ def get_llm_rate_limiter() -> "BaseRateLimiter":
     """
     global _rate_limiter
     if _rate_limiter is None:
-        import os
-
         from langchain_core.rate_limiters import InMemoryRateLimiter
 
         rps = float(os.getenv("LUNARIS_LLM_RPS", _DEFAULT_LLM_RPS))
@@ -91,7 +90,7 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
     """
     anthropic_key = resolve_secret("ANTHROPIC_API_KEY")
     if not anthropic_key:  # None or "" → no live key → the keyless fallback, not a blank-key Claude
-        return _build_fallback_chat_model()
+        return build_keyless_chat_model()
 
     from langchain_anthropic import ChatAnthropic
 
@@ -104,19 +103,23 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
     )
 
 
-def _build_fallback_chat_model() -> "BaseChatModel":
+def build_keyless_chat_model() -> "BaseChatModel":
     """The keyless local fallback model over an OpenAI-compatible endpoint (Bonsai 8B by default).
+
+    Public so the keyless path can be requested directly (e.g. the tool-calling smoke check), as
+    distinct from ``build_chat_model``, which routes to Claude when a key is present.
 
     Base URL + model id come from ``LUNARIS_FALLBACK_LLM_BASE_URL`` / ``LUNARIS_FALLBACK_LLM_MODEL``
     (defaults target a local llama.cpp / ``bonsai`` server), so swapping the model or runtime is a
     one-line env change. The ``api_key`` is a non-secret placeholder — the endpoint ignores it.
-    ``langchain_openai`` is imported lazily so only the fallback path pays for it.
+
+    The model is a ``RepairingChatOpenAI`` (T1b): a 1-bit model's tool-call JSON is its one weak
+    spot, so its completions have malformed tool calls repaired before the agent acts on them.
+    ``langchain_openai`` (via that subclass) is imported lazily so only the fallback path pays it.
     """
-    import os
+    from .repaired_chat_model import RepairingChatOpenAI
 
-    from langchain_openai import ChatOpenAI
-
-    return ChatOpenAI(
+    return RepairingChatOpenAI(
         model=os.getenv("LUNARIS_FALLBACK_LLM_MODEL", _DEFAULT_FALLBACK_MODEL),
         base_url=os.getenv("LUNARIS_FALLBACK_LLM_BASE_URL", _DEFAULT_FALLBACK_BASE_URL),
         api_key=_FALLBACK_PLACEHOLDER_KEY,

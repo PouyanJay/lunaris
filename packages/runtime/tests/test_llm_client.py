@@ -1,9 +1,8 @@
 from typing import ClassVar
 
 import langchain_anthropic
-import langchain_openai
 from lunaris_runtime.credentials import run_credentials
-from lunaris_runtime.resilience import build_chat_model
+from lunaris_runtime.resilience import build_chat_model, repaired_chat_model
 
 
 class _SpyChatAnthropic:
@@ -16,7 +15,7 @@ class _SpyChatAnthropic:
 
 
 class _SpyChatOpenAI:
-    """Captures the kwargs the keyless fallback (ChatOpenAI) is constructed with."""
+    """Captures the kwargs the keyless fallback (RepairingChatOpenAI) is constructed with."""
 
     last_kwargs: ClassVar[dict[str, object]] = {}
 
@@ -48,7 +47,7 @@ def test_builder_uses_env_when_no_scope(monkeypatch) -> None:
 
 def test_falls_back_to_local_openai_when_no_anthropic_key(monkeypatch) -> None:
     # No Anthropic key anywhere (no scope/env) → the keyless local fallback, not a refused Claude.
-    monkeypatch.setattr(langchain_openai, "ChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("LUNARIS_FALLBACK_LLM_BASE_URL", raising=False)
     monkeypatch.delenv("LUNARIS_FALLBACK_LLM_MODEL", raising=False)
@@ -65,7 +64,7 @@ def test_falls_back_to_local_openai_when_no_anthropic_key(monkeypatch) -> None:
 
 def test_fallback_honours_env_overrides(monkeypatch) -> None:
     # The model + endpoint are a one-line env swap, so the seam isn't locked to one runtime/model.
-    monkeypatch.setattr(langchain_openai, "ChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("LUNARIS_FALLBACK_LLM_BASE_URL", "http://gpu-host:9999/v1")
     monkeypatch.setenv("LUNARIS_FALLBACK_LLM_MODEL", "bonsai-4b")
@@ -75,3 +74,15 @@ def test_fallback_honours_env_overrides(monkeypatch) -> None:
     kwargs = _SpyChatOpenAI.last_kwargs
     assert kwargs["base_url"] == "http://gpu-host:9999/v1"
     assert kwargs["model"] == "bonsai-4b"
+
+
+def test_fallback_model_repairs_tool_calls(monkeypatch) -> None:
+    # The keyless fallback is the tool-call-repairing variant (T1b) — a 1-bit model's tool-call JSON
+    # is its one weak spot, so the safety net is on by construction, not an opt-in agents forget.
+    from lunaris_runtime.resilience.repaired_chat_model import RepairingChatOpenAI
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    model = build_chat_model("claude-haiku-4-5-20251001")
+
+    assert isinstance(model, RepairingChatOpenAI)
