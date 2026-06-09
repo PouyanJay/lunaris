@@ -18,6 +18,7 @@ The values live here so they are set in one place. ``langchain_core`` is importe
 factory (only the live path needs it), so ``lunaris_runtime``'s declared dependencies stay light.
 """
 
+import math
 import os
 from typing import TYPE_CHECKING
 
@@ -50,7 +51,34 @@ _DEFAULT_FALLBACK_MODEL = "qwen2.5-3b-instruct"
 # secret — the whole point of the fallback is that it needs no API key.
 _FALLBACK_PLACEHOLDER_KEY = "no-key-required"
 
+# Keyless CPU inference is far slower than a hosted API, so the keyless path gets its own generous
+# timeouts (the 60s hosted bound would cancel a keyless call mid-prefill). Prefilling a
+# multi-thousand-token agent prompt on a 2-vCPU container runs *minutes* before the first token —
+# measured ~26 tok/s on prod Qwen-3B, so a ~7.9k-token prompt needs ~5 min to its first chunk, well
+# past ``langchain_openai``'s 120s ``stream_chunk_timeout`` default (which silently cancelled the
+# first build call). ``stream_chunk_timeout`` bounds the wait for that first/next chunk; the overall
+# request timeout must additionally cover a full generation. Both are env-tunable per box.
+_DEFAULT_FALLBACK_REQUEST_TIMEOUT_S = 900.0
+_DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S = 600.0
+
 _rate_limiter: "BaseRateLimiter | None" = None
+
+
+def _env_float(name: str, default: float) -> float:
+    """A positive float from env ``name``, falling back to ``default`` when unset or invalid.
+
+    These knobs (timeouts, request rate) are operationally tuned via env, so a typo'd override —
+    non-numeric, non-finite (``inf``), or non-positive (``0``/``-1``) — must default safely rather
+    than crash the build or wedge a client with a nonsensical bound.
+    """
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except (ValueError, OverflowError):
+        return default
+    return value if math.isfinite(value) and value > 0 else default
 
 
 def get_llm_rate_limiter() -> "BaseRateLimiter":
@@ -64,7 +92,7 @@ def get_llm_rate_limiter() -> "BaseRateLimiter":
     if _rate_limiter is None:
         from langchain_core.rate_limiters import InMemoryRateLimiter
 
-        rps = float(os.getenv("LUNARIS_LLM_RPS", _DEFAULT_LLM_RPS))
+        rps = _env_float("LUNARIS_LLM_RPS", _DEFAULT_LLM_RPS)
         _rate_limiter = InMemoryRateLimiter(
             requests_per_second=rps,
             check_every_n_seconds=0.1,
@@ -124,7 +152,11 @@ def build_keyless_chat_model() -> "BaseChatModel":
         model=os.getenv("LUNARIS_FALLBACK_LLM_MODEL", _DEFAULT_FALLBACK_MODEL),
         base_url=os.getenv("LUNARIS_FALLBACK_LLM_BASE_URL", _DEFAULT_FALLBACK_BASE_URL),
         api_key=_FALLBACK_PLACEHOLDER_KEY,
-        timeout=LLM_REQUEST_TIMEOUT_S,
+        timeout=_env_float("LUNARIS_FALLBACK_LLM_TIMEOUT_S", _DEFAULT_FALLBACK_REQUEST_TIMEOUT_S),
+        stream_chunk_timeout=_env_float(
+            "LUNARIS_FALLBACK_LLM_STREAM_CHUNK_TIMEOUT_S",
+            _DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S,
+        ),
         max_retries=LLM_MAX_RETRIES,
         rate_limiter=get_llm_rate_limiter(),
     )
