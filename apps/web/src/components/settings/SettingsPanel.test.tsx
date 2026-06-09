@@ -13,6 +13,12 @@ const SETTINGS = {
     { name: "supabaseUrl", isSet: false, last4: null },
     { name: "supabaseServiceRole", isSet: false, last4: null },
   ],
+  capabilities: [
+    { capability: "llm", mode: "fallback", provider: "Qwen3-4B (local)" },
+    { capability: "embeddings", mode: "live", provider: "Voyage" },
+    { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
+    { capability: "video", mode: "fallback", provider: "Web search" },
+  ],
 };
 
 /** A fetch stub: GET returns the settings (or an empty trust config / empty runtime config); PUT
@@ -61,6 +67,10 @@ describe("SettingsPanel", () => {
     expect(screen.getByLabelText("Anthropic API key")).toHaveAttribute("type", "password");
     // The embedded Trusted-sources panel mounts alongside the keys (its GET is routed in the stub).
     expect(await screen.findByText("Source authority config")).toBeInTheDocument();
+    // Per-capability badges show which provider is in effect: LLM has no key → its keyless fallback.
+    expect(screen.getByText("Qwen3-4B (local)")).toBeInTheDocument();
+    const llmRow = screen.getByText("Language model").closest("li");
+    expect(llmRow).toHaveAttribute("data-mode", "fallback");
   });
 
   it("saves a key and reflects the new status", async () => {

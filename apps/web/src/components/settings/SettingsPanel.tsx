@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
+import { CapabilityBadges } from "./CapabilityBadges";
 import { ConfigPanel } from "./ConfigPanel";
 import { CredentialsPanel } from "./CredentialsPanel";
 import { SecretField } from "./SecretField";
@@ -110,6 +111,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
               <p className={styles.pipeline}>
                 Pipeline mode: <span className="mono">{state.view.pipeline}</span>
               </p>
+              <CapabilityBadges capabilities={state.view.capabilities ?? []} />
               {/* When BYOK is on, each tenant manages their own keys via the authed per-user
                   credentials API; otherwise the single-tenant file-backed secret store is used. */}
               {state.view.byokEnabled ? (

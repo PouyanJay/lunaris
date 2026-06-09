@@ -1,6 +1,7 @@
 from pydantic import BaseModel, SecretStr
 
 from .base import CamelModel
+from .capabilities import CapabilityStatusView
 
 
 class SecretStatusView(CamelModel):
@@ -29,6 +30,9 @@ class SettingsView(CamelModel):
     # caller's own model selection (LangSmith is operator-only and absent from the surface); when
     # False it's the process-wide file store (single-user dev, incl. LangSmith).
     per_user_config_enabled: bool
+    # Per-capability active provider: live (the key is set) or its keyless fallback. The web shows a
+    # badge per capability; a capability flips to live the moment its key is stored.
+    capabilities: list[CapabilityStatusView]
 
 
 class SecretValue(BaseModel):

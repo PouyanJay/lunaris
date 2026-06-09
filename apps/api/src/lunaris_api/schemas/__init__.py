@@ -1,6 +1,7 @@
 from .app_config import ConfigSettingView, ConfigValue, ConfigView
 from .authorities import SourceAuthorityRequest, SourceAuthorityView
 from .brief_response import BriefResponse
+from .capabilities import CapabilityStatusView
 from .corpus import CorpusSourceRequest, CorpusSourceView, IngestResultView
 from .course_request import CourseRequest
 from .credentials import CredentialStatusView, CredentialTestResult
@@ -9,6 +10,7 @@ from .settings import SecretStatusView, SecretValue, SettingsView
 
 __all__ = [
     "BriefResponse",
+    "CapabilityStatusView",
     "ConfigSettingView",
     "ConfigValue",
     "ConfigView",
