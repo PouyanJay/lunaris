@@ -1,6 +1,6 @@
-"""T1b (keyless-fallbacks): the 1-bit tool-calling safety net — repairing malformed tool-call JSON.
+"""T1b (keyless-fallbacks): the tool-calling safety net — repairing malformed tool-call JSON.
 
-A native 1-bit model (the keyless Bonsai fallback) is competitive on prose but its tool-call JSON is
+A small local model (the keyless fallback) is decent on prose but its tool-call JSON is
 the one residual risk: it often emits *almost*-valid arguments (a code fence, a trailing comma,
 single quotes, trailing prose). LangChain surfaces those as ``invalid_tool_calls`` and the agent
 can't act on them. ``repair_tool_calls`` re-parses each tolerantly and promotes the ones it can fix
@@ -52,7 +52,7 @@ def test_trailing_comma_arguments_are_repaired_and_promoted() -> None:
 
 
 def test_code_fenced_and_single_quoted_arguments_are_repaired() -> None:
-    # Markdown fences + single quotes + trailing prose around the JSON — all common 1-bit noise.
+    # Markdown fences + single quotes + trailing prose around the JSON — common small-model noise.
     raw = "```json\n{'topic': 'graphs', 'n': 5}\n```\nDone."
     message = AIMessage(content="", invalid_tool_calls=[_invalid("finalize", raw)])
 

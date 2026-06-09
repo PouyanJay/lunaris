@@ -1,7 +1,7 @@
 """Admission control for keyless ("Draft") builds (keyless-fallbacks T6).
 
-A keyless build runs on a slow, shared, self-hosted runtime (Bonsai on CPU), so — unlike a keyed
-build, which hits the fast hosted provider — it must be rationed:
+A keyless build runs on a slow, shared, self-hosted runtime (a small model on CPU), so — unlike a
+keyed build, which hits the fast hosted provider — it must be rationed:
 
 - an **operator switch** can disable the Draft tier entirely (``LUNARIS_DRAFT_TIER_ENABLED``);
 - each signed-in tenant gets a **per-day cap** (``LUNARIS_DRAFT_DAILY_CAP``) so one user can't

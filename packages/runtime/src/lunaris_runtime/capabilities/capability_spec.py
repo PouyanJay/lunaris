@@ -42,7 +42,7 @@ CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
         secret_id="anthropic",
         env_var="ANTHROPIC_API_KEY",
         live_label="Anthropic Claude",
-        fallback_label="Bonsai 8B (1-bit, local)",
+        fallback_label="Qwen2.5-3B (local)",
     ),
     CapabilitySpec(
         capability=CapabilityName.EMBEDDINGS,

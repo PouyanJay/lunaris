@@ -5,9 +5,9 @@ An unkeyed account falls back to a local, no-API-key model; that model has to ru
 this is it: [llama.cpp](https://github.com/ggml-org/llama.cpp) servers on **Azure Container Apps**,
 scale-to-zero, so you pay **only while a build runs**.
 
-**CPU by default — no GPU, no GPU quota.** Bonsai 8B is 1-bit and CPU-runnable, so both services run
-on the built-in Consumption (CPU) profile. A GPU is an **optional speed upgrade** (see below), not a
-requirement — which means you can deploy + test today without a quota request.
+**CPU by default — no GPU, no GPU quota.** Qwen2.5-3B is small and GQA-light, so both services run on
+the built-in Consumption (CPU) profile. A bigger model or GPU is an **optional upgrade** (see below),
+not a requirement — which means you can deploy + test today without a quota request.
 
 > **Status: scaffolded, NOT verified on Azure.** Treat the Dockerfiles + bicep as a vetted starting
 > point. The model GGUF URLs are verified to exist on Hugging Face; the llama.cpp base tags and ACA
@@ -17,14 +17,14 @@ requirement — which means you can deploy + test today without a quota request.
 
 | Service | Model | Compute | Endpoint env var (on the API) | Artifacts |
 |---|---|---|---|---|
-| Chat | Bonsai 8B (1-bit GGUF) | CPU (Consumption), scale-to-zero | `LUNARIS_FALLBACK_LLM_BASE_URL` | `Dockerfile` + `inference.bicep` |
+| Chat | Qwen2.5-3B-Instruct (Q4 GGUF) | CPU (Consumption), scale-to-zero | `LUNARIS_FALLBACK_LLM_BASE_URL` | `Dockerfile` + `inference.bicep` |
 | Embeddings | bge-large-en-v1.5 | CPU (Consumption), scale-to-zero | `LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL` | `Dockerfile.embeddings` + `../embeddings.bicep` |
 
 They're **two services** because llama.cpp's `--embeddings` mode is exclusive with generation. Both
 run as cheap CPU Container Apps and expose `:8080/v1` + `/health` over internal-only ingress.
 
-Bonsai being 1-bit (~1.2–1.5 GB) is what makes CPU viable: the image and model load are small, so a
-cold start is dominated by the **replica scaling from zero**, not model loading.
+Qwen2.5-3B being small (~1.9 GB Q4) with GQA is what makes CPU viable: weights + KV cache fit the 4
+GiB ceiling, so a cold start is dominated by the **replica scaling from zero**, not model loading.
 
 ## How the app uses it
 
@@ -80,9 +80,9 @@ the **chat** server to a GPU:
 - **It's not free.** Scale-to-zero means ~no cost while idle, but a build pays per-second while the
   replica is up; a warm/pinned replica pays continuously. At low volume a provider API key is usually
   cheaper — the keyless path wins on *no third-party key / data stays in your infra*, or at scale.
-- **CPU is slow.** A 1-bit 8B on CPU produces a Draft course in minutes, not seconds. Fine for
-  testing and low volume; use the GPU upgrade for interactive speed.
+- **CPU is slow.** A 3B model on CPU produces a Draft course in minutes, not seconds. Fine for
+  testing and low volume; use a bigger box / GPU for interactive speed.
 - **Cold start** is ~30–90s on the first build after idle (replica scale-from-zero + model load). The
   readiness endpoint + provisioning UI exist precisely to make that honest, not hidden.
-- **Draft quality is degraded** vs a keyed build (lighter depth + weaker verification); the 1-bit
+- **Draft quality is degraded** vs a keyed build (lighter depth + weaker verification); the small
   model's tool-calling is repaired but not perfect (see `resilience/tool_call_repair.py`).

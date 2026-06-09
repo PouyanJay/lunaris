@@ -1,6 +1,6 @@
 """A ChatOpenAI that repairs the keyless model's malformed tool-call JSON (keyless-fallbacks T1b).
 
-Used only on the keyless Bonsai fallback path — a native 1-bit model whose tool-call arguments are
+Used only on the keyless fallback path — a small local model whose tool-call arguments are
 the one place it slips. Overriding ``_generate``/``_agenerate`` post-processes every completion so a
 recoverable ``invalid_tool_call`` becomes a real ``tool_call`` before the agent (or a
 ``with_structured_output`` parser) sees it. Because ``bind_tools`` / ``with_structured_output`` wrap

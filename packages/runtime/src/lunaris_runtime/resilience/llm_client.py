@@ -40,11 +40,12 @@ LLM_MAX_RETRIES = 2
 # ``LUNARIS_LLM_RPS`` on the base 50/min tier (e.g. 0.7); raise it on a higher tier.
 _DEFAULT_LLM_RPS = 12.0
 
-# Keyless local LLM fallback (PrismML Bonsai 8B by default), reached over an OpenAI-compatible
-# endpoint when no Anthropic key is configured. The defaults target a local llama.cpp / ``bonsai``
-# server; both are overridable so swapping the model or runtime is a one-line env change.
+# Keyless local LLM fallback (Qwen2.5-3B-Instruct by default — a small, strong tool-calling model
+# whose GQA keeps it light enough to fit a 4 GiB serverless-CPU container), reached over an
+# OpenAI-compatible endpoint when no Anthropic key is configured. The defaults target a local
+# llama.cpp server; both are overridable so swapping the model or runtime is a one-line env change.
 _DEFAULT_FALLBACK_BASE_URL = "http://localhost:8080/v1"
-_DEFAULT_FALLBACK_MODEL = "bonsai-8b"
+_DEFAULT_FALLBACK_MODEL = "qwen2.5-3b-instruct"
 # llama.cpp ignores the key, but the OpenAI client requires a non-empty value. A placeholder, NOT a
 # secret — the whole point of the fallback is that it needs no API key.
 _FALLBACK_PLACEHOLDER_KEY = "no-key-required"
@@ -82,9 +83,9 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
        scope when one is active (the tenant's own key), else from the process environment
        (admin/eval/single-user). ``langchain_anthropic`` is imported lazily so only the live path
        pays for it.
-    2. **Keyless fallback (no Anthropic key anywhere).** A local OpenAI-compatible endpoint (PrismML
-       Bonsai 8B by default) so a keyless account still builds (a labelled "Draft"). ``model_id``
-       (a Claude id) is ignored in favour of the configured fallback model. No API key is needed.
+    2. **Keyless fallback (no Anthropic key anywhere).** A local OpenAI-compatible endpoint
+       (Qwen2.5-3B-Instruct by default) so a keyless account still builds (a labelled "Draft").
+       ``model_id`` (a Claude id) is ignored in favour of the configured fallback model. No key.
 
     The key value is never logged here; redaction at the structlog layer covers it regardless.
     """
@@ -104,16 +105,16 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
 
 
 def build_keyless_chat_model() -> "BaseChatModel":
-    """The keyless local fallback model over an OpenAI-compatible endpoint (Bonsai 8B by default).
+    """The keyless local fallback model over an OpenAI-compatible endpoint (Qwen2.5-3B by default).
 
     Public so the keyless path can be requested directly (e.g. the tool-calling smoke check), as
     distinct from ``build_chat_model``, which routes to Claude when a key is present.
 
     Base URL + model id come from ``LUNARIS_FALLBACK_LLM_BASE_URL`` / ``LUNARIS_FALLBACK_LLM_MODEL``
-    (defaults target a local llama.cpp / ``bonsai`` server), so swapping the model or runtime is a
-    one-line env change. The ``api_key`` is a non-secret placeholder — the endpoint ignores it.
+    (defaults target a local llama.cpp server), so swapping the model or runtime is a one-line env
+    change. The ``api_key`` is a non-secret placeholder — the endpoint ignores it.
 
-    The model is a ``RepairingChatOpenAI`` (T1b): a 1-bit model's tool-call JSON is its one weak
+    The model is a ``RepairingChatOpenAI`` (T1b): a small local model's tool-call JSON is its weak
     spot, so its completions have malformed tool calls repaired before the agent acts on them.
     ``langchain_openai`` (via that subclass) is imported lazily so only the fallback path pays it.
     """
