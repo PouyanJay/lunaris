@@ -1,14 +1,16 @@
-// The keyless inference Container App — a serverless-GPU, scale-to-zero llama.cpp server that hosts
-// the keyless chat model (Bonsai 8B) so an unkeyed account can build in Draft mode (keyless-fallbacks
-// T8). Built from infra/inference/Dockerfile and pushed to ACR by CD, like the API.
+// The keyless inference Container App — a scale-to-zero llama.cpp server that hosts the keyless chat
+// model (Bonsai 8B) so an unkeyed account can build in Draft mode (keyless-fallbacks T8). Built from
+// infra/inference/Dockerfile and pushed to ACR by CD, like the API.
 //
-// Scale-to-zero is the whole point: you pay for GPU only while a build runs. The cost is a cold start
-// (~30–90s) on the first build after idle — surfaced in the UI via GET /api/keyless/readiness.
+// CPU by default: Bonsai is 1-bit and CPU-runnable, so this runs on the built-in Consumption (CPU)
+// profile — no GPU and no GPU quota needed. Scale-to-zero means you pay only while a build runs; the
+// cost is a cold start (~30–90s) on the first build after idle, surfaced via GET /api/keyless/readiness.
 //
-// ⚠ UNVERIFIED ON AZURE. Serverless-GPU workload profiles are region- + quota-gated and their names
-// change; confirm `workloadProfileName` against your managed environment's available GPU profiles
-// (e.g. a Consumption GPU profile) before deploying. This is a vetted starting point, not a tested
-// deployment. The embeddings service (bge-large-en-v1.5) is deployed separately (see inference/README).
+// GPU (optional speed upgrade): pass `gpuWorkloadProfileName` (a serverless/Consumption GPU profile
+// that exists + has quota in your region — e.g. Consumption-GPU-NC8as-T4) AND build the image from
+// the CUDA base (see the Dockerfile). CPU is slower (a build takes minutes) but needs no quota.
+//
+// The embeddings service (bge-large-en-v1.5) is deployed separately (see inference/README).
 
 targetScope = 'resourceGroup'
 
@@ -24,12 +26,15 @@ param managedEnvironmentId string
 param managedIdentityResourceId string
 param acrLoginServer string
 
-@description('The name of a GPU workload profile defined on the managed environment (serverless/Consumption GPU). MUST exist + be available in this region.')
-param gpuWorkloadProfileName string
+@description('Optional GPU workload profile name (a serverless/Consumption GPU profile with quota, e.g. Consumption-GPU-NC8as-T4). Empty (the default) runs on CPU via the built-in Consumption profile — no GPU quota needed.')
+param gpuWorkloadProfileName string = ''
 
-@description('vCPU/memory for the GPU container (the GPU itself comes from the workload profile).')
+@description('vCPU/memory for the container. The CPU default fits the Consumption profile (max 4 vCPU / 8Gi); a GPU profile sets its own capacity.')
 param cpu string = '4.0'
-param memory string = '16Gi'
+param memory string = '8Gi'
+
+// CPU by default (the built-in "Consumption" profile); a GPU profile name overrides it.
+var workloadProfile = empty(gpuWorkloadProfileName) ? 'Consumption' : gpuWorkloadProfileName
 
 // Internal-only ingress: the API reaches it over the managed environment's private network; it is
 // never exposed to the public internet (no browser talks to it directly).
@@ -48,7 +53,7 @@ resource inference 'Microsoft.App/containerApps@2024-03-01' = {
   }
   properties: {
     managedEnvironmentId: managedEnvironmentId
-    workloadProfileName: gpuWorkloadProfileName
+    workloadProfileName: workloadProfile
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {

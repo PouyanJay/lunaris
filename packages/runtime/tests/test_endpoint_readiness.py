@@ -1,10 +1,10 @@
-"""T8 (keyless-fallbacks): readiness probe for the keyless LLM endpoint (the serverless GPU).
+"""T8 (keyless-fallbacks): readiness probe for the keyless model endpoint.
 
-The keyless model is served by a self-hosted, scale-to-zero GPU endpoint, so the first build after
-idle waits while the GPU provisions. This probe turns that into a signal the UI can show: a fast
-health check whose result distinguishes "ready", "provisioning" (warming up — a 503 while the model
-loads, or a short-probe timeout while the replica scales from zero), and "unreachable" (nothing
-configured / wrong URL). Best-effort: it never raises.
+The keyless model is served by a self-hosted, scale-to-zero endpoint (CPU by default; GPU optional),
+so the first build after idle waits while it provisions. This probe turns that into a signal the UI
+can show: a fast health check whose result distinguishes "ready", "provisioning" (warming up — a 503
+while the model loads, or a short-probe timeout while the replica scales from zero), and
+"unreachable" (nothing configured / wrong URL). Best-effort: it never raises.
 """
 
 from collections.abc import Awaitable, Callable
@@ -47,7 +47,7 @@ async def test_a_503_loading_response_is_provisioning(monkeypatch) -> None:
 
 @pytest.mark.parametrize("code", [400, 401, 404, 500])
 async def test_an_unexpected_status_code_is_unreachable(monkeypatch, code: int) -> None:
-    # Arrange — only 200/503 are meaningful; anything else means we can't trust it's the GPU server.
+    # Arrange — only 200/503 are meaningful; anything else means we can't trust it's the server.
     monkeypatch.setenv("LUNARIS_FALLBACK_LLM_BASE_URL", "http://gpu:8080/v1")
 
     # Act
@@ -58,7 +58,7 @@ async def test_an_unexpected_status_code_is_unreachable(monkeypatch, code: int) 
 
 
 async def test_a_timeout_is_provisioning(monkeypatch) -> None:
-    # Arrange — a scale-to-zero GPU queues the first request while the replica spins up; a short
+    # Arrange — a scale-to-zero replica queues the first request while it spins up; a short
     # probe times out — read as "waking up", not a hard failure (the probe also pre-warms it).
     monkeypatch.setenv("LUNARIS_FALLBACK_LLM_BASE_URL", "http://gpu:8080/v1")
 

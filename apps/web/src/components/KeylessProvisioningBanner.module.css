@@ -1,5 +1,5 @@
 /* Same hairline-band-with-accent-rail family as the Draft banner — this is a transient sub-state of
-   a Draft build, so it reads as kin. Sits above the build timeline while the GPU wakes. */
+   a Draft build, so it reads as kin. Sits above the build timeline while the model wakes. */
 .banner {
   display: flex;
   align-items: baseline;

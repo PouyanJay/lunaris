@@ -2,8 +2,9 @@
 #
 # Keyless inference server for Lunaris (keyless-fallbacks T8): a llama.cpp server that exposes an
 # OpenAI-compatible API for the keyless chat model (PrismML Bonsai 8B, native 1-bit) so an unkeyed
-# account can build in Draft mode. Built to run on an Azure Container Apps **serverless GPU**
-# (scale-to-zero) — see infra/inference.bicep and infra/inference/README.md.
+# account can build in Draft mode. Runs on an Azure Container Apps **serverless CPU** (the default
+# Consumption profile, scale-to-zero) — no GPU and no GPU quota needed, because Bonsai is 1-bit and
+# CPU-runnable. A GPU is an optional speed upgrade (see the note below). See infra/inference.bicep.
 #
 # It serves:
 #   - POST /v1/chat/completions   (the agent's planner + structured-output subagents)
@@ -13,16 +14,15 @@
 # exclusive with generation, so run a second llama-server for it (see README). The app points
 # LUNARIS_FALLBACK_LLM_BASE_URL and LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL at the two endpoints.
 #
-# NOTE (unverified on Azure): the CUDA base tag, the GGUF URL, and the GPU profile must be confirmed
-# against current llama.cpp + Azure ACA serverless-GPU docs for your region. Treat this as a vetted
-# starting point, not a tested image.
+# GPU (optional, for speed): swap the base image to ``:server-cuda`` and deploy inference.bicep with
+# a GPU workload profile (gpuWorkloadProfileName) — that path needs serverless-GPU quota. CPU is
+# slower (a build takes minutes) but needs no quota and is enough to run + test the keyless path.
 
-# Prebuilt llama.cpp server with CUDA. Pin a specific tag in real use (":server-cuda" floats).
-FROM ghcr.io/ggml-org/llama.cpp:server-cuda
+# Prebuilt CPU llama.cpp server. Pin a specific tag in real use (":server" floats).
+FROM ghcr.io/ggml-org/llama.cpp:server
 
-# The keyless chat model. Bonsai 8B is ~1.2–1.5GB as 1-bit GGUF, so the image/model stays small and
-# loads into VRAM in seconds (the cold start is dominated by GPU provisioning, not model load).
-# Override at build time to swap the model: --build-arg MODEL_URL=… --build-arg MODEL_FILE=…
+# The keyless chat model. Bonsai 8B is ~1.2–1.5GB as a 1-bit GGUF, so the image/model stays small and
+# loads in seconds (the cold start is dominated by the replica scaling from zero, not model load).
 # The real 1-bit GGUF in the prism-ml/Bonsai-8B-gguf repo (verified to exist). Override at build
 # time to swap: --build-arg MODEL_URL=… --build-arg MODEL_FILE=…
 ARG MODEL_URL="https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/main/Bonsai-8B-Q1_0.gguf"

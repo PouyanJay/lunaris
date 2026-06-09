@@ -1,19 +1,18 @@
 name: CD (inference images)
 
-# Builds + pushes the keyless inference images (the chat GPU server + the embeddings CPU server) to
+# Builds + pushes the keyless inference images (the chat server + the embeddings server, both CPU) to
 # ACR, SHA-tagged, for keyless ("Draft") builds (keyless-fallbacks T8).
 #
-# MANUAL (workflow_dispatch), not on every push: these images are large (a CUDA base + a model
-# download) and change rarely (only when their Dockerfile or the model changes), so building them on
-# every main push would bloat each deploy. Run this when you (re)build the inference images.
+# MANUAL (workflow_dispatch), not on every push: these images bundle a model download and change
+# rarely (only when their Dockerfile or the model changes), so building them on every main push would
+# bloat each deploy. Run this when you (re)build the inference images.
 #
 # This workflow only BUILDS + PUSHES the images. The first deploy of the Container Apps themselves is
-# manual (infra/inference.bicep needs a GPU workload-profile name + region/quota confirmed for your
-# subscription — see infra/inference/README.md). Once the apps exist, point them at a new image with
-# `az containerapp update --image <ref>` or by re-running the bicep with the new image ref.
+# manual (see infra/inference/README.md) — but on CPU it needs no special quota. Once the apps exist,
+# point them at a new image with `az containerapp update --image <ref>` or by re-running the bicep.
 #
 # Auth is GitHub OIDC federation scoped to `environment: dev` (same as cd-dev), so the ACR push
-# reuses the dev federated identity. Unverified end-to-end until a GPU profile is available.
+# reuses the dev federated identity.
 
 on:
   workflow_dispatch:
@@ -52,7 +51,7 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build & push chat image (Bonsai 8B, GPU)
+      - name: Build & push chat image (Bonsai 8B, CPU)
         uses: docker/build-push-action@v6
         with:
           context: .

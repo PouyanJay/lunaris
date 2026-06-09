@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 
 import { fetchKeylessReadiness, type KeylessReadinessStatus } from "../lib/keylessReadiness";
 
-/** How often to re-probe while the GPU is still waking. Matches the order of a cold start (tens of
+/** How often to re-probe while the model is still waking. Matches the order of a cold start (tens of
  *  seconds) without hammering the endpoint — each probe also nudges a scale-from-zero replica along. */
 const _POLL_INTERVAL_MS = 4000;
 
-/** Tracks whether the keyless GPU is ready while `enabled` (e.g. during a keyless build). Polls
+/** Tracks whether the keyless model is ready while `enabled` (e.g. during a keyless build). Polls
  *  `/api/keyless/readiness` and stops once the answer is settled (`ready` / `not_applicable`) — only
  *  the transient `provisioning` / `unreachable` states keep polling. Returns `null` until the first
  *  probe resolves. Best-effort: a failed probe leaves the last known status (no throw). */

@@ -1,9 +1,9 @@
 import { authedFetch } from "./apiClient";
 
-/** The keyless serverless-GPU endpoint's serve-readiness, mirroring the API ReadinessStatus
+/** The keyless model endpoint's serve-readiness, mirroring the API ReadinessStatus
  *  (keyless-fallbacks T8). The runtime list is the single source; the type is derived from it so the
- *  two can't drift: `ready` (loaded), `provisioning` (the GPU is waking / the model is loading),
- *  `unreachable` (no endpoint wired), `not_applicable` (the caller's LLM is keyed — no GPU). */
+ *  two can't drift: `ready` (loaded), `provisioning` (the server is waking / the model is loading),
+ *  `unreachable` (no endpoint wired), `not_applicable` (the caller's LLM is keyed — no local server). */
 const KEYLESS_READINESS_STATUSES = [
   "ready",
   "provisioning",
@@ -13,7 +13,7 @@ const KEYLESS_READINESS_STATUSES = [
 
 export type KeylessReadinessStatus = (typeof KEYLESS_READINESS_STATUSES)[number];
 
-/** Probe whether the keyless GPU is ready. Best-effort: any failure (or an unexpected shape) resolves
+/** Probe whether the keyless model is ready. Best-effort: any failure (or an unexpected shape) resolves
  *  to `null` so the provisioning UI simply doesn't show, rather than throwing into the build view. */
 export async function fetchKeylessReadiness(
   apiBaseUrl: string,

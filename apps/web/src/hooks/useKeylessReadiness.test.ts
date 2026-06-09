@@ -31,7 +31,7 @@ describe("useKeylessReadiness", () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it("keeps polling while the GPU is still provisioning", async () => {
+  it("keeps polling while the model is still provisioning", async () => {
     mockFetch.mockResolvedValue("provisioning");
 
     const { result } = renderHook(() => useKeylessReadiness("http://api", true));
