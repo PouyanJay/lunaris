@@ -1,8 +1,9 @@
 from typing import ClassVar
 
 import langchain_anthropic
+import pytest
 from lunaris_runtime.credentials import run_credentials
-from lunaris_runtime.resilience import build_chat_model, repaired_chat_model
+from lunaris_runtime.resilience import build_chat_model, llm_client, repaired_chat_model
 
 
 class _SpyChatAnthropic:
@@ -21,6 +22,13 @@ class _SpyChatOpenAI:
 
     def __init__(self, **kwargs: object) -> None:
         type(self).last_kwargs = kwargs
+
+
+@pytest.fixture(autouse=True)
+def _reset_spies() -> None:
+    """Clear the shared capture state so a test can never read kwargs left by an earlier one."""
+    _SpyChatAnthropic.last_kwargs = {}
+    _SpyChatOpenAI.last_kwargs = {}
 
 
 def test_builder_injects_the_scoped_tenant_key(monkeypatch) -> None:
@@ -74,6 +82,65 @@ def test_fallback_honours_env_overrides(monkeypatch) -> None:
     kwargs = _SpyChatOpenAI.last_kwargs
     assert kwargs["base_url"] == "http://gpu-host:9999/v1"
     assert kwargs["model"] == "qwen2.5-1.5b-instruct"
+
+
+def test_keyless_fallback_uses_generous_cpu_timeouts(monkeypatch) -> None:
+    # Keyless CPU inference prefills a large agent prompt for minutes before the first token, so the
+    # fallback must override langchain_openai's 120s stream-chunk default (and the 60s hosted bound)
+    # — else the very first build call is cancelled mid-prefill (observed on prod Qwen-3B on CPU).
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LUNARIS_FALLBACK_LLM_TIMEOUT_S", raising=False)
+    monkeypatch.delenv("LUNARIS_FALLBACK_LLM_STREAM_CHUNK_TIMEOUT_S", raising=False)
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    kwargs = _SpyChatOpenAI.last_kwargs
+    # Pin the documented defaults (far above the 120s stream / 60s request hosted bounds), so an
+    # accidental shrink is a regression, not a silently-still-passing >=300 floor.
+    assert kwargs["stream_chunk_timeout"] == llm_client._DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S
+    assert kwargs["timeout"] == llm_client._DEFAULT_FALLBACK_REQUEST_TIMEOUT_S
+
+
+def test_keyless_timeouts_are_env_tunable(monkeypatch) -> None:
+    # Operators tune the CPU timeouts per box without a code change (a bigger model / slower host).
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_TIMEOUT_S", "1200")
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_STREAM_CHUNK_TIMEOUT_S", "800")
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    kwargs = _SpyChatOpenAI.last_kwargs
+    assert kwargs["timeout"] == 1200
+    assert kwargs["stream_chunk_timeout"] == 800
+
+
+def test_keyless_timeouts_fall_back_to_default_on_garbage_env(monkeypatch) -> None:
+    # A malformed override must not crash the keyless build — it falls back to the safe default.
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_TIMEOUT_S", "not-a-number")
+    monkeypatch.delenv("LUNARIS_FALLBACK_LLM_STREAM_CHUNK_TIMEOUT_S", raising=False)
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    kwargs = _SpyChatOpenAI.last_kwargs
+    assert kwargs["timeout"] == llm_client._DEFAULT_FALLBACK_REQUEST_TIMEOUT_S
+    assert kwargs["stream_chunk_timeout"] == llm_client._DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S
+
+
+@pytest.mark.parametrize("bad", ["0", "-30", "inf", "nan"])
+def test_keyless_timeouts_reject_nonpositive_or_nonfinite_env(monkeypatch, bad) -> None:
+    # A non-positive or non-finite override would wedge the client with a nonsensical bound, so it
+    # is rejected in favour of the safe default just like a non-numeric value.
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_TIMEOUT_S", bad)
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    assert _SpyChatOpenAI.last_kwargs["timeout"] == llm_client._DEFAULT_FALLBACK_REQUEST_TIMEOUT_S
 
 
 def test_fallback_model_repairs_tool_calls(monkeypatch) -> None:
