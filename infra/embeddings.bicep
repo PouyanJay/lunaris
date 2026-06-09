@@ -41,7 +41,7 @@ resource embeddings 'Microsoft.App/containerApps@2024-03-01' = {
   }
   properties: {
     managedEnvironmentId: managedEnvironmentId
-    workloadProfileName: 'Consumption' // CPU — the built-in Consumption profile (no GPU quota needed)
+    // workloadProfileName omitted: a Consumption-Only environment rejects it (CPU is the default).
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
