@@ -35,6 +35,7 @@ from lunaris_grounding.corpus import (
     SupabaseCorpusStore,
 )
 from lunaris_grounding.discovery import (
+    DuckDuckGoSearchProvider,
     ExtractedContent,
     IContentExtractor,
     ISearchProvider,
@@ -79,6 +80,7 @@ __all__ = [
     "CorpusSourceSummary",
     "CredibilityScorer",
     "DocumentExtractor",
+    "DuckDuckGoSearchProvider",
     "Evidence",
     "ExtractedContent",
     "ExtractedDocument",
