@@ -1,6 +1,7 @@
 from pydantic import Field
 
 from .base import CourseModel
+from .build_provenance import CapabilityBuildTag
 from .course_scope import CourseScope
 from .enums import CourseStatus, GoalType
 from .instruction import Module
@@ -29,5 +30,9 @@ class Course(CourseModel):
     graph: PrerequisiteGraph = Field(default_factory=PrerequisiteGraph)
     modules: list[Module] = Field(default_factory=list)
     provenance: list[Citation] = Field(default_factory=list)
+    # Which provider produced each key-gated capability's contribution (keyless-fallbacks T5):
+    # captured at finalize from the run's credential scope and persisted, so a Draft course carries
+    # an honest record of the fallback that built it. Empty on pre-T5 / direct-assembly courses.
+    build_capabilities: list[CapabilityBuildTag] = Field(default_factory=list)
     status: CourseStatus = CourseStatus.DIAGNOSING
     budget_ledger: BudgetLedger = Field(default_factory=BudgetLedger)

@@ -9,6 +9,7 @@ import { Button } from "../primitives/Button";
 import { AnnotationRail } from "./AnnotationRail";
 import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
+import { BuildProvenance } from "./BuildProvenance";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonObjectives } from "./LessonObjectives";
 import { LessonProse } from "./LessonProse";
@@ -300,6 +301,12 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
           {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
           {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
+          {/* Per-course build tag (keyless-fallbacks T5): the persistent record of which keyless
+              fallbacks produced this course, shown once at entry. Renders nothing for a fully-live
+              build, and unlike the live badge never flips — it only changes on rebuild. */}
+          {safeIndex === 0 && course.buildCapabilities && (
+            <BuildProvenance buildCapabilities={course.buildCapabilities} />
+          )}
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>

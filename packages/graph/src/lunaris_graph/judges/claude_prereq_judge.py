@@ -3,7 +3,7 @@ import re
 
 import structlog
 from lunaris_runtime.resilience import (
-    build_anthropic_chat_model,
+    build_chat_model,
     retry_on_rate_limit,
 )
 from lunaris_runtime.schema import KnowledgeComponent
@@ -54,7 +54,7 @@ class ClaudePrereqJudge:
         self, prerequisite: KnowledgeComponent, dependent: KnowledgeComponent
     ) -> PrereqVerdict:
         if self._client is None:
-            self._client = build_anthropic_chat_model(self._model_name)
+            self._client = build_chat_model(self._model_name)
 
         prompt = _PROMPT.format(
             a_label=prerequisite.label,

@@ -15,6 +15,7 @@ from lunaris_runtime.schema import (
 from pydantic import ValidationError
 
 from ..dependencies import CourseServiceDep, OptionalUserIdDep
+from ..draft_throttle import DraftBuildRefusedError
 from ..schemas import CourseRequest
 from ..service import (
     CourseBuildCancelledError,
@@ -22,14 +23,15 @@ from ..service import (
     CourseNotFoundError,
     InvalidCourseIdError,
     LessonRegenerationUnsupportedError,
-    ProviderKeyRequiredError,
 )
 
-# The 400 a BYOK tenant gets when they start a build without their Anthropic key set. One message so
-# the await-full, rebuild, and stream paths stay in lockstep; the web routes the user to Settings.
-_PROVIDER_KEY_REQUIRED_DETAIL = "Set your Anthropic API key in Settings before building a course."
-
 router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+
+def _refused(exc: DraftBuildRefusedError) -> HTTPException:
+    """Map a refused keyless (Draft) build to its HTTP status + learner-facing detail (T6)."""
+    return HTTPException(status_code=exc.status_code, detail=exc.detail)
+
 
 # The clarification rides the GET stream as a JSON query param (the web is fetch-based, and the
 # payload is a handful of short fields). Capped so a malformed/oversized value can't bloat the URL.
@@ -82,10 +84,8 @@ async def create_course(
             discovery_depth=payload.discovery_depth,
             owner_id=owner_id,
         )
-    except ProviderKeyRequiredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=_PROVIDER_KEY_REQUIRED_DETAIL
-        ) from exc
+    except DraftBuildRefusedError as exc:
+        raise _refused(exc) from exc
     except CourseBuildCancelledError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Build was cancelled"
@@ -113,14 +113,13 @@ async def stream_course(
     course_id = uuid4().hex
     run_id = uuid4().hex
     parsed_clarification = _parse_clarification(clarification)
-    # Pre-flight the BYOK requirement here: the SSE response commits 200 + headers before the body,
-    # so a missing-key refusal must be a clean 400 now rather than an error frame mid-stream.
+
+    # Admit the build BEFORE the StreamingResponse begins, so a refused keyless build is a real
+    # 403/429 — once the SSE body starts, a refusal could only close the connection (T6).
     try:
-        await service.assert_build_credentials(owner_id=owner_id)
-    except ProviderKeyRequiredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=_PROVIDER_KEY_REQUIRED_DETAIL
-        ) from exc
+        admission = await service.admit_build(owner_id)
+    except DraftBuildRefusedError as exc:
+        raise _refused(exc) from exc
 
     async def events() -> AsyncIterator[str]:
         async for kind, payload in service.stream(
@@ -130,6 +129,7 @@ async def stream_course(
             clarification=parsed_clarification,
             discovery_depth=discovery_depth,
             owner_id=owner_id,
+            admission=admission,
         ):
             yield _sse_frame(kind, payload)
 
@@ -175,10 +175,8 @@ async def rebuild_course(
         return await service.create(
             existing.topic, course_id=course_id, run_id=run_id, owner_id=owner_id
         )
-    except ProviderKeyRequiredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=_PROVIDER_KEY_REQUIRED_DETAIL
-        ) from exc
+    except DraftBuildRefusedError as exc:
+        raise _refused(exc) from exc
     except CourseBuildCancelledError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Build was cancelled"
@@ -241,10 +239,6 @@ async def regenerate_lesson(
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
             detail="This pipeline does not support lesson regeneration",
-        ) from exc
-    except ProviderKeyRequiredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=_PROVIDER_KEY_REQUIRED_DETAIL
         ) from exc
     if course is None:
         raise HTTPException(

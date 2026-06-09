@@ -1,5 +1,5 @@
 from lunaris_runtime.resilience import (
-    build_anthropic_chat_model,
+    build_chat_model,
 )
 
 
@@ -13,7 +13,7 @@ class ClaudeModel:
 
     async def complete(self, prompt: str) -> str:
         if self._client is None:
-            self._client = build_anthropic_chat_model(self._model_name)
+            self._client = build_chat_model(self._model_name)
         message = await self._client.ainvoke(prompt)  # type: ignore[attr-defined]
         content = message.content
         return content if isinstance(content, str) else str(content)

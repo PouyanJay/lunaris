@@ -1,0 +1,70 @@
+.band {
+  /* The design-system eyebrow micro-label spec is exactly 10px (smaller than --text-xs); shared by
+     the eyebrow and the DRAFT tag so the band's two micro-labels stay in lockstep. */
+  --eyebrow-font-size: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.eyebrow {
+  font-size: var(--eyebrow-font-size);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+/* The Draft state word — uppercase mono carries the signal; the accent marks it as the thing to act
+   on (add a key + rebuild), matching the FALLBACK tag on the live capability badge. */
+.tag {
+  font-size: var(--eyebrow-font-size);
+  letter-spacing: 0.08em;
+  color: var(--accent-500);
+}
+
+.note {
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--border-width) solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+.row + .row {
+  border-top: var(--border-width) solid var(--border);
+}
+
+.name {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+/* The provider in effect is data → monospace, secondary ink, pushed to the trailing edge. */
+.provider {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-left: auto;
+}

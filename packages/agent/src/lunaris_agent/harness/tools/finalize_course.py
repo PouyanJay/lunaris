@@ -11,8 +11,11 @@ import asyncio
 
 import structlog
 from langchain_core.tools import BaseTool, tool
+from lunaris_runtime.capabilities import capture_build_capabilities
 from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import (
+    CapabilityBuildTag,
+    CapabilityMode,
     Course,
     CourseStatus,
     GoalType,
@@ -132,12 +135,16 @@ def _modules_from_graph(graph: PrerequisiteGraph) -> list[Module]:
     ]
 
 
-def _assemble(draft: CourseDraft) -> Course:
+def _assemble(draft: CourseDraft, build_capabilities: list[CapabilityBuildTag]) -> Course:
     """Build the typed course-object from the draft's authoritative results.
 
     Enforces the finalize precondition in code: a course cannot be assembled before the
     prerequisite graph exists (the agent must call the graph tool first). This keeps a
     nullable working field (``draft.graph``) from silently becoming a malformed ``Course``.
+
+    ``build_capabilities`` is captured by the caller inside the run's credential scope and set at
+    construction (keyless-fallbacks T5), so the provider provenance is part of the assembled course
+    rather than a post-construction mutation.
     """
     if draft.graph is None:
         raise RuntimeError(
@@ -157,6 +164,7 @@ def _assemble(draft: CourseDraft) -> Course:
         graph=draft.graph,
         modules=draft.modules or _modules_from_graph(draft.graph),
         provenance=draft.provenance,
+        build_capabilities=build_capabilities,
     )
 
 
@@ -191,7 +199,9 @@ def make_finalize_course_tool(
         Returns ``{courseId, status, moduleCount, issues}``. ``status`` is ``published`` when the
         publish gate passes, else ``review`` with the blocking ``issues`` listed.
         """
-        course = _assemble(draft)
+        # Capture the build tag here (keyless-fallbacks T5): finalize runs inside the build's
+        # credential scope, so it reflects which provider each capability actually used.
+        course = _assemble(draft, capture_build_capabilities())
         if visual_engine is not None:
             placed = await visual_engine.illustrate(course)
             logger.info("agent_course_illustrated", run_id=draft.run_id, visuals_placed=placed)
@@ -223,6 +233,13 @@ def make_finalize_course_tool(
             status=course.status.value,
             module_count=len(course.modules),
             issue_count=len(issues),
+            # Which capabilities ran on a keyless fallback for this build (keyless-fallbacks T5):
+            # capability names only (never a key), so a thin Draft course is diagnosable from logs.
+            fallback_capabilities=[
+                tag.capability.value
+                for tag in course.build_capabilities
+                if tag.mode is CapabilityMode.FALLBACK
+            ],
         )
         await draft.progress.emit(
             ProgressStage.RUN_COMPLETED,

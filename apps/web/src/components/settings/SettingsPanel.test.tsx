@@ -15,6 +15,13 @@ const SETTINGS = {
   ],
 };
 
+const CAPABILITIES = [
+  { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
+  { capability: "embeddings", mode: "live", provider: "Voyage" },
+  { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
+  { capability: "video", mode: "fallback", provider: "Web search" },
+];
+
 /** A fetch stub: GET returns the settings (or an empty trust config / empty runtime config); PUT
  *  returns the per-call status from `onPut`. The embedded TrustedSourcesPanel lists
  *  /api/source-authorities and the ConfigPanel lists /api/config on mount. */
@@ -26,6 +33,9 @@ function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; jso
     }
     if (url.toString().includes("/api/source-authorities")) {
       return { ok: true, json: async () => [] };
+    }
+    if (url.toString().includes("/api/capabilities")) {
+      return { ok: true, json: async () => CAPABILITIES };
     }
     if (url.toString().includes("/api/config")) {
       return { ok: true, json: async () => ({ settings: [] }) };
@@ -61,6 +71,10 @@ describe("SettingsPanel", () => {
     expect(screen.getByLabelText("Anthropic API key")).toHaveAttribute("type", "password");
     // The embedded Trusted-sources panel mounts alongside the keys (its GET is routed in the stub).
     expect(await screen.findByText("Source authority config")).toBeInTheDocument();
+    // Per-capability badges show which provider is in effect: LLM has no key → its keyless fallback.
+    expect(screen.getByText("Bonsai 8B (1-bit, local)")).toBeInTheDocument();
+    const llmRow = screen.getByText("Language model").closest("li");
+    expect(llmRow).toHaveAttribute("data-mode", "fallback");
   });
 
   it("saves a key and reflects the new status", async () => {

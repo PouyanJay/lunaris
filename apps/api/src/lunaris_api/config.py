@@ -33,6 +33,13 @@ class Settings:
     # Base64 AES master key for BYOK at-rest encryption (Phase 2), injected from the secret manager
     # as an env var — never the .env, never the DB. Absent ⇒ BYOK is off (no per-user key storage).
     key_enc_master: str | None = None
+    # Keyless ("Draft") build admission control (keyless-fallbacks T6). Draft builds run on a slow,
+    # shared local runtime, so the operator can switch the tier off and ration it: a per-tenant
+    # per-day cap and a concurrency limit (one in-flight keyless build at a time by default). These
+    # govern ONLY keyless builds — a fully-keyed build hits the fast hosted provider, unthrottled.
+    draft_tier_enabled: bool = True
+    draft_daily_cap: int = 10
+    draft_max_concurrent: int = 1
 
     @property
     def has_supabase(self) -> bool:
@@ -71,4 +78,33 @@ def get_settings() -> Settings:
         embeddings_api_key=os.getenv("EMBEDDINGS_API_KEY") or None,
         supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET") or None,
         key_enc_master=os.getenv("LUNARIS_KEY_ENC_MASTER") or None,
+        draft_tier_enabled=_env_flag("LUNARIS_DRAFT_TIER_ENABLED", default=True),
+        draft_daily_cap=_env_int("LUNARIS_DRAFT_DAILY_CAP", default=10),
+        draft_max_concurrent=_env_int("LUNARIS_DRAFT_MAX_CONCURRENT", default=1),
     )
+
+
+def _env_flag(name: str, *, default: bool) -> bool:
+    """Read a boolean env var: ``1/true/yes/on`` (any case) is True, ``0/false/no/off`` is False,
+    anything else (or unset) falls back to ``default``."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _env_int(name: str, *, default: int) -> int:
+    """Read a non-negative integer env var, falling back to ``default`` when unset or malformed."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default

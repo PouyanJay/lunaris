@@ -8,8 +8,12 @@ from lunaris_grounding import (
     ClaudeSupportAssessor,
     CorpusIngestor,
     CredibilityScorer,
+    DuckDuckGoSearchProvider,
+    IEmbedder,
     IEvidenceRetriever,
+    ISearchProvider,
     IVideoSource,
+    LocalEmbedder,
     OpenAlexScholarlyRegistry,
     PgVectorRetriever,
     SearchVideoSource,
@@ -24,7 +28,7 @@ from lunaris_grounding import (
 )
 from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.persistence import ICourseStore
-from lunaris_runtime.resilience import build_anthropic_chat_model
+from lunaris_runtime.resilience import build_chat_model
 from lunaris_runtime.run_config import resolve_config
 
 from .coverage_critic import (
@@ -51,13 +55,11 @@ from .subagents.resource_curator import (
     ClaudeQueryTranslator,
     ClaudeResourceCurator,
     IResourceCurator,
-    StubResourceCurator,
 )
 from .subagents.scope_polisher import ClaudeScopePolisher, IScopePolisher
 from .subagents.standard_researcher import (
     ClaudeStandardResearcher,
     IStandardResearcher,
-    StubStandardResearcher,
 )
 from .subagents.visual_agent import (
     ClaudeVisualGenerator,
@@ -72,128 +74,134 @@ _DEFAULT_WORKER = "claude-haiku-4-5-20251001"
 _DEFAULT_STRONG = "claude-opus-4-8"
 
 
-def _retriever_from_env() -> IEvidenceRetriever | None:
-    """Build the real pgvector retriever iff the corpus + embeddings creds are present.
+def _embedder_from_env() -> IEmbedder:
+    """The embedder for a run: Voyage when its key is set, else the keyless local fallback (nano).
 
-    Returns ``None`` (→ the verifier falls back to the conservative stub that cuts every
-    claim) when Supabase or the embeddings key is unset, so the pipeline still runs offline.
+    Embeddings are no longer key-gated: with no key the run uses the local nano fallback (over an
+    OpenAI-compatible endpoint), so grounding still works keyless. Nano and Voyage are different
+    vector spaces, so a corpus ingests + queries under one embedder; a switch means re-grounding.
     """
-    if (
-        os.getenv("SUPABASE_URL")
-        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and resolve_secret("EMBEDDINGS_API_KEY")
-    ):
-        return PgVectorRetriever(VoyageEmbedder(), SupabaseCorpusStore())
-    logger.info("grounding_retriever_stubbed", reason="supabase/embeddings creds unset")
+    if resolve_secret("EMBEDDINGS_API_KEY"):
+        return VoyageEmbedder()
+    logger.info("embedder_local_fallback", reason="EMBEDDINGS_API_KEY unset")
+    return LocalEmbedder()
+
+
+def _retriever_from_env() -> IEvidenceRetriever | None:
+    """Build the real pgvector retriever iff the Supabase corpus is present.
+
+    Embeddings are keyless (Voyage when keyed, else the local nano fallback), so this gates only on
+    the Supabase corpus store. Returns ``None`` (→ the verifier falls back to the conservative stub
+    that cuts every claim) only when Supabase is unset, so the pipeline still runs corpus-less.
+    """
+    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
+        return PgVectorRetriever(_embedder_from_env(), SupabaseCorpusStore())
+    logger.info("grounding_retriever_stubbed", reason="supabase corpus unset")
     return None
 
 
 def _discoverer_from_env(worker_model: str) -> IGroundingDiscoverer:
-    """Build the live grounding discoverer iff search + corpus + embeddings creds are set (P6.3).
+    """Build the live grounding discoverer iff the Supabase corpus is present (P6.3).
 
-    Discovery needs a search key (to find sources), the embeddings key (to embed them), and the
-    Supabase corpus (to ingest into the same store the verifier retrieves from). Without all three
-    it returns the stub (no source ingested), so the no-key path stays deterministic and claims fall
-    REVIEW. The discovery sub-graph grades each source with the credibility scorer — backed by the
-    seeded authorities table + the live OpenAlex registry (keyless; optional ``OPENALEX_EMAIL`` for
-    its polite pool), which floors an unknown host serving a real paper to REPUTABLE — and drops
+    Search + embeddings are keyless (DuckDuckGo / local nano when their keys are unset), so it
+    gates only on the Supabase corpus (the store the verifier retrieves from). Without it the stub
+    is returned (no source ingested), so the corpus-less path stays deterministic and claims fall
+    to REVIEW. The discovery sub-graph grades each source with the credibility scorer — backed by
+    the seeded authorities table + the live OpenAlex registry (keyless; optional ``OPENALEX_EMAIL``
+    for its polite pool), which floors an unknown host serving a real paper to REPUTABLE — and drops
     off-topic ones with a label-blind worker-tier judge, so machine-found evidence is graded, not
     just gathered.
     """
-    if (
-        resolve_secret("SEARCH_API_KEY")
-        and os.getenv("SUPABASE_URL")
-        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and resolve_secret("EMBEDDINGS_API_KEY")
-    ):
+    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
             registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
         )
         return SubgraphGroundingDiscoverer(
-            TavilySearchProvider(),
+            _search_provider_from_env(),
             TrafilaturaContentExtractor(),
             scorer,
             ClaudeRelevanceJudge(worker_model),
-            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore()),
+            CorpusIngestor(_embedder_from_env(), SupabaseCorpusStore()),
         )
-    logger.info("grounding_discoverer_stubbed", reason="search/supabase/embeddings creds unset")
+    logger.info("grounding_discoverer_stubbed", reason="supabase corpus unset")
     return StubGroundingDiscoverer()
 
 
 def _seeder_from_env() -> IGroundingSeeder:
-    """Build the live grounding seeder iff the corpus + embeddings creds are set (P6.4).
+    """Build the live grounding seeder iff the Supabase corpus is present (P6.4).
 
-    Seeding needs the embeddings key (to embed the research pages) and the Supabase corpus (to
-    ingest into the same store the verifier retrieves from) — but no search key, since it reuses
-    pages the research stage already fetched. Its ingestor carries the credibility scorer (backed by
-    the seeded authorities table + the live OpenAlex registry), so each seed is graded through the
-    SAME gate as an auto-discovered source: seeded is not the same as trusted. Without the creds it
-    returns the stub (nothing ingested), so the no-key path stays deterministic and claims fall to
-    the verifier's existing behaviour.
+    Embeddings are keyless (local nano when no Voyage key), so seeding gates only on the Supabase
+    corpus (to ingest into the same store the verifier retrieves from); it needs no search key,
+    since it reuses pages the research stage already fetched. Its ingestor carries the credibility
+    scorer (backed by the seeded authorities table + the live OpenAlex registry), so each seed is
+    graded through the SAME gate as an auto-discovered source: seeded is not the same as trusted.
+    Without the corpus it returns the stub (nothing ingested), so the corpus-less path stays
+    deterministic and claims fall to the verifier's existing behaviour.
     """
-    if (
-        os.getenv("SUPABASE_URL")
-        and os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-        and resolve_secret("EMBEDDINGS_API_KEY")
-    ):
+    if os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
         scorer = CredibilityScorer(
             SupabaseSourceAuthorityStore(),
             registry=OpenAlexScholarlyRegistry(mailto=os.getenv("OPENALEX_EMAIL")),
         )
         return GroundingSeeder(
-            CorpusIngestor(VoyageEmbedder(), SupabaseCorpusStore(), scorer=scorer)
+            CorpusIngestor(_embedder_from_env(), SupabaseCorpusStore(), scorer=scorer)
         )
-    logger.info("grounding_seeder_stubbed", reason="supabase/embeddings creds unset")
+    logger.info("grounding_seeder_stubbed", reason="supabase corpus unset")
     return StubGroundingSeeder()
 
 
-def _researcher_from_env(worker_model: str) -> IStandardResearcher:
-    """Build the live standard researcher iff a search key is present, else the stub.
+def _search_provider_from_env() -> ISearchProvider:
+    """The web-search provider for a run: Tavily when its key is set, else keyless DuckDuckGo.
 
-    The real researcher grounds the brief over the shared Tavily search + Trafilatura extraction
-    adapters (worker tier for distillation). With no ``SEARCH_API_KEY`` it returns the stub, so
-    research degrades honestly to UNAVAILABLE and the no-key CI path stays deterministic.
+    Search is no longer key-gated — with no ``SEARCH_API_KEY`` the run searches via DuckDuckGo (no
+    key), so research / discovery / resource curation still run keyless instead of stubbing out.
     """
     if resolve_secret("SEARCH_API_KEY"):
-        return ClaudeStandardResearcher(
-            worker_model, TavilySearchProvider(), TrafilaturaContentExtractor()
-        )
-    logger.info("standard_researcher_stubbed", reason="SEARCH_API_KEY unset")
-    return StubStandardResearcher()
+        return TavilySearchProvider()
+    logger.info("search_provider_duckduckgo_fallback", reason="SEARCH_API_KEY unset")
+    return DuckDuckGoSearchProvider()
+
+
+def _researcher_from_env(worker_model: str) -> IStandardResearcher:
+    """The standard researcher — always live now that search is keyless (Tavily or DuckDuckGo).
+
+    Grounds the brief over the selected search provider + Trafilatura extraction (worker tier for
+    distillation). The keyless path uses DuckDuckGo, so research no longer degrades to UNAVAILABLE.
+    """
+    return ClaudeStandardResearcher(
+        worker_model, _search_provider_from_env(), TrafilaturaContentExtractor()
+    )
 
 
 def _video_source_from_env() -> IVideoSource:
     """The video source for resource curation: YouTube when keyed, else the shared-search fallback.
 
     With a ``YOUTUBE_API_KEY`` set, videos come from the YouTube Data API (guaranteed-video results
-    + channel); without one, every video query routes through the shared ``ISearchProvider`` so a
-    video is still found + vetted, just without YouTube's metadata.
+    + channel); without one, every video query routes through the shared ``ISearchProvider`` (itself
+    keyless via DuckDuckGo when there's no Tavily key) so a video is still found + vetted, just
+    without YouTube's metadata.
     """
     if resolve_secret("YOUTUBE_API_KEY"):
         return YouTubeVideoSource()
     logger.info("video_source_search_fallback", reason="YOUTUBE_API_KEY unset")
-    return SearchVideoSource(TavilySearchProvider())
+    return SearchVideoSource(_search_provider_from_env())
 
 
 def _curator_from_env(worker_model: str) -> IResourceCurator:
-    """Build the live resource curator iff a search key is present, else the stub (P7.4).
+    """Build the resource curator — always live now that search is keyless (P7.4).
 
-    Mirrors the researcher: the live curator finds + vets resources over the shared Tavily search +
-    an ``IVideoSource`` (worker tier for the relevance judge). The query translator (CQ Phase 2,
-    worker tier) rewrites each competency into domain search vernacular before the search. With no
-    ``SEARCH_API_KEY`` it returns the stub, so curation degrades honestly to nothing and the no-key
-    CI path stays deterministic.
+    Mirrors the researcher: the live curator finds + vets resources over the selected search
+    provider, plus an ``IVideoSource`` (worker tier for the relevance judge). The query translator
+    (CQ Phase 2, worker tier) rewrites each competency into domain vernacular before the search.
+    Search is keyless (Tavily or DuckDuckGo), so curation is always live rather than stubbing.
     """
-    if resolve_secret("SEARCH_API_KEY"):
-        return ClaudeResourceCurator(
-            worker_model,
-            TavilySearchProvider(),
-            _video_source_from_env(),
-            translator=ClaudeQueryTranslator(worker_model),
-        )
-    logger.info("resource_curator_stubbed", reason="SEARCH_API_KEY unset")
-    return StubResourceCurator()
+    return ClaudeResourceCurator(
+        worker_model,
+        _search_provider_from_env(),
+        _video_source_from_env(),
+        translator=ClaudeQueryTranslator(worker_model),
+    )
 
 
 def _scope_polisher_from_env(worker_model: str) -> IScopePolisher | None:
@@ -322,7 +330,7 @@ def build_agent_course_builder(
     set, conservative stub otherwise). ``opus-4`` rejects ``temperature``, so none is passed. The
     planner client is built explicitly (not as a bare model id) so it carries a request timeout —
     otherwise ``create_deep_agent`` would build an un-timed client and a stalled socket would hang
-    the whole run. It routes through ``build_anthropic_chat_model`` so it picks up the current run's
+    the whole run. It routes through ``build_chat_model`` so it picks up the current run's
     BYOK Anthropic key (the tenant's own) alongside the shared hardening. ``stream_tokens=True``
     because this planner is a real streaming model: the agent reasoning streams token-by-token to
     the UI (the no-key path keeps the deterministic beats).
@@ -334,7 +342,7 @@ def build_agent_course_builder(
     """
     worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
     strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
-    planner = build_anthropic_chat_model(strong)
+    planner = build_chat_model(strong)
     return AgentCourseBuilder(
         planner,
         store,

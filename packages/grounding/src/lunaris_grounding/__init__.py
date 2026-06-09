@@ -35,6 +35,7 @@ from lunaris_grounding.corpus import (
     SupabaseCorpusStore,
 )
 from lunaris_grounding.discovery import (
+    DuckDuckGoSearchProvider,
     ExtractedContent,
     IContentExtractor,
     ISearchProvider,
@@ -56,7 +57,7 @@ from lunaris_grounding.discovery import (
     research_budget_for_brief,
     video_quality_score,
 )
-from lunaris_grounding.embeddings import IEmbedder, StubEmbedder, VoyageEmbedder
+from lunaris_grounding.embeddings import IEmbedder, LocalEmbedder, StubEmbedder, VoyageEmbedder
 from lunaris_grounding.evidence import Evidence, Support
 from lunaris_grounding.ingest import (
     CandidateSource,
@@ -79,6 +80,7 @@ __all__ = [
     "CorpusSourceSummary",
     "CredibilityScorer",
     "DocumentExtractor",
+    "DuckDuckGoSearchProvider",
     "Evidence",
     "ExtractedContent",
     "ExtractedDocument",
@@ -97,6 +99,7 @@ __all__ = [
     "IVideoSource",
     "InMemoryCorpusStore",
     "InMemorySourceAuthorityStore",
+    "LocalEmbedder",
     "OpenAlexScholarlyRegistry",
     "PgVectorRetriever",
     "ResearchBudget",

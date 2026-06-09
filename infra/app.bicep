@@ -38,6 +38,15 @@ param withProviderKeys bool = false
 @description('When true, inject the BYOK AES master key from Key Vault as LUNARIS_KEY_ENC_MASTER (enables per-tenant encrypted key storage + the authed Settings keys panel). The secret MUST already exist in the vault or the deploy fails.')
 param withByok bool = false
 
+@description('Keyless (Draft) build tier on/off. False (the default until a keyless inference endpoint is wired) makes an unkeyed build a clean "add a key" 403 instead of failing mid-build with no model server. Flip to true once the serverless-GPU inference app is deployed (keyless-fallbacks T6/T8).')
+param draftTierEnabled bool = false
+
+@description('Internal base URL of the keyless chat endpoint (the inference.bicep app, e.g. https://lunaris-<env>-inference.internal…/v1). Empty = use the in-process default (localhost) — i.e. no keyless backend in this deployment.')
+param keylessLlmBaseUrl string = ''
+
+@description('Internal base URL of the keyless embeddings endpoint (the voyage-4-nano service). Empty = the localhost default.')
+param keylessEmbeddingsBaseUrl string = ''
+
 @description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')
 param minReplicas int = (env == 'prod') ? 1 : 0
 param maxReplicas int = 3
@@ -100,7 +109,19 @@ var baseEnv = [
   { name: 'LUNARIS_PIPELINE', value: pipeline }
   { name: 'LUNARIS_CORS_ORIGINS', value: corsOrigins }
   { name: 'LUNARIS_ENV', value: env }
+  { name: 'LUNARIS_DRAFT_TIER_ENABLED', value: string(draftTierEnabled) }
 ]
+
+// Point the keyless fallbacks at the self-hosted inference endpoints when wired; otherwise omit the
+// vars so the app keeps its localhost default (no keyless backend → keyless builds rely on the Draft
+// toggle being off). Each is added only when non-empty.
+var keylessLlmEnv = empty(keylessLlmBaseUrl)
+  ? []
+  : [{ name: 'LUNARIS_FALLBACK_LLM_BASE_URL', value: keylessLlmBaseUrl }]
+var keylessEmbeddingsEnv = empty(keylessEmbeddingsBaseUrl)
+  ? []
+  : [{ name: 'LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL', value: keylessEmbeddingsBaseUrl }]
+var keylessEnv = concat(keylessLlmEnv, keylessEmbeddingsEnv)
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
@@ -141,7 +162,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json(cpu)
             memory: memory
           }
-          env: concat(baseEnv, providerEnv, byokEnv)
+          env: concat(baseEnv, providerEnv, byokEnv, keylessEnv)
         }
       ]
       scale: {

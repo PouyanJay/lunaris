@@ -8,6 +8,7 @@ research-to-ground-claims stage both build on these primitives.
 
 from .content_extractor import IContentExtractor
 from .domain_trust import classify_domain, host
+from .duckduckgo_search_provider import DuckDuckGoSearchProvider
 from .extracted_content import ExtractedContent
 from .research_budget import ResearchBudget
 from .research_budget_policy import research_budget_for_brief
@@ -26,6 +27,7 @@ from .video_source import IVideoSource
 from .youtube_video_source import YouTubeVideoSource
 
 __all__ = [
+    "DuckDuckGoSearchProvider",
     "ExtractedContent",
     "IContentExtractor",
     "ISearchProvider",

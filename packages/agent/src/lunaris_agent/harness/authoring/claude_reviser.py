@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 import structlog
 from langchain_core.language_models import BaseChatModel
 from lunaris_runtime.resilience import (
-    build_anthropic_chat_model,
+    build_chat_model,
     retry_on_rate_limit,
 )
 from lunaris_runtime.schema import CourseBrief, Module
@@ -84,5 +84,5 @@ class ClaudeLessonReviser:
             if self._client_factory is not None:
                 self._client = self._client_factory(self._model)
             else:
-                self._client = build_anthropic_chat_model(self._model)
+                self._client = build_chat_model(self._model)
         return self._client

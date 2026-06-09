@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 
+import { useCapabilities } from "../../hooks/useCapabilities";
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
+import { CapabilityBadges } from "./CapabilityBadges";
 import { ConfigPanel } from "./ConfigPanel";
 import { CredentialsPanel } from "./CredentialsPanel";
 import { SecretField } from "./SecretField";
@@ -66,6 +68,8 @@ type State =
  *  and see the current pipeline mode. */
 export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
   const [state, setState] = useState<State>({ status: "loading" });
+  // Per-capability badges; reloaded when a key is saved so a capability flips live immediately.
+  const { capabilities, reload: reloadCapabilities } = useCapabilities(apiBaseUrl);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -82,6 +86,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
   }, [apiBaseUrl]);
 
   function onSaved(updated: SecretStatus) {
+    reloadCapabilities();
     setState((prev) =>
       prev.status === "ready"
         ? {
@@ -110,6 +115,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
               <p className={styles.pipeline}>
                 Pipeline mode: <span className="mono">{state.view.pipeline}</span>
               </p>
+              <CapabilityBadges capabilities={capabilities} />
               {/* When BYOK is on, each tenant manages their own keys via the authed per-user
                   credentials API; otherwise the single-tenant file-backed secret store is used. */}
               {state.view.byokEnabled ? (

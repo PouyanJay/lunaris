@@ -1,0 +1,39 @@
+/* Per-capability provider rows — hairline-divided, not cards. The mode word carries the state. */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--border-width) solid var(--border);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+}
+.row + .row {
+  border-top: var(--border-width) solid var(--border);
+}
+
+.name {
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.provider {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+/* Uppercase mono status tag — the typographic signal (never colour alone). Fallback gets the accent
+   so it stands out as the thing to act on; live stays quiet. */
+.mode {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.row[data-mode="fallback"] .mode {
+  color: var(--accent-500);
+}
