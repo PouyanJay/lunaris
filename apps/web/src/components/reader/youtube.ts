@@ -28,6 +28,14 @@ export function youTubeThumbnail(id: string): string {
   return `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 }
 
+/** Referrer policy for the embed iframes. `youtube-nocookie.com` (privacy mode) validates the
+ *  embedding domain from the request `Referer`, so it needs at least the origin. Prod serves the SPA
+ *  with `Referrer-Policy: same-origin` (no referrer is sent cross-origin) → the player fails with
+ *  "Error 153 · Video player configuration error". Setting this per-iframe overrides the document
+ *  policy for just these frames, sending the origin to YouTube while leaving the app's policy intact.
+ *  (It works on localhost because the dev server sends no such header.) */
+export const YOUTUBE_EMBED_REFERRER_POLICY = "strict-origin-when-cross-origin";
+
 /** The privacy-enhanced embed URL (`youtube-nocookie.com`) for in-reader playback. `autoplay` is set
  *  only after a user gesture (a click on the facade), and `rel=0` keeps related videos in-channel. */
 export function youTubeEmbed(id: string, options: { autoplay?: boolean } = {}): string {

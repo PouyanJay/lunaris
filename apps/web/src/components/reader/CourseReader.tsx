@@ -321,9 +321,27 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
                   className={styles.railToggle}
                   aria-expanded={railOpen}
                   aria-controls="annotation-rail"
+                  aria-label={`Sources & checks, ${annotations.length}`}
                   onClick={() => setRailOpen((open) => !open)}
                 >
-                  Sources &amp; checks{" "}
+                  {/* On phones the words collapse to this verification glyph (see CSS); the count
+                      stays as the at-a-glance signal. */}
+                  <svg
+                    className={styles.railToggleIcon}
+                    viewBox="0 0 24 24"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6l7-3z" />
+                    <path d="M9 12l2 2 4-4" />
+                  </svg>
+                  <span className={styles.railToggleLabel}>Sources &amp; checks</span>{" "}
                   <span className={`mono ${styles.railCount}`}>{annotations.length}</span>
                 </button>
               )}

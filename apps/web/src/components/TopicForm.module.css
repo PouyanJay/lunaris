@@ -45,6 +45,11 @@
   height: 38px;
 }
 
+/* The submit button shows its full label on desktop; the go-arrow is phone-only (see media query). */
+.submitIcon {
+  display: none;
+}
+
 .input {
   flex: 1;
   min-width: 0;
@@ -114,4 +119,24 @@
   outline: none;
   border-color: var(--accent-500);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Phone: give the input the full row and collapse the submit to a square 44px go-arrow button, so the
+   two read as one inline field at matching heights (the base Button is 44px on touch). */
+@media (max-width: 768px) {
+  .input {
+    height: 44px;
+  }
+  .field > button {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .submitLabel {
+    display: none;
+  }
+  .submitIcon {
+    display: inline-flex;
+  }
 }

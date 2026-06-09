@@ -79,8 +79,21 @@ export function TopicForm({ value, onChange, onSubmit }: TopicFormProps) {
             maxLength={200}
             autoFocus
           />
-          <Button type="submit" variant="accent">
-            Generate course
+          <Button type="submit" variant="accent" aria-label="Generate course">
+            <span className={styles.submitLabel}>Generate course</span>
+            {/* On phones the label collapses to this go-arrow so the input gets the width. */}
+            <svg
+              className={styles.submitIcon}
+              viewBox="0 0 24 24"
+              width="20"
+              height="20"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
           </Button>
         </div>
         {error && (

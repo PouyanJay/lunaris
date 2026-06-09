@@ -97,6 +97,12 @@
   color: var(--text-muted);
 }
 
+/* The verification glyph is phone-only; desktop/tablet keep the worded toggle (see media query). */
+.railToggleIcon {
+  display: none;
+  flex: none;
+}
+
 .competency {
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -409,6 +415,29 @@
     background: var(--scrim);
     border: none;
     cursor: pointer;
+  }
+
+  /* The worded "Sources & checks" toggle wraps to three cramped lines here, so collapse it to the
+     verification glyph + count in the accent (a distinguishable, meaningful affordance) at a 44px
+     tap target. The accessible name is preserved via the button's aria-label. */
+  .railToggle {
+    min-height: 44px;
+    padding: var(--space-1) var(--space-3);
+    color: var(--accent-500);
+    border-color: var(--accent-500);
+  }
+  .railToggle:hover {
+    color: var(--accent-600);
+    background: var(--accent-soft);
+  }
+  .railToggleLabel {
+    display: none;
+  }
+  .railToggleIcon {
+    display: inline-flex;
+  }
+  .railCount {
+    color: var(--accent-500);
   }
 }
 
