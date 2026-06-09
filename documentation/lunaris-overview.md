@@ -64,13 +64,13 @@ operate over *relevant, right-level* input rather than the whole subject.
 | **Eval** | `lunaris-eval` (offline checkers) | Independent verification of the definition of done: prerequisite order + factuality. |
 
 **Graceful degradation is a first-class property.** Every external key is optional. Rather than
-failing — or silently faking — the absence of a key, each capability **falls back to an alternative
-provider** so the no-key path still produces a real course:
+failing — or faking with deterministic stubs — the absence of a key makes each capability **fall back
+to an alternative real provider**, so the no-key path still produces a real course. _(The earlier
+deterministic-stub fallback is **deprecated**; the providers below replace it.)_
 
-> ⚠️ **Active development.** The fallback / key-gated degradation mechanism is currently being
-> reworked. The model is moving **away from deterministic stubs toward alternate real providers**
-> (table below). The exact providers, model sizes, and the automatic pipeline selection in §3.4 may
-> still change — treat this section as a moving target until it settles.
+> ⚠️ **Active development.** This real-provider fallback is currently being built out. The exact
+> providers and model sizes below may still change — treat this section as a moving target until it
+> settles.
 
 | Capability | Primary (key present) | Fallback (key absent) |
 |---|---|---|
@@ -208,10 +208,10 @@ flowchart TD
 | Visual agent | `subagents/visual_agent` | branded diagrams at finalize | worker |
 | Grounding seeder / discoverer / verifier | `harness/seeding`, `harness/discovery`, `packages/grounding` | `seed_grounding`, `discover_grounding`, Moat B | worker / deterministic |
 
-**Pipeline modes** (`LUNARIS_PIPELINE`): `agent` (default — the deep-agent harness above), `live`
-(legacy single-shot `Orchestrator`, no discovery), `stub` (the same orchestrator with deterministic
-stubs — offline, no keys). The MCP server (`lunaris_agent.mcp_registry`) re-exposes the two moats as
-FastMCP tools for external callers.
+**Pipeline modes** (`LUNARIS_PIPELINE`): `agent` (default — the deep-agent harness above) and `live`
+(legacy single-shot `Orchestrator`, no discovery). _(The old deterministic `stub` pipeline is
+**deprecated** — the no-key path now uses real fallback providers, §2, rather than stubs.)_ The MCP
+server (`lunaris_agent.mcp_registry`) re-exposes the two moats as FastMCP tools for external callers.
 
 ---
 
@@ -372,7 +372,8 @@ progress via **Supabase Realtime** on `run_events` instead of a held SSE connect
 - **strong / worker** = Claude tiers — strong `claude-opus-4-8` (planner, curriculum architect, claim
   assessor); worker `claude-haiku-4-5-20251001` (extraction, interpretation, profiling, authoring,
   revision, discovery, curation).
-- **best-effort** = the stage degrades gracefully (offline / no key) without failing the build.
+- **best-effort** = the stage degrades gracefully (no key → real fallback provider, §2) without
+  failing the build.
 
 Primary sources in-repo:
 `packages/agent/src/lunaris_agent/harness/` (agent, runner, tools, authoring, discovery, seeding) ·
