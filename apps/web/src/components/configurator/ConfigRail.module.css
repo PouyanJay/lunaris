@@ -304,11 +304,15 @@
   }
 }
 
-/* Phone: the close control is a ≥44px tap target, and the rail body clears a right-edge notch. */
+/* Phone: the close control is a ≥44px tap target, the depth radios get a ≥44px row, and the rail
+   body clears a right-edge notch. */
 @media (max-width: 768px) {
   .close {
     width: 44px;
     height: 44px;
+  }
+  .depthOption {
+    min-height: 44px;
   }
   .rail {
     padding-right: max(var(--space-5), env(safe-area-inset-right));

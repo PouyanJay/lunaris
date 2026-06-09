@@ -148,3 +148,14 @@
   font-size: var(--text-xs);
   color: var(--text-secondary);
 }
+
+/* Phone: drop the wide outer gutter so the column isn't squeezed, and make the key fields ≥44px tap
+   targets. (Inputs already render at 16px ≤768px via index.css to stop iOS zoom-on-focus.) */
+@media (max-width: 768px) {
+  .center {
+    padding: var(--space-4);
+  }
+  .input {
+    height: 44px;
+  }
+}

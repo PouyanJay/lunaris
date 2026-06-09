@@ -1,4 +1,5 @@
 .explorer {
+  position: relative; /* anchors the detail panel's phone bottom-sheet (see KcDetailPanel) */
   display: flex;
   height: 100%;
   min-height: 0;
@@ -19,4 +20,13 @@
 
 .minimap :global(.react-flow__minimap-mask) {
   fill: rgba(9, 10, 12, 0.6);
+}
+
+/* Phone: enlarge the zoom / fit-view controls into comfortable tap targets (WCAG 2.5.5). They keep
+   their bottom-left anchor; the detail sheet sits above them when open. */
+@media (max-width: 768px) {
+  .canvas :global(.react-flow__controls-button) {
+    width: 44px;
+    height: 44px;
+  }
 }

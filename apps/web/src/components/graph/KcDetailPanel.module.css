@@ -152,3 +152,45 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* Phone: the inspector docks to the bottom as a sheet rather than eating a side column, so the graph
+   keeps the full canvas width. It slides up from the bottom edge, caps at ~62% of the canvas (the
+   map stays visible + tappable to dismiss above it), and clears a home-bar / notch. */
+@media (max-width: 768px) {
+  .panel {
+    /* Leave the upper ~third of the canvas as a tappable "dismiss" zone above the sheet. */
+    --kc-sheet-max-height: 62%;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: var(--kc-sheet-max-height);
+    z-index: var(--z-overlay);
+    border-left: none;
+    border-top: var(--border-width) solid var(--border-strong);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+    padding-bottom: max(var(--space-5), env(safe-area-inset-bottom));
+    animation: kcSheetUp var(--dur) var(--ease-out);
+  }
+  .close {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@keyframes kcSheetUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+}
