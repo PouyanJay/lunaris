@@ -8,7 +8,7 @@
 // ⚠ UNVERIFIED ON AZURE. Serverless-GPU workload profiles are region- + quota-gated and their names
 // change; confirm `workloadProfileName` against your managed environment's available GPU profiles
 // (e.g. a Consumption GPU profile) before deploying. This is a vetted starting point, not a tested
-// deployment. The embeddings service (voyage-4-nano) is deployed separately (see inference/README).
+// deployment. The embeddings service (bge-large-en-v1.5) is deployed separately (see inference/README).
 
 targetScope = 'resourceGroup'
 

@@ -1,10 +1,15 @@
 # syntax=docker/dockerfile:1
 #
 # Keyless EMBEDDINGS server for Lunaris (keyless-fallbacks T8): a llama.cpp server in --embeddings
-# mode that exposes an OpenAI-compatible /v1/embeddings for the keyless embedder (voyage-4-nano), so
-# a keyless build can ground + retrieve without an embeddings API key.
+# mode that exposes an OpenAI-compatible /v1/embeddings for the keyless embedder (bge-large-en-v1.5),
+# so a keyless build can ground + retrieve without an embeddings API key.
 #
-# CPU, not GPU: the nano embedder is light, so this runs as a cheap CPU Container App (see
+# Model choice: bge-large-en-v1.5 (MIT) — a real, GGUF-available, natively 1024-d open embedder that
+# fits the corpus's vector(1024) column. (voyage-4-nano was the original pick but is not published as
+# a self-hostable GGUF; a keyless corpus is a different vector space than paid Voyage → re-ground on
+# a provider switch.)
+#
+# CPU, not GPU: the embedder is light, so this runs as a cheap CPU Container App (see
 # infra/embeddings.bicep) — separate from the GPU chat server because llama.cpp's --embeddings mode
 # is exclusive with generation. The app points LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL at this endpoint.
 #
@@ -12,16 +17,16 @@
 #   - POST /v1/embeddings   (the grounding retriever / discoverer / seeder)
 #   - GET  /health          (200 ready / 503 loading)
 #
-# NOTE (unverified on Azure): the CPU base tag, the voyage-4-nano GGUF URL, and llama.cpp's embedding
-# compatibility for this model must be confirmed before relying on this. A vetted starting point.
+# NOTE (unverified on Azure): the CPU base tag and llama.cpp's embedding behaviour must be confirmed
+# before relying on this. The model URL below is verified to exist on Hugging Face. A starting point.
 
 # CPU llama.cpp server (no CUDA — embeddings are light). Pin a specific tag in real use.
 FROM ghcr.io/ggml-org/llama.cpp:server
 
-# The keyless embedder. Override at build time to swap the model:
+# The keyless embedder (bge-large-en-v1.5, f16 GGUF — verified to exist). Override at build time:
 #   --build-arg MODEL_URL=… --build-arg MODEL_FILE=…
-ARG MODEL_URL="https://huggingface.co/voyageai/voyage-4-nano-gguf/resolve/main/voyage-4-nano.gguf"
-ARG MODEL_FILE="voyage-4-nano.gguf"
+ARG MODEL_URL="https://huggingface.co/CompendiumLabs/bge-large-en-v1.5-gguf/resolve/main/bge-large-en-v1.5-f16.gguf"
+ARG MODEL_FILE="bge-large-en-v1.5-f16.gguf"
 ENV MODEL_PATH="/models/${MODEL_FILE}"
 
 RUN mkdir -p /models && \
@@ -29,8 +34,9 @@ RUN mkdir -p /models && \
 
 EXPOSE 8080
 
-# --embeddings turns the server into an embedding endpoint; --pooling mean is the usual sentence-
-# embedding pooling. The served model id "voyage-4-nano" matches LUNARIS_FALLBACK_EMBEDDINGS_MODEL.
+# --embeddings turns the server into an embedding endpoint; --pooling cls is bge-v1.5's pooling (it
+# embeds from the [CLS] token, not mean). The served model id "bge-large-en-v1.5" matches the app's
+# LUNARIS_FALLBACK_EMBEDDINGS_MODEL default.
 ENTRYPOINT ["/app/llama-server", "--host", "0.0.0.0", "--port", "8080", \
-            "--model", "/models/voyage-4-nano.gguf", "--alias", "voyage-4-nano", \
-            "--embeddings", "--pooling", "mean"]
+            "--model", "/models/bge-large-en-v1.5-f16.gguf", "--alias", "bge-large-en-v1.5", \
+            "--embeddings", "--pooling", "cls"]

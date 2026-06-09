@@ -2,10 +2,12 @@ import os
 
 from lunaris_runtime.resilience import retry_on_rate_limit
 
-_DEFAULT_MODEL = "voyage-4-nano"
+_DEFAULT_MODEL = "bge-large-en-v1.5"
 _DEFAULT_BASE_URL = "http://localhost:8080/v1"
-# The grounding_documents pgvector column is fixed at vector(1024); voyage-4-nano is Matryoshka, so
-# request 1024 dims to match it (a corpus must embed + query in one model/space — see the class).
+# The grounding_documents pgvector column is fixed at vector(1024). bge-large-en-v1.5 is natively
+# 1024-d, so we pin 1024 to assert that contract (the keyless embedder MUST be a 1024-d model);
+# llama.cpp returns the model's native dimension and ignores an extra request field, so this stays a
+# belt-and-suspenders guard, not a truncation. A corpus must embed + query in one model/space.
 _CORPUS_DIMS = 1024
 # The local endpoint ignores the key, but the OpenAI client requires a non-empty value. A
 # placeholder, NOT a secret — the keyless embeddings fallback needs no API key.
@@ -13,16 +15,16 @@ _PLACEHOLDER_KEY = "no-key-required"
 
 
 class LocalEmbedder:
-    """Keyless self-hosted embedder over an OpenAI-compatible endpoint (voyage-4-nano by default).
+    """Keyless self-hosted embedder over an OpenAI-compatible endpoint (bge-large-en-v1.5 default).
 
-    The fallback when no Voyage key is set: a local llama.cpp / ``bonsai`` server serves the model,
-    reached at ``/v1/embeddings`` with no API key. Output is pinned to 1024 dims to match the
-    corpus's ``vector(1024)`` column. Base URL + model are read from env so the runtime/model is a
-    one-line swap. Like ``VoyageEmbedder``, constructing it touches no network — the client
-    materialises on the first embed call.
+    The fallback when no Voyage key is set: a local llama.cpp server serves the model, reached at
+    ``/v1/embeddings`` with no API key. bge-large-en-v1.5 is a real, GGUF-available, natively 1024-d
+    open model (MIT), matching the corpus's ``vector(1024)`` column. Base URL + model are read from
+    env so the runtime/model is a one-line swap. Like ``VoyageEmbedder``, constructing it touches no
+    network — the client materialises on the first embed call.
 
-    Note: nano and Voyage are different vector spaces, so a corpus must be ingested AND queried with
-    the same embedder; switching providers means re-grounding the course.
+    Note: the keyless embedder and Voyage are different vector spaces, so a corpus must be ingested
+    AND queried with the same embedder; switching providers means re-grounding the course.
     """
 
     def __init__(self, model_name: str | None = None, *, base_url: str | None = None) -> None:

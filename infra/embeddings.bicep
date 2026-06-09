@@ -1,12 +1,12 @@
-// The keyless EMBEDDINGS Container App — a CPU, scale-to-zero llama.cpp server hosting voyage-4-nano
+// The keyless EMBEDDINGS Container App — a CPU, scale-to-zero llama.cpp server hosting bge-large-en-v1.5
 // over an OpenAI-compatible /v1/embeddings, so a keyless account can ground + retrieve without an
 // embeddings key (keyless-fallbacks T8). Built from infra/inference/Dockerfile.embeddings.
 //
 // CPU, not GPU: the nano embedder is light, so unlike the chat server (inference.bicep) this needs
 // no GPU workload profile — it runs on the default Consumption profile. Internal ingress only.
 //
-// ⚠ UNVERIFIED ON AZURE — confirm the voyage-4-nano GGUF + llama.cpp embedding compatibility (see the
-// Dockerfile note). A vetted starting point, not a tested deployment.
+// ⚠ UNVERIFIED ON AZURE — confirm llama.cpp's embedding behaviour for this model (see the Dockerfile
+// note). The model GGUF URL is verified to exist. A starting point, not a tested deployment.
 
 targetScope = 'resourceGroup'
 

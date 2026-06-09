@@ -49,7 +49,7 @@ CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
         secret_id="voyage",
         env_var="EMBEDDINGS_API_KEY",
         live_label="Voyage",
-        fallback_label="voyage-4-nano (local)",
+        fallback_label="BGE-large (local)",
     ),
     CapabilitySpec(
         capability=CapabilityName.SEARCH,
