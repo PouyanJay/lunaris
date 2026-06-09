@@ -14,7 +14,7 @@ const LIVE: CapabilityStatus[] = [
 describe("DraftModeBanner", () => {
   it("names each capability running on a keyless fallback", () => {
     const capabilities: CapabilityStatus[] = [
-      { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
+      { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)" },
       { capability: "embeddings", mode: "live", provider: "Voyage" },
       { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
       { capability: "video", mode: "live", provider: "YouTube" },
@@ -24,7 +24,7 @@ describe("DraftModeBanner", () => {
 
     const banner = screen.getByRole("status");
     expect(banner).toHaveTextContent("Draft mode");
-    expect(banner).toHaveTextContent("Bonsai 8B (1-bit, local)");
+    expect(banner).toHaveTextContent("Qwen2.5-3B (local)");
     expect(banner).toHaveTextContent("DuckDuckGo");
     // The live capabilities are not listed as fallbacks.
     expect(banner).not.toHaveTextContent("Voyage");
@@ -41,7 +41,7 @@ describe("DraftModeBanner", () => {
     const onOpenSettings = vi.fn();
     render(
       <DraftModeBanner
-        capabilities={[{ capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" }]}
+        capabilities={[{ capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)" }]}
         onOpenSettings={onOpenSettings}
       />,
     );

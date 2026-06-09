@@ -55,10 +55,10 @@ def test_falls_back_to_local_openai_when_no_anthropic_key(monkeypatch) -> None:
     build_chat_model("claude-haiku-4-5-20251001")
 
     kwargs = _SpyChatOpenAI.last_kwargs
-    # Points at a local OpenAI-compatible endpoint with the default Bonsai model — and needs no key
+    # Points at a local OpenAI-compatible endpoint with the default Qwen model — and needs no key
     # (a non-secret placeholder, since the local endpoint ignores it).
     assert kwargs["base_url"] == "http://localhost:8080/v1"
-    assert kwargs["model"] == "bonsai-8b"
+    assert kwargs["model"] == "qwen2.5-3b-instruct"
     assert kwargs["api_key"] == "no-key-required"
 
 
@@ -67,17 +67,17 @@ def test_fallback_honours_env_overrides(monkeypatch) -> None:
     monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setenv("LUNARIS_FALLBACK_LLM_BASE_URL", "http://gpu-host:9999/v1")
-    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_MODEL", "bonsai-4b")
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_MODEL", "qwen2.5-1.5b-instruct")
 
     build_chat_model("claude-haiku-4-5-20251001")
 
     kwargs = _SpyChatOpenAI.last_kwargs
     assert kwargs["base_url"] == "http://gpu-host:9999/v1"
-    assert kwargs["model"] == "bonsai-4b"
+    assert kwargs["model"] == "qwen2.5-1.5b-instruct"
 
 
 def test_fallback_model_repairs_tool_calls(monkeypatch) -> None:
-    # The keyless fallback is the tool-call-repairing variant (T1b) — a 1-bit model's tool-call JSON
+    # The keyless fallback is the tool-call-repairing variant (T1b) — a small model's tool-call JSON
     # is its one weak spot, so the safety net is on by construction, not an opt-in agents forget.
     from lunaris_runtime.resilience.repaired_chat_model import RepairingChatOpenAI
 

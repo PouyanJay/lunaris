@@ -5,7 +5,7 @@ import type { CapabilityBuildTag } from "../../types/course";
 import { BuildProvenance } from "./BuildProvenance";
 
 const KEYLESS: CapabilityBuildTag[] = [
-  { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
+  { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)" },
   { capability: "embeddings", mode: "fallback", provider: "BGE-large (local)" },
   { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
   { capability: "video", mode: "fallback", provider: "Web search" },
@@ -17,7 +17,7 @@ describe("BuildProvenance", () => {
     const band = screen.getByRole("region", { name: /build provenance/i });
     const list = within(band).getByRole("list", { name: /fallback providers used/i });
     expect(within(list).getByText("Language model")).toBeInTheDocument();
-    expect(within(list).getByText("Bonsai 8B (1-bit, local)")).toBeInTheDocument();
+    expect(within(list).getByText("Qwen2.5-3B (local)")).toBeInTheDocument();
     expect(within(list).getByText("DuckDuckGo")).toBeInTheDocument();
   });
 

@@ -1,7 +1,7 @@
 """A startup tool-calling smoke check for the keyless fallback model (keyless-fallbacks T1b).
 
-The keyless Bonsai fallback is competitive on prose but tool-calling is its one residual risk, so
-before serving keyless an operator can probe it: bind one trivial tool and see whether the model
+The keyless fallback (a small local model) is decent on prose but tool-calling is its one residual
+risk, so before serving keyless an operator can probe it: bind one trivial tool and see whether it
 emits a usable tool call. Run it as a pre-flight (see ``main`` below, or from ``make run``) rather
 than in the API's request path; it is intentionally NOT wired into app startup, so the hot path and
 the test suite never probe a local runtime.

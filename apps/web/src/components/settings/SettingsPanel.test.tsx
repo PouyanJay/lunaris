@@ -16,7 +16,7 @@ const SETTINGS = {
 };
 
 const CAPABILITIES = [
-  { capability: "llm", mode: "fallback", provider: "Bonsai 8B (1-bit, local)" },
+  { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)" },
   { capability: "embeddings", mode: "live", provider: "Voyage" },
   { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
   { capability: "video", mode: "fallback", provider: "Web search" },
@@ -72,7 +72,7 @@ describe("SettingsPanel", () => {
     // The embedded Trusted-sources panel mounts alongside the keys (its GET is routed in the stub).
     expect(await screen.findByText("Source authority config")).toBeInTheDocument();
     // Per-capability badges show which provider is in effect: LLM has no key → its keyless fallback.
-    expect(screen.getByText("Bonsai 8B (1-bit, local)")).toBeInTheDocument();
+    expect(screen.getByText("Qwen2.5-3B (local)")).toBeInTheDocument();
     const llmRow = screen.getByText("Language model").closest("li");
     expect(llmRow).toHaveAttribute("data-mode", "fallback");
   });

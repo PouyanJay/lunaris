@@ -105,7 +105,10 @@ jobs:
               corsOrigins="${{ vars.CORS_ORIGINS }}" \
               pipeline="${{ vars.PIPELINE_MODE }}" \
               withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}" \
-              withByok="${{ vars.WITH_BYOK || 'false' }}"
+              withByok="${{ vars.WITH_BYOK || 'false' }}" \
+              draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \
+              keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
+              keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}"
 
       - name: Deployment summary
         run: |

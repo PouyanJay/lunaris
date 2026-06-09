@@ -1,7 +1,7 @@
-"""Repair malformed tool-call JSON from a weak (1-bit) local model (keyless-fallbacks T1b).
+"""Repair malformed tool-call JSON from a small local model (keyless-fallbacks T1b).
 
-The keyless Bonsai fallback's one residual risk is tool-call reliability: it often emits *almost*-
-valid argument JSON (a markdown fence, a trailing comma, single quotes, trailing prose) that
+The keyless fallback's one residual risk is tool-call reliability: a small model often emits
+*almost*-valid argument JSON (a markdown fence, a trailing comma, single quotes, trailing prose)
 LangChain can't parse, so it lands in ``AIMessage.invalid_tool_calls`` and the agent's turn stalls.
 :func:`repair_tool_calls` re-parses each with a tolerant pass and promotes the ones it can recover
 to real ``tool_calls``. Live Claude never produces invalid tool calls, so this is a no-op there.
@@ -75,7 +75,7 @@ def repair_tool_calls(message: "AIMessage") -> "AIMessage":
     newly_repaired = repaired_calls[original_count:]
     if not newly_repaired:
         return message
-    # Names only (never the argument values) — a 1-bit build's tool args could carry course content.
+    # Names only (never the argument values) — keyless tool args could carry course content.
     logger.info(
         "keyless_tool_calls_repaired",
         repaired=len(newly_repaired),

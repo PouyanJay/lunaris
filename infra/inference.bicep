@@ -1,8 +1,8 @@
 // The keyless inference Container App — a scale-to-zero llama.cpp server that hosts the keyless chat
-// model (Bonsai 8B) so an unkeyed account can build in Draft mode (keyless-fallbacks T8). Built from
+// model (Qwen2.5-3B) so an unkeyed account can build in Draft mode (keyless-fallbacks T8). Built from
 // infra/inference/Dockerfile and pushed to ACR by CD, like the API.
 //
-// CPU by default: Bonsai is 1-bit and CPU-runnable, so this runs on the built-in Consumption (CPU)
+// CPU by default: Qwen2.5-3B is small + GQA-light, so this runs on the built-in Consumption (CPU)
 // profile — no GPU and no GPU quota needed. Scale-to-zero means you pay only while a build runs; the
 // cost is a cold start (~30–90s) on the first build after idle, surfaced via GET /api/keyless/readiness.
 //
@@ -29,7 +29,7 @@ param acrLoginServer string
 @description('Optional GPU workload profile name (a serverless/Consumption GPU profile with quota, e.g. Consumption-GPU-NC8as-T4). Empty (the default) runs on CPU via the built-in Consumption profile — no GPU quota needed.')
 param gpuWorkloadProfileName string = ''
 
-@description('vCPU/memory for the container. The default (2 vCPU / 4Gi) is the max a Consumption-Only environment allows and fits the ~1.5GB 1-bit model; a GPU profile sets its own capacity.')
+@description('vCPU/memory for the container. The default (2 vCPU / 4Gi) is the max a Consumption-Only environment allows and fits the ~1.9GB Qwen2.5-3B Q4 model; a GPU profile sets its own capacity.')
 param cpu string = '2.0'
 param memory string = '4Gi'
 

@@ -9,7 +9,7 @@ class CapabilityBuildTag(CourseModel):
     a Draft course carries an honest, permanent record of the fallback that built it — distinct from
     the live capability badge, which reflects the *current* key state and flips the moment a key is
     stored. ``provider`` is the human label of the provider in effect (e.g. ``Anthropic Claude`` or
-    ``Bonsai 8B (1-bit, local)``); the tag only changes when the course is rebuilt with a real key.
+    ``Qwen2.5-3B (local)``); the tag only changes when the course is rebuilt with a real key.
     """
 
     capability: CapabilityName

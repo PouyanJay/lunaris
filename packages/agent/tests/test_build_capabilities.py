@@ -68,14 +68,14 @@ async def test_keyless_build_tags_every_capability_with_its_fallback(tmp_path: P
         await finalize.ainvoke({})
     course = draft.course
 
-    # Assert — every key-gated capability is tagged, the LLM ran on its keyless fallback (the Bonsai
+    # Assert — every key-gated capability is tagged, the LLM ran on its keyless fallback (the Qwen
     # label), and the tag survives the store round-trip (structural provenance persists).
     assert course is not None
     tagged = {t.capability for t in course.build_capabilities}
     assert tagged == set(CapabilityName)
     llm = _tag(course, CapabilityName.LLM)
     assert llm.mode is CapabilityMode.FALLBACK
-    assert "Bonsai" in llm.provider
+    assert "Qwen" in llm.provider
     reloaded = store.load("course-keyless")
     assert reloaded.build_capabilities == course.build_capabilities
 
