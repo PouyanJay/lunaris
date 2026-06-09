@@ -29,12 +29,14 @@ param acrLoginServer string
 @description('Optional GPU workload profile name (a serverless/Consumption GPU profile with quota, e.g. Consumption-GPU-NC8as-T4). Empty (the default) runs on CPU via the built-in Consumption profile — no GPU quota needed.')
 param gpuWorkloadProfileName string = ''
 
-@description('vCPU/memory for the container. The CPU default fits the Consumption profile (max 4 vCPU / 8Gi); a GPU profile sets its own capacity.')
-param cpu string = '4.0'
-param memory string = '8Gi'
+@description('vCPU/memory for the container. The default (2 vCPU / 4Gi) is the max a Consumption-Only environment allows and fits the ~1.5GB 1-bit model; a GPU profile sets its own capacity.')
+param cpu string = '2.0'
+param memory string = '4Gi'
 
-// CPU by default (the built-in "Consumption" profile); a GPU profile name overrides it.
-var workloadProfile = empty(gpuWorkloadProfileName) ? 'Consumption' : gpuWorkloadProfileName
+// CPU runs on the env's default profile, so `workloadProfileName` is OMITTED entirely — a
+// Consumption-Only environment rejects the property even with the value "Consumption". Only a GPU
+// profile name (which requires a workload-profiles environment) adds it back, via union() below.
+var gpuProfile = empty(gpuWorkloadProfileName) ? {} : { workloadProfileName: gpuWorkloadProfileName }
 
 // Internal-only ingress: the API reaches it over the managed environment's private network; it is
 // never exposed to the public internet (no browser talks to it directly).
@@ -51,9 +53,8 @@ resource inference 'Microsoft.App/containerApps@2024-03-01' = {
       '${managedIdentityResourceId}': {}
     }
   }
-  properties: {
+  properties: union(gpuProfile, {
     managedEnvironmentId: managedEnvironmentId
-    workloadProfileName: workloadProfile
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
@@ -102,7 +103,7 @@ resource inference 'Microsoft.App/containerApps@2024-03-01' = {
         ]
       }
     }
-  }
+  })
 }
 
 // The internal URL the API points LUNARIS_FALLBACK_LLM_BASE_URL at (app.bicep's keylessLlmBaseUrl).
