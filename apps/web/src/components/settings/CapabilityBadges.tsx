@@ -1,12 +1,5 @@
-import type { CapabilityStatus } from "../../lib/capabilities";
+import { CAPABILITY_LABELS, type CapabilityStatus } from "../../lib/capabilities";
 import styles from "./CapabilityBadges.module.css";
-
-const LABELS: Record<CapabilityStatus["capability"], string> = {
-  llm: "Language model",
-  embeddings: "Embeddings",
-  search: "Web search",
-  video: "Video",
-};
 
 interface CapabilityBadgesProps {
   capabilities: CapabilityStatus[];
@@ -21,7 +14,7 @@ export function CapabilityBadges({ capabilities }: CapabilityBadgesProps) {
     <ul className={styles.list} aria-label="Capability providers">
       {capabilities.map((capability) => (
         <li key={capability.capability} className={styles.row} data-mode={capability.mode}>
-          <span className={styles.name}>{LABELS[capability.capability]}</span>
+          <span className={styles.name}>{CAPABILITY_LABELS[capability.capability]}</span>
           <span className={`mono ${styles.provider}`}>{capability.provider}</span>
           <span className={`mono ${styles.mode}`}>
             {capability.mode === "fallback" ? "FALLBACK" : "LIVE"}

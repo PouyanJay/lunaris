@@ -1,5 +1,6 @@
 from .agent_event import AgentEvent
 from .base import CourseModel
+from .build_provenance import CapabilityBuildTag
 from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuestion
 from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
@@ -10,6 +11,8 @@ from .enums import (
     AgentEventKind,
     AuthorityKind,
     BloomLevel,
+    CapabilityMode,
+    CapabilityName,
     ClarifierKind,
     CourseStatus,
     DetailDepth,
@@ -87,6 +90,9 @@ __all__ = [
     "BloomLevel",
     "Budget",
     "BudgetLedger",
+    "CapabilityBuildTag",
+    "CapabilityMode",
+    "CapabilityName",
     "Citation",
     "Claim",
     "Clarification",

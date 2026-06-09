@@ -10,6 +10,25 @@ class BloomLevel(StrEnum):
     CREATE = "create"
 
 
+class CapabilityName(StrEnum):
+    """A key-gated capability that has a keyed live provider and a keyless local fallback."""
+
+    LLM = "llm"
+    EMBEDDINGS = "embeddings"
+    SEARCH = "search"
+    VIDEO = "video"
+
+
+class CapabilityMode(StrEnum):
+    """Whether a capability ran on its keyed provider or its keyless fallback.
+
+    Shared by the live settings badge and the per-course build tag (keyless-fallbacks).
+    """
+
+    LIVE = "live"
+    FALLBACK = "fallback"
+
+
 class CourseStatus(StrEnum):
     DIAGNOSING = "diagnosing"
     MAPPING = "mapping"

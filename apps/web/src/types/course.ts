@@ -369,6 +369,22 @@ export interface IngestResult {
   reason: string | null;
 }
 
+/** A key-gated capability that degrades to a keyless local fallback (mirrors CapabilityName). */
+export type CapabilityName = "llm" | "embeddings" | "search" | "video";
+
+/** Whether a capability ran on its keyed provider or its keyless fallback (mirrors CapabilityMode). */
+export type CapabilityMode = "live" | "fallback";
+
+/** Which provider produced one capability's contribution to a course (mirrors CapabilityBuildTag,
+ *  keyless-fallbacks T5). Captured at finalize and persisted: the honest, permanent record of the
+ *  fallback that built a Draft course — distinct from the live capability badge, which reflects the
+ *  current key state. `provider` is the human label of the provider in effect. */
+export interface CapabilityBuildTag {
+  capability: CapabilityName;
+  mode: CapabilityMode;
+  provider: string;
+}
+
 /** The scope-realism band (CQ Phase 3.1): an honest effort/timeline + what this course does and
  *  does not get you, computed at finalize from the brief. `null` on a pre-Phase-3 course → no band. */
 export interface CourseScope {
@@ -395,6 +411,10 @@ export interface Course {
   graph: PrerequisiteGraph;
   modules: Module[];
   provenance: Citation[];
+  /** Which provider produced each key-gated capability (keyless-fallbacks T5); captured at finalize
+   *  and persisted, so a Draft course carries the honest record of the fallback that built it.
+   *  Absent on pre-T5 courses → the reader shows no build-provenance strip. */
+  buildCapabilities?: CapabilityBuildTag[];
   status: CourseStatus;
 }
 
