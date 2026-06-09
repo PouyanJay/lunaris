@@ -1,10 +1,13 @@
 import asyncio
+import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
+from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.credentials import run_credentials
 from lunaris_runtime.persistence import (
     ICourseStore,
@@ -15,6 +18,7 @@ from lunaris_runtime.persistence import (
 from lunaris_runtime.run_config import run_config
 from lunaris_runtime.schema import (
     AgentEvent,
+    CapabilityName,
     Clarification,
     Course,
     CourseRun,
@@ -24,11 +28,18 @@ from lunaris_runtime.schema import (
     RunStatus,
 )
 
+from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
 
 logger = structlog.get_logger()
+
+# The env var whose presence means the LLM ran live (else keyless Draft) — read once from the shared
+# capability table so the throttle's keyless check and the live badge agree on what "keyed" means.
+_LLM_KEY_ENV = next(s.env_var for s in CAPABILITY_SPECS if s.capability is CapabilityName.LLM)
+# The per-day cap bucket for a build with no owner (auth off / single-user instance).
+_LOCAL_OWNER_KEY = "__local__"
 
 # Bounds for the run-history list, shared with the GET /api/runs router so the HTTP validation and
 # the service-layer clamp stay in lockstep (single source of truth).
@@ -54,6 +65,19 @@ ConfigResolver = Callable[[str], Awaitable[Mapping[str, str]]]
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
 # maps directly to the SSE event name.
 _StreamItem = tuple[str, ProgressEvent | AgentEvent | Course]
+
+
+@dataclass(frozen=True)
+class BuildAdmission:
+    """The outcome of admitting a build (keyless-fallbacks T6): the resolved run credentials and,
+    for a throttled keyless build, the held Draft slot to release when the build's task ends.
+
+    Computed once by :meth:`CourseService.admit_build` so a refusal is a real HTTP status before the
+    response starts (the SSE path can't surface a 429 once it has begun streaming). ``reservation``
+    is ``None`` for a keyed build or when no throttle is wired — those are never rationed."""
+
+    credentials: Mapping[str, str] | None
+    reservation: DraftReservation | None
 
 
 class CourseServiceError(Exception):
@@ -121,9 +145,13 @@ class CourseService:
         *,
         credential_resolver: CredentialResolver | None = None,
         config_resolver: ConfigResolver | None = None,
+        throttle: KeylessBuildThrottle | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
+        # Admission control for keyless (Draft) builds (T6): operator switch + per-tenant per-day
+        # cap + concurrency limit. None (the default) leaves keyless builds unthrottled — today's.
+        self._throttle = throttle
         # Resolves the owner's BYOK keys per run (None when BYOK is off → builds use the process
         # environment).
         self._credential_resolver = credential_resolver
@@ -166,6 +194,39 @@ class CourseService:
         return await self._credential_resolver(owner_id)
 
     @staticmethod
+    def _is_keyless_llm(credentials: Mapping[str, str] | None) -> bool:
+        """Whether this build will run the LLM keyless (a Draft build) — mirrors ``resolve_secret``:
+        a scoped tenant with no Anthropic key, or no scope and no key in the process env."""
+        if credentials is not None:
+            return not credentials.get(_LLM_KEY_ENV)
+        return not os.environ.get(_LLM_KEY_ENV)
+
+    async def admit_build(self, owner_id: str | None) -> BuildAdmission:
+        """Resolve the run's credentials and, for a throttled keyless build, reserve a Draft slot.
+
+        Call this BEFORE recording or streaming a build, so a refusal is a real HTTP status rather
+        than a half-open SSE stream. Raises the throttle's ``Draft*`` errors when the keyless build
+        is refused; the router maps them to 403/429. A keyed build (or no throttle) reserves nothing
+        — only the slow keyless runtime is rationed. Release ``reservation`` when the build's task
+        ends.
+        """
+        credentials = await self._resolve_run_credentials(owner_id)
+        reservation: DraftReservation | None = None
+        if self._throttle is not None and self._is_keyless_llm(credentials):
+            reservation = self._throttle.reserve(owner_id or _LOCAL_OWNER_KEY)
+        return BuildAdmission(credentials=credentials, reservation=reservation)
+
+    def _release(self, reservation: DraftReservation | None) -> None:
+        """Free a held Draft slot (no-op when the build was keyed / unthrottled).
+
+        A non-None reservation can only have come from this service's throttle, so the throttle is
+        present whenever there's a slot to free — assert the invariant rather than no-op."""
+        if reservation is None:
+            return
+        assert self._throttle is not None, "a Draft reservation is held but no throttle is wired"
+        self._throttle.release(reservation)
+
+    @staticmethod
     def _credential_scope(credentials: Mapping[str, str] | None) -> AbstractContextManager[None]:
         """The run's credential context: the tenant keys when present, else a no-op (env fallback).
 
@@ -203,9 +264,10 @@ class CourseService:
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
         owner_id: str | None = None,
     ) -> Course:
-        # Resolve the owner's BYOK keys (refuses up front if the required key is missing) before any
-        # run is recorded, so a refused build leaves no history row, plus their model config.
-        credentials = await self._resolve_run_credentials(owner_id)
+        # Admit the build first (resolves the owner's BYOK keys; for a keyless Draft build, reserves
+        # a slot or refuses) before any run is recorded, so a refused build leaves no history row.
+        admission = await self.admit_build(owner_id)
+        credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
@@ -241,6 +303,8 @@ class CourseService:
             raise
         finally:
             self._registry.discard(run_id)
+            # The await-full build's task has ended here (awaited above) — free its Draft slot.
+            self._release(admission.reservation)
         await self._record_finish(course, owner_id=owner_id)
         return course
 
@@ -253,6 +317,7 @@ class CourseService:
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
         owner_id: str | None = None,
+        admission: BuildAdmission | None = None,
     ) -> AsyncIterator[_StreamItem]:
         """Run the pipeline, yielding each progress/agent event as it happens, then the course.
 
@@ -276,9 +341,12 @@ class CourseService:
         recorder = RunEventRecorder(
             self._event_store, run_id=run_id, course_id=course_id, owner_id=owner_id
         )
-        # Resolve the owner's BYOK keys; a missing key is not a refusal — the run scope then carries
-        # no key for that provider and the adapter falls back to its keyless local provider (Draft).
-        credentials = await self._resolve_run_credentials(owner_id)
+        # Admission (resolved BYOK keys + any held Draft slot) is normally computed by the router
+        # via admit_build, so a 403/429 refusal precedes the response; a direct caller passes None
+        # and we admit here. A missing key is not a refusal — the adapter falls back to keyless.
+        if admission is None:
+            admission = await self.admit_build(owner_id)
+        credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # The credential + config scopes wrap only the factory + create_task (no yields inside), so
@@ -306,6 +374,10 @@ class CourseService:
             self._registry.register(
                 run_id, run_task, course_id, owner_id
             )  # cancellable by a separate request (scoped to the owner)
+        # Free the Draft slot when the durable build task ends — NOT when this generator is torn
+        # down (a client disconnect leaves the build running, so the slot tracks the task lifetime).
+        if admission.reservation is not None:
+            run_task.add_done_callback(lambda _: self._release(admission.reservation))
         next_event_task: asyncio.Task[StreamItem] | None = None
         try:
             while True:

@@ -50,6 +50,7 @@ from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
 from .credential_vault import CredentialVault
+from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, IExplainer
 from .run_registry import RunRegistry
 from .secrets import (
@@ -332,6 +333,21 @@ def _byok_credential_resolver(vault: CredentialVault) -> CredentialResolver:
     return resolve
 
 
+@lru_cache
+def _get_keyless_build_throttle(settings: Settings) -> KeylessBuildThrottle:
+    """The process-wide keyless-build throttle for the given settings (T6).
+
+    Cached on the frozen ``Settings`` value so the in-flight slot + per-day counts are shared across
+    every build request for that config (per-request instances would never see each other's counts).
+    Tracking the whole ``Settings`` (not just the Draft fields) is immune to config-surface drift;
+    tests reset it via ``_get_keyless_build_throttle.cache_clear()`` (see the API conftest)."""
+    return KeylessBuildThrottle(
+        enabled=settings.draft_tier_enabled,
+        daily_cap=settings.draft_daily_cap,
+        max_concurrent=settings.draft_max_concurrent,
+    )
+
+
 def get_course_service(
     settings: Annotated[Settings, Depends(get_settings)],
     run_store: Annotated[IRunStore, Depends(get_run_store)],
@@ -368,6 +384,7 @@ def get_course_service(
         event_store,
         credential_resolver=resolver,
         config_resolver=config_resolver,
+        throttle=_get_keyless_build_throttle(settings),
     )
 
 

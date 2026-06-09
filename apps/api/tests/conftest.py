@@ -1,11 +1,23 @@
 """Shared fixtures for the API test suite."""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 import pytest
 from lunaris_agent import build_stub_orchestrator
 from lunaris_runtime.schema import Course, ProgressEvent, ProgressStage
+
+
+@pytest.fixture(autouse=True)
+def _reset_keyless_throttle() -> Iterator[None]:
+    """The keyless-build throttle (T6) is a process-wide singleton, so its per-day Draft-build
+    counts persist across tests in the shared process. Clear it around each test so one test's
+    keyless builds can't exhaust another's per-day cap (a flaky 429 that depends on test order)."""
+    from lunaris_api import dependencies
+
+    dependencies._get_keyless_build_throttle.cache_clear()
+    yield
+    dependencies._get_keyless_build_throttle.cache_clear()
 
 
 class ReleasablePipeline:
