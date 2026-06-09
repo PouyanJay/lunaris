@@ -34,8 +34,15 @@ EXPOSE 8080
 
 # --host 0.0.0.0 so ACA ingress can reach it; --port 8080 matches the app's default base URL; the
 # served model id "qwen2.5-3b-instruct" matches LUNARIS_FALLBACK_LLM_MODEL. The memory caps matter on
-# the 4 GiB Consumption container: --ctx-size 8192 + --parallel 1 bound the KV cache, and -fit off
-# stops llama.cpp's auto-fit from sizing to the NODE's RAM (which OOM-kills the smaller container).
+# the 4 GiB Consumption container: --parallel 1 bounds the KV cache and -fit off stops llama.cpp's
+# auto-fit from sizing to the NODE's RAM (which OOM-kills the smaller container).
+#
+# --ctx-size 16384: a full deep-agent build accumulates planner context (todo list + tool results)
+# that overflowed an 8192 window mid-build (400 exceed_context_size_error). Qwen2.5-3B is GQA-light
+# (2 KV heads, head_dim 128, 36 layers) → its KV cache at 16384 is only ~0.6 GiB, so model (~1.9 GiB)
+# + KV + buffers fits the 4 GiB container with headroom (still well under n_ctx_train = 32768). The
+# app also bounds prompts to this window via the keyless model profile (see build_keyless_chat_model),
+# so summarization keeps the planner under the limit regardless.
 ENTRYPOINT ["/app/llama-server", "--host", "0.0.0.0", "--port", "8080", \
             "--model", "/models/qwen2.5-3b-instruct-q4_k_m.gguf", "--alias", "qwen2.5-3b-instruct", \
-            "--ctx-size", "8192", "--parallel", "1", "-fit", "off"]
+            "--ctx-size", "16384", "--parallel", "1", "-fit", "off"]

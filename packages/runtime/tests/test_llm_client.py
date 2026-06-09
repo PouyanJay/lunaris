@@ -130,6 +130,47 @@ def test_keyless_timeouts_fall_back_to_default_on_garbage_env(monkeypatch) -> No
     assert kwargs["stream_chunk_timeout"] == llm_client._DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S
 
 
+def test_keyless_model_advertises_its_context_window(monkeypatch) -> None:
+    # The keyless model carries a profile so the deep-agent harness summarizes a fraction before it
+    # overflows the small local window (deepagents otherwise assumes a 170k window for unknown
+    # models and never summarizes inside 16k — the planner then 400s mid-build on context overflow).
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("LUNARIS_FALLBACK_LLM_CONTEXT_TOKENS", raising=False)
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    profile = _SpyChatOpenAI.last_kwargs["profile"]
+    window = llm_client._DEFAULT_FALLBACK_CONTEXT_TOKENS
+    # Max *input* = window minus the response reserve, keeping the prompt under the served window.
+    assert profile["max_input_tokens"] == window - llm_client._FALLBACK_RESPONSE_RESERVE_TOKENS
+
+
+def test_keyless_context_window_is_env_tunable(monkeypatch) -> None:
+    # Ops match the advertised window to the endpoint's --ctx-size without a code change.
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_CONTEXT_TOKENS", "8192")
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    profile = _SpyChatOpenAI.last_kwargs["profile"]
+    assert profile["max_input_tokens"] == 8192 - llm_client._FALLBACK_RESPONSE_RESERVE_TOKENS
+
+
+def test_keyless_context_window_floor_guards_a_tiny_window(monkeypatch) -> None:
+    # A misconfigured window smaller than the response reserve can't drive the input budget to
+    # zero/negative — the floor holds so deepagents still receives a sane bound.
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("LUNARIS_FALLBACK_LLM_CONTEXT_TOKENS", "1000")  # < the response reserve
+
+    build_chat_model("claude-haiku-4-5-20251001")
+
+    profile = _SpyChatOpenAI.last_kwargs["profile"]
+    assert profile["max_input_tokens"] == llm_client._FALLBACK_MIN_INPUT_TOKENS
+
+
 @pytest.mark.parametrize("bad", ["0", "-30", "inf", "nan"])
 def test_keyless_timeouts_reject_nonpositive_or_nonfinite_env(monkeypatch, bad) -> None:
     # A non-positive or non-finite override would wedge the client with a nonsensical bound, so it
