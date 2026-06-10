@@ -154,9 +154,7 @@ def test_grounding_model_referenced_python_files_exist() -> None:
     cited = set(_PY_FILE_PATTERN.findall(_read(_GROUNDING_MODEL)))
     present = {path.name for path in (_REPO_ROOT / "packages").rglob("*.py")}
 
-    assert cited, (
-        "expected grounding.md to cite at least one eval .py file (the poisoning proofs)"
-    )
+    assert cited, "expected grounding.md to cite at least one eval .py file (the poisoning proofs)"
     missing = sorted(name for name in cited if name not in present)
 
     assert not missing, f"grounding.md cites Python files that no longer exist: {missing}"
