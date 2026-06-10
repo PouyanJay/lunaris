@@ -21,8 +21,8 @@ from lunaris_grounding.verifier import _HIGH_CREDIBILITY_FLOOR
 from lunaris_runtime.schema import AcquisitionMode, SourceType, SubjectField, TrustTier
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_GROUNDING_MODEL = _REPO_ROOT / "documentation" / "grounding-model.md"
-_WALKTHROUGH = _REPO_ROOT / "documentation" / "build-a-course-walkthrough.md"
+_GROUNDING_MODEL = _REPO_ROOT / "documentation" / "grounding.md"
+_WALKTHROUGH = _REPO_ROOT / "documentation" / "getting-started.md"
 _README = _REPO_ROOT / "README.md"
 _ENV_SAMPLE = _REPO_ROOT / ".env.sample"
 
@@ -31,7 +31,8 @@ _LINKED_DOCS = [
     _GROUNDING_MODEL,
     _WALKTHROUGH,
     _README,
-    _REPO_ROOT / "documentation" / "relevance-model.md",
+    _REPO_ROOT / "documentation" / "relevance.md",
+    _REPO_ROOT / "documentation" / "README.md",
 ]
 
 # Matched against the doc so a documented key name that is absent from .env.sample is caught as a
@@ -90,7 +91,7 @@ def test_grounding_model_documents_every_enum_member(enum_cls: type) -> None:
 
     missing = [m.value for m in enum_cls if not _documents_term(text, _normalise(m.value))]
 
-    assert not missing, f"grounding-model.md omits {enum_cls.__name__} members: {missing}"
+    assert not missing, f"grounding.md omits {enum_cls.__name__} members: {missing}"
 
 
 def test_grounding_model_states_the_high_risk_credibility_floor() -> None:
@@ -98,7 +99,7 @@ def test_grounding_model_states_the_high_risk_credibility_floor() -> None:
     text = _read(_GROUNDING_MODEL)
     floor = f"{_HIGH_CREDIBILITY_FLOOR:.2f}"
 
-    assert floor in text, f"grounding-model.md must state the HIGH-risk credibility floor ({floor})"
+    assert floor in text, f"grounding.md must state the HIGH-risk credibility floor ({floor})"
 
 
 def test_grounding_model_env_vars_exist_in_env_sample() -> None:
@@ -106,17 +107,17 @@ def test_grounding_model_env_vars_exist_in_env_sample() -> None:
     declared = _env_sample_keys(_read(_ENV_SAMPLE))
     documented = set(_ENV_VAR_PATTERN.findall(_read(_GROUNDING_MODEL)))
 
-    assert documented, "expected grounding-model.md to name at least one gating env var"
+    assert documented, "expected grounding.md to name at least one gating env var"
     unknown = sorted(var for var in documented if var not in declared)
 
-    assert not unknown, f"grounding-model.md names env vars absent from .env.sample: {unknown}"
+    assert not unknown, f"grounding.md names env vars absent from .env.sample: {unknown}"
 
 
 def test_grounding_model_names_the_free_scholarly_registry() -> None:
     # OpenAlex being free is a load-bearing honesty/cost point; it must be stated.
     text = _read(_GROUNDING_MODEL).lower()
 
-    assert "openalex" in text, "grounding-model.md must name OpenAlex (the free scholarly registry)"
+    assert "openalex" in text, "grounding.md must name OpenAlex (the free scholarly registry)"
 
 
 def test_grounding_model_documents_the_keys_that_gate_grounding() -> None:
@@ -126,7 +127,7 @@ def test_grounding_model_documents_the_keys_that_gate_grounding() -> None:
 
     missing = [key for key in ("SEARCH_API_KEY", "EMBEDDINGS_API_KEY") if key not in text]
 
-    assert not missing, f"grounding-model.md omits keys central to the cost story: {missing}"
+    assert not missing, f"grounding.md omits keys central to the cost story: {missing}"
 
 
 @pytest.mark.parametrize("doc", _LINKED_DOCS, ids=lambda d: d.name)
@@ -145,7 +146,7 @@ def test_walkthrough_covers_filling_the_corpus() -> None:
     lowered = text.lower()
 
     assert "corpus" in lowered, "the walkthrough must cover the Corpus tab / filling the corpus"
-    assert "grounding-model.md" in text, "the walkthrough must link grounding-model.md"
+    assert "grounding.md" in text, "the walkthrough must link grounding.md"
 
 
 def test_grounding_model_referenced_python_files_exist() -> None:
@@ -153,9 +154,7 @@ def test_grounding_model_referenced_python_files_exist() -> None:
     cited = set(_PY_FILE_PATTERN.findall(_read(_GROUNDING_MODEL)))
     present = {path.name for path in (_REPO_ROOT / "packages").rglob("*.py")}
 
-    assert cited, (
-        "expected grounding-model.md to cite at least one eval .py file (the poisoning proofs)"
-    )
+    assert cited, "expected grounding.md to cite at least one eval .py file (the poisoning proofs)"
     missing = sorted(name for name in cited if name not in present)
 
-    assert not missing, f"grounding-model.md cites Python files that no longer exist: {missing}"
+    assert not missing, f"grounding.md cites Python files that no longer exist: {missing}"

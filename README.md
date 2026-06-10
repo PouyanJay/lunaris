@@ -50,7 +50,7 @@ Ordering and grounding don't make a course about the *right thing at the right l
 alphabet"* — coherent, correctly ordered, and useless. So Lunaris runs the front of the pipeline a good
 tutor runs first: **interpret** the request into a typed goal‑for‑a‑learner brief → **research** the
 real standard → **model the learner's frontier** (what to skip) → **scope to the gap** → design backward
-and **curate** vetted resources. The moats then operate over *relevant, scoped* input. → [relevance‑model.md](documentation/relevance-model.md)
+and **curate** vetted resources. The moats then operate over *relevant, scoped* input. → [relevance.md](documentation/relevance.md)
 
 ### Grounded, and auditable
 
@@ -59,7 +59,7 @@ blocked, plus **vouched** for sources you supply), a **source type**, and a **cr
 constructed at acquisition and shown on the citation. On a high‑risk course the verifier applies a
 **risk‑tiered trust floor**: evidence must be curated‑or‑better *and* credible, **or** corroborated
 across ≥2 independent domains — otherwise the claim is cut. **Authority emerges from agreement, not from
-a label** (and the LLM judges stay blind to source labels while you see the full trust). → [grounding‑model.md](documentation/grounding-model.md)
+a label** (and the LLM judges stay blind to source labels while you see the full trust). → [grounding.md](documentation/grounding.md)
 
 ## Architecture
 
@@ -135,7 +135,7 @@ flowchart LR
     class E,I moat
 ```
 
-Step‑by‑step with real values from a live build: **[documentation/course-build-pipeline.md](documentation/course-build-pipeline.md)**.
+Step‑by‑step, traced on a worked example: **[documentation/build-pipeline.md](documentation/build-pipeline.md)**.
 
 ## Quick start
 
@@ -178,15 +178,17 @@ no‑key path always works:
 
 ## Documentation
 
-Minimal by design — four focused docs plus the system‑design reference:
+Full docs live in **[documentation/](documentation/README.md)** — start there for the index. The
+pages:
 
 | Doc | Read it for |
 |---|---|
-| **[architecture.md](documentation/architecture.md)** | System‑design, sequence, and deployment diagrams (Mermaid) |
-| [course-build-pipeline.md](documentation/course-build-pipeline.md) | The 11‑stage build, traced with real values |
-| [relevance-model.md](documentation/relevance-model.md) | The interpret → research → scope front + its cost model |
-| [grounding-model.md](documentation/grounding-model.md) | Trust tiers, the trust floor, the three corpus modes |
-| [build-a-course-walkthrough.md](documentation/build-a-course-walkthrough.md) | A hands‑on first build |
+| **[getting-started.md](documentation/getting-started.md)** | A hands‑on first build, step by step |
+| [architecture.md](documentation/architecture.md) | System‑design and sequence diagrams (Mermaid) |
+| [build-pipeline.md](documentation/build-pipeline.md) | The 11‑stage build, traced on a worked example |
+| [relevance.md](documentation/relevance.md) | The interpret → research → scope front + its cost model |
+| [grounding.md](documentation/grounding.md) | Trust tiers, the trust floor, the three corpus modes |
+| [deployment.md](documentation/deployment.md) | Production topology, BYOK, and the keyless Draft tier |
 
 ## Development
 
