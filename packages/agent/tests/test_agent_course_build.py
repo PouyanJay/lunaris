@@ -1230,18 +1230,21 @@ async def test_an_unbuilt_competency_is_scoped_out_and_withheld_for_review(
     assert reloaded.scope == course.scope
 
 
-async def test_finalize_before_graph_is_rejected(tmp_path: Path) -> None:
-    # Arrange — the finalize tool over a draft whose prerequisite graph was never built. The moat
-    # must refuse to assemble a course out of order rather than emit a malformed one. Tested
-    # directly on the tool (deterministic) rather than through the agent loop, which retries a
-    # failed tool call.
+async def test_finalize_before_graph_is_rejected_gracefully(tmp_path: Path) -> None:
+    # Arrange — the finalize tool over a draft whose prerequisite graph was never built. A weak
+    # planner (e.g. the keyless local model) can call finalize out of order; the tool must refuse to
+    # assemble a malformed course, but RECOVERABLY — returning a corrective result the agent can act
+    # on, not raising into the agent loop and killing the run.
     draft = CourseDraft(topic="demo", course_id="course-2", run_id="run-2")
     finalize = make_finalize_course_tool(
         MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
     )
 
-    # Act / Assert — the precondition fails loudly, and nothing is persisted.
-    with pytest.raises(RuntimeError, match="before the prerequisite"):
-        await finalize.ainvoke({})
+    # Act — finalize before the graph exists.
+    result = await finalize.ainvoke({})
+
+    # Assert — a corrective "incomplete" result naming the missing step; nothing assembled or saved.
+    assert result["status"] == "incomplete"
+    assert "build_prerequisite_graph" in result["error"]
     assert draft.course is None
     assert not (tmp_path / "course-2.json").exists()

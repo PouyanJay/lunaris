@@ -196,9 +196,30 @@ def make_finalize_course_tool(
         """Assemble, gate, and persist the finished course from the work done so far.
 
         Call this once the concepts, prerequisite graph, curriculum, and lessons are ready.
-        Returns ``{courseId, status, moduleCount, issues}``. ``status`` is ``published`` when the
-        publish gate passes, else ``review`` with the blocking ``issues`` listed.
+        Returns ``{courseId, status, moduleCount, issues}``; ``status`` is ``published`` when the
+        publish gate passes, else ``review`` with the blocking ``issues``. If the build isn't ready
+        yet (no prerequisite graph), it returns ``{status: "incomplete", error}`` instead of
+        finishing — do the missing steps, then call this again.
         """
+        if draft.graph is None:
+            # A weak planner (notably the keyless local model) can call finalize before doing the
+            # work, which would crash the whole run. Return a corrective result instead, so the
+            # agent builds the missing pieces and finalizes again. (``_assemble`` still raises when
+            # called directly — this guard is on the tool boundary, not inside ``_assemble``.)
+            logger.warning(
+                "finalize_course_premature", run_id=draft.run_id, missing="prerequisite_graph"
+            )
+            return {
+                "courseId": None,
+                "status": "incomplete",
+                "moduleCount": None,
+                "issues": [],
+                "error": (
+                    "Cannot finalize yet — the prerequisite graph has not been built. Build the "
+                    "course first: extract the concepts, call build_prerequisite_graph, design the "
+                    "curriculum, and author the lessons; then call finalize_course again."
+                ),
+            }
         # Capture the build tag here (keyless-fallbacks T5): finalize runs inside the build's
         # credential scope, so it reflects which provider each capability actually used.
         course = _assemble(draft, capture_build_capabilities())
@@ -251,6 +272,7 @@ def make_finalize_course_tool(
             "status": course.status.value,
             "moduleCount": len(course.modules),
             "issues": issues,
+            "error": None,
         }
 
     return finalize_course
