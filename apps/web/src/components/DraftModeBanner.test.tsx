@@ -24,8 +24,13 @@ describe("DraftModeBanner", () => {
 
     const banner = screen.getByRole("status");
     expect(banner).toHaveTextContent("Draft mode");
-    expect(banner).toHaveTextContent("Qwen2.5-3B (local)");
+    // Each fallback is a labelled chip: the capability name over its provider.
+    expect(screen.getByText("Language model")).toBeInTheDocument();
+    expect(screen.getByText("Qwen2.5-3B")).toBeInTheDocument();
+    expect(banner).toHaveTextContent("Qwen2.5-3B");
     expect(banner).toHaveTextContent("DuckDuckGo");
+    // The redundant "(local)" suffix is dropped — the band already says these run locally.
+    expect(banner).not.toHaveTextContent("(local)");
     // The live capabilities are not listed as fallbacks.
     expect(banner).not.toHaveTextContent("Voyage");
   });
