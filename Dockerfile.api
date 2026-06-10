@@ -38,6 +38,16 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     LUNARIS_ENV=production
 
+# Apply Debian security updates to the base image's OS packages before dropping privileges. The slim
+# base lags behind Debian's security point releases, and CI gates the build on fixable HIGH/CRITICAL
+# CVEs (Trivy) — without this an unpatched base package (e.g. an OpenSSL advisory) fails every build.
+# Scoped to an in-release upgrade (no new sources), then the apt lists are dropped to keep the image
+# slim and the layer reproducible.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Unprivileged runtime user (the container never needs root).
 RUN useradd --create-home --uid 1000 app
 WORKDIR /app
