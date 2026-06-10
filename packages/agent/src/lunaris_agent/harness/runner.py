@@ -79,6 +79,31 @@ _BUILD_INSTRUCTION = (
     "lesson. Finally, finalize the course."
 )
 
+# The briefing handed to the author→verify→revise subagent on the scripted (keyless) path — the
+# narrative the ``task`` tool would otherwise carry. The subagent keys off the draft's curriculum.
+_SCRIPTED_AUTHOR_BRIEFING = (
+    "Author and verify the Merrill lesson for every designed module: write each lesson, ground "
+    "every factual claim against the evidence corpus, and revise until claims are supported."
+)
+
+# The fixed tool order for the keyless (scripted) path — the spine ``_BUILD_INSTRUCTION`` asks the
+# agent to follow, split around the authoring subagent (a subagent, not a tool, run in the middle).
+# A test pins these against ``_make_tools`` so a tool added there but omitted here fails a test,
+# rather than being silently skipped on a keyless build.
+_SCRIPTED_PRE_AUTHOR_TOOLS: tuple[str, ...] = (
+    "interpret_request",
+    "research_standard",
+    "model_learner",
+    "extract_concepts",
+    "build_prerequisite_graph",
+    "design_curriculum",
+    "seed_grounding",
+    "discover_grounding",
+)
+_SCRIPTED_POST_AUTHOR_TOOLS: tuple[str, ...] = ("curate_resources", "finalize_course")
+# Every build tool, in order — the union must equal the names ``_make_tools`` produces.
+SCRIPTED_TOOL_SEQUENCE: tuple[str, ...] = _SCRIPTED_PRE_AUTHOR_TOOLS + _SCRIPTED_POST_AUTHOR_TOOLS
+
 
 class AgentCourseBuilder:
     """Composes a deep agent over the course-build tools + the authoring subagent, and runs it."""
@@ -105,6 +130,7 @@ class AgentCourseBuilder:
         scope_polisher: IScopePolisher | None = None,
         risk_tier: RiskTier = RiskTier.LOW,
         stream_tokens: bool = False,
+        scripted: bool = False,
     ) -> None:
         self._model = model
         self._store = store
@@ -133,6 +159,12 @@ class AgentCourseBuilder:
         # composition root sets it). The scripted no-key model keeps the deterministic ``updates``
         # path, so the offline suite stays stable.
         self._stream_tokens = stream_tokens
+        # Scripted (keyless) mode: drive the build tools in a fixed, code-enforced order instead of
+        # letting the model plan — a small local model can't reliably orchestrate the multi-tool
+        # build (it called finalize first and crashed the run). Same tools/subagent/features; only
+        # the autonomous planner is bypassed. Set by the composition root on the no-Anthropic-key
+        # signal, so a keyed build keeps the full agent harness, untouched.
+        self._scripted = scripted
 
     @property
     def stream_tokens(self) -> bool:
@@ -185,17 +217,22 @@ class AgentCourseBuilder:
             # SAME channel (one sink + sequence) — the tap can't see inside the subagent.
             draft.agent = agent_reporter
             await draft.progress.emit(ProgressStage.RUN_STARTED, f"Building a course for “{topic}”")
-            deep_agent = build_course_agent(
-                self._model,
-                self._make_tools(draft),
-                subagents=[self._make_author_subagent(draft)],
-            )
-            await stream_course_build(
-                deep_agent,
-                {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]},
-                agent_reporter,
-                stream_tokens=self._stream_tokens,
-            )
+            if self._scripted:
+                # Keyless: the code drives the tool order; the local model only does each step's
+                # generation (which it can), never the planning (which it can't).
+                await self._run_scripted(draft, topic)
+            else:
+                deep_agent = build_course_agent(
+                    self._model,
+                    self._make_tools(draft),
+                    subagents=[self._make_author_subagent(draft)],
+                )
+                await stream_course_build(
+                    deep_agent,
+                    {"messages": [HumanMessage(content=_BUILD_INSTRUCTION.format(topic=topic))]},
+                    agent_reporter,
+                    stream_tokens=self._stream_tokens,
+                )
             return self._finished_course(draft, course_id)
         finally:
             clear_correlation()
@@ -240,6 +277,35 @@ class AgentCourseBuilder:
             "description": _AUTHOR_SUBAGENT_DESCRIPTION,
             "runnable": build_authoring_subgraph(self._reviser, self._verifier, draft),
         }
+
+    async def _run_scripted(self, draft: CourseDraft, topic: str) -> None:
+        """Drive the build tools in a fixed, code-enforced order — the keyless (Draft) path.
+
+        This is the same spine ``_BUILD_INSTRUCTION`` asks the agent to follow, but the CODE owns
+        the order so a weak local model never has to plan it (the failure that crashed the run).
+        Each tool reads/writes the shared ``draft`` exactly as on the agent path, the author→verify→
+        revise subagent is invoked directly instead of via the ``task`` tool, and every tool still
+        emits its ``ProgressStage`` onto ``draft.progress`` — so the build timeline advances and all
+        grounding/relevance/coverage features run, unchanged. Only the autonomous planner is gone.
+        """
+        tools = {tool.name: tool for tool in self._make_tools(draft)}
+        # The two draft-bound tools that take the topic; the rest read the draft (called with {}).
+        topic_args: dict[str, dict[str, object]] = {
+            "interpret_request": {"request": topic},
+            "extract_concepts": {"topic": topic},
+        }
+
+        async def step(name: str) -> None:
+            await tools[name].ainvoke(topic_args.get(name, {}))
+
+        for name in _SCRIPTED_PRE_AUTHOR_TOOLS:
+            await step(name)
+        # Author + verify + revise every module's lesson (the subagent loop, run directly). It keys
+        # off the draft's designed curriculum and writes the typed lessons + provenance back to it.
+        author = build_authoring_subgraph(self._reviser, self._verifier, draft)
+        await author.ainvoke({"messages": [HumanMessage(content=_SCRIPTED_AUTHOR_BRIEFING)]})
+        for name in _SCRIPTED_POST_AUTHOR_TOOLS:
+            await step(name)
 
     def _finished_course(self, draft: CourseDraft, course_id: str) -> Course:
         """Return the finalized course, or fail loudly if the agent never finalized one."""
