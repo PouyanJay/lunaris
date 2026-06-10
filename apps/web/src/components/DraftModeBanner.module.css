@@ -1,6 +1,6 @@
 /* A hairline band (not a floating card) tinted with the single accent — the one "this is Draft"
    signal. Sits at the top of the canvas body; the accent left edge reads as a status rail. The
-   fallbacks list as labelled chips below the lead line, so it scans as data, not a run-on sentence. */
+   fallbacks list as a flat, hairline-divided status row below the lead line — data, not prose. */
 .banner {
   display: flex;
   flex-direction: column;
@@ -32,39 +32,40 @@
   color: var(--text-secondary);
 }
 
-/* The fallbacks as a row of key→value chips (a definition list): capability label over its
-   provider. Each chip is one calm tile — hairline border, single surface — so the set reads as a
-   scannable inventory rather than nested parentheticals. */
-.chips {
+/* The fallbacks as a flat status row (a definition list): capability label → provider, each item
+   set off by a hairline divider. No boxes — it sits directly on the band, reading as a status bar
+   rather than a set of floating cards. */
+.fallbacks {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  align-items: baseline;
+  row-gap: var(--space-2);
   margin: 0;
 }
 
-.chip {
+.item {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-left: var(--border-width) solid var(--border-strong);
 }
 
-/* The capability name — a quiet uppercase label, the chip's caption. */
-.chipLabel {
+.item:first-child {
+  padding-left: 0;
+  border-left: none;
+}
+
+/* The capability name — a quiet caption ahead of its provider value. */
+.label {
   font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--text-muted);
 }
 
-/* The provider value row: the model/service name (mono data) plus the optional compute badge. */
-.chipValue {
+/* The provider value cell: the model/service name (mono data) plus the optional compute badge. */
+.value {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: var(--space-2);
   margin: 0;
 }
@@ -78,6 +79,7 @@
    (the faster, "upgraded" path) carries the accent; CPU stays neutral, so the accent marks the one
    state worth noticing rather than colouring everything. */
 .compute {
+  align-self: center;
   padding: 0 var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -90,12 +92,12 @@
 .compute[data-compute="cpu"] {
   color: var(--text-muted);
   background: var(--bg-muted);
-  border-color: var(--border);
+  border-color: var(--border-strong);
 }
 
 .compute[data-compute="gpu"] {
   color: var(--accent-700);
-  background: var(--accent-soft);
+  background: var(--bg);
   border-color: var(--accent-500);
 }
 
@@ -126,9 +128,20 @@
     0 0 0 4px var(--focus-ring);
 }
 
+/* Phone: stack the fallbacks so they never wrap into a divider at the start of a line; each reads
+   as its own label → value line. */
 @media (max-width: 768px) {
   .banner {
     padding: var(--space-3) var(--space-4);
+  }
+  .fallbacks {
+    flex-direction: column;
+    align-items: stretch;
+    row-gap: var(--space-2);
+  }
+  .item {
+    padding: 0;
+    border-left: none;
   }
   .action {
     min-height: 44px;
