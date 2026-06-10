@@ -10,7 +10,6 @@ Type a subject. An agent plans the curriculum, writes the lessons, orders every 
 grounds every factual claim against evidence — then hands you a prerequisite map, Merrill‑structured
 lessons, branded diagrams, and claims that carry their sources.
 
-[![CI](https://github.com/PouyanJay/lunaris/actions/workflows/ci.yml/badge.svg)](https://github.com/PouyanJay/lunaris/actions/workflows/ci.yml)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-e8a33d?style=flat-square)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](.python-version)
 [![React 19](https://img.shields.io/badge/React-19-149ECA?style=flat-square&logo=react&logoColor=white)](apps/web)
