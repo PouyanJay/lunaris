@@ -32,6 +32,10 @@ interface OpenedRun {
   close: () => void;
 }
 
+/** How often an opened, still-building run re-checks for its finished course, so the canvas advances
+ *  to the built course on its own when the run completes — no manual "Check again" needed. */
+export const OPENED_RUN_RECHECK_INTERVAL_MS = 3000;
+
 /**
  * Opens a historical run's course in the canvas: closed → loading → ready (the course) or error,
  * with a `building` state for a run still in progress. Each open/recheck aborts any prior in-flight
@@ -58,11 +62,14 @@ export function useOpenedRun(apiBaseUrl: string): OpenedRun {
       topic: string,
       runId: string | undefined,
       onNotFound: (error: CourseLoadError) => void,
+      // A quiet load skips the `loading` flip — used by the background recheck poll, so a
+      // still-building run's live timeline isn't unmounted to a skeleton on every tick.
+      quiet = false,
     ) => {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
-      setState({ status: "loading", courseId, topic });
+      if (!quiet) setState({ status: "loading", courseId, topic });
 
       fetchCourseById(apiBaseUrl, courseId, controller.signal)
         .then((course) => {
@@ -108,14 +115,32 @@ export function useOpenedRun(apiBaseUrl: string): OpenedRun {
     const current = stateRef.current;
     if (current.status !== "building") return;
     const { courseId, topic, runId } = current;
-    // A 404 means the build still hasn't persisted its course → stay building, not an error.
-    load(courseId, topic, runId, () => setState({ status: "building", courseId, topic, runId }));
+    // A 404 means the build still hasn't persisted its course → stay building, not an error. Quiet,
+    // so re-checking never flashes the loading skeleton over the live timeline (it flips only on a
+    // real outcome: the finished course, or a hard error).
+    load(
+      courseId,
+      topic,
+      runId,
+      () => setState({ status: "building", courseId, topic, runId }),
+      true,
+    );
   }, [load]);
 
   const close = useCallback(() => {
     controllerRef.current?.abort();
     setState({ status: "closed" });
   }, []);
+
+  // While a still-building run is open, poll for its finished course so the canvas advances on its
+  // own when the run completes — no manual re-check. Keyed on the building course_id (a stable value
+  // for the run), so the interval is created once when building starts and cleared when it ends.
+  const buildingCourseId = state.status === "building" ? state.courseId : null;
+  useEffect(() => {
+    if (!buildingCourseId) return undefined;
+    const interval = setInterval(recheck, OPENED_RUN_RECHECK_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [buildingCourseId, recheck]);
 
   useEffect(() => {
     return () => {
