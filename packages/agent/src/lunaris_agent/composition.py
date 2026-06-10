@@ -343,6 +343,11 @@ def build_agent_course_builder(
     worker = worker_model or resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER
     strong = strong_model or resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_STRONG
     planner = build_chat_model(strong)
+    # Keyless (Draft) builds run the tools in a fixed, code-enforced order instead of the autonomous
+    # planner — a small local model can't reliably orchestrate the multi-tool build. Gated on the
+    # SAME no-Anthropic-key signal as ``build_chat_model``/``_is_keyless_llm`` (this factory runs in
+    # the run's credential scope), so a keyed build keeps the full agent harness, never scripted.
+    keyless = not resolve_secret("ANTHROPIC_API_KEY")
     return AgentCourseBuilder(
         planner,
         store,
@@ -360,5 +365,8 @@ def build_agent_course_builder(
         coverage_critic=_coverage_critic_from_env(strong),
         visual_engine=_visual_engine_from_env(worker),
         scope_polisher=_scope_polisher_from_env(worker),
-        stream_tokens=True,
+        # The scripted (keyless) path never token-streams (no planner loop); only the keyed agent
+        # path streams the planner's reasoning token-by-token.
+        stream_tokens=not keyless,
+        scripted=keyless,
     )

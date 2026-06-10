@@ -29,7 +29,7 @@ from lunaris_agent.harness.discovery import (
 )
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.event_tap import stream_course_build as real_stream_course_build
-from lunaris_agent.harness.runner import AgentCourseBuilder
+from lunaris_agent.harness.runner import SCRIPTED_TOOL_SEQUENCE, AgentCourseBuilder
 from lunaris_agent.harness.seeding import GroundingSeeder, IGroundingSeeder, StubGroundingSeeder
 from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.lesson_claims import iter_claims
@@ -254,6 +254,7 @@ def _builder(
     visual_engine: VisualEngine | None = None,
     scope_polisher: IScopePolisher | None = None,
     stream_tokens: bool = False,
+    scripted: bool = False,
 ) -> AgentCourseBuilder:
     """Construct the agent course builder over the no-key stub subagents + real moats."""
     return AgentCourseBuilder(
@@ -274,6 +275,7 @@ def _builder(
         visual_engine=visual_engine,
         scope_polisher=scope_polisher,
         stream_tokens=stream_tokens,
+        scripted=scripted,
     )
 
 
@@ -413,6 +415,35 @@ async def test_build_without_a_clarification_profiles_the_inferred_brief(
     # i.e. the skip path is byte-for-byte today's inferred-only build.
     assert profiler.seen is not None
     assert profiler.seen.target_level == Level.NOVICE
+
+
+async def test_scripted_keyless_build_completes_without_a_planner(tmp_path: Path) -> None:
+    # The keyless (Draft) path drives the tools in a fixed order, so the autonomous planner is
+    # bypassed entirely — a weak local model never has to orchestrate the build. The sentinel model
+    # (NOT a scripted plan) proves the planner is never invoked: had scripted mode regressed to the
+    # agent path, building the deep agent over a bare ``object()`` would raise.
+    store = CourseStore(tmp_path)
+    builder = _builder(object(), store, scripted=True)
+
+    # Act
+    course = await builder.run("demo", course_id="course-scripted", run_id="run-scripted")
+
+    # Assert — the fixed spine produced and persisted a complete course (curriculum authored +
+    # finalized), the same shape the agent path yields, with no planner in the loop.
+    assert course.id == "course-scripted"
+    assert course.modules
+    assert (tmp_path / "course-scripted.json").exists()
+
+
+def test_scripted_sequence_covers_every_build_tool(tmp_path: Path) -> None:
+    # The keyless spine must invoke EVERY tool the agent path exposes — a tool added to _make_tools
+    # but omitted from the scripted sequence would be silently skipped on a keyless build. Pin them.
+    builder = _builder(object(), CourseStore(tmp_path))
+    draft = CourseDraft(topic="demo", course_id="c", run_id="r")
+
+    tool_names = {tool.name for tool in builder._make_tools(draft)}
+
+    assert tool_names == set(SCRIPTED_TOOL_SEQUENCE)
 
 
 async def test_goal_type_threads_from_the_brief_to_the_finalized_course(
