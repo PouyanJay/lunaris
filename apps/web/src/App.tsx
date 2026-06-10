@@ -13,6 +13,7 @@ import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
 import { BuildTimeline } from "./components/transcript/BuildTimeline";
 import { BuildReplay } from "./components/transcript/BuildReplay";
+import { LiveBuildReplay } from "./components/transcript/LiveBuildReplay";
 import { ExplainProvider } from "./components/transcript/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
@@ -295,17 +296,42 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     }
     if (opened.state.status === "building") {
       const { topic, runId } = opened.state;
+      const cancelling = cancellation.cancellingRunId === runId;
       return {
         title: topic,
-        meta: <StatusDot label="building" tone="accent" live />,
+        meta: (
+          <>
+            <StatusDot label="building" tone="accent" live />
+            {runId && (
+              <Button
+                variant="secondary"
+                onClick={() => cancellation.cancel(runId)}
+                disabled={cancelling}
+                aria-busy={cancelling}
+              >
+                {cancelling ? "Cancelling…" : "Cancel build"}
+              </Button>
+            )}
+          </>
+        ),
+        // A running run is reattachable: poll its live event log into the build timeline rather than
+        // a static placeholder (the canvas auto-advances to the course when the run finishes — see
+        // useOpenedRun's recheck poll). Fall back to the placeholder only when the run carries no
+        // run_id (defensive — a running run always has one).
         body: (
           <>
             <KeylessProvisioningBanner status={keylessReadiness} />
-            <BuildingState
-              onRecheck={opened.recheck}
-              onCancel={() => cancellation.cancel(runId)}
-              cancelling={cancellation.cancellingRunId === runId}
-            />
+            {runId ? (
+              <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+                <LiveBuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={topic} />
+              </ExplainProvider>
+            ) : (
+              <BuildingState
+                onRecheck={opened.recheck}
+                onCancel={() => cancellation.cancel(runId)}
+                cancelling={cancelling}
+              />
+            )}
           </>
         ),
       };
@@ -326,7 +352,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         title: "New course",
         meta: null,
         body: (
-          <IdleCourseSetup apiBaseUrl={apiBaseUrl} onGenerate={generate} onOpenSettings={openSettings} />
+          <IdleCourseSetup
+            apiBaseUrl={apiBaseUrl}
+            onGenerate={generate}
+            onOpenSettings={openSettings}
+          />
         ),
       };
     }

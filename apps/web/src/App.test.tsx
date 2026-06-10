@@ -5,9 +5,12 @@ import App from "./App";
 import {
   agentFrame,
   courseFrame,
+  makeAgentEvent,
   makeBriefResponse,
   makeCourse,
+  makeProgressEvent,
   makeRun,
+  makeRunEvent,
   progressFrame,
   sseStreamResponse,
 } from "./test/fixtures";
@@ -91,6 +94,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
    *  build is an SSE stream. ``settings`` defaults to a regenerate-capable pipeline. */
   function routedFetch(handlers: {
     runs?: unknown;
+    events?: unknown;
     build?: unknown;
     course?: unknown;
     settings?: unknown;
@@ -104,6 +108,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
       }
       if (url.includes("/api/briefs")) {
         return Promise.resolve({ ok: true, json: async () => handlers.brief });
+      }
+      // A reattached running run polls its live event log — distinct from the run-history list.
+      if (/\/api\/runs\/[^/]+\/events$/.test(url)) {
+        return Promise.resolve({ ok: true, json: async () => handlers.events ?? [] });
       }
       if (url.includes("/api/runs")) {
         return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
@@ -632,20 +640,28 @@ describe("App — live studio (VITE_API_URL set)", () => {
     );
   });
 
-  it("shows a building state — not a 404 error — when a still-running run is opened", async () => {
-    // The course isn't persisted until the run finishes, so opening a RUNNING run must not fetch
-    // and render the broken-looking "no longer available" error. No `course` handler is wired, so
-    // routedFetch would throw on any course fetch — proving the running run never triggers one.
+  it("reattaches a still-running run to its live build timeline — not a 404 error", async () => {
+    // The course isn't persisted until the run finishes, so opening a RUNNING run must not fetch it
+    // (which would 404 into a broken-looking error). Instead it reattaches to the live event log and
+    // shows progress. No `course` handler is wired, so routedFetch would throw on any course fetch —
+    // proving the running run never triggers one.
     vi.stubGlobal(
       "fetch",
-      routedFetch({ runs: [makeRun({ id: "c-1", topic: "queues", status: "running" })] }),
+      routedFetch({
+        runs: [makeRun({ id: "c-1", topic: "queues", status: "running" })],
+        events: [
+          makeRunEvent(0, makeProgressEvent("run_started", 0)),
+          makeRunEvent(1, makeAgentEvent("reasoning", 1, { text: "Mapping the prerequisites." })),
+        ],
+      }),
     );
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
 
-    expect(await screen.findByText(/still building this course/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /check again/i })).toBeInTheDocument();
+    // The live timeline renders the in-flight log — not the static placeholder, not a 404 alert.
+    expect(await screen.findByRole("region", { name: /building queues/i })).toBeInTheDocument();
+    expect(await screen.findByText("Mapping the prerequisites.")).toBeInTheDocument();
     // The canvas Cancel action (exact name) — distinct from the sidebar's "Cancel build: <topic>".
     expect(screen.getByRole("button", { name: /^cancel build$/i })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -702,6 +718,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
       if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
         return Promise.resolve({ ok: true, status: 202 });
       }
+      // The reattached running run polls its live event log — keep it out of the run-history count.
+      if (/\/api\/runs\/[^/]+\/events$/.test(url)) {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
       if (url.includes("/api/runs")) {
         runsReads += 1;
         const status = runsReads === 1 ? "running" : "cancelled";
@@ -715,9 +735,9 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    // Open the running run → building canvas, then cancel from the canvas (exact-name button).
+    // Open the running run → live build canvas, then cancel from the canvas (exact-name button).
     fireEvent.click(await screen.findByRole("button", { name: /^graphs/i }));
-    await screen.findByText(/still building this course/i);
+    await screen.findByRole("region", { name: /building graphs/i });
     fireEvent.click(screen.getByRole("button", { name: /^cancel build$/i }));
 
     // The cancel was POSTed by run_id and the refreshed history reflects CANCELLED.
