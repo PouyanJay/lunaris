@@ -17,7 +17,7 @@ not a requirement — which means you can deploy + test today without a quota re
 
 | Service | Model | Compute | Endpoint env var (on the API) | Artifacts |
 |---|---|---|---|---|
-| Chat | Qwen2.5-3B-Instruct (Q4 GGUF) | CPU (Consumption), scale-to-zero | `LUNARIS_FALLBACK_LLM_BASE_URL` | `Dockerfile` + `inference.bicep` |
+| Chat | Qwen2.5-3B-Instruct (Q4 GGUF) | CPU now; **auto-GPU** when on a GPU profile (see below) | `LUNARIS_FALLBACK_LLM_BASE_URL` | `Dockerfile` + `inference.bicep` |
 | Embeddings | bge-large-en-v1.5 | CPU (Consumption), scale-to-zero | `LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL` | `Dockerfile.embeddings` + `../embeddings.bicep` |
 
 They're **two services** because llama.cpp's `--embeddings` mode is exclusive with generation. Both
@@ -63,17 +63,45 @@ GiB ceiling, so a cold start is dominated by the **replica scaling from zero**, 
 5. **Verify** with the pre-flight smoke check (it also warms the model):
    `python -m lunaris_runtime.resilience.smoke_check` → expect `ok`.
 
-## GPU (optional speed upgrade)
+## GPU rollout (optional speed upgrade)
 
-CPU is enough to run + test the keyless path, but a build takes minutes. For interactive speed, move
-the **chat** server to a GPU:
+CPU is enough to run + test the keyless path, but a 3B model takes minutes per build. A GPU makes it
+interactive **and** unlocks running a bigger (8B) model for better quality. **The image is already
+GPU-ready** — the chat `Dockerfile` uses the CUDA llama.cpp base and `entrypoint.sh` auto-detects a
+GPU at boot (`/dev/nvidia0` → `--n-gpu-layers 999`, else CPU). So the same image you run today on CPU
+will use a GPU the moment it's scheduled onto one — no rebuild. What's left is the **infra**:
 
-1. Build the chat image from the CUDA base — change `FROM …:server` to `…:server-cuda` in
-   `infra/inference/Dockerfile`.
-2. Get a serverless-GPU workload profile with quota in your region (e.g. `Consumption-GPU-NC8as-T4`),
-   add it to the managed environment, and deploy `inference.bicep` with `gpuWorkloadProfileName=<it>`.
-   (Serverless-GPU quota is often 0 by default and needs a request — that's the wait the CPU path
-   avoids.) Embeddings stay on CPU.
+**Gate — GPU quota.** Serverless GPU is region-limited and starts at **0** quota; request it via an
+Azure support ticket (*Help + support → Service and subscription limits (quotas) → Container Apps*),
+e.g. `Consumption-GPU-NC8as-T4` in **West US 3**. Everything below waits on that approval.
+
+**Gotcha — one environment.** The current platform env is **Consumption-Only** and can't host a GPU;
+a GPU needs a **workload-profiles** environment, and you can't convert in place. And ACA internal
+ingress is **per-environment** — the API reaches the inference over the env's private network — so the
+**API + embeddings + chat must all live in the GPU env**. Practically, GPU = moving the keyless stack
+onto a new workload-profiles environment (a platform move, like a region change; cd-prod already
+re-binds the API custom domain on redeploy).
+
+**Steps (after quota is approved):**
+
+1. **Stand up the GPU environment** — `infra/gpu-env.bicep` (a workload-profiles env with a
+   `Consumption` profile + a `gpu` profile):
+   ```
+   az deployment group create -g rg-lunaris-<env> -f infra/gpu-env.bicep \
+     -p env=<env> location=westus3 \
+        logAnalyticsCustomerId=<ws customerId> logAnalyticsSharedKey=<ws key> \
+        gpuWorkloadProfileType=Consumption-GPU-NC8as-T4
+   # → outputs managedEnvironmentId + gpuWorkloadProfileName (= "gpu")
+   ```
+2. **Deploy the apps into it** — re-run `inference.bicep` (chat) with `gpuWorkloadProfileName=gpu`
+   and the new `managedEnvironmentId`; re-run `embeddings.bicep` + `app.bicep` against the same
+   `managedEnvironmentId` (they stay on the Consumption profile). *(Optional: bump the chat model to
+   an 8B GGUF via the Dockerfile `MODEL_URL`/`MODEL_FILE` build args — the GPU's VRAM is the point.)*
+3. **Flip the badge** — set the per-env GitHub var **`LUNARIS_KEYLESS_COMPUTE=gpu`** and repoint the
+   API's `LUNARIS_FALLBACK_LLM_BASE_URL` to the new chat app's internal URL, then redeploy the API.
+4. **Verify** — a keyless build's chat container log should show `ggml_cuda_init: found N CUDA
+   devices` + `offloaded N/N layers to GPU` (vs. today's `no usable GPU found … CPU`), and the Draft
+   banner should read **GPU**.
 
 ## Honest caveats
 
