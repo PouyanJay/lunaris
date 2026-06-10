@@ -1,16 +1,27 @@
 # Architecture
 
-The system design of Lunaris in five diagrams. Lunaris is an **agent‑first** application: a conventional
-product surface (web + API + Supabase) wraps a deep‑agent core that plans a course build and calls every
-capability — including two deterministic correctness moats — as **tools**.
+The system design of Lunaris in four diagrams. Lunaris is an **agent-first** application: a
+conventional product surface (web + API + Supabase) wraps a deep-agent core that plans a course build
+and calls every capability — including two deterministic correctness guarantees — as **tools**.
 
-Four invariants hold across every layer (and the harness enforces them):
+Four invariants hold across every layer, and the harness enforces them:
 
-1. **Reasoning vs recall** — the agent reasons about plans; authoritative facts flow through capability
-   tools, never the model's memory.
-2. **Tools vs orchestration** — each capability is its own package; the MCP registry is a thin adapter, not a home for logic.
-3. **Provenance is structural** — tool results carry where the data came from (source, trust, tool‑call id, timestamp), constructed at the source and flowing untouched to the UI.
-4. **Correlation everywhere** — every run carries a `run_id` propagated via `structlog` contextvars, so one build can be traced across every layer.
+1. **Reasoning vs recall** — the agent reasons about plans; authoritative facts flow through
+   capability tools, never the model's memory.
+2. **Tools vs orchestration** — each capability is its own package; the MCP registry is a thin
+   adapter, not a home for logic.
+3. **Provenance is structural** — tool results carry where the data came from (source, trust,
+   tool-call id, timestamp), constructed at the source and flowing untouched to the UI.
+4. **Correlation everywhere** — every run carries a `run_id` propagated via `structlog` contextvars,
+   so one build can be traced across every layer.
+
+The two correctness guarantees referenced throughout these docs are:
+
+- **Prerequisite ordering** — the prerequisite graph is acyclic and teaches in topological order; the
+  model cannot reorder it. Built in [`packages/graph`](../packages/graph).
+- **Claim grounding** — every factual claim is verified against retrieved evidence and either
+  supported or cut; the model cannot talk an unsupported claim past it. Built in
+  [`packages/grounding`](../packages/grounding).
 
 ---
 
@@ -29,7 +40,7 @@ flowchart TB
         MCP["MCP registry · FastMCP<br/>build_prerequisite_graph · verify_claims"]
     end
 
-    subgraph Moats["Deterministic moats"]
+    subgraph Guarantees["Deterministic correctness guarantees"]
         GRAPH{{"PrerequisiteGraphBuilder<br/>packages/graph"}}
         VERIFY{{"Verifier + PgVectorRetriever<br/>packages/grounding"}}
     end
@@ -59,18 +70,20 @@ flowchart TB
     MCP --> GRAPH
     MCP --> VERIFY
 
-    classDef moat fill:#3b2f10,stroke:#e8a33d,stroke-width:2px,color:#fff;
-    class GRAPH,VERIFY moat
+    classDef guarantee fill:#3b2f10,stroke:#e8a33d,stroke-width:2px,color:#fff;
+    class GRAPH,VERIFY guarantee
 ```
 
-The harness exposes the same two moats **twice**: as in‑process tools to its own planner, and via the
-**MCP registry** so any MCP client can call them. The registry is a thin adapter — the logic lives in
-`packages/graph` and `packages/grounding`.
+The harness exposes the same two guarantees **twice**: as in-process tools to its own planner, and
+via the **MCP registry** so any MCP client can call them. The registry is a thin adapter — the logic
+lives in `packages/graph` and `packages/grounding`.
 
 ## 2. Build sequence
 
 The planner drives the build by calling tools in a sensible order; each tool emits a typed
-`ProgressStage` event that streams to the web timeline over SSE. The two moats (◆) are deterministic.
+`ProgressStage` event that streams to the web timeline over SSE. The two guarantees (◆) are
+deterministic. The same flow is traced stage by stage, with example values, in
+[build-pipeline.md](build-pipeline.md).
 
 ```mermaid
 sequenceDiagram
@@ -79,9 +92,9 @@ sequenceDiagram
     participant API as API (SSE)
     participant A as Agent harness
     participant W as Claude workers
-    participant G as Graph moat ◆
+    participant G as Prerequisite graph ◆
     participant S as Authoring subagent
-    participant V as Verifier moat ◆
+    participant V as Verifier ◆
     participant DB as Supabase pgvector
 
     L->>API: POST /api/courses {topic}
@@ -115,10 +128,11 @@ sequenceDiagram
     A-->>L: RUN_COMPLETED
 ```
 
-## 3. The authoring loop (Moat B, up close)
+## 3. The authoring loop, up close
 
 Lessons are authored by a LangGraph subagent that **grounds before it ships**: every factual claim is
-checked against retrieved evidence, and unsupported claims trigger a bounded revise — not a rubber stamp.
+checked against retrieved evidence, and unsupported claims trigger a bounded revise — not a rubber
+stamp.
 
 ```mermaid
 flowchart LR
@@ -129,12 +143,12 @@ flowchart LR
     REV --> VER
     VER -.->|revise budget exhausted| TRIAGE(["ship supported only<br/>· mark Needs review"])
 
-    classDef moat fill:#3b2f10,stroke:#e8a33d,stroke-width:2px,color:#fff;
-    class VER moat
+    classDef guarantee fill:#3b2f10,stroke:#e8a33d,stroke-width:2px,color:#fff;
+    class VER guarantee
 ```
 
-The verifier's thresholds and the risk‑tiered trust floor are documented in
-[grounding-model.md](grounding-model.md); the moat is never loosened to make a claim pass.
+The verifier's thresholds and the risk-tiered trust floor are documented in
+[grounding.md](grounding.md); the guarantee is never loosened to make a claim pass.
 
 ## 4. Pipeline selection
 
@@ -152,46 +166,13 @@ flowchart TD
     KEY -->|no| DRAFT["keyless Draft tier<br/>local Qwen + BGE + DuckDuckGo"]
 ```
 
-## 5. Deployment (production)
-
-Lunaris runs on Azure with Supabase Cloud for data + identity. Compute is **Azure Container Apps** (not
-App Service — the long SSE build outlives a 230s gateway timeout) and **Static Web Apps** for the SPA.
-The keyless Draft tier runs as scale‑to‑zero CPU inference sidecars.
-
-```mermaid
-flowchart TB
-    USER(["Browser"])
-    subgraph Azure
-        SWA["Static Web Apps<br/>lunaris.pouyan.ai · SPA"]
-        subgraph ACAENV["Container Apps environment"]
-            APIC["lunaris-api<br/>FastAPI · agent · min 1"]
-            INF["inference<br/>Qwen · CPU · scale-to-0"]
-            EMB["embeddings<br/>BGE · CPU · scale-to-0"]
-        end
-        KV["Key Vault<br/>BYOK master key · provider keys"]
-    end
-    subgraph Supabase["Supabase Cloud"]
-        AUTH["Auth · ES256 / JWKS"]
-        PG[("Postgres<br/>pgvector · RLS")]
-    end
-
-    USER -->|HTTPS| SWA
-    SWA -->|"api.lunaris.pouyan.ai · authedFetch + SSE"| APIC
-    USER -. login .-> AUTH
-    APIC -->|verify JWT via JWKS| AUTH
-    APIC -->|RLS-scoped queries| PG
-    APIC -->|"keyless: internal ingress"| INF
-    APIC --> EMB
-    APIC -->|decrypt per-run keys| KV
-```
-
-**Multi‑tenancy + BYOK.** Each tenant authenticates with Supabase (ES256, verified by the API via JWKS),
-rows are isolated by per‑user RLS, and each tenant supplies their **own** provider keys — stored
-AES‑GCM‑encrypted (master key from Key Vault, never the DB) and injected into a run's context, never the
-process environment, never logged. CI/CD is GitHub Actions (`cd-dev`, `cd-prod` build‑once‑promote,
-`cd-inference`).
+When no Anthropic key is reachable, the build runs in a labelled **Draft tier** on fully local,
+self-hosted models — see [deployment.md](deployment.md#the-keyless-draft-tier).
 
 ---
+
+For how this runs in production — the Azure topology, multi-tenancy, and bring-your-own-key model —
+see **[deployment.md](deployment.md)**.
 
 *These diagrams are the map; the deeper "why" lives in the linked docs and the code under
 [`packages/`](../packages) and [`apps/`](../apps).*

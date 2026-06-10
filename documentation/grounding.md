@@ -1,11 +1,10 @@
-# How Lunaris keeps a course *grounded* — the trust model and the corpus
+# Keeping a course grounded — the trust model and the corpus
 
-Lunaris's claim verifier (Failure-B moat) cuts any factual sentence it can't support against
-retrieved evidence. That guarantee is only as honest as the **evidence it retrieves from** — the
-*grounding corpus*. This doc explains where that corpus comes from, how every source is graded for
-trust, and how the verifier stays a safety check rather than a rubber stamp even when the system finds
-its own evidence. It is the grounding companion to [relevance-model.md](relevance-model.md) (which
-covers keeping a course *relevant*).
+Lunaris's claim verifier cuts any factual sentence it can't support against retrieved evidence. That
+guarantee is only as honest as the **evidence it retrieves from** — the *grounding corpus*. This doc
+explains where that corpus comes from, how every source is graded for trust, and how the verifier
+stays a safety check rather than a rubber stamp even when the system finds its own evidence. It is the
+grounding companion to [relevance.md](relevance.md) (which covers keeping a course *relevant*).
 
 > **Scope note:** grounding is **per-course only**. There is no shared, cross-topic "library" a source
 > is promoted into — a vector-similar chunk from a close-but-different topic could be rubber-stamped,
@@ -71,8 +70,8 @@ shape. The blend is logged with its inputs, so a low score is always explainable
 
 **Authority is topic-relative.** A single global allowlist is a trap: PubMed is authoritative for
 medicine and irrelevant for medieval history. So the spine (universal domains), the per-field **packs**
-(CS-ML, medicine, physics, chemistry, + a shared multidisciplinary set), and the **denylist** live in
-an *editable* `source_authorities` table — nothing is hardcoded. A pack hit sets the **tier prior
+(CS-ML, medicine, physics, chemistry, plus a shared multidisciplinary set), and the **denylist** live
+in an *editable* `source_authorities` table — nothing is hardcoded. A pack hit sets the **tier prior
 only**; it never inflates the credibility score (a degree gets you the interview, not the job). A free
 scholarly registry (**OpenAlex**) resolves any source to its peer-reviewed record (venue, DOI,
 citations) so authority scales across every field without enumerating the world.
@@ -82,7 +81,7 @@ citations) so authority scales across every field without enumerating the world.
 The floor is **orthogonal** to the assessor-score thresholds and **AND-joined** with them, so it can
 only *tighten* the gate, never loosen it:
 
-- **LOW-risk course** — the floor only excludes **blocked** sources. (Today's behaviour, now
+- **LOW-risk course** — the floor only excludes **blocked** sources. (The default behaviour, now
   *recorded* with its trust.)
 - **HIGH-risk course** — a claim's chosen evidence must be **curated-or-better** (tier ≥ reputable,
   which vouched clears) **and** credible (credibility ≥ **0.70**) — **or** corroborated by
@@ -95,13 +94,14 @@ clears it while a nudged-up open-web source (max 0.65) does not.
 
 ### The moat defends itself
 
-The reason all of this exists: auto-discovery is exactly where the grounding moat could quietly invert
-from a safety check into a rubber stamp (the confirmation-bias loop in [the section above](#the-risk-this-defends-against)).
-The floor is what stops it. The poisoning-resistance evals (`test_discovery_poisoning.py`,
-`test_seed_poisoning.py`) prove it on every commit: a lone open-web source that *agrees* with a claim
-is still **cut** at HIGH risk — even when the support assessor always votes SUPPORTED — because one
-uncorroborated open source cannot clear the floor. Only genuine cross-source agreement (or a curated
-source) clears it. **Authority emerges from agreement, not from a label.**
+The reason all of this exists: auto-discovery is exactly where grounding could quietly invert from a
+safety check into a rubber stamp (the confirmation-bias loop in
+[the section above](#the-risk-this-defends-against)). The floor is what stops it. The
+poisoning-resistance evals (`test_discovery_poisoning.py`, `test_seed_poisoning.py`) prove it on every
+commit: a lone open-web source that *agrees* with a claim is still **cut** at HIGH risk — even when the
+support assessor always votes SUPPORTED — because one uncorroborated open source cannot clear the
+floor. Only genuine cross-source agreement (or a curated source) clears it. **Authority emerges from
+agreement, not from a label.**
 
 ### Label-blindness (the judge sees merit, the user sees trust)
 
@@ -126,28 +126,27 @@ Add a document yourself from the per-course **Corpus tab** — paste text, give 
 (PDF / DOCX / MD / TXT). The source is classified **vouched** (you chose it), deduped, embedded, and
 ingested for that course. URL ingest fetches and extracts the page (with an SSRF guard); uploads are
 capped at 10 MB. The operator path `make ingest DIR=… COURSE=…` ingests a whole folder. This is the
-cold-start answer and the trust escape hatch — *upload your Dijkstra notes, re-ground, and the
-citations go green.*
+cold-start answer and the trust escape hatch — *upload your notes, re-ground, and the citations go
+green.*
 
 ### auto — the system finds its own corpus
 
 The discovery agent fills the corpus before claims are verified. It runs a bounded LangGraph loop —
-**plan → search → fetch + extract → gate (score + a label-blind relevance judge) → ingest →
-reflect** — and you watch every step in the build canvas: the queries it plans, each source it finds
-with its tier + credibility, and the accept/reject verdict with a one-line reason. Found sources are
-graded by the same scorer + floor as everything else, so a machine-found page is never trusted just
-for being found. Discovery depth is **pre-authorized** up front (the build can't safely pause
-mid-flight to ask): **standard** is the one-click default; **thorough** raises the per-round
-search/fetch caps and the round ceiling to corroborate more concepts across more domains, for a higher
-search cost.
+**plan → search → fetch + extract → gate (score + a label-blind relevance judge) → ingest → reflect**
+— and you watch every step in the build canvas: the queries it plans, each source it finds with its
+tier + credibility, and the accept/reject verdict with a one-line reason. Found sources are graded by
+the same scorer + floor as everything else, so a machine-found page is never trusted just for being
+found. Discovery depth is **pre-authorized** up front (the build can't safely pause mid-flight to
+ask): **standard** is the one-click default; **thorough** raises the per-round search/fetch caps and
+the round ceiling to corroborate more concepts across more domains, for a higher search cost.
 
 ### seed — reuse what the build already read
 
 The research stage (relevance front) already searches, fetches, and trust-classifies authoritative
-pages to ground the *brief* — then normally discards the text. Seed mode carries that text forward
-into the corpus instead, so the build's claims verify against the very evidence it already read. **No
-second fetch, no search key** — it reuses pages already pulled, which makes it the **near-free** half
-of a hybrid corpus. Seeded sources are graded by the same scorer + floor (seeded ≠ trusted).
+pages to ground the *brief* — then normally discards the text. Seed mode carries that text forward into
+the corpus instead, so the build's claims verify against the very evidence it already read. **No second
+fetch, no search key** — it reuses pages already pulled, which makes it the **near-free** half of a
+hybrid corpus. Seeded sources are graded by the same scorer + floor (seeded ≠ trusted).
 
 ## Costs & keys
 
@@ -192,6 +191,6 @@ Notes that keep the cost story honest:
 
 ---
 
-*See also [relevance-model.md](relevance-model.md) (keeping a course at the right level) and
-[build-a-course-walkthrough.md](build-a-course-walkthrough.md) (a hands-on run, including filling the
-corpus so citations go green).*
+*See also [relevance.md](relevance.md) (keeping a course at the right level) and
+[getting-started.md](getting-started.md) (a hands-on run, including filling the corpus so citations go
+green).*
