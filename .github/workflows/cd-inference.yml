@@ -3,19 +3,26 @@ name: CD (inference images)
 # Builds + pushes the keyless inference images (the chat server + the embeddings server, both CPU) to
 # ACR, SHA-tagged, for keyless ("Draft") builds (keyless-fallbacks T8).
 #
-# MANUAL (workflow_dispatch), not on every push: these images bundle a model download and change
-# rarely (only when their Dockerfile or the model changes), so building them on every main push would
-# bloat each deploy. Run this when you (re)build the inference images.
+# NOT on every push: these images bundle a model download and change rarely, so building them on
+# every main push would bloat each deploy. They rebuild exactly when their inputs change — a push
+# that touches infra/inference/** — plus on demand (workflow_dispatch), so they can't silently go
+# stale while the Draft tier serves from them (cd-dev/cd-prod also warn when the running image
+# predates the last inference change).
 #
-# This workflow only BUILDS + PUSHES the images. The first deploy of the Container Apps themselves is
-# manual (see infra/inference/README.md) — but on CPU it needs no special quota. Once the apps exist,
-# point them at a new image with `az containerapp update --image <ref>` or by re-running the bicep.
+# After pushing, the dev Container Apps are rolled to the new images when they exist. The FIRST
+# deploy of the apps is still manual (see infra/inference/README.md) — but on CPU it needs no
+# special quota. Prod stays a manual promote (az acr import + az containerapp update), surfaced by
+# cd-prod's staleness warning.
 #
 # Auth is GitHub OIDC federation scoped to `environment: dev` (same as cd-dev), so the ACR push
 # reuses the dev federated identity.
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "infra/inference/**"
 
 permissions:
   id-token: write # request the OIDC token for azure/login
@@ -73,6 +80,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Pushing an image nobody runs is the staleness gap this workflow closes — roll the dev apps
+      # to the fresh images. Apps that don't exist yet warn loudly (first deploy is manual,
+      # infra/inference/README.md) instead of failing the build-and-push that DID succeed.
+      - name: Roll dev Container Apps to the new images
+        run: |
+          set -euo pipefail
+          roll() {
+            local app="$1" image="$2"
+            if az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n "$app" >/dev/null 2>&1; then
+              az containerapp update -g "${{ vars.RESOURCE_GROUP }}" -n "$app" --image "$image" \
+                --output none
+              echo "✅ $app rolled to $image"
+            else
+              echo "::warning::$app does not exist yet — image pushed but not deployed (first deploy is manual, see infra/inference/README.md)."
+            fi
+          }
+          roll lunaris-dev-inference  "${{ steps.image.outputs.chat }}"
+          roll lunaris-dev-embeddings "${{ steps.image.outputs.embeddings }}"
+
       - name: Summary
         run: |
           {
@@ -80,11 +106,11 @@ jobs:
             echo ""
             echo "| Service | Image |"
             echo "|---|---|"
-            echo "| Chat (GPU)        | \`${{ steps.image.outputs.chat }}\` |"
+            echo "| Chat (CPU)        | \`${{ steps.image.outputs.chat }}\` |"
             echo "| Embeddings (CPU)  | \`${{ steps.image.outputs.embeddings }}\` |"
             echo ""
-            echo "Next: deploy \`infra/inference.bicep\` (chat, needs a GPU workload profile) and"
-            echo "\`infra/embeddings.bicep\` (CPU) with these image refs, then set the API's"
-            echo "\`keylessLlmBaseUrl\` / \`keylessEmbeddingsBaseUrl\` and flip"
-            echo "\`LUNARIS_DRAFT_TIER_ENABLED=true\`. See infra/inference/README.md."
+            echo "Dev apps were rolled to these images where they exist (see the step above)."
+            echo "Prod promote stays manual: \`az acr import\` both images into the prod ACR, then"
+            echo "\`az containerapp update --image\` on lunaris-prod-inference / -embeddings."
+            echo "See infra/inference/README.md."
           } >> "$GITHUB_STEP_SUMMARY"

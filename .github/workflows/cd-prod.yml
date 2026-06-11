@@ -40,6 +40,8 @@ jobs:
     environment: prod
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — the inference staleness check tests commit ancestry
 
       - name: Resolve image SHA
         id: sha
@@ -148,6 +150,32 @@ jobs:
       - name: Note alerts skip
         if: vars.ALERT_EMAIL == ''
         run: echo "::warning::ALERT_EMAIL not set for this environment — skipped Azure Monitor alert rules (no alerting on 5xx/restarts/memory)."
+
+      # Prod's inference images are promoted manually (az acr import + containerapp update), so a
+      # stale model server is the likeliest drift here. Warn — visibly, in the promote run itself —
+      # when a running image predates the last change to infra/inference/**.
+      - name: Check keyless inference images are not stale
+        if: vars.DRAFT_TIER_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          LAST_CHANGE=$(git log -1 --format=%H -- infra/inference/)
+          check() {
+            local app="$1" image tag
+            image=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n "$app" \
+              --query 'properties.template.containers[0].image' -o tsv 2>/dev/null) || {
+              echo "::warning::$app not found — the Draft tier is enabled but its model server isn't deployed."
+              return 0
+            }
+            tag="${image##*:}"
+            if git cat-file -e "$tag^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$LAST_CHANGE" "$tag"; then
+              echo "✅ $app image ($tag) includes the latest infra/inference change."
+            else
+              echo "::warning::$app runs image tag '$tag', which predates the last infra/inference change ($LAST_CHANGE) — rebuild via 'CD (inference images)', then az acr import + az containerapp update on prod."
+            fi
+          }
+          check lunaris-prod-inference
+          check lunaris-prod-embeddings
 
       # A green promote must mean a serving API: poll /api/healthz on the default FQDN (and the
       # custom domain when configured) until it answers 200, or fail the run.
