@@ -4,16 +4,14 @@ from lunaris_runtime.schema import Citation, Claim, RiskTier, TrustTier, Verifie
 from lunaris_grounding.discovery.domain_trust import host
 from lunaris_grounding.evidence import Evidence
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
+from lunaris_grounding.thresholds import VerificationThresholds
 
 logger = structlog.get_logger()
 
-_HIGH_THRESHOLD = 0.85
-_LOW_THRESHOLD = 0.65
-
-# The risk-tiered trust floor (P6.2 §4c), orthogonal to the assessor-score thresholds above: those
-# gate how strongly evidence supports a claim, this gates how trustworthy the evidence is. Authority
-# order for the floor — VOUCHED (the user chose it) ranks with the curated tier; an un-tiered (pre-
-# P6.2) citation is treated as open web, never trusted by omission.
+# The risk-tiered trust floor (P6.2 §4c), orthogonal to the assessor-score thresholds (now carried
+# by ``VerificationThresholds``): those gate how strongly evidence supports a claim, this gates how
+# trustworthy the evidence is. Authority order for the floor — VOUCHED (the user chose it) ranks
+# with the curated tier; an un-tiered (pre-P6.2) citation is open web, never trusted by omission.
 _TIER_RANK: dict[TrustTier, int] = {
     TrustTier.BLOCKED: 0,
     TrustTier.OPEN: 1,
@@ -24,13 +22,9 @@ _TIER_RANK: dict[TrustTier, int] = {
 _UNTIERED_RANK = _TIER_RANK[TrustTier.OPEN]
 # A HIGH-risk claim needs curated-or-better evidence (>= REPUTABLE) AND a credibility floor — or
 # (per plan §4a) cross-source agreement (>=2 independent domains), so authority can emerge from
-# agreement when no single source is curated. LOW risk only excludes blocked sources.
+# agreement when no single source is curated. LOW risk only excludes blocked sources. The rank
+# order is structural (what the tiers MEAN); the tunable values live in VerificationThresholds.
 _HIGH_TIER_FLOOR = _TIER_RANK[TrustTier.REPUTABLE]
-# 0.70 sits just under the REPUTABLE scorer prior (0.75) so a curated source clears it while a
-# nudged-up open-web source (max 0.65) does not; recalibrate against the T5 poisoning eval's FPR.
-_HIGH_CREDIBILITY_FLOOR = 0.70
-# Two distinct registrable domains is the minimum that precludes a source corroborating itself.
-_MIN_CORROBORATING_DOMAINS = 2
 
 
 class Verifier:
@@ -47,9 +41,18 @@ class Verifier:
     backend and the model are swappable and tests run with stubs.
     """
 
-    def __init__(self, retriever: IEvidenceRetriever, assessor: ISupportAssessor) -> None:
+    def __init__(
+        self,
+        retriever: IEvidenceRetriever,
+        assessor: ISupportAssessor,
+        *,
+        thresholds: VerificationThresholds | None = None,
+    ) -> None:
         self._retriever = retriever
         self._assessor = assessor
+        # The tunable gates (support thresholds, credibility floor, corroboration minimum) as one
+        # injected value object — recalibration is configuration, not a code edit.
+        self._thresholds = thresholds or VerificationThresholds()
 
     @property
     def retriever(self) -> IEvidenceRetriever:
@@ -67,7 +70,10 @@ class Verifier:
         # ``course_id`` scopes retrieval to the course being built (P6.1): claims ground only
         # against that course's own evidence. The thresholds + the independent assessor are
         # unchanged — this narrows *which* evidence is retrieved, never how strictly it's judged.
-        threshold = _HIGH_THRESHOLD if risk_tier is RiskTier.HIGH else _LOW_THRESHOLD
+        thresholds = self._thresholds
+        threshold = (
+            thresholds.high_support if risk_tier is RiskTier.HIGH else thresholds.low_support
+        )
         citations: dict[str, Citation] = {}
 
         for claim in claims:
@@ -86,7 +92,9 @@ class Verifier:
                 self._cut_on_grounding_failure(claim, "claim_assessment_unavailable", exc)
                 continue
             chosen = next((e for e in evidence if e.citation.id == support.citation_id), None)
-            agreement = _has_cross_source_agreement(evidence)
+            agreement = _has_cross_source_agreement(
+                evidence, min_domains=thresholds.min_corroborating_domains
+            )
             if (
                 support.score >= threshold
                 and chosen is not None
@@ -135,13 +143,16 @@ class Verifier:
         )
         return passed
 
-    @staticmethod
-    def _floor_ok(rank: int, credibility: float, agreement: bool, risk_tier: RiskTier) -> bool:
+    def _floor_ok(
+        self, rank: int, credibility: float, agreement: bool, risk_tier: RiskTier
+    ) -> bool:
         if rank == _TIER_RANK[TrustTier.BLOCKED]:
             return False  # a blocked/denylisted source never supports a claim, at any risk
         if risk_tier is not RiskTier.HIGH:
             return True  # LOW: the open web is recorded, only blocked is refused
-        curated_and_credible = rank >= _HIGH_TIER_FLOOR and credibility >= _HIGH_CREDIBILITY_FLOOR
+        curated_and_credible = (
+            rank >= _HIGH_TIER_FLOOR and credibility >= self._thresholds.high_credibility_floor
+        )
         return curated_and_credible or agreement
 
     def _cut_on_grounding_failure(self, claim: Claim, event: str, exc: Exception) -> None:
@@ -163,8 +174,9 @@ class Verifier:
                 )
 
 
-def _has_cross_source_agreement(evidence: list[Evidence]) -> bool:
-    """Whether the retrieved evidence is corroborated across >=2 independent domains (§4b).
+def _has_cross_source_agreement(evidence: list[Evidence], *, min_domains: int) -> bool:
+    """Whether the retrieved evidence is corroborated across >=``min_domains`` independent domains
+    (§4b).
 
     The plan's operationalization of cross-source agreement: count distinct *registrable* domains
     among the retrieved chunks. Grouping by registrable domain (not full host) means two subdomains
@@ -179,7 +191,7 @@ def _has_cross_source_agreement(evidence: list[Evidence]) -> bool:
         if e.citation.url and e.citation.trust_tier is not TrustTier.BLOCKED
     }
     domains.discard("")
-    return len(domains) >= _MIN_CORROBORATING_DOMAINS
+    return len(domains) >= min_domains
 
 
 def _registrable_domain(url: str) -> str:

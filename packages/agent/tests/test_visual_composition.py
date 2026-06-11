@@ -3,7 +3,7 @@ environment — the real ``MermaidRenderer`` when ``LUNARIS_MERMAID_SCRIPT`` is 
 no-toolchain ``PassthroughDiagramRenderer`` so branded visuals ship without a render script."""
 
 import pytest
-from lunaris_agent.composition import _visual_engine_from_env
+from lunaris_agent.composition._subagents import _visual_engine_from_env
 from lunaris_agent.subagents.visual_agent import (
     MermaidRenderer,
     PassthroughDiagramRenderer,

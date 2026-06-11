@@ -71,6 +71,7 @@ from lunaris_grounding.ingest import (
 )
 from lunaris_grounding.protocols import IEvidenceRetriever, ISupportAssessor
 from lunaris_grounding.retrievers import PgVectorRetriever, StubEvidenceRetriever
+from lunaris_grounding.thresholds import VerificationThresholds
 from lunaris_grounding.verifier import Verifier
 
 __all__ = [
@@ -121,6 +122,7 @@ __all__ = [
     "Support",
     "TavilySearchProvider",
     "TrafilaturaContentExtractor",
+    "VerificationThresholds",
     "Verifier",
     "VideoResult",
     "VoyageEmbedder",

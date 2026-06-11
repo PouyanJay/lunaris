@@ -3,7 +3,7 @@ else the keyless local nano fallback, and the cuts-everything retriever stub no 
 because the embeddings key is missing (a corpus present → real grounding on the local embedder)."""
 
 import pytest
-from lunaris_agent.composition import _embedder_from_env, _retriever_from_env
+from lunaris_agent.composition._grounding import _embedder_from_env, _retriever_from_env
 from lunaris_grounding import LocalEmbedder, PgVectorRetriever, VoyageEmbedder
 
 

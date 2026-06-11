@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 
 import pytest
-from lunaris_grounding.verifier import _HIGH_CREDIBILITY_FLOOR
+from lunaris_grounding import VerificationThresholds
 from lunaris_runtime.schema import AcquisitionMode, SourceType, SubjectField, TrustTier
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -97,7 +97,7 @@ def test_grounding_model_documents_every_enum_member(enum_cls: type) -> None:
 def test_grounding_model_states_the_high_risk_credibility_floor() -> None:
     # The documented floor must match the verifier's constant, or the doc lies about the moat.
     text = _read(_GROUNDING_MODEL)
-    floor = f"{_HIGH_CREDIBILITY_FLOOR:.2f}"
+    floor = f"{VerificationThresholds().high_credibility_floor:.2f}"
 
     assert floor in text, f"grounding.md must state the HIGH-risk credibility floor ({floor})"
 

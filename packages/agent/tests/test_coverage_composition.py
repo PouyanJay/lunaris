@@ -6,7 +6,7 @@ deterministic.
 """
 
 import pytest
-from lunaris_agent.composition import _coverage_critic_from_env
+from lunaris_agent.composition._subagents import _coverage_critic_from_env
 from lunaris_agent.coverage_critic import ClaudeCoverageCritic, DeterministicCoverageCritic
 
 _STRONG = "claude-opus-4-8"
