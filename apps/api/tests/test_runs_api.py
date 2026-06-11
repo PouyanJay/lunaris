@@ -11,7 +11,7 @@ from lunaris_api.app import create_app
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore, InMemoryRunStore, IRunStore
+from lunaris_runtime.persistence import CourseStore, InMemoryRunStore, IRunStore, PersistenceError
 from lunaris_runtime.schema import CourseRun, RunStatus
 
 
@@ -20,14 +20,16 @@ class _UnavailableRunStore:
     ``course_runs`` table missing, Supabase unreachable). Writes are no-ops because recording is
     best-effort; only ``list_recent`` raises, which is what the sidebar's read must survive."""
 
-    async def start(self, *, run_id: str, course_id: str, topic: str) -> None: ...
+    async def start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
+    ) -> None: ...
 
     async def finish(
         self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
     ) -> None: ...
 
-    async def list_recent(self, *, limit: int = 50) -> list[CourseRun]:
-        raise RuntimeError("history backend unavailable")
+    async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:
+        raise PersistenceError("history backend unavailable")
 
 
 def _client_for(tmp_path: Path, run_store: IRunStore) -> httpx.AsyncClient:

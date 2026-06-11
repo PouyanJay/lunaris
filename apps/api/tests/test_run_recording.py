@@ -16,7 +16,7 @@ from lunaris_api.dependencies import get_course_service
 from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
+from lunaris_runtime.persistence import CourseStore, InMemoryRunStore, PersistenceError
 from lunaris_runtime.schema import CourseRun, RunStatus
 
 
@@ -83,33 +83,85 @@ async def test_stream_build_records_a_completed_run(
 
 
 class _FailingRunStore:
-    """A RunStore whose every write blows up — proves recording is best-effort (start fails)."""
+    """A RunStore whose every write blows up with the backend-failure contract error
+    (``PersistenceError`` — what the Supabase stores raise) — proves recording is best-effort."""
 
-    async def start(self, *, run_id: str, course_id: str, topic: str) -> None:
-        raise RuntimeError("history index is down")
+    async def start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
+    ) -> None:
+        raise PersistenceError("history index is down")
 
     async def finish(
-        self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
+        self,
+        *,
+        course_id: str,
+        status: RunStatus,
+        kc_count: int,
+        module_count: int,
+        owner_id: str | None = None,
     ) -> None:
-        raise RuntimeError("history index is down")
+        raise PersistenceError("history index is down")
 
-    async def list_recent(self, *, limit: int = 50) -> list[CourseRun]:
+    async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:
         return []
+
+
+class _BuggyRunStore:
+    """A RunStore with a programming error (not a backend failure) — must NOT be hidden."""
+
+    async def start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
+    ) -> None:
+        raise TypeError("start() got an unexpected keyword argument")
+
+    async def finish(
+        self,
+        *,
+        course_id: str,
+        status: RunStatus,
+        kc_count: int,
+        module_count: int,
+        owner_id: str | None = None,
+    ) -> None:
+        return None
+
+    async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:
+        return []
+
+
+async def test_a_programming_error_in_the_run_store_is_not_swallowed(tmp_path: Path) -> None:
+    # Arrange — a store whose failure is a bug in our code, not an unavailable backend. The
+    # best-effort guards catch only PersistenceError; anything else must surface loudly.
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, _BuggyRunStore())
+    transport = _client_for(service)
+
+    # Act / Assert — the bug propagates instead of degrading to "history quietly skipped".
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        with pytest.raises(TypeError):
+            await client.post("/api/courses", json={"topic": "graphs"})
 
 
 class _FinishFailingRunStore:
     """Start succeeds, finish blows up — exercises the _record_finish best-effort guard, which the
     start-failure case can't reach (it never gets to finish)."""
 
-    async def start(self, *, run_id: str, course_id: str, topic: str) -> None:
+    async def start(
+        self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
+    ) -> None:
         return None
 
     async def finish(
-        self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
+        self,
+        *,
+        course_id: str,
+        status: RunStatus,
+        kc_count: int,
+        module_count: int,
+        owner_id: str | None = None,
     ) -> None:
-        raise RuntimeError("history index is down")
+        raise PersistenceError("history index is down")
 
-    async def list_recent(self, *, limit: int = 50) -> list[CourseRun]:
+    async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:
         return []
 
 

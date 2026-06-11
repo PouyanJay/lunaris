@@ -21,6 +21,9 @@ class IRunEventStore(Protocol):
     ``owner_id`` (Phase 2 per-user scoping) is the authenticated caller's id: ``append`` stamps it
     on each row, ``list_for_run``/``delete_for_course`` constrain to it (another user's transcript
     reads as empty). ``None`` means unscoped — the auth-off / single-user path, today's behavior.
+
+    Backend failures raise ``PersistenceError`` — the only store error callers may
+    treat as best-effort; anything else is a bug and must surface.
     """
 
     async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None: ...

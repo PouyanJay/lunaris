@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 
 from lunaris_runtime.schema import CourseRun, RunStatus
 
+from .guard import guard
+
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "course_runs"
@@ -47,6 +49,7 @@ class SupabaseRunStore:
             self._client = create_client(url, key)
         return self._client
 
+    @guard("course_runs upsert")
     async def start(
         self, *, run_id: str, course_id: str, topic: str, owner_id: str | None = None
     ) -> None:
@@ -62,6 +65,7 @@ class SupabaseRunStore:
             row["user_id"] = owner_id  # stamp the owner (Phase 2) — see SupabaseCourseStore.save
         await asyncio.to_thread(lambda: client.table(_TABLE).upsert(row).execute())  # type: ignore[attr-defined]
 
+    @guard("course_runs update")
     async def finish(
         self,
         *,
@@ -87,6 +91,7 @@ class SupabaseRunStore:
 
         await asyncio.to_thread(_run)
 
+    @guard("course_runs list")
     async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:
         client = self._ensure_client()
 
@@ -99,6 +104,7 @@ class SupabaseRunStore:
         response = await asyncio.to_thread(_run)
         return [self._to_course_run(row) for row in (response.data or [])]
 
+    @guard("course_runs get")
     async def get(self, *, course_id: str, owner_id: str | None = None) -> CourseRun | None:
         client = self._ensure_client()
 
@@ -112,6 +118,7 @@ class SupabaseRunStore:
         rows = response.data or []
         return self._to_course_run(rows[0]) if rows else None
 
+    @guard("course_runs delete")
     async def delete(self, *, course_id: str, owner_id: str | None = None) -> bool:
         client = self._ensure_client()
 

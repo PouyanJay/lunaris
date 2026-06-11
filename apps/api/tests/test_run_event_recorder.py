@@ -5,6 +5,7 @@ event store in best-effort batches, with a volume cap. Drives the batching/cap b
 from collections.abc import Sequence
 
 from lunaris_api.run_event_recorder import RunEventRecorder
+from lunaris_runtime.persistence import PersistenceError
 from lunaris_runtime.schema import (
     AgentEvent,
     AgentEventKind,
@@ -133,7 +134,7 @@ async def test_owner_id_is_stamped_on_every_flush() -> None:
 
 class _FailingStore:
     async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None:
-        raise RuntimeError("event log is down")
+        raise PersistenceError("event log is down")
 
     async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         return []

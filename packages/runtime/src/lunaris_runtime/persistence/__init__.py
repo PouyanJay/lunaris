@@ -1,8 +1,10 @@
 from .course_store import CourseStore
 from .course_store_protocol import ICourseStore
+from .guard import guard
 from .memory_run_event_store import InMemoryRunEventStore
 from .memory_run_store import InMemoryRunStore
 from .owner_scoped_course_store import OwnerScopedCourseStore
+from .persistence_error import PersistenceError
 from .run_event_store_protocol import IRunEventStore
 from .run_store_protocol import IRunStore
 from .supabase_course_store import SupabaseCourseStore
@@ -17,7 +19,9 @@ __all__ = [
     "InMemoryRunEventStore",
     "InMemoryRunStore",
     "OwnerScopedCourseStore",
+    "PersistenceError",
     "SupabaseCourseStore",
     "SupabaseRunEventStore",
     "SupabaseRunStore",
+    "guard",
 ]

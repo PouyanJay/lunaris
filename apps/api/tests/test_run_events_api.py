@@ -16,7 +16,12 @@ from lunaris_api.app import create_app
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore, InMemoryRunEventStore, InMemoryRunStore
+from lunaris_runtime.persistence import (
+    CourseStore,
+    InMemoryRunEventStore,
+    InMemoryRunStore,
+    PersistenceError,
+)
 from lunaris_runtime.schema import ProgressEvent, ProgressStage, RunEvent, RunEventKind
 
 
@@ -99,8 +104,8 @@ async def test_deleting_a_course_purges_its_event_log(
 class _PurgeFailingEventStore(InMemoryRunEventStore):
     """Appends/reads normally but blows up on purge — proves purge is best-effort."""
 
-    async def delete_for_course(self, *, course_id: str) -> int:
-        raise RuntimeError("event log purge is down")
+    async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
+        raise PersistenceError("event log purge is down")
 
 
 async def test_event_log_purge_failure_does_not_break_course_deletion(tmp_path: Path) -> None:
@@ -138,13 +143,13 @@ async def test_unknown_run_has_no_build_record(http_with: httpx.AsyncClient) -> 
 class _FailingEventStore:
     """An event store whose append blows up — proves persistence is best-effort."""
 
-    async def append(self, *, events: Sequence[RunEvent]) -> None:
-        raise RuntimeError("event log is down")
+    async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None:
+        raise PersistenceError("event log is down")
 
-    async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
+    async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         return []
 
-    async def delete_for_course(self, *, course_id: str) -> int:
+    async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
         return 0
 
 
@@ -185,8 +190,8 @@ async def test_event_log_write_failure_does_not_break_a_build(
 class _ReadFailingEventStore(InMemoryRunEventStore):
     """Reads blow up — the missing-table / backend-outage case for the replay endpoint."""
 
-    async def list_for_run(self, *, run_id: str) -> list[RunEvent]:
-        raise RuntimeError("event log backend is unavailable")
+    async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
+        raise PersistenceError("event log backend is unavailable")
 
 
 async def test_event_log_read_outage_returns_503_with_cors_headers(tmp_path: Path) -> None:

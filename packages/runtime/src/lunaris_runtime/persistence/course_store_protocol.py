@@ -21,6 +21,9 @@ class ICourseStore(Protocol):
     the row, ``load``/``delete`` constrain to it (a course owned by another user is not-found).
     ``None`` means unscoped — the auth-off / single-user path, byte-for-byte today's behavior. The
     file store is single-user and ignores it; the Supabase store enforces it.
+
+    Backend failures raise ``PersistenceError`` — the only store error callers may
+    treat as best-effort; anything else is a bug and must surface.
     """
 
     def save(self, course: Course, *, owner_id: str | None = None) -> None: ...

@@ -14,6 +14,7 @@ from lunaris_runtime.persistence import (
     IRunEventStore,
     IRunStore,
     OwnerScopedCourseStore,
+    PersistenceError,
 )
 from lunaris_runtime.run_config import run_config
 from lunaris_runtime.schema import (
@@ -537,7 +538,7 @@ class CourseService:
             return 0
         try:
             return await self._event_store.delete_for_course(course_id=course_id, owner_id=owner_id)
-        except Exception:
+        except PersistenceError:
             logger.warning("run_events_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
@@ -553,7 +554,7 @@ class CourseService:
         bounded = max(RUNS_LIMIT_MIN, min(limit, RUNS_LIMIT_MAX))
         try:
             return await self._run_store.list_recent(limit=bounded, owner_id=owner_id)
-        except Exception as exc:
+        except PersistenceError as exc:
             # A configured backend that fails to read is a real outage — surface it (vs. a silent
             # empty list, which would lie "no runs yet"). Logged with the run_id from contextvars so
             # the failure is triangulatable across layers; the router maps it to a recoverable 503.
@@ -574,7 +575,7 @@ class CourseService:
             return []
         try:
             return await self._event_store.list_for_run(run_id=run_id, owner_id=owner_id)
-        except Exception as exc:
+        except PersistenceError as exc:
             logger.warning("run_events_list_failed", run_id=run_id, exc_info=True)
             raise RunHistoryUnavailableError("Build event log is unavailable") from exc
 
@@ -602,7 +603,7 @@ class CourseService:
             await self._run_store.start(
                 run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id
             )
-        except Exception:
+        except PersistenceError:
             logger.warning(
                 "run_history_start_failed", course_id=course_id, run_id=run_id, exc_info=True
             )
@@ -619,7 +620,7 @@ class CourseService:
                 module_count=len(course.modules),
                 owner_id=owner_id,
             )
-        except Exception:
+        except PersistenceError:
             logger.warning("run_history_finish_failed", course_id=course.id, exc_info=True)
 
     async def _record_failure(self, course_id: str, *, owner_id: str | None = None) -> None:
@@ -634,7 +635,7 @@ class CourseService:
                 module_count=0,
                 owner_id=owner_id,
             )
-        except Exception:
+        except PersistenceError:
             logger.warning("run_history_mark_failed_error", course_id=course_id, exc_info=True)
 
     async def _record_cancelled(self, course_id: str, *, owner_id: str | None = None) -> None:
@@ -649,5 +650,5 @@ class CourseService:
                 module_count=0,
                 owner_id=owner_id,
             )
-        except Exception:
+        except PersistenceError:
             logger.warning("run_history_mark_cancelled_error", course_id=course_id, exc_info=True)

@@ -6,6 +6,8 @@ import structlog
 
 from lunaris_runtime.schema import RunEvent, RunEventKind
 
+from .guard import guard
+
 logger = structlog.get_logger()
 
 _URL_ENV = "SUPABASE_URL"
@@ -61,6 +63,7 @@ class SupabaseRunEventStore:
             self._client = create_client(url, key)
         return self._client
 
+    @guard("run_events insert")
     async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None:
         if not events:
             return  # an empty flush must never issue a no-op insert
@@ -80,6 +83,7 @@ class SupabaseRunEventStore:
         ]
         await asyncio.to_thread(lambda: client.table(_TABLE).insert(rows).execute())  # type: ignore[attr-defined]
 
+    @guard("run_events list")
     async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         client = self._ensure_client()
         rows: list[dict[str, object]] = []
@@ -105,6 +109,7 @@ class SupabaseRunEventStore:
             logger.warning("run_events_read_hit_page_ceiling", run_id=run_id, pages=_MAX_PAGES)
         return [self._to_run_event(row) for row in rows]
 
+    @guard("run_events delete")
     async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
         client = self._ensure_client()
 
