@@ -139,16 +139,19 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
   const [canRegenerate, setCanRegenerate] = useState(false);
-  // Whether the transcript may offer "Explain" on a JSON blob — available only when an Anthropic key
-  // is reachable. Read alongside the regenerate capability; fail closed so a button never 503s.
+  // Explain availability is tiered: the transcript's dev-facing affordance stays hosted-only
+  // (Anthropic key reachable), while the reader's learner-facing one answers on either tier
+  // (hosted or the keyless server fallback). Fail closed so a button never 503s.
   const [canExplain, setCanExplain] = useState(false);
+  const [canReaderExplain, setCanReaderExplain] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     fetchSettings(apiBaseUrl, controller.signal)
       .then((settings) => {
         if (controller.signal.aborted) return;
         setCanRegenerate(settings.supportsLessonRegeneration);
-        setCanExplain(settings.supportsExplain);
+        setCanExplain(settings.supportsHostedExplain);
+        setCanReaderExplain(settings.supportsExplain);
       })
       .catch(() => {
         // Fail closed: a settings fetch we can't complete hides the actions. Guard the unmount race
@@ -248,7 +251,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       ) : viewMode === "corpus" ? (
         <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
       ) : (
-        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canReaderExplain}>
           <CourseReader
             course={course}
             focusRequest={focusRequest}

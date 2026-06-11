@@ -19,9 +19,12 @@ class SettingsView(CamelModel):
     # Whether the active pipeline can re-author a single lesson; the web hides the regenerate
     # action when False rather than offering a button the pipeline would reject with a 501.
     supports_lesson_regeneration: bool
-    # Whether plain-language "Explain" is available (an Anthropic key is reachable); the web hides
-    # the Explain affordance when False rather than offering a button that 503s.
+    # Whether plain-language "Explain" can answer at all (hosted Claude OR the keyless server
+    # tier); the web hides the affordance when False rather than offering a button that 503s.
     supports_explain: bool
+    # Whether the HOSTED tier specifically (an Anthropic key) is reachable. The transcript's
+    # dev-facing Explain stays hosted-only; the reader offers Explain on either tier.
+    supports_hosted_explain: bool
     # Whether per-user BYOK is configured (a master key + Supabase). When True the web manages keys
     # through the authed per-user /api/credentials surface instead of this file-backed secret store.
     byok_enabled: bool

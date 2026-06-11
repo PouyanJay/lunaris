@@ -37,7 +37,9 @@ def get_settings_view(
         secrets=[_to_view(s) for s in store.statuses()],
         pipeline=settings.pipeline,
         supports_lesson_regeneration=pipeline_supports_lesson_regeneration(settings.pipeline),
-        supports_explain=explain_is_available(),
+        # Hosted (key reachable) OR the keyless server tier — either way Explain answers.
+        supports_explain=explain_is_available() or settings.draft_tier_enabled,
+        supports_hosted_explain=explain_is_available(),
         byok_enabled=settings.has_byok,
         per_user_config_enabled=settings.has_auth,
     )

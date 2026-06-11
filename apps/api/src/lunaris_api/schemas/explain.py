@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import Field
 
 from .base import CamelModel
@@ -17,6 +19,7 @@ class ExplainRequest(CamelModel):
 
 
 class ExplainResponse(CamelModel):
-    """The plain-language explanation of a blob."""
+    """The plain-language explanation, stamped with which tier answered (the web badge's truth)."""
 
     explanation: str
+    source: Literal["hosted", "server-fallback"] = "hosted"
