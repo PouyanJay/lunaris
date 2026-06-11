@@ -107,6 +107,33 @@ describe("useCourseStream device compute", () => {
     expect(streamCourseMock).not.toHaveBeenCalled();
   });
 
+  it("explains a failed device build in terms of the tab-open contract", async () => {
+    // Arrange — the stream dies without a course (the server failed the run — e.g. this tab
+    // went silent after a laptop sleep and the bridge disconnected it).
+    armDeviceChoice();
+    const { CourseLoadError } = await import("../lib/loadCourse");
+    streamCourseMock.mockImplementation(
+      (_base: string, _topic: string, options: { onRunId?: (id: string) => void }) => {
+        options.onRunId?.("run-42");
+        return Promise.reject(
+          new CourseLoadError("The build stream ended before the course was ready."),
+        );
+      },
+    );
+    const engine = fakeEngine();
+    const { result } = renderHook(() =>
+      useCourseStream("http://api", { llmKeyless: true, deviceEngine: engine }),
+    );
+
+    // Act
+    act(() => result.current.generate("graphs"));
+
+    // Assert — the error names the likely cause, not just a generic stream failure.
+    await waitFor(() => expect(result.current.state.status).toBe("error"));
+    const state = result.current.state as { status: "error"; message: string };
+    expect(state.message).toMatch(/keeping the tab open/i);
+  });
+
   it("builds on the server when the user is keyed, even with a saved device choice", async () => {
     // Arrange
     armDeviceChoice();

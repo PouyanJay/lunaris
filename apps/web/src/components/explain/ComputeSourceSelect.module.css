@@ -30,7 +30,9 @@
   margin: 0;
   font-size: var(--text-xs);
   line-height: var(--lh-xs);
-  color: var(--text-muted);
+  /* Secondary, not muted: the hint carries the tab-open contract and must clear AA on the
+     accent-soft band it usually sits on. */
+  color: var(--text-secondary);
   max-width: 44ch;
 }
 

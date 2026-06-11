@@ -1,0 +1,21 @@
+/* Content layout only — the band shell (tint, rails, padding) is the AccentBand primitive. */
+.row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.eyebrow {
+  /* 700, not 600: small accent text on the accent-soft band needs the stronger step for AA. */
+  color: var(--accent-700);
+}
+
+.text {
+  flex: 1;
+  min-width: 12rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}

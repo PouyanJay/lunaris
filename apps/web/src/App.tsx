@@ -23,6 +23,7 @@ import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
 import { useCourse } from "./hooks/useCourse";
+import { useBeforeUnloadGuard } from "./hooks/useBeforeUnloadGuard";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
@@ -31,6 +32,7 @@ import { useCapabilities } from "./hooks/useCapabilities";
 import { useKeylessReadiness } from "./hooks/useKeylessReadiness";
 import { KeylessProvisioningBanner } from "./components/KeylessProvisioningBanner";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
+import { DeviceBuildNotice } from "./components/DeviceBuildNotice";
 import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
@@ -141,6 +143,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const { state, generate, reset } = useCourseStream(apiBaseUrl, {
     llmKeyless: isLlmKeyless(capabilities),
   });
+  // While THIS tab serves a device build (or its model is preparing), closing it kills the build —
+  // intercept the reflex tab-close with the browser's native confirm.
+  useBeforeUnloadGuard(
+    state.status === "preparing-device" ||
+      (state.status === "streaming" && state.servedByThisDevice),
+  );
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
@@ -378,7 +386,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     if (state.status === "preparing-device") {
       return {
         title: state.topic,
-        meta: <StatusDot label="preparing" tone="accent" live />,
+        meta: (
+          <>
+            <StatusDot label="preparing" tone="accent" live />
+            <Button onClick={reset}>Cancel build</Button>
+          </>
+        ),
         body: <PreparingDeviceState topic={state.topic} progress={state.progress} />,
       };
     }
@@ -394,7 +407,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         ),
         body: (
           <>
-            <KeylessProvisioningBanner status={keylessReadiness} />
+            {state.servedByThisDevice ? (
+              <DeviceBuildNotice />
+            ) : (
+              <KeylessProvisioningBanner status={keylessReadiness} />
+            )}
             <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
               <BuildTimeline
                 topic={state.topic}

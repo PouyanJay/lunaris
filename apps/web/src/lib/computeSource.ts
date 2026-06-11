@@ -43,7 +43,8 @@ export function detectWebGpu(): WebGpuSupport {
   }
   return {
     supported: false,
-    reason: "This browser doesn't support WebGPU — explanations will use the Lunaris server.",
+    reason:
+      "This browser doesn't support WebGPU — builds and explanations will use the Lunaris server.",
   };
 }
 

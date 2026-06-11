@@ -1,4 +1,7 @@
 .track {
+  /* Full width even inside centered flex columns (align-items: center would otherwise shrink
+     the track to its intrinsic — zero — width and the bar vanishes). */
+  width: 100%;
   height: var(--space-1);
   border-radius: var(--radius-full);
   background: var(--bg-muted);

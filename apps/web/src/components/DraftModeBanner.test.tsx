@@ -45,7 +45,7 @@ describe("DraftModeBanner", () => {
     render(<DraftModeBanner capabilities={capabilities} />);
 
     // Assert — the per-device choice rides the Draft banner.
-    expect(screen.getByLabelText(/explanations run on/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/draft ai runs on/i)).toBeInTheDocument();
   });
 
   it("hides the explain compute dropdown when only non-LLM capabilities are fallback", () => {
@@ -59,7 +59,7 @@ describe("DraftModeBanner", () => {
     render(<DraftModeBanner capabilities={capabilities} />);
 
     // Assert
-    expect(screen.queryByLabelText(/explanations run on/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/draft ai runs on/i)).not.toBeInTheDocument();
   });
 
   it("shows the compute kind (GPU/CPU) for the local model fallback only", () => {

@@ -1,0 +1,14 @@
+/* A hairline band (not a floating card) tinted with the single accent; the left edge reads as a
+   status rail. The band owns only its identity — content layout belongs to the consumer. */
+.band {
+  padding: var(--space-3) var(--space-5);
+  background: var(--accent-soft);
+  border-bottom: var(--border-width) solid var(--border);
+  border-left: 2px solid var(--accent-500);
+}
+
+@media (max-width: 768px) {
+  .band {
+    padding: var(--space-3) var(--space-4);
+  }
+}

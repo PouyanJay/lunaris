@@ -1,4 +1,5 @@
 import type { KeylessReadinessStatus } from "../lib/keylessReadiness";
+import { AccentBand } from "./primitives/AccentBand";
 import { StatusDot } from "./primitives/StatusDot";
 import styles from "./KeylessProvisioningBanner.module.css";
 
@@ -14,12 +15,12 @@ export function KeylessProvisioningBanner({ status }: KeylessProvisioningBannerP
   if (status !== "provisioning") return null;
 
   return (
-    <aside className={styles.banner} role="status" aria-live="polite">
+    <AccentBand className={styles.row}>
       <StatusDot label="provisioning" tone="accent" live />
       <p className={styles.text}>
         Waking up the local model for this Draft build. The first build after an idle period can take
         <span className={styles.nowrap}> ~30–60s</span> while it starts up — it speeds up once warm.
       </p>
-    </aside>
+    </AccentBand>
   );
 }

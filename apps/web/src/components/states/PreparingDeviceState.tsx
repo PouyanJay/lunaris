@@ -15,13 +15,19 @@ interface PreparingDeviceStateProps {
 export function PreparingDeviceState({ topic, progress }: PreparingDeviceStateProps) {
   return (
     <div className={styles.center}>
-      <div className={styles.message} role="status">
-        <span className="eyebrow">Preparing your device</span>
-        <h2 className={styles.title}>Loading the on-device model</h2>
-        <p className={styles.body}>
-          “{topic}” will build using this device — the model loads first (about 1.8 GB the first
-          time, then cached). Keep this tab open: the build runs only while it stays open.
-        </p>
+      <div className={styles.message}>
+        {/* Only the static framing is a live region — WebLLM's per-beat progress text would
+            otherwise be announced on every download tick. The bar stays queryable via its
+            progressbar role without being chatty. */}
+        <div role="status">
+          <span className="eyebrow">Preparing your device</span>
+          <h2 className={styles.title}>Loading the on-device model</h2>
+          <p className={styles.body}>
+            “{topic}” will build using this device — the model loads first (about 1.8{" "}GB
+            the first time, then cached). Keep this tab open: the build runs only while it stays
+            open.
+          </p>
+        </div>
         <ProgressBar value={progress?.progress ?? 0} label="Model download" />
         {progress && <p className={styles.body}>{progress.text}</p>}
       </div>

@@ -1,5 +1,6 @@
 import { CAPABILITY_LABELS, isLlmKeyless, type CapabilityStatus } from "../lib/capabilities";
 import { ComputeSourceSelect } from "./explain/ComputeSourceSelect";
+import { AccentBand } from "./primitives/AccentBand";
 import styles from "./DraftModeBanner.module.css";
 
 interface DraftModeBannerProps {
@@ -23,7 +24,7 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
   const llmIsKeyless = isLlmKeyless(fallbacks);
 
   return (
-    <aside className={styles.banner} role="status">
+    <AccentBand className={styles.column}>
       <div className={styles.head}>
         <span className={`eyebrow ${styles.eyebrow}`}>Draft mode</span>
         <p className={styles.text}>
@@ -59,6 +60,6 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
           <ComputeSourceSelect />
         </div>
       )}
-    </aside>
+    </AccentBand>
   );
 }

@@ -1,14 +1,9 @@
-/* A hairline band (not a floating card) tinted with the single accent — the one "this is Draft"
-   signal. Sits at the top of the canvas body; the accent left edge reads as a status rail. The
+/* Content layout only — the band shell (tint, rails, padding) is the AccentBand primitive. The
    fallbacks list as a flat, hairline-divided status row below the lead line — data, not prose. */
-.banner {
+.column {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  background: var(--accent-soft);
-  border-bottom: var(--border-width) solid var(--border);
-  border-left: 2px solid var(--accent-500);
 }
 
 /* The lead row: the Draft eyebrow, the one-line caveat, and the quiet route to Settings. */
@@ -20,7 +15,8 @@
 }
 
 .eyebrow {
-  color: var(--accent-600);
+  /* 700, not 600: small accent text on the accent-soft band needs the stronger step for AA. */
+  color: var(--accent-700);
   flex: none;
 }
 
@@ -107,7 +103,8 @@
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--accent-600);
+  /* 700 for AA on the accent-soft band, like the eyebrow. */
+  color: var(--accent-700);
   background: transparent;
   border: none;
   padding: 0;
@@ -131,9 +128,6 @@
 /* Phone: stack the fallbacks so they never wrap into a divider at the start of a line; each reads
    as its own label → value line. */
 @media (max-width: 768px) {
-  .banner {
-    padding: var(--space-3) var(--space-4);
-  }
   .fallbacks {
     flex-direction: column;
     align-items: stretch;

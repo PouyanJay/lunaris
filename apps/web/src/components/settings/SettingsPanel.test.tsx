@@ -127,7 +127,7 @@ describe("SettingsPanel", () => {
 
     // Assert — the per-device compute choice is manageable from Settings too.
     await waitFor(() =>
-      expect(screen.getByLabelText(/explanations run on/i)).toBeInTheDocument(),
+      expect(screen.getByLabelText(/draft ai runs on/i)).toBeInTheDocument(),
     );
   });
 

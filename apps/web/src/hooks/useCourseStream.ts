@@ -139,12 +139,25 @@ function streamBuild(options: StreamBuildOptions): void {
     })
     .catch((error: unknown) => {
       if (controller.signal.aborted) return;
-      const message =
-        error instanceof CourseLoadError
-          ? error.message
-          : "An unexpected error occurred while building the course.";
+      const message = buildFailureMessage(error, engine !== null);
       setState({ status: "error", message, topic, discoveryDepth: discoveryDepth ?? "standard" });
     });
+}
+
+/** The learner-facing failure copy. A device build's stream most often dies because this tab
+ *  broke the tab-open contract (closed/slept → the server disconnected the bridge), so its
+ *  message names that cause and both ways out — the generic stream error alone would read as a
+ *  server fault. */
+function buildFailureMessage(error: unknown, onDevice: boolean): string {
+  if (!(error instanceof CourseLoadError)) {
+    return "An unexpected error occurred while building the course.";
+  }
+  if (!onDevice) return error.message;
+  return (
+    `${error.message} This build was running on your device — if this tab was closed or the ` +
+    "device slept, the build lost its model. Retry keeping the tab open, or switch the Draft " +
+    "AI back to the Lunaris server."
+  );
 }
 
 /** Download + boot the on-device model, then hand off to the stream; a failed preparation is a
