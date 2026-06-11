@@ -15,7 +15,7 @@ export function ComputeSourceSelect() {
 
   return (
     <div className={styles.field}>
-      <label className={styles.label} htmlFor={selectId}>
+      <label className={`eyebrow ${styles.label}`} htmlFor={selectId}>
         Explanations run on
       </label>
       <select

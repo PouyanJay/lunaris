@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 
 import {
   detectWebGpu,
@@ -18,7 +18,7 @@ interface UseComputeSource {
 /** The device's explain compute choice as React state, persisted on every change. Detection runs
  *  once per mount — WebGPU support can't change within a page's lifetime. */
 export function useComputeSource(): UseComputeSource {
-  const device = useMemo(detectWebGpu, []);
+  const [device] = useState<WebGpuSupport>(detectWebGpu);
   const [source, setSourceState] = useState<ComputeSource>(loadComputeSource);
 
   const setSource = useCallback((next: ComputeSource) => {

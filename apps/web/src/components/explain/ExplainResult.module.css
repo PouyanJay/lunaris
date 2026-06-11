@@ -8,13 +8,7 @@
   background: var(--bg-subtle);
 }
 
-.eyebrow {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text-muted);
-}
+/* Typography comes from the global .eyebrow utility; nothing local to add. */
 
 .body {
   margin: 0;

@@ -4,12 +4,9 @@
   gap: var(--space-1);
 }
 
+/* Typography comes from the global .eyebrow utility; this only constrains layout. */
 .label {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--text-muted);
+  display: block;
 }
 
 .select {

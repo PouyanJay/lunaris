@@ -12,7 +12,7 @@ export function ExplainResult({ state }: ExplainResultProps) {
   if (state.status === "done") {
     return (
       <div className={styles.result} role="status">
-        <span className={styles.eyebrow}>Explanation</span>
+        <span className="eyebrow">Explanation</span>
         <p className={styles.body}>{state.explanation}</p>
       </div>
     );

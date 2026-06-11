@@ -4,6 +4,7 @@ import { useCapabilities } from "../../hooks/useCapabilities";
 import { fetchSettings, type SecretStatus, type SettingsView } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { CapabilityBadges } from "./CapabilityBadges";
+import { isLlmKeyless } from "../../lib/capabilities";
 import { ComputeSourceSelect } from "../explain/ComputeSourceSelect";
 import { ConfigPanel } from "./ConfigPanel";
 import { CredentialsPanel } from "./CredentialsPanel";
@@ -118,9 +119,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
               </p>
               <CapabilityBadges capabilities={capabilities} />
               {/* Keyless LLM → the user chooses where their explanations run (per device). */}
-              {capabilities.some((c) => c.capability === "llm" && c.mode === "fallback") && (
-                <ComputeSourceSelect />
-              )}
+              {isLlmKeyless(capabilities) && <ComputeSourceSelect />}
               {/* When BYOK is on, each tenant manages their own keys via the authed per-user
                   credentials API; otherwise the single-tenant file-backed secret store is used. */}
               {state.view.byokEnabled ? (

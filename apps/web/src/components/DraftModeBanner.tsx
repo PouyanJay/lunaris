@@ -1,4 +1,4 @@
-import { CAPABILITY_LABELS, type CapabilityStatus } from "../lib/capabilities";
+import { CAPABILITY_LABELS, isLlmKeyless, type CapabilityStatus } from "../lib/capabilities";
 import { ComputeSourceSelect } from "./explain/ComputeSourceSelect";
 import styles from "./DraftModeBanner.module.css";
 
@@ -20,9 +20,7 @@ function providerName(provider: string): string {
 export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBannerProps) {
   const fallbacks = capabilities.filter((capability) => capability.mode === "fallback");
   if (fallbacks.length === 0) return null;
-  // The LLM on its fallback means this user's explanations are keyless too — offer the per-device
-  // compute choice right where Draft mode is announced.
-  const llmIsKeyless = fallbacks.some((capability) => capability.capability === "llm");
+  const llmIsKeyless = isLlmKeyless(fallbacks);
 
   return (
     <aside className={styles.banner} role="status">
