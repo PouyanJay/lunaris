@@ -110,6 +110,20 @@ jobs:
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}"
 
+      # Alert rules scope to the Container App, so they deploy right after it (idempotent).
+      - name: Deploy alert rules (alerts.bicep, dev)
+        if: vars.ALERT_EMAIL != ''
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-dev-alerts-${{ github.run_number }}" \
+            --template-file infra/alerts.bicep \
+            --parameters env=dev alertEmail="${{ vars.ALERT_EMAIL }}"
+
+      - name: Note alerts skip
+        if: vars.ALERT_EMAIL == ''
+        run: echo "::warning::ALERT_EMAIL not set for this environment — skipped Azure Monitor alert rules (no alerting on 5xx/restarts/memory)."
+
       # A green deploy must mean a serving API: poll /api/healthz until it answers 200, or fail
       # the run so a broken revision never ships silently.
       - name: Smoke test API (dev)
