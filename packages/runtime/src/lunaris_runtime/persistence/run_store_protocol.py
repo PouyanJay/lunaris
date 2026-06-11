@@ -17,6 +17,9 @@ class IRunStore(Protocol):
     the row, the reads/writes constrain to it (``list_recent`` returns only the caller's runs, and
     finish/get/delete only touch a row the caller owns). ``None`` means unscoped — the auth-off /
     single-user path, byte-for-byte today's behavior.
+
+    Backend failures raise ``PersistenceError`` — the only store error callers may
+    treat as best-effort; anything else is a bug and must surface.
     """
 
     async def start(

@@ -1,5 +1,5 @@
 import structlog
-from lunaris_runtime.persistence import IRunEventStore
+from lunaris_runtime.persistence import IRunEventStore, PersistenceError
 from lunaris_runtime.schema import RunEvent, RunEventKind
 
 from .progress_sink import StreamItem
@@ -91,7 +91,7 @@ class RunEventRecorder:
         self._buffer = []
         try:
             await self._store.append(events=batch, owner_id=self._owner_id)
-        except Exception:
+        except PersistenceError:
             logger.warning(
                 "run_events_append_failed",
                 run_id=self._run_id,

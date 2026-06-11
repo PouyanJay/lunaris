@@ -37,6 +37,8 @@ jobs:
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — the inference staleness check tests commit ancestry
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -109,6 +111,65 @@ jobs:
               draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}"
+
+      # Alert rules scope to the Container App, so they deploy right after it (idempotent).
+      - name: Deploy alert rules (alerts.bicep, dev)
+        if: vars.ALERT_EMAIL != ''
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-dev-alerts-${{ github.run_number }}" \
+            --template-file infra/alerts.bicep \
+            --parameters env=dev alertEmail="${{ vars.ALERT_EMAIL }}"
+
+      - name: Note alerts skip
+        if: vars.ALERT_EMAIL == ''
+        run: echo "::warning::ALERT_EMAIL not set for this environment — skipped Azure Monitor alert rules (no alerting on 5xx/restarts/memory)."
+
+      # The Draft tier serves from the keyless inference apps, which rebuild on a separate cadence
+      # (cd-inference). Warn — don't fail, the two workflows can race on the same push — when a
+      # running image predates the last change to infra/inference/**, so a stale model server is a
+      # visible warning instead of a silently degraded Draft tier.
+      - name: Check keyless inference images are not stale
+        if: vars.DRAFT_TIER_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          LAST_CHANGE=$(git log -1 --format=%H -- infra/inference/)
+          check() {
+            local app="$1" image tag
+            image=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n "$app" \
+              --query 'properties.template.containers[0].image' -o tsv 2>/dev/null) || {
+              echo "::warning::$app not found — the Draft tier is enabled but its model server isn't deployed."
+              return 0
+            }
+            tag="${image##*:}"
+            if git cat-file -e "$tag^{commit}" 2>/dev/null \
+              && git merge-base --is-ancestor "$LAST_CHANGE" "$tag"; then
+              echo "✅ $app image ($tag) includes the latest infra/inference change."
+            else
+              echo "::warning::$app runs image tag '$tag', which predates the last infra/inference change ($LAST_CHANGE) — run 'CD (inference images)' to rebuild + roll."
+            fi
+          }
+          check lunaris-dev-inference
+          check lunaris-dev-embeddings
+
+      # A green deploy must mean a serving API: poll /api/healthz until it answers 200, or fail
+      # the run so a broken revision never ships silently.
+      - name: Smoke test API (dev)
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-dev-api \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Probing https://$FQDN/api/healthz"
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "https://$FQDN/api/healthz" >/dev/null 2>&1; then
+              echo "✅ dev API healthy (attempt $i)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::https://$FQDN/api/healthz did not return 200 within 5 minutes after deploy."
+          exit 1
 
       - name: Deployment summary
         run: |

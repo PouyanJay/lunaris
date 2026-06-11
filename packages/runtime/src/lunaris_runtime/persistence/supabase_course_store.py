@@ -3,6 +3,8 @@ from datetime import UTC, datetime
 
 from lunaris_runtime.schema import Course
 
+from .guard import guard
+
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "courses"
@@ -49,6 +51,7 @@ class SupabaseCourseStore:
             self._client = create_client(url, key)
         return self._client
 
+    @guard("courses upsert")
     def save(self, course: Course, *, owner_id: str | None = None) -> None:
         client = self._ensure_client()
         # Upsert so re-finalizing the same course_id REPLACES its row (parity with the file store's
@@ -67,6 +70,7 @@ class SupabaseCourseStore:
             row["user_id"] = owner_id
         client.table(_TABLE).upsert(row).execute()  # type: ignore[attr-defined]
 
+    @guard("courses load")
     def load(self, course_id: str, *, owner_id: str | None = None) -> Course:
         client = self._ensure_client()
         query = client.table(_TABLE).select("payload").eq("id", course_id)  # type: ignore[attr-defined]
@@ -80,6 +84,7 @@ class SupabaseCourseStore:
             raise FileNotFoundError(course_id)
         return Course.model_validate(rows[0]["payload"])
 
+    @guard("courses delete")
     def delete(self, course_id: str, *, owner_id: str | None = None) -> bool:
         client = self._ensure_client()
         # Ask PostgREST for an exact count so "did anything get deleted?" doesn't depend on the

@@ -61,7 +61,7 @@ export function CorpusPanel({ apiBaseUrl, courseId, onReground }: CorpusPanelPro
     setDeletingId(sourceId);
     setDeleteError(null);
     try {
-      await deleteCorpusSource(apiBaseUrl, sourceId);
+      await deleteCorpusSource(apiBaseUrl, courseId, sourceId);
       reload();
     } catch (error) {
       setDeleteError(error instanceof CorpusError ? error.message : "Couldn't delete that source.");

@@ -23,8 +23,10 @@ from _auth import auth_headers as _auth
 from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
-from lunaris_api.dependencies import get_course_service
+from lunaris_api.corpus_service import CorpusService as CorpusIngestService
+from lunaris_api.dependencies import get_authority_store, get_corpus_service, get_course_service
 from lunaris_api.service import CourseService
+from lunaris_grounding import InMemoryCorpusStore, InMemorySourceAuthorityStore, StubEmbedder
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import InMemoryRunEventStore, InMemoryRunStore
 from lunaris_runtime.schema import Course
@@ -73,6 +75,12 @@ def _build_client(tmp_path: Path, jwt_secret: str | None) -> httpx.AsyncClient:
         event_store=InMemoryRunEventStore(),
     )
     app.dependency_overrides[get_course_service] = lambda: service
+    # In-memory corpus + trust config (shared per app, like the prod singletons) so the corpus and
+    # source-authority isolation tests run hermetically — no Supabase or embeddings key.
+    corpus_service = CorpusIngestService(InMemoryCorpusStore(), StubEmbedder())
+    app.dependency_overrides[get_corpus_service] = lambda: corpus_service
+    authority_store = InMemorySourceAuthorityStore()
+    app.dependency_overrides[get_authority_store] = lambda: authority_store
     app.dependency_overrides[get_settings] = lambda: Settings(
         pipeline="stub",
         course_dir=tmp_path,
@@ -167,6 +175,104 @@ async def test_anonymous_requests_are_rejected_when_auth_is_configured(
     # Assert — user routes require a token (mirrors the frontend AuthGate, server-side).
     assert create.status_code == 401
     assert runs.status_code == 401
+
+
+async def _add_corpus_text(
+    client: httpx.AsyncClient, sub: str, course_id: str, text: str
+) -> httpx.Response:
+    return await client.post(
+        "/api/corpus/sources",
+        json={"courseId": course_id, "kind": "text", "title": "notes", "text": text},
+        headers=_auth(sub),
+    )
+
+
+async def test_user_cannot_write_to_another_users_corpus(client: httpx.AsyncClient) -> None:
+    # Arrange — A owns a course.
+    a_course, _ = await _build_as(client, _USER_A, "A's grounded course")
+
+    # Act — B tries to plant a source in A's corpus (grounding-poisoning vector).
+    b_add = await _add_corpus_text(client, _USER_B, a_course, "B's poisoned claim.")
+
+    # Assert — denied as not-found; A's corpus stays empty.
+    assert b_add.status_code == 404
+    a_list = await client.get("/api/corpus", params={"courseId": a_course}, headers=_auth(_USER_A))
+    assert a_list.json() == []
+
+
+async def test_user_cannot_read_another_users_corpus(client: httpx.AsyncClient) -> None:
+    # Arrange — A owns a course with one source.
+    a_course, _ = await _build_as(client, _USER_A, "A's corpus to read")
+    assert (await _add_corpus_text(client, _USER_A, a_course, "A's text.")).status_code == 201
+
+    # Act / Assert — B can't list A's sources; A still can.
+    b_list = await client.get("/api/corpus", params={"courseId": a_course}, headers=_auth(_USER_B))
+    assert b_list.status_code == 404
+    a_list = await client.get("/api/corpus", params={"courseId": a_course}, headers=_auth(_USER_A))
+    assert len(a_list.json()) == 1
+
+
+async def test_user_cannot_delete_another_users_corpus_source(client: httpx.AsyncClient) -> None:
+    # Arrange — A owns a course with one source.
+    a_course, _ = await _build_as(client, _USER_A, "A's corpus to keep")
+    source_id = (await _add_corpus_text(client, _USER_A, a_course, "Keep me.")).json()["sourceId"]
+
+    # Act — B tries to delete A's source.
+    b_delete = await client.delete(
+        f"/api/corpus/{source_id}", params={"courseId": a_course}, headers=_auth(_USER_B)
+    )
+
+    # Assert — denied; the source survives for A.
+    assert b_delete.status_code == 404
+    a_list = await client.get("/api/corpus", params={"courseId": a_course}, headers=_auth(_USER_A))
+    assert [row["sourceId"] for row in a_list.json()] == [source_id]
+
+
+async def test_anonymous_corpus_requests_are_rejected_when_auth_is_configured(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act — no Authorization header on each corpus surface.
+    add = await client.post(
+        "/api/corpus/sources", json={"courseId": "c1", "kind": "text", "title": "t", "text": "x"}
+    )
+    listed = await client.get("/api/corpus", params={"courseId": "c1"})
+    deleted = await client.delete(f"/api/corpus/{'0' * 32}", params={"courseId": "c1"})
+
+    # Assert — the corpus is a write path into a course's grounding; anonymous is rejected.
+    assert add.status_code == 401
+    assert listed.status_code == 401
+    assert deleted.status_code == 401
+
+
+async def test_anonymous_authority_requests_are_rejected_when_auth_is_configured(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act — no Authorization header on each trust-config surface.
+    listed = await client.get("/api/source-authorities")
+    upserted = await client.put(
+        "/api/source-authorities",
+        json={"domain": "example.org", "kind": "spine", "tier": "reputable"},
+    )
+    deleted = await client.delete("/api/source-authorities", params={"domain": "example.org"})
+
+    # Assert — the trust config steers every build's credibility floor; anonymous is rejected.
+    assert listed.status_code == 401
+    assert upserted.status_code == 401
+    assert deleted.status_code == 401
+
+
+async def test_authenticated_user_can_manage_authorities(client: httpx.AsyncClient) -> None:
+    # Act — a signed-in user lists + upserts (the auth gate must not break the authed flow).
+    put = await client.put(
+        "/api/source-authorities",
+        json={"domain": "example.org", "kind": "spine", "tier": "reputable"},
+        headers=_auth(_USER_A),
+    )
+    listed = await client.get("/api/source-authorities", headers=_auth(_USER_A))
+
+    # Assert
+    assert put.status_code == 200
+    assert [row["domain"] for row in listed.json()] == ["example.org"]
 
 
 async def test_auth_off_keeps_routes_unscoped(tmp_path: Path) -> None:

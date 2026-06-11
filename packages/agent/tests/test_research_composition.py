@@ -3,7 +3,8 @@ set, else keyless DuckDuckGo, so research (and discovery / curation) run keyless
 """
 
 import pytest
-from lunaris_agent.composition import _researcher_from_env, _search_provider_from_env
+from lunaris_agent.composition._grounding import _search_provider_from_env
+from lunaris_agent.composition._subagents import _researcher_from_env
 from lunaris_agent.subagents.standard_researcher import ClaudeStandardResearcher
 from lunaris_grounding import (
     DuckDuckGoSearchProvider,

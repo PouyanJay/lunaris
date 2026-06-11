@@ -31,6 +31,32 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest -q
 
+  db:
+    name: Database (migrations + lint + RLS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      # A fresh local Postgres with every migration applied — a broken migration fails CI here
+      # instead of in CD against the real database. `migration up` is the explicit apply (idempotent
+      # when `db start` already ran them).
+      - run: supabase db start
+      - run: supabase migration up
+      - run: supabase db lint --fail-on warning
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.17"
+          enable-cache: true
+      - run: uv sync --frozen --all-packages
+      # Prove the RLS posture against the real schema: owner isolation behaves, the secrets/corpus
+      # tables stay locked down, and function EXECUTE stays revoked. The suite is eval-gated, so the
+      # default offline pytest run skips it; here the CLI's local stack provides the database.
+      - run: uv run pytest tests/db -m eval -q
+        env:
+          SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
   web:
     name: Web (typecheck + lint + test)
     runs-on: ubuntu-latest
