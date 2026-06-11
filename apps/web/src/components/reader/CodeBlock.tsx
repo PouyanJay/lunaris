@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Components } from "react-markdown";
 
+import { ExplainResult } from "../explain/ExplainResult";
+import { useExplain } from "../explain/useExplain";
 import { ArrayViz } from "./ArrayViz";
 import { HtmlPreview } from "./HtmlPreview";
 import styles from "./CodeBlock.module.css";
@@ -48,6 +50,7 @@ export const CodeBlock: NonNullable<Components["pre"]> = ({ node, children }) =>
   const language = languageOf(hast);
   const source = textOf(hast).replace(/\n$/, "");
   const [copied, setCopied] = useState(false);
+  const { available, state, explain } = useExplain();
 
   if (language === "html-preview") {
     return <HtmlPreview html={source} />;
@@ -65,15 +68,31 @@ export const CodeBlock: NonNullable<Components["pre"]> = ({ node, children }) =>
     }
   };
 
+  const isExplaining = state.status === "loading";
+
   return (
     <figure className={styles.block}>
       <figcaption className={styles.bar}>
         <span className={styles.lang}>{language ?? "text"}</span>
-        <button type="button" className={styles.copy} onClick={onCopy} aria-live="polite">
-          {copied ? "Copied" : "Copy"}
-        </button>
+        <span className={styles.actions}>
+          {available && (
+            <button
+              type="button"
+              className={styles.copy}
+              onClick={() => void explain(source, language ?? undefined)}
+              disabled={isExplaining}
+              aria-live="polite"
+            >
+              {isExplaining ? "Explaining…" : "Explain"}
+            </button>
+          )}
+          <button type="button" className={styles.copy} onClick={onCopy} aria-live="polite">
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </span>
       </figcaption>
       <pre className={styles.pre}>{children}</pre>
+      <ExplainResult state={state} />
     </figure>
   );
 };

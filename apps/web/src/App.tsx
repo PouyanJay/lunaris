@@ -14,7 +14,7 @@ import { Sidebar } from "./components/shell/Sidebar";
 import { BuildTimeline } from "./components/transcript/BuildTimeline";
 import { BuildReplay } from "./components/transcript/BuildReplay";
 import { LiveBuildReplay } from "./components/transcript/LiveBuildReplay";
-import { ExplainProvider } from "./components/transcript/ExplainContext";
+import { ExplainProvider } from "./components/explain/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
@@ -248,15 +248,17 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       ) : viewMode === "corpus" ? (
         <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
       ) : (
-        <CourseReader
-          course={course}
-          focusRequest={focusRequest}
-          onRegenerate={
-            canRegenerate
-              ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
-              : undefined
-          }
-        />
+        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+          <CourseReader
+            course={course}
+            focusRequest={focusRequest}
+            onRegenerate={
+              canRegenerate
+                ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
+                : undefined
+            }
+          />
+        </ExplainProvider>
       ),
   });
 

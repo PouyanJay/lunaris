@@ -5,6 +5,7 @@ The explainer is injected (a stub here, the real Claude one in production), so t
 ``supportsExplain`` settings flag) is proven with no API key.
 """
 
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -62,6 +63,18 @@ async def test_explain_returns_a_plain_language_explanation(tmp_path: Path) -> N
         "explanation": "These judge whether one concept must be learned before another."
     }
     assert stub.calls == [('{"is_prereq": true, "strength": 0.85}', "Graph")]
+
+
+async def test_explain_response_carries_a_request_id(client: httpx.AsyncClient) -> None:
+    # Arrange — the shared client fixture wires a StubExplainer (explain succeeds).
+
+    # Act
+    response = await client.post("/api/explain", json={"content": "{}"})
+
+    # Assert — correlation everywhere: the call succeeded AND is traceable across the logs.
+    assert response.status_code == 200
+    assert response.json()["explanation"]
+    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-Id"])
 
 
 async def test_explain_forwards_content_with_no_context(tmp_path: Path) -> None:

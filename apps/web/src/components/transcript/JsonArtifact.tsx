@@ -5,7 +5,7 @@ import { ComparisonTable } from "../reader/visuals/ComparisonTable";
 import { FlowDiagram } from "../reader/visuals/FlowDiagram";
 import { StepsDiagram } from "../reader/visuals/StepsDiagram";
 import { TimelineDiagram } from "../reader/visuals/TimelineDiagram";
-import { useExplainApi } from "./ExplainContext";
+import { useExplainApi } from "../explain/ExplainContext";
 import styles from "./JsonArtifact.module.css";
 
 interface JsonArtifactProps {

@@ -1,0 +1,28 @@
+/* The explanation strip under an explained block: same hairline language as the block frames. */
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-width) solid var(--border);
+  background: var(--bg-subtle);
+}
+
+.eyebrow {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--text-muted);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+.error .body {
+  color: var(--danger);
+}
