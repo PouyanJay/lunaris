@@ -149,3 +149,9 @@
     align-items: center;
   }
 }
+
+.computeRow {
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--border);
+  margin-top: var(--space-3);
+}
