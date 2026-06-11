@@ -134,6 +134,26 @@ describe("useCourseStream device compute", () => {
     expect(state.message).toMatch(/keeping the tab open/i);
   });
 
+  it("falls back to a server build when the saved device choice has no WebGPU", async () => {
+    // Arrange — a stale "device" choice carried to a browser that can't run it (no navigator.gpu
+    // stub: jsdom is the realistic unsupported browser). No dead end: the build still runs.
+    localStorage.setItem(COMPUTE_SOURCE_KEY, "device");
+    streamCourseMock.mockImplementation(async () => new Promise(() => {}));
+    const engine = fakeEngine();
+    const { result } = renderHook(() =>
+      useCourseStream("http://api", { llmKeyless: true, deviceEngine: engine }),
+    );
+
+    // Act
+    act(() => result.current.generate("graphs"));
+
+    // Assert — straight to a server stream: no preload, no compute param, no worker.
+    await waitFor(() => expect(streamCourseMock).toHaveBeenCalled());
+    expect(engine.preload).not.toHaveBeenCalled();
+    expect(streamCourseMock.mock.calls[0]?.[2]?.compute).toBeUndefined();
+    expect(workerMock).not.toHaveBeenCalled();
+  });
+
   it("builds on the server when the user is keyed, even with a saved device choice", async () => {
     // Arrange
     armDeviceChoice();
