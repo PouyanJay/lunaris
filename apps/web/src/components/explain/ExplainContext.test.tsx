@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { COMPUTE_SOURCE_KEY } from "../../lib/computeSource";
-import { DeviceExplainEngine, type BackendLoader } from "../../lib/deviceExplain";
+import { DeviceEngine, type BackendLoader } from "../../lib/deviceEngine";
 import { ExplainProvider, useExplainApi, type ExplainOutcome } from "./ExplainContext";
 
 function Probe() {
@@ -22,8 +22,8 @@ function Probe() {
 }
 
 function deviceEngine(answer: string) {
-  const loader: BackendLoader = async () => ({ complete: async () => answer });
-  return new DeviceExplainEngine(loader);
+  const loader: BackendLoader = async () => ({ chat: async () => answer });
+  return new DeviceEngine(loader);
 }
 
 function jsonResponse(body: unknown) {

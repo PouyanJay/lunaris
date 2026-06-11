@@ -46,3 +46,11 @@ export function detectWebGpu(): WebGpuSupport {
     reason: "This browser doesn't support WebGPU — explanations will use the Lunaris server.",
   };
 }
+
+/** Whether THIS request/build should run on the device: only a keyless user who saved the device
+ *  choice on a WebGPU-capable browser. Keyed users always run hosted, and a stale "device" choice
+ *  on unsupported hardware falls back to the server — never a dead end. The shared predicate for
+ *  every device-routed surface (explain + builds), so the two can't drift. */
+export function isDeviceComputeActive(llmKeyless: boolean): boolean {
+  return llmKeyless && loadComputeSource() === "device" && detectWebGpu().supported;
+}

@@ -18,6 +18,7 @@ import { ExplainProvider } from "./components/explain/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
+import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
@@ -114,7 +115,6 @@ function SeedApp({ theme, onToggleTheme }: ThemeProps) {
 /** Live surface: name a topic, watch the pipeline build it, then explore the result. The sidebar
  *  (run history + nav) persists across every state; only the canvas changes. */
 function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } & ThemeProps) {
-  const { state, generate, reset } = useCourseStream(apiBaseUrl);
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
   const sidebarLayout = useSidebarLayout();
@@ -136,6 +136,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   useEffect(() => {
     if (!settingsOpen) reloadCapabilities();
   }, [settingsOpen, reloadCapabilities]);
+  // The build stream needs the keyless signal: only a keyless user's device choice routes the
+  // build's completions through this tab (a keyed user's builds are always hosted).
+  const { state, generate, reset } = useCourseStream(apiBaseUrl, {
+    llmKeyless: isLlmKeyless(capabilities),
+  });
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
@@ -368,6 +373,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
             onOpenSettings={openSettings}
           />
         ),
+      };
+    }
+    if (state.status === "preparing-device") {
+      return {
+        title: state.topic,
+        meta: <StatusDot label="preparing" tone="accent" live />,
+        body: <PreparingDeviceState topic={state.topic} progress={state.progress} />,
       };
     }
     if (state.status === "streaming") {

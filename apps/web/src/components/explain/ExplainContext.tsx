@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 
-import { detectWebGpu, loadComputeSource } from "../../lib/computeSource";
-import { getDeviceExplainEngine, type DeviceExplainEngine, type DeviceProgress } from "../../lib/deviceExplain";
+import { isDeviceComputeActive } from "../../lib/computeSource";
+import { getDeviceEngine, type DeviceEngine, type DeviceProgress } from "../../lib/deviceEngine";
 import { explainBlob } from "../../lib/explain";
 
 /** Every tier that can answer an explain: the two server tiers (from the wire) + this browser. */
@@ -44,7 +44,7 @@ interface ExplainProviderProps {
    *  (a keyed user's explains are always hosted). Default false: today's server-only behavior. */
   llmKeyless?: boolean;
   /** Injectable for tests; production lazily shares the page's one engine (one model download). */
-  deviceEngine?: DeviceExplainEngine;
+  deviceEngine?: DeviceEngine;
   children: ReactNode;
 }
 
@@ -62,10 +62,8 @@ export function ExplainProvider({
     () => ({
       available,
       explain: async (content, context, onProgress) => {
-        const onDevice =
-          llmKeyless && loadComputeSource() === "device" && detectWebGpu().supported;
-        if (onDevice) {
-          const engine = deviceEngine ?? getDeviceExplainEngine();
+        if (isDeviceComputeActive(llmKeyless)) {
+          const engine = deviceEngine ?? getDeviceEngine();
           const explanation = await engine.explain(content, context, onProgress);
           return { explanation, source: "on-device" };
         }

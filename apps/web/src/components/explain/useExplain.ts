@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 
-import type { DeviceProgress } from "../../lib/deviceExplain";
+import type { DeviceProgress } from "../../lib/deviceEngine";
 import { useExplainApi, type ExplainAnswerSource } from "./ExplainContext";
 
 /** The explain interaction's full state — a discriminated union so impossible combinations

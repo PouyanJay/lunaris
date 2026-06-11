@@ -38,21 +38,4 @@
   color: var(--success);
 }
 
-.progressTrack {
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: var(--bg-muted);
-  overflow: hidden;
-}
-
-.progressFill {
-  height: 100%;
-  background: var(--accent-500);
-  transition: width var(--dur) var(--ease);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .progressFill {
-    transition: none;
-  }
-}
+/* The download bar is the shared ProgressBar primitive; nothing local to style. */

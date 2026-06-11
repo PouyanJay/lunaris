@@ -1,3 +1,4 @@
+import { ProgressBar } from "../primitives/ProgressBar";
 import type { ExplainAnswerSource } from "./ExplainContext";
 import type { ExplainState } from "./useExplain";
 import styles from "./ExplainResult.module.css";
@@ -19,20 +20,10 @@ const SOURCE_LABELS: Record<ExplainAnswerSource, string> = {
  *  nothing; the trigger button carries the loading state. */
 export function ExplainResult({ state }: ExplainResultProps) {
   if (state.status === "downloading") {
-    const percent = Math.round(state.progress * 100);
     return (
       <div className={styles.result} role="status">
         <span className="eyebrow">Preparing on-device model</span>
-        <div
-          className={styles.progressTrack}
-          role="progressbar"
-          aria-valuenow={percent}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label="Model download"
-        >
-          <div className={styles.progressFill} style={{ width: `${percent}%` }} />
-        </div>
+        <ProgressBar value={state.progress} label="Model download" />
         <p className={styles.body}>{state.text}</p>
       </div>
     );
