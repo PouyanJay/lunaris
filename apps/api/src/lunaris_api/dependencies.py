@@ -51,6 +51,7 @@ from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
 from .credential_vault import CredentialVault
+from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, ExplainBinding
 from .explain_throttle import KeylessExplainThrottle
@@ -140,6 +141,19 @@ _run_registry = RunRegistry()
 def get_run_registry() -> RunRegistry:
     """The process-wide registry of in-flight build tasks (for cancellation)."""
     return _run_registry
+
+
+# Process-wide singleton: the build request and the tab's bridge polls arrive on separate HTTP
+# connections (separate DI scopes), so the registry must live above both — RunRegistry's twin.
+_device_bridge_registry = DeviceBridgeRegistry()
+
+
+def get_device_bridge_registry() -> DeviceBridgeRegistry:
+    """The process-wide registry of in-flight device bridges (device-compute Draft builds)."""
+    return _device_bridge_registry
+
+
+DeviceBridgeRegistryDep = Annotated[DeviceBridgeRegistry, Depends(get_device_bridge_registry)]
 
 
 def get_run_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunStore:
@@ -387,6 +401,7 @@ def get_course_service(
         credential_resolver=resolver,
         config_resolver=config_resolver,
         throttle=_get_keyless_build_throttle(settings),
+        bridge_registry=_device_bridge_registry,
     )
 
 

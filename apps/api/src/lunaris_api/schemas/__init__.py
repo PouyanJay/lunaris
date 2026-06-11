@@ -1,7 +1,9 @@
 from .app_config import ConfigSettingView, ConfigValue, ConfigView
 from .authorities import SourceAuthorityRequest, SourceAuthorityView
+from .bridge import BridgeMessageView, BridgeRequestView, BridgeResultRequest
 from .brief_response import BriefResponse
 from .capabilities import CapabilityStatusView
+from .compute import ComputeChoice
 from .corpus import CorpusSourceRequest, CorpusSourceView, IngestResultView
 from .course_request import CourseRequest
 from .credentials import CredentialStatusView, CredentialTestResult
@@ -10,8 +12,12 @@ from .keyless_readiness import KeylessReadinessView
 from .settings import SecretStatusView, SecretValue, SettingsView
 
 __all__ = [
+    "BridgeMessageView",
+    "BridgeRequestView",
+    "BridgeResultRequest",
     "BriefResponse",
     "CapabilityStatusView",
+    "ComputeChoice",
     "ConfigSettingView",
     "ConfigValue",
     "ConfigView",
