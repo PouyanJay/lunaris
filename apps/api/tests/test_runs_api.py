@@ -25,7 +25,13 @@ class _UnavailableRunStore:
     ) -> None: ...
 
     async def finish(
-        self, *, course_id: str, status: RunStatus, kc_count: int, module_count: int
+        self,
+        *,
+        course_id: str,
+        status: RunStatus,
+        kc_count: int,
+        module_count: int,
+        owner_id: str | None = None,
     ) -> None: ...
 
     async def list_recent(self, *, limit: int = 50, owner_id: str | None = None) -> list[CourseRun]:

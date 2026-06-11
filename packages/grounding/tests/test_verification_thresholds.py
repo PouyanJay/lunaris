@@ -65,6 +65,19 @@ def test_thresholds_from_env_override_the_defaults(monkeypatch: pytest.MonkeyPat
     )
 
 
+def test_zero_is_a_legitimate_env_override_not_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange — "0" is falsy as a string; it must still override (only unset/empty falls back).
+    monkeypatch.setenv("LUNARIS_VERIFIER_LOW_SUPPORT", "0")
+    monkeypatch.setenv("LUNARIS_VERIFIER_HIGH_CREDIBILITY_FLOOR", "")
+
+    # Act
+    thresholds = VerificationThresholds.from_env()
+
+    # Assert — zero applied; the empty var kept its calibrated default.
+    assert thresholds.low_support == 0.0
+    assert thresholds.high_credibility_floor == VerificationThresholds().high_credibility_floor
+
+
 def test_thresholds_from_env_fall_back_to_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange — none of the tuning vars set.
     for name in (

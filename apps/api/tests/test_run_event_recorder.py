@@ -2,8 +2,10 @@
 event store in best-effort batches, with a volume cap. Drives the batching/cap behavior in isolation
 (the end-to-end persistence is covered by test_run_events_api)."""
 
+import json
 from collections.abc import Sequence
 
+import pytest
 from lunaris_api.run_event_recorder import RunEventRecorder
 from lunaris_runtime.persistence import PersistenceError
 from lunaris_runtime.schema import (
@@ -13,7 +15,6 @@ from lunaris_runtime.schema import (
     ProgressStage,
     RunEvent,
 )
-from structlog.testing import capture_logs
 
 
 class _RecordingStore:
@@ -89,21 +90,22 @@ async def test_flush_of_an_empty_buffer_is_a_noop() -> None:
     assert store.batches == []
 
 
-async def test_cap_drops_excess_and_logs_once() -> None:
+async def test_cap_drops_excess_and_logs_once(capsys: pytest.CaptureFixture[str]) -> None:
     # Arrange — cap 2; the 3rd and 4th events must be dropped, the note logged exactly once.
     store = _RecordingStore()
     recorder = _recorder(store, cap=2, batch_size=1000)
 
     # Act
-    with capture_logs() as logs:
-        for _ in range(4):
-            await recorder.record(_agent())
-        await recorder.flush()
+    for _ in range(4):
+        await recorder.record(_agent())
+    await recorder.flush()
 
-    # Assert — only the first two events persisted; seq never exceeds the cap.
+    # Assert — only the first two events persisted; seq never exceeds the cap. Logs are read off
+    # stdout JSON (not structlog's capture_logs, which can't intercept the module logger once an
+    # earlier test has cached it against the real JSON pipeline — order-independent this way).
     persisted = [e for batch in store.batches for e in batch]
     assert [e.seq for e in persisted] == [0, 1]
-    truncations = [e for e in logs if e["event"] == "run_events_truncated"]
+    truncations = [e for e in _json_log_lines(capsys) if e.get("event") == "run_events_truncated"]
     assert len(truncations) == 1
     assert truncations[0]["run_id"] == "r1" and truncations[0]["cap"] == 2
 
@@ -143,18 +145,26 @@ class _FailingStore:
         return 0
 
 
-async def test_a_failing_flush_never_raises() -> None:
+async def test_a_failing_flush_never_raises(capsys: pytest.CaptureFixture[str]) -> None:
     # Arrange
     recorder = _recorder(_FailingStore(), batch_size=1)
 
     # Act — a flush whose store raises must be swallowed (best-effort). Reaching the assert below
-    # without the RuntimeError propagating out of record() IS the primary no-raise contract.
-    with capture_logs() as logs:
-        await recorder.record(_agent())
+    # without the PersistenceError propagating out of record() IS the primary no-raise contract.
+    await recorder.record(_agent())
 
     # Assert — the swallowed failure is logged run_id-correlated (so it was attempted, not skipped).
-    failures = [e for e in logs if e["event"] == "run_events_append_failed"]
+    failures = [e for e in _json_log_lines(capsys) if e.get("event") == "run_events_append_failed"]
     assert failures and failures[0]["run_id"] == "r1"
+
+
+def _json_log_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object]]:
+    """The structured stdout log lines emitted so far (the project logs JSON to stdout)."""
+    return [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.strip().startswith("{")
+    ]
 
 
 async def test_no_store_is_a_noop() -> None:

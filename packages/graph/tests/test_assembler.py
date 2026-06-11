@@ -1,3 +1,6 @@
+"""GraphAssembler — the deterministic correctness core: cycle removal (weakest-edge), transitive
+reduction, frontier pruning, and the validated topological teaching order."""
+
 import pytest
 from lunaris_graph.assembler import GraphAssembler
 from lunaris_runtime.schema import BloomLevel, Edge, KnowledgeComponent

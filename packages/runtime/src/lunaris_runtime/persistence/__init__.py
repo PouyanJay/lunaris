@@ -1,6 +1,5 @@
 from .course_store import CourseStore
 from .course_store_protocol import ICourseStore
-from .guard import guard
 from .memory_run_event_store import InMemoryRunEventStore
 from .memory_run_store import InMemoryRunStore
 from .owner_scoped_course_store import OwnerScopedCourseStore
@@ -23,5 +22,4 @@ __all__ = [
     "SupabaseCourseStore",
     "SupabaseRunEventStore",
     "SupabaseRunStore",
-    "guard",
 ]

@@ -18,7 +18,7 @@ param alertEmail string
 @description('Name of the API Container App the alerts watch (created by app.bicep).')
 param apiAppName string = 'lunaris-${env}-api'
 
-@description('Memory threshold in bytes — 85% of the 2Gi Consumption cap by default.')
+@description('Memory threshold in bytes — 85% of the 2Gi Consumption cap by default (2 * 1024^3 * 0.85 = 1825361100, pre-computed because a param default must not lose precision to float math).')
 param memoryThresholdBytes int = 1825361100
 
 var tags = { app: 'lunaris', env: env, managedBy: 'bicep' }

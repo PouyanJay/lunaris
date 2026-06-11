@@ -44,9 +44,10 @@ class VerificationThresholds:
 
 def _float_env(name: str, default: float) -> float:
     raw = os.getenv(_ENV_PREFIX + name)
-    return float(raw) if raw else default
+    # Explicit unset/empty check — "0" is a legitimate override, not "use the default".
+    return default if raw is None or raw == "" else float(raw)
 
 
 def _int_env(name: str, default: int) -> int:
     raw = os.getenv(_ENV_PREFIX + name)
-    return int(raw) if raw else default
+    return default if raw is None or raw == "" else int(raw)
