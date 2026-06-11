@@ -46,9 +46,10 @@ function fakeServer(initial: CorpusSource[] = []) {
         { status: 201 },
       );
     }
-    if (url.match(/\/api\/corpus\/[0-9a-f]{32}$/) && method === "DELETE") {
-      const id = url.split("/").pop();
-      sources = sources.filter((s) => s.sourceId !== id);
+    // The delete names its course (?courseId=…) so the server can verify ownership + membership.
+    const deleteMatch = url.match(/\/api\/corpus\/([0-9a-f]{32})\?courseId=course-1$/);
+    if (deleteMatch && method === "DELETE") {
+      sources = sources.filter((s) => s.sourceId !== deleteMatch[1]);
       return { ok: true, status: 204 };
     }
     if (url.match(/\/api\/courses\/.+\/rebuild$/) && method === "POST") {

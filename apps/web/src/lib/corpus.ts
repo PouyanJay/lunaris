@@ -113,13 +113,22 @@ export async function regroundCourse(apiBaseUrl: string, courseId: string): Prom
   }
 }
 
-/** Remove a source (all its chunks) from the corpus (DELETE /api/corpus/{sourceId}). */
-export async function deleteCorpusSource(apiBaseUrl: string, sourceId: string): Promise<void> {
+/** Remove a source (all its chunks) from the corpus (DELETE /api/corpus/{sourceId}?courseId=…).
+ *  The course id rides along so the server verifies ownership + membership before deleting. */
+export async function deleteCorpusSource(
+  apiBaseUrl: string,
+  courseId: string,
+  sourceId: string,
+): Promise<void> {
+  const query = new URLSearchParams({ courseId });
   let response: Response;
   try {
-    response = await authedFetch(`${apiBaseUrl}/api/corpus/${encodeURIComponent(sourceId)}`, {
-      method: "DELETE",
-    });
+    response = await authedFetch(
+      `${apiBaseUrl}/api/corpus/${encodeURIComponent(sourceId)}?${query}`,
+      {
+        method: "DELETE",
+      },
+    );
   } catch (cause) {
     throw new CorpusError("Could not reach the corpus service.", { cause });
   }

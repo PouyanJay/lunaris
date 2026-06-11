@@ -106,13 +106,28 @@ async def test_source_can_be_deleted(client: httpx.AsyncClient) -> None:
         "sourceId"
     ]
 
-    # Act
-    deleted = await client.delete(f"/api/corpus/{source_id}")
+    # Act — the delete names its course, so the source's membership is verified first.
+    deleted = await client.delete(f"/api/corpus/{source_id}", params={"courseId": "course-1"})
 
     # Assert — 204 and the list goes empty.
     assert deleted.status_code == 204
     after = await client.get("/api/corpus", params={"courseId": "course-1"})
     assert after.json() == []
+
+
+async def test_delete_cannot_reach_across_courses(client: httpx.AsyncClient) -> None:
+    # Arrange — a source under course-1.
+    source_id = (await _add_text(client, "course-1", "A", "Some grounding text.")).json()[
+        "sourceId"
+    ]
+
+    # Act — a delete that names a DIFFERENT course must not remove it (guessed-id guard).
+    deleted = await client.delete(f"/api/corpus/{source_id}", params={"courseId": "course-2"})
+
+    # Assert — idempotent 204, but the source survives under its own course.
+    assert deleted.status_code == 204
+    after = await client.get("/api/corpus", params={"courseId": "course-1"})
+    assert [row["sourceId"] for row in after.json()] == [source_id]
 
 
 async def test_corpus_list_is_scoped_to_the_course(client: httpx.AsyncClient) -> None:
