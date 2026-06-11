@@ -117,7 +117,35 @@ build is in progress.
 
 GitHub Actions builds the API image once and promotes it across environments: `cd-dev` deploys on
 merge to the default branch, `cd-prod` is a one-click promote, and `cd-inference` builds the local
-model images. The image is scanned for fixable high/critical vulnerabilities before it ships.
+model images (and rebuilds them automatically when `infra/inference/` changes). The image is
+scanned for fixable high/critical vulnerabilities before it ships. Every deploy ends with a smoke
+test — the run only goes green once `/api/healthz` answers on the deployed host (the custom domain
+included on prod) — and CI boots a disposable local Postgres to apply every migration, lint the
+schema, and run the row-level-security suite against the real policies.
+
+## Operations
+
+**Alerting.** Setting the `ALERT_EMAIL` GitHub environment variable (per environment) makes each
+deploy also apply `infra/alerts.bicep`: an action group plus metric alerts on the API container app
+for an HTTP 5xx burst, replica crash-loop restarts, and sustained memory above 85% of the 2 Gi cap.
+Leave it unset and the deploy warns that no alerting is configured.
+
+**Rotating the Supabase service_role key.** The service-role key is the API's server-side database
+credential; rotate it immediately if it ever appears in a log, transcript, or terminal. Procedure:
+
+1. Supabase dashboard → Project Settings → API keys → generate a new **secret** key, then revoke
+   the exposed one (with the newer `sb_secret_…` keys both can briefly coexist, so this is
+   zero-downtime; legacy JWT-style keys rotate via "JWT secret" and invalidate immediately).
+2. Update the `supabase-service-role-key` secret in the environment's Key Vault
+   (`az keyvault secret set --vault-name <kv> --name supabase-service-role-key --value <new>`).
+3. Re-run the environment's deploy workflow (cd-dev / cd-prod) — the Container App reads Key Vault
+   secrets at deploy time, so a new revision picks up the new key; the smoke test verifies it.
+4. Update `SUPABASE_SERVICE_ROLE_KEY` in the local `.env` if your machine talks to that project.
+
+**Rotating the BYOK master key (`LUNARIS_KEY_ENC_MASTER`)** is *not* drop-in: stored tenant
+credentials are encrypted under it, so a bare swap makes every stored key undecryptable. Until a
+re-encryption migration exists, rotating it means asking tenants to re-enter their keys — treat it
+as an incident response, not routine hygiene.
 
 ---
 
