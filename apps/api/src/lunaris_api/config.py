@@ -1,9 +1,15 @@
+import math
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.schema import ComputeKind
+
+# The canonical device-bridge defaults live on BridgeLimits; Settings derives from them so a
+# tuning change happens in exactly one place.
+_DEFAULT_BRIDGE_LIMITS = BridgeLimits()
 
 _DEFAULT_ORIGINS = (
     "http://localhost:5173,http://localhost:4173,http://localhost:4174,"
@@ -47,6 +53,11 @@ class Settings:
     # this declares it for the Draft UI's compute badge, set per environment to match where the
     # inference app is deployed. Any other env value falls back to CPU.
     keyless_compute: ComputeKind = ComputeKind.CPU
+    # Device-bridge bounds (device-compute Draft builds): how long the tab may go silent before
+    # its build is failed as disconnected, and the per-completion ceiling for a tab that polls
+    # but never answers. Tuned per environment when proxies or device profiles demand it.
+    device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
+    device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
 
     @property
     def has_supabase(self) -> bool:
@@ -90,6 +101,13 @@ def get_settings() -> Settings:
         draft_max_concurrent=_env_int("LUNARIS_DRAFT_MAX_CONCURRENT", default=1),
         explain_daily_cap=_env_int("LUNARIS_EXPLAIN_DAILY_CAP", default=50),
         keyless_compute=_env_compute("LUNARIS_KEYLESS_COMPUTE", default=ComputeKind.CPU),
+        device_bridge_liveness_s=_env_float(
+            "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
+        ),
+        device_bridge_completion_timeout_s=_env_float(
+            "LUNARIS_DEVICE_BRIDGE_COMPLETION_TIMEOUT_S",
+            default=_DEFAULT_BRIDGE_LIMITS.completion_timeout_s,
+        ),
     )
 
 
@@ -116,7 +134,22 @@ def _env_int(name: str, *, default: int) -> int:
         value = int(raw)
     except ValueError:
         return default
+    # >= 0, deliberately: zero is a valid operator choice ("no Draft builds today"), not malformed.
     return value if value >= 0 else default
+
+
+def _env_float(name: str, *, default: float) -> float:
+    """Read a positive, finite float env var, falling back to ``default`` when unset or malformed —
+    a typo'd timeout must degrade to the safe default: never a zero bound that fails every build,
+    never an ``inf`` that builds a watchdog which can't fire."""
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except (ValueError, OverflowError):
+        return default
+    return value if math.isfinite(value) and value > 0 else default
 
 
 def _env_compute(name: str, *, default: ComputeKind) -> ComputeKind:

@@ -9,7 +9,7 @@ import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.credentials import run_credentials
-from lunaris_runtime.device_bridge import DeviceBridge, run_device_bridge
+from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import (
     ICourseStore,
     IRunEventStore,
@@ -154,6 +154,7 @@ class CourseService:
         config_resolver: ConfigResolver | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
+        bridge_limits: BridgeLimits | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
@@ -180,6 +181,9 @@ class CourseService:
         # the bridge router reads, so the tab's polls find the bridge this service registers. None
         # (the default) means device compute is unavailable — admission falls back to the server.
         self._bridge_registry = bridge_registry
+        # The bridge's time bounds (tab liveness, per-completion ceiling), operator-tunable via
+        # Settings; None → the code defaults.
+        self._bridge_limits = bridge_limits
 
     def _store_for(self, owner_id: str | None) -> ICourseStore:
         """The course store the pipeline writes through, scoped to the owner (Phase 2).
@@ -244,7 +248,7 @@ class CourseService:
             and run_id is not None
             and self._bridge_registry is not None
         ):
-            bridge = DeviceBridge(run_id=run_id)
+            bridge = DeviceBridge(run_id=run_id, limits=self._bridge_limits)
             self._bridge_registry.register(run_id, bridge, owner_id)
             logger.info("device_bridge_registered", run_id=run_id)
         return BuildAdmission(
@@ -305,6 +309,9 @@ class CourseService:
         if bridge is None or self._bridge_registry is None:
             return
         self._bridge_registry.discard(run_id)
+        # Defensive: completions awaited by the run task itself have unwound with it, but any
+        # parked by a child task the harness spawned must not outlive the run.
+        bridge.fail_pending("the build ended")
         logger.info("device_bridge_closed", run_id=run_id)
 
     async def create(

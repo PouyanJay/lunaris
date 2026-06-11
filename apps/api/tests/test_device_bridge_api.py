@@ -19,6 +19,7 @@ from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_course_service, get_device_bridge_registry
 from lunaris_api.device_bridge_registry import DeviceBridgeRegistry
 from lunaris_api.service import CourseService
+from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import CourseStore, ICourseStore, InMemoryRunStore
 from lunaris_runtime.resilience import build_chat_model
@@ -64,11 +65,14 @@ class BridgeProbePipeline:
         )
 
 
-@pytest.fixture
-async def bridge_app(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> AsyncIterator[tuple[httpx.AsyncClient, BridgeProbePipeline, DeviceBridgeRegistry]]:
-    """An app whose course pipeline makes one bridged LLM call, in a keyless environment."""
+def _build_bridge_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    bridge_limits: BridgeLimits | None = None,
+    raise_app_exceptions: bool = True,
+) -> tuple[httpx.AsyncClient, BridgeProbePipeline, DeviceBridgeRegistry]:
+    """A keyless app whose course pipeline makes one bridged LLM call — the shared Arrange."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)  # keyless → the Draft/bridge path
     clear_correlation()
     app = create_app()
@@ -79,15 +83,26 @@ async def bridge_app(
         lambda store: pipeline,
         InMemoryRunStore(),
         bridge_registry=registry,
+        bridge_limits=bridge_limits,
     )
     app.dependency_overrides[get_course_service] = lambda: service
     app.dependency_overrides[get_device_bridge_registry] = lambda: registry
     app.dependency_overrides[get_settings] = lambda: Settings(
         pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
     )
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
-        yield http_client, pipeline, registry
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions)
+    client = httpx.AsyncClient(transport=transport, base_url="http://test")
+    return client, pipeline, registry
+
+
+@pytest.fixture
+async def bridge_app(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[tuple[httpx.AsyncClient, BridgeProbePipeline, DeviceBridgeRegistry]]:
+    """An app whose course pipeline makes one bridged LLM call, in a keyless environment."""
+    client, pipeline, registry = _build_bridge_client(tmp_path, monkeypatch)
+    async with client:
+        yield client, pipeline, registry
 
 
 async def _poll_and_answer_one_completion(client: httpx.AsyncClient, run_id: str) -> list[dict]:
@@ -161,3 +176,32 @@ async def test_server_compute_build_registers_no_bridge(
 
     # Assert — there is no bridge to poll: the tab gets a 404, not an empty offer.
     assert response.status_code == 404
+
+
+async def test_device_build_fails_when_the_tab_never_polls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The explicit contract: a device build whose tab goes silent DIES — promptly, recorded
+    FAILED, never a hung run. (The web makes this visible: "keep this tab open".)"""
+    # Arrange — a device-compute app with a tight liveness window and NO tab.
+    # raise_app_exceptions=False: a real client experiences the disconnect as the SSE stream
+    # ending early, not as the server-side exception ASGITransport would otherwise re-raise.
+    client, pipeline, _ = _build_bridge_client(
+        tmp_path,
+        monkeypatch,
+        bridge_limits=BridgeLimits(liveness_s=0.05, completion_timeout_s=1.0),
+        raise_app_exceptions=False,
+    )
+    async with client:
+        # Act — start the build; nobody ever polls the bridge.
+        response = await client.get(
+            "/api/courses/stream", params={"topic": "hello", "compute": "device"}
+        )
+        runs = (await client.get("/api/runs")).json()
+
+    # Assert — the stream ended without a course frame, the run is recorded FAILED, and the
+    # pipeline never received a reply.
+    assert response.status_code == 200
+    assert "event: course" not in response.text
+    assert [run["status"] for run in runs] == ["failed"]
+    assert pipeline.last_reply is None

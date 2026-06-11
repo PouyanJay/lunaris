@@ -27,6 +27,7 @@ from lunaris_grounding import (
     SupabaseSourceAuthorityStore,
     VoyageEmbedder,
 )
+from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.persistence import (
     CourseStore,
     ICourseStore,
@@ -402,6 +403,10 @@ def get_course_service(
         config_resolver=config_resolver,
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
+        bridge_limits=BridgeLimits(
+            liveness_s=settings.device_bridge_liveness_s,
+            completion_timeout_s=settings.device_bridge_completion_timeout_s,
+        ),
     )
 
 
