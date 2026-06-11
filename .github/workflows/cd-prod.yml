@@ -109,17 +109,57 @@ jobs:
 
       # app.bicep's ingress block doesn't carry customDomains, so a deploy resets ingress and drops
       # the api.lunaris.pouyan.ai binding — restore it here (idempotent). DNS (CNAME + asuid TXT) and
-      # the managed cert already exist on the env, so add+bind just re-attach them.
+      # the managed cert already exist on the env, so add+bind just re-attach them. The add is only
+      # skipped when the hostname is already attached — any other failure fails the job instead of
+      # being squelched, and the binding is verified afterwards so a green run means a bound domain.
       - name: Restore API custom domain
         if: vars.API_CUSTOM_DOMAIN != ''
         run: |
+          set -euo pipefail
+          DOMAIN="${{ vars.API_CUSTOM_DOMAIN }}"
           ENV_NAME=$(basename "${{ vars.ACA_ENV_ID }}")
-          az containerapp hostname add -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
-            --hostname "${{ vars.API_CUSTOM_DOMAIN }}" 2>/dev/null || true
+          EXISTING=$(az containerapp hostname list -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+            --query "[?name=='$DOMAIN'] | length(@)" -o tsv)
+          if [ "$EXISTING" = "0" ]; then
+            az containerapp hostname add -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+              --hostname "$DOMAIN"
+          fi
           az containerapp hostname bind -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
-            --hostname "${{ vars.API_CUSTOM_DOMAIN }}" \
+            --hostname "$DOMAIN" \
             --environment "$ENV_NAME" \
             --certificate "${{ vars.API_CUSTOM_DOMAIN_CERT }}"
+          BOUND=$(az containerapp hostname list -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+            --query "[?name=='$DOMAIN' && bindingType=='SniEnabled'] | length(@)" -o tsv)
+          if [ "$BOUND" != "1" ]; then
+            echo "::error::Custom domain $DOMAIN is not SNI-bound after bind — prod would be unreachable at the custom host."
+            exit 1
+          fi
+
+      # A green promote must mean a serving API: poll /api/healthz on the default FQDN (and the
+      # custom domain when configured) until it answers 200, or fail the run.
+      - name: Smoke test API (prod)
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          HOSTS="https://$FQDN"
+          [ -n "${{ vars.API_CUSTOM_DOMAIN }}" ] && HOSTS="$HOSTS https://${{ vars.API_CUSTOM_DOMAIN }}"
+          for HOST in $HOSTS; do
+            echo "Probing $HOST/api/healthz"
+            ok=""
+            for i in $(seq 1 30); do
+              if curl -fsS --max-time 10 "$HOST/api/healthz" >/dev/null 2>&1; then
+                echo "✅ $HOST healthy (attempt $i)"
+                ok=1
+                break
+              fi
+              sleep 10
+            done
+            if [ -z "$ok" ]; then
+              echo "::error::$HOST/api/healthz did not return 200 within 5 minutes after deploy."
+              exit 1
+            fi
+          done
 
       - name: Deployment summary
         run: |

@@ -110,6 +110,24 @@ jobs:
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}"
 
+      # A green deploy must mean a serving API: poll /api/healthz until it answers 200, or fail
+      # the run so a broken revision never ships silently.
+      - name: Smoke test API (dev)
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-dev-api \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Probing https://$FQDN/api/healthz"
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "https://$FQDN/api/healthz" >/dev/null 2>&1; then
+              echo "✅ dev API healthy (attempt $i)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::https://$FQDN/api/healthz did not return 200 within 5 minutes after deploy."
+          exit 1
+
       - name: Deployment summary
         run: |
           FQDN=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-dev-api \
