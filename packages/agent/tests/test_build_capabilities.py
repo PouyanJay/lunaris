@@ -7,7 +7,9 @@ on the course, so a Draft course always carries the honest record of the fallbac
 only changes when the course is rebuilt with a real provider.
 
 Driven directly on the finalize tool (deterministic) inside a ``run_credentials`` scope — the same
-scope a real build runs in — so ``resolve_secret`` reports exactly the keys the build used.
+scope a real build runs in — so ``resolve_secret`` reports exactly the keys the build used. The
+device-bridge scope (device-build-bridge T2) layers in the same way: a bridge in scope at finalize
+tags the LLM as having run on the learner's device.
 """
 
 from pathlib import Path
@@ -18,6 +20,7 @@ from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_runtime.credentials import run_credentials
+from lunaris_runtime.device_bridge import DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import CourseStore
 from lunaris_runtime.schema import (
     BloomLevel,
@@ -136,3 +139,30 @@ async def test_finalize_logs_the_fallback_capabilities_run_id_correlated(tmp_pat
     finalized = next(e for e in logs if e["event"] == "agent_course_finalized")
     assert finalized["run_id"] == "run-log"
     assert set(finalized["fallback_capabilities"]) == {c.value for c in CapabilityName}
+
+
+async def test_a_device_compute_build_tags_the_llm_with_the_device_provider(
+    tmp_path: Path,
+) -> None:
+    # Arrange — a keyless DEVICE build: empty credential scope AND the run's device bridge in
+    # scope (the learner's browser served the completions). Finalize runs inside both, exactly
+    # as a real device build does.
+    store = CourseStore(tmp_path)
+    draft = _draft_with_graph("course-device", "run-device")
+    finalize = _finalize_tool(draft, store)
+
+    # Act
+    with run_credentials({}), run_device_bridge(DeviceBridge(run_id="run-device")):
+        await finalize.ainvoke({})
+    course = draft.course
+
+    # Assert — the LLM tag stays an honest Draft (FALLBACK) but names the learner's device as
+    # the provider, distinct from the server tier's "(local)" label; the other capabilities
+    # keep their server fallback labels (only the LLM leg moved to the device).
+    assert course is not None
+    llm = _tag(course, CapabilityName.LLM)
+    assert llm.mode is CapabilityMode.FALLBACK
+    assert llm.provider == "Qwen2.5-3B (your device)"
+    search = _tag(course, CapabilityName.SEARCH)
+    assert search.mode is CapabilityMode.FALLBACK
+    assert search.provider == "DuckDuckGo"

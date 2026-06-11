@@ -109,3 +109,32 @@ async def test_resolving_an_unknown_request_is_rejected() -> None:
 
     # Act / Assert — an unknown request id is rejected, never silently swallowed.
     assert bridge.resolve("no-such-request", "text") is False
+
+
+async def test_one_polling_tab_serves_concurrent_completions() -> None:
+    # Arrange — the scripted runner can park several completions at once (parallel subagents);
+    # a single tab serves them from one poll loop, matching results to ids.
+    bridge = DeviceBridge(run_id="run-1")
+
+    async def tab() -> None:
+        answered = 0
+        while answered < 3:
+            for request in await bridge.claim(wait_s=1.0):
+                content = request.messages[0]["content"]
+                bridge.resolve(request.request_id, f"echo:{content}")
+                answered += 1
+
+    tab_task = asyncio.create_task(tab())
+
+    # Act — three completions in flight together. (gather schedules all three complete() calls —
+    # and their synchronous put_nowait enqueues — before the tab task first runs, so the tab's
+    # claim drains a non-empty queue; no timing involved, just cooperative scheduling.)
+    replies = await asyncio.gather(
+        bridge.complete([{"role": "user", "content": "a"}]),
+        bridge.complete([{"role": "user", "content": "b"}]),
+        bridge.complete([{"role": "user", "content": "c"}]),
+    )
+
+    # Assert — every completion got ITS OWN answer (ids matched, no cross-wiring).
+    assert replies == ["echo:a", "echo:b", "echo:c"]
+    await tab_task
