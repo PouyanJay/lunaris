@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { COMPUTE_SOURCE_KEY } from "../../lib/computeSource";
@@ -134,5 +134,44 @@ describe("ExplainProvider compute routing", () => {
 
     // Assert — no dead end on unsupported hardware.
     await waitFor(() => expect(document.title).toBe("server-fallback:Server words."));
+  });
+});
+
+describe("answering-tier badges (variant coverage)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    ["hosted", "CLAUDE"],
+    ["server-fallback", "LUNARIS SERVER"],
+  ] as const)("labels a %s answer as %s", async (source, label) => {
+    // Arrange — render the full hook → result path with the wire reporting `source`.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ explanation: "Words.", source })),
+    );
+    const { ExplainResult } = await import("./ExplainResult");
+    const { useExplain } = await import("./useExplain");
+    function Block() {
+      const { state, explain } = useExplain();
+      return (
+        <div>
+          <button type="button" onClick={() => void explain("x")}>
+            go
+          </button>
+          <ExplainResult state={state} />
+        </div>
+      );
+    }
+    render(
+      <ExplainProvider apiBaseUrl="http://test" available={true}>
+        <Block />
+      </ExplainProvider>,
+    );
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: "go" }));
+
+    // Assert
+    await waitFor(() => expect(screen.getByText(label)).toBeInTheDocument());
   });
 });

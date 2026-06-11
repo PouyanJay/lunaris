@@ -274,3 +274,15 @@ async def test_vault_unkeyed_caller_resolves_to_server_fallback(
     assert binding is not None and binding.source == "server-fallback"
     assert binding.credentials is not None
     assert "ANTHROPIC_API_KEY" not in binding.credentials
+
+
+@pytest.mark.parametrize("source", ["hosted", "server-fallback"])
+async def test_every_server_tier_reports_its_provenance(tmp_path: Path, source: str) -> None:
+    # Arrange — the same route must stamp whichever tier answered (variant coverage).
+    async with _build_client(tmp_path, binding=_binding(source)) as client:
+        # Act
+        response = await client.post("/api/explain", json={"content": "{}"})
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json()["source"] == source

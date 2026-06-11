@@ -113,6 +113,15 @@ Anthropic/LLM key alone: a keyed build uses the full hosted path unchanged; only
 routed to the local models. The UI shows which capabilities are running on a fallback while a Draft
 build is in progress.
 
+**Explanations (local intelligence, Phase 1).** The reader's per-block "Explain" works for keyless
+users too, on a compute source they choose per device (the dropdown on the Draft banner and in
+Settings): **Lunaris server** routes through the keyless model above behind a small per-user daily
+allowance (`LUNARIS_EXPLAIN_DAILY_CAP`, default 50, refused with a friendly 429 when spent), while
+**This device** downloads Qwen2.5-3B once (~1.8 GB, cached by the browser) and answers over WebGPU
+with no server involvement at all. Every explanation carries a badge naming which tier answered
+(Claude / Lunaris server / your device). Keyed users always get Claude and never see the choice;
+builds always run server-side.
+
 ## CI / CD
 
 GitHub Actions builds the API image once and promotes it across environments: `cd-dev` deploys on
