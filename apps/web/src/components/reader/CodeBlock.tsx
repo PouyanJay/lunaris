@@ -68,7 +68,7 @@ export const CodeBlock: NonNullable<Components["pre"]> = ({ node, children }) =>
     }
   };
 
-  const isExplaining = state.status === "loading";
+  const isExplaining = state.status === "loading" || state.status === "downloading";
 
   return (
     <figure className={styles.block}>

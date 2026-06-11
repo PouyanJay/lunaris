@@ -218,7 +218,7 @@ function useExplainState(source: string, auto: boolean) {
     requestedRef.current = true;
     setExplaining(true);
     explain(source)
-      .then((result) => setExplanation(result))
+      .then((result) => setExplanation(result.explanation))
       .catch(() => setExplainError("Couldn't explain this right now."))
       .finally(() => setExplaining(false));
   }, [auto, available, explain, source]);

@@ -1,13 +1,16 @@
 import { useCallback, useState } from "react";
 
-import { useExplainApi } from "./ExplainContext";
+import type { DeviceProgress } from "../../lib/deviceExplain";
+import { useExplainApi, type ExplainAnswerSource } from "./ExplainContext";
 
 /** The explain interaction's full state — a discriminated union so impossible combinations
- *  (e.g. an explanation AND an error) cannot be represented. */
+ *  (e.g. an explanation AND an error) cannot be represented. `downloading` only occurs on the
+ *  on-device path, while the model's one-time download runs. */
 export type ExplainState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; explanation: string }
+  | { status: "downloading"; progress: number; text: string }
+  | { status: "done"; explanation: string; source: ExplainAnswerSource }
   | { status: "error"; message: string };
 
 interface UseExplain {
@@ -19,7 +22,7 @@ interface UseExplain {
 }
 
 /** One-shot "explain this block" over the ambient capability, with the standard state arc
- *  (idle → loading → done | error). Shared by every reader block that offers Explain. */
+ *  (idle → loading [→ downloading…] → done | error). Shared by every reader block. */
 export function useExplain(): UseExplain {
   const api = useExplainApi();
   const [state, setState] = useState<ExplainState>({ status: "idle" });
@@ -28,8 +31,10 @@ export function useExplain(): UseExplain {
     async (content: string, context?: string) => {
       setState({ status: "loading" });
       try {
-        const explanation = await api.explain(content, context);
-        setState({ status: "done", explanation });
+        const onProgress = (progress: DeviceProgress) =>
+          setState({ status: "downloading", progress: progress.progress, text: progress.text });
+        const outcome = await api.explain(content, context, onProgress);
+        setState({ status: "done", explanation: outcome.explanation, source: outcome.source });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Couldn't generate an explanation right now.";

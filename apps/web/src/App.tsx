@@ -34,6 +34,7 @@ import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
+import { isLlmKeyless } from "./lib/capabilities";
 import { fetchSettings } from "./lib/settings";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useDeleteRun } from "./hooks/useDeleteRun";
@@ -251,7 +252,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       ) : viewMode === "corpus" ? (
         <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
       ) : (
-        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canReaderExplain}>
+        <ExplainProvider
+          apiBaseUrl={apiBaseUrl}
+          available={canReaderExplain}
+          llmKeyless={isLlmKeyless(capabilities)}
+        >
           <CourseReader
             course={course}
             focusRequest={focusRequest}
