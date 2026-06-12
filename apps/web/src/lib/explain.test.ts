@@ -13,7 +13,8 @@ describe("explainBlob", () => {
 
     const result = await explainBlob("http://api", '{"x":1}', "Graph");
 
-    expect(result).toBe("It orders concepts.");
+    // Provenance defaults to hosted when an (older) server omits source.
+    expect(result).toEqual({ explanation: "It orders concepts.", source: "hosted" });
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe("http://api/api/explain");
     expect(JSON.parse(init.body)).toEqual({ content: '{"x":1}', context: "Graph" });

@@ -1,14 +1,10 @@
-/* Same hairline-band-with-accent-rail family as the Draft banner — this is a transient sub-state of
-   a Draft build, so it reads as kin. Sits above the build timeline while the model wakes. */
-.banner {
+/* Content layout only — the band shell (tint, rails, padding) is the AccentBand primitive. This
+   is a transient sub-state of a Draft build, so it reads as kin of the Draft banner. */
+.row {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  background: var(--accent-soft);
-  border-bottom: var(--border-width) solid var(--border);
-  border-left: 2px solid var(--accent-500);
 }
 
 .text {
@@ -23,10 +19,4 @@
 .nowrap {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 768px) {
-  .banner {
-    padding: var(--space-3) var(--space-4);
-  }
 }

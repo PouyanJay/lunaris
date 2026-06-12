@@ -6,6 +6,7 @@ from .config import get_settings
 from .routers import (
     app_config,
     authorities,
+    bridge,
     briefs,
     capabilities,
     corpus,
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(courses.router)
     app.include_router(briefs.router)
     app.include_router(runs.router)
+    app.include_router(bridge.router)
     app.include_router(settings_router.router)
     app.include_router(explain.router)
     app.include_router(corpus.router)

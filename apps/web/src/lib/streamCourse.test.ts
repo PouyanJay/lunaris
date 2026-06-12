@@ -4,9 +4,15 @@ import { courseFrame, makeCourse, progressFrame, sseStreamResponse } from "../te
 import { CourseLoadError } from "./loadCourse";
 import { streamCourse } from "./streamCourse";
 
-/** Stub global fetch to return an SSE Response streaming the given chunks. */
-function stubStream(chunks: string[], init: { ok?: boolean; status?: number } = {}) {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(sseStreamResponse(chunks, init)));
+/** Stub global fetch to return an SSE Response streaming the given chunks; returns the mock so
+ *  tests can assert on the request it received. */
+function stubStream(
+  chunks: string[],
+  init: { ok?: boolean; status?: number; headers?: Record<string, string> } = {},
+) {
+  const fetchMock = vi.fn().mockResolvedValue(sseStreamResponse(chunks, init));
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("streamCourse", () => {
@@ -60,5 +66,37 @@ describe("streamCourse", () => {
     expect(String(url)).toContain("/api/courses/stream");
     expect(String(url)).toContain("topic=merge+sort");
     expect(init?.signal).toBe(controller.signal);
+  });
+
+  it("passes the device compute choice through as a query param", async () => {
+    const fetchMock = stubStream([courseFrame()]);
+
+    await streamCourse("http://api", "x", { compute: "device" });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("compute=device");
+  });
+
+  it("omits the compute param when unset, leaving the API's server default", async () => {
+    const fetchMock = stubStream([courseFrame()]);
+
+    await streamCourse("http://api", "x", {});
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("compute=");
+  });
+
+  it("reports the run id from the X-Run-Id header before any frame arrives", async () => {
+    // The bridge worker must know the run id as soon as the response starts — the first
+    // completion can be parked before the first progress frame lands.
+    stubStream([progressFrame("run_started", 0), courseFrame()], {
+      headers: { "X-Run-Id": "run-123" },
+    });
+    const arrivals: string[] = [];
+
+    await streamCourse("http://api", "x", {
+      onRunId: (runId) => arrivals.push(`run:${runId}`),
+      onProgress: () => arrivals.push("progress"),
+    });
+
+    expect(arrivals[0]).toBe("run:run-123");
   });
 });

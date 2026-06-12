@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { ExplainAction, reactNodeToText } from "../explain/ExplainAction";
 import styles from "./Callout.module.css";
 
 /** The admonition variants the authoring model can emit (via `:::note` … or a "Note:" lead-in). */
@@ -43,6 +44,7 @@ export function Callout({ variant, children }: CalloutProps) {
         {meta.label}
       </p>
       <div className={styles.body}>{children}</div>
+      <ExplainAction content={reactNodeToText(children)} context={`${meta.label} callout`} />
     </aside>
   );
 }

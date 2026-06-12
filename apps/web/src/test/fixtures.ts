@@ -309,12 +309,13 @@ export function makeProgressEvent(
  *  the stream un-closed (it stays "streaming" — for asserting the live transcript mid-build). */
 export function sseStreamResponse(
   frames: string[],
-  init: { ok?: boolean; status?: number; open?: boolean } = {},
+  init: { ok?: boolean; status?: number; open?: boolean; headers?: Record<string, string> } = {},
 ) {
-  const { ok = true, status = 200, open = false } = init;
+  const { ok = true, status = 200, open = false, headers = {} } = init;
   return {
     ok,
     status,
+    headers: new Headers(headers),
     body: new ReadableStream<Uint8Array>({
       start(controller) {
         const encoder = new TextEncoder();

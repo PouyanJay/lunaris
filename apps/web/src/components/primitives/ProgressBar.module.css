@@ -1,0 +1,21 @@
+.track {
+  /* Full width even inside centered flex columns (align-items: center would otherwise shrink
+     the track to its intrinsic — zero — width and the bar vanishes). */
+  width: 100%;
+  height: var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  background: var(--accent-500);
+  transition: width var(--dur) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}

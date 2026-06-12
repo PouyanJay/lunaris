@@ -1,0 +1,41 @@
+/* The explanation strip under an explained block: same hairline language as the block frames. */
+.result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--border-width) solid var(--border);
+  background: var(--bg-subtle);
+}
+
+/* Typography comes from the global .eyebrow utility; nothing local to add. */
+
+.body {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+.error .body {
+  color: var(--danger);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.badge {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.badge[data-source="on-device"] {
+  color: var(--success);
+}
+
+/* The download bar is the shared ProgressBar primitive; nothing local to style. */

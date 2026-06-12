@@ -125,6 +125,10 @@
   --text-muted: #565c66;
   --accent-500: #e0a23c;
   --accent-600: #c8860f;
+  /* In dark, "stronger on soft" = the 600 itself (it already clears AA on --accent-soft); the
+     darker light-theme 700 would fail here, so 700 aliases 600. Use 700 for accent TEXT on the
+     accent-soft band (banner eyebrows/actions) — AA in both themes. */
+  --accent-700: #c8860f;
   --accent-soft: #16140d;
   --success: #56a585;
   --warning: #c0974a;

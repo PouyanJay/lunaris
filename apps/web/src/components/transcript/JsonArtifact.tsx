@@ -5,7 +5,7 @@ import { ComparisonTable } from "../reader/visuals/ComparisonTable";
 import { FlowDiagram } from "../reader/visuals/FlowDiagram";
 import { StepsDiagram } from "../reader/visuals/StepsDiagram";
 import { TimelineDiagram } from "../reader/visuals/TimelineDiagram";
-import { useExplainApi } from "./ExplainContext";
+import { useExplainApi } from "../explain/ExplainContext";
 import styles from "./JsonArtifact.module.css";
 
 interface JsonArtifactProps {
@@ -218,7 +218,7 @@ function useExplainState(source: string, auto: boolean) {
     requestedRef.current = true;
     setExplaining(true);
     explain(source)
-      .then((result) => setExplanation(result))
+      .then((result) => setExplanation(result.explanation))
       .catch(() => setExplainError("Couldn't explain this right now."))
       .finally(() => setExplaining(false));
   }, [auto, available, explain, source]);

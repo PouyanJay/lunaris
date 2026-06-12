@@ -56,8 +56,10 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         ("GET", "/api/courses/deadbeef"),
         ("GET", "/api/courses/stream?topic=x"),  # the SSE build path
         ("GET", "/api/runs/somerun/events"),
+        ("GET", "/api/runs/somerun/bridge/requests?wait=0"),  # the device-bridge work feed
         ("DELETE", "/api/courses/deadbeef"),
         ("POST", "/api/runs/somerun/cancel"),
+        ("POST", "/api/runs/somerun/bridge/results"),  # the device-bridge answer path
         ("POST", "/api/courses"),
     ],
 )

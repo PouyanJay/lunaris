@@ -1,5 +1,6 @@
 import hashlib
 import os
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, get_type_hints
@@ -26,6 +27,7 @@ from lunaris_grounding import (
     SupabaseSourceAuthorityStore,
     VoyageEmbedder,
 )
+from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.persistence import (
     CourseStore,
     ICourseStore,
@@ -50,8 +52,10 @@ from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService
 from .credential_vault import CredentialVault
+from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import KeylessBuildThrottle
-from .explain import ClaudeExplainer, IExplainer
+from .explain import ClaudeExplainer, ExplainBinding
+from .explain_throttle import KeylessExplainThrottle
 from .run_registry import RunRegistry
 from .secrets import (
     BYOK_PROVIDERS,
@@ -138,6 +142,19 @@ _run_registry = RunRegistry()
 def get_run_registry() -> RunRegistry:
     """The process-wide registry of in-flight build tasks (for cancellation)."""
     return _run_registry
+
+
+# Process-wide singleton: the build request and the tab's bridge polls arrive on separate HTTP
+# connections (separate DI scopes), so the registry must live above both — RunRegistry's twin.
+_device_bridge_registry = DeviceBridgeRegistry()
+
+
+def get_device_bridge_registry() -> DeviceBridgeRegistry:
+    """The process-wide registry of in-flight device bridges (device-compute Draft builds)."""
+    return _device_bridge_registry
+
+
+DeviceBridgeRegistryDep = Annotated[DeviceBridgeRegistry, Depends(get_device_bridge_registry)]
 
 
 def get_run_store(settings: Annotated[Settings, Depends(get_settings)]) -> IRunStore:
@@ -385,6 +402,11 @@ def get_course_service(
         credential_resolver=resolver,
         config_resolver=config_resolver,
         throttle=_get_keyless_build_throttle(settings),
+        bridge_registry=_device_bridge_registry,
+        bridge_limits=BridgeLimits(
+            liveness_s=settings.device_bridge_liveness_s,
+            completion_timeout_s=settings.device_bridge_completion_timeout_s,
+        ),
     )
 
 
@@ -407,35 +429,14 @@ ConfigStoreDep = Annotated[ConfigStore, Depends(get_config_store)]
 
 
 def explain_is_available() -> bool:
-    """Whether plain-language Explain can run — i.e. an Anthropic key is reachable.
+    """Whether plain-language Explain can run on the HOSTED tier — an Anthropic key is reachable.
 
     Keyed on the environment variable (the unified runtime source, named once in ``KNOWN_SECRETS``):
     a key set in ``.env`` OR entered via the Settings UI (the SecretStore applies stored keys to
-    ``os.environ``) both satisfy it.
+    ``os.environ``) both satisfy it. The keyless server-fallback tier is gated separately
+    (``draft_tier_enabled``) — ``get_explain_binding`` resolves the two per request.
     """
     return bool(os.getenv(KNOWN_SECRETS["anthropic"]))
-
-
-# One explainer per process (built lazily on first availability). NOT cached as None — the key can
-# be added at runtime via the Settings UI, so availability is re-checked every call.
-_explainer: ClaudeExplainer | None = None
-
-
-def get_explainer() -> IExplainer | None:
-    """The transcript-blob explainer (worker tier), or None when no Anthropic key is reachable.
-
-    None makes the route fail closed with a 503 instead of constructing a client that can't call
-    out; the web mirrors this via ``supportsExplain`` so it never shows a button that would 503.
-    """
-    global _explainer
-    if not explain_is_available():
-        return None
-    if _explainer is None:
-        _explainer = ClaudeExplainer(os.getenv("LUNARIS_MODEL_WORKER", _WORKER_MODEL))
-    return _explainer
-
-
-ExplainerDep = Annotated[IExplainer | None, Depends(get_explainer)]
 
 
 # One goal interpreter per process (built lazily on first availability), mirroring ``_explainer``.
@@ -552,3 +553,57 @@ def optional_user_id(
 
 
 OptionalUserIdDep = Annotated[str | None, Depends(optional_user_id)]
+
+
+async def get_explain_binding(
+    owner_id: OptionalUserIdDep,
+    vault: CredentialVaultDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ExplainBinding | None:
+    """Resolve this request's explain capability: who answers, on which tier, under whose keys.
+
+    The ladder mirrors the build pipeline's credential semantics:
+    - **Vault caller (auth + BYOK):** their own keys become the call's credential scope —
+      tenant-only, no env fallback. Their own Anthropic key → ``hosted``; none → the keyless
+      ``server-fallback`` (when the Draft tier is on), never the platform key.
+    - **No vault (auth off / single-user):** the process env decides — key → ``hosted``,
+      else ``server-fallback`` when the Draft tier is on.
+    - Neither tier available → ``None`` (the route fails closed with today's 503).
+
+    Built fresh per request: the explainer's lazy model client would otherwise pin the first
+    caller's key (the same BYOK invariant as the per-run pipeline factories).
+    """
+    credentials: Mapping[str, str] | None = None
+    if vault is not None and owner_id is not None:
+        credentials = await _byok_credential_resolver(vault)(owner_id)
+        keyed = bool(credentials.get(KNOWN_SECRETS["anthropic"]))
+    else:
+        keyed = explain_is_available()
+    if not keyed and not settings.draft_tier_enabled:
+        return None
+    explainer = ClaudeExplainer(os.getenv("LUNARIS_MODEL_WORKER", _WORKER_MODEL))
+    return ExplainBinding(
+        explainer=explainer,
+        source="hosted" if keyed else "server-fallback",
+        credentials=credentials,
+    )
+
+
+ExplainBindingDep = Annotated[ExplainBinding | None, Depends(get_explain_binding)]
+
+
+@lru_cache
+def _get_explain_throttle(settings: Settings) -> KeylessExplainThrottle:
+    """One explain throttle per Settings — the per-user daily counts must be shared across
+    requests (mirrors ``_get_keyless_build_throttle``; tests reset via ``cache_clear()``)."""
+    return KeylessExplainThrottle(daily_cap=settings.explain_daily_cap)
+
+
+def get_explain_throttle(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> KeylessExplainThrottle:
+    """The shared daily cap for server-fallback explains (``LUNARIS_EXPLAIN_DAILY_CAP``)."""
+    return _get_explain_throttle(settings)
+
+
+ExplainThrottleDep = Annotated[KeylessExplainThrottle, Depends(get_explain_throttle)]

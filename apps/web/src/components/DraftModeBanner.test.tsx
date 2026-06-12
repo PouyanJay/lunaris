@@ -35,6 +35,33 @@ describe("DraftModeBanner", () => {
     expect(banner).not.toHaveTextContent("Voyage");
   });
 
+  it("offers the explain compute dropdown when the language model runs keyless", () => {
+    // Arrange — the LLM is on its fallback: this user's explains are keyless too.
+    const capabilities: CapabilityStatus[] = [
+      { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)" },
+    ];
+
+    // Act
+    render(<DraftModeBanner capabilities={capabilities} />);
+
+    // Assert — the per-device choice rides the Draft banner.
+    expect(screen.getByLabelText(/draft ai runs on/i)).toBeInTheDocument();
+  });
+
+  it("hides the explain compute dropdown when only non-LLM capabilities are fallback", () => {
+    // Arrange — search is keyless but the LLM is live: explains are hosted, no choice to make.
+    const capabilities: CapabilityStatus[] = [
+      { capability: "llm", mode: "live", provider: "Anthropic Claude" },
+      { capability: "search", mode: "fallback", provider: "DuckDuckGo" },
+    ];
+
+    // Act
+    render(<DraftModeBanner capabilities={capabilities} />);
+
+    // Assert
+    expect(screen.queryByLabelText(/draft ai runs on/i)).not.toBeInTheDocument();
+  });
+
   it("shows the compute kind (GPU/CPU) for the local model fallback only", () => {
     render(
       <DraftModeBanner

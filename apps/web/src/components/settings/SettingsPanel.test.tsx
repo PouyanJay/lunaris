@@ -118,6 +118,19 @@ describe("SettingsPanel", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/rejected/i));
   });
 
+  it("offers the explain compute dropdown when the language model runs keyless", async () => {
+    // Arrange — the CAPABILITIES fixture has the LLM on its fallback.
+    vi.stubGlobal("fetch", stubFetch(() => ({ ok: true, json: async () => ({}) })));
+
+    // Act
+    render(<SettingsPanel apiBaseUrl="http://test" />);
+
+    // Assert — the per-device compute choice is manageable from Settings too.
+    await waitFor(() =>
+      expect(screen.getByLabelText(/draft ai runs on/i)).toBeInTheDocument(),
+    );
+  });
+
   it("shows the per-user BYOK keys panel when BYOK is enabled", async () => {
     // Arrange — settings report BYOK on; the credentials endpoint serves the per-user statuses.
     vi.stubGlobal(

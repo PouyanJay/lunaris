@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ExplainProvider } from "./ExplainContext";
+import { ExplainProvider } from "../explain/ExplainContext";
 import { makeAgentEvent, makeProgressEvent, makeRunEvent } from "../../test/fixtures";
 import { LiveBuildReplay } from "./LiveBuildReplay";
 

@@ -9,6 +9,7 @@ import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.credentials import run_credentials
+from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import (
     ICourseStore,
     IRunEventStore,
@@ -29,10 +30,12 @@ from lunaris_runtime.schema import (
     RunStatus,
 )
 
+from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
+from .schemas.compute import ComputeChoice
 
 logger = structlog.get_logger()
 
@@ -75,10 +78,13 @@ class BuildAdmission:
 
     Computed once by :meth:`CourseService.admit_build` so a refusal is a real HTTP status before the
     response starts (the SSE path can't surface a 429 once it has begun streaming). ``reservation``
-    is ``None`` for a keyed build or when no throttle is wired — those are never rationed."""
+    is ``None`` for a keyed build or when no throttle is wired — those are never rationed.
+    ``device_bridge`` is the run's registered completion bridge when this is a keyless build whose
+    learner chose device compute, else ``None`` (server compute / keyed — today's behaviour)."""
 
     credentials: Mapping[str, str] | None
     reservation: DraftReservation | None
+    device_bridge: DeviceBridge | None = None
 
 
 class CourseServiceError(Exception):
@@ -147,6 +153,8 @@ class CourseService:
         credential_resolver: CredentialResolver | None = None,
         config_resolver: ConfigResolver | None = None,
         throttle: KeylessBuildThrottle | None = None,
+        bridge_registry: DeviceBridgeRegistry | None = None,
+        bridge_limits: BridgeLimits | None = None,
     ) -> None:
         self._store = store
         self._factory = pipeline_factory
@@ -169,6 +177,13 @@ class CourseService:
         # injected (so the cancel request and the build request share it). The lone-instance default
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
         self._registry = registry or RunRegistry()
+        # In-flight device bridges (device-compute Draft builds). The same process-wide singleton
+        # the bridge router reads, so the tab's polls find the bridge this service registers. None
+        # (the default) means device compute is unavailable — admission falls back to the server.
+        self._bridge_registry = bridge_registry
+        # The bridge's time bounds (tab liveness, per-completion ceiling), operator-tunable via
+        # Settings; None → the code defaults.
+        self._bridge_limits = bridge_limits
 
     def _store_for(self, owner_id: str | None) -> ICourseStore:
         """The course store the pipeline writes through, scoped to the owner (Phase 2).
@@ -202,7 +217,13 @@ class CourseService:
             return not credentials.get(_LLM_KEY_ENV)
         return not os.environ.get(_LLM_KEY_ENV)
 
-    async def admit_build(self, owner_id: str | None) -> BuildAdmission:
+    async def admit_build(
+        self,
+        owner_id: str | None,
+        *,
+        compute: ComputeChoice = ComputeChoice.SERVER,
+        run_id: str | None = None,
+    ) -> BuildAdmission:
         """Resolve the run's credentials and, for a throttled keyless build, reserve a Draft slot.
 
         Call this BEFORE recording or streaming a build, so a refusal is a real HTTP status rather
@@ -210,12 +231,29 @@ class CourseService:
         is refused; the router maps them to 403/429. A keyed build (or no throttle) reserves nothing
         — only the slow keyless runtime is rationed. Release ``reservation`` when the build's task
         ends.
+
+        ``compute=DEVICE`` on a keyless build registers a device bridge under ``run_id`` — by the
+        time the caller holds the response's ``X-Run-Id``, the tab can already poll it. A keyed
+        build ignores the choice (it always runs hosted), mirroring the explain tiers.
         """
         credentials = await self._resolve_run_credentials(owner_id)
+        keyless = self._is_keyless_llm(credentials)
         reservation: DraftReservation | None = None
-        if self._throttle is not None and self._is_keyless_llm(credentials):
+        if self._throttle is not None and keyless:
             reservation = self._throttle.reserve(owner_id or _LOCAL_OWNER_KEY)
-        return BuildAdmission(credentials=credentials, reservation=reservation)
+        bridge: DeviceBridge | None = None
+        if (
+            compute is ComputeChoice.DEVICE
+            and keyless
+            and run_id is not None
+            and self._bridge_registry is not None
+        ):
+            bridge = DeviceBridge(run_id=run_id, limits=self._bridge_limits)
+            self._bridge_registry.register(run_id, bridge, owner_id)
+            logger.info("device_bridge_registered", run_id=run_id)
+        return BuildAdmission(
+            credentials=credentials, reservation=reservation, device_bridge=bridge
+        )
 
     def _release(self, reservation: DraftReservation | None) -> None:
         """Free a held Draft slot (no-op when the build was keyed / unthrottled).
@@ -255,6 +293,27 @@ class CourseService:
             return nullcontext()
         return run_config(config)
 
+    @staticmethod
+    def _bridge_scope(bridge: DeviceBridge | None) -> AbstractContextManager[None]:
+        """The run's device-bridge context: routes the build's LLM calls to the learner's tab when
+        a bridge was admitted, else a no-op. Entered alongside the credential + config scopes."""
+        if bridge is None:
+            return nullcontext()
+        return run_device_bridge(bridge)
+
+    def _close_bridge(self, run_id: str, bridge: DeviceBridge | None) -> None:
+        """Remove the bridge once the run task ends, so the tab's next poll 404s (its stop signal)
+        regardless of whether any client is still connected. Must run in the task's done-callback,
+        not the stream generator's teardown — a client disconnect leaves the build alive.
+        Idempotent, like ``RunRegistry.discard``."""
+        if bridge is None or self._bridge_registry is None:
+            return
+        self._bridge_registry.discard(run_id)
+        # Defensive: completions awaited by the run task itself have unwound with it, but any
+        # parked by a child task the harness spawned must not outlive the run.
+        bridge.fail_pending("the build ended")
+        logger.info("device_bridge_closed", run_id=run_id)
+
     async def create(
         self,
         topic: str,
@@ -276,6 +335,8 @@ class CourseService:
         # it raises CancelledError at this await without cancelling the request coroutine itself.
         # The credential + config scopes wrap the factory + create_task so the task inherits the
         # tenant's keys + model choices (a context copy); the adapters then read them, not the env.
+        # No bridge scope here: device compute is stream-only (admit_build above gets no compute /
+        # run_id), so an await-full build always runs server-side.
         with self._credential_scope(credentials), self._config_scope(config):
             pipeline = self._factory(self._store_for(owner_id))
             task = asyncio.create_task(
@@ -350,11 +411,16 @@ class CourseService:
         credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
-        # The credential + config scopes wrap only the factory + create_task (no yields inside), so
-        # the run task inherits the tenant's keys + model choices as a context copy while the
-        # generator's own context — the one live across each yield — never retains them. The
-        # terminal status is recorded by the task itself (_run_recording_status), disconnect-proof.
-        with self._credential_scope(credentials), self._config_scope(config):
+        # The credential + config + bridge scopes wrap only the factory + create_task (no yields
+        # inside), so the run task inherits the tenant's keys + model choices + device bridge as a
+        # context copy while the generator's own context — the one live across each yield — never
+        # retains them. The terminal status is recorded by the task itself (_run_recording_status),
+        # disconnect-proof.
+        with (
+            self._credential_scope(credentials),
+            self._config_scope(config),
+            self._bridge_scope(admission.device_bridge),
+        ):
             pipeline = self._factory(self._store_for(owner_id))
             run_task = asyncio.create_task(
                 self._run_recording_status(
@@ -379,6 +445,12 @@ class CourseService:
         # down (a client disconnect leaves the build running, so the slot tracks the task lifetime).
         if admission.reservation is not None:
             run_task.add_done_callback(lambda _: self._release(admission.reservation))
+        # Same lifetime for the device bridge: the tab's next poll after the run ends must 404 (its
+        # signal to stop), however the run ended.
+        if admission.device_bridge is not None:
+            run_task.add_done_callback(
+                lambda _: self._close_bridge(run_id, admission.device_bridge)
+            )
         next_event_task: asyncio.Task[StreamItem] | None = None
         try:
             while True:

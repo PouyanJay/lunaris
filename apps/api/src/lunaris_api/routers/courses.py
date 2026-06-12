@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from ..dependencies import CourseServiceDep, OptionalUserIdDep
 from ..draft_throttle import DraftBuildRefusedError
-from ..schemas import CourseRequest
+from ..schemas import ComputeChoice, CourseRequest
 from ..service import (
     CourseBuildCancelledError,
     CourseDeletionConflictError,
@@ -99,6 +99,7 @@ async def stream_course(
     topic: str = Query(min_length=1, max_length=200),
     clarification: str | None = Query(default=None, max_length=_MAX_CLARIFICATION_CHARS),
     discovery_depth: Annotated[DiscoveryDepth, Query()] = DiscoveryDepth.STANDARD,
+    compute: Annotated[ComputeChoice, Query()] = ComputeChoice.SERVER,
 ) -> StreamingResponse:
     """Run the pipeline for a topic and stream live build progress as Server-Sent Events.
 
@@ -106,9 +107,11 @@ async def stream_course(
     stage as it happens, then a terminal ``course`` event carrying the finished
     camelCase course-object — so the web renders without a second fetch. The optional
     ``clarification`` query param carries the learner's opt-in confirm answers (P7.5) as
-    camelCase JSON; absent, the build uses the interpreter's inference. The generated
-    ``run_id`` is returned in ``X-Run-Id`` (sent before the body) for cross-layer
-    correlation.
+    camelCase JSON; absent, the build uses the interpreter's inference. ``compute=device``
+    on a keyless build serves the LLM from the learner's browser over the run's device
+    bridge (registered before the response, so the tab can poll as soon as it holds the
+    ``X-Run-Id``); keyed builds ignore it. The generated ``run_id`` is returned in
+    ``X-Run-Id`` (sent before the body) for cross-layer correlation.
     """
     course_id = uuid4().hex
     run_id = uuid4().hex
@@ -117,7 +120,7 @@ async def stream_course(
     # Admit the build BEFORE the StreamingResponse begins, so a refused keyless build is a real
     # 403/429 — once the SSE body starts, a refusal could only close the connection (T6).
     try:
-        admission = await service.admit_build(owner_id)
+        admission = await service.admit_build(owner_id, compute=compute, run_id=run_id)
     except DraftBuildRefusedError as exc:
         raise _refused(exc) from exc
 

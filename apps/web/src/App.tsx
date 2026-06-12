@@ -14,14 +14,16 @@ import { Sidebar } from "./components/shell/Sidebar";
 import { BuildTimeline } from "./components/transcript/BuildTimeline";
 import { BuildReplay } from "./components/transcript/BuildReplay";
 import { LiveBuildReplay } from "./components/transcript/LiveBuildReplay";
-import { ExplainProvider } from "./components/transcript/ExplainContext";
+import { ExplainProvider } from "./components/explain/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
+import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
 import { useCourse } from "./hooks/useCourse";
+import { useBeforeUnloadGuard } from "./hooks/useBeforeUnloadGuard";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
@@ -30,10 +32,12 @@ import { useCapabilities } from "./hooks/useCapabilities";
 import { useKeylessReadiness } from "./hooks/useKeylessReadiness";
 import { KeylessProvisioningBanner } from "./components/KeylessProvisioningBanner";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
+import { DeviceBuildNotice } from "./components/DeviceBuildNotice";
 import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
+import { isLlmKeyless } from "./lib/capabilities";
 import { fetchSettings } from "./lib/settings";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useDeleteRun } from "./hooks/useDeleteRun";
@@ -113,7 +117,6 @@ function SeedApp({ theme, onToggleTheme }: ThemeProps) {
 /** Live surface: name a topic, watch the pipeline build it, then explore the result. The sidebar
  *  (run history + nav) persists across every state; only the canvas changes. */
 function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } & ThemeProps) {
-  const { state, generate, reset } = useCourseStream(apiBaseUrl);
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
   const sidebarLayout = useSidebarLayout();
@@ -135,20 +138,34 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   useEffect(() => {
     if (!settingsOpen) reloadCapabilities();
   }, [settingsOpen, reloadCapabilities]);
+  // The build stream needs the keyless signal: only a keyless user's device choice routes the
+  // build's completions through this tab (a keyed user's builds are always hosted).
+  const { state, generate, reset } = useCourseStream(apiBaseUrl, {
+    llmKeyless: isLlmKeyless(capabilities),
+  });
+  // While THIS tab serves a device build (or its model is preparing), closing it kills the build —
+  // intercept the reflex tab-close with the browser's native confirm.
+  useBeforeUnloadGuard(
+    state.status === "preparing-device" ||
+      (state.status === "streaming" && state.servedByThisDevice),
+  );
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
   const [canRegenerate, setCanRegenerate] = useState(false);
-  // Whether the transcript may offer "Explain" on a JSON blob — available only when an Anthropic key
-  // is reachable. Read alongside the regenerate capability; fail closed so a button never 503s.
+  // Explain availability is tiered: the transcript's dev-facing affordance stays hosted-only
+  // (Anthropic key reachable), while the reader's learner-facing one answers on either tier
+  // (hosted or the keyless server fallback). Fail closed so a button never 503s.
   const [canExplain, setCanExplain] = useState(false);
+  const [canReaderExplain, setCanReaderExplain] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     fetchSettings(apiBaseUrl, controller.signal)
       .then((settings) => {
         if (controller.signal.aborted) return;
         setCanRegenerate(settings.supportsLessonRegeneration);
-        setCanExplain(settings.supportsExplain);
+        setCanExplain(settings.supportsHostedExplain);
+        setCanReaderExplain(settings.supportsExplain);
       })
       .catch(() => {
         // Fail closed: a settings fetch we can't complete hides the actions. Guard the unmount race
@@ -248,15 +265,21 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       ) : viewMode === "corpus" ? (
         <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
       ) : (
-        <CourseReader
-          course={course}
-          focusRequest={focusRequest}
-          onRegenerate={
-            canRegenerate
-              ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
-              : undefined
-          }
-        />
+        <ExplainProvider
+          apiBaseUrl={apiBaseUrl}
+          available={canReaderExplain}
+          llmKeyless={isLlmKeyless(capabilities)}
+        >
+          <CourseReader
+            course={course}
+            focusRequest={focusRequest}
+            onRegenerate={
+              canRegenerate
+                ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
+                : undefined
+            }
+          />
+        </ExplainProvider>
       ),
   });
 
@@ -360,6 +383,18 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         ),
       };
     }
+    if (state.status === "preparing-device") {
+      return {
+        title: state.topic,
+        meta: (
+          <>
+            <StatusDot label="preparing" tone="accent" live />
+            <Button onClick={reset}>Cancel build</Button>
+          </>
+        ),
+        body: <PreparingDeviceState topic={state.topic} progress={state.progress} />,
+      };
+    }
     if (state.status === "streaming") {
       const { runId } = state;
       return {
@@ -372,7 +407,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         ),
         body: (
           <>
-            <KeylessProvisioningBanner status={keylessReadiness} />
+            {state.servedByThisDevice ? (
+              <DeviceBuildNotice />
+            ) : (
+              <KeylessProvisioningBanner status={keylessReadiness} />
+            )}
             <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
               <BuildTimeline
                 topic={state.topic}

@@ -23,6 +23,7 @@ import os
 from typing import TYPE_CHECKING
 
 from lunaris_runtime.credentials import resolve_secret
+from lunaris_runtime.device_bridge import resolve_device_bridge
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -144,11 +145,18 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
     2. **Keyless fallback (no Anthropic key anywhere).** A local OpenAI-compatible endpoint
        (Qwen2.5-3B-Instruct by default) so a keyless account still builds (a labelled "Draft").
        ``model_id`` (a Claude id) is ignored in favour of the configured fallback model. No key.
+       When the run scope carries a **device bridge** (the learner chose "This device"), the
+       Draft build's completions are instead served by their browser over that bridge.
 
     The key value is never logged here; redaction at the structlog layer covers it regardless.
     """
     anthropic_key = resolve_secret("ANTHROPIC_API_KEY")
     if not anthropic_key:  # None or "" → no live key → the keyless fallback, not a blank-key Claude
+        bridge = resolve_device_bridge()
+        if bridge is not None:
+            from lunaris_runtime.device_bridge.chat_model import BridgeChatModel
+
+            return BridgeChatModel(bridge=bridge)
         return build_keyless_chat_model()
 
     from langchain_anthropic import ChatAnthropic

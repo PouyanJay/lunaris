@@ -36,3 +36,9 @@ export async function fetchCapabilities(
   const body = await response.json();
   return Array.isArray(body) ? (body as CapabilityStatus[]) : [];
 }
+
+/** Whether the language model runs on its keyless fallback — i.e. this user's explanations are
+ *  keyless too, and the per-device compute choice applies. */
+export function isLlmKeyless(capabilities: CapabilityStatus[]): boolean {
+  return capabilities.some((c) => c.capability === "llm" && c.mode === "fallback");
+}

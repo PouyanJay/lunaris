@@ -1,6 +1,7 @@
 import { authedFetch } from "./apiClient";
 import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
+import type { ComputeSource } from "./computeSource";
 import { CourseLoadError, parseCourse } from "./loadCourse";
 
 interface StreamCourseOptions {
@@ -8,10 +9,17 @@ interface StreamCourseOptions {
   onProgress?: (event: ProgressEvent) => void;
   /** Called for each fine-grained agent-transcript beat (reasoning / tool call / todo). */
   onAgent?: (event: AgentEvent) => void;
+  /** Called once with the run id from the X-Run-Id header, before any frame — the device
+   *  bridge worker needs it immediately (the first completion can be parked before the
+   *  first progress event lands). */
+  onRunId?: (runId: string) => void;
   /** The learner's opt-in confirm answers (P7.5); absent → today's inferred-only build. */
   clarification?: Clarification;
   /** How hard auto-discovery searches (P6.3); absent → the moderate `standard` default. */
   discoveryDepth?: DiscoveryDepth;
+  /** Where a keyless build's LLM runs (the compute dropdown): `device` serves completions
+   *  from this browser over the run's bridge; absent → the API's server default. */
+  compute?: ComputeSource;
   /** Abort the in-flight build (e.g. the user navigates away or starts a new topic). */
   signal?: AbortSignal;
 }
@@ -27,11 +35,12 @@ interface StreamCourseOptions {
 export async function streamCourse(
   apiBaseUrl: string,
   topic: string,
-  { onProgress, onAgent, clarification, discoveryDepth, signal }: StreamCourseOptions,
+  { onProgress, onAgent, onRunId, clarification, discoveryDepth, compute, signal }: StreamCourseOptions,
 ): Promise<Course> {
   const params = new URLSearchParams({ topic });
   if (clarification) params.set("clarification", JSON.stringify(clarification));
   if (discoveryDepth) params.set("discovery_depth", discoveryDepth);
+  if (compute) params.set("compute", compute);
   const url = `${apiBaseUrl}/api/courses/stream?${params}`;
   let response: Response;
   try {
@@ -45,6 +54,8 @@ export async function streamCourse(
   if (!response.body) {
     throw new CourseLoadError("The course stream returned no body.");
   }
+  const runId = response.headers.get("X-Run-Id");
+  if (runId) onRunId?.(runId);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

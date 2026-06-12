@@ -1,4 +1,6 @@
-import { CAPABILITY_LABELS, type CapabilityStatus } from "../lib/capabilities";
+import { CAPABILITY_LABELS, isLlmKeyless, type CapabilityStatus } from "../lib/capabilities";
+import { ComputeSourceSelect } from "./explain/ComputeSourceSelect";
+import { AccentBand } from "./primitives/AccentBand";
 import styles from "./DraftModeBanner.module.css";
 
 interface DraftModeBannerProps {
@@ -19,9 +21,10 @@ function providerName(provider: string): string {
 export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBannerProps) {
   const fallbacks = capabilities.filter((capability) => capability.mode === "fallback");
   if (fallbacks.length === 0) return null;
+  const llmIsKeyless = isLlmKeyless(fallbacks);
 
   return (
-    <aside className={styles.banner} role="status">
+    <AccentBand className={styles.column}>
       <div className={styles.head}>
         <span className={`eyebrow ${styles.eyebrow}`}>Draft mode</span>
         <p className={styles.text}>
@@ -52,6 +55,11 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
           </div>
         ))}
       </dl>
-    </aside>
+      {llmIsKeyless && (
+        <div className={styles.computeRow}>
+          <ComputeSourceSelect />
+        </div>
+      )}
+    </AccentBand>
   );
 }

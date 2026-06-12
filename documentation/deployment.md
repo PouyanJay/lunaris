@@ -113,6 +113,29 @@ Anthropic/LLM key alone: a keyed build uses the full hosted path unchanged; only
 routed to the local models. The UI shows which capabilities are running on a fallback while a Draft
 build is in progress.
 
+**Explanations (local intelligence, Phase 1).** The reader's per-block "Explain" works for keyless
+users too, on a compute source they choose per device (the dropdown on the Draft banner and in
+Settings): **Lunaris server** routes through the keyless model above behind a small per-user daily
+allowance (`LUNARIS_EXPLAIN_DAILY_CAP`, default 50, refused with a friendly 429 when spent), while
+**This device** downloads Qwen2.5-3B once (~1.8 GB, cached by the browser) and answers over WebGPU
+with no server involvement at all. Every explanation carries a badge naming which tier answered
+(Claude / Lunaris server / your device). Keyed users always get Claude and never see the choice.
+
+**Device builds (local intelligence, Phase 2).** The same dropdown — relabelled "Draft AI runs on"
+— now covers builds: a keyless build started with **This device** keeps its orchestration on the
+server (agent harness, grounding, embeddings, search all unchanged) but serves every LLM completion
+from the learner's browser over a per-run **device bridge**. The server parks each completion; the
+tab long-polls `GET /api/runs/{run_id}/bridge/requests`, runs it on the same on-device Qwen model
+the explains use (one download serves both), and posts the text back to
+`POST /api/runs/{run_id}/bridge/results`. The trade is explicit in the UI: device builds are free
+and unlimited, but **the tab must stay open** — if it closes or the device sleeps, the server fails
+the run once no poll arrives within `LUNARIS_DEVICE_BRIDGE_LIVENESS_S` (default 75); a claimed
+completion that is never answered is bounded by `LUNARIS_DEVICE_BRIDGE_COMPLETION_TIMEOUT_S`
+(default 900, matching the keyless server tier). The course's build tag records the provenance
+honestly: a device build's language model reads "Qwen2.5-3B (your device)". Keyed builds ignore the
+choice entirely, and the Draft admission throttle still applies (a device build still uses the
+server's orchestration and embeddings).
+
 ## CI / CD
 
 GitHub Actions builds the API image once and promotes it across environments: `cd-dev` deploys on

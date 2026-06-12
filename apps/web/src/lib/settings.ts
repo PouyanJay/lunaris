@@ -14,9 +14,12 @@ export interface SettingsView {
   /** Whether the active pipeline can re-author a single lesson. The reader hides the regenerate
    *  action when false (the deep-agent pipeline doesn't support it and would 501). */
   supportsLessonRegeneration: boolean;
-  /** Whether plain-language "Explain" is available (an Anthropic key is reachable). The transcript
-   *  hides the Explain affordance when false rather than offering a button that 503s. */
+  /** Whether plain-language "Explain" can answer at all (hosted Claude or the keyless server
+   *  tier). The reader offers Explain when true; false hides the affordance (it would 503). */
   supportsExplain: boolean;
+  /** Whether the HOSTED tier specifically (an Anthropic key) is reachable. The transcript's
+   *  dev-facing Explain stays hosted-only; the reader works on either tier. */
+  supportsHostedExplain: boolean;
   /** Whether per-user BYOK is configured. When true the Keys panel manages the tenant's own keys
    *  via the authed /api/credentials surface; when false it uses the file-backed secret store. */
   byokEnabled: boolean;

@@ -1,0 +1,44 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Typography comes from the global .eyebrow utility; this only constrains layout. */
+.label {
+  display: block;
+}
+
+.select {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  max-width: 220px;
+  touch-action: manipulation;
+}
+
+.select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  /* Secondary, not muted: the hint carries the tab-open contract and must clear AA on the
+     accent-soft band it usually sits on. */
+  color: var(--text-secondary);
+  max-width: 44ch;
+}
+
+@media (max-width: 720px) {
+  .select {
+    min-height: 44px;
+    font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
+  }
+}

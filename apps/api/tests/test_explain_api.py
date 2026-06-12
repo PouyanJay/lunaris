@@ -5,6 +5,7 @@ The explainer is injected (a stub here, the real Claude one in production), so t
 ``supportsExplain`` settings flag) is proven with no API key.
 """
 
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -12,8 +13,9 @@ import httpx
 import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
-from lunaris_api.dependencies import get_explainer, get_secret_store
-from lunaris_api.explain import IExplainer
+from lunaris_api.dependencies import get_explain_binding, get_secret_store
+from lunaris_api.explain import ExplainBinding, IExplainer
+from lunaris_api.schemas.explain import MAX_EXPLAIN_CONTENT
 from lunaris_api.secrets import SecretStore
 
 
@@ -29,14 +31,25 @@ class _StubExplainer:
         return self._text
 
 
-def _build_client(tmp_path: Path, explainer: IExplainer | None) -> httpx.AsyncClient:
+def _build_client(
+    tmp_path: Path, explainer: IExplainer | None, *, draft_tier_enabled: bool = True
+) -> httpx.AsyncClient:
     app = create_app()
     env_file = tmp_path / ".env"
     app.dependency_overrides[get_settings] = lambda: Settings(
-        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=env_file
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(),
+        env_file=env_file,
+        draft_tier_enabled=draft_tier_enabled,
     )
     app.dependency_overrides[get_secret_store] = lambda: SecretStore(env_file)
-    app.dependency_overrides[get_explainer] = lambda: explainer
+    binding = (
+        ExplainBinding(explainer=explainer, source="hosted", credentials=None)
+        if explainer is not None
+        else None
+    )
+    app.dependency_overrides[get_explain_binding] = lambda: binding
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
@@ -59,9 +72,22 @@ async def test_explain_returns_a_plain_language_explanation(tmp_path: Path) -> N
     # Assert — the explanation comes back, and the blob + context were passed through verbatim.
     assert response.status_code == 200
     assert response.json() == {
-        "explanation": "These judge whether one concept must be learned before another."
+        "explanation": "These judge whether one concept must be learned before another.",
+        "source": "hosted",
     }
     assert stub.calls == [('{"is_prereq": true, "strength": 0.85}', "Graph")]
+
+
+async def test_explain_response_carries_a_request_id(client: httpx.AsyncClient) -> None:
+    # Arrange — the shared client fixture wires a StubExplainer (explain succeeds).
+
+    # Act
+    response = await client.post("/api/explain", json={"content": "{}"})
+
+    # Assert — correlation everywhere: the call succeeded AND is traceable across the logs.
+    assert response.status_code == 200
+    assert response.json()["explanation"]
+    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-Id"])
 
 
 async def test_explain_forwards_content_with_no_context(tmp_path: Path) -> None:
@@ -76,7 +102,7 @@ async def test_explain_forwards_content_with_no_context(tmp_path: Path) -> None:
 
 
 async def test_explain_is_503_when_no_explainer_is_available(tmp_path: Path) -> None:
-    # Arrange — no Anthropic key → get_explainer yields None.
+    # Arrange — neither tier available → the binding resolves to None.
     async with _build_client(tmp_path, None) as client:
         # Act
         response = await client.post("/api/explain", json={"content": "{}"})
@@ -101,12 +127,18 @@ async def test_explain_degrades_to_503_when_the_model_fails(tmp_path: Path) -> N
 
 
 async def test_explain_rejects_empty_content(client: httpx.AsyncClient) -> None:
+    # Act
     response = await client.post("/api/explain", json={"content": ""})
+
+    # Assert
     assert response.status_code == 422
 
 
 async def test_explain_rejects_oversized_content(client: httpx.AsyncClient) -> None:
-    response = await client.post("/api/explain", json={"content": "x" * 8001})
+    # Act — one character over the schema's MAX_EXPLAIN_CONTENT fence.
+    response = await client.post("/api/explain", json={"content": "x" * (MAX_EXPLAIN_CONTENT + 1)})
+
+    # Assert
     assert response.status_code == 422
 
 
@@ -123,14 +155,55 @@ async def test_settings_reports_explain_available_when_the_key_is_set(
     assert body["supportsExplain"] is True
 
 
-async def test_settings_reports_explain_unavailable_without_a_key(
+async def test_settings_reports_explain_unavailable_without_a_key_or_keyless_tier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Arrange
+    # Arrange — no key AND the keyless tier off: neither explain tier can answer.
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    async with _build_client(tmp_path, _StubExplainer()) as client:
+    async with _build_client(tmp_path, _StubExplainer(), draft_tier_enabled=False) as client:
         # Act
         body = (await client.get("/api/settings")).json()
 
     # Assert
     assert body["supportsExplain"] is False
+
+
+async def test_settings_reports_explain_available_keyless_when_draft_tier_is_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange — no key, but the keyless server tier can answer (local-intelligence Phase 1).
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    async with _build_client(tmp_path, _StubExplainer(), draft_tier_enabled=True) as client:
+        # Act
+        body = (await client.get("/api/settings")).json()
+
+    # Assert
+    assert body["supportsExplain"] is True
+
+
+async def test_settings_keyless_caller_gets_any_tier_but_not_hosted_explain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange — keyless with the Draft tier on: the reader can explain, the transcript cannot.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    async with _build_client(tmp_path, _StubExplainer(), draft_tier_enabled=True) as client:
+        # Act
+        body = (await client.get("/api/settings")).json()
+
+    # Assert — supportsExplain = any tier; supportsHostedExplain = the transcript's stricter gate.
+    assert body["supportsExplain"] is True
+    assert body["supportsHostedExplain"] is False
+
+
+async def test_settings_keyed_caller_gets_both_explain_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange — keyed: both surfaces explain on the hosted tier.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    async with _build_client(tmp_path, _StubExplainer(), draft_tier_enabled=True) as client:
+        # Act
+        body = (await client.get("/api/settings")).json()
+
+    # Assert
+    assert body["supportsExplain"] is True
+    assert body["supportsHostedExplain"] is True
