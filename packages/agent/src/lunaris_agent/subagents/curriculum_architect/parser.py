@@ -1,11 +1,20 @@
 import re
+from collections.abc import Sequence
 
+import structlog
 from lunaris_runtime.schema import BloomLevel
 
 from ..json_tolerant import loads_tolerant
 from .plan import AssessmentItemPlan, CurriculumPlan, ModulePlan, ObjectivePlan
 
+logger = structlog.get_logger()
+
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+# A positional reference to the prompt's 1-based teaching-order enumeration instead of the kc id
+# itself — the persistent habit of small (device/Draft) models. An optional "kc" prefix and any
+# run of separators are tolerated: "1", "kc_1", "KC 2", "kc-3", "#4".
+_POSITIONAL_KC_RE = re.compile(r"^(?:kc)?[-\s_#]*(\d+)$", re.IGNORECASE)
 
 _BLOOM_VERBS: dict[BloomLevel, tuple[str, ...]] = {
     BloomLevel.REMEMBER: ("define", "list", "recall", "name", "identify", "state"),
@@ -64,11 +73,44 @@ def _parse_items(obj: dict) -> list[AssessmentItemPlan]:
     return items
 
 
-def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
+def _resolve_kc(raw_kc: str, known_kc_ids: set[str], teaching_order: Sequence[str]) -> str:
+    """The real kc id for a model-emitted reference, or raise.
+
+    An exact id passes through. A positional reference ("1", "kc_2") resolves against the
+    1-based ``teaching_order`` — the same enumeration the prompt printed, so the mapping is
+    deterministic, not a guess. Anything else (or positional without an order) raises the
+    strict error; the caller's repair turn handles it from there.
+    """
+    if raw_kc in known_kc_ids:
+        return raw_kc
+    positional = _POSITIONAL_KC_RE.match(raw_kc.strip())
+    if positional and teaching_order:
+        index = int(positional.group(1))
+        if 1 <= index <= len(teaching_order):
+            resolved = teaching_order[index - 1]
+            logger.info("kc_reference_coerced", raw_kc_ref=raw_kc, resolved=resolved)
+            return resolved
+    raise ValueError(f"objective targets unknown KC {raw_kc!r}")
+
+
+def _resolve_kc_lenient(raw_kc: str, known_kc_ids: set[str], teaching_order: Sequence[str]) -> str:
+    """The module ``kcs`` list was never validated against known ids, so raising on an unknown
+    entry would introduce a new failure mode — unresolvable references pass through unchanged."""
+    try:
+        return _resolve_kc(raw_kc, known_kc_ids, teaching_order)
+    except ValueError:
+        return raw_kc
+
+
+def parse_curriculum(
+    text: str, known_kc_ids: set[str], *, teaching_order: Sequence[str] = ()
+) -> CurriculumPlan:
     """Parse the architect's JSON into a validated ``CurriculumPlan``.
 
     Enforces the backward-design invariants structurally: every objective targets a
     real KC, names a valid Bloom level, and carries at least one assessment item.
+    ``teaching_order`` (the 1-based enumeration the prompt printed) lets a positional KC
+    reference from a weak model resolve deterministically instead of failing the parse.
     """
     match = _JSON_OBJECT_RE.search(text)
     if match is None:
@@ -88,9 +130,7 @@ def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
         for obj in raw.get("objectives", []):
             if not isinstance(obj, dict) or "kc" not in obj:
                 continue  # skip a malformed/half-written objective rather than KeyError on it
-            kc = str(obj["kc"])
-            if kc not in known_kc_ids:
-                raise ValueError(f"objective targets unknown KC {kc!r}")
+            kc = _resolve_kc(str(obj["kc"]), known_kc_ids, teaching_order)
             items = _parse_items(obj)
             if not items:
                 raise ValueError(f"objective for KC {kc!r} has no assessment items")
@@ -108,7 +148,10 @@ def parse_curriculum(text: str, known_kc_ids: set[str]) -> CurriculumPlan:
         modules.append(
             ModulePlan(
                 title=str(raw.get("title", "Module")),
-                kcs=[str(k) for k in raw.get("kcs", [])],
+                kcs=[
+                    _resolve_kc_lenient(str(k), known_kc_ids, teaching_order)
+                    for k in raw.get("kcs", [])
+                ],
                 objectives=objectives,
                 # The researched target skill the architect mapped this module to (P7.3); None on
                 # the no-research path (absent / blank / non-string).

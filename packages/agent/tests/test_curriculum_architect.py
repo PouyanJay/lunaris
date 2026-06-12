@@ -45,7 +45,11 @@ def _curriculum(kc: str) -> str:
 
 
 # The prod device-build failure verbatim: the model echoed the teaching-order list number.
-_NUMERIC_KC_CURRICULUM = _curriculum("1")
+# Positional references now resolve deterministically (see the no-repair-turn test below), so
+# the repair-path tests use a reference that genuinely can't be resolved.
+_POSITIONAL_KC_CURRICULUM = _curriculum("kc_1")
+
+_UNRESOLVABLE_KC_CURRICULUM = _curriculum("ghost-concept")
 
 _VALID_CURRICULUM = _curriculum(_KC_ID)
 
@@ -74,9 +78,9 @@ def _graph() -> PrerequisiteGraph:
     )
 
 
-async def test_design_repairs_a_numeric_kc_reference_instead_of_failing() -> None:
-    # Arrange — first response reproduces the failure ("kc": "1"), the second is valid.
-    client = ScriptedRecordingChatModel([_NUMERIC_KC_CURRICULUM, _VALID_CURRICULUM])
+async def test_design_repairs_an_unresolvable_kc_reference_instead_of_failing() -> None:
+    # Arrange — first response targets a KC that exists nowhere, the second is valid.
+    client = ScriptedRecordingChatModel([_UNRESOLVABLE_KC_CURRICULUM, _VALID_CURRICULUM])
     architect = _architect(client)
 
     # Act
@@ -89,7 +93,7 @@ async def test_design_repairs_a_numeric_kc_reference_instead_of_failing() -> Non
 
 async def test_design_sends_the_parse_error_with_the_original_prompt_on_repair() -> None:
     # Arrange
-    client = ScriptedRecordingChatModel([_NUMERIC_KC_CURRICULUM, _VALID_CURRICULUM])
+    client = ScriptedRecordingChatModel([_UNRESOLVABLE_KC_CURRICULUM, _VALID_CURRICULUM])
     architect = _architect(client)
 
     # Act
@@ -98,13 +102,13 @@ async def test_design_sends_the_parse_error_with_the_original_prompt_on_repair()
     # Assert — the repair turn restates the full original prompt plus the parse error.
     first_prompt, repair_prompt = client.prompts
     assert repair_prompt.startswith(first_prompt)
-    assert "unknown KC '1'" in repair_prompt
+    assert "unknown KC 'ghost-concept'" in repair_prompt
     assert _KC_ID in repair_prompt
 
 
 async def test_design_raises_after_exhausting_bounded_repair_attempts() -> None:
     # Arrange — every response carries the bad KC reference, so repair can never succeed.
-    client = ScriptedRecordingChatModel([_NUMERIC_KC_CURRICULUM] * 3)
+    client = ScriptedRecordingChatModel([_UNRESOLVABLE_KC_CURRICULUM] * 3)
     architect = _architect(client, max_attempts=3)
 
     # Act / Assert — the parse error surfaces after exactly max_attempts calls.
@@ -117,6 +121,21 @@ async def test_design_raises_after_exhausting_bounded_repair_attempts() -> None:
     original_prompt, first_repair, second_repair = client.prompts
     assert first_repair == second_repair
     assert first_repair.startswith(original_prompt)
+
+
+async def test_design_resolves_a_positional_kc_reference_without_a_repair_turn() -> None:
+    # Arrange — the persistent device-model habit: "kc_1" for the first listed KC. The
+    # numbering is ours (the prompt enumerates the teaching order), so no repair turn is spent.
+    client = ScriptedRecordingChatModel([_POSITIONAL_KC_CURRICULUM])
+    architect = _architect(client)
+
+    # Act
+    plan = await architect.design(_graph())
+
+    # Assert — resolved deterministically on the first attempt, in the kcs list too.
+    assert plan.modules[0].objectives[0].kc == _KC_ID
+    assert plan.modules[0].kcs == [_KC_ID]
+    assert len(client.prompts) == 1
 
 
 def test_prompt_tells_the_model_to_copy_kc_ids_verbatim() -> None:
