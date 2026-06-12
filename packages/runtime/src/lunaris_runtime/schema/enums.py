@@ -390,3 +390,32 @@ class SubjectField(StrEnum):
     PHYSICS = "physics"
     CHEMISTRY = "chemistry"
     SHARED = "shared"
+
+
+class VideoKind(StrEnum):
+    """Which explainer video a job produces (plan §0): the course trailer (``SUMMARY``), the
+    topic intro (``OVERVIEW``), or a per-lesson explainer (``LESSON``)."""
+
+    SUMMARY = "summary"
+    OVERVIEW = "overview"
+    LESSON = "lesson"
+
+
+class VideoJobStatus(StrEnum):
+    """The video job's lifecycle — the queue's status machine, mirrored by the DB CHECK.
+
+    ``QUEUED`` rows are claimable; a claim atomically flips to ``PLANNING`` (the first in-flight
+    stage) and stamps the lease. The in-flight stages mirror the pipeline (plan §1.2); ``READY``
+    and ``FAILED`` are terminal. The job row doubles as the status record the reader's hero slot
+    polls, so these values are wire-visible.
+    """
+
+    QUEUED = "queued"
+    PLANNING = "planning"
+    CODING = "coding"
+    RENDERING = "rendering"
+    QA = "qa"
+    VOICING = "voicing"
+    ASSEMBLING = "assembling"
+    READY = "ready"
+    FAILED = "failed"

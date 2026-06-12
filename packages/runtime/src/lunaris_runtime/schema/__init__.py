@@ -40,6 +40,8 @@ from .enums import (
     SubjectField,
     TrustTier,
     VerifierStatus,
+    VideoJobStatus,
+    VideoKind,
     VisualKind,
 )
 from .instruction import (
@@ -63,6 +65,7 @@ from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
 from .standard_research import CompetencyArea, ResearchSource, StandardResearch
+from .video_job import VideoJob
 from .visual_spec import (
     BeforeAfterSpec,
     ComparisonRow,
@@ -173,6 +176,9 @@ __all__ = [
     "TreeSpec",
     "TrustTier",
     "VerifierStatus",
+    "VideoJob",
+    "VideoJobStatus",
+    "VideoKind",
     "Visual",
     "VisualKind",
     "VisualSpec",
