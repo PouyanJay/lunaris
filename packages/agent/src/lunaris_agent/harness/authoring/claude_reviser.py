@@ -23,6 +23,15 @@ from ...subagents.module_author.parser import parse_lesson
 
 logger = structlog.get_logger()
 
+_MAX_LESSON_ATTEMPTS = 3
+
+_REPAIR_INSTRUCTION = (
+    "\n\nYour previous response could not be used: {error}. "
+    "Respond again with the COMPLETE lesson as a single JSON object containing all four phases "
+    "(activate, demonstrate, apply, integrate) — do not stop early, and emit no text outside "
+    "the JSON object."
+)
+
 
 class ClaudeLessonReviser:
     """Authors and revises a module's lesson with Claude (worker tier), lazily building its client.
@@ -30,14 +39,23 @@ class ClaudeLessonReviser:
     Both passes go through ``build_authoring_prompt`` so the arc prompt stays in one place and the
     personalization (the module's competency, the level, the frontier, the voice) — plus the
     retrieved grounding evidence (CQ Phase 1.5) — is preserved across author and revise.
+
+    A response that doesn't parse into a complete four-phase lesson gets a bounded repair turn
+    (the parse error folded into the prompt) rather than failing the build: a single bad
+    generation at the last step of an otherwise-green run must not kill it.
     """
 
     def __init__(
-        self, model: str, client_factory: Callable[[str], BaseChatModel] | None = None
+        self,
+        model: str,
+        client_factory: Callable[[str], BaseChatModel] | None = None,
+        *,
+        max_attempts: int = _MAX_LESSON_ATTEMPTS,
     ) -> None:
         self._model = model
         self._client_factory = client_factory
         self._client: BaseChatModel | None = None
+        self._max_attempts = max_attempts
 
     async def author(
         self,
@@ -75,9 +93,31 @@ class ClaudeLessonReviser:
         return draft
 
     async def _author_from_prompt(self, prompt: str) -> LessonDraft:
-        message = await retry_on_rate_limit(lambda: self._ensure_client().ainvoke(prompt))
-        content = message.content if isinstance(message.content, str) else str(message.content)
-        return parse_lesson(content)
+        """Invoke the model with up to ``max_attempts`` parse-repair turns.
+
+        Each failed parse folds the error into the *original* prompt (never the prior repair
+        prompt, so feedback can't stack across attempts); the final attempt re-raises the
+        ``parse_lesson`` error unwrapped.
+        """
+        attempt_prompt = prompt
+        for attempt in range(1, self._max_attempts + 1):
+            message = await retry_on_rate_limit(
+                lambda p=attempt_prompt: self._ensure_client().ainvoke(p)
+            )
+            content = message.content if isinstance(message.content, str) else str(message.content)
+            try:
+                return parse_lesson(content)
+            except ValueError as exc:
+                if attempt == self._max_attempts:
+                    raise
+                logger.warning(
+                    "lesson_parse_repair",
+                    attempt=attempt,
+                    max_attempts=self._max_attempts,
+                    error=str(exc),
+                )
+                attempt_prompt = prompt + _REPAIR_INSTRUCTION.format(error=exc)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _ensure_client(self) -> BaseChatModel:
         if self._client is None:
