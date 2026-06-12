@@ -47,10 +47,19 @@ class ClaudeCurriculumArchitect:
     ) -> CurriculumPlan:
         prompt = build_curriculum_prompt(graph, brief)
         known_kc_ids = {kc.id for kc in graph.nodes}
+
+        def parse(content: str) -> CurriculumPlan:
+            # teaching_order = the prompt's own 1-based enumeration, so a positional KC
+            # reference from a weak model resolves deterministically instead of burning a
+            # repair turn (or three).
+            return parse_curriculum(
+                content, known_kc_ids=known_kc_ids, teaching_order=graph.topo_order
+            )
+
         plan = await invoke_with_parse_repair(
             self._client.invoke_text,
             prompt,
-            lambda content: parse_curriculum(content, known_kc_ids=known_kc_ids),
+            parse,
             repair_instruction=_REPAIR_INSTRUCTION,
             max_attempts=self._max_attempts,
         )

@@ -158,3 +158,65 @@ def test_parse_curriculum_survives_a_malformed_json_response() -> None:
 def test_bloom_verb_helper_matches_level() -> None:
     assert objective_has_valid_bloom_verb("the learner can apply the rule", BloomLevel.APPLY)
     assert not objective_has_valid_bloom_verb("the learner can apply the rule", BloomLevel.CREATE)
+
+
+@pytest.mark.parametrize("alias", ["2", "kc_2", "KC 2", "kc-2", "#2", "KC_2"])
+def test_parse_curriculum_resolves_positional_kc_references_via_teaching_order(
+    alias: str,
+) -> None:
+    # Arrange — the live device-build failure: a weak model echoes the prompt's enumeration
+    # instead of copying the kc id. The numbering is ours (the prompt lists the teaching order
+    # 1-based), so every alias form resolves deterministically.
+    text = (
+        '{"modules": [{"title": "M", "kcs": ["bsearch"], "objectives": ['
+        f'{{"kc": "{alias}", "statement": "s", "bloom_level": "apply",'
+        ' "item_prompts": ["q"]}]}]}'
+    )
+
+    # Act
+    plan = parse_curriculum(text, _KCS, teaching_order=["arrays", "bsearch"])
+
+    # Assert
+    assert plan.modules[0].objectives[0].kc == "bsearch"
+
+
+def test_parse_curriculum_resolves_positional_references_in_the_module_kcs_list() -> None:
+    # Arrange — the kcs list takes the lenient path: a positional entry resolves, an entry that
+    # resolves nowhere passes through unchanged (the list was never validated — no new failure
+    # mode).
+    text = (
+        '{"modules": [{"title": "M", "kcs": ["1", "ghost"], "objectives": ['
+        '{"kc": "arrays", "statement": "s", "bloom_level": "understand", "item_prompts": ["q"]}]}]}'
+    )
+
+    # Act
+    plan = parse_curriculum(text, _KCS, teaching_order=["arrays", "bsearch"])
+
+    # Assert
+    assert plan.modules[0].kcs == ["arrays", "ghost"]
+
+
+def test_parse_curriculum_rejects_an_out_of_range_positional_reference() -> None:
+    # Arrange — "kc_9" with only two KCs: not resolvable, so the strict error (and the caller's
+    # repair turn) still applies.
+    text = (
+        '{"modules": [{"title": "M", "kcs": ["arrays"], "objectives": ['
+        '{"kc": "kc_9", "statement": "s", "bloom_level": "apply", "item_prompts": ["q"]}]}]}'
+    )
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="unknown KC"):
+        parse_curriculum(text, _KCS, teaching_order=["arrays", "bsearch"])
+
+
+def test_parse_curriculum_without_a_teaching_order_keeps_strict_ids() -> None:
+    # Arrange — no teaching order supplied: positional references stay unknown (no silent
+    # guessing against an unordered set).
+    text = (
+        '{"modules": [{"title": "M", "kcs": ["arrays"], "objectives": ['
+        '{"kc": "1", "statement": "s", "bloom_level": "apply", "item_prompts": ["q"]}]}]}'
+    )
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="unknown KC"):
+        parse_curriculum(text, _KCS)
