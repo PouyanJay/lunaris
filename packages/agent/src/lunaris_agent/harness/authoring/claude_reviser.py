@@ -13,17 +13,16 @@ from collections.abc import Callable, Sequence
 import structlog
 from langchain_core.language_models import BaseChatModel
 from lunaris_runtime.resilience import (
-    build_chat_model,
-    retry_on_rate_limit,
+    DEFAULT_PARSE_REPAIR_ATTEMPTS,
+    invoke_with_parse_repair,
 )
 from lunaris_runtime.schema import CourseBrief, Module
 
+from ...subagents.lazy_chat_client import LazyChatClient
 from ...subagents.module_author import LessonDraft, build_authoring_prompt
 from ...subagents.module_author.parser import parse_lesson
 
 logger = structlog.get_logger()
-
-_MAX_LESSON_ATTEMPTS = 3
 
 _REPAIR_INSTRUCTION = (
     "\n\nYour previous response could not be used: {error}. "
@@ -50,11 +49,9 @@ class ClaudeLessonReviser:
         model: str,
         client_factory: Callable[[str], BaseChatModel] | None = None,
         *,
-        max_attempts: int = _MAX_LESSON_ATTEMPTS,
+        max_attempts: int = DEFAULT_PARSE_REPAIR_ATTEMPTS,
     ) -> None:
-        self._model = model
-        self._client_factory = client_factory
-        self._client: BaseChatModel | None = None
+        self._client = LazyChatClient(model, client_factory)
         self._max_attempts = max_attempts
 
     async def author(
@@ -93,36 +90,10 @@ class ClaudeLessonReviser:
         return draft
 
     async def _author_from_prompt(self, prompt: str) -> LessonDraft:
-        """Invoke the model with up to ``max_attempts`` parse-repair turns.
-
-        Each failed parse folds the error into the *original* prompt (never the prior repair
-        prompt, so feedback can't stack across attempts); the final attempt re-raises the
-        ``parse_lesson`` error unwrapped.
-        """
-        attempt_prompt = prompt
-        for attempt in range(1, self._max_attempts + 1):
-            message = await retry_on_rate_limit(
-                lambda p=attempt_prompt: self._ensure_client().ainvoke(p)
-            )
-            content = message.content if isinstance(message.content, str) else str(message.content)
-            try:
-                return parse_lesson(content)
-            except ValueError as exc:
-                if attempt == self._max_attempts:
-                    raise
-                logger.warning(
-                    "lesson_parse_repair",
-                    attempt=attempt,
-                    max_attempts=self._max_attempts,
-                    error=str(exc),
-                )
-                attempt_prompt = prompt + _REPAIR_INSTRUCTION.format(error=exc)
-        raise AssertionError("unreachable")  # pragma: no cover
-
-    def _ensure_client(self) -> BaseChatModel:
-        if self._client is None:
-            if self._client_factory is not None:
-                self._client = self._client_factory(self._model)
-            else:
-                self._client = build_chat_model(self._model)
-        return self._client
+        return await invoke_with_parse_repair(
+            self._client.invoke_text,
+            prompt,
+            parse_lesson,
+            repair_instruction=_REPAIR_INSTRUCTION,
+            max_attempts=self._max_attempts,
+        )

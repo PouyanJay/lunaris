@@ -9,8 +9,8 @@ before giving up.
 import json
 
 import pytest
+from _scripted_chat import ScriptedRecordingChatModel
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage
 from lunaris_agent.harness.authoring import ClaudeLessonReviser
 from lunaris_runtime.schema import Module
 
@@ -25,25 +25,7 @@ _COMPLETE_LESSON = json.dumps(
 )
 
 
-class _ScriptedChatModel:
-    """A minimal chat-model double: replays scripted responses and records every prompt.
-
-    Not the conftest ``ScriptedChatModel``: the reviser only calls ``ainvoke`` (no tool binding),
-    and these tests need the recorded prompts to assert repair-prompt content.
-    """
-
-    def __init__(self, responses: list[str]) -> None:
-        self._responses = list(responses)
-        self.prompts: list[str] = []
-
-    async def ainvoke(self, prompt: str) -> AIMessage:
-        self.prompts.append(prompt)
-        if not self._responses:
-            raise AssertionError("scripted model exhausted — unexpected extra call")
-        return AIMessage(content=self._responses.pop(0))
-
-
-def _reviser(client: _ScriptedChatModel, **kwargs: int) -> ClaudeLessonReviser:
+def _reviser(client: ScriptedRecordingChatModel, **kwargs: int) -> ClaudeLessonReviser:
     def factory(model: str) -> BaseChatModel:
         return client  # type: ignore[return-value]  # duck-typed double: only ainvoke is used
 
@@ -56,7 +38,7 @@ def _module() -> Module:
 
 async def test_revise_repairs_an_incomplete_lesson_instead_of_failing() -> None:
     # Arrange — first response reproduces the failure (activate only), the second is complete.
-    client = _ScriptedChatModel([_ACTIVATE_ONLY, _COMPLETE_LESSON])
+    client = ScriptedRecordingChatModel([_ACTIVATE_ONLY, _COMPLETE_LESSON])
     reviser = _reviser(client)
 
     # Act
@@ -69,7 +51,7 @@ async def test_revise_repairs_an_incomplete_lesson_instead_of_failing() -> None:
 
 async def test_revise_sends_the_parse_error_with_the_original_prompt_on_repair() -> None:
     # Arrange
-    client = _ScriptedChatModel([_ACTIVATE_ONLY, _COMPLETE_LESSON])
+    client = ScriptedRecordingChatModel([_ACTIVATE_ONLY, _COMPLETE_LESSON])
     reviser = _reviser(client)
 
     # Act — revise() is the call path that failed in production.
@@ -84,7 +66,7 @@ async def test_revise_sends_the_parse_error_with_the_original_prompt_on_repair()
 
 async def test_author_raises_after_exhausting_bounded_repair_attempts() -> None:
     # Arrange — every response is incomplete, so repair can never succeed.
-    client = _ScriptedChatModel([_ACTIVATE_ONLY] * 3)
+    client = ScriptedRecordingChatModel([_ACTIVATE_ONLY] * 3)
     reviser = _reviser(client, max_attempts=3)
 
     # Act / Assert — the parse error surfaces after exactly max_attempts calls.
