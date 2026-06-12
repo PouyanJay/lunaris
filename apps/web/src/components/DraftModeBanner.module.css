@@ -1,5 +1,6 @@
-/* Content layout only — the band shell (tint, rails, padding) is the AccentBand primitive. The
-   fallbacks list as a flat, hairline-divided status row below the lead line — data, not prose. */
+/* Content layout only — the band shell (tint, rails, padding) is the AccentBand primitive.
+   Two zones: the lead line (eyebrow · caveat · Settings action), then a hairline-topped status
+   band of uniform label-over-value cells — an instrument strip, not prose. */
 .column {
   display: flex;
   flex-direction: column;
@@ -28,42 +29,56 @@
   color: var(--text-secondary);
 }
 
-/* The fallbacks as a flat status row (a definition list): capability label → provider, each item
-   set off by a hairline divider. No boxes — it sits directly on the band, reading as a status bar
-   rather than a set of floating cards. */
+/* The status band: one row of cells welded together by hairline dividers, set off from the
+   lead line by a hairline top rule. Every cell — the compute control and the fallbacks alike —
+   stacks an eyebrow micro-label over its value, so the row reads as one rhythm. */
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  row-gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: var(--border-width) solid var(--border-strong);
+}
+
 .fallbacks {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  row-gap: var(--space-2);
+  align-items: stretch;
+  row-gap: var(--space-3);
   margin: 0;
 }
 
-.item {
+.cell {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  justify-content: flex-start;
   gap: var(--space-2);
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-4);
   border-left: var(--border-width) solid var(--border-strong);
 }
 
-.item:first-child {
+/* The first cell in the row hugs the band's left rail — whether it's the compute control or,
+   without one, the first fallback. */
+.statusRow > .cell:first-child,
+.statusRow > .fallbacks:first-child > .cell:first-child {
   padding-left: 0;
   border-left: none;
 }
 
-/* The capability name — a quiet caption ahead of its provider value. */
+/* dt inside the flex cell: typography comes from the global .eyebrow utility. */
 .label {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  display: block;
 }
 
-/* The provider value cell: the model/service name (mono data) plus the optional compute badge. */
+/* The provider value cell: the model/service name (mono data) plus the optional compute badge.
+   min-height matches the segmented control's track so values sit optically centered beside it. */
 .value {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
   margin: 0;
+  min-height: var(--space-6);
 }
 
 .provider {
@@ -71,11 +86,10 @@
   color: var(--text);
 }
 
-/* A small CPU/GPU badge on the local-inference fallback — the compute kind reads as mono data. GPU
-   (the faster, "upgraded" path) carries the accent; CPU stays neutral, so the accent marks the one
-   state worth noticing rather than colouring everything. */
+/* A small CPU/GPU badge on the local-inference fallback — the compute kind reads as mono data.
+   GPU (the faster, "upgraded" path) carries the accent; CPU stays neutral, so the accent marks
+   the one state worth noticing rather than colouring everything. */
 .compute {
-  align-self: center;
   padding: 0 var(--space-1);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -125,15 +139,15 @@
     0 0 0 4px var(--focus-ring);
 }
 
-/* Phone: stack the fallbacks so they never wrap into a divider at the start of a line; each reads
-   as its own label → value line. */
+/* Phone: the cells stack — each its own label-over-value block, no dividers — and the
+   Settings action keeps a 44px target. */
 @media (max-width: 768px) {
+  .statusRow,
   .fallbacks {
     flex-direction: column;
     align-items: stretch;
-    row-gap: var(--space-2);
   }
-  .item {
+  .cell {
     padding: 0;
     border-left: none;
   }
@@ -141,34 +155,5 @@
     min-height: 44px;
     display: inline-flex;
     align-items: center;
-  }
-}
-
-/* One status row: the compute choice leads, the capability fallbacks follow — the select reads
-   as the row's first item (same baseline rhythm), with a hairline divider before the chips. */
-.statusRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  row-gap: var(--space-2);
-}
-
-.computeItem {
-  display: flex;
-  align-items: baseline;
-  padding-right: var(--space-3);
-  border-right: var(--border-width) solid var(--border-strong);
-  margin-right: var(--space-3);
-}
-
-@media (max-width: 768px) {
-  .statusRow {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .computeItem {
-    padding-right: 0;
-    border-right: none;
-    margin-right: 0;
   }
 }
