@@ -105,7 +105,10 @@
   border-color: var(--border-strong);
 }
 
-.compute[data-compute="gpu"] {
+/* GPU paths — the server's GPU and the browser's WebGPU alike — carry the accent: the faster,
+   "upgraded" state is the one worth noticing. */
+.compute[data-compute="gpu"],
+.compute[data-compute="webgpu"] {
   color: var(--accent-700);
   background: var(--bg);
   border-color: var(--accent-500);

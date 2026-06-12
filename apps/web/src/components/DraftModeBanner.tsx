@@ -1,4 +1,6 @@
+import { useComputeSource } from "../hooks/useComputeSource";
 import { CAPABILITY_LABELS, isLlmKeyless, type CapabilityStatus } from "../lib/capabilities";
+import { DEVICE_MODEL_LABEL } from "../lib/deviceEngine";
 import { ComputeSourceSelect } from "./explain/ComputeSourceSelect";
 import { AccentBand } from "./primitives/AccentBand";
 import styles from "./DraftModeBanner.module.css";
@@ -21,9 +23,13 @@ function providerName(provider: string): string {
  *  control) first, then each fallback as micro-label over mono provider. Disappears once every
  *  capability is live. */
 export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBannerProps) {
+  const { source, device } = useComputeSource();
   const fallbacks = capabilities.filter((capability) => capability.mode === "fallback");
   if (fallbacks.length === 0) return null;
   const llmIsKeyless = isLlmKeyless(fallbacks);
+  // While "This device" is the chosen compute, the browser engine — not the server fallback the
+  // capability report describes — is what will serve, so the language-model cell presents it.
+  const llmServedByThisDevice = llmIsKeyless && source === "device" && device.supported;
 
   return (
     <AccentBand className={styles.column}>
@@ -45,27 +51,30 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
           </div>
         )}
         <dl className={styles.fallbacks}>
-          {fallbacks.map((capability) => (
-            <div key={capability.capability} className={styles.cell}>
-              <dt className={`eyebrow ${styles.label}`}>
-                {CAPABILITY_LABELS[capability.capability]}
-              </dt>
-              <dd className={styles.value}>
-                <span className={`mono ${styles.provider}`}>
-                  {providerName(capability.provider)}
-                </span>
-                {capability.compute && (
-                  <span
-                    className={styles.compute}
-                    data-compute={capability.compute}
-                    aria-label={`running on ${capability.compute.toUpperCase()}`}
-                  >
-                    {capability.compute.toUpperCase()}
-                  </span>
-                )}
-              </dd>
-            </div>
-          ))}
+          {fallbacks.map((capability) => {
+            const onDevice = llmServedByThisDevice && capability.capability === "llm";
+            const provider = onDevice ? DEVICE_MODEL_LABEL : providerName(capability.provider);
+            const compute = onDevice ? "webgpu" : capability.compute;
+            return (
+              <div key={capability.capability} className={styles.cell}>
+                <dt className={`eyebrow ${styles.label}`}>
+                  {CAPABILITY_LABELS[capability.capability]}
+                </dt>
+                <dd className={styles.value}>
+                  <span className={`mono ${styles.provider}`}>{provider}</span>
+                  {compute && (
+                    <span
+                      className={styles.compute}
+                      data-compute={compute}
+                      aria-label={`running on ${compute.toUpperCase()}`}
+                    >
+                      {compute.toUpperCase()}
+                    </span>
+                  )}
+                </dd>
+              </div>
+            );
+          })}
         </dl>
       </div>
     </AccentBand>

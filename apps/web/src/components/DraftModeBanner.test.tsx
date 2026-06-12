@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CapabilityStatus } from "../lib/capabilities";
+import { COMPUTE_SOURCE_KEY } from "../lib/computeSource";
 import { DraftModeBanner } from "./DraftModeBanner";
 
 const LIVE: CapabilityStatus[] = [
@@ -12,6 +13,11 @@ const LIVE: CapabilityStatus[] = [
 ];
 
 describe("DraftModeBanner", () => {
+  afterEach(() => {
+    localStorage.clear();
+    vi.unstubAllGlobals();
+  });
+
   it("names each capability running on a keyless fallback", () => {
     const capabilities: CapabilityStatus[] = [
       { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)" },
@@ -78,6 +84,46 @@ describe("DraftModeBanner", () => {
     const chips = screen.getAllByLabelText(/running on/i);
     expect(chips).toHaveLength(1);
     expect(chips[0]).toHaveTextContent("GPU");
+  });
+
+  it("presents the on-device engine in the language-model cell while the device is chosen", () => {
+    // Arrange — the server's capability report says CPU fallback, but THIS device's choice is
+    // "This device": the cell must describe what will actually serve — the browser engine over
+    // WebGPU — not the server it bypasses.
+    vi.stubGlobal("navigator", { gpu: {} });
+    localStorage.setItem(COMPUTE_SOURCE_KEY, "device");
+
+    // Act
+    render(
+      <DraftModeBanner
+        capabilities={[
+          { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)", compute: "cpu" },
+        ]}
+      />,
+    );
+
+    // Assert — the device engine's compute chip, not the server's.
+    const chips = screen.getAllByLabelText(/running on/i);
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent("WEBGPU");
+    expect(screen.getByRole("status")).not.toHaveTextContent("CPU");
+  });
+
+  it("keeps the server fallback in the language-model cell while the server is chosen", () => {
+    // Arrange — default choice (server): the capability report is the truth.
+    vi.stubGlobal("navigator", { gpu: {} });
+
+    // Act
+    render(
+      <DraftModeBanner
+        capabilities={[
+          { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)", compute: "cpu" },
+        ]}
+      />,
+    );
+
+    // Assert
+    expect(screen.getByLabelText(/running on cpu/i)).toBeInTheDocument();
   });
 
   it("renders nothing once every capability is live (the banner clears when keys are set)", () => {
