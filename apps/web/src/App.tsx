@@ -32,7 +32,6 @@ import { useCapabilities } from "./hooks/useCapabilities";
 import { useKeylessReadiness } from "./hooks/useKeylessReadiness";
 import { KeylessProvisioningBanner } from "./components/KeylessProvisioningBanner";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
-import { DeviceBuildNotice } from "./components/DeviceBuildNotice";
 import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
@@ -407,11 +406,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         ),
         body: (
           <>
-            {state.servedByThisDevice ? (
-              <DeviceBuildNotice />
-            ) : (
-              <KeylessProvisioningBanner status={keylessReadiness} />
-            )}
+            {/* The tab-open contract for a device build now rides the Draft banner's compact
+                compute select (its hint while "This device" is chosen) — no separate band. */}
+            {!state.servedByThisDevice && <KeylessProvisioningBanner status={keylessReadiness} />}
             <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
               <BuildTimeline
                 topic={state.topic}

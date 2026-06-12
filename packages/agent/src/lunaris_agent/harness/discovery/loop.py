@@ -155,10 +155,31 @@ def build_discovery_subgraph(
         )
         return {"queries": queries, "prev_total": len(accepted)}
 
+    async def _emit_search_plan(queries: list[DiscoveryQuery], done_through: int) -> None:
+        # Re-emit the WHOLE plan on every transition (the UI renders the latest todo event):
+        # queries before the cursor are crossed off, the one at it is active, the rest pending.
+        # This loop is deterministic — nothing else updates these todos (the cloud agent's own
+        # write_todos can't see inside this tool), so without these emissions the keyless build's
+        # plan card stays 0/N forever even though every search ran.
+        def status(index: int) -> str:
+            if index < done_through:
+                return "completed"
+            return "in_progress" if index == done_through else "pending"
+
+        await draft.agent.emit(
+            AgentEventKind.TODO,
+            todos=[
+                {"content": f"Search: {query.text}", "status": status(index)}
+                for index, query in enumerate(queries)
+            ],
+        )
+
     async def search_node(state: DiscoveryState) -> DiscoveryState:
         seen = set(state.get("seen_urls", []))
         candidates: list[_Candidate] = []
-        for query in state.get("queries", []):
+        queries = state.get("queries", [])
+        for position, query in enumerate(queries):
+            await _emit_search_plan(queries, done_through=position)
             await draft.agent.emit(
                 AgentEventKind.TOOL_CALL, tool="search", tool_args={"query": query.text}
             )
@@ -176,6 +197,8 @@ def build_discovery_subgraph(
                 if classify_domain(result.url) is TrustTier.BLOCKED:
                     continue
                 candidates.append(_Candidate(result, query.kc_id))
+        if queries:
+            await _emit_search_plan(queries, done_through=len(queries))  # all crossed off
         return {"candidates": candidates[: budget.fetches_per_round], "seen_urls": sorted(seen)}
 
     async def fetch_node(state: DiscoveryState) -> DiscoveryState:
