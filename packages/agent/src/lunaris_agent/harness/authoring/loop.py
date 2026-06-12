@@ -185,13 +185,35 @@ def build_authoring_subgraph(
             # Claim-repair (CQ Phase 1.5): retrieve evidence for the cut claims so the reviser
             # rewrites them down to what the corpus states, not re-assert from memory.
             grounding = await _grounding_for(cut_texts)
-            revised = await reviser.revise(
-                module,
-                cut_texts,
-                brief=draft.brief,
-                frontier=draft.frontier,
-                grounded_evidence=grounding,
-            )
+            try:
+                revised = await reviser.revise(
+                    module,
+                    cut_texts,
+                    brief=draft.brief,
+                    frontier=draft.frontier,
+                    grounded_evidence=grounding,
+                )
+            except ValueError:
+                # The reviser exhausted its bounded parse-repair turns (a small draft-tier model
+                # may never emit a parseable four-phase lesson). Revision is an IMPROVEMENT pass
+                # over an already-authored lesson — keep the existing lesson rather than fail the
+                # whole run at its last step: the still-cut claims stay cut, the no-progress
+                # route sends the loop to triage, and the publish gate guarantees no cut claim
+                # ships. Mirrors the grounding/verifier per-claim degradation philosophy.
+                logger.warning(
+                    "lesson_revision_unparseable",
+                    run_id=draft.run_id,
+                    module=module.id,
+                    exc_info=True,
+                )
+                await draft.agent.emit(
+                    AgentEventKind.REASONING,
+                    text=(
+                        f"Could not produce a usable revision for “{module.title}” — "
+                        "keeping the previous lesson; its unsupported claims will be cut."
+                    ),
+                )
+                continue
             module.lessons = [lesson_assembler.assemble(revised, lesson_id=f"{module.id}-l0")]
         return {"prev_cut": state.get("cut", _UNSET_CUT), "round": state.get("round", 0) + 1}
 

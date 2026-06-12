@@ -218,3 +218,38 @@ async def test_low_risk_tier_cap_stops_a_still_improving_loop() -> None:
     assert revise_calls == [1]
     assert draft.needs_review is False
     assert any(event.get("event") == "authoring_loop_finished" for event in logs)
+
+
+async def test_unparseable_revision_keeps_the_lesson_and_finishes_the_run() -> None:
+    # Arrange — the author emits an unsupported claim, and EVERY revision attempt fails to
+    # parse (a small draft-tier model that never emits a valid four-phase lesson). The loop
+    # must keep the authored lesson, triage the still-cut claim, and finish — not crash the
+    # run at its last step (the field failure: keyless device builds died after "Revising…").
+    draft = _draft(Module(id="m0", title="C", kcs=["c"], difficulty_index=0.5))
+
+    def author_fn(module: Module) -> LessonDraft:
+        return _lesson_with_claim(f"unsupported fact about {module.title}")
+
+    def revise_fn(module: Module, cut: Sequence[str], attempt: int) -> LessonDraft:
+        raise ValueError("response is not a complete four-phase lesson")
+
+    sink = _RecordingAgentSink()
+    draft.agent = AgentReporter("r1", sink)
+    draft.progress = ProgressReporter("r1", cursor=StageCursor())
+    subgraph = build_authoring_subgraph(
+        StubLessonReviser(author_fn, revise_fn), _marker_verifier(), draft
+    )
+
+    # Act — must NOT raise.
+    await subgraph.ainvoke({"messages": [HumanMessage(content="author all modules")]})
+
+    # Assert — the authored lesson survived (not dropped by the failed revision)…
+    claims = _all_claims(draft)
+    assert claims, "the failed revision must not erase the authored lesson"
+    # …its claim is still CUT (triaged; the publish gate keeps it out of publication)…
+    assert all(c.verifier_status is VerifierStatus.CUT for c in claims)
+    # …the goal-critical residue flags the course for review rather than failing the build…
+    assert draft.needs_review is True
+    # …and the degradation is narrated on the agent channel, not silent.
+    reasoning = [e.text for e in sink.events if e.kind is AgentEventKind.REASONING and e.text]
+    assert any("keeping the previous lesson" in text for text in reasoning)

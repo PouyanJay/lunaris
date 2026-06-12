@@ -36,30 +36,34 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
           </button>
         )}
       </div>
-      <dl className={styles.fallbacks}>
-        {fallbacks.map((capability) => (
-          <div key={capability.capability} className={styles.item}>
-            <dt className={styles.label}>{CAPABILITY_LABELS[capability.capability]}</dt>
-            <dd className={styles.value}>
-              <span className={`mono ${styles.provider}`}>{providerName(capability.provider)}</span>
-              {capability.compute && (
-                <span
-                  className={styles.compute}
-                  data-compute={capability.compute}
-                  aria-label={`running on ${capability.compute.toUpperCase()}`}
-                >
-                  {capability.compute.toUpperCase()}
-                </span>
-              )}
-            </dd>
+      <div className={styles.statusRow}>
+        {llmIsKeyless && (
+          <div className={styles.computeItem}>
+            <ComputeSourceSelect variant="compact" />
           </div>
-        ))}
-      </dl>
-      {llmIsKeyless && (
-        <div className={styles.computeRow}>
-          <ComputeSourceSelect />
-        </div>
-      )}
+        )}
+        <dl className={styles.fallbacks}>
+          {fallbacks.map((capability) => (
+            <div key={capability.capability} className={styles.item}>
+              <dt className={styles.label}>{CAPABILITY_LABELS[capability.capability]}</dt>
+              <dd className={styles.value}>
+                <span className={`mono ${styles.provider}`}>
+                  {providerName(capability.provider)}
+                </span>
+                {capability.compute && (
+                  <span
+                    className={styles.compute}
+                    data-compute={capability.compute}
+                    aria-label={`running on ${capability.compute.toUpperCase()}`}
+                  >
+                    {capability.compute.toUpperCase()}
+                  </span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </AccentBand>
   );
 }

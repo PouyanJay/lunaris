@@ -144,8 +144,31 @@
   }
 }
 
-.computeRow {
-  padding-top: var(--space-3);
-  border-top: var(--border-width) solid var(--border);
-  margin-top: var(--space-3);
+/* One status row: the compute choice leads, the capability fallbacks follow — the select reads
+   as the row's first item (same baseline rhythm), with a hairline divider before the chips. */
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  row-gap: var(--space-2);
+}
+
+.computeItem {
+  display: flex;
+  align-items: baseline;
+  padding-right: var(--space-3);
+  border-right: var(--border-width) solid var(--border-strong);
+  margin-right: var(--space-3);
+}
+
+@media (max-width: 768px) {
+  .statusRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .computeItem {
+    padding-right: 0;
+    border-right: none;
+    margin-right: 0;
+  }
 }
