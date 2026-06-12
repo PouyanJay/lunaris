@@ -126,6 +126,29 @@ describe("DraftModeBanner", () => {
     expect(screen.getByLabelText(/running on cpu/i)).toBeInTheDocument();
   });
 
+  it("switches the language-model cell back to the server fallback when the segment flips", () => {
+    // Arrange — device chosen; the banner's segmented control and its model cell render from the
+    // SAME shared choice. (Field regression: per-instance state let the cell keep WEBGPU after
+    // the user flipped the segment to "Lunaris server".)
+    vi.stubGlobal("navigator", { gpu: {} });
+    localStorage.setItem(COMPUTE_SOURCE_KEY, "device");
+    render(
+      <DraftModeBanner
+        capabilities={[
+          { capability: "llm", mode: "fallback", provider: "Qwen2.5-3B (local)", compute: "cpu" },
+        ]}
+      />,
+    );
+    expect(screen.getByLabelText(/running on webgpu/i)).toBeInTheDocument();
+
+    // Act — flip the banner's own segmented control to the server.
+    fireEvent.click(screen.getByRole("radio", { name: /lunaris server/i }));
+
+    // Assert — the cell follows the flip: the server's CPU fallback, no stale device engine.
+    expect(screen.getByLabelText(/running on cpu/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/running on webgpu/i)).not.toBeInTheDocument();
+  });
+
   it("renders nothing once every capability is live (the banner clears when keys are set)", () => {
     const { container } = render(<DraftModeBanner capabilities={LIVE} />);
 
