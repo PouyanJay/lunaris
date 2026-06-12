@@ -16,6 +16,7 @@ members = [
     "lunaris-graph",
     "lunaris-grounding",
     "lunaris-runtime",
+    "lunaris-video",
 ]
 
 [[package]]
@@ -1501,6 +1502,21 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.9" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "supabase", specifier = ">=2.9" },
+]
+
+[[package]]
+name = "lunaris-video"
+version = "0.0.0"
+source = { editable = "packages/video" }
+dependencies = [
+    { name = "lunaris-runtime" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "structlog", specifier = ">=24.4" },
 ]
 
 [[package]]
