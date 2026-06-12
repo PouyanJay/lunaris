@@ -10,15 +10,15 @@ describe("ComputeSourceSelect", () => {
     vi.unstubAllGlobals();
   });
 
-  it("offers both sources with the server selected by default", () => {
-    // Arrange / Act
+  it("offers both sources as a labelled segmented choice, server selected by default", () => {
+    // Act
     render(<ComputeSourceSelect />);
 
-    // Assert — a labelled select with the two compute options, defaulting to today's behavior.
-    const select = screen.getByLabelText(/draft ai runs on/i);
-    expect(select).toHaveValue("server");
-    expect(screen.getByRole("option", { name: /lunaris server/i })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /this device/i })).toBeInTheDocument();
+    // Assert — a labelled radiogroup with the two compute options, defaulting to today's
+    // behavior (the server). A two-option choice reads as segments, not a dropdown.
+    expect(screen.getByRole("radiogroup", { name: /draft ai runs on/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /lunaris server/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /this device/i })).not.toBeChecked();
   });
 
   it("states the device trade: free builds and explanations, but the tab stays open", () => {
@@ -32,7 +32,7 @@ describe("ComputeSourceSelect", () => {
 
     // Assert — first that the DEVICE hint is the one showing (not the disabled-reason text),
     // then that it carries the contract.
-    expect(screen.getByLabelText(/draft ai runs on/i)).toHaveValue("device");
+    expect(screen.getByRole("radio", { name: /this device/i })).toBeChecked();
     const hint = screen.getByText(/keep this tab open/i);
     expect(hint).toHaveTextContent(/builds/i);
     expect(hint).toHaveTextContent(/1\.8\s*GB/i);
@@ -56,8 +56,7 @@ describe("ComputeSourceSelect", () => {
     render(<ComputeSourceSelect />);
 
     // Assert — disabled, and the reason is visible (not a silent missing option).
-    const device = screen.getByRole("option", { name: /this device/i });
-    expect(device).toBeDisabled();
+    expect(screen.getByRole("radio", { name: /this device/i })).toBeDisabled();
     expect(screen.getByText(/doesn't support webgpu/i)).toBeInTheDocument();
   });
 
@@ -67,13 +66,11 @@ describe("ComputeSourceSelect", () => {
     render(<ComputeSourceSelect />);
 
     // Act
-    fireEvent.change(screen.getByLabelText(/draft ai runs on/i), {
-      target: { value: "device" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: /this device/i }));
 
-    // Assert — the choice is device-local (localStorage), the dropdown reflects it.
+    // Assert — the choice is device-local (localStorage), the control reflects it.
     expect(localStorage.getItem(COMPUTE_SOURCE_KEY)).toBe("device");
-    expect(screen.getByLabelText(/draft ai runs on/i)).toHaveValue("device");
+    expect(screen.getByRole("radio", { name: /this device/i })).toBeChecked();
   });
 
   it("restores a previously saved choice", () => {
@@ -85,7 +82,21 @@ describe("ComputeSourceSelect", () => {
     render(<ComputeSourceSelect />);
 
     // Assert
-    expect(screen.getByLabelText(/draft ai runs on/i)).toHaveValue("device");
+    expect(screen.getByRole("radio", { name: /this device/i })).toBeChecked();
+  });
+
+  it("switches back to the server when that segment is chosen again", () => {
+    // Arrange — device currently chosen; the reverse path persists too.
+    vi.stubGlobal("navigator", { gpu: {} });
+    localStorage.setItem(COMPUTE_SOURCE_KEY, "device");
+    render(<ComputeSourceSelect />);
+
+    // Act
+    fireEvent.click(screen.getByRole("radio", { name: /lunaris server/i }));
+
+    // Assert
+    expect(localStorage.getItem(COMPUTE_SOURCE_KEY)).toBe("server");
+    expect(screen.getByRole("radio", { name: /lunaris server/i })).toBeChecked();
   });
 
   describe("compact variant (the Draft banner's status row)", () => {
@@ -111,7 +122,8 @@ describe("ComputeSourceSelect", () => {
       // Act
       render(<ComputeSourceSelect variant="compact" />);
 
-      // Assert
+      // Assert — the control itself still renders; only the hint is dropped.
+      expect(screen.getByRole("radiogroup", { name: /draft ai runs on/i })).toBeInTheDocument();
       expect(screen.queryByText(/close this tab/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/keep this tab open/i)).not.toBeInTheDocument();
     });
@@ -123,7 +135,7 @@ describe("ComputeSourceSelect", () => {
       render(<ComputeSourceSelect variant="compact" />);
 
       // Assert
-      expect(screen.getByRole("option", { name: /this device/i })).toBeDisabled();
+      expect(screen.getByRole("radio", { name: /this device/i })).toBeDisabled();
       expect(screen.getByText(/doesn't support webgpu/i)).toBeInTheDocument();
     });
   });

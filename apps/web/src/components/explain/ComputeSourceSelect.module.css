@@ -1,7 +1,11 @@
+/* The compute choice as a label-over-control cell: eyebrow micro-label, a two-segment
+   control (native radios underneath), and the load-bearing hint as a quiet footnote. The
+   same stacked rhythm as the Draft banner's data cells, so the control reads as one of them. */
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  align-items: flex-start;
+  gap: var(--space-2);
 }
 
 /* Typography comes from the global .eyebrow utility; this only constrains layout. */
@@ -9,21 +13,68 @@
   display: block;
 }
 
-.select {
-  font: inherit;
-  font-size: var(--text-sm);
-  color: var(--text);
-  background: var(--surface);
+/* The segmented track: a hairline-bordered inset rail; segments sit inside with concentric
+   radii (track 5px − 2px inset → 3px segments). */
+.segments {
+  display: inline-flex;
+  align-items: stretch;
+  padding: calc(var(--space-1) / 2);
+  background: var(--bg-muted);
   border: var(--border-width) solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
-  max-width: 220px;
-  touch-action: manipulation;
+  border-radius: var(--radius-md);
 }
 
-.select:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
+.segment {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--space-6);
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.segment:hover:not([data-disabled]) {
+  color: var(--text);
+}
+
+/* The chosen segment lifts to a surface with a hairline — selection by contrast, no accent
+   spend (the accent stays reserved for focus). */
+.segment[data-checked] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 var(--border-width) var(--border-strong),
+    var(--shadow-xs);
+}
+
+.segment[data-disabled] {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* The native radio stays for semantics + keyboard; the label is the visible segment. */
+.radio {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.segment:has(.radio:focus-visible) {
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
 }
 
 .hint {
@@ -37,21 +88,20 @@
 }
 
 @media (max-width: 720px) {
-  .select {
+  .segments {
+    display: flex;
+    align-self: stretch;
+  }
+  .segment {
+    flex: 1;
+    justify-content: center;
     min-height: 44px;
     font-size: 16px; /* prevents iOS Safari auto-zoom on focus */
   }
 }
 
-/* Compact (the Draft banner's status row): label → select → load-bearing hint on one baseline,
-   reading like the capability items beside it rather than a form block. */
-.fieldCompact {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.fieldCompact .hint {
-  max-width: none;
+@media (prefers-reduced-motion: reduce) {
+  .segment {
+    transition: none;
+  }
 }
