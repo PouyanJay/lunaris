@@ -8,6 +8,10 @@
  *  two compute choices answer with comparable quality. */
 export const DEVICE_MODEL_ID = "Qwen2.5-3B-Instruct-q4f16_1-MLC";
 
+/** The model name as surfaces display it (the Draft banner's language-model cell while "This
+ *  device" is the chosen compute) — the human name of DEVICE_MODEL_ID's family/size. */
+export const DEVICE_MODEL_LABEL = "Qwen2.5-3B";
+
 // Mirrors the server explainer's bounds (schemas/explain.py) — one block, never an unbounded prompt.
 const MAX_CONTENT = 8000;
 const MAX_CONTEXT = 400;
