@@ -13,15 +13,23 @@ from collections.abc import Callable, Sequence
 import structlog
 from langchain_core.language_models import BaseChatModel
 from lunaris_runtime.resilience import (
-    build_chat_model,
-    retry_on_rate_limit,
+    DEFAULT_PARSE_REPAIR_ATTEMPTS,
+    invoke_with_parse_repair,
 )
 from lunaris_runtime.schema import CourseBrief, Module
 
+from ...subagents.lazy_chat_client import LazyChatClient
 from ...subagents.module_author import LessonDraft, build_authoring_prompt
 from ...subagents.module_author.parser import parse_lesson
 
 logger = structlog.get_logger()
+
+_REPAIR_INSTRUCTION = (
+    "\n\nYour previous response could not be used: {error}. "
+    "Respond again with the COMPLETE lesson as a single JSON object containing all four phases "
+    "(activate, demonstrate, apply, integrate) — do not stop early, and emit no text outside "
+    "the JSON object."
+)
 
 
 class ClaudeLessonReviser:
@@ -30,14 +38,21 @@ class ClaudeLessonReviser:
     Both passes go through ``build_authoring_prompt`` so the arc prompt stays in one place and the
     personalization (the module's competency, the level, the frontier, the voice) — plus the
     retrieved grounding evidence (CQ Phase 1.5) — is preserved across author and revise.
+
+    A response that doesn't parse into a complete four-phase lesson gets a bounded repair turn
+    (the parse error folded into the prompt) rather than failing the build: a single bad
+    generation at the last step of an otherwise-green run must not kill it.
     """
 
     def __init__(
-        self, model: str, client_factory: Callable[[str], BaseChatModel] | None = None
+        self,
+        model: str,
+        client_factory: Callable[[str], BaseChatModel] | None = None,
+        *,
+        max_attempts: int = DEFAULT_PARSE_REPAIR_ATTEMPTS,
     ) -> None:
-        self._model = model
-        self._client_factory = client_factory
-        self._client: BaseChatModel | None = None
+        self._client = LazyChatClient(model, client_factory)
+        self._max_attempts = max_attempts
 
     async def author(
         self,
@@ -75,14 +90,10 @@ class ClaudeLessonReviser:
         return draft
 
     async def _author_from_prompt(self, prompt: str) -> LessonDraft:
-        message = await retry_on_rate_limit(lambda: self._ensure_client().ainvoke(prompt))
-        content = message.content if isinstance(message.content, str) else str(message.content)
-        return parse_lesson(content)
-
-    def _ensure_client(self) -> BaseChatModel:
-        if self._client is None:
-            if self._client_factory is not None:
-                self._client = self._client_factory(self._model)
-            else:
-                self._client = build_chat_model(self._model)
-        return self._client
+        return await invoke_with_parse_repair(
+            self._client.invoke_text,
+            prompt,
+            parse_lesson,
+            repair_instruction=_REPAIR_INSTRUCTION,
+            max_attempts=self._max_attempts,
+        )

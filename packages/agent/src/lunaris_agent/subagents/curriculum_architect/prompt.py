@@ -17,7 +17,9 @@ Rules:
   check that proves the objective) AND a "pass_criterion": the explicit, concrete, GRADEABLE bar
   a passing response must clear (e.g. "Names >=2 AZs and a failover path; no single point of
   failure"), NOT a vague "does it look right". The lesson will be authored backward from this bar.
-- Keep modules in the given order; do not move a KC before its prerequisites."""
+- Keep modules in the given order; do not move a KC before its prerequisites.
+- In "kcs" and "kc" fields, copy the kc id exactly as written in the teaching order
+  (the id string before the dash) — never the list number."""
 
 # Appended when research grounded the target's real competency framework (P7.2; CQ Phase 1.3
 # presents the structured AREAS): the modules are designed backward from the actual standard, each
