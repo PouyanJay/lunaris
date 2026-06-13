@@ -78,11 +78,13 @@ async def test_run_once_processes_a_job_end_to_end() -> None:
     assert processed is True
     job = await queue.get(job_id="job-1")
     assert job is not None and job.status == VideoJobStatus.READY
-    mp4_path = f"{_OWNER}/course-1/job-1/final.mp4"
-    poster_path = f"{_OWNER}/course-1/job-1/poster.jpg"
-    assert sorted(storage.paths()) == [mp4_path, poster_path]
+    prefix = f"{_OWNER}/course-1/job-1"
+    mp4_path, poster_path = f"{prefix}/final.mp4", f"{prefix}/poster.jpg"
+    contracts_path, timing_path = f"{prefix}/scene_contracts.json", f"{prefix}/timing.json"
+    assert sorted(storage.paths()) == sorted([mp4_path, poster_path, contracts_path, timing_path])
     assert storage.content_type(mp4_path) == "video/mp4"
     assert storage.content_type(poster_path) == "image/jpeg"
+    assert storage.content_type(contracts_path) == "application/json"
     assert storage.read(mp4_path)[4:8] == b"ftyp"
     assert storage.read(poster_path)[:3] == b"\xff\xd8\xff"
 
@@ -118,7 +120,10 @@ async def test_run_once_binds_the_job_id_into_log_context_while_working() -> Non
         async def produce(self, job: VideoJob) -> RenderedVideo:
             captured.update(structlog.contextvars.get_contextvars())
             return RenderedVideo(
-                mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000, poster=b"\xff\xd8\xff" + b"x" * 600
+                mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
+                poster=b"\xff\xd8\xff" + b"x" * 600,
+                contracts_json=b"{}",
+                timing_json=b"{}",
             )
 
     queue, storage, events = (

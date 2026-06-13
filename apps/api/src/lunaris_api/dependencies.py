@@ -1,5 +1,7 @@
 import hashlib
+import importlib.util
 import os
+import tempfile
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
@@ -44,6 +46,11 @@ from lunaris_runtime.persistence import (
     SupabaseRunStore,
     SupabaseVideoJobQueue,
     SupabaseVideoStorage,
+)
+from lunaris_video import (
+    IVideoPipeline,
+    StubVideoPipeline,
+    build_lesson_video_pipeline,
 )
 from structlog.contextvars import bind_contextvars
 
@@ -211,6 +218,29 @@ def get_video_storage(settings: Annotated[Settings, Depends(get_settings)]) -> I
 
 VideoJobQueueDep = Annotated[IVideoJobQueue, Depends(get_video_job_queue)]
 VideoStorageDep = Annotated[IVideoStorage, Depends(get_video_storage)]
+
+
+def _resolve_course_store(settings: Settings) -> ICourseStore:
+    """The finished-course store for the environment — Supabase (durable) or file (offline dev)."""
+    return _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
+
+
+def get_video_pipeline(settings: Settings) -> IVideoPipeline:
+    """The worker's video pipeline: the real Manim pipeline where the render toolchain is present,
+    else the stub.
+
+    V1 swap point — keyed renders run the real plan→code→render→QA→assemble pipeline (lessons
+    loaded from the course store). Where the render extra is absent (CI, a lean image), the stub
+    keeps the job spine working rather than crash-looping the worker on a missing import. Prod is
+    dark until V7 regardless (the worker only starts when ``VIDEO_GENERATION_ENABLED``).
+    """
+    if importlib.util.find_spec("manim") is None:
+        logger.info("video_pipeline_stub", reason="render extra not installed")
+        return StubVideoPipeline()
+    workspace_root = Path(tempfile.gettempdir()) / "lunaris-video-workspace"
+    return build_lesson_video_pipeline(
+        store=_resolve_course_store(settings), workspace_root=workspace_root
+    )
 
 
 # Process-wide corpus collaborators (singletons, like the run store): the in-memory corpus must be
@@ -409,9 +439,7 @@ def get_course_service(
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
     # across replicas — the stateless-container need); the file store otherwise (offline dev).
-    store: ICourseStore = (
-        _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
-    )
+    store = _resolve_course_store(settings)
     factory = _PIPELINE_FACTORIES.get(settings.pipeline)
     if factory is None:
         # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.

@@ -15,8 +15,15 @@ class VideoArtifactPaths:
 
     mp4: str
     poster: str
+    contracts: str
+    timing: str
 
     @classmethod
     def for_job(cls, job: VideoJob) -> Self:
         prefix = f"{job.user_id}/{job.course_id}/{job.id}"
-        return cls(mp4=f"{prefix}/final.mp4", poster=f"{prefix}/poster.jpg")
+        return cls(
+            mp4=f"{prefix}/final.mp4",
+            poster=f"{prefix}/poster.jpg",
+            contracts=f"{prefix}/scene_contracts.json",
+            timing=f"{prefix}/timing.json",
+        )
