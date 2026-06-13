@@ -22,7 +22,14 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-extend-exclude = [".venv", "build", "dist"]
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    # The vendored explainer-video skill is a pinned dependency, kept byte-verbatim (fingerprint
+    # test in packages/video) — linting it would force edits the pin forbids.
+    "packages/video/src/lunaris_video/skill/pinned",
+]
 
 [tool.ruff.lint]
 select = [

@@ -104,6 +104,14 @@ class VideoWorker:
         await self._storage.upload(
             path=paths.poster, data=rendered.poster, content_type="image/jpeg"
         )
+        # The contract + timing manifest are what regeneration and a later re-voice need (plan
+        # §8.2) — kept alongside the playable artifacts under the same job prefix.
+        await self._storage.upload(
+            path=paths.contracts, data=rendered.contracts_json, content_type="application/json"
+        )
+        await self._storage.upload(
+            path=paths.timing, data=rendered.timing_json, content_type="application/json"
+        )
 
 
 class _EventSequence:

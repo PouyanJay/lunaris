@@ -228,6 +228,10 @@ async def test_app_lifespan_runs_the_worker_end_to_end(
     monkeypatch.setenv("LUNARIS_COURSE_DIR", str(tmp_path))
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    # This test proves the worker SPINE (claim → produce → upload → ready), so it pins the stub
+    # pipeline: deterministic whether or not the render extra is installed (the real Manim
+    # pipeline has its own smoke tests and would need a seeded course + toolchain here).
+    monkeypatch.setattr("lunaris_api.app.get_video_pipeline", lambda settings: StubVideoPipeline())
     get_settings.cache_clear()
     try:
         app = create_app()
@@ -327,3 +331,43 @@ async def test_the_job_id_correlates_api_queue_worker_and_event_log(
     assert recorded, "the worker left no event-log trail under the job's run_id"
     assert {event.payload.get("jobId") for event in recorded} == {job_id}
     assert recorded[-1].payload.get("status") == "ready"
+
+
+# ── pipeline selection (the V1 stub → real swap) ────────────────────────────────
+
+
+def test_video_pipeline_falls_back_to_stub_without_the_render_extra(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange — simulate a lean image / CI where Manim is not installed.
+    import importlib.util
+
+    from lunaris_api.dependencies import get_video_pipeline
+
+    real_find_spec = importlib.util.find_spec
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name, *a, **k: None if name == "manim" else real_find_spec(name, *a, **k),
+    )
+
+    # Act
+    pipeline = get_video_pipeline(_settings(tmp_path, video_enabled=True))
+
+    # Assert — the worker still has a pipeline (the job spine survives a missing toolchain).
+    assert isinstance(pipeline, StubVideoPipeline)
+
+
+@pytest.mark.skipif(
+    __import__("importlib.util", fromlist=["util"]).find_spec("manim") is None,
+    reason="render extra not installed (make video-deps)",
+)
+def test_video_pipeline_is_the_real_pipeline_when_renderable(tmp_path: Path) -> None:
+    # Arrange / Act — the render toolchain is present (local dev / the V7 worker image).
+    from lunaris_api.dependencies import get_video_pipeline
+    from lunaris_video import LessonVideoPipeline
+
+    pipeline = get_video_pipeline(_settings(tmp_path, video_enabled=True))
+
+    # Assert — keyed renders run the real plan→render→QA→assemble pipeline.
+    assert isinstance(pipeline, LessonVideoPipeline)

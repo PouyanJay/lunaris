@@ -39,6 +39,12 @@ stop:
 check-ports:
 	@./scripts/check-ports.sh
 
+# ── Video ────────────────────────────────────────────────────────────────────
+.PHONY: video-deps
+
+video-deps:
+	@./scripts/video-deps.sh
+
 # ── Grounding corpus ─────────────────────────────────────────────────────────
 .PHONY: ingest
 

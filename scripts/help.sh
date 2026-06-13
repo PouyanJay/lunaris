@@ -26,6 +26,9 @@ ui::cmd "make stop"          "Stop all services (Supabase data preserved)"
 ui::section "Diagnostics"
 ui::cmd "make check-ports"   "Pre-flight the fixed Supabase ports (54321-3)"
 
+ui::section "Video"
+ui::cmd "make video-deps"    "Install the local render toolchain (Manim CE; verifies ffmpeg)"
+
 ui::section "Testing"
 ui::cmd "make test"          "Run the standard suites: Python + web"
 ui::cmd "make test-python"   "Deterministic Python suite only (pytest)"

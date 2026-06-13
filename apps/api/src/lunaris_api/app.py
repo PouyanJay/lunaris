@@ -8,10 +8,15 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from lunaris_runtime.logging import configure_logging
-from lunaris_video import StubVideoPipeline, VideoWorker
+from lunaris_video import VideoWorker
 
 from .config import get_settings
-from .dependencies import get_run_event_store, get_video_job_queue, get_video_storage
+from .dependencies import (
+    get_run_event_store,
+    get_video_job_queue,
+    get_video_pipeline,
+    get_video_storage,
+)
 from .routers import (
     app_config,
     authorities,
@@ -47,7 +52,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.video_generation_enabled:
         worker = VideoWorker(
             queue=get_video_job_queue(settings),
-            pipeline=StubVideoPipeline(),
+            pipeline=get_video_pipeline(settings),
             storage=get_video_storage(settings),
             events=get_run_event_store(settings),
             worker_id=f"api-{os.getpid()}",

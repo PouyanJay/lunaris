@@ -28,9 +28,13 @@ def test_artifact_paths_follow_the_owner_prefix_convention() -> None:
     # Act
     paths = VideoArtifactPaths.for_job(_job())
 
-    # Assert — {user_id}/{course_id}/{job_id}/… is the storage-policy and prefix-delete contract.
-    assert paths.mp4 == "00000000-0000-0000-0000-000000000001/course-1/job-1/final.mp4"
-    assert paths.poster == "00000000-0000-0000-0000-000000000001/course-1/job-1/poster.jpg"
+    # Assert — {user_id}/{course_id}/{job_id}/… is the storage-policy and prefix-delete contract;
+    # every artifact (playable + regeneration) shares the one job prefix.
+    prefix = "00000000-0000-0000-0000-000000000001/course-1/job-1"
+    assert paths.mp4 == f"{prefix}/final.mp4"
+    assert paths.poster == f"{prefix}/poster.jpg"
+    assert paths.contracts == f"{prefix}/scene_contracts.json"
+    assert paths.timing == f"{prefix}/timing.json"
 
 
 # ── in-memory double ──────────────────────────────────────────────────────────────
