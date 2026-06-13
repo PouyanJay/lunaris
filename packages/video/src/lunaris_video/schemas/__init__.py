@@ -1,6 +1,7 @@
 from lunaris_video.schemas.beat import Beat
 from lunaris_video.schemas.chapter import Chapter
 from lunaris_video.schemas.chaptered_scene_contracts import ChapteredSceneContracts
+from lunaris_video.schemas.contract_draft import ContractDraft
 from lunaris_video.schemas.global_style import GlobalStyle
 from lunaris_video.schemas.scene_contract import SceneContract
 from lunaris_video.schemas.scene_contracts import SceneContracts
@@ -11,6 +12,7 @@ __all__ = [
     "Beat",
     "Chapter",
     "ChapteredSceneContracts",
+    "ContractDraft",
     "GlobalStyle",
     "SceneContract",
     "SceneContracts",

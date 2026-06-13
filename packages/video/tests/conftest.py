@@ -11,18 +11,12 @@ from lunaris_video.schemas import (
     SceneContract,
     SceneContracts,
 )
+from lunaris_video.style import video_global_style
 
 
 def _global_style() -> GlobalStyle:
-    return GlobalStyle(
-        background="#0E1116",
-        primary_text="#E6EDF3",
-        muted="#5B6470",
-        accent="#FBBF24",
-        danger="#F87171",
-        success="#34D399",
-        font="DejaVu Sans",
-    )
+    # The real injected style — the fixtures stay honest to what the planner actually produces.
+    return video_global_style()
 
 
 def _beats() -> list[Beat]:
