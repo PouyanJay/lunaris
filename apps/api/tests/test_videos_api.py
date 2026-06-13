@@ -22,7 +22,9 @@ from lunaris_runtime.persistence import (
     InMemoryRunEventStore,
     InMemoryVideoJobQueue,
     InMemoryVideoStorage,
+    VideoArtifactPaths,
 )
+from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
 from lunaris_video import StubVideoPipeline, VideoWorker
 
 
@@ -219,11 +221,69 @@ async def test_a_ready_job_carries_grounding_provenance_to_the_wire(
     response = await client.get(f"/api/videos/{job_id}", headers=auth_headers(USER_A))
 
     # Assert — provenance traverses pipeline → storage → API: the wire names the job it came from.
+    # The stub video is framing-only, so it grounds on (and asserts) nothing: claimIds is empty.
     body = response.json()
     assert body["provenance"] is not None
     assert body["provenance"]["jobId"] == job_id
     assert body["provenance"]["courseId"] == "course-1"
-    assert "claimIds" in body["provenance"]
+    assert body["provenance"]["claimIds"] == []
+
+
+async def _drive_to_ready(client: httpx.AsyncClient, queue: InMemoryVideoJobQueue) -> VideoJob:
+    """Enqueue over HTTP and settle the job READY through the queue (no worker), so a test can
+    stage its own artifacts in storage. Returns the settled job."""
+    await client.post(_ENQUEUE, headers=auth_headers(USER_A))
+    claimed = await queue.claim(worker_id="probe")
+    assert claimed is not None
+    await queue.complete(job_id=claimed.id)
+    return claimed
+
+
+async def test_a_ready_job_surfaces_non_empty_claim_ids_on_the_wire(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — a READY job whose stored provenance grounds on two verified claims.
+    job = await _drive_to_ready(client, queue)
+    provenance = VideoProvenance(
+        job_id=job.id,
+        course_id="course-1",
+        lesson_id="lesson-1",
+        kind=VideoKind.LESSON,
+        model="claude-opus-4-8",
+        contract_hash="h",
+        input_hash="h",
+        claim_ids=["c1", "c3"],
+        generated_at="2026-01-01T00:00:00+00:00",
+    )
+    await storage.upload(
+        path=VideoArtifactPaths.for_job(job).provenance,
+        data=provenance.model_dump_json(by_alias=True).encode(),
+        content_type="application/json",
+    )
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — the grounded claim ids reach the wire unchanged (a grounded video, not framing-only).
+    assert body["provenance"]["claimIds"] == ["c1", "c3"]
+
+
+async def test_a_ready_job_without_provenance_degrades_to_null(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a READY job with NO provenance.json in storage (a pre-V2 job, or one whose
+    # provenance upload predates this surface). The status read must not 500.
+    job = await _drive_to_ready(client, queue)
+
+    # Act
+    response = await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))
+
+    # Assert — ready, playback URLs present, provenance gracefully absent.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job"]["status"] == "ready"
+    assert body["videoUrl"] is not None
+    assert body["provenance"] is None
 
 
 async def test_an_in_flight_job_carries_no_provenance(client: httpx.AsyncClient) -> None:
