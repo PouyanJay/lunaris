@@ -5,6 +5,7 @@ description = "Lunaris video — the explainer-video worker loop + pipeline (V0:
 requires-python = ">=3.12"
 dependencies = [
     "lunaris-runtime",
+    "pydantic>=2.9",
     "structlog>=24.4",
 ]
 

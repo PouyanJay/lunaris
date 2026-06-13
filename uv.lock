@@ -1512,12 +1512,14 @@ version = "0.0.0"
 source = { editable = "packages/video" }
 dependencies = [
     { name = "lunaris-runtime" },
+    { name = "pydantic" },
     { name = "structlog" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "pydantic", specifier = ">=2.9" },
     { name = "structlog", specifier = ">=24.4" },
 ]
 
