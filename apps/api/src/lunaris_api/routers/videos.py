@@ -3,7 +3,8 @@ import uuid
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.persistence import VideoArtifactPaths
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 from lunaris_runtime.schema.base import CourseModel
@@ -71,8 +72,12 @@ async def enqueue_lesson_video(
     lesson_id: str,
     owner_id: Annotated[str, Depends(require_keyed_caller)],
     queue: VideoJobQueueDep,
+    response: Response,
 ) -> VideoJobView:
     """Enqueue one lesson-video job. The worker drains it; the job row is the status record."""
+    request_id = uuid.uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
     job = VideoJob(
         id=uuid.uuid4().hex,
         user_id=owner_id,
@@ -96,6 +101,7 @@ async def get_video_job(
     owner_id: CurrentUserIdDep,
     queue: VideoJobQueueDep,
     storage: VideoStorageDep,
+    response: Response,
 ) -> VideoJobView:
     """One job's status, owner-scoped; a READY job carries short-lived signed playback URLs.
 
@@ -103,6 +109,9 @@ async def get_video_job(
     generation capacity, and a user whose key was removed mid-flight must still see how their
     in-flight job ends. Owner scoping is the boundary that matters here.
     """
+    request_id = uuid.uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
     job = await queue.get(job_id=job_id, owner_id=owner_id)
     if job is None:
         # 404 for missing AND not-owned alike — existence is never leaked across tenants.
