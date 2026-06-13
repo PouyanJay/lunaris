@@ -55,7 +55,10 @@ export async function enqueueLessonVideo(
   if (response.status === 404) return { kind: "unavailable" };
   if (response.status === 403) {
     const body = (await response.json().catch(() => null)) as { detail?: string } | null;
-    return { kind: "keyless", detail: body?.detail ?? "Video generation needs an API key." };
+    return {
+      kind: "keyless",
+      detail: body?.detail ?? "Video generation needs an Anthropic API key — add one in Settings.",
+    };
   }
   if (!response.ok) return { kind: "error" };
   return { kind: "accepted", view: (await response.json()) as VideoJobView };

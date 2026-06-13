@@ -43,6 +43,13 @@ function readyView(jobId = "job-1") {
   };
 }
 
+function failedView(jobId = "job-1") {
+  return {
+    ...queuedView(jobId),
+    job: { ...queuedView(jobId).job, status: "failed", error: "video generation failed" },
+  };
+}
+
 const fetchMock = vi.fn<typeof fetch>();
 
 beforeEach(() => {
@@ -75,7 +82,8 @@ describe("LessonVideoHero", () => {
     // Act — the user asks for the video.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
 
-    // Assert — a live status while the job works…
+    // Assert — findByRole polls until React flushes the enqueue response → working transition;
+    // the status poll's promise is still pending here, so the working state is observable.
     expect(await screen.findByRole("status")).toBeInTheDocument();
     releasePoll(jsonResponse(200, readyView()));
     // …then the ready poster; playing mounts a native <video> on the signed URL.
@@ -85,9 +93,11 @@ describe("LessonVideoHero", () => {
     expect(video).not.toBeNull();
     expect(video?.src).toContain("final.mp4");
     expect(video?.poster).toContain("poster.jpg");
-    // The enqueue hit the right route.
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+    expect(video?.hasAttribute("controls")).toBe(true);
+    // The enqueue was a POST to the right route (order-independent matcher).
+    expect(fetchMock).toHaveBeenCalledWith(
       `${API}/api/courses/course-1/lessons/lesson-1/video`,
+      expect.objectContaining({ method: "POST" }),
     );
   });
 
@@ -101,9 +111,23 @@ describe("LessonVideoHero", () => {
     // Act
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
 
-    // Assert — the refusal is shown verbatim; no broken retry loop is offered.
+    // Assert — the refusal is announced (role=status), shown verbatim, and the affordance
+    // is withdrawn; no broken retry loop is offered.
     expect(await screen.findByText(/needs an anthropic api key/i)).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/anthropic api key/i);
     expect(screen.queryByRole("button", { name: /generate video/i })).toBeNull();
+  });
+
+  it("treats a server error on enqueue as a failed state with retry", async () => {
+    // Arrange — the network itself fails; the slot must degrade to the recoverable state.
+    fetchMock.mockRejectedValueOnce(new Error("network down"));
+    render(<LessonVideoHero {...PROPS} />);
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+
+    // Assert
+    expect(await screen.findByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
   it("disappears entirely when the feature is switched off", async () => {
@@ -120,13 +144,9 @@ describe("LessonVideoHero", () => {
 
   it("surfaces a failed job with a retry that re-enqueues", async () => {
     // Arrange — enqueue accepts, the poll reports the job failed, the retry enqueues again.
-    const failed = {
-      ...queuedView(),
-      job: { ...queuedView().job, status: "failed", error: "video generation failed" },
-    };
     fetchMock
       .mockResolvedValueOnce(jsonResponse(202, queuedView()))
-      .mockResolvedValueOnce(jsonResponse(200, failed))
+      .mockResolvedValueOnce(jsonResponse(200, failedView()))
       .mockResolvedValueOnce(jsonResponse(202, queuedView("job-2")))
       .mockResolvedValue(jsonResponse(200, readyView("job-2")));
     render(<LessonVideoHero {...PROPS} />);

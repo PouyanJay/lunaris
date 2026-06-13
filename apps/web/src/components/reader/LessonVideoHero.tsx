@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useLessonVideo } from "../../hooks/useLessonVideo";
 import type { VideoJobStatus } from "../../lib/videoJobs";
@@ -14,7 +14,9 @@ interface LessonVideoHeroProps {
   pollIntervalMs?: number;
 }
 
-/** What each in-flight pipeline stage says under the shimmer (the worker's status machine). */
+/** What each in-flight pipeline stage says under the shimmer (the worker's status machine).
+ *  `ready`/`failed` exist only to keep the Record exhaustive (a new status is a compile error);
+ *  the working stage never paints at a terminal status. */
 const WORKING_LABELS: Record<VideoJobStatus, string> = {
   queued: "Queued",
   planning: "Planning scenes",
@@ -71,7 +73,11 @@ export function LessonVideoHero({
         </div>
       )}
 
-      {state.phase === "keyless" && <p className={styles.keyless}>{state.detail}</p>}
+      {state.phase === "keyless" && (
+        <p className={styles.keyless} role="status">
+          {state.detail}
+        </p>
+      )}
     </section>
   );
 }
@@ -90,43 +96,52 @@ function WorkingStage({ status }: { status: VideoJobStatus }) {
 
 function ReadyPlayer({ videoUrl, posterUrl }: { videoUrl: string; posterUrl: string | null }) {
   const [playing, setPlaying] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  if (playing) {
-    return (
-      <div className={styles.stage}>
-        {/* The artifact is our own MP4 on a signed URL — a native element, no third party.
-            Captions arrive with narrated videos in V3 (the silent stub has none to caption). */}
+  // Playing unmounts the focused poster button — move focus onto the player so keyboard users
+  // land on the controls instead of falling back to <body> (WCAG 2.4.3).
+  useEffect(() => {
+    if (playing) videoRef.current?.focus();
+  }, [playing]);
+
+  return (
+    <div className={styles.stage}>
+      {/* The job just settled: announce success politely (the working status region unmounted). */}
+      <span className="sr-only" role="status">
+        Video ready
+      </span>
+      {playing ? (
+        /* The artifact is our own MP4 on a signed URL — a native element, no third party.
+           Captions arrive with narrated videos in V3 (the silent stub has none to caption). */
         <video
+          ref={videoRef}
           className={styles.player}
           src={videoUrl}
           poster={posterUrl ?? undefined}
           controls
           autoPlay
         />
-      </div>
-    );
-  }
-  return (
-    <div className={styles.stage}>
-      <button
-        type="button"
-        className={styles.poster}
-        aria-label="Play lesson video"
-        onClick={() => setPlaying(true)}
-      >
-        {posterUrl ? (
-          <img className={styles.posterImage} src={posterUrl} alt="" loading="lazy" />
-        ) : (
-          <span className={`mono ${styles.posterGlyph}`} aria-hidden="true">
-            VIDEO
+      ) : (
+        <button
+          type="button"
+          className={styles.poster}
+          aria-label="Play lesson video"
+          onClick={() => setPlaying(true)}
+        >
+          {posterUrl ? (
+            <img className={styles.posterImage} src={posterUrl} alt="" loading="lazy" />
+          ) : (
+            <span className={`mono ${styles.posterGlyph}`} aria-hidden="true">
+              VIDEO
+            </span>
+          )}
+          <span className={styles.play} aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
           </span>
-        )}
-        <span className={styles.play} aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </span>
-      </button>
+        </button>
+      )}
     </div>
   );
 }

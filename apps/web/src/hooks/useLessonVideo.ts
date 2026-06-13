@@ -62,8 +62,9 @@ export function useLessonVideo(
         const view = await fetchVideoJob(apiBaseUrl, jobId, controller.signal);
         if (controller.signal.aborted) return;
         if (view === null) {
-          // An unreadable job mid-poll (network blip, signed-out): keep trying — the timeout
-          // chain is bounded by the user navigating away, which aborts it.
+          // Retry-forever by design: a missed tick is transient (network blip, token refresh),
+          // and the AbortController fired on navigation/lesson-change is the intended
+          // termination — a bounded backoff would strand a slow job as "working" forever.
           timerRef.current = setTimeout(tick, pollIntervalMs);
           return;
         }
