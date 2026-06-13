@@ -6,15 +6,23 @@ frames, assembler, lesson source)."""
 import json
 from pathlib import Path
 
+import pytest
 from _stubs import FakeLessonProvider, StubInvokeModel
 from lunaris_runtime.schema import VideoJob, VideoKind
-from lunaris_video.gates import RenderGate, VisualQaGate
+from lunaris_video.errors import FactualGateError
+from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.schemas import QaVerdict, SceneContract, VideoContract
 
-_SCENE_SOURCE = "from manim import *\nfrom style_tokens import *\n\n\nclass S1Problem(Scene):\n    def construct(self):\n        pass\n"  # noqa: E501
+_SCENE_SOURCE = (
+    "from manim import *\n"
+    "from style_tokens import *\n\n\n"
+    "class S1Problem(Scene):\n"
+    "    def construct(self):\n"
+    "        pass\n"
+)
 
 
 def _job() -> VideoJob:
@@ -100,6 +108,7 @@ def _pipeline(
     return LessonVideoPipeline(
         lesson_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=invoke),
+        factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
         visual_qa_gate=VisualQaGate(
             vision=_CleanVision(), codegen=codegen, renderer=renderer, frames=_FakeFrames()
@@ -127,6 +136,28 @@ async def test_produce_runs_the_pipeline_and_returns_the_assembled_video(
     assert assembler.calls == 1
     assert video.mp4[4:8] == b"ftyp"
     assert b"How merge sort works" in video.contracts_json
+
+
+async def test_a_smuggled_figure_fails_gate_c_before_any_render(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — the planner emits a framing-only scene that nonetheless narrates "47% faster": an
+    # unsupported figure (the lesson has no claims — FakeLessonProvider yields an empty packet).
+    contract = make_lesson_contract().model_dump(mode="json")
+    keys = ("topic", "audience", "visual_archetypes_used", "asset_strategy")
+    draft: dict[str, object] = {k: contract[k] for k in keys}
+    scene = contract["scenes"][0]
+    scene["narration"] = "Sorting is 47% faster everywhere you look."
+    draft["scenes"] = [scene]
+    invoke = StubInvokeModel([json.dumps(draft)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path)
+
+    # Act / Assert — Gate C runs on the contract right after PLAN, so the job fails before the
+    # renderer is ever invoked (no compute wasted on ungrounded content).
+    with pytest.raises(FactualGateError):
+        await pipeline.produce(_job())
+    assert renderer.renders == 0
 
 
 async def test_an_unchanged_contract_hits_the_cache_and_skips_rendering(

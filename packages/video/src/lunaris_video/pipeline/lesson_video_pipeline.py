@@ -3,7 +3,7 @@ from pathlib import Path
 import structlog
 from lunaris_runtime.schema import VideoJob
 
-from lunaris_video.gates import RenderGate, VisualQaGate
+from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedScene, RenderedVideo
 from lunaris_video.planning import ScenePlanner
@@ -20,11 +20,13 @@ _DEFAULT_TARGET_SECONDS = 75
 class LessonVideoPipeline:
     """The real lesson-video pipeline (``IVideoPipeline``): lesson → contract → scenes → MP4.
 
-    PLAN once, then per scene: Gate A (render + stack-trace repair) → Gate B (vision QA + targeted
-    repair), then ASSEMBLE (concat + poster + timing). The contract hash gates the whole render
-    half: an unchanged contract with cached artifacts returns immediately (skip Stage 2+). Any
-    scene that cannot be made to render or pass QA raises (a ``VideoPipelineError`` subclass) — the
-    worker settles the job FAILED with the evidence; a partial video is never returned.
+    PLAN once, then Gate C (factual: every narrated figure must be grounded in a cited claim —
+    runs on the contract before any render so a smuggled figure costs no compute), then per scene:
+    Gate A (render + stack-trace repair) → Gate B (vision QA + targeted repair), then ASSEMBLE
+    (concat + poster + timing). The contract hash gates the whole render half: an unchanged contract
+    with cached artifacts returns immediately (skip Stage 2+). Any scene that cannot be grounded,
+    rendered or pass QA raises (a ``VideoPipelineError`` subclass) — the worker settles the job
+    FAILED with the evidence; a partial video is never returned.
 
     V1 plans lesson videos only (flat ``SceneContracts``); the chaptered overview kind arrives in
     V5 behind the same interface.
@@ -35,6 +37,7 @@ class LessonVideoPipeline:
         *,
         lesson_provider: ILessonSourceProvider,
         planner: ScenePlanner,
+        factual_gate: FactualGate,
         render_gate: RenderGate,
         visual_qa_gate: VisualQaGate,
         assembler: IVideoAssembler,
@@ -43,6 +46,7 @@ class LessonVideoPipeline:
     ) -> None:
         self._lesson_provider = lesson_provider
         self._planner = planner
+        self._factual_gate = factual_gate
         self._render_gate = render_gate
         self._visual_qa_gate = visual_qa_gate
         self._assembler = assembler
@@ -52,6 +56,7 @@ class LessonVideoPipeline:
     async def produce(self, job: VideoJob) -> RenderedVideo:
         lesson = await self._lesson_provider.load(job)
         contract = await self._planner.plan(lesson, target_seconds=_target_seconds(job))
+        self._factual_gate.check(contract, lesson.packet)
         digest = contract_hash(contract)
 
         cached = await self._cache.fetch(digest)
