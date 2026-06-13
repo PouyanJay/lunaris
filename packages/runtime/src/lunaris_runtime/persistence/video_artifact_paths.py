@@ -17,6 +17,7 @@ class VideoArtifactPaths:
     poster: str
     contracts: str
     timing: str
+    provenance: str
 
     @classmethod
     def for_job(cls, job: VideoJob) -> Self:
@@ -26,4 +27,5 @@ class VideoArtifactPaths:
             poster=f"{prefix}/poster.jpg",
             contracts=f"{prefix}/scene_contracts.json",
             timing=f"{prefix}/timing.json",
+            provenance=f"{prefix}/provenance.json",
         )

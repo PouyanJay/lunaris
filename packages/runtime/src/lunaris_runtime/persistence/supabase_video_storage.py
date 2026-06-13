@@ -68,3 +68,18 @@ class SupabaseVideoStorage:
         if not url:
             raise PersistenceError(f"no signed URL returned for {path!r}")
         return str(url)
+
+    @guard("course-videos download")
+    async def download(self, *, path: str) -> bytes:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            bucket = client.storage.from_(_BUCKET)  # type: ignore[attr-defined]
+            return bucket.download(path)
+
+        data = await asyncio.to_thread(_run)
+        if not isinstance(data, bytes | bytearray):
+            raise PersistenceError(
+                f"download for {path!r} returned {type(data).__name__}, not bytes"
+            )
+        return bytes(data)

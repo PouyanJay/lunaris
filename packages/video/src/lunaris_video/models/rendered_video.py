@@ -9,9 +9,15 @@ class RenderedVideo:
     signed URLs, not bytes. Beyond the playable ``mp4`` + ``poster``, the bundle carries the two
     artifacts regeneration really needs (plan §8.2): ``contracts_json`` (the regeneration-stable
     plan) and ``timing_json`` (the silent-but-voice-ready manifest V3 swaps measured timings into).
+    ``provenance_json`` is the serialized ``VideoProvenance`` built at the source (the pipeline sets
+    it per produce, even on a cache hit, so it is always the requesting job's own); the worker
+    uploads it and the API threads it onto the wire. ``None`` means a producer that built only the
+    render artifacts (e.g. the assembler before the pipeline restamps) — absence is explicit, never
+    a bogus empty artifact.
     """
 
     mp4: bytes
     poster: bytes
     contracts_json: bytes
     timing_json: bytes
+    provenance_json: bytes | None = None

@@ -6,15 +6,23 @@ frames, assembler, lesson source)."""
 import json
 from pathlib import Path
 
+import pytest
 from _stubs import FakeLessonProvider, StubInvokeModel
-from lunaris_runtime.schema import VideoJob, VideoKind
-from lunaris_video.gates import RenderGate, VisualQaGate
+from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
+from lunaris_video.errors import FactualGateError
+from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.schemas import QaVerdict, SceneContract, VideoContract
 
-_SCENE_SOURCE = "from manim import *\nfrom style_tokens import *\n\n\nclass S1Problem(Scene):\n    def construct(self):\n        pass\n"  # noqa: E501
+_SCENE_SOURCE = (
+    "from manim import *\n"
+    "from style_tokens import *\n\n\n"
+    "class S1Problem(Scene):\n"
+    "    def construct(self):\n"
+    "        pass\n"
+)
 
 
 def _job() -> VideoJob:
@@ -100,6 +108,7 @@ def _pipeline(
     return LessonVideoPipeline(
         lesson_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=invoke),
+        factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
         visual_qa_gate=VisualQaGate(
             vision=_CleanVision(), codegen=codegen, renderer=renderer, frames=_FakeFrames()
@@ -107,6 +116,7 @@ def _pipeline(
         assembler=assembler,
         cache=cache,
         workspace_root=workspace,
+        model_id="claude-test-model",
     )
 
 
@@ -129,6 +139,84 @@ async def test_produce_runs_the_pipeline_and_returns_the_assembled_video(
     assert b"How merge sort works" in video.contracts_json
 
 
+async def test_produce_stamps_grounding_provenance_at_the_source(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — the planner grounds scene 1 on claim c1 (FakeLessonProvider's packet); the
+    # provenance must record that claim id, the job, the contract hash, the model and a timestamp.
+    contract = make_lesson_contract().model_dump(mode="json")
+    keys = ("topic", "audience", "visual_archetypes_used", "asset_strategy")
+    draft: dict[str, object] = {k: contract[k] for k in keys}
+    scene = contract["scenes"][0]
+    scene["sources"] = ["c1"]
+    draft["scenes"] = [scene]
+    invoke = StubInvokeModel([json.dumps(draft)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path)
+
+    # Act
+    video = await pipeline.produce(_job())
+
+    # Assert — provenance rides on the artifact, populated (not just an MP4 exists).
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.job_id == "job-1"
+    assert provenance.input_hash == "hash-1"
+    assert provenance.model == "claude-test-model"
+    assert provenance.claim_ids == ["c1"]
+    assert provenance.contract_hash  # the regeneration key, populated
+    assert provenance.generated_at  # an ISO-8601 instant, stamped at the source
+
+
+async def test_a_cache_hit_restamps_provenance_for_the_requesting_job(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — two different jobs produce the SAME contract (cache hit on the second). Provenance
+    # must name the SECOND job, not the one that first rendered the contract.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path)
+    job_two = VideoJob(
+        id="job-2",
+        user_id="00000000-0000-0000-0000-000000000001",
+        course_id="course-1",
+        lesson_id="lesson-1",
+        kind=VideoKind.LESSON,
+        input_hash="hash-2",
+    )
+
+    # Act — first job renders; second hits the cache.
+    await pipeline.produce(_job())
+    second = await pipeline.produce(job_two)
+
+    # Assert — the cached render is reused, but provenance is the second job's own.
+    assert renderer.renders == 1
+    provenance = VideoProvenance.model_validate_json(second.provenance_json)
+    assert provenance.job_id == "job-2"
+    assert provenance.input_hash == "hash-2"
+
+
+async def test_a_smuggled_figure_fails_gate_c_before_any_render(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — the planner emits a framing-only scene (cites no claim) that nonetheless narrates
+    # "47% faster": a framing-only scene may assert no figure, so this is smuggled.
+    contract = make_lesson_contract().model_dump(mode="json")
+    keys = ("topic", "audience", "visual_archetypes_used", "asset_strategy")
+    draft: dict[str, object] = {k: contract[k] for k in keys}
+    scene = contract["scenes"][0]
+    scene["narration"] = "Sorting is 47% faster everywhere you look."
+    draft["scenes"] = [scene]
+    invoke = StubInvokeModel([json.dumps(draft)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path)
+
+    # Act / Assert — Gate C runs on the contract right after PLAN, so the job fails before the
+    # renderer is ever invoked (no compute wasted on ungrounded content).
+    with pytest.raises(FactualGateError):
+        await pipeline.produce(_job())
+    assert renderer.renders == 0
+
+
 async def test_an_unchanged_contract_hits_the_cache_and_skips_rendering(
     make_lesson_contract, tmp_path: Path
 ) -> None:
@@ -141,7 +229,9 @@ async def test_an_unchanged_contract_hits_the_cache_and_skips_rendering(
     first = await pipeline.produce(_job())
     second = await pipeline.produce(_job())
 
-    # Assert — second produce skipped Stage 2+: no extra render, no extra assemble, same artifact.
+    # Assert — second produce skipped Stage 2+: no extra render, no extra assemble, and the cached
+    # render bytes are reused (only provenance is restamped per produce, so the wrapper differs).
     assert renderer.renders == 1
     assert assembler.calls == 1
-    assert second is first
+    assert second.mp4 == first.mp4
+    assert second.contracts_json == first.contracts_json

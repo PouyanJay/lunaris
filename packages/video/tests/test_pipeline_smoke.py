@@ -12,7 +12,7 @@ import pytest
 from _stubs import FakeLessonProvider, StubInvokeModel
 from lunaris_runtime.schema import VideoJob, VideoKind
 from lunaris_video.assembly import VideoAssembler
-from lunaris_video.gates import RenderGate, VisualQaGate
+from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.qa import VisionQaInspector
@@ -79,6 +79,7 @@ async def test_a_lesson_renders_a_multi_scene_mp4(
     pipeline = LessonVideoPipeline(
         lesson_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=StubInvokeModel([_three_scene_draft(make_lesson_contract)])),
+        factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
         visual_qa_gate=VisualQaGate(
             vision=VisionQaInspector(invoke=_PassingVision()),
@@ -89,6 +90,7 @@ async def test_a_lesson_renders_a_multi_scene_mp4(
         assembler=VideoAssembler(),
         cache=ContractHashCache(),
         workspace_root=tmp_path,
+        model_id="claude-test-model",
     )
 
     # Act

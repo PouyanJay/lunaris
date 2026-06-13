@@ -35,6 +35,7 @@ def test_artifact_paths_follow_the_owner_prefix_convention() -> None:
     assert paths.poster == f"{prefix}/poster.jpg"
     assert paths.contracts == f"{prefix}/scene_contracts.json"
     assert paths.timing == f"{prefix}/timing.json"
+    assert paths.provenance == f"{prefix}/provenance.json"
 
 
 # ── in-memory double ──────────────────────────────────────────────────────────────
@@ -66,6 +67,24 @@ async def test_upload_overwrites_in_place() -> None:
     assert len(storage.paths()) == 1
 
 
+async def test_download_returns_the_uploaded_bytes() -> None:
+    # Arrange — the API downloads small JSON artifacts (provenance) to thread onto the wire.
+    storage = InMemoryVideoStorage()
+    await storage.upload(path="u/c/j/provenance.json", data=b'{"jobId":"j"}', content_type="json")
+
+    # Act / Assert
+    assert await storage.download(path="u/c/j/provenance.json") == b'{"jobId":"j"}'
+
+
+async def test_download_of_a_missing_object_raises() -> None:
+    # Arrange — a job rendered before V2 has no provenance.json; the API must degrade, not crash.
+    storage = InMemoryVideoStorage()
+
+    # Act / Assert
+    with pytest.raises(PersistenceError):
+        await storage.download(path="u/c/j/missing.json")
+
+
 async def test_signed_url_is_deterministic_and_path_scoped() -> None:
     # Arrange
     storage = InMemoryVideoStorage()
@@ -94,6 +113,10 @@ class _FakeBucket:
     def create_signed_url(self, path: str, expires_in: int) -> dict[str, str]:
         self._sink.append({"op": "signed_url", "path": path, "expires_in": expires_in})
         return self._signed_response
+
+    def download(self, path: str) -> bytes:
+        self._sink.append({"op": "download", "path": path})
+        return b'{"jobId":"j"}'
 
 
 class _FakeStorageClient:
@@ -130,6 +153,20 @@ async def test_upload_targets_the_course_videos_bucket() -> None:
     assert call["path"] == "u/c/j/final.mp4"
     assert call["file_options"]["content-type"] == "video/mp4"
     assert call["file_options"]["upsert"] == "true"
+
+
+async def test_download_targets_the_course_videos_bucket() -> None:
+    # Arrange
+    client = _FakeClient()
+    storage = SupabaseVideoStorage(client=client)
+
+    # Act
+    data = await storage.download(path="u/c/j/provenance.json")
+
+    # Assert — reads the provenance artifact straight off the private bucket.
+    assert data == b'{"jobId":"j"}'
+    assert client.storage.buckets == ["course-videos"]
+    assert client.storage.calls[0] == {"op": "download", "path": "u/c/j/provenance.json"}
 
 
 async def test_signed_url_unwraps_the_response() -> None:

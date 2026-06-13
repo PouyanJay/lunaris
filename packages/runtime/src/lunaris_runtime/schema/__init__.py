@@ -65,7 +65,9 @@ from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
 from .standard_research import CompetencyArea, ResearchSource, StandardResearch
+from .video_artifact import VideoArtifact
 from .video_job import VideoJob
+from .video_provenance import VideoProvenance
 from .visual_spec import (
     BeforeAfterSpec,
     ComparisonRow,
@@ -176,9 +178,11 @@ __all__ = [
     "TreeSpec",
     "TrustTier",
     "VerifierStatus",
+    "VideoArtifact",
     "VideoJob",
     "VideoJobStatus",
     "VideoKind",
+    "VideoProvenance",
     "Visual",
     "VisualKind",
     "VisualSpec",

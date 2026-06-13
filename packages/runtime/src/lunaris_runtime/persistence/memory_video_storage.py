@@ -1,3 +1,6 @@
+from .persistence_error import PersistenceError
+
+
 class InMemoryVideoStorage:
     """The in-memory storage double: byte-for-byte upload semantics, no Supabase.
 
@@ -15,6 +18,12 @@ class InMemoryVideoStorage:
 
     async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str:
         return f"memory://course-videos/{path}?signed=true"
+
+    async def download(self, *, path: str) -> bytes:
+        stored = self._objects.get(path)
+        if stored is None:
+            raise PersistenceError(f"no object at {path!r}")
+        return stored[0]
 
     def paths(self) -> list[str]:
         return list(self._objects)

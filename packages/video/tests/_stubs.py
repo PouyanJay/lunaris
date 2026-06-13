@@ -6,7 +6,7 @@ is what lets a single bad reply drive a "exhaust the repair budget" test without
 """
 
 from lunaris_runtime.schema import VideoJob
-from lunaris_video.models import LessonSource
+from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
 
 
 class StubInvokeModel:
@@ -37,6 +37,20 @@ class StubVisionModel:
 
 _DEFAULT_PROSE = "Merge sort splits the array, sorts the halves, and merges."
 
+# One verified claim so a scene may ground on "c1" (the framing-only fixtures cite none, so an
+# empty packet would also do — but a non-empty packet lets a grounded-path test cite a real id).
+_DEFAULT_PACKET = GroundingPacket(
+    kind=PacketKind.LESSON,
+    claims=(
+        GroundedClaim(
+            id="c1",
+            text="Merge sort runs in O(n log n) time.",
+            citation_id="cite-clrs",
+            source_label="CLRS",
+        ),
+    ),
+)
+
 
 class FakeLessonProvider:
     """An ``ILessonSourceProvider`` double returning a fixed merge-sort lesson — the pipeline
@@ -51,4 +65,5 @@ class FakeLessonProvider:
             lesson_title="Merge sort",
             audience="first-year CS",
             prose=self._prose,
+            packet=_DEFAULT_PACKET,
         )

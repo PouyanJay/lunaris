@@ -112,6 +112,15 @@ class VideoWorker:
         await self._storage.upload(
             path=paths.timing, data=rendered.timing_json, content_type="application/json"
         )
+        # Structural-provenance contract (CLAUDE.md): persisted as its own artifact so the API can
+        # thread it onto the wire independently of the playback artifacts. A producer that built no
+        # provenance writes none rather than a bogus empty object.
+        if rendered.provenance_json:
+            await self._storage.upload(
+                path=paths.provenance,
+                data=rendered.provenance_json,
+                content_type="application/json",
+            )
 
 
 class _EventSequence:

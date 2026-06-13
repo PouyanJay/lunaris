@@ -17,8 +17,8 @@ from lunaris_runtime.schema import VideoJob, VideoKind
 from lunaris_video.assembly import VideoAssembler
 from lunaris_video.codegen import SceneCodeGenerator
 from lunaris_video.errors import VideoPipelineError
-from lunaris_video.gates import RenderGate, VisualQaGate
-from lunaris_video.models import LessonSource
+from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
+from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.pipeline.model_adapters import (
     build_text_invoke,
@@ -32,7 +32,33 @@ from lunaris_video.rendering import FrameExtractor, SceneRenderer
 pytestmark = pytest.mark.eval
 
 # A conceptual lesson with visually-friendly scenes (a metaphor, a simple flow) rather than a dense
-# data layout — gives Gate B a fair chance to pass on a real model. Coherent title + prose.
+# data layout — gives Gate B a fair chance to pass on a real model. Coherent title + prose, plus a
+# grounding packet so the live eval exercises the full V2 path: the model cites these verified
+# claims and Gate C checks every narrated figure against them.
+_PACKET = GroundingPacket(
+    kind=PacketKind.LESSON,
+    claims=(
+        GroundedClaim(
+            id="c1",
+            text="A hash function returns a fixed-size hash for an input of any size.",
+            citation_id="cite-hash",
+            source_label="Crypto 101",
+        ),
+        GroundedClaim(
+            id="c2",
+            text="The same input always produces the same hash, and a tiny change "
+            "produces a completely different one.",
+            citation_id="cite-hash",
+            source_label="Crypto 101",
+        ),
+        GroundedClaim(
+            id="c3",
+            text="A hash cannot be reversed back into the original input.",
+            citation_id="cite-hash",
+            source_label="Crypto 101",
+        ),
+    ),
+)
 _LESSON = LessonSource(
     course_topic="Computer science fundamentals",
     lesson_title="How a hash function works",
@@ -45,6 +71,7 @@ _LESSON = LessonSource(
         "and look up data quickly without storing the original, which is why they power password "
         "checks, file fingerprints, and fast lookups."
     ),
+    packet=_PACKET,
 )
 
 # The product's "Fresh take" recovery: the planner is non-deterministic, so a re-plan can clear a
@@ -101,6 +128,7 @@ async def test_a_real_lesson_renders_on_live_claude(tmp_path, capsys) -> None:
     pipeline = LessonVideoPipeline(
         lesson_provider=_FixedLessonProvider(),
         planner=ScenePlanner(invoke=build_text_invoke(model)),
+        factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
         visual_qa_gate=VisualQaGate(
             vision=VisionQaInspector(invoke=build_vision_invoke(model)),
@@ -111,6 +139,7 @@ async def test_a_real_lesson_renders_on_live_claude(tmp_path, capsys) -> None:
         assembler=VideoAssembler(),
         cache=ContractHashCache(),
         workspace_root=tmp_path,
+        model_id=model,
     )
 
     # Act — render the lesson, allowing fresh-take re-plans on a gate failure.
