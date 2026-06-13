@@ -12,15 +12,15 @@ the local stack (``supabase start`` or ``supabase db start``):
     SUPABASE_DB_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres \
         uv run pytest tests/db -m eval
 
-Each test runs inside one transaction that is rolled back, so the suite never dirties the database.
-User context is simulated the way PostgREST builds it: ``set local role authenticated`` plus the
-``request.jwt.claims`` GUC that ``auth.uid()`` reads.
+Each test runs inside one transaction that is rolled back, so the suite never dirties the database
+(harness shared with the other tests/db suites via ``conftest.py``). User context is simulated the
+way PostgREST builds it: ``set local role authenticated`` plus the ``request.jwt.claims`` GUC that
+``auth.uid()`` reads.
 """
 
-import json
 import os
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable
 
 import pytest
 
@@ -36,22 +36,7 @@ pytestmark = [
 _USER_A = str(uuid.uuid4())
 _USER_B = str(uuid.uuid4())
 
-
-@pytest.fixture
-def db() -> Iterator["psycopg.Cursor"]:
-    """A cursor inside one never-committed transaction — every test leaves the DB untouched."""
-    with psycopg.connect(_DB_URL) as conn:
-        conn.autocommit = False
-        with conn.cursor() as cur:
-            yield cur
-        conn.rollback()
-
-
-def _as_user(cur: "psycopg.Cursor", user_id: str) -> None:
-    """Become an authenticated user for the rest of the transaction, the way PostgREST does."""
-    cur.execute("set local role authenticated")
-    claims = json.dumps({"sub": user_id, "role": "authenticated"})
-    cur.execute("select set_config('request.jwt.claims', %s, true)", (claims,))
+_AsUser = Callable[["psycopg.Cursor", str], None]
 
 
 def _insert_course(cur: "psycopg.Cursor", course_id: str, owner: str | None) -> None:
@@ -79,7 +64,9 @@ def test_every_public_table_has_rls_enabled(db: "psycopg.Cursor") -> None:
     assert db.fetchall() == [], "tables without RLS found"
 
 
-def test_authenticated_user_sees_only_their_own_courses(db: "psycopg.Cursor") -> None:
+def test_authenticated_user_sees_only_their_own_courses(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
     # Arrange — two owners' courses, written the way the backend writes (service path, owner
     # stamped explicitly).
     a_course, b_course = uuid.uuid4().hex, uuid.uuid4().hex
@@ -87,20 +74,22 @@ def test_authenticated_user_sees_only_their_own_courses(db: "psycopg.Cursor") ->
     _insert_course(db, b_course, _USER_B)
 
     # Act — read as A.
-    _as_user(db, _USER_A)
+    as_user(db, _USER_A)
     db.execute("select id from public.courses where id in (%s, %s)", (a_course, b_course))
 
     # Assert — the policy hides B's row; this is the DB belt, not app code.
     assert [row[0] for row in db.fetchall()] == [a_course]
 
 
-def test_authenticated_user_cannot_update_or_delete_anothers_course(db: "psycopg.Cursor") -> None:
+def test_authenticated_user_cannot_update_or_delete_anothers_course(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
     # Arrange
     b_course = uuid.uuid4().hex
     _insert_course(db, b_course, _USER_B)
 
     # Act — A attacks B's row.
-    _as_user(db, _USER_A)
+    as_user(db, _USER_A)
     db.execute("update public.courses set status = 'failed' where id = %s", (b_course,))
     updated = db.rowcount
     db.execute("delete from public.courses where id = %s", (b_course,))
@@ -110,14 +99,16 @@ def test_authenticated_user_cannot_update_or_delete_anothers_course(db: "psycopg
     assert (updated, deleted) == (0, 0)
 
 
-def test_authenticated_user_cannot_insert_a_course_for_someone_else(db: "psycopg.Cursor") -> None:
+def test_authenticated_user_cannot_insert_a_course_for_someone_else(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
     # Act / Assert — the WITH CHECK clause rejects a spoofed owner (and a null owner).
-    _as_user(db, _USER_A)
+    as_user(db, _USER_A)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         _insert_course(db, uuid.uuid4().hex, _USER_B)
 
 
-def test_run_events_are_owner_scoped(db: "psycopg.Cursor") -> None:
+def test_run_events_are_owner_scoped(db: "psycopg.Cursor", as_user: _AsUser) -> None:
     # Arrange — one replay event per owner.
     a_run, b_run = uuid.uuid4().hex, uuid.uuid4().hex
     db.execute(
@@ -130,7 +121,7 @@ def test_run_events_are_owner_scoped(db: "psycopg.Cursor") -> None:
     )
 
     # Act — A reads both runs' transcripts.
-    _as_user(db, _USER_A)
+    as_user(db, _USER_A)
     db.execute("select run_id from public.run_events where run_id in (%s, %s)", (a_run, b_run))
 
     # Assert — only A's own build transcript is visible.

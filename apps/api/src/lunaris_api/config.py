@@ -58,6 +58,12 @@ class Settings:
     # but never answers. Tuned per environment when proxies or device profiles demand it.
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
+    # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
+    # mid-workstream prod promote can never expose a half-built video surface; dev environments
+    # turn it on explicitly (VIDEO_GENERATION_ENABLED=true in .env / per-env CD vars).
+    video_generation_enabled: bool = False
+    # How often the in-process video worker polls an idle queue (tests turn this way down).
+    video_worker_poll_seconds: float = 2.0
 
     @property
     def has_supabase(self) -> bool:
@@ -108,6 +114,8 @@ def get_settings() -> Settings:
             "LUNARIS_DEVICE_BRIDGE_COMPLETION_TIMEOUT_S",
             default=_DEFAULT_BRIDGE_LIMITS.completion_timeout_s,
         ),
+        video_generation_enabled=_env_flag("VIDEO_GENERATION_ENABLED", default=False),
+        video_worker_poll_seconds=_env_float("LUNARIS_VIDEO_WORKER_POLL_S", default=2.0),
     )
 
 

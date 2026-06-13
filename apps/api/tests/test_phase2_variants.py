@@ -37,6 +37,7 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         env_file=tmp_path / ".env",
         config_path=tmp_path / "config.json",
         supabase_jwt_secret=JWT_SECRET,  # auth ON
+        video_generation_enabled=True,  # video routes live so the sweep hits their AUTH gate
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
@@ -61,6 +62,8 @@ async def client(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
         ("POST", "/api/runs/somerun/cancel"),
         ("POST", "/api/runs/somerun/bridge/results"),  # the device-bridge answer path
         ("POST", "/api/courses"),
+        ("POST", "/api/courses/deadbeef/lessons/l1/video"),  # video enqueue (V0-T5)
+        ("GET", "/api/videos/somejob"),  # video status read (V0-T5)
     ],
 )
 async def test_user_route_rejects_anonymous_when_auth_on(
