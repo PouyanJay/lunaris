@@ -33,11 +33,17 @@ from lunaris_runtime.persistence import (
     ICourseStore,
     InMemoryRunEventStore,
     InMemoryRunStore,
+    InMemoryVideoJobQueue,
+    InMemoryVideoStorage,
     IRunEventStore,
     IRunStore,
+    IVideoJobQueue,
+    IVideoStorage,
     SupabaseCourseStore,
     SupabaseRunEventStore,
     SupabaseRunStore,
+    SupabaseVideoJobQueue,
+    SupabaseVideoStorage,
 )
 from structlog.contextvars import bind_contextvars
 
@@ -178,6 +184,33 @@ def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) ->
     if settings.has_supabase:
         return _supabase_run_event_store
     return _in_memory_run_event_store
+
+
+# The video-job queue + artifact storage (explainer-video V0), one per process — same singleton /
+# lazy-client posture as the run stores. The in-memory pair serves tests and Supabase-less dev;
+# the lifespan worker and the request DI must see the SAME instances or enqueues would vanish.
+_in_memory_video_queue = InMemoryVideoJobQueue()
+_supabase_video_queue = SupabaseVideoJobQueue()
+_in_memory_video_storage = InMemoryVideoStorage()
+_supabase_video_storage = SupabaseVideoStorage()
+
+
+def get_video_job_queue(settings: Annotated[Settings, Depends(get_settings)]) -> IVideoJobQueue:
+    """The video-job queue: Supabase (durable, SKIP LOCKED claims) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_video_queue
+    return _in_memory_video_queue
+
+
+def get_video_storage(settings: Annotated[Settings, Depends(get_settings)]) -> IVideoStorage:
+    """The video-artifact store: the private course-videos bucket when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_video_storage
+    return _in_memory_video_storage
+
+
+VideoJobQueueDep = Annotated[IVideoJobQueue, Depends(get_video_job_queue)]
+VideoStorageDep = Annotated[IVideoStorage, Depends(get_video_storage)]
 
 
 # Process-wide corpus collaborators (singletons, like the run store): the in-memory corpus must be

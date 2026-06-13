@@ -7,6 +7,7 @@ dependencies = [
     "lunaris-agent",
     "lunaris-runtime",
     "lunaris-grounding",
+    "lunaris-video",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "structlog>=24.4",
@@ -26,3 +27,4 @@ packages = ["src/lunaris_api"]
 lunaris-agent = { workspace = true }
 lunaris-runtime = { workspace = true }
 lunaris-grounding = { workspace = true }
+lunaris-video = { workspace = true }
