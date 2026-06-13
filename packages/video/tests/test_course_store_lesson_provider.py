@@ -3,16 +3,27 @@ segments concatenated), with clean domain failures when the course or lesson is 
 
 import pytest
 from lunaris_runtime.schema import (
+    Citation,
+    Claim,
     Course,
     Lesson,
     MerrillSegments,
     Module,
     Segment,
+    VerifierStatus,
     VideoJob,
     VideoKind,
 )
 from lunaris_video.errors import VideoPipelineError
+from lunaris_video.grounding import LessonGroundingPacketBuilder
+from lunaris_video.models import PacketKind
 from lunaris_video.sourcing import CourseStoreLessonSourceProvider
+
+
+def _provider(course: Course | None) -> CourseStoreLessonSourceProvider:
+    return CourseStoreLessonSourceProvider(
+        _FakeCourseStore(course), packet_builder=LessonGroundingPacketBuilder()
+    )
 
 
 class _FakeCourseStore:
@@ -49,6 +60,33 @@ def _course(*, lesson_id: str = "lesson-1") -> Course:
     )
 
 
+def _grounded_course() -> Course:
+    segments = MerrillSegments(
+        activate=Segment(
+            prose="Merge sort is a divide-and-conquer sort.",
+            claims=[
+                Claim(
+                    text="Merge sort runs in O(n log n) time.",
+                    supported_by="cite-clrs",
+                    verifier_status=VerifierStatus.SUPPORTED,
+                )
+            ],
+        ),
+        demonstrate=Segment(prose="It splits the array in half repeatedly."),
+        apply=Segment(prose="Trace the merge."),
+        integrate=Segment(prose="Where else does it help?"),
+    )
+    lesson = Lesson(id="lesson-1", segments=segments)
+    module = Module(id="m1", title="Sorting", competency="sort efficiently", lessons=[lesson])
+    return Course(
+        id="course-1",
+        topic="Algorithms",
+        scope_note="for CS undergrads",
+        modules=[module],
+        provenance=[Citation(id="cite-clrs", title="CLRS")],
+    )
+
+
 def _job(*, lesson_id: str | None = "lesson-1") -> VideoJob:
     return VideoJob(
         id="job-1",
@@ -62,7 +100,7 @@ def _job(*, lesson_id: str | None = "lesson-1") -> VideoJob:
 
 async def test_load_flattens_the_lesson_into_a_source() -> None:
     # Arrange
-    provider = CourseStoreLessonSourceProvider(_FakeCourseStore(_course()))
+    provider = _provider(_course())
 
     # Act
     source = await provider.load(_job())
@@ -76,9 +114,34 @@ async def test_load_flattens_the_lesson_into_a_source() -> None:
     assert "divide-and-conquer" in source.prose
 
 
+async def test_load_composes_the_grounding_packet_onto_the_source() -> None:
+    # Arrange — the lesson carries one SUPPORTED claim grounded by a course citation.
+    provider = _provider(_grounded_course())
+
+    # Act
+    source = await provider.load(_job())
+
+    # Assert — the GROUND stage hands PLAN a packet, not just prose (cross-cutting principle 2).
+    assert source.packet.kind is PacketKind.LESSON
+    assert [claim.text for claim in source.packet.claims] == ["Merge sort runs in O(n log n) time."]
+    assert source.packet.claims[0].id == "c1"
+    assert source.packet.claims[0].source_label == "CLRS"
+
+
+async def test_a_lesson_with_no_supported_claims_loads_an_empty_packet() -> None:
+    # Arrange — prose exists (so the load succeeds) but nothing was verified: framing-only.
+    provider = _provider(_course())
+
+    # Act
+    source = await provider.load(_job())
+
+    # Assert — a valid load with an empty packet; PLAN must make every scene framing-only.
+    assert source.packet.is_empty
+
+
 async def test_missing_course_is_a_clean_domain_failure() -> None:
     # Arrange
-    provider = CourseStoreLessonSourceProvider(_FakeCourseStore(None))
+    provider = _provider(None)
 
     # Act / Assert
     with pytest.raises(VideoPipelineError, match="not found"):
@@ -87,7 +150,7 @@ async def test_missing_course_is_a_clean_domain_failure() -> None:
 
 async def test_missing_lesson_is_a_clean_domain_failure() -> None:
     # Arrange
-    provider = CourseStoreLessonSourceProvider(_FakeCourseStore(_course(lesson_id="other")))
+    provider = _provider(_course(lesson_id="other"))
 
     # Act / Assert
     with pytest.raises(VideoPipelineError, match="not found in course"):
@@ -96,7 +159,7 @@ async def test_missing_lesson_is_a_clean_domain_failure() -> None:
 
 async def test_a_lesson_job_without_a_lesson_id_is_rejected() -> None:
     # Arrange
-    provider = CourseStoreLessonSourceProvider(_FakeCourseStore(_course()))
+    provider = _provider(_course())
 
     # Act / Assert
     with pytest.raises(VideoPipelineError, match="no lesson_id"):
@@ -111,7 +174,7 @@ async def test_a_lesson_with_only_blank_prose_is_rejected() -> None:
     lesson = Lesson(id="lesson-1", segments=blank)
     module = Module(id="m1", title="Sorting", lessons=[lesson])
     course = Course(id="course-1", topic="Algorithms", modules=[module])
-    provider = CourseStoreLessonSourceProvider(_FakeCourseStore(course))
+    provider = _provider(course)
 
     # Act / Assert
     with pytest.raises(VideoPipelineError, match="no prose"):

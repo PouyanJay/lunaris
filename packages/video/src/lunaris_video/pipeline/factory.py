@@ -5,6 +5,7 @@ from lunaris_runtime.persistence import ICourseStore
 from lunaris_video.assembly import VideoAssembler
 from lunaris_video.codegen import SceneCodeGenerator
 from lunaris_video.gates import RenderGate, VisualQaGate
+from lunaris_video.grounding import LessonGroundingPacketBuilder
 from lunaris_video.pipeline.contract_hash_cache import ContractHashCache
 from lunaris_video.pipeline.lesson_video_pipeline import LessonVideoPipeline
 from lunaris_video.pipeline.model_adapters import (
@@ -31,7 +32,9 @@ def build_lesson_video_pipeline(
     codegen = SceneCodeGenerator(invoke=text_invoke)
     renderer = SceneRenderer()
     return LessonVideoPipeline(
-        lesson_provider=CourseStoreLessonSourceProvider(store),
+        lesson_provider=CourseStoreLessonSourceProvider(
+            store, packet_builder=LessonGroundingPacketBuilder()
+        ),
         planner=ScenePlanner(invoke=text_invoke),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
         visual_qa_gate=VisualQaGate(
