@@ -277,6 +277,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
                 ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
                 : undefined
             }
+            apiBaseUrl={apiBaseUrl}
           />
         </ExplainProvider>
       ),

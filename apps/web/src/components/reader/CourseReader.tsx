@@ -11,6 +11,7 @@ import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
 import { LessonAssessment } from "./LessonAssessment";
+import { LessonVideoHero } from "./LessonVideoHero";
 import { LessonObjectives } from "./LessonObjectives";
 import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
@@ -101,6 +102,9 @@ interface CourseReaderProps {
   /** Re-author the focused lesson with the agent, returning the updated course. Absent => the
    *  regenerate action is hidden (e.g. offline). */
   onRegenerate?: ((lessonId: string) => Promise<Course>) | undefined;
+  /** The API origin for per-lesson video generation. Absent (offline sample course) => the
+   *  video hero slot is not rendered. */
+  apiBaseUrl?: string | undefined;
 }
 
 /** The lesson reader (Learn view): a persistent course outline, a clean reading column, and a
@@ -110,7 +114,7 @@ interface CourseReaderProps {
  *  Selecting a rail entry highlights the place it refers to in the prose (its matched sentence, or
  *  its phase); a prose cross-link highlights the rail entry. On narrow screens the rail collapses
  *  behind a "Sources & checks" toggle that opens it as a drawer. */
-export function CourseReader({ course, focusRequest, onRegenerate }: CourseReaderProps) {
+export function CourseReader({ course, focusRequest, onRegenerate, apiBaseUrl }: CourseReaderProps) {
   // A successful regenerate swaps in the updated course locally until a different course is opened.
   const [regeneratedCourse, setRegeneratedCourse] = useState<Course | null>(null);
   const active = regeneratedCourse ?? course;
@@ -354,6 +358,15 @@ export function CourseReader({ course, focusRequest, onRegenerate }: CourseReade
               )}
             </div>
           </header>
+
+          {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
+          {apiBaseUrl && (
+            <LessonVideoHero
+              apiBaseUrl={apiBaseUrl}
+              courseId={active.id}
+              lessonId={current.lesson.id}
+            />
+          )}
 
           {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
 

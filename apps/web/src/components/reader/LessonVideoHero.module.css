@@ -1,0 +1,175 @@
+/* The lesson video hero slot: one bordered region above the prose, holding whichever state the
+   job is in. Idle stays slim (a single row); every media state is a 16:9 stage. */
+
+.slot {
+  margin-bottom: var(--space-6);
+}
+
+/* Idle: a quiet, single-row affordance — the lesson is complete without it. */
+.idle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.idleHint {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* The 16:9 stage every media state shares (mirrors VideoFacade's frame). */
+.stage {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Working: shimmer + a centred mono status line. */
+.shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    var(--bg-subtle) 30%,
+    var(--bg-muted) 50%,
+    var(--bg-subtle) 70%
+  );
+  background-size: 200% 100%;
+  animation: heroShimmer 1.4s var(--ease) infinite;
+}
+
+@keyframes heroShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.stageLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.spinner {
+  flex: none;
+}
+
+/* Ready: the whole stage is the play target (the VideoFacade pattern). */
+.poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: var(--bg-muted);
+  cursor: pointer;
+}
+
+.poster:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--bg-muted),
+    inset 0 0 0 4px var(--focus-ring);
+}
+
+.posterImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.posterGlyph {
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--scrim);
+  color: var(--gray-0);
+  padding-left: 3px; /* optical centring of the triangle */
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.poster:hover .play,
+.poster:focus-visible .play {
+  background: var(--accent-600);
+}
+
+.player {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--bg-muted);
+}
+
+/* Failed: a recoverable state with the retry beside the message. */
+.failed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.failedTitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* Keyless: the tier refusal, stated plainly. */
+.keyless {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+  }
+
+  .play {
+    transition: none;
+  }
+}
