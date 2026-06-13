@@ -9,6 +9,12 @@ dependencies = [
     "structlog>=24.4",
 ]
 
+[project.optional-dependencies]
+# The render toolchain (Manim CE) is optional: hermetic tests never import it, CI installs
+# without extras, and only render-capable environments (local dev via `make video-deps`, the
+# V7 cloud worker image) pay for it. ffmpeg is a system binary, not a wheel.
+render = ["manim>=0.19"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

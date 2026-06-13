@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 
 import pytest
+from _stubs import StubInvokeModel
 from lunaris_runtime.resilience import DEFAULT_PARSE_REPAIR_ATTEMPTS
 from lunaris_video.models import LessonSource
 from lunaris_video.planning import ScenePlanner
@@ -31,25 +32,12 @@ def _draft_payload(contract_factory: Callable[..., SceneContracts]) -> dict[str,
     }
 
 
-class _StubModel:
-    """Scripted completions, recording every prompt the planner sends."""
-
-    def __init__(self, replies: list[str]) -> None:
-        self.prompts: list[str] = []
-        self._replies = replies
-
-    async def __call__(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        call_index = len(self.prompts) - 1  # 0-based; repeats the last reply once exhausted
-        return self._replies[min(call_index, len(self._replies) - 1)]
-
-
 async def test_planner_builds_a_contract_with_injected_style(
     make_lesson_contract: Callable[..., SceneContracts],
 ) -> None:
     # Arrange
     payload = _draft_payload(make_lesson_contract)
-    stub = _StubModel([json.dumps(payload)])
+    stub = StubInvokeModel([json.dumps(payload)])
     planner = ScenePlanner(invoke=stub)
 
     # Act
@@ -72,7 +60,7 @@ async def test_model_cannot_choose_global_style(
     # repair turn carries the error, the second completion is clean.
     smuggled = dict(_draft_payload(make_lesson_contract))
     smuggled["global_style"] = {"background": "#FF00FF"}
-    stub = _StubModel([json.dumps(smuggled), json.dumps(_draft_payload(make_lesson_contract))])
+    stub = StubInvokeModel([json.dumps(smuggled), json.dumps(_draft_payload(make_lesson_contract))])
     planner = ScenePlanner(invoke=stub)
 
     # Act
@@ -86,7 +74,7 @@ async def test_model_cannot_choose_global_style(
 
 async def test_planner_exhausts_repairs_and_raises() -> None:
     # Arrange
-    stub = _StubModel(["not json at all"])
+    stub = StubInvokeModel(["not json at all"])
     planner = ScenePlanner(invoke=stub)
 
     # Act / Assert — bounded attempts, then the parse error propagates (the worker fails the job).
@@ -99,7 +87,7 @@ async def test_prompt_carries_lesson_and_pinned_skill_context(
     make_lesson_contract: Callable[..., SceneContracts],
 ) -> None:
     # Arrange
-    stub = _StubModel([json.dumps(_draft_payload(make_lesson_contract))])
+    stub = StubInvokeModel([json.dumps(_draft_payload(make_lesson_contract))])
     planner = ScenePlanner(invoke=stub)
 
     # Act
