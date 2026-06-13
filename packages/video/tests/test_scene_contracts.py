@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 import pytest
 from lunaris_video.schemas import (
+    FRAMING_ONLY_SENTINEL,
     Beat,
     ChapteredSceneContracts,
     GlobalStyle,
@@ -129,6 +130,29 @@ def test_sources_must_be_non_empty(make_scene: Callable[..., SceneContract]) -> 
     # Act / Assert — an empty sources list is itself a gate failure (contract-schema field rules).
     with pytest.raises(ValidationError):
         SceneContract(**{**scene.model_dump(), "sources": []})
+
+
+def test_sources_accept_a_list_of_claim_ids(make_scene: Callable[..., SceneContract]) -> None:
+    # Arrange — V2: a grounded scene cites the verified claims it draws facts from, by id.
+    scene = make_scene(1, "problem")
+
+    # Act
+    grounded = SceneContract(**{**scene.model_dump(), "sources": ["c1", "c3"]})
+
+    # Assert
+    assert grounded.sources == ["c1", "c3"]
+
+
+def test_framing_only_sentinel_cannot_be_mixed_with_claim_ids(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — "framing only" means the scene asserts NO facts; pairing it with a claim id is a
+    # contradiction the schema must reject (T1: claim ids OR the literal sentinel, never both).
+    scene = make_scene(1, "problem")
+
+    # Act / Assert
+    with pytest.raises(ValidationError):
+        SceneContract(**{**scene.model_dump(), "sources": [FRAMING_ONLY_SENTINEL, "c1"]})
 
 
 def test_silent_beat_requires_an_explicit_visual_floor() -> None:
