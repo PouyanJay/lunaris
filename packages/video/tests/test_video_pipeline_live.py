@@ -139,6 +139,7 @@ async def test_a_real_lesson_renders_on_live_claude(tmp_path, capsys) -> None:
         assembler=VideoAssembler(),
         cache=ContractHashCache(),
         workspace_root=tmp_path,
+        model_id=model,
     )
 
     # Act — render the lesson, allowing fresh-take re-plans on a gate failure.

@@ -90,6 +90,7 @@ async def test_a_lesson_renders_a_multi_scene_mp4(
         assembler=VideoAssembler(),
         cache=ContractHashCache(),
         workspace_root=tmp_path,
+        model_id="claude-test-model",
     )
 
     # Act

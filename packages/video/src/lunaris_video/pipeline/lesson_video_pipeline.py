@@ -1,7 +1,9 @@
+from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from lunaris_runtime.schema import VideoJob
+from lunaris_runtime.schema import VideoJob, VideoProvenance
 
 from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
@@ -10,7 +12,7 @@ from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourceProvider
 from lunaris_video.protocols.render_cache_protocol import IRenderCache
 from lunaris_video.protocols.video_assembler_protocol import IVideoAssembler
-from lunaris_video.schemas import SceneContracts
+from lunaris_video.schemas import FRAMING_ONLY_SENTINEL, SceneContracts, VideoContract
 
 _logger = structlog.get_logger(__name__)
 
@@ -43,6 +45,7 @@ class LessonVideoPipeline:
         assembler: IVideoAssembler,
         cache: IRenderCache,
         workspace_root: Path,
+        model_id: str,
     ) -> None:
         self._lesson_provider = lesson_provider
         self._planner = planner
@@ -52,6 +55,7 @@ class LessonVideoPipeline:
         self._assembler = assembler
         self._cache = cache
         self._workspace_root = workspace_root
+        self._model_id = model_id
 
     async def produce(self, job: VideoJob) -> RenderedVideo:
         lesson = await self._lesson_provider.load(job)
@@ -59,17 +63,40 @@ class LessonVideoPipeline:
         self._factual_gate.check(contract, lesson.packet)
         digest = contract_hash(contract)
 
+        # Provenance is built at the source and stamped fresh per produce — even on a cache hit it
+        # must carry THIS job's id/timestamp, not the job that first rendered the contract.
+        provenance = self._provenance_bytes(job, contract, digest)
+
         cached = await self._cache.fetch(digest)
         if cached is not None:
             _logger.info("video_pipeline.cache_hit", job_id=job.id, contract_hash=digest)
-            return cached
+            return replace(cached, provenance_json=provenance)
 
         workdir = self._workdir_for(job)
         rendered = await self._render_scenes(contract, workdir)
         video = await self._assembler.assemble(rendered, contract, workdir=workdir)
         await self._cache.store(digest, video)
-        _logger.info("video_pipeline.produced", job_id=job.id, scenes=len(rendered))
-        return video
+        _logger.info(
+            "video_pipeline.produced",
+            job_id=job.id,
+            scenes=len(rendered),
+            grounded_claim_ids=len(_cited_claim_ids(contract)),
+        )
+        return replace(video, provenance_json=provenance)
+
+    def _provenance_bytes(self, job: VideoJob, contract: VideoContract, digest: str) -> bytes:
+        provenance = VideoProvenance(
+            job_id=job.id,
+            course_id=job.course_id,
+            lesson_id=job.lesson_id,
+            kind=job.kind,
+            model=self._model_id,
+            contract_hash=digest,
+            input_hash=job.input_hash,
+            claim_ids=_cited_claim_ids(contract),
+            generated_at=datetime.now(UTC).isoformat(),
+        )
+        return provenance.model_dump_json(by_alias=True).encode()
 
     async def _render_scenes(self, contract: SceneContracts, workdir: Path) -> list[RenderedScene]:
         rendered: list[RenderedScene] = []
@@ -92,3 +119,15 @@ class LessonVideoPipeline:
 def _target_seconds(job: VideoJob) -> int:
     raw = job.config.get("target_seconds")
     return int(raw) if isinstance(raw, int) else _DEFAULT_TARGET_SECONDS
+
+
+def _cited_claim_ids(contract: VideoContract) -> list[str]:
+    # Framing-only scenes assert no empirical fact, so they contribute no grounded claim id — only
+    # the ids real scenes cite become the video's provenance.
+    cited = {
+        source
+        for scene in contract.scenes
+        for source in scene.sources
+        if source != FRAMING_ONLY_SENTINEL
+    }
+    return sorted(cited)

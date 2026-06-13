@@ -1,10 +1,11 @@
+from datetime import UTC, datetime
 from importlib import resources
 
-from lunaris_runtime.schema import VideoJob
+from lunaris_runtime.schema import VideoJob, VideoProvenance
 
 from lunaris_video.models.rendered_video import RenderedVideo
 
-# Minimal but valid regeneration artifacts so the stub exercises the same four-artifact upload
+# Minimal but valid regeneration artifacts so the stub exercises the same five-artifact upload
 # path the real pipeline does — the walking skeleton stays honest end to end.
 _STUB_CONTRACTS_JSON = b'{"topic": "stub", "scenes": []}'
 _STUB_TIMING_JSON = b"{}"
@@ -25,4 +26,21 @@ class StubVideoPipeline:
             poster=(assets / "poster.jpg").read_bytes(),
             contracts_json=_STUB_CONTRACTS_JSON,
             timing_json=_STUB_TIMING_JSON,
+            provenance_json=_stub_provenance(job),
         )
+
+
+def _stub_provenance(job: VideoJob) -> bytes:
+    """A stub video still carries real provenance — the spine asserts nothing it can't trace."""
+    provenance = VideoProvenance(
+        job_id=job.id,
+        course_id=job.course_id,
+        lesson_id=job.lesson_id,
+        kind=job.kind,
+        model="stub",
+        contract_hash="stub",
+        input_hash=job.input_hash,
+        claim_ids=[],
+        generated_at=datetime.now(UTC).isoformat(),
+    )
+    return provenance.model_dump_json(by_alias=True).encode()

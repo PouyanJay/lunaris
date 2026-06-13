@@ -47,4 +47,5 @@ def build_lesson_video_pipeline(
         assembler=VideoAssembler(),
         cache=ContractHashCache(),
         workspace_root=workspace_root,
+        model_id=model,
     )

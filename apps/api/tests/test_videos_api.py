@@ -208,6 +208,36 @@ async def test_a_ready_job_serves_signed_playback_urls(
     assert f"{USER_A}/course-1/{job_id}/poster.jpg" in body["posterUrl"]
 
 
+async def test_a_ready_job_carries_grounding_provenance_to_the_wire(
+    client: httpx.AsyncClient, worker: VideoWorker
+) -> None:
+    # Arrange — enqueue over HTTP, then the worker settles the job (and uploads provenance.json).
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    assert await worker.run_once() is True
+
+    # Act
+    response = await client.get(f"/api/videos/{job_id}", headers=auth_headers(USER_A))
+
+    # Assert — provenance traverses pipeline → storage → API: the wire names the job it came from.
+    body = response.json()
+    assert body["provenance"] is not None
+    assert body["provenance"]["jobId"] == job_id
+    assert body["provenance"]["courseId"] == "course-1"
+    assert "claimIds" in body["provenance"]
+
+
+async def test_an_in_flight_job_carries_no_provenance(client: httpx.AsyncClient) -> None:
+    # Arrange — a freshly queued job: provenance only exists once the worker has produced.
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+
+    # Act
+    body = (await client.get(f"/api/videos/{job_id}", headers=auth_headers(USER_A))).json()
+
+    # Assert
+    assert body["job"]["status"] == "queued"
+    assert body["provenance"] is None
+
+
 # ── the lifespan worker (make run parity) ─────────────────────────────────────────
 
 

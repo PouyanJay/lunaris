@@ -3,6 +3,7 @@ from pydantic import Field
 from .base import CourseModel
 from .enums import BloomLevel, VerifierStatus, VisualKind
 from .resource import Resource
+from .video_artifact import VideoArtifact
 from .visual_spec import VisualSpec
 
 
@@ -102,6 +103,9 @@ class Lesson(CourseModel):
     self_check: list[str] = Field(default_factory=list)
     gagne: GagneFlags = Field(default_factory=GagneFlags)
     load_estimate: float = 0.0  # vs the cognitive-load budget
+    # None until the build populates it; defined now so the course payload shape is stable and a
+    # lesson's video provenance has a home without a later migration.
+    video: VideoArtifact | None = None
 
 
 class Module(CourseModel):

@@ -14,7 +14,13 @@ from lunaris_runtime.persistence import (
     InMemoryVideoStorage,
     PersistenceError,
 )
-from lunaris_runtime.schema import RunEventKind, VideoJob, VideoJobStatus, VideoKind
+from lunaris_runtime.schema import (
+    RunEventKind,
+    VideoJob,
+    VideoJobStatus,
+    VideoKind,
+    VideoProvenance,
+)
 from lunaris_video import RenderedVideo, StubVideoPipeline, VideoWorker
 
 _OWNER = "00000000-0000-0000-0000-000000000001"
@@ -81,12 +87,20 @@ async def test_run_once_processes_a_job_end_to_end() -> None:
     prefix = f"{_OWNER}/course-1/job-1"
     mp4_path, poster_path = f"{prefix}/final.mp4", f"{prefix}/poster.jpg"
     contracts_path, timing_path = f"{prefix}/scene_contracts.json", f"{prefix}/timing.json"
-    assert sorted(storage.paths()) == sorted([mp4_path, poster_path, contracts_path, timing_path])
+    provenance_path = f"{prefix}/provenance.json"
+    assert sorted(storage.paths()) == sorted(
+        [mp4_path, poster_path, contracts_path, timing_path, provenance_path]
+    )
     assert storage.content_type(mp4_path) == "video/mp4"
     assert storage.content_type(poster_path) == "image/jpeg"
     assert storage.content_type(contracts_path) == "application/json"
+    assert storage.content_type(provenance_path) == "application/json"
     assert storage.read(mp4_path)[4:8] == b"ftyp"
     assert storage.read(poster_path)[:3] == b"\xff\xd8\xff"
+    # The stub still carries real provenance under the job's run_id (the spine traces everything).
+    provenance = VideoProvenance.model_validate_json(storage.read(provenance_path))
+    assert provenance.job_id == "job-1"
+    assert provenance.input_hash == _job().input_hash
 
 
 async def test_run_once_appends_the_job_lifecycle_to_run_events() -> None:

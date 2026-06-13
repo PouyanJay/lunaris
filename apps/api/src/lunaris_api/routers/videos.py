@@ -5,9 +5,10 @@ from typing import Annotated
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from lunaris_runtime.logging import bind_request_id
-from lunaris_runtime.persistence import VideoArtifactPaths
-from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
+from lunaris_runtime.persistence import IVideoStorage, PersistenceError, VideoArtifactPaths
+from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.schema.base import CourseModel
+from pydantic import ValidationError
 
 from ..config import Settings, get_settings
 from ..dependencies import (
@@ -29,11 +30,13 @@ _KEYLESS_DETAIL = (
 
 
 class VideoJobView(CourseModel):
-    """The wire shape of one video job: the row itself plus playback URLs once it is ready."""
+    """The wire shape of one video job: the row itself, playback URLs and the grounding provenance
+    once it is ready."""
 
     job: VideoJob
     video_url: str | None = None
     poster_url: str | None = None
+    provenance: VideoProvenance | None = None
 
 
 def require_video_generation_enabled(
@@ -123,4 +126,16 @@ async def get_video_job(
         job=job,
         video_url=await storage.signed_url(path=paths.mp4),
         poster_url=await storage.signed_url(path=paths.poster),
+        provenance=await _read_provenance(storage, paths.provenance),
     )
+
+
+async def _read_provenance(storage: IVideoStorage, path: str) -> VideoProvenance | None:
+    """The video's grounding provenance, threaded onto the wire. Supplementary to playback, so a
+    missing or malformed artifact (e.g. a job rendered before V2) degrades to None, never a 500."""
+    try:
+        return VideoProvenance.model_validate_json(await storage.download(path=path))
+    except (PersistenceError, ValidationError) as exc:
+        # reason distinguishes the expected case (a pre-V2 job has no artifact) from schema drift.
+        logger.warning("video_provenance_unavailable", path=path, reason=type(exc).__name__)
+        return None
