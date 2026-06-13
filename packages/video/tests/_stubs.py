@@ -15,3 +15,18 @@ class StubInvokeModel:
         self.prompts.append(prompt)
         call_index = len(self.prompts) - 1
         return self._replies[min(call_index, len(self._replies) - 1)]
+
+
+class StubVisionModel:
+    """The vision seam's analog of StubInvokeModel — also records the frame batch per call."""
+
+    def __init__(self, replies: list[str]) -> None:
+        self.prompts: list[str] = []
+        self.frame_batches: list[list[bytes]] = []
+        self._replies = replies
+
+    async def __call__(self, prompt: str, frames: list[bytes]) -> str:
+        self.prompts.append(prompt)
+        self.frame_batches.append(frames)
+        call_index = len(self.prompts) - 1
+        return self._replies[min(call_index, len(self._replies) - 1)]

@@ -1,24 +1,13 @@
-import re
 from collections.abc import Awaitable, Callable
 
 import structlog
 from lunaris_runtime.resilience import invoke_with_parse_repair
 
-from lunaris_video.schemas import SceneContract
+from lunaris_video.codegen.scene_validator import validate_scene_source
+from lunaris_video.schemas import QaDefect, SceneContract
 from lunaris_video.skill import read_skill_asset
 
 _logger = structlog.get_logger(__name__)
-
-# The no-LaTeX rule and the CE-only rule, enforced deterministically — a completion that
-# violates them is rejected BEFORE any subprocess runs, with the violation named so the repair
-# turn can fix it. `include_numbers` is banned outright: Axes numbers secretly invoke LaTeX.
-_FORBIDDEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\b(MathTex|Tex|SingleStringMathTex|BulletedList|Title)\s*\("), "LaTeX mobject"),
-    (re.compile(r"include_numbers"), "Axes numbers (secretly LaTeX)"),
-    (re.compile(r"\bmanimlib\b|\bmanimgl\b"), "manimgl import (CE only)"),
-]
-
-_CODE_FENCE = re.compile(r"^```(?:python)?\s*\n|\n```\s*$", re.MULTILINE)
 
 _GENERATE_TEMPLATE = """\
 You are the CODE stage of an explainer-video pipeline. Implement ONE Manim Community Edition
@@ -69,6 +58,27 @@ The HARD RULES still apply: CE only; no LaTeX (no MathTex/Tex/Title/BulletedList
 `class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
 end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
 
+_REPAIR_VISUAL_TEMPLATE = """\
+You are repairing a Manim CE scene that RENDERS but is VISUALLY WRONG. The visual-QA gate looked
+at frames and found spatial defects. Fix EACH defect with the smallest targeted edit; do not
+redesign the scene or change its narration.
+
+SCENE CONTRACT (JSON)
+{scene_json}
+
+CURRENT SOURCE (renders, but visually defective)
+{source}
+
+DEFECTS FOUND (fix every one)
+{defects}
+
+Common spatial fixes (from the pinned patterns): rotate groups about an explicit pivot anchor,
+not get_center(); keep labels next_to their object across Transforms; compute max extent vs a
+container BEFORE animating growth; span baselines/axes across every element. The HARD RULES still
+apply: CE only; no LaTeX; `from manim import *` and `from style_tokens import *`; exactly one class
+`class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
+end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
+
 _FORMAT_REPAIR_TEMPLATE = """
 
 Your previous reply was rejected before rendering: {error}
@@ -112,6 +122,24 @@ class SceneCodeGenerator:
         _logger.info("scene_codegen.repaired", scene_id=scene.id, chars=len(repaired))
         return repaired
 
+    async def repair_visual(
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect]
+    ) -> str:
+        prompt = _REPAIR_VISUAL_TEMPLATE.format(
+            scene_json=scene.model_dump_json(indent=2),
+            source=source,
+            defects=_format_defects(defects),
+            scene_class_name=scene.scene_class_name,
+        )
+        repaired = await self._complete(prompt, scene)
+        _logger.info(
+            "scene_codegen.visual_repaired",
+            scene_id=scene.id,
+            defect_count=len(defects),
+            chars=len(repaired),
+        )
+        return repaired
+
     async def _complete(self, prompt: str, scene: SceneContract) -> str:
         def parse(text: str) -> str:
             return validate_scene_source(text, scene)
@@ -124,24 +152,8 @@ class SceneCodeGenerator:
         )
 
 
-def validate_scene_source(completion: str, scene: SceneContract) -> str:
-    """Deterministic gate on generated source; returns the cleaned code or raises ValueError.
-
-    Public because Gate A's tests and the security review reason about it directly: this is
-    the line where the no-LaTeX rule stops being a prompt suggestion and becomes structure.
-    """
-    source = _CODE_FENCE.sub("", completion).strip() + "\n"
-    for pattern, label in _FORBIDDEN_PATTERNS:
-        match = pattern.search(source)
-        if match:
-            raise ValueError(f"forbidden construct ({label}): {match.group(0)!r}")
-    if "from style_tokens import" not in source:
-        raise ValueError("missing `from style_tokens import *` — tokens must come from the map")
-    class_pattern = re.compile(rf"class\s+{re.escape(scene.scene_class_name)}\s*\(")
-    if not class_pattern.search(source):
-        raise ValueError(f"missing scene class {scene.scene_class_name}(Scene)")
-    try:
-        compile(source, f"{scene.id}.py", "exec")
-    except SyntaxError as exc:
-        raise ValueError(f"source does not parse: {exc}") from exc
-    return source
+def _format_defects(defects: list[QaDefect]) -> str:
+    """Render the gate's defects as a numbered list for the visual-repair prompt."""
+    return "\n".join(
+        f"{n}. {defect.issue} — fix: {defect.fix_hint}" for n, defect in enumerate(defects, 1)
+    )
