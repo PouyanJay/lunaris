@@ -34,6 +34,19 @@ HARD RULES (violations are rejected automatically)
   never rotate about get_center() of an asymmetric group.
 - End the scene by fading out all mobjects (clear_scene(self)) for clean concat boundaries.
 
+LAYOUT & LEGIBILITY (the spatial defects Gate B rejects — get these right the first time)
+- ONE Text per value. Never stack, overlap, or Transform one Text onto another in the same spot —
+  if a value changes, FadeOut the old Text before FadeIn the new one. Overlapping text is the #1
+  rejected defect.
+- High contrast always: text on a filled shape uses a colour that clearly reads against that fill
+  (INK on dark PANEL/box fills; never a low-contrast hue like GREEN on a light/ALT fill). A
+  hash/number/label must pass a squint test.
+- On-screen data must EXACTLY match the beat narration: if the narration says the same input gives
+  the SAME hash, show the identical string both times; never invent a different value.
+- Every label must be next_to a mobject that is actually on screen at that moment — if you label
+  an "input", draw the input object; an unattached label reading into empty space is rejected.
+- Size for the frame: scale_to_fit_width any text that might overflow its box BEFORE animating it.
+
 PATTERNS REFERENCE (verbatim from the pinned skill — follow it)
 {patterns}
 
@@ -153,7 +166,6 @@ class SceneCodeGenerator:
 
 
 def _format_defects(defects: list[QaDefect]) -> str:
-    """Render the gate's defects as a numbered list for the visual-repair prompt."""
     return "\n".join(
         f"{n}. {defect.issue} — fix: {defect.fix_hint}" for n, defect in enumerate(defects, 1)
     )

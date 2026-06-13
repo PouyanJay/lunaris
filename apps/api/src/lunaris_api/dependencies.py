@@ -237,7 +237,11 @@ def get_video_pipeline(settings: Settings) -> IVideoPipeline:
     if importlib.util.find_spec("manim") is None:
         logger.info("video_pipeline_stub", reason="render extra not installed")
         return StubVideoPipeline()
+    # Owner-only render workspace; per-job subdirs are uuid4-named (unguessable). A unique
+    # mkdtemp root + per-job disk quota is the V7 container's hardening (S1).
     workspace_root = Path(tempfile.gettempdir()) / "lunaris-video-workspace"
+    workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    workspace_root.chmod(0o700)  # mkdir(exist_ok) skips mode on a pre-existing dir; enforce it
     return build_lesson_video_pipeline(
         store=_resolve_course_store(settings), workspace_root=workspace_root
     )

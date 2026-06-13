@@ -12,14 +12,21 @@ _FORBIDDEN_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 _CODE_FENCE = re.compile(r"^```(?:python)?\s*\n|\n```\s*$", re.MULTILINE)
+# A sane upper bound on a single scene's source — the model's context already bounds it; this is
+# defense-in-depth against a degenerate completion making compile() chew unbounded CPU.
+_MAX_SOURCE_CHARS = 200_000
 
 
 def validate_scene_source(completion: str, scene: SceneContract) -> str:
-    """Deterministic gate on generated source; returns the cleaned code or raises ValueError.
+    """A CORRECTNESS gate on generated source (no-LaTeX/CE-only/parses); NOT a security boundary.
 
-    Public because Gate A's tests and the security review reason about it directly: this is
-    the line where the no-LaTeX rule stops being a prompt suggestion and becomes structure.
+    ``compile()`` parses but never executes, so this cannot stop hostile runtime behaviour —
+    ``import os; os.system(...)`` passes it and then runs under ``manim render``. The trust
+    boundary is the subprocess sandbox (``run_sandboxed``), not this function. Public because
+    Gate A's tests and the security review reason about it directly.
     """
+    if len(completion) > _MAX_SOURCE_CHARS:
+        raise ValueError(f"scene source exceeds {_MAX_SOURCE_CHARS} chars")
     source = _CODE_FENCE.sub("", completion).strip() + "\n"
     for pattern, label in _FORBIDDEN_PATTERNS:
         match = pattern.search(source)

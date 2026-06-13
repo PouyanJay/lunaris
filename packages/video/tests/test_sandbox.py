@@ -95,3 +95,23 @@ async def test_nonzero_exit_is_reported_with_stderr_tail(tmp_path: Path) -> None
     assert not result.succeeded
     assert not result.timed_out
     assert "scene exploded" in result.stderr_tail
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="RLIMIT_AS is enforced on Linux; macOS ignores it"
+)
+async def test_a_memory_bomb_is_capped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange — a low cap so the test allocates little; the real default is 3 GiB. A whole-API OOM
+    # (the worker runs in-process with the API) must become a single-job MemoryError instead.
+    monkeypatch.setenv("LUNARIS_VIDEO_MEM_LIMIT_BYTES", str(256 * 1024 * 1024))
+
+    # Act — try to allocate 1 GiB against a 256 MiB cap.
+    result = await run_sandboxed(
+        _python("x = bytearray(1024 * 1024 * 1024); print(len(x))"), cwd=tmp_path, timeout_s=30
+    )
+
+    # Assert — the cap fires (MemoryError), not a timeout or other error; the parent is untouched.
+    assert not result.succeeded
+    assert not result.timed_out
+    assert "MemoryError" in result.stderr_tail
+    assert "1073741824" not in result.stdout_tail

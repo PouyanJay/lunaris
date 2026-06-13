@@ -136,3 +136,12 @@ def test_validator_rejects_unparseable_source(make_scene: Callable[..., SceneCon
     # Arrange / Act / Assert
     with pytest.raises(ValueError):
         validate_scene_source("def broken(:\n    pass", make_scene(1, "problem"))
+
+
+def test_validator_rejects_oversized_source(make_scene: Callable[..., SceneContract]) -> None:
+    # Arrange — a degenerate completion far past any real scene (defense-in-depth before compile()).
+    bloated = _VALID_SOURCE + "# " + "x" * 300_000 + "\n"
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="exceeds"):
+        validate_scene_source(bloated, make_scene(1, "problem"))
