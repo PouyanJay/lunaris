@@ -37,7 +37,7 @@ const LABELS: Record<string, string> = {
 
 const DESCRIPTIONS: Record<string, string> = {
   videoEnabled:
-    "Add a 3Blue1Brown-style explainer to each lesson, plus a course trailer and topic intro.",
+    "Add an animated explainer to each lesson, plus a course trailer and topic intro.",
   videoVoice:
     "Narrate in one pass with ElevenLabs. Off renders silent and voice-ready — you can add narration later.",
 };
