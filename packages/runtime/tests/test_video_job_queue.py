@@ -165,6 +165,138 @@ async def test_get_scopes_to_the_owner() -> None:
     assert await queue.get(job_id="ghost") is None
 
 
+# ── lease sweep (V7-T4) ───────────────────────────────────────────────────────────
+
+
+async def test_sweep_requeues_a_stale_in_flight_job() -> None:
+    # Arrange — a job claimed at 10:00 by a worker that then "died"; the sweep runs at 10:10.
+    now = [datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC)]
+    queue = InMemoryVideoJobQueue(clock=lambda: now[0])
+    await queue.enqueue(_job())
+    await queue.claim(worker_id="dead-worker")  # status=planning, claimed_at=10:00, attempts=1
+    now[0] = datetime(2026, 6, 14, 10, 10, 0, tzinfo=UTC)  # 10 min later → past a 300s lease
+
+    # Act
+    result = await queue.sweep_stale_leases(lease_seconds=300, max_attempts=3)
+
+    # Assert — back to queued (attempts left), lease cleared, ready for a fresh claim.
+    assert (result.requeued, result.dead_lettered) == (1, 0)
+    job = await queue.get(job_id="job-1")
+    assert job is not None
+    assert job.status == VideoJobStatus.QUEUED
+    assert job.claimed_at is None and job.claimed_by is None
+
+
+async def test_sweep_dead_letters_a_stale_job_past_max_attempts() -> None:
+    # Arrange — same stale setup, but the job has already used up its one allowed attempt.
+    now = [datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC)]
+    queue = InMemoryVideoJobQueue(clock=lambda: now[0])
+    await queue.enqueue(_job())
+    await queue.claim(worker_id="dead-worker")  # attempts=1
+    now[0] = datetime(2026, 6, 14, 10, 10, 0, tzinfo=UTC)
+
+    # Act
+    result = await queue.sweep_stale_leases(lease_seconds=300, max_attempts=1)
+
+    # Assert — dead-lettered, not requeued: a poison job can't loop forever.
+    assert (result.requeued, result.dead_lettered) == (0, 1)
+    job = await queue.get(job_id="job-1")
+    assert job is not None
+    assert job.status == VideoJobStatus.FAILED
+    assert job.error is not None and "lease expired" in job.error
+
+
+async def test_sweep_leaves_fresh_queued_and_terminal_jobs_untouched() -> None:
+    # Arrange — a fresh in-flight job (just claimed), a queued job, and a completed one.
+    now = [datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC)]
+    queue = InMemoryVideoJobQueue(clock=lambda: now[0])
+    await queue.enqueue(_job("in-flight"))
+    await queue.claim(worker_id="live-worker")  # claimed_at=10:00
+    await queue.enqueue(_job("queued"))
+    await queue.enqueue(_job("done"))
+    await queue.claim(worker_id="live-worker")  # claims the next oldest queued ("queued")
+    await queue.complete(job_id="queued")
+    now[0] = datetime(2026, 6, 14, 10, 1, 0, tzinfo=UTC)  # only 1 min later → within a 300s lease
+
+    # Act
+    result = await queue.sweep_stale_leases(lease_seconds=300, max_attempts=3)
+
+    # Assert — nothing reaped: the live lease is fresh, queued isn't in-flight, done is terminal.
+    assert (result.requeued, result.dead_lettered) == (0, 0)
+    in_flight = await queue.get(job_id="in-flight")
+    assert in_flight is not None and in_flight.status == VideoJobStatus.PLANNING
+
+
+async def test_list_and_delete_for_course_are_owner_and_course_scoped() -> None:
+    # Arrange — two courses for one owner, plus another owner's job that must be untouched.
+    owner = "00000000-0000-0000-0000-00000000000a"
+    other = "00000000-0000-0000-0000-00000000000b"
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(
+        VideoJob(id="a1", user_id=owner, course_id="c1", kind=VideoKind.SUMMARY, input_hash="h")
+    )
+    await queue.enqueue(
+        VideoJob(
+            id="a2",
+            user_id=owner,
+            course_id="c1",
+            lesson_id="l1",
+            kind=VideoKind.LESSON,
+            input_hash="h",
+        )
+    )
+    await queue.enqueue(
+        VideoJob(id="a3", user_id=owner, course_id="c2", kind=VideoKind.SUMMARY, input_hash="h")
+    )
+    await queue.enqueue(
+        VideoJob(id="b1", user_id=other, course_id="c1", kind=VideoKind.SUMMARY, input_hash="h")
+    )
+
+    # Act / Assert — list returns only this owner's jobs for the course.
+    listed = await queue.list_for_course(course_id="c1", owner_id=owner)
+    assert sorted(job.id for job in listed) == ["a1", "a2"]
+
+    # Delete removes exactly those rows; the other course + other owner are untouched.
+    deleted = await queue.delete_for_course(course_id="c1", owner_id=owner)
+    assert deleted == 2
+    assert await queue.get(job_id="a1") is None
+    assert await queue.get(job_id="a3") is not None  # other course kept
+    assert await queue.get(job_id="b1") is not None  # other owner kept
+
+
+# ── Supabase queue: sweep / list / delete query construction ───────────────────────
+
+
+async def test_sweep_calls_the_rpc_and_maps_the_counts() -> None:
+    # Arrange — the DB function returns the two counts as one row.
+    client = _FakeClient(data=[{"requeued": 2, "dead_lettered": 1}])
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act
+    result = await queue.sweep_stale_leases(lease_seconds=300, max_attempts=3)
+
+    # Assert — the atomic requeue/dead-letter is the DB function's job; the client just calls it.
+    assert client.calls[0]["table"] == "rpc:requeue_stale_video_jobs"
+    assert client.calls[0]["params"] == {"p_lease_seconds": 300, "p_max_attempts": 3}
+    assert (result.requeued, result.dead_lettered) == (2, 1)
+
+
+async def test_delete_for_course_filters_by_owner_and_course_and_counts() -> None:
+    # Arrange — the delete matches two rows.
+    client = _FakeClient(update_count=2)
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act
+    deleted = await queue.delete_for_course(course_id="c1", owner_id="owner-1")
+
+    # Assert — owner + course filtered, exact count returned (the storage objects go separately).
+    call = client.calls[0]
+    assert call["op"] == "delete"
+    assert call["count_mode"] == "exact"
+    assert call["filters"] == {"user_id": "owner-1", "course_id": "c1"}
+    assert deleted == 2
+
+
 # ── Supabase queue: query construction + row mapping against a fake client ─────────
 
 
@@ -194,6 +326,11 @@ class _FakeQuery:
         self._call["count_mode"] = count
         return self
 
+    def delete(self, count: str | None = None) -> "_FakeQuery":
+        self._call["op"] = "delete"
+        self._call["count_mode"] = count
+        return self
+
     def select(self, columns: str) -> "_FakeQuery":
         self._call["op"] = "select"
         self._call["columns"] = columns
@@ -208,7 +345,9 @@ class _FakeQuery:
 
     def execute(self) -> Any:
         self._sink.append(self._call)
-        count = self._update_count if self._call.get("op") == "update" else len(self._data)
+        count = (
+            self._update_count if self._call.get("op") in ("update", "delete") else len(self._data)
+        )
         return type("Response", (), {"data": self._data, "count": count})()
 
 

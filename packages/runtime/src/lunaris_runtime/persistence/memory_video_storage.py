@@ -25,6 +25,10 @@ class InMemoryVideoStorage:
             raise PersistenceError(f"no object at {path!r}")
         return stored[0]
 
+    async def delete(self, *, paths: list[str]) -> None:
+        for path in paths:
+            self._objects.pop(path, None)  # idempotent, like the real bucket's remove()
+
     def paths(self) -> list[str]:
         return list(self._objects)
 

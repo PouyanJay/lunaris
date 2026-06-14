@@ -2,6 +2,8 @@ from typing import Protocol
 
 from lunaris_runtime.schema import VideoJob, VideoKind
 
+from .lease_sweep_result import LeaseSweepResult
+
 
 class IVideoJobQueue(Protocol):
     """The explainer-video job queue — Postgres-backed in production, in-memory for tests/dev.
@@ -39,4 +41,24 @@ class IVideoJobQueue(Protocol):
         """The owner's most recent NON-terminal (queued or in-flight) job for this
         (course, lesson, kind), or ``None`` if none is live. The enqueue endpoint dedups against it:
         a second request for a video already being made returns that job instead of a duplicate."""
+        ...
+
+    async def sweep_stale_leases(
+        self, *, lease_seconds: int, max_attempts: int
+    ) -> LeaseSweepResult:
+        """Recover jobs a dead worker left in-flight past the lease (V7-T4): requeue those with
+        attempts left, dead-letter (fail) those that have hit ``max_attempts``. Idempotent and
+        atomic — a live render's lease stays fresh via ``heartbeat``, so only genuinely stuck jobs
+        match. Returns how many were requeued vs dead-lettered."""
+        ...
+
+    async def list_for_course(self, *, course_id: str, owner_id: str) -> list[VideoJob]:
+        """Every job (any status) for the owner's course — the artifact-path source for the
+        course-deletion storage cascade (V7-T4)."""
+        ...
+
+    async def delete_for_course(self, *, course_id: str, owner_id: str) -> int:
+        """Delete all of the owner's job rows for a course (the queue side of course deletion);
+        returns the row count removed. Storage objects are purged separately (storage.objects
+        rejects SQL deletes — see ``IVideoStorage.delete``)."""
         ...

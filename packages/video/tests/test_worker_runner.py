@@ -14,6 +14,7 @@ signals when a worker first polls and when each job settles.
 
 import asyncio
 from collections.abc import Coroutine
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -153,5 +154,58 @@ async def test_supervisor_floors_worker_count_to_one() -> None:
         await asyncio.gather(
             _supervisor(queue, storage, events, count=0, stop=stop), _stop_when_drained()
         )
+    job = await queue.get(job_id="job-0")
+    assert job is not None and job.status == VideoJobStatus.READY
+
+
+class _RecoverySignalQueue(InMemoryVideoJobQueue):
+    """Fires ``recovered`` when a job settles READY — so the sweep-recovery test waits on the real
+    completion event (which arrives only via sweep → requeue → claim → complete), not a sleep."""
+
+    def __init__(self, *, clock: Any) -> None:
+        super().__init__(clock=clock)
+        self.recovered = asyncio.Event()
+
+    async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
+        await super().complete(job_id=job_id, contract_hash=contract_hash)
+        self.recovered.set()
+
+
+async def test_supervisor_sweep_recovers_a_job_a_dead_worker_left_in_flight() -> None:
+    # Arrange — a job claimed at 10:00 by a worker that died; an injected clock pins "now" to 10:10,
+    # so the lease (300s) is exceeded and the supervisor sweep should requeue it for a fresh claim.
+    now = [datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC)]
+    queue = _RecoverySignalQueue(clock=lambda: now[0])
+    storage, events = InMemoryVideoStorage(), InMemoryRunEventStore()
+    await queue.enqueue(_job(0))
+    dead = await queue.claim(worker_id="dead-worker")  # status=planning, claimed_at=10:00
+    assert dead is not None and dead.status == VideoJobStatus.PLANNING
+    now[0] = datetime(2026, 6, 14, 10, 10, 0, tzinfo=UTC)
+    stop = asyncio.Event()
+
+    async def _stop_when_recovered() -> None:
+        await queue.recovered.wait()  # only set once the requeued job is re-claimed + completed
+        stop.set()
+
+    # Act — the lease sweep requeues the stuck job; a live worker then claims + renders it.
+    async with asyncio.timeout(10):
+        await asyncio.gather(
+            run_video_workers(
+                queue=queue,
+                pipeline=StubVideoPipeline(),
+                storage=storage,
+                events=events,
+                count=1,
+                poll_interval_seconds=0.01,
+                worker_id_prefix="test",
+                lease_seconds=300,
+                lease_max_attempts=3,
+                sweep_interval_seconds=0.01,
+                stop=stop,
+            ),
+            _stop_when_recovered(),
+        )
+
+    # Assert — the orphaned job was recovered all the way to READY.
     job = await queue.get(job_id="job-0")
     assert job is not None and job.status == VideoJobStatus.READY

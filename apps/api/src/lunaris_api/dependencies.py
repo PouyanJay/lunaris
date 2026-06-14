@@ -540,6 +540,10 @@ def get_course_service(
         credential_resolver=resolver,
         config_resolver=config_resolver,
         video_coordinator_factory=video_coordinator_factory,
+        # The course-deletion storage cascade (V7-T4) — wired unconditionally (independent of the
+        # video gate) so an old course's artifacts are reclaimable even after video is turned off.
+        video_job_queue=get_video_job_queue(settings),
+        video_storage=get_video_storage(settings),
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
         bridge_limits=BridgeLimits(

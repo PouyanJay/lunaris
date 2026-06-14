@@ -66,6 +66,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 poll_interval_seconds=settings.video_worker_poll_seconds,
                 worker_id_prefix=f"api-{os.getpid()}",
                 credential_resolver=get_video_credential_resolver(settings),
+                lease_seconds=settings.video_lease_seconds,
             )
         )
     yield

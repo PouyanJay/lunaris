@@ -5,12 +5,14 @@ from datetime import UTC, datetime
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 
 from .guard import guard
+from .lease_sweep_result import LeaseSweepResult
 from .persistence_error import PersistenceError
 
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "video_jobs"
 _CLAIM_RPC = "claim_video_job"
+_SWEEP_RPC = "requeue_stale_video_jobs"
 # The non-terminal statuses a job passes through before READY/FAILED — "active" for the dedup read.
 _TERMINAL_STATUSES = (VideoJobStatus.READY.value, VideoJobStatus.FAILED.value)
 
@@ -149,6 +151,58 @@ class SupabaseVideoJobQueue:
         response = await asyncio.to_thread(_run)
         rows = response.data or []
         return VideoJob.model_validate(rows[0]) if rows else None
+
+    @guard("video_jobs sweep")
+    async def sweep_stale_leases(
+        self, *, lease_seconds: int, max_attempts: int
+    ) -> LeaseSweepResult:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            return client.rpc(  # type: ignore[attr-defined]
+                _SWEEP_RPC,
+                {"p_lease_seconds": lease_seconds, "p_max_attempts": max_attempts},
+            ).execute()
+
+        response = await asyncio.to_thread(_run)
+        rows = response.data or [{}]
+        row = rows[0]
+        return LeaseSweepResult(
+            requeued=int(row.get("requeued") or 0),
+            dead_lettered=int(row.get("dead_lettered") or 0),
+        )
+
+    @guard("video_jobs list_for_course")
+    async def list_for_course(self, *, course_id: str, owner_id: str) -> list[VideoJob]:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            return (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .select("*")
+                .eq("user_id", owner_id)  # owner-scoped (the app belt over the DB's RLS belt)
+                .eq("course_id", course_id)
+                .execute()
+            )
+
+        response = await asyncio.to_thread(_run)
+        return [VideoJob.model_validate(row) for row in (response.data or [])]
+
+    @guard("video_jobs delete_for_course")
+    async def delete_for_course(self, *, course_id: str, owner_id: str) -> int:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            return (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .delete(count="exact")
+                .eq("user_id", owner_id)
+                .eq("course_id", course_id)
+                .execute()
+            )
+
+        response = await asyncio.to_thread(_run)
+        return int(getattr(response, "count", None) or 0)
 
     async def _patch(self, job_id: str, patch: dict[str, object]) -> None:
         client = self._ensure_client()

@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Mapping
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, nullcontext, suppress
 
 import structlog
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
@@ -59,6 +59,7 @@ class VideoWorker:
         events: IRunEventStore,
         worker_id: str,
         credential_resolver: CredentialResolver | None = None,
+        heartbeat_interval_s: float = 60.0,
     ) -> None:
         self._queue = queue
         self._pipeline = pipeline
@@ -66,6 +67,7 @@ class VideoWorker:
         self._events = events
         self._worker_id = worker_id
         self._credential_resolver = credential_resolver
+        self._heartbeat_interval_s = heartbeat_interval_s
 
     async def run_forever(self, *, poll_interval_seconds: float = 2.0) -> None:
         """Drain the queue forever; idle-poll when empty. Cancellation is the stop signal."""
@@ -121,14 +123,33 @@ class VideoWorker:
         _logger.info("video_worker.job_ready", job_id=job.id)
 
     async def _produce(self, job: VideoJob) -> RenderedVideo:
-        """Render the job inside its owner's credential scope (V7-T1).
+        """Render the job inside its owner's credential scope (V7-T1), with a heartbeat (V7-T4).
 
         Only the pipeline's provider calls (Claude / ElevenLabs) are scoped — infrastructure work
         (queue, storage, events) reads the process env and must never enter a tenant-only scope, so
-        upload + settle stay outside it."""
-        credentials = await self._resolve_credentials(job)
-        with self._credential_scope(credentials):
-            return await self._pipeline.produce(job)
+        upload + settle stay outside it. A concurrent heartbeat extends the lease while the render
+        runs, so the lease-timeout sweep can tell a live worker from a dead one (the heartbeat is
+        outside the credential scope — it touches only the queue's own infra credentials)."""
+        heartbeat = asyncio.create_task(self._heartbeat(job.id))
+        try:
+            credentials = await self._resolve_credentials(job)
+            with self._credential_scope(credentials):
+                return await self._pipeline.produce(job)
+        finally:
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat
+
+    async def _heartbeat(self, job_id: str) -> None:
+        """Extend the job's lease every ``heartbeat_interval_s`` until cancelled (render done). A
+        heartbeat failure is logged, never fatal — the loop survives so a transient blip doesn't
+        abandon a render (a sustained outage just lets the lease lapse and the job requeue)."""
+        while True:
+            await asyncio.sleep(self._heartbeat_interval_s)
+            try:
+                await self._queue.heartbeat(job_id=job_id)
+            except PersistenceError:
+                _logger.warning("video_worker.heartbeat_failed", job_id=job_id)
 
     async def _resolve_credentials(self, job: VideoJob) -> Mapping[str, str] | None:
         """The job owner's BYOK keys to bind for this render, or ``None`` to read the process env.

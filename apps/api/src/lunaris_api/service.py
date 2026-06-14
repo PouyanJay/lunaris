@@ -3,7 +3,7 @@ import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
-from dataclasses import dataclass
+from dataclasses import astuple, dataclass
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
@@ -14,8 +14,11 @@ from lunaris_runtime.persistence import (
     ICourseStore,
     IRunEventStore,
     IRunStore,
+    IVideoJobQueue,
+    IVideoStorage,
     OwnerScopedCourseStore,
     PersistenceError,
+    VideoArtifactPaths,
 )
 from lunaris_runtime.run_config import run_config
 from lunaris_runtime.schema import (
@@ -160,6 +163,8 @@ class CourseService:
         credential_resolver: CredentialResolver | None = None,
         config_resolver: ConfigResolver | None = None,
         video_coordinator_factory: VideoCoordinatorFactory | None = None,
+        video_job_queue: IVideoJobQueue | None = None,
+        video_storage: IVideoStorage | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -178,6 +183,12 @@ class CourseService:
         # Builds the per-run video-build coordinator (explainer-video V4). None when the operator
         # kill-switch VIDEO_GENERATION_ENABLED is off → builds enqueue no videos (today's path).
         self._video_coordinator_factory = video_coordinator_factory
+        # The video-job queue + artifact store, for the course-deletion storage cascade (V7-T4).
+        # Always wired in production (harmless when a course has no videos); None for callers that
+        # never delete a video-bearing course (batch / tests). Independent of the coordinator gate —
+        # an old course's artifacts must be reclaimable even after video generation is turned off.
+        self._video_job_queue = video_job_queue
+        self._video_storage = video_storage
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -649,12 +660,14 @@ class CourseService:
         if not course_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
         events_purged = await self._purge_event_log(course_id, owner_id=owner_id)
+        videos_purged = await self._purge_course_videos(course_id, owner_id=owner_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
             course_deleted=course_deleted,
             row_deleted=row_deleted,
             events_purged=events_purged,
+            videos_purged=videos_purged,
         )
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
@@ -666,6 +679,34 @@ class CourseService:
             return await self._event_store.delete_for_course(course_id=course_id, owner_id=owner_id)
         except PersistenceError:
             logger.warning("run_events_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_videos(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Storage cascade for course deletion (explainer-video V7-T4 / §8.6): remove every video
+        artifact + job row for the course. Best-effort — like the event-log purge, a failure logs
+        and is swallowed so it never blocks the user's delete (the artifacts are recoverable cruft,
+        not authoritative state).
+
+        Owner-scoping needs a real owner: the queue/storage are keyed by ``{user_id}/...`` and an
+        unowned (auth-off) delete has no user to scope to, so it is skipped. The artifact paths are
+        derived from each job row (``VideoArtifactPaths``) rather than listed — exact, and safe even
+        for a FAILED job that only wrote some of its files (``delete`` ignores missing paths)."""
+        if self._video_job_queue is None or owner_id is None:
+            return 0
+        try:
+            jobs = await self._video_job_queue.list_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+            if self._video_storage is not None and jobs:
+                # astuple over the frozen VideoArtifactPaths so a new artifact field is purged
+                # automatically — the path convention stays the single source of truth.
+                paths = [path for job in jobs for path in astuple(VideoArtifactPaths.for_job(job))]
+                await self._video_storage.delete(paths=paths)
+            return await self._video_job_queue.delete_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+        except PersistenceError:
+            logger.warning("course_videos_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def list_runs(

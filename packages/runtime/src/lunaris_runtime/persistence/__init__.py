@@ -1,5 +1,6 @@
 from .course_store import CourseStore
 from .course_store_protocol import ICourseStore
+from .lease_sweep_result import LeaseSweepResult
 from .memory_run_event_store import InMemoryRunEventStore
 from .memory_run_store import InMemoryRunStore
 from .memory_video_job_queue import InMemoryVideoJobQueue
@@ -28,6 +29,7 @@ __all__ = [
     "InMemoryRunStore",
     "InMemoryVideoJobQueue",
     "InMemoryVideoStorage",
+    "LeaseSweepResult",
     "OwnerScopedCourseStore",
     "PersistenceError",
     "SupabaseCourseStore",

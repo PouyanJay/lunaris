@@ -19,3 +19,10 @@ class IVideoStorage(Protocol):
     async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str: ...
 
     async def download(self, *, path: str) -> bytes: ...
+
+    async def delete(self, *, paths: list[str]) -> None:
+        """Remove the given object paths (the course-deletion storage cascade, V7-T4). Idempotent —
+        a path that doesn't exist is a no-op, never an error — so deleting a job's full artifact set
+        is safe even when a FAILED job only ever wrote some of them. Uses the Storage API (not SQL;
+        storage.objects rejects direct deletes)."""
+        ...

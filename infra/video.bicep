@@ -42,6 +42,9 @@ param withByok bool = false
 @description('Max concurrent render replicas (plan §8.4 ceiling) — bounds wall-time and parallel spend.')
 param maxReplicas int = 3
 
+@description('Lease window (seconds): a job whose worker stops heartbeating for this long is treated as dead. Drives BOTH the KEDA stale-job query and the worker (via LUNARIS_VIDEO_LEASE_SECONDS), so they can never drift — this one param is their single source of truth.')
+param leaseSeconds int = 300
+
 @description('vCPU/memory per replica. Manim rendering is CPU-bound; the default (2 vCPU / 4Gi) is the Consumption-Only ceiling and matches the render sandbox\'s 3 GiB memory cap.')
 param cpu string = '2.0'
 param memory string = '4Gi'
@@ -92,13 +95,20 @@ var baseEnv = concat(
     { name: 'SUPABASE_SERVICE_ROLE_KEY', secretRef: supabaseServiceRoleSecret }
     { name: 'LUNARIS_ENV', value: env }
     { name: 'LUNARIS_VIDEO_WORKER_COUNT', value: '1' }
+    // Same lease the KEDA query uses below — the worker's sweep + KEDA's wake threshold stay in lockstep.
+    { name: 'LUNARIS_VIDEO_LEASE_SECONDS', value: string(leaseSeconds) }
   ],
   byokEnv
 )
 
-// KEDA PostgreSQL scaler: scale on the number of QUEUED jobs. targetQueryValue 1 → one replica per
-// pending job (up to maxReplicas); activationTargetQueryValue 0 → wake from zero as soon as one
-// appears. The query is read-only and cheap (a partial index backs status='queued').
+// KEDA PostgreSQL scaler: scale on jobs that need a worker — QUEUED rows, AND stale in-flight rows
+// (claimed but not heartbeated within ``leaseSeconds``, i.e. a dead worker). Counting the stale ones
+// is what lets a job stuck after a scale-to-zero wake a replica, whose lease sweep (V7-T4) then
+// requeues and re-claims it. targetQueryValue 1 → one replica per pending job (up to maxReplicas);
+// activationTargetQueryValue 0 → wake from zero as soon as one appears. Read-only + cheap (a partial
+// index backs status='queued'). The interval interpolates ``leaseSeconds`` — the same value the
+// worker gets via LUNARIS_VIDEO_LEASE_SECONDS — so the scaler and the sweep can never drift.
+var staleClause = 'status NOT IN (\'queued\', \'ready\', \'failed\') AND claimed_at < now() - interval \'${leaseSeconds} seconds\''
 var scaleRules = hasScaler
   ? [
       {
@@ -106,7 +116,7 @@ var scaleRules = hasScaler
         custom: {
           type: 'postgresql'
           metadata: {
-            query: 'SELECT count(*)::int FROM public.video_jobs WHERE status = \'queued\''
+            query: 'SELECT count(*)::int FROM public.video_jobs WHERE status = \'queued\' OR (${staleClause})'
             targetQueryValue: '1'
             activationTargetQueryValue: '0'
           }

@@ -1,9 +1,10 @@
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 
+from .lease_sweep_result import LeaseSweepResult
 from .persistence_error import PersistenceError
 
 # The non-terminal statuses a job passes through before READY/FAILED — "active" for dedup.
@@ -87,6 +88,50 @@ class InMemoryVideoJobQueue:
             # Most recent first — same direction as the Supabase query's order(desc).limit(1).
             active.sort(key=lambda job: (job.created_at or self._clock(), job.id), reverse=True)
             return active[0].model_copy(deep=True)
+
+    async def sweep_stale_leases(
+        self, *, lease_seconds: int, max_attempts: int
+    ) -> LeaseSweepResult:
+        async with self._lock:
+            cutoff = self._clock() - timedelta(seconds=lease_seconds)
+            requeued = dead_lettered = 0
+            for job in self._jobs.values():
+                # Only stale IN-FLIGHT jobs (claimed, not terminal, not already back in the queue)
+                # with a lease older than the cutoff — a live render's heartbeat keeps it fresh.
+                if job.status in _TERMINAL or job.status == VideoJobStatus.QUEUED:
+                    continue
+                if job.claimed_at is None or job.claimed_at >= cutoff:
+                    continue
+                if job.attempts >= max_attempts:
+                    job.status = VideoJobStatus.FAILED
+                    job.error = "video generation failed (lease expired after max attempts)"
+                    dead_lettered += 1
+                else:
+                    job.status = VideoJobStatus.QUEUED
+                    requeued += 1
+                job.claimed_at = None
+                job.claimed_by = None
+                job.updated_at = self._clock()
+            return LeaseSweepResult(requeued=requeued, dead_lettered=dead_lettered)
+
+    async def list_for_course(self, *, course_id: str, owner_id: str) -> list[VideoJob]:
+        async with self._lock:
+            return [
+                job.model_copy(deep=True)
+                for job in self._jobs.values()
+                if job.user_id == owner_id and job.course_id == course_id
+            ]
+
+    async def delete_for_course(self, *, course_id: str, owner_id: str) -> int:
+        async with self._lock:
+            doomed = [
+                job_id
+                for job_id, job in self._jobs.items()
+                if job.user_id == owner_id and job.course_id == course_id
+            ]
+            for job_id in doomed:
+                del self._jobs[job_id]
+            return len(doomed)
 
     async def _settle(
         self,

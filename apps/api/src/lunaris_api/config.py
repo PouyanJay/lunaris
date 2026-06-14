@@ -68,6 +68,10 @@ class Settings:
     # share the queue (SKIP-LOCKED claims never double-serve) and the process-wide Claude rate
     # limiter, so more workers overlap renders without bursting the org limit. Cloud scales w/ KEDA.
     video_worker_count: int = 2
+    # Lease window (seconds): a job whose worker hasn't heartbeated within it is considered dead and
+    # requeued by the sweep (V7-T4). In cloud this MUST equal the KEDA scaler's stale-job interval —
+    # infra/video.bicep sets both from its one `leaseSeconds` param (passed here as the env var).
+    video_lease_seconds: int = 300
 
     @property
     def has_supabase(self) -> bool:
@@ -121,6 +125,7 @@ def get_settings() -> Settings:
         video_generation_enabled=_env_flag("VIDEO_GENERATION_ENABLED", default=False),
         video_worker_poll_seconds=_env_float("LUNARIS_VIDEO_WORKER_POLL_S", default=2.0),
         video_worker_count=_env_int("LUNARIS_VIDEO_WORKER_COUNT", default=2),
+        video_lease_seconds=_env_int("LUNARIS_VIDEO_LEASE_SECONDS", default=300),
     )
 
 

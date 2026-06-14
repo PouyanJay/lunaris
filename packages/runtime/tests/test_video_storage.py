@@ -97,6 +97,20 @@ async def test_signed_url_is_deterministic_and_path_scoped() -> None:
     assert "u/c/j/final.mp4" in url
 
 
+async def test_delete_removes_given_paths_and_ignores_missing() -> None:
+    # Arrange — the course-deletion cascade (V7-T4) deletes a job's full artifact set, some of which
+    # a FAILED job never wrote — so delete must be idempotent over absent paths.
+    storage = InMemoryVideoStorage()
+    await storage.upload(path="u/c/j/final.mp4", data=b"x", content_type="video/mp4")
+    await storage.upload(path="u/c/j/poster.jpg", data=b"y", content_type="image/jpeg")
+
+    # Act — delete both real paths plus one that was never written.
+    await storage.delete(paths=["u/c/j/final.mp4", "u/c/j/poster.jpg", "u/c/j/captions.vtt"])
+
+    # Assert — the two real objects are gone; the missing one was a silent no-op.
+    assert storage.paths() == []
+
+
 # ── Supabase store: call construction against a fake client ──────────────────────
 
 
@@ -117,6 +131,10 @@ class _FakeBucket:
     def download(self, path: str) -> bytes:
         self._sink.append({"op": "download", "path": path})
         return b'{"jobId":"j"}'
+
+    def remove(self, paths: list[str]) -> list[dict[str, str]]:
+        self._sink.append({"op": "remove", "paths": paths})
+        return [{"name": p} for p in paths]
 
 
 class _FakeStorageClient:
@@ -199,3 +217,31 @@ async def test_signed_url_with_no_url_in_the_response_raises() -> None:
     # Act / Assert
     with pytest.raises(PersistenceError):
         await storage.signed_url(path="p")
+
+
+async def test_delete_removes_paths_from_the_course_videos_bucket() -> None:
+    # Arrange
+    client = _FakeClient()
+    storage = SupabaseVideoStorage(client=client)
+
+    # Act
+    await storage.delete(paths=["u/c/j/final.mp4", "u/c/j/poster.jpg"])
+
+    # Assert — one batched remove() on the private bucket (storage.objects rejects SQL deletes).
+    assert client.storage.buckets == ["course-videos"]
+    assert client.storage.calls[0] == {
+        "op": "remove",
+        "paths": ["u/c/j/final.mp4", "u/c/j/poster.jpg"],
+    }
+
+
+async def test_delete_of_an_empty_batch_does_not_round_trip() -> None:
+    # Arrange — a course with no video jobs cascades an empty path list; don't call the bucket.
+    client = _FakeClient()
+    storage = SupabaseVideoStorage(client=client)
+
+    # Act
+    await storage.delete(paths=[])
+
+    # Assert
+    assert client.storage.calls == []
