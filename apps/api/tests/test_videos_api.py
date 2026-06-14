@@ -623,9 +623,10 @@ def test_video_pipeline_falls_back_to_stub_without_the_render_extra(
 def test_video_pipeline_is_the_real_pipeline_when_renderable(tmp_path: Path) -> None:
     # Arrange / Act — the render toolchain is present (local dev / the V7 worker image).
     from lunaris_api.dependencies import get_video_pipeline
-    from lunaris_video import LessonVideoPipeline
+    from lunaris_video import KindRoutingVideoPipeline
 
     pipeline = get_video_pipeline(_settings(tmp_path, video_enabled=True))
 
-    # Assert — keyed renders run the real plan→render→QA→assemble pipeline.
-    assert isinstance(pipeline, LessonVideoPipeline)
+    # Assert — keyed renders run the real plan→render→QA→assemble pipeline, routed by kind so a
+    # lesson / summary / overview job each reaches its configured inner pipeline (V5).
+    assert isinstance(pipeline, KindRoutingVideoPipeline)

@@ -21,6 +21,7 @@ from lunaris_runtime.schema import (
     Module,
     PrerequisiteGraph,
     RiskTier,
+    VideoKind,
 )
 from lunaris_runtime.video_build import IVideoBuildCoordinator
 
@@ -78,6 +79,9 @@ class CourseDraft:
     # lesson_id → job_id for every lesson video the build enqueued (the authoring loop fills this as
     # modules clear verification; finalize awaits these jobs in V4-T1). Per-build, harness-only.
     enqueued_video_jobs: dict[str, str] = field(default_factory=dict)
+    # kind → job_id for the course-level videos (SUMMARY trailer, OVERVIEW intro) the build enqueued
+    # once the curriculum is designed (V5-T2); finalize awaits these and stitches Course.videos.
+    enqueued_course_videos: dict[VideoKind, str] = field(default_factory=dict)
     # Stage-boundary progress emitter shared by every draft-bound tool + the authoring loop. Not a
     # constructor arg: it defaults to a no-op reporter (so tests/batch runs need no wiring) and the
     # runner swaps in a streaming sink-backed reporter when the API requests SSE.

@@ -1,4 +1,4 @@
-"""LessonVideoPipeline tests: the real orchestration (PLAN → Gate A → Gate B → ASSEMBLE) wired
+"""VideoPipeline tests: the real orchestration (PLAN → Gate A → Gate B → ASSEMBLE) wired
 from real planner/gates with stubbed leaf seams, plus the contract-hash cache that skips the whole
 render half on an unchanged contract. Fakes stand in only for I/O leaves (model, renderer, vision,
 frames, assembler, lesson source)."""
@@ -13,8 +13,8 @@ from lunaris_video.assembly import build_webvtt
 from lunaris_video.errors import FactualGateError, VoiceUnavailableError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
-from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
-from lunaris_video.pipeline.lesson_video_pipeline import SynthesizerProvider
+from lunaris_video.pipeline import ContractHashCache, VideoPipeline
+from lunaris_video.pipeline.video_pipeline import SynthesizerProvider
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.schemas import (
     QaVerdict,
@@ -170,10 +170,10 @@ def _pipeline(
     codegen: _CodegenStub | None = None,
     synthesizer_provider: SynthesizerProvider = lambda: None,
     sync_gate: SyncGate | None = None,
-) -> LessonVideoPipeline:
+) -> VideoPipeline:
     codegen = codegen or _CodegenStub()
-    return LessonVideoPipeline(
-        lesson_provider=FakeLessonProvider(),
+    return VideoPipeline(
+        source_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=invoke),
         factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),

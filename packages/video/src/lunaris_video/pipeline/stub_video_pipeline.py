@@ -16,7 +16,10 @@ class StubVideoPipeline:
 
     The assets are a real 2-second MP4 and a real JPEG poster (generated once with ffmpeg and
     committed), so every downstream layer — storage, signed URLs, the reader's player — handles
-    honest media from day one. V1 swaps this for ``LessonVideoPipeline`` behind ``IVideoPipeline``.
+    honest media from day one. The real pipeline (``VideoPipeline`` behind ``IVideoPipeline``,
+    routed by kind in ``KindRoutingVideoPipeline``) swaps in where the render toolchain is present.
+    The stub stays kind-agnostic — it serves a LESSON, SUMMARY or OVERVIEW job alike (``job.kind``
+    flows into the artifact + provenance), so the course-level spine is provable without Manim.
     """
 
     async def produce(self, job: VideoJob) -> RenderedVideo:

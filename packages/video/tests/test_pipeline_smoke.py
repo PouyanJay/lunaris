@@ -1,5 +1,5 @@
 """Full-pipeline real-render smoke (acceptance #1, minus the LLM): a lesson runs through the REAL
-LessonVideoPipeline — real Manim renders, real ffmpeg frame extraction + concat — and produces a
+VideoPipeline — real Manim renders, real ffmpeg frame extraction + concat — and produces a
 real ≥3-scene MP4. Only the model seams are stubbed (the LLM authoring is the T5 live eval).
 Self-skips where the render extra is absent."""
 
@@ -13,7 +13,7 @@ from _stubs import FakeLessonProvider, StubInvokeModel
 from lunaris_runtime.schema import VideoJob, VideoKind
 from lunaris_video.assembly import VideoAssembler
 from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
-from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
+from lunaris_video.pipeline import ContractHashCache, VideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.qa import VisionQaInspector
 from lunaris_video.rendering import FrameExtractor, SceneRenderer
@@ -80,8 +80,8 @@ async def test_a_lesson_renders_a_multi_scene_mp4(
     # Arrange — the fixture contract has three scenes; only the model seams are stubbed.
     codegen = _SceneFromContractCodegen()
     renderer = SceneRenderer(timeout_s=180)
-    pipeline = LessonVideoPipeline(
-        lesson_provider=FakeLessonProvider(),
+    pipeline = VideoPipeline(
+        source_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=StubInvokeModel([_three_scene_draft(make_lesson_contract)])),
         factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),

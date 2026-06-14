@@ -20,11 +20,13 @@ from lunaris_runtime.schema import (
     CapabilityMode,
     Course,
     CourseStatus,
+    CourseVideos,
     GoalType,
     Module,
     PrerequisiteGraph,
     ProgressStage,
     VideoJobStatus,
+    VideoKind,
 )
 
 from ...coverage_critic import CoverageReport, ICoverageCritic
@@ -201,6 +203,41 @@ async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
         await draft.agent.emit(AgentEventKind.REASONING, text=_video_beat(outcome))
 
 
+async def _stitch_course_videos(course: Course, draft: CourseDraft) -> None:
+    """Await the build's course-level videos and fold them into ``Course.videos`` (V5-T2).
+
+    The SUMMARY trailer + OVERVIEW intro, enqueued the moment the curriculum was designed, have been
+    rendering through the build's tail; finalize blocks just long enough to collect them, degrading
+    on failure (a failed course video → a FAILED retry-state artifact in the Overview section, never
+    a blocked publish — plan §0). A no-op when video is off (no coordinator) or nothing enqueued,
+    so the offline / video-off path finalizes byte-for-byte as before. The reader's Overview section
+    resolves each artifact's signed URL via its ``provenance.job_id`` (V5-T3).
+    """
+    coordinator = draft.video_coordinator
+    if coordinator is None or not draft.enqueued_course_videos:
+        return
+    try:
+        artifacts = await coordinator.collect_course_videos(draft.enqueued_course_videos)
+    except Exception:
+        # The outer belt (the coordinator already degrades per-job): a course-level video must NEVER
+        # abort the publish. A wholesale collect failure ships the course with no Overview section.
+        logger.warning(
+            "agent_course_level_videos_collect_failed", run_id=draft.run_id, exc_info=True
+        )
+        return
+    course.videos = CourseVideos(
+        summary=artifacts.get(VideoKind.SUMMARY),
+        overview=artifacts.get(VideoKind.OVERVIEW),
+    )
+    logger.info(
+        "agent_course_level_videos_stitched",
+        run_id=draft.run_id,
+        course_id=course.id,
+        summary_status=course.videos.summary.status.value if course.videos.summary else None,
+        overview_status=course.videos.overview.status.value if course.videos.overview else None,
+    )
+
+
 def _modules_from_graph(graph: PrerequisiteGraph) -> list[Module]:
     """Trivial walking-skeleton assembly: one module per concept, in topological order.
 
@@ -327,6 +364,9 @@ def make_finalize_course_tool(
         # lesson before persisting. Placed last so the renders overlap the whole finalize tail
         # (visuals, gates, scope polish); degrade-on-failure, so a video never blocks the publish.
         await _stitch_lesson_videos(course, draft)
+        # The course-level videos (V5-T2): the SUMMARY trailer + OVERVIEW intro, awaited and folded
+        # into Course.videos the same blocking-but-overlapped, degrade-on-failure way.
+        await _stitch_course_videos(course, draft)
         # The store's save is synchronous (file I/O for the file store, a blocking supabase-py call
         # for the Postgres store); off-load it so the agent's event loop isn't blocked on the write.
         await asyncio.to_thread(store.save, course)
