@@ -254,3 +254,6 @@ node_modules/
 /package.json
 /package-lock.json
 /.visuals/
+
+# Compiled ARM JSON from `az bicep build` — bicep is the source, JSON is build output.
+/infra/*.json
