@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
-
 import { useLessonVideo } from "../../hooks/useLessonVideo";
 import type { VideoJobStatus } from "../../lib/videoJobs";
 import { Button } from "../primitives/Button";
 import { LunarSpinner } from "../transcript/LunarSpinner";
+import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import styles from "./LessonVideoHero.module.css";
 
 interface LessonVideoHeroProps {
@@ -61,11 +60,18 @@ export function LessonVideoHero({
       {state.phase === "working" && <WorkingStage status={state.status} />}
 
       {state.phase === "ready" && (
-        <ReadyPlayer
-          videoUrl={state.videoUrl}
-          posterUrl={state.posterUrl}
-          captionsUrl={state.captionsUrl}
-        />
+        <>
+          {/* The job just settled: announce success politely (the working status region unmounted). */}
+          <span className="sr-only" role="status">
+            Video ready
+          </span>
+          <GeneratedVideoPlayer
+            videoUrl={state.videoUrl}
+            posterUrl={state.posterUrl}
+            captionsUrl={state.captionsUrl}
+            label="Play lesson video"
+          />
+        </>
       )}
 
       {state.phase === "failed" && (
@@ -98,69 +104,3 @@ function WorkingStage({ status }: { status: VideoJobStatus }) {
   );
 }
 
-function ReadyPlayer({
-  videoUrl,
-  posterUrl,
-  captionsUrl,
-}: {
-  videoUrl: string;
-  posterUrl: string | null;
-  captionsUrl: string | null;
-}) {
-  const [playing, setPlaying] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Playing unmounts the focused poster button — move focus onto the player so keyboard users
-  // land on the controls instead of falling back to <body> (WCAG 2.4.3).
-  useEffect(() => {
-    if (playing) videoRef.current?.focus();
-  }, [playing]);
-
-  return (
-    <div className={styles.stage}>
-      {/* The job just settled: announce success politely (the working status region unmounted). */}
-      <span className="sr-only" role="status">
-        Video ready
-      </span>
-      {playing ? (
-        /* The artifact is our own MP4 on a signed URL — a native element, no third party.
-           A narrated video also ships a WebVTT track (V3); the signed URL is cross-origin, so the
-           <video> opts into CORS (`crossOrigin`) for the <track> to load. A silent video has no
-           captionsUrl, so no track is attached. */
-        <video
-          ref={videoRef}
-          className={styles.player}
-          src={videoUrl}
-          poster={posterUrl ?? undefined}
-          controls
-          autoPlay
-          crossOrigin={captionsUrl ? "anonymous" : undefined}
-        >
-          {captionsUrl && (
-            <track kind="captions" src={captionsUrl} srcLang="en" label="English" default />
-          )}
-        </video>
-      ) : (
-        <button
-          type="button"
-          className={styles.poster}
-          aria-label="Play lesson video"
-          onClick={() => setPlaying(true)}
-        >
-          {posterUrl ? (
-            <img className={styles.posterImage} src={posterUrl} alt="" loading="lazy" />
-          ) : (
-            <span className={`mono ${styles.posterGlyph}`} aria-hidden="true">
-              VIDEO
-            </span>
-          )}
-          <span className={styles.play} aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}

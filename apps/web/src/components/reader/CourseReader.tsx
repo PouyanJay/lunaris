@@ -12,6 +12,7 @@ import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonVideoHero } from "./LessonVideoHero";
+import { OverviewSection } from "./OverviewSection";
 import { LessonObjectives } from "./LessonObjectives";
 import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
@@ -303,6 +304,11 @@ export function CourseReader({ course, focusRequest, onRegenerate, apiBaseUrl }:
           </div>
           {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so. */}
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
+          {/* The course opens with video (explainer-video V5): the trailer + topic intro, pinned at
+              the top of the course (entry only). Absent on a pre-V5 / video-off course. */}
+          {safeIndex === 0 && apiBaseUrl && course.videos && (
+            <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} />
+          )}
           {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
           {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
           {/* Per-course build tag (keyless-fallbacks T5): the persistent record of which keyless
