@@ -5,6 +5,8 @@ from lunaris_video.protocols.render_cache_protocol import IRenderCache
 from lunaris_video.protocols.scene_code_generator_protocol import ISceneCodeGenerator
 from lunaris_video.protocols.scene_renderer_protocol import ISceneRenderer
 from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesizer
+from lunaris_video.protocols.sync_frame_extractor_protocol import ISyncFrameExtractor
+from lunaris_video.protocols.sync_qa_protocol import ISyncQa
 from lunaris_video.protocols.video_assembler_protocol import IVideoAssembler
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline
 from lunaris_video.protocols.vision_qa_protocol import IVisionQa
@@ -17,6 +19,8 @@ __all__ = [
     "ISceneCodeGenerator",
     "ISceneRenderer",
     "ISpeechSynthesizer",
+    "ISyncFrameExtractor",
+    "ISyncQa",
     "IVideoAssembler",
     "IVideoPipeline",
     "IVisionQa",

@@ -34,6 +34,16 @@ class FrameExtractor:
         _logger.info("frame_extractor.extracted", scene=mp4_path.stem, frames=len(frames))
         return frames
 
+    async def extract_at(self, mp4_path: Path, at_seconds: float) -> bytes:
+        """The single frame at ``at_seconds`` on the timeline — Gate D's per-beat midpoint sample.
+
+        Returned as image bytes for the vision seam. (Internally the frame is written beside the MP4
+        with a millisecond-keyed name so concurrent per-beat extractions never collide.)
+        """
+        frame_path = mp4_path.with_name(f"{mp4_path.stem}_sync_{int(at_seconds * 1000)}.png")
+        await self._extract_one(mp4_path, frame_path, timestamp=at_seconds)
+        return await asyncio.to_thread(frame_path.read_bytes)
+
     async def _probe_duration(self, mp4_path: Path) -> float:
         argv = [
             "ffprobe",
