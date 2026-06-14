@@ -4,7 +4,6 @@ from lunaris_video.errors.scene_qa_error import SceneQaError
 from lunaris_video.errors.scene_render_error import SceneRenderError
 from lunaris_video.errors.sync_gate_error import SyncGateError
 from lunaris_video.errors.video_pipeline_error import VideoPipelineError
-from lunaris_video.errors.voice_unavailable_error import VoiceUnavailableError
 
 __all__ = [
     "FactualGateError",
@@ -13,5 +12,4 @@ __all__ = [
     "SceneRenderError",
     "SyncGateError",
     "VideoPipelineError",
-    "VoiceUnavailableError",
 ]

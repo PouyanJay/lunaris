@@ -13,7 +13,7 @@ from lunaris_runtime.persistence import (
 )
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.schema.base import CourseModel
-from lunaris_runtime.video_build import video_input_hash
+from lunaris_runtime.video_build import VideoConfig, video_config_from_map, video_input_hash
 from lunaris_video.schemas import TimingManifest
 from pydantic import ValidationError
 
@@ -22,10 +22,12 @@ from ..dependencies import (
     CourseStoreDep,
     CredentialVaultDep,
     CurrentUserIdDep,
+    UserConfigStoreDep,
     VideoJobQueueDep,
     VideoStorageDep,
     explain_is_available,
 )
+from ..user_config import to_env_map
 
 logger = structlog.get_logger()
 
@@ -35,6 +37,19 @@ _KEYLESS_DETAIL = (
     "Video generation needs an Anthropic API key — add one in Settings. "
     "The Draft tier does not include videos."
 )
+
+_VIDEO_DISABLED_DETAIL = (
+    "Video generation is turned off in your settings. Turn it on to generate videos."
+)
+
+
+async def caller_video_config(owner_id: CurrentUserIdDep, store: UserConfigStoreDep) -> VideoConfig:
+    """The caller's resolved video config — the on-demand mirror of the build path's run-config
+    resolution, gating enqueue on the master toggle and stamping the chosen length + voice."""
+    return video_config_from_map(to_env_map(await store.get_all(user_id=owner_id)))
+
+
+VideoConfigDep = Annotated[VideoConfig, Depends(caller_video_config)]
 
 
 class VideoJobView(CourseModel):
@@ -83,19 +98,23 @@ async def enqueue_lesson_video(
     course_id: str,
     lesson_id: str,
     owner_id: Annotated[str, Depends(require_keyed_caller)],
+    video_config: VideoConfigDep,
     queue: VideoJobQueueDep,
     store: CourseStoreDep,
     response: Response,
 ) -> VideoJobView:
     """Enqueue one lesson-video job. The worker drains it; the job row is the status record.
 
-    Two guards before enqueue (V4-T0, the V0-deferred safety): the caller must **own** the course
-    and the lesson must exist in it (else 404 — never spend worker capacity on a course you don't
-    own), and a **duplicate** is deduped — a video already queued/in-flight for this lesson is
-    returned rather than re-enqueued as a twin (idempotent Generate)."""
+    Gates (plan §V6 — the per-user master toggle gates every enqueue point): video must be on in the
+    caller's settings (else 403), the caller must **own** the course and the lesson must exist in it
+    (else 404 — never spend worker capacity on a course you don't own), and a **duplicate** is
+    deduped (idempotent Generate). The enqueued job carries the tenant's chosen lesson length + the
+    voice toggle, so the worker plans to the right length and narrates only when asked (V6)."""
     request_id = uuid.uuid4().hex
     bind_request_id(request_id)
     response.headers["X-Request-Id"] = request_id
+    if not video_config.enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_VIDEO_DISABLED_DETAIL)
     await _assert_owns_lesson(store, course_id=course_id, lesson_id=lesson_id, owner_id=owner_id)
     existing = await queue.find_active(
         course_id=course_id, lesson_id=lesson_id, kind=VideoKind.LESSON, owner_id=owner_id
@@ -115,6 +134,10 @@ async def enqueue_lesson_video(
         lesson_id=lesson_id,
         kind=VideoKind.LESSON,
         input_hash=video_input_hash(course_id, lesson_id),
+        config={
+            "target_seconds": video_config.target_seconds(VideoKind.LESSON),
+            "voice": video_config.voice,
+        },
     )
     await queue.enqueue(job)
     logger.info("video_job_enqueued", job_id=job.id, course_id=course_id, lesson_id=lesson_id)

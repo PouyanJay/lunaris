@@ -47,7 +47,11 @@ from lunaris_runtime.persistence import (
     SupabaseVideoJobQueue,
     SupabaseVideoStorage,
 )
-from lunaris_runtime.video_build import IVideoBuildCoordinator, QueueVideoBuildCoordinator
+from lunaris_runtime.video_build import (
+    IVideoBuildCoordinator,
+    QueueVideoBuildCoordinator,
+    VideoConfig,
+)
 from lunaris_video import (
     IVideoPipeline,
     StubVideoPipeline,
@@ -93,11 +97,11 @@ from .service import (
     VideoCoordinatorFactory,
 )
 from .user_config import (
-    PER_USER_CONFIG,
     InMemoryUserConfigStore,
     IUserConfigStore,
     SupabaseUserConfigStore,
     UserConfigService,
+    to_env_map,
 )
 
 logger = structlog.get_logger()
@@ -235,12 +239,15 @@ def _video_coordinator_factory(
     """Build a per-run video-build coordinator over the shared queue + storage (explainer-video V4).
 
     Returned to ``CourseService`` only when ``VIDEO_GENERATION_ENABLED`` is on (so its presence is
-    the operator gate); the service calls it per keyed, owned build to enqueue that build's lesson
-    videos onto the same queue the lifespan worker drains, and (at finalize) to await them and read
-    the finished artifacts from the same storage the worker wrote them to."""
+    the operator gate); the service calls it per keyed, owned build (with the owner's resolved video
+    config) to enqueue that build's videos — at the tenant's chosen lengths + voice (V6) — onto the
+    same queue the lifespan worker drains, and (at finalize) to await them and read the finished
+    artifacts from the same storage the worker wrote them to."""
 
-    def build(owner_id: str) -> IVideoBuildCoordinator:
-        return QueueVideoBuildCoordinator(queue=queue, storage=storage, owner_id=owner_id)
+    def build(owner_id: str, video_config: VideoConfig) -> IVideoBuildCoordinator:
+        return QueueVideoBuildCoordinator(
+            queue=queue, storage=storage, owner_id=owner_id, video_config=video_config
+        )
 
     return build
 
@@ -430,10 +437,7 @@ def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:
     tenant's chosen models; an unset key is omitted (→ the run-config env/default fallback)."""
 
     async def resolve(user_id: str) -> dict[str, str]:
-        stored = await store.get_all(user_id=user_id)
-        return {
-            PER_USER_CONFIG[key]: value for key, value in stored.items() if key in PER_USER_CONFIG
-        }
+        return to_env_map(await store.get_all(user_id=user_id))
 
     return resolve
 

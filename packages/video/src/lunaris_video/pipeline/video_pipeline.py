@@ -8,7 +8,7 @@ from lunaris_runtime.schema import VideoJob, VideoProvenance
 from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
-from lunaris_video.errors import VideoPipelineError, VoiceUnavailableError
+from lunaris_video.errors import VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedScene, RenderedVideo
@@ -153,14 +153,22 @@ class VideoPipeline:
         self, job: VideoJob, digest: str
     ) -> tuple[VoiceSpec | None, ISpeechSynthesizer | None, str]:
         """Decide voiced vs silent for this job and the cache key its artifact lives under, without
-        re-planning. Silent gives (None, None, digest). Voiced needs a synthesizer (a validated key)
-        AND a sync gate (Gate D), or it fails fast: voice on without a key, or a pipeline wired for
-        voice but missing Gate D, must not silently ship an unasked-for or unverified video."""
+        re-planning. Silent gives (None, None, digest).
+
+        The voice toggle (V6) defaults ON, but an ElevenLabs key is OPTIONAL BYOK — so "voice on +
+        no key" is the common keyed-user state and must **degrade to silent (voice-ready)** per §0,
+        never fail: a build of a keyed user who never added an ElevenLabs key would otherwise FAIL
+        every video. A voiced render still needs the sync gate (Gate D) — a pipeline wired for voice
+        but missing it is a wiring bug, not a user state, so that stays a hard error."""
         if not _wants_voice(job):
             return None, None, digest
         synthesizer = self._synthesizer_provider()
         if synthesizer is None:
-            raise VoiceUnavailableError(job.id)
+            # Voice asked for but no validated key resolvable here → render silent voice-ready (the
+            # WPM estimate manifest), exactly as if the toggle were off. The user can add narration
+            # later (the V6 regenerate menu) with no re-plan.
+            _logger.info("video_pipeline.voice_degraded_to_silent", job_id=job.id)
+            return None, None, digest
         if self._sync_gate is None:
             raise VideoPipelineError(
                 f"job {job.id} requested narration but the pipeline has no sync gate (Gate D)"

@@ -1,15 +1,30 @@
+from collections.abc import Mapping
 from typing import Protocol
 
 from ..config_store import KNOWN_CONFIG
 
-# The non-secret config a tenant owns per build: model selection. Maps the web/API config id to the
-# environment variable the runtime reads (a subset of KNOWN_CONFIG — LangSmith tracing/project are
-# operator-only deploy config, not per-tenant). Must stay in lockstep with the config_key CHECK in
-# the user_runtime_config migration: a new per-user key is a change in both places.
+# The non-secret config a tenant owns per build: model selection + the explainer-video settings
+# (V6). Maps the web/API config id to the environment variable the runtime reads (a subset of
+# KNOWN_CONFIG — LangSmith tracing/project are operator-only deploy config, not per-tenant). Must
+# stay in lockstep with the config_key CHECK in the user_runtime_config migration: a new per-user
+# key is a change in both places.
 PER_USER_CONFIG: dict[str, str] = {
     "modelStrong": KNOWN_CONFIG["modelStrong"],
     "modelWorker": KNOWN_CONFIG["modelWorker"],
+    "videoEnabled": KNOWN_CONFIG["videoEnabled"],
+    "videoVoice": KNOWN_CONFIG["videoVoice"],
+    "videoSummarySeconds": KNOWN_CONFIG["videoSummarySeconds"],
+    "videoOverviewSeconds": KNOWN_CONFIG["videoOverviewSeconds"],
+    "videoLessonSeconds": KNOWN_CONFIG["videoLessonSeconds"],
 }
+
+
+def to_env_map(stored: Mapping[str, str]) -> dict[str, str]:
+    """Translate a stored per-user config snapshot (logical-id keys) into the env-var-keyed map the
+    run-config scope and ``video_config_from_map`` both consume. Any key outside the per-user
+    surface is dropped. The single place this translation lives (the build resolver + the on-demand
+    video config both call it)."""
+    return {PER_USER_CONFIG[key]: value for key, value in stored.items() if key in PER_USER_CONFIG}
 
 
 class IUserConfigStore(Protocol):

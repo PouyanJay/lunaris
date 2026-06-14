@@ -11,13 +11,37 @@ from .coordinator_protocol import IVideoBuildCoordinator
 from .input_hash import video_input_hash
 from .queue_coordinator import QueueVideoBuildCoordinator
 from .run_scope import resolve_video_coordinator, run_video_coordinator
+from .video_config import (
+    DEFAULT_VIDEO_CONFIG,
+    MAX_VIDEO_SECONDS,
+    MIN_VIDEO_SECONDS,
+    VIDEO_ENABLED_ENV,
+    VIDEO_LESSON_SECONDS_ENV,
+    VIDEO_OVERVIEW_SECONDS_ENV,
+    VIDEO_SUMMARY_SECONDS_ENV,
+    VIDEO_VOICE_ENV,
+    VideoConfig,
+    resolve_video_config,
+    video_config_from_map,
+)
 from .video_lengths import target_seconds_for
 
 __all__ = [
+    "DEFAULT_VIDEO_CONFIG",
+    "MAX_VIDEO_SECONDS",
+    "MIN_VIDEO_SECONDS",
+    "VIDEO_ENABLED_ENV",
+    "VIDEO_LESSON_SECONDS_ENV",
+    "VIDEO_OVERVIEW_SECONDS_ENV",
+    "VIDEO_SUMMARY_SECONDS_ENV",
+    "VIDEO_VOICE_ENV",
     "IVideoBuildCoordinator",
     "QueueVideoBuildCoordinator",
+    "VideoConfig",
+    "resolve_video_config",
     "resolve_video_coordinator",
     "run_video_coordinator",
     "target_seconds_for",
+    "video_config_from_map",
     "video_input_hash",
 ]

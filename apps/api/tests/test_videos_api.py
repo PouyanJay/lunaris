@@ -19,9 +19,11 @@ from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import (
     get_course_store,
     get_run_event_store,
+    get_user_config_store,
     get_video_job_queue,
     get_video_storage,
 )
+from lunaris_api.user_config import InMemoryUserConfigStore
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import (
     InMemoryRunEventStore,
@@ -131,6 +133,7 @@ def _build_client(
     *,
     video_enabled: bool = True,
     course_store: _FakeCourseStore | None = None,
+    user_config_store: InMemoryUserConfigStore | None = None,
 ) -> httpx.AsyncClient:
     clear_correlation()
     app = create_app()
@@ -141,6 +144,8 @@ def _build_client(
     app.dependency_overrides[get_video_storage] = lambda: storage
     app.dependency_overrides[get_run_event_store] = lambda: events
     app.dependency_overrides[get_course_store] = lambda: course_store or _seeded_course_store()
+    if user_config_store is not None:
+        app.dependency_overrides[get_user_config_store] = lambda: user_config_store
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
@@ -209,6 +214,60 @@ async def test_keyless_caller_gets_a_feature_disabled_refusal(
         assert await queue.claim(worker_id="probe") is None
 
 
+# ── the per-user master toggle (V6) ───────────────────────────────────────────────
+
+
+async def test_master_toggle_off_refuses_on_demand_enqueue(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — keyed + authed, but the caller turned video OFF in Settings (V6 master toggle).
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    user_config = InMemoryUserConfigStore()
+    await user_config.set(user_id=USER_A, key="videoEnabled", value="false")
+    async with _build_client(
+        tmp_path, queue, storage, events, user_config_store=user_config
+    ) as client:
+        # Act
+        response = await client.post(_ENQUEUE, headers=auth_headers(USER_A))
+
+    # Assert — 403 naming the setting, and nothing was enqueued (gated everywhere enqueue happens).
+    # (The refusal's correlation id is bound to the structlog context via bind_request_id, not the
+    # error-response headers — FastAPI does not carry the injected Response headers through an
+    # HTTPException, the same as the keyless 403.)
+    assert response.status_code == 403
+    assert "settings" in response.json()["detail"].lower()
+    assert await queue.claim(worker_id="probe") is None
+
+
+async def test_enqueue_stamps_the_tenants_length_and_voice(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — the caller chose a 90s lesson length and turned narration OFF.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    user_config = InMemoryUserConfigStore()
+    await user_config.set(user_id=USER_A, key="videoLessonSeconds", value="90")
+    await user_config.set(user_id=USER_A, key="videoVoice", value="false")
+    async with _build_client(
+        tmp_path, queue, storage, events, user_config_store=user_config
+    ) as client:
+        # Act
+        job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+
+    # Assert — the worker will plan to the tenant's length and render silent (voice-ready).
+    stored = await queue.get(job_id=job_id)
+    assert stored is not None
+    assert stored.config["target_seconds"] == 90
+    assert stored.config["voice"] is False
+
+
 # ── enqueue + status read ─────────────────────────────────────────────────────────
 
 
@@ -218,7 +277,7 @@ async def test_enqueue_creates_an_owner_stamped_queued_job(
     # Act
     response = await client.post(_ENQUEUE, headers=auth_headers(USER_A))
 
-    # Assert — 202 with the queued job's wire shape; the row is owner-stamped.
+    # Assert — 202 with the queued job's wire shape; the row is owner-stamped, defaults stamped on.
     assert response.status_code == 202
     body = response.json()
     job = body["job"]
@@ -230,6 +289,9 @@ async def test_enqueue_creates_an_owner_stamped_queued_job(
     assert body["videoUrl"] is None
     stored = await queue.get(job_id=job["id"])
     assert stored is not None and stored.user_id == USER_A
+    # Unset video config → product defaults: the per-kind lesson length, voice on.
+    assert stored.config["target_seconds"] == 75
+    assert stored.config["voice"] is True
 
 
 # ── enqueue ownership + dedup (V4-T0, the V0-deferred safety) ──────────────────────
