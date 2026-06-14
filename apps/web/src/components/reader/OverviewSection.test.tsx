@@ -309,6 +309,46 @@ describe("OverviewSection", () => {
     expect(screen.getByText(/rendering the scenes/i)).toBeInTheDocument();
   });
 
+  it("surfaces the worker's failure reason on a course video instead of a generic line", async () => {
+    // Arrange — a failed course video whose regenerate polls to failed WITH an actionable reason
+    // (the Gate-D-retry-exhausted message); the slot shows that reason, not the generic fallback.
+    const failed: VideoArtifact = {
+      kind: "summary",
+      status: "failed",
+      jobId: "sum-fail",
+      provenance: null,
+      narrated: false,
+    };
+    const queued = {
+      ...readyView("sum-2"),
+      videoUrl: null,
+      job: { ...readyView("sum-2").job, status: "queued" },
+    };
+    const failedView = {
+      ...readyView("sum-2"),
+      videoUrl: null,
+      job: {
+        ...readyView("sum-2").job,
+        status: "failed",
+        error: "Narration couldn’t be synced to the visuals.",
+      },
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (url.includes("/regenerate")) return Promise.resolve(jsonResponse(202, queued));
+      return Promise.resolve(jsonResponse(200, failedView));
+    });
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+
+    // Act — Try again → Fresh take → the regenerate polls to a failure carrying the reason.
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+
+    // Assert — the actionable reason is shown.
+    expect(await screen.findByText(/narration couldn.t be synced/i)).toBeInTheDocument();
+  });
+
   it("renders nothing when neither course video was built", () => {
     // Arrange / Act — a video-on build where both course-level renders were absent.
     const { container } = render(<OverviewSection videos={{}} apiBaseUrl={API} />);

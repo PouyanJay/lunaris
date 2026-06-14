@@ -92,7 +92,8 @@ function CourseVideoSlot({
         <>
           <div className={styles.stage}>
             <p className={styles.failedLabel} role="status">
-              This video couldn’t be generated. The rest of the course is unaffected.
+              {state.error ??
+                "This video couldn’t be generated. The rest of the course is unaffected."}
             </p>
           </div>
           {resolveJobId(artifact) && (

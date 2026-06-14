@@ -12,7 +12,7 @@ from _stubs import FakeLessonProvider, StubInvokeModel, manifest_for
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.video_build import target_seconds_for
 from lunaris_video.assembly import build_webvtt
-from lunaris_video.errors import FactualGateError
+from lunaris_video.errors import FactualGateError, SyncGateError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, VideoPipeline
@@ -154,6 +154,25 @@ class _PassingSyncVision:
 
     async def inspect(self, frame: bytes, *, narration: str, beat_id: str) -> SyncVerdict:
         return SyncVerdict(matches=True)
+
+
+class _FlakySyncVision:
+    """Desyncs the first ``fail_first`` beat inspections, then matches — models a first attempt that
+    fails Gate D and a plainer retry that lines up (or, with a huge count, never lines up)."""
+
+    def __init__(self, fail_first: int) -> None:
+        self.calls = 0
+        self._fail_first = fail_first
+
+    async def inspect(self, frame: bytes, *, narration: str, beat_id: str) -> SyncVerdict:
+        self.calls += 1
+        if self.calls <= self._fail_first:
+            return SyncVerdict(matches=False, reason="the narration says X; the frame shows Y")
+        return SyncVerdict(matches=True)
+
+
+def _sync_gate_with(vision: object) -> SyncGate:
+    return SyncGate(vision=vision, frames=_DummyFrameExtractor())
 
 
 class _DummyFrameExtractor:
@@ -552,6 +571,58 @@ async def test_one_contract_renders_silent_and_narrated_with_no_replan(
     assert silent_assembler.received_manifest.is_voiced is False
     assert narrated_assembler.received_manifest.is_voiced is True
     assert silent_assembler.received_manifest != narrated_assembler.received_manifest
+
+
+async def test_a_voiced_desync_retries_simpler_then_succeeds(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — Gate D desyncs on the FIRST attempt's first spoken beat, but the (plainer) retry
+    # lines up. A voiced narration/visual mismatch is a re-plan case, not something to ship.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    vision = _FlakySyncVision(fail_first=1)
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        _SpyAssembler(),
+        ContractHashCache(),
+        tmp_path,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_sync_gate_with(vision),
+    )
+
+    # Act — the desync is recovered automatically; a real video ships.
+    video = await pipeline.produce(_voiced_job())
+
+    # Assert — it re-planned exactly once, with the Simpler directive (plainer scenes sync easier).
+    assert video.mp4
+    assert len(invoke.prompts) == 2
+    assert "SIMPLER" in invoke.prompts[1]
+
+
+async def test_a_voiced_desync_that_wont_simplify_fails_with_an_actionable_reason(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — Gate D never lines up (a stubborn scene). After the plainer retry, the job fails —
+    # never shipping a voiced mismatch — but with a clear, owner-safe reason, not a raw critique.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    vision = _FlakySyncVision(fail_first=999)
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        _SpyAssembler(),
+        ContractHashCache(),
+        tmp_path,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_sync_gate_with(vision),
+    )
+
+    # Act / Assert
+    with pytest.raises(SyncGateError) as excinfo:
+        await pipeline.produce(_voiced_job())
+    assert len(invoke.prompts) == 2  # tried once, then once plainer, then gave up
+    assert excinfo.value.user_detail is not None
+    assert "narration" in excinfo.value.user_detail.lower()
+    assert "silent" in excinfo.value.user_detail.lower()
 
 
 async def test_voice_on_without_a_key_degrades_to_silent(

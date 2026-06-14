@@ -28,7 +28,7 @@ export type LessonVideoState =
       captionsUrl: string | null;
       stale: boolean;
     }
-  | { phase: "failed"; jobId: string | null }
+  | { phase: "failed"; jobId: string | null; error?: string | null }
   | { phase: "keyless"; detail: string }
   | { phase: "unavailable" };
 
@@ -75,7 +75,7 @@ export function useLessonVideo(
               stale: view.stale ?? false,
             });
           } else {
-            setState({ phase: "failed", jobId });
+            setState({ phase: "failed", jobId, error: view.job.error ?? null });
           }
         },
       });

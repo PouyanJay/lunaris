@@ -340,6 +340,37 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
     assert storage.paths() == []  # nothing half-uploaded presented as done
 
 
+async def test_an_actionable_failure_reason_reaches_the_job_row() -> None:
+    # Arrange — a VideoPipelineError carrying a user_detail (the Gate-D-retry-exhausted case). The
+    # owner-readable row gets the actionable line; the internal vision critique never does.
+    from lunaris_video.errors import SyncGateError
+
+    class _DesyncPipeline:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
+            raise SyncGateError(
+                "b2",
+                reason="crammed into the right side of the frame",
+                user_detail="Turn off narration in Settings for a silent version.",
+            )
+
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        InMemoryRunEventStore(),
+    )
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, events, pipeline=_DesyncPipeline())
+
+    # Act
+    assert await worker.run_once() is True
+
+    # Assert — the actionable reason is on the row; the raw critique is not (logs only).
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.FAILED
+    assert job.error == "Turn off narration in Settings for a silent version."
+    assert "crammed" not in (job.error or "")
+
+
 async def test_an_infrastructure_failure_never_escapes_the_loop() -> None:
     # Arrange — settling the job blows up too (DB gone mid-job): the worker logs and moves on.
     class _BrokenQueue(InMemoryVideoJobQueue):
