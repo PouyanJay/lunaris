@@ -11,10 +11,14 @@ class VideoArtifact(CourseModel):
     and whether it is ready; ``narrated``/``duration_s`` describe playback. Populated by the build
     in V4 (``Lesson.video`` / ``Course.videos``); defined now so provenance traverses pipeline →
     payload → API against a stable shape.
+
+    ``provenance`` is ``None`` for a video that has none — a FAILED job carries a retry-state
+    artifact that may never have planned a contract (V4-T1). A READY artifact always carries it
+    (provenance is built at the source the moment the contract is planned and Gate C passes).
     """
 
     kind: VideoKind
     status: VideoJobStatus
-    provenance: VideoProvenance
+    provenance: VideoProvenance | None = None
     narrated: bool = False
     duration_s: float | None = None

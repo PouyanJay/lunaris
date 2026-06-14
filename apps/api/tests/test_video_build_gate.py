@@ -11,7 +11,7 @@ from collections.abc import Mapping
 import pytest
 from lunaris_agent import build_stub_orchestrator
 from lunaris_api.service import CourseService
-from lunaris_runtime.persistence import InMemoryVideoJobQueue
+from lunaris_runtime.persistence import InMemoryVideoJobQueue, InMemoryVideoStorage
 from lunaris_runtime.schema import Course
 from lunaris_runtime.video_build import (
     IVideoBuildCoordinator,
@@ -55,8 +55,13 @@ def _service(
     credential_resolver: object | None = None,
 ) -> CourseService:
     queue = InMemoryVideoJobQueue()
+    storage = InMemoryVideoStorage()
     factory = (
-        (lambda owner_id: QueueVideoBuildCoordinator(queue=queue, owner_id=owner_id))
+        (
+            lambda owner_id: QueueVideoBuildCoordinator(
+                queue=queue, storage=storage, owner_id=owner_id
+            )
+        )
         if video_on
         else None
     )

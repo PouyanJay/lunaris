@@ -229,15 +229,18 @@ VideoJobQueueDep = Annotated[IVideoJobQueue, Depends(get_video_job_queue)]
 VideoStorageDep = Annotated[IVideoStorage, Depends(get_video_storage)]
 
 
-def _video_coordinator_factory(queue: IVideoJobQueue) -> VideoCoordinatorFactory:
-    """Build a per-run video-build coordinator over the shared queue (explainer-video V4-T0).
+def _video_coordinator_factory(
+    queue: IVideoJobQueue, storage: IVideoStorage
+) -> VideoCoordinatorFactory:
+    """Build a per-run video-build coordinator over the shared queue + storage (explainer-video V4).
 
     Returned to ``CourseService`` only when ``VIDEO_GENERATION_ENABLED`` is on (so its presence is
     the operator gate); the service calls it per keyed, owned build to enqueue that build's lesson
-    videos onto the same queue the lifespan worker drains."""
+    videos onto the same queue the lifespan worker drains, and (at finalize) to await them and read
+    the finished artifacts from the same storage the worker wrote them to."""
 
     def build(owner_id: str) -> IVideoBuildCoordinator:
-        return QueueVideoBuildCoordinator(queue=queue, owner_id=owner_id)
+        return QueueVideoBuildCoordinator(queue=queue, storage=storage, owner_id=owner_id)
 
     return build
 
@@ -495,7 +498,7 @@ def get_course_service(
     # only when it's on, so a build enqueues videos only where the operator opted in (dev now, prod
     # at V7). The per-build keyed + owner checks layer on top inside CourseService.
     video_coordinator_factory = (
-        _video_coordinator_factory(get_video_job_queue(settings))
+        _video_coordinator_factory(get_video_job_queue(settings), get_video_storage(settings))
         if settings.video_generation_enabled
         else None
     )

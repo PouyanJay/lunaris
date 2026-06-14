@@ -16,6 +16,7 @@ from lunaris_runtime.persistence import (
 )
 from lunaris_runtime.schema import (
     RunEventKind,
+    VideoArtifact,
     VideoJob,
     VideoJobStatus,
     VideoKind,
@@ -84,12 +85,14 @@ async def test_run_once_processes_a_job_end_to_end() -> None:
     assert processed is True
     job = await queue.get(job_id="job-1")
     assert job is not None and job.status == VideoJobStatus.READY
+    # V4-T1: the planned contract fingerprint is written back onto the job row (regen cache key).
+    assert job.contract_hash == "stub"
     prefix = f"{_OWNER}/course-1/job-1"
     mp4_path, poster_path = f"{prefix}/final.mp4", f"{prefix}/poster.jpg"
     contracts_path, timing_path = f"{prefix}/scene_contracts.json", f"{prefix}/timing.json"
-    provenance_path = f"{prefix}/provenance.json"
+    provenance_path, artifact_path = f"{prefix}/provenance.json", f"{prefix}/artifact.json"
     assert sorted(storage.paths()) == sorted(
-        [mp4_path, poster_path, contracts_path, timing_path, provenance_path]
+        [mp4_path, poster_path, contracts_path, timing_path, provenance_path, artifact_path]
     )
     assert storage.content_type(mp4_path) == "video/mp4"
     assert storage.content_type(poster_path) == "image/jpeg"
@@ -101,6 +104,11 @@ async def test_run_once_processes_a_job_end_to_end() -> None:
     provenance = VideoProvenance.model_validate_json(storage.read(provenance_path))
     assert provenance.job_id == "job-1"
     assert provenance.input_hash == _job().input_hash
+    # V4-T1: the finished VideoArtifact is written at the source — what finalize folds in.
+    artifact = VideoArtifact.model_validate_json(storage.read(artifact_path))
+    assert artifact.status == VideoJobStatus.READY
+    assert artifact.provenance is not None and artifact.provenance.job_id == "job-1"
+    assert artifact.narrated is False  # the stub is silent
 
 
 async def test_a_narrated_video_uploads_a_captions_track() -> None:
@@ -225,7 +233,7 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
 async def test_an_infrastructure_failure_never_escapes_the_loop() -> None:
     # Arrange — settling the job blows up too (DB gone mid-job): the worker logs and moves on.
     class _BrokenQueue(InMemoryVideoJobQueue):
-        async def complete(self, *, job_id: str) -> None:
+        async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
             raise PersistenceError("db is gone")
 
         async def fail(self, *, job_id: str, error: str) -> None:
@@ -244,8 +252,8 @@ async def test_run_forever_drains_then_stops_on_cancel() -> None:
     settled = asyncio.Event()
 
     class _SignallingQueue(InMemoryVideoJobQueue):
-        async def complete(self, *, job_id: str) -> None:
-            await super().complete(job_id=job_id)
+        async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
+            await super().complete(job_id=job_id, contract_hash=contract_hash)
             settled.set()
 
     queue, storage, events = _SignallingQueue(), InMemoryVideoStorage(), InMemoryRunEventStore()

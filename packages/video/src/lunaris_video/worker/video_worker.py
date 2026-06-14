@@ -9,10 +9,18 @@ from lunaris_runtime.persistence import (
     PersistenceError,
     VideoArtifactPaths,
 )
-from lunaris_runtime.schema import RunEvent, RunEventKind, VideoJob, VideoJobStatus
+from lunaris_runtime.schema import (
+    RunEvent,
+    RunEventKind,
+    VideoArtifact,
+    VideoJob,
+    VideoJobStatus,
+    VideoProvenance,
+)
 
 from lunaris_video.models.rendered_video import RenderedVideo
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline
+from lunaris_video.schemas import TimingManifest
 
 _logger = structlog.get_logger(__name__)
 
@@ -84,7 +92,8 @@ class VideoWorker:
 
         try:
             rendered = await self._pipeline.produce(job)
-            await self._upload_artifacts(job, rendered)
+            artifact = _build_artifact(job, rendered)
+            await self._upload_artifacts(job, rendered, artifact)
         except Exception as exc:
             # Full detail to the logs; only the class name to the owner-readable job row.
             _logger.exception("video_worker.job_failed")
@@ -94,11 +103,16 @@ class VideoWorker:
             await sequence.emit(VideoJobStatus.FAILED, "video generation failed")
             return
 
-        await self._queue.complete(job_id=job.id)
+        # Write the planned contract fingerprint back onto the job row — the durable cross-process
+        # regeneration cache key (V4-T1; V1 deferred it). None when the producer built none.
+        contract_hash = artifact.provenance.contract_hash if artifact.provenance else None
+        await self._queue.complete(job_id=job.id, contract_hash=contract_hash)
         await sequence.emit(VideoJobStatus.READY, "video ready")
         _logger.info("video_worker.job_ready", job_id=job.id)
 
-    async def _upload_artifacts(self, job: VideoJob, rendered: RenderedVideo) -> None:
+    async def _upload_artifacts(
+        self, job: VideoJob, rendered: RenderedVideo, artifact: VideoArtifact
+    ) -> None:
         paths = VideoArtifactPaths.for_job(job)
         await self._storage.upload(path=paths.mp4, data=rendered.mp4, content_type="video/mp4")
         await self._storage.upload(
@@ -127,6 +141,34 @@ class VideoWorker:
                 data=rendered.provenance_json,
                 content_type="application/json",
             )
+        # The finished VideoArtifact (status + provenance + narrated + duration), built at the
+        # source so the build's finalize folds it into the lesson with a single read (V4-T1).
+        await self._storage.upload(
+            path=paths.artifact,
+            data=artifact.model_dump_json(by_alias=True).encode(),
+            content_type="application/json",
+        )
+
+
+def _build_artifact(job: VideoJob, rendered: RenderedVideo) -> VideoArtifact:
+    """The finished video as it rides in the course payload, built at the source (V4-T1).
+
+    Provenance comes from what the pipeline produced (``None`` for a producer that built none);
+    ``narrated`` + ``duration_s`` are read off the timing manifest — the one source of truth for
+    playback metadata, so ``artifact.json`` and the GET endpoint agree without extra work."""
+    provenance = (
+        VideoProvenance.model_validate_json(rendered.provenance_json)
+        if rendered.provenance_json
+        else None
+    )
+    manifest = TimingManifest.model_validate_json(rendered.timing_json)
+    return VideoArtifact(
+        kind=job.kind,
+        status=VideoJobStatus.READY,
+        provenance=provenance,
+        narrated=manifest.is_voiced,
+        duration_s=manifest.total_s,
+    )
 
 
 class _EventSequence:

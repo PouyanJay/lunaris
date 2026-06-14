@@ -45,6 +45,11 @@ class TimingManifest(RootModel[dict[str, SceneTiming]]):
         return list(self.root)
 
     @property
+    def total_s(self) -> float:
+        """The whole video's playback duration — the sum of every scene's on-screen window."""
+        return sum(scene.total_s for scene in self.root.values())
+
+    @property
     def is_voiced(self) -> bool:
         """True once any beat has a synthesized clip — the measured path. Silent (estimate)
         manifests carry no audio, so the assembler skips the mux and ships no captions."""

@@ -16,7 +16,7 @@ from lunaris_agent.harness.authoring.stub_reviser import StubLessonReviser
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
-from lunaris_runtime.persistence import InMemoryVideoJobQueue
+from lunaris_runtime.persistence import InMemoryVideoJobQueue, InMemoryVideoStorage
 from lunaris_runtime.schema import Citation, Module, RiskTier, VideoJobStatus, VideoKind
 from lunaris_runtime.video_build import QueueVideoBuildCoordinator
 
@@ -68,7 +68,9 @@ async def test_clean_module_enqueues_one_lesson_job_tracked_on_the_draft() -> No
     # Arrange — one module that authors a groundable claim (clears verify on round 0).
     queue = InMemoryVideoJobQueue()
     draft = _draft(Module(id="m0", title="Routing", kcs=["c"], difficulty_index=0.5))
-    draft.video_coordinator = QueueVideoBuildCoordinator(queue=queue, owner_id=_OWNER)
+    draft.video_coordinator = QueueVideoBuildCoordinator(
+        queue=queue, storage=InMemoryVideoStorage(), owner_id=_OWNER
+    )
     subgraph = build_authoring_subgraph(
         StubLessonReviser(_grounded_author, _unused_revise), _marker_verifier(), draft
     )
@@ -113,7 +115,9 @@ async def test_every_module_enqueues_exactly_one_job_across_revise_rounds() -> N
         Module(id="ma", title="A", kcs=["a"], difficulty_index=0.1),
         Module(id="mb", title="B", kcs=["b"], difficulty_index=0.2),
     )
-    draft.video_coordinator = QueueVideoBuildCoordinator(queue=queue, owner_id=_OWNER)
+    draft.video_coordinator = QueueVideoBuildCoordinator(
+        queue=queue, storage=InMemoryVideoStorage(), owner_id=_OWNER
+    )
 
     def author_fn(module: Module) -> LessonDraft:
         # A is groundable immediately; B is not (needs a revise round).
@@ -144,7 +148,9 @@ async def test_module_with_residual_cut_still_enqueues_at_triage() -> None:
     # still enqueues — a publishable lesson always gets its video job.
     queue = InMemoryVideoJobQueue()
     draft = _draft(Module(id="m0", title="C", kcs=["c"], difficulty_index=0.5))
-    draft.video_coordinator = QueueVideoBuildCoordinator(queue=queue, owner_id=_OWNER)
+    draft.video_coordinator = QueueVideoBuildCoordinator(
+        queue=queue, storage=InMemoryVideoStorage(), owner_id=_OWNER
+    )
 
     def author_fn(module: Module) -> LessonDraft:
         return _lesson_with_claim("ungroundable one")

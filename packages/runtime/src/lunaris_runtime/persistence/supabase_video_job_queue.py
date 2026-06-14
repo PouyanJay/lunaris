@@ -86,15 +86,17 @@ class SupabaseVideoJobQueue:
         await self._patch(job_id, {"claimed_at": now, "updated_at": now})
 
     @guard("video_jobs complete")
-    async def complete(self, *, job_id: str) -> None:
-        await self._patch(
-            job_id,
-            {
-                "status": VideoJobStatus.READY.value,
-                "error": None,
-                "updated_at": datetime.now(UTC).isoformat(),
-            },
-        )
+    async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
+        patch: dict[str, object] = {
+            "status": VideoJobStatus.READY.value,
+            "error": None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+        # Write the planned contract fingerprint back (the regeneration cache key, V4-T1) only when
+        # the pipeline produced one; never clobber an existing value with null.
+        if contract_hash is not None:
+            patch["contract_hash"] = contract_hash
+        await self._patch(job_id, patch)
 
     @guard("video_jobs fail")
     async def fail(self, *, job_id: str, error: str) -> None:

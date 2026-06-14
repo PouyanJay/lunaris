@@ -56,8 +56,8 @@ class InMemoryVideoJobQueue:
             job.claimed_at = self._clock()
             job.updated_at = job.claimed_at
 
-    async def complete(self, *, job_id: str) -> None:
-        await self._settle(job_id, VideoJobStatus.READY, error=None)
+    async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
+        await self._settle(job_id, VideoJobStatus.READY, error=None, contract_hash=contract_hash)
 
     async def fail(self, *, job_id: str, error: str) -> None:
         await self._settle(job_id, VideoJobStatus.FAILED, error=error)
@@ -88,11 +88,20 @@ class InMemoryVideoJobQueue:
             active.sort(key=lambda job: (job.created_at or self._clock(), job.id), reverse=True)
             return active[0].model_copy(deep=True)
 
-    async def _settle(self, job_id: str, status: VideoJobStatus, *, error: str | None) -> None:
+    async def _settle(
+        self,
+        job_id: str,
+        status: VideoJobStatus,
+        *,
+        error: str | None,
+        contract_hash: str | None = None,
+    ) -> None:
         async with self._lock:
             job = self._require(job_id, operation=f"settle {status.value}")
             job.status = status
             job.error = error
+            if contract_hash is not None:
+                job.contract_hash = contract_hash
             job.updated_at = self._clock()
 
     def _require(self, job_id: str, *, operation: str) -> VideoJob:

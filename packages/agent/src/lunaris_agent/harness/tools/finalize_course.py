@@ -22,6 +22,7 @@ from lunaris_runtime.schema import (
     Module,
     PrerequisiteGraph,
     ProgressStage,
+    VideoJobStatus,
 )
 
 from ...coverage_critic import CoverageReport, ICoverageCritic
@@ -119,6 +120,46 @@ def _apply_quality_gates(
         and coverage_report.is_clean
     ):
         course.status = CourseStatus.PUBLISHED
+
+
+async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
+    """Await the build's enqueued lesson videos and fold each into its lesson (V4-T1).
+
+    Blocking-but-overlapped (plan §0): the jobs were enqueued the moment their modules cleared, so
+    they have been rendering through the whole finalize tail; here the build blocks just long enough
+    to collect them, degrading on failure (a failed video → a FAILED retry-state artifact on the
+    lesson, never a blocked publish). A no-op when video is off (no coordinator) or nothing was
+    enqueued, so the offline / video-off path finalizes byte-for-byte as before.
+    """
+    coordinator = draft.video_coordinator
+    if coordinator is None or not draft.enqueued_video_jobs:
+        return
+    try:
+        artifacts = await coordinator.collect(draft.enqueued_video_jobs)
+    except Exception:
+        # The coordinator already degrades per-job; this is the outer belt — a video must NEVER
+        # abort the publish (plan §0). A wholesale collect failure ships the course video-less.
+        logger.warning("agent_course_videos_collect_failed", run_id=draft.run_id, exc_info=True)
+        return
+    stitched = 0
+    degraded = 0
+    for module in course.modules:
+        for lesson in module.lessons:
+            artifact = artifacts.get(lesson.id)
+            if artifact is None:
+                continue
+            lesson.video = artifact
+            if artifact.status is VideoJobStatus.READY:
+                stitched += 1
+            else:
+                degraded += 1
+    logger.info(
+        "agent_course_videos_stitched",
+        run_id=draft.run_id,
+        course_id=course.id,
+        ready=stitched,
+        degraded=degraded,
+    )
 
 
 def _modules_from_graph(graph: PrerequisiteGraph) -> list[Module]:
@@ -243,6 +284,10 @@ def make_finalize_course_tool(
         # it). None (the no-key path) ships the deterministic band unchanged.
         if scope_polisher is not None and course.scope is not None:
             course.scope = await scope_polisher.polish(course.scope, brief=draft.brief)
+        # Blocking finalize (V4-T1): await the build's enqueued lesson videos and fold each into its
+        # lesson before persisting. Placed last so the renders overlap the whole finalize tail
+        # (visuals, gates, scope polish); degrade-on-failure, so a video never blocks the publish.
+        await _stitch_lesson_videos(course, draft)
         # The store's save is synchronous (file I/O for the file store, a blocking supabase-py call
         # for the Postgres store); off-load it so the agent's event loop isn't blocked on the write.
         await asyncio.to_thread(store.save, course)
