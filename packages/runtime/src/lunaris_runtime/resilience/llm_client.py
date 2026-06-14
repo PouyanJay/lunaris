@@ -132,7 +132,7 @@ def get_llm_rate_limiter() -> "BaseRateLimiter":
     return _rate_limiter
 
 
-def build_chat_model(model_id: str) -> "BaseChatModel":
+def build_chat_model(model_id: str, *, max_tokens: int | None = None) -> "BaseChatModel":
     """The hardened chat model for a run — the one place the LLM provider is chosen.
 
     Two paths, both wired with the same timeout + bounded retries + shared rate limiter:
@@ -148,6 +148,12 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
        When the run scope carries a **device bridge** (the learner chose "This device"), the
        Draft build's completions are instead served by their browser over that bridge.
 
+    ``max_tokens`` caps the response: omitted, the provider default applies (low — langchain's
+    ChatAnthropic defaults to ~1k, which truncates a large structured output like the chaptered
+    overview contract). A caller that emits a big response (video planner / codegen) passes a
+    generous ceiling; Anthropic bills only tokens actually generated, so a high cap adds no cost.
+    Applies to the live path only — the keyless fallback ignores it (video is keyed-only).
+
     The key value is never logged here; redaction at the structlog layer covers it regardless.
     """
     anthropic_key = resolve_secret("ANTHROPIC_API_KEY")
@@ -161,13 +167,16 @@ def build_chat_model(model_id: str) -> "BaseChatModel":
 
     from langchain_anthropic import ChatAnthropic
 
-    return ChatAnthropic(
-        model=model_id,
-        api_key=anthropic_key,
-        default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-        max_retries=LLM_MAX_RETRIES,
-        rate_limiter=get_llm_rate_limiter(),
-    )
+    kwargs: dict[str, object] = {
+        "model": model_id,
+        "api_key": anthropic_key,
+        "default_request_timeout": LLM_REQUEST_TIMEOUT_S,
+        "max_retries": LLM_MAX_RETRIES,
+        "rate_limiter": get_llm_rate_limiter(),
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    return ChatAnthropic(**kwargs)
 
 
 def build_keyless_chat_model() -> "BaseChatModel":

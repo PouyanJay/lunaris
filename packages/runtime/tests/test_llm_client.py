@@ -44,6 +44,28 @@ def test_builder_injects_the_scoped_tenant_key(monkeypatch) -> None:
     assert _SpyChatAnthropic.last_kwargs["api_key"] == "tenant-key"
 
 
+def test_builder_sets_max_tokens_when_given(monkeypatch) -> None:
+    # A caller that emits a large response (the video chaptered-overview planner) raises the output
+    # ceiling so it is not truncated by ChatAnthropic's low default (the prod EOF failure).
+    monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")
+
+    build_chat_model("claude-opus-4-8", max_tokens=16384)
+
+    assert _SpyChatAnthropic.last_kwargs["max_tokens"] == 16384
+
+
+def test_builder_omits_max_tokens_by_default(monkeypatch) -> None:
+    # Default behaviour unchanged: no max_tokens forced onto the client (the provider default
+    # holds), so every existing caller keeps its current ceiling.
+    monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")
+
+    build_chat_model("claude-opus-4-8")
+
+    assert "max_tokens" not in _SpyChatAnthropic.last_kwargs
+
+
 def test_builder_uses_env_when_no_scope(monkeypatch) -> None:
     monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")

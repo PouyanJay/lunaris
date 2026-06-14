@@ -10,6 +10,13 @@ from lunaris_runtime.run_config import resolve_config
 # limiter.
 _DEFAULT_VIDEO_MODEL = "claude-opus-4-8"
 
+# The output ceiling for video text generation. The planner (especially the chaptered overview, a
+# multi-chapter contract that is hundreds of JSON lines) and codegen (a whole Manim scene file) emit
+# large responses; ChatAnthropic's low default (~1k tokens) truncated the chaptered contract
+# mid-JSON (the prod "Invalid JSON: EOF" failure). 16k sits well above the worst-case overview and a
+# scene file, and Anthropic bills only generated tokens, so the headroom is free.
+VIDEO_MAX_OUTPUT_TOKENS = 16384
+
 TextInvoke = Callable[[str], Awaitable[str]]
 VisionInvoke = Callable[[str, list[bytes]], Awaitable[str]]
 
@@ -19,11 +26,16 @@ def default_video_model() -> str:
     return resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_VIDEO_MODEL
 
 
-def build_text_invoke(model_id: str) -> TextInvoke:
-    """A plain text-completion seam over the build chat model (planner + codegen)."""
+def build_text_invoke(model_id: str, *, max_tokens: int | None = None) -> TextInvoke:
+    """A plain text-completion seam over the build chat model (planner + codegen).
+
+    ``max_tokens`` caps each response; the video toolchain passes ``VIDEO_MAX_OUTPUT_TOKENS`` so a
+    large structured output (the chaptered overview contract) is not truncated by the provider's
+    low default. ``None`` leaves the provider default in place.
+    """
 
     async def invoke(prompt: str) -> str:
-        model = build_chat_model(model_id)
+        model = build_chat_model(model_id, max_tokens=max_tokens)
         message = await retry_on_rate_limit(lambda: model.ainvoke(prompt))
         return _message_text(message)
 
