@@ -13,6 +13,8 @@ from .supabase_credential_store import SupabaseCredentialStore
 from .validator import (
     AcceptingValidator,
     AnthropicProbeValidator,
+    CompositeSecretValidator,
+    ElevenLabsProbeValidator,
     ISecretValidator,
     SecretValidationError,
 )
@@ -22,9 +24,11 @@ __all__ = [
     "KNOWN_SECRETS",
     "AcceptingValidator",
     "AnthropicProbeValidator",
+    "CompositeSecretValidator",
     "CredentialStatus",
     "CryptoError",
     "DecryptionError",
+    "ElevenLabsProbeValidator",
     "EncryptedSecret",
     "ICredentialStore",
     "ISecretValidator",

@@ -1563,6 +1563,7 @@ source = { editable = "apps/api" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "lunaris-agent" },
     { name = "lunaris-grounding" },
     { name = "lunaris-runtime" },
@@ -1577,6 +1578,7 @@ dependencies = [
 requires-dist = [
     { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "lunaris-agent", editable = "packages/agent" },
     { name = "lunaris-grounding", editable = "packages/grounding" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
