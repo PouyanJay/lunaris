@@ -29,7 +29,12 @@ from lunaris_runtime.schema import (
     RunEvent,
     RunStatus,
 )
-from lunaris_runtime.video_build import IVideoBuildCoordinator, run_video_coordinator
+from lunaris_runtime.video_build import (
+    IVideoBuildCoordinator,
+    VideoConfig,
+    run_video_coordinator,
+    video_config_from_map,
+)
 
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
@@ -66,10 +71,11 @@ CredentialResolver = Callable[[str], Awaitable[Mapping[str, str]]]
 # per-user (auth off) → builds read the process env, today's behaviour.
 ConfigResolver = Callable[[str], Awaitable[Mapping[str, str]]]
 
-# Builds the per-run video-build coordinator for an owner (explainer-video V4): owner_id → the
-# coordinator that enqueues the build's lesson videos. Wired ONLY when the operator flag
-# VIDEO_GENERATION_ENABLED is on (its presence is the operator gate); None otherwise → no videos.
-VideoCoordinatorFactory = Callable[[str], IVideoBuildCoordinator]
+# Builds the per-run video-build coordinator for an owner (explainer-video V4): (owner_id, the
+# owner's resolved video config) → the coordinator that enqueues the build's videos at the tenant's
+# chosen lengths + voice (V6). Wired ONLY when the operator flag VIDEO_GENERATION_ENABLED is on (its
+# presence is the operator gate); None otherwise → no videos.
+VideoCoordinatorFactory = Callable[[str, VideoConfig], IVideoBuildCoordinator]
 
 # A streamed item: a ("progress", ProgressEvent) stage, an ("agent", AgentEvent) transcript beat,
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
@@ -304,20 +310,29 @@ class CourseService:
         return run_config(config)
 
     def _video_coordinator_for(
-        self, owner_id: str | None, credentials: Mapping[str, str] | None
+        self,
+        owner_id: str | None,
+        credentials: Mapping[str, str] | None,
+        config: Mapping[str, str] | None,
     ) -> IVideoBuildCoordinator | None:
         """The build's video-enqueue coordinator, or ``None`` when video generation is off for it.
 
-        The whole V4 enqueue gate in one place (plan §V4-T0): the operator flag (the factory is
-        wired only when ``VIDEO_GENERATION_ENABLED`` is on), AND the build is **keyed** (video needs
-        Claude + a vision model — never a keyless Draft build), AND an **owner** is known (a
-        ``video_jobs`` row needs a ``user_id``; auth-off single-user builds get no videos). The
-        harness then only checks the coordinator's presence — it never re-derives this gate."""
+        The whole enqueue gate in one place: the operator flag (the factory is wired only when
+        ``VIDEO_GENERATION_ENABLED`` is on), AND the build is **keyed** (video needs Claude + a
+        vision model — never a keyless Draft build), AND an **owner** is known (a ``video_jobs`` row
+        needs a ``user_id``; auth-off single-user builds get no videos), AND the owner's **master
+        toggle** is on (V6 — the per-user opt-out layers on top of the operator flag). The owner's
+        resolved video config (lengths + voice) is handed to the factory so every enqueued job is
+        stamped with the tenant's choices. The harness then only checks the coordinator's presence —
+        it never re-derives this gate."""
         if self._video_coordinator_factory is None or owner_id is None:
             return None
         if self._is_keyless_llm(credentials):
             return None
-        return self._video_coordinator_factory(owner_id)
+        video_config = video_config_from_map(config)
+        if not video_config.enabled:
+            return None  # the owner turned video generation off in Settings (V6 master toggle)
+        return self._video_coordinator_factory(owner_id, video_config)
 
     @staticmethod
     def _video_scope(
@@ -366,7 +381,7 @@ class CourseService:
         admission = await self.admit_build(owner_id)
         credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
-        video_coordinator = self._video_coordinator_for(owner_id, credentials)
+        video_coordinator = self._video_coordinator_for(owner_id, credentials, config)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
@@ -452,7 +467,7 @@ class CourseService:
             admission = await self.admit_build(owner_id)
         credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
-        video_coordinator = self._video_coordinator_for(owner_id, credentials)
+        video_coordinator = self._video_coordinator_for(owner_id, credentials, config)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # The credential + config + video + bridge scopes wrap only the factory + create_task (no
         # yields inside), so the run task inherits the tenant's keys + model choices + video

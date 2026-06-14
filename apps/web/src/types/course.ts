@@ -292,6 +292,9 @@ export interface Lesson {
   gagne: GagneFlags;
   /** Estimated intrinsic cognitive load for the lesson. */
   loadEstimate: number;
+  /** The build-time explainer video stitched onto the lesson (V4), if the course shipped one. The
+   *  hero resolves it and flags it outdated once the lesson is revised (V6-T3). */
+  video?: VideoArtifact | null;
 }
 
 /** One assessment item (mirrors Item). `answer` is the model answer, often absent. */
@@ -406,6 +409,9 @@ export type VideoKind = "summary" | "overview" | "lesson";
 export interface VideoArtifact {
   kind: VideoKind;
   status: VideoJobStatus;
+  /** The source job — present even when FAILED (unlike `provenance`), so the regenerate menu (V6)
+   *  can re-run any artifact, finished or not. */
+  jobId?: string | null;
   provenance?: VideoProvenance | null;
   narrated: boolean;
   durationS?: number | null;

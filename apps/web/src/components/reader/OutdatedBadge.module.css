@@ -1,0 +1,33 @@
+/* A status signal, house style: a muted warning dot + UPPERCASE-MONO label, no saturated pill. */
+.badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.dot {
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--warning);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.hint {
+  color: var(--text-secondary);
+}
+
+/* Phone: drop the secondary hint so the badge stays compact next to the regenerate control. */
+@media (max-width: 768px) {
+  .hint {
+    display: none;
+  }
+}

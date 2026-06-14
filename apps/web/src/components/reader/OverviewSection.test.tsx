@@ -135,7 +135,12 @@ describe("OverviewSection", () => {
   it("shows the honest message when a ready artifact carries no resolvable jobId", () => {
     // Arrange — a READY artifact with no provenance (e.g. a pre-provenance worker); it can't resolve
     // a signed URL, so it degrades like a failure rather than rendering a broken player.
-    const noJobId: VideoArtifact = { kind: "summary", status: "ready", provenance: null, narrated: false };
+    const noJobId: VideoArtifact = {
+      kind: "summary",
+      status: "ready",
+      provenance: null,
+      narrated: false,
+    };
 
     // Act
     render(<OverviewSection videos={{ summary: noJobId }} apiBaseUrl={API} />);
@@ -163,6 +168,64 @@ describe("OverviewSection", () => {
     releaseUrl(jsonResponse(200, readyView("sum-1")));
     await screen.findByRole("button", { name: /play the course trailer/i });
     expect(screen.queryByRole("status", { name: /loading/i })).toBeNull();
+  });
+
+  it("offers a Regenerate menu on a ready course video and re-runs it", async () => {
+    // Arrange — a ready summary; its menu's Fresh take re-runs the course video.
+    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    await screen.findByRole("button", { name: /play the course trailer/i });
+
+    // Act — open the regenerate menu and pick Fresh take.
+    fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+
+    // Assert — the POST targeted the source job with the chosen mode.
+    const regen = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/videos/sum-1/regenerate"),
+    );
+    expect(JSON.parse(String((regen?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
+  });
+
+  it("shows the outdated badge when a ready course video reports stale", async () => {
+    // The stale flag from the status read plumbs through useCourseVideo to the slot's badge.
+    fetchMock.mockImplementation((input) => {
+      const jobId = String(input).split("/videos/")[1] ?? "job";
+      return Promise.resolve(jsonResponse(200, { ...readyView(jobId), stale: true }));
+    });
+
+    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+
+    await screen.findByRole("button", { name: /play the course trailer/i });
+    expect(screen.getByText("OUTDATED")).toBeInTheDocument();
+  });
+
+  it("offers a Try again menu on a failed course video and regenerates it", async () => {
+    // Arrange — a FAILED artifact that still carries its job id (V6), so the slot can re-run it.
+    const failed: VideoArtifact = {
+      kind: "summary",
+      status: "failed",
+      jobId: "sum-fail",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockReset();
+    const queued = { ...readyView("sum-2"), job: { ...readyView("sum-2").job, status: "queued" } };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(202, queued)) // regenerate POST
+      .mockResolvedValue(jsonResponse(200, readyView("sum-2"))); // poll → ready
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+
+    // Act — the failed slot states it plainly and offers a Try again menu; Fresh take re-runs it.
+    expect(screen.getByText(/couldn.t be generated/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+
+    // Assert — the regenerated job polls to a playable trailer; the POST hit the source job.
+    await screen.findByRole("button", { name: /play the course trailer/i });
+    const regen = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/videos/sum-fail/regenerate"),
+    );
+    expect(JSON.parse(String((regen?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
   });
 
   it("renders nothing when neither course video was built", () => {

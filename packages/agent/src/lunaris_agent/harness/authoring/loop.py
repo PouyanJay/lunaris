@@ -24,6 +24,7 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from lunaris_grounding import Evidence, Verifier, render_evidence
 from lunaris_runtime.schema import AgentEventKind, Module, ProgressStage, RiskTier, VerifierStatus
+from lunaris_runtime.video_build import lesson_content_fingerprint
 
 from ...lesson_claims import iter_claims
 from ...subagents.module_author import LessonAssembler
@@ -87,12 +88,18 @@ async def _enqueue_cleared_module_videos(draft: CourseDraft, *, ready_module_ids
         if module.id not in ready_module_ids or not module.lessons:
             continue
         # One lesson per module today (the assembler stamps a single ``{module.id}-l0``).
-        lesson_id = module.lessons[0].id
-        if lesson_id in draft.enqueued_video_jobs:
+        lesson = module.lessons[0]
+        if lesson.id in draft.enqueued_video_jobs:
             continue
-        job_id = await coordinator.enqueue_lesson(course_id=draft.course_id, lesson_id=lesson_id)
+        # Fold the just-authored content into the job's input hash so a later lesson revision marks
+        # the built video outdated (V6-T3).
+        job_id = await coordinator.enqueue_lesson(
+            course_id=draft.course_id,
+            lesson_id=lesson.id,
+            content_hash=lesson_content_fingerprint(lesson),
+        )
         if job_id is not None:
-            draft.enqueued_video_jobs[lesson_id] = job_id
+            draft.enqueued_video_jobs[lesson.id] = job_id
             # Surface the overlap live: the canvas shows the video starting while later modules
             # still author/verify (it lands in the active Lessons phase; the tally lands in Videos).
             await draft.agent.emit(

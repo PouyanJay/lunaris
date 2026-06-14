@@ -4,17 +4,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from lunaris_runtime.schema import VideoJob, VideoProvenance
+from lunaris_runtime.schema import RegenerateMode, VideoJob, VideoProvenance
 from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
-from lunaris_video.errors import VideoPipelineError, VoiceUnavailableError
+from lunaris_video.errors import VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedScene, RenderedVideo
 from lunaris_video.models.lesson_source import LessonSource
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourceProvider
+from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.protocols.render_cache_protocol import IRenderCache
 from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesizer
 from lunaris_video.protocols.video_assembler_protocol import IVideoAssembler
@@ -24,6 +25,7 @@ from lunaris_video.schemas import (
     VideoContract,
     VoiceSpec,
 )
+from lunaris_video.sourcing import NullPriorContractProvider
 
 _logger = structlog.get_logger(__name__)
 
@@ -80,6 +82,7 @@ class VideoPipeline:
         chaptered: bool = False,
         synthesizer_provider: SynthesizerProvider = _no_synthesizer,
         sync_gate: SyncGate | None = None,
+        prior_contract_provider: IPriorContractProvider | None = None,
     ) -> None:
         self._source_provider = source_provider
         self._planner = planner
@@ -90,6 +93,9 @@ class VideoPipeline:
         self._cache = cache
         self._workspace_root = workspace_root
         self._model_id = model_id
+        # Reuses a prior contract for a RETRY / ADD_NARRATION regenerate (V6-T2); the default never
+        # reuses, so a bare pipeline always plans fresh.
+        self._prior_contract_provider = prior_contract_provider or NullPriorContractProvider()
         # Chaptered = the overview kind (a ~3-min topic intro), planned as chapters that concatenate
         # into one MP4; flat = a single-arc lesson/summary. A config property, not a per-job branch.
         self._chaptered = chaptered
@@ -100,7 +106,7 @@ class VideoPipeline:
 
     async def produce(self, job: VideoJob) -> RenderedVideo:
         source = await self._source_provider.load(job)
-        contract = await self._plan(source, _target_seconds(job))
+        contract = await self._resolve_contract(job, source)
         self._factual_gate.check(contract, source.packet)
         digest = contract_hash(contract)
 
@@ -142,25 +148,58 @@ class VideoPipeline:
         )
         return replace(video, provenance_json=provenance)
 
-    async def _plan(self, source: LessonSource, target_seconds: int) -> VideoContract:
+    async def _resolve_contract(self, job: VideoJob, source: LessonSource) -> VideoContract:
+        """The contract this produce renders — the regenerate menu's four entry points (V6-T2).
+
+        ``RETRY`` / ``ADD_NARRATION`` re-render the prior job's planned contract (reused from
+        storage) without re-planning — Stage 2+ only; ``ADD_NARRATION`` differs only in that the
+        job's voice toggle is on. ``SIMPLER`` re-plans with the simplify directive; ``FRESH`` (or no
+        regenerate) plans normally. A reuse mode whose prior contract is missing falls back to a
+        fresh plan rather than failing the regenerate.
+        """
+        mode = _regenerate_mode(job)
+        if mode is not None and mode.reuses_contract:
+            prior = await self._prior_contract_provider.load(job)
+            if prior is not None:
+                _logger.info("video_pipeline.contract_reused", job_id=job.id, mode=mode.value)
+                return prior
+            _logger.info("video_pipeline.no_prior_contract", job_id=job.id, mode=mode.value)
+        return await self._plan(
+            source, _target_seconds(job), simplify=mode is RegenerateMode.SIMPLER
+        )
+
+    async def _plan(
+        self, source: LessonSource, target_seconds: int, *, simplify: bool
+    ) -> VideoContract:
         """PLAN the contract for this pipeline's kind: chaptered for the overview, flat otherwise.
-        Both share the grounding moat (the packet on ``source``) and the injected style/gates."""
+        Both share the grounding moat (the packet on ``source``) and the injected style/gates;
+        ``simplify`` (the V6 Simpler regenerate) steers PLAN toward fewer, plainer scenes."""
         if self._chaptered:
-            return await self._planner.plan_chaptered(source, target_seconds=target_seconds)
-        return await self._planner.plan(source, target_seconds=target_seconds)
+            return await self._planner.plan_chaptered(
+                source, target_seconds=target_seconds, simplify=simplify
+            )
+        return await self._planner.plan(source, target_seconds=target_seconds, simplify=simplify)
 
     def _resolve_voice(
         self, job: VideoJob, digest: str
     ) -> tuple[VoiceSpec | None, ISpeechSynthesizer | None, str]:
         """Decide voiced vs silent for this job and the cache key its artifact lives under, without
-        re-planning. Silent gives (None, None, digest). Voiced needs a synthesizer (a validated key)
-        AND a sync gate (Gate D), or it fails fast: voice on without a key, or a pipeline wired for
-        voice but missing Gate D, must not silently ship an unasked-for or unverified video."""
+        re-planning. Silent gives (None, None, digest).
+
+        The voice toggle (V6) defaults ON, but an ElevenLabs key is OPTIONAL BYOK — so "voice on +
+        no key" is the common keyed-user state and must **degrade to silent (voice-ready)** per §0,
+        never fail: a build of a keyed user who never added an ElevenLabs key would otherwise FAIL
+        every video. A voiced render still needs the sync gate (Gate D) — a pipeline wired for voice
+        but missing it is a wiring bug, not a user state, so that stays a hard error."""
         if not _wants_voice(job):
             return None, None, digest
         synthesizer = self._synthesizer_provider()
         if synthesizer is None:
-            raise VoiceUnavailableError(job.id)
+            # Voice asked for but no validated key resolvable here → render silent voice-ready (the
+            # WPM estimate manifest), exactly as if the toggle were off. The user can add narration
+            # later (the V6 regenerate menu) with no re-plan.
+            _logger.info("video_pipeline.voice_degraded_to_silent", job_id=job.id)
+            return None, None, digest
         if self._sync_gate is None:
             raise VideoPipelineError(
                 f"job {job.id} requested narration but the pipeline has no sync gate (Gate D)"
@@ -224,6 +263,19 @@ def _target_seconds(job: VideoJob) -> int:
     # product default — so PLAN always designs to a length, kind-aware, with no duplicated constant.
     raw = job.config.get("target_seconds")
     return int(raw) if isinstance(raw, int) else target_seconds_for(job.kind)
+
+
+def _regenerate_mode(job: VideoJob) -> RegenerateMode | None:
+    # The regenerate mode the endpoint stamped on the job (V6-T2), or None for an ordinary build.
+    # A value the enum doesn't know is treated as no regenerate (fresh plan) rather than a failure.
+    regenerate = job.config.get("regenerate")
+    if not isinstance(regenerate, dict):
+        return None
+    raw = regenerate.get("mode")
+    try:
+        return RegenerateMode(raw)
+    except ValueError:
+        return None
 
 
 def _wants_voice(job: VideoJob) -> bool:

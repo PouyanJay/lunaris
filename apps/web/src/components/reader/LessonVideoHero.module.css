@@ -5,6 +5,20 @@
   margin-bottom: var(--space-6);
 }
 
+/* The regenerate affordance under a ready video — the menu opens above. An outdated badge sits at
+   the start; with none, the menu stays right-aligned. */
+.regenerateRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.regenerateRow:only-child,
+.regenerateRow > :only-child {
+  margin-left: auto;
+}
+
 /* Idle: a quiet, single-row affordance — the lesson is complete without it. */
 .idle {
   display: flex;

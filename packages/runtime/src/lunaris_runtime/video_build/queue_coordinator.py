@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from ..persistence import IVideoJobQueue, IVideoStorage, PersistenceError, VideoArtifactPaths
 from ..schema import CourseBrief, Module, VideoArtifact, VideoJob, VideoJobStatus, VideoKind
 from .input_hash import video_input_hash
-from .video_lengths import target_seconds_for
+from .video_config import DEFAULT_VIDEO_CONFIG, VideoConfig
 
 logger = structlog.get_logger()
 
@@ -26,13 +26,15 @@ class QueueVideoBuildCoordinator:
     """Enqueues a build's lesson-video jobs onto the shared queue and awaits them at finalize — the
     in-proc (local) / cloud (V7) worker drains them.
 
-    One instance per run, holding the build owner and the config snapshot stamped on every job, and
-    deduping within the build so a lesson enqueues exactly once even when its module is re-verified
-    across revise rounds. Enqueue is **best-effort**: a queue failure is logged and returns ``None``
-    (that lesson simply gets no video) — a video must never break the course build (plan §0 failure
-    policy). ``collect`` awaits the jobs with the same degrade-on-failure posture. The composition
-    root builds this only when video is enabled, keyed, and owned, so its mere presence in run scope
-    IS the gate.
+    One instance per run, holding the build owner and the per-user video config (V6) — stamped on
+    each job — and deduping within the build so a lesson enqueues exactly once even when its module
+    is re-verified across revise rounds. Each job's config carries the tenant's target length for
+    its kind and the voice toggle, so the worker's PLAN designs to the chosen length and narrates
+    only when the user asked. Enqueue is **best-effort**: a queue failure is logged and returns
+    ``None`` (that lesson simply gets no video) — a video must never break the course build (plan §0
+    failure policy). ``collect`` awaits the jobs with the same degrade-on-failure posture. The
+    composition root builds this only when video is enabled (master toggle ON), keyed, and owned, so
+    its mere presence in run scope IS the gate.
     """
 
     def __init__(
@@ -41,6 +43,7 @@ class QueueVideoBuildCoordinator:
         queue: IVideoJobQueue,
         storage: IVideoStorage,
         owner_id: str,
+        video_config: VideoConfig = DEFAULT_VIDEO_CONFIG,
         config: Mapping[str, object] | None = None,
         await_timeout_s: float = _DEFAULT_AWAIT_TIMEOUT_S,
         poll_s: float = _DEFAULT_POLL_S,
@@ -48,13 +51,31 @@ class QueueVideoBuildCoordinator:
         self._queue = queue
         self._storage = storage
         self._owner_id = owner_id
+        # The build owner's resolved video settings (master already gated upstream; voice + per-kind
+        # lengths are stamped onto each job). ``config`` is an optional extra base snapshot.
+        self._video_config = video_config
         self._config = dict(config or {})
         self._await_timeout_s = await_timeout_s
         self._poll_s = poll_s
         self._enqueued: dict[str, str] = {}  # lesson_id → job_id (per-build dedup)
         self._enqueued_course: dict[VideoKind, str] = {}  # summary/overview → job_id (per build)
 
-    async def enqueue_lesson(self, *, course_id: str, lesson_id: str) -> str | None:
+    def _job_config(
+        self, kind: VideoKind, *, grounding: dict[str, object] | None = None
+    ) -> dict[str, object]:
+        """The config stamped on a job of ``kind``: the base snapshot plus the tenant's target
+        length for this kind and the voice toggle (the pipeline reads both off the job), and — for a
+        course-level kind — the grounding snapshot it plans against."""
+        config = dict(self._config)
+        config["target_seconds"] = self._video_config.target_seconds(kind)
+        config["voice"] = self._video_config.voice
+        if grounding is not None:
+            config["grounding"] = grounding
+        return config
+
+    async def enqueue_lesson(
+        self, *, course_id: str, lesson_id: str, content_hash: str = ""
+    ) -> str | None:
         existing = self._enqueued.get(lesson_id)
         if existing is not None:
             return existing  # one job per lesson per build (a re-verified clean module re-enters)
@@ -64,8 +85,13 @@ class QueueVideoBuildCoordinator:
             course_id=course_id,
             lesson_id=lesson_id,
             kind=VideoKind.LESSON,
-            input_hash=video_input_hash(course_id, lesson_id),
-            config=dict(self._config),
+            input_hash=video_input_hash(
+                course_id,
+                lesson_id,
+                content_hash=content_hash,
+                target_seconds=self._video_config.target_seconds(VideoKind.LESSON),
+            ),
+            config=self._job_config(VideoKind.LESSON),
         )
         try:
             await self._queue.enqueue(job)
@@ -110,16 +136,16 @@ class QueueVideoBuildCoordinator:
         existing = self._enqueued_course.get(kind)
         if existing is not None:
             return existing  # one summary + one overview per build
-        config = dict(self._config)
-        config["target_seconds"] = target_seconds_for(kind)
-        config["grounding"] = grounding
+        config = self._job_config(kind, grounding=grounding)
         job = VideoJob(
             id=uuid4().hex,
             user_id=self._owner_id,
             course_id=course_id,
             lesson_id=None,  # course-level kinds carry no lesson
             kind=kind,
-            input_hash=video_input_hash(course_id, kind.value),
+            input_hash=video_input_hash(
+                course_id, kind.value, target_seconds=self._video_config.target_seconds(kind)
+            ),
             config=config,
         )
         try:
@@ -194,9 +220,10 @@ class QueueVideoBuildCoordinator:
             if artifact is not None:
                 return artifact
         # FAILED, unreadable, or still running past the timeout → the retry-state artifact (carrying
-        # the right kind). The course publishes anyway; the hero shows the regenerate menu (§0).
+        # the right kind + the job id so the reader's regenerate menu can re-run it). The course
+        # publishes anyway; the slot shows the regenerate menu (§0 / V6-T2).
         logger.info("video_build_degraded", job_id=job_id, kind=degraded_kind.value)
-        return VideoArtifact(kind=degraded_kind, status=VideoJobStatus.FAILED)
+        return VideoArtifact(kind=degraded_kind, status=VideoJobStatus.FAILED, job_id=job_id)
 
     async def _await_terminal(self, job_id: str) -> VideoJob | None:
         """Poll the job until it settles READY/FAILED, returning it. ``None`` means "give up and

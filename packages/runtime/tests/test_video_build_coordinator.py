@@ -19,9 +19,23 @@ from lunaris_runtime.schema import (
     VideoKind,
     VideoProvenance,
 )
-from lunaris_runtime.video_build import QueueVideoBuildCoordinator, video_input_hash
+from lunaris_runtime.video_build import (
+    QueueVideoBuildCoordinator,
+    VideoConfig,
+    video_input_hash,
+)
 
 _OWNER = "user-a"
+
+
+def _video_config(*, voice: bool = True, lesson_seconds: int = 75) -> VideoConfig:
+    return VideoConfig(
+        enabled=True,
+        voice=voice,
+        summary_seconds=75,
+        overview_seconds=180,
+        lesson_seconds=lesson_seconds,
+    )
 
 
 def _coordinator(
@@ -76,14 +90,14 @@ async def _stage_ready(
 
 
 async def test_enqueue_lesson_creates_a_queued_lesson_job() -> None:
-    # Arrange
+    # Arrange — the tenant chose a 90s lesson length with voice on (V6).
     queue = InMemoryVideoJobQueue()
-    coordinator = _coordinator(queue, config={"voice": True})
+    coordinator = _coordinator(queue, video_config=_video_config(voice=True, lesson_seconds=90))
 
     # Act
     job_id = await coordinator.enqueue_lesson(course_id="c1", lesson_id="m0-l0")
 
-    # Assert — a QUEUED lesson job owned by the build's owner, with the config snapshot stamped on.
+    # Assert — a QUEUED lesson job owned by the build's owner, carrying the tenant's length + voice.
     assert job_id is not None
     job = await queue.get(job_id=job_id, owner_id=_OWNER)
     assert job is not None
@@ -92,8 +106,24 @@ async def test_enqueue_lesson_creates_a_queued_lesson_job() -> None:
     assert job.lesson_id == "m0-l0"
     assert job.user_id == _OWNER
     assert job.status is VideoJobStatus.QUEUED
-    assert job.config == {"voice": True}
-    assert job.input_hash == video_input_hash("c1", "m0-l0")
+    assert job.config == {"target_seconds": 90, "voice": True}
+    # The input hash folds the chosen length (V6-T3); no content_hash on the build path here.
+    assert job.input_hash == video_input_hash("c1", "m0-l0", content_hash="", target_seconds=90)
+
+
+async def test_enqueue_lesson_stamps_voice_off_when_the_tenant_disabled_narration() -> None:
+    # Arrange — voice toggle OFF: the lesson job must render silent (voice-ready), never narrated.
+    queue = InMemoryVideoJobQueue()
+    coordinator = _coordinator(queue, video_config=_video_config(voice=False, lesson_seconds=75))
+
+    # Act
+    job_id = await coordinator.enqueue_lesson(course_id="c1", lesson_id="m0-l0")
+
+    # Assert
+    job = await queue.get(job_id=job_id, owner_id=_OWNER)
+    assert job is not None
+    assert job.config["voice"] is False
+    assert job.config["target_seconds"] == 75
 
 
 async def test_enqueue_lesson_is_idempotent_within_a_build() -> None:

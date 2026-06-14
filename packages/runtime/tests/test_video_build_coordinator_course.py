@@ -23,11 +23,22 @@ from lunaris_runtime.schema import (
 )
 from lunaris_runtime.video_build import (
     QueueVideoBuildCoordinator,
+    VideoConfig,
     target_seconds_for,
     video_input_hash,
 )
 
 _OWNER = "user-a"
+
+
+def _video_config(*, voice: bool = True) -> VideoConfig:
+    return VideoConfig(
+        enabled=True,
+        voice=voice,
+        summary_seconds=target_seconds_for(VideoKind.SUMMARY),
+        overview_seconds=target_seconds_for(VideoKind.OVERVIEW),
+        lesson_seconds=target_seconds_for(VideoKind.LESSON),
+    )
 
 
 def _coordinator(
@@ -58,9 +69,9 @@ def _brief() -> CourseBrief:
 
 
 async def test_enqueue_summary_stamps_kind_length_and_curriculum_grounding() -> None:
-    # Arrange
+    # Arrange — the tenant turned narration OFF (a silent trailer).
     queue = InMemoryVideoJobQueue()
-    coordinator = _coordinator(queue, config={"voice": False})
+    coordinator = _coordinator(queue, video_config=_video_config(voice=False))
 
     # Act
     job_id = await coordinator.enqueue_summary(
@@ -76,11 +87,14 @@ async def test_enqueue_summary_stamps_kind_length_and_curriculum_grounding() -> 
     assert job.lesson_id is None
     assert job.status is VideoJobStatus.QUEUED
     assert job.config["target_seconds"] == target_seconds_for(VideoKind.SUMMARY)
-    assert job.config["voice"] is False  # the build config snapshot is preserved
+    assert job.config["voice"] is False  # the tenant's voice toggle is stamped on the job
     grounding = job.config["grounding"]
     assert grounding["topic"] == "Algorithms"
     assert [m["title"] for m in grounding["modules"]] == ["Sorting", "Searching"]
-    assert job.input_hash == video_input_hash("c1", "summary")
+    # The course-video input hash folds the kind's length (V6-T3); no per-lesson content_hash.
+    assert job.input_hash == video_input_hash(
+        "c1", "summary", target_seconds=target_seconds_for(VideoKind.SUMMARY)
+    )
 
 
 async def test_enqueue_overview_stamps_kind_length_and_brief_grounding() -> None:

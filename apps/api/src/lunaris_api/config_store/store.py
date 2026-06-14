@@ -4,28 +4,52 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from lunaris_runtime.schema import VideoKind
+from lunaris_runtime.video_build import (
+    MAX_VIDEO_SECONDS,
+    MIN_VIDEO_SECONDS,
+    VIDEO_ENABLED_ENV,
+    VIDEO_LESSON_SECONDS_ENV,
+    VIDEO_OVERVIEW_SECONDS_ENV,
+    VIDEO_SUMMARY_SECONDS_ENV,
+    VIDEO_VOICE_ENV,
+    target_seconds_for,
+)
+
 # Logical config id (the web/API contract) → the environment variable the runtime reads. Unlike
 # secrets these are NON-secret: their values are shown in the UI. Populating os.environ is how a
 # UI-provided value reaches the runtime adapters (and, at startup, the langsmith SDK) without
-# threading it through every call site.
+# threading it through every call site. The video keys (V6) share the same mechanism — the env-var
+# names are imported from the runtime so the two halves stay in lockstep.
 KNOWN_CONFIG: dict[str, str] = {
     "langsmithTracing": "LANGSMITH_TRACING",
     "langsmithProject": "LANGSMITH_PROJECT",
     "modelStrong": "LUNARIS_MODEL_STRONG",
     "modelWorker": "LUNARIS_MODEL_WORKER",
+    "videoEnabled": VIDEO_ENABLED_ENV,
+    "videoVoice": VIDEO_VOICE_ENV,
+    "videoSummarySeconds": VIDEO_SUMMARY_SECONDS_ENV,
+    "videoOverviewSeconds": VIDEO_OVERVIEW_SECONDS_ENV,
+    "videoLessonSeconds": VIDEO_LESSON_SECONDS_ENV,
 }
 
 # How the web renders each control: ``toggle`` = on/off; ``model`` = a known-model dropdown;
-# ``text`` = a free-text field.
-ConfigKind = Literal["toggle", "text", "model"]
+# ``number`` = a bounded seconds control; ``text`` = a free-text field.
+ConfigKind = Literal["toggle", "text", "model", "number"]
 
 # Defaults mirror the runtime's own fallbacks (composition.py `_DEFAULT_STRONG`/`_DEFAULT_WORKER`,
-# the langsmith env conventions) so an unset value reads the same in the UI as the code would use.
+# the langsmith env conventions, the per-kind `target_seconds_for`) so an unset value reads the same
+# in the UI as the code would use.
 _DEFAULTS: dict[str, str] = {
     "langsmithTracing": "false",
     "langsmithProject": "lunaris",
     "modelStrong": "claude-opus-4-8",
     "modelWorker": "claude-haiku-4-5-20251001",
+    "videoEnabled": "true",
+    "videoVoice": "true",
+    "videoSummarySeconds": str(target_seconds_for(VideoKind.SUMMARY)),
+    "videoOverviewSeconds": str(target_seconds_for(VideoKind.OVERVIEW)),
+    "videoLessonSeconds": str(target_seconds_for(VideoKind.LESSON)),
 }
 
 _KINDS: dict[str, ConfigKind] = {
@@ -33,10 +57,16 @@ _KINDS: dict[str, ConfigKind] = {
     "langsmithProject": "text",
     "modelStrong": "model",
     "modelWorker": "model",
+    "videoEnabled": "toggle",
+    "videoVoice": "toggle",
+    "videoSummarySeconds": "number",
+    "videoOverviewSeconds": "number",
+    "videoLessonSeconds": "number",
 }
 
 # Values consumed at process start (the langsmith SDK) only take effect after a restart; the UI
-# flags these. The model vars are read per build, so they apply to the next build with no restart.
+# flags these. The model + video vars are read per build, so they apply to the next build with no
+# restart.
 _RESTART_REQUIRED: frozenset[str] = frozenset({"langsmithTracing", "langsmithProject"})
 
 _MAX_VALUE_LEN = 200
@@ -74,6 +104,19 @@ def validate_config_value(name: str, value: str) -> str:
         if cleaned not in ("true", "false"):
             raise ConfigError(f"{name} must be 'true' or 'false'")
         return cleaned
+    if _KINDS[name] == "number":
+        # A bounded whole number of seconds — defence in depth around whatever preset the UI offers;
+        # the runtime clamps to the same range, so a stored bad value never breaks a build (it
+        # falls back), while the API rejects it at the write boundary.
+        try:
+            seconds = int(cleaned)
+        except ValueError as exc:
+            raise ConfigError(f"{name} must be a whole number of seconds") from exc
+        if not MIN_VIDEO_SECONDS <= seconds <= MAX_VIDEO_SECONDS:
+            raise ConfigError(
+                f"{name} must be between {MIN_VIDEO_SECONDS} and {MAX_VIDEO_SECONDS} seconds"
+            )
+        return str(seconds)
     # Model ids are free-form — a new model needs no backend release; the UI offers a shortlist.
     if not cleaned:
         raise ConfigError(f"{name} must not be empty")

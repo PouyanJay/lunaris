@@ -37,13 +37,34 @@ def _client(tmp_path: Path, *, jwt_secret: str | None) -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
-async def test_authed_get_returns_only_the_per_user_model_settings(tmp_path: Path) -> None:
+async def test_authed_get_returns_only_the_per_user_settings(tmp_path: Path) -> None:
     async with _client(tmp_path, jwt_secret=_JWT_SECRET) as client:
         response = await client.get("/api/config", headers=_auth(_USER_A))
 
     assert response.status_code == 200, response.text
     names = {s["name"] for s in response.json()["settings"]}
-    assert names == {"modelStrong", "modelWorker"}  # LangSmith is operator-only, absent here
+    # Model selection + the V6 video settings; LangSmith is operator-only and absent here.
+    assert names == {
+        "modelStrong",
+        "modelWorker",
+        "videoEnabled",
+        "videoVoice",
+        "videoSummarySeconds",
+        "videoOverviewSeconds",
+        "videoLessonSeconds",
+    }
+
+
+async def test_authed_put_then_get_round_trips_video_config_per_user(tmp_path: Path) -> None:
+    async with _client(tmp_path, jwt_secret=_JWT_SECRET) as client:
+        put = await client.put(
+            "/api/config/videoLessonSeconds", json={"value": "90"}, headers=_auth(_USER_A)
+        )
+        get = await client.get("/api/config", headers=_auth(_USER_A))
+
+    assert put.status_code == 200, put.text
+    settings = {s["name"]: s["value"] for s in get.json()["settings"]}
+    assert settings["videoLessonSeconds"] == "90"
 
 
 async def test_authed_put_then_get_round_trips_per_user(tmp_path: Path) -> None:

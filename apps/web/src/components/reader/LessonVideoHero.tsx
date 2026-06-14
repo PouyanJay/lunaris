@@ -1,14 +1,20 @@
 import { useLessonVideo } from "../../hooks/useLessonVideo";
-import type { VideoJobStatus } from "../../lib/videoJobs";
+import { FAILED_REGEN_MODES, readyRegenModes, type VideoJobStatus } from "../../lib/videoJobs";
+import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { LunarSpinner } from "../transcript/LunarSpinner";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
+import { OutdatedBadge } from "./OutdatedBadge";
+import { RegenerateMenu } from "./RegenerateMenu";
 import styles from "./LessonVideoHero.module.css";
 
 interface LessonVideoHeroProps {
   apiBaseUrl: string;
   courseId: string;
   lessonId: string;
+  /** The build-time lesson video, if the course shipped one. Resolved + shown with an outdated
+   *  badge once the lesson is revised; absent ⇒ the on-demand generate affordance. */
+  video?: VideoArtifact | null;
   /** Poll cadence override for tests; defaults to the hook's production interval. */
   pollIntervalMs?: number;
 }
@@ -38,9 +44,16 @@ export function LessonVideoHero({
   apiBaseUrl,
   courseId,
   lessonId,
+  video,
   pollIntervalMs,
 }: LessonVideoHeroProps) {
-  const { state, generate } = useLessonVideo(apiBaseUrl, courseId, lessonId, pollIntervalMs);
+  const { state, generate, regenerate } = useLessonVideo(
+    apiBaseUrl,
+    courseId,
+    lessonId,
+    pollIntervalMs,
+    video,
+  );
 
   if (state.phase === "unavailable") return null;
 
@@ -48,9 +61,7 @@ export function LessonVideoHero({
     <section className={styles.slot} aria-label="Lesson video">
       {state.phase === "idle" && (
         <div className={styles.idle}>
-          <span className={styles.idleHint}>
-            Turn this lesson into a short animated explainer.
-          </span>
+          <span className={styles.idleHint}>Turn this lesson into a short animated explainer.</span>
           <Button variant="accent" onClick={generate}>
             Generate video
           </Button>
@@ -71,15 +82,27 @@ export function LessonVideoHero({
             captionsUrl={state.captionsUrl}
             label="Play lesson video"
           />
+          <div className={styles.regenerateRow}>
+            {state.stale && <OutdatedBadge />}
+            <RegenerateMenu available={readyRegenModes(state.captionsUrl)} onSelect={regenerate} />
+          </div>
         </>
       )}
 
       {state.phase === "failed" && (
         <div className={styles.failed} role="alert">
           <span className={styles.failedTitle}>Couldn’t generate the video.</span>
-          <Button variant="secondary" onClick={generate}>
-            Try again
-          </Button>
+          {state.jobId ? (
+            <RegenerateMenu
+              available={FAILED_REGEN_MODES}
+              onSelect={regenerate}
+              triggerLabel="Try again"
+            />
+          ) : (
+            <Button variant="secondary" onClick={generate}>
+              Try again
+            </Button>
+          )}
         </div>
       )}
 
@@ -103,4 +126,3 @@ function WorkingStage({ status }: { status: VideoJobStatus }) {
     </div>
   );
 }
-

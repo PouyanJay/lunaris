@@ -371,6 +371,7 @@ export function CourseReader({ course, focusRequest, onRegenerate, apiBaseUrl }:
               apiBaseUrl={apiBaseUrl}
               courseId={active.id}
               lessonId={current.lesson.id}
+              video={current.lesson.video ?? null}
             />
           )}
 

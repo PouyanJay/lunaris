@@ -10,6 +10,7 @@ import { ConfigPanel } from "./ConfigPanel";
 import { CredentialsPanel } from "./CredentialsPanel";
 import { SecretField } from "./SecretField";
 import { TrustedSourcesPanel } from "./TrustedSourcesPanel";
+import { VideoConfigPanel } from "./VideoConfigPanel";
 import styles from "./Settings.module.css";
 
 interface SettingsPanelProps {
@@ -160,6 +161,14 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
           apiBaseUrl={apiBaseUrl}
           perUserConfig={state.status === "ready" && state.view.perUserConfigEnabled}
         />
+        {state.status === "ready" && (
+          <VideoConfigPanel
+            apiBaseUrl={apiBaseUrl}
+            keyless={isLlmKeyless(capabilities)}
+            byokEnabled={state.view.byokEnabled}
+            secrets={state.view.secrets}
+          />
+        )}
       </div>
     </div>
   );

@@ -46,9 +46,17 @@ async def test_service_settings_returns_defaults_when_unset() -> None:
     # Act
     settings = await service.settings(user_id=_USER_A)
 
-    # Assert — both model keys present, each carrying its default value; LangSmith is absent.
+    # Assert — every per-user key present, each carrying its default value; LangSmith is absent.
     assert {s.name: s.value for s in settings} == {s.name: s.default for s in settings}
-    assert {s.name for s in settings} == {"modelStrong", "modelWorker"}
+    assert {s.name for s in settings} == {
+        "modelStrong",
+        "modelWorker",
+        "videoEnabled",
+        "videoVoice",
+        "videoSummarySeconds",
+        "videoOverviewSeconds",
+        "videoLessonSeconds",
+    }
 
 
 async def test_service_settings_reflects_a_stored_value() -> None:
@@ -92,3 +100,22 @@ async def test_service_rejects_an_empty_value() -> None:
 
     with pytest.raises(ConfigError):
         await service.set(user_id=_USER_A, name="modelStrong", value="   ")
+
+
+async def test_service_accepts_a_per_user_video_length() -> None:
+    # The V6 video keys are per-user; an in-bounds length round-trips through the same surface.
+    store = InMemoryUserConfigStore()
+    service = UserConfigService(store)
+
+    setting = await service.set(user_id=_USER_A, name="videoLessonSeconds", value="90")
+
+    assert setting.value == "90"
+    assert await store.get_all(user_id=_USER_A) == {"videoLessonSeconds": "90"}
+
+
+async def test_service_rejects_an_out_of_bounds_video_length() -> None:
+    # The per-user write boundary re-validates the number range (defence in depth).
+    service = UserConfigService(InMemoryUserConfigStore())
+
+    with pytest.raises(ConfigError):
+        await service.set(user_id=_USER_A, name="videoLessonSeconds", value="99999")
