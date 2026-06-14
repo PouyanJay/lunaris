@@ -50,10 +50,15 @@ async def test_append_rejects_a_duplicate_seq_for_a_run() -> None:
     assert [e.seq for e in await store.list_for_run(run_id="r-1")] == [0]
 
 
-async def test_latest_seq_returns_the_highest_seq_or_none() -> None:
+async def test_latest_seq_is_none_for_a_run_with_no_events() -> None:
+    # Arrange / Act / Assert — no events → no seed → a fresh worker starts at 0.
+    store = InMemoryRunEventStore()
+    assert await store.latest_seq(run_id="ghost") is None
+
+
+async def test_latest_seq_returns_the_highest_seq() -> None:
     # Arrange
     store = InMemoryRunEventStore()
-    assert await store.latest_seq(run_id="ghost") is None  # no events → no seed → start at 0
     await store.append(
         events=[
             _event("r-1", "c-1", 0, RunEventKind.PROGRESS),

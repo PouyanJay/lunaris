@@ -47,7 +47,8 @@ def build_vision_invoke(model_id: str) -> VisionInvoke:
 
     Frames are sent as Anthropic-native base64 image blocks (the build model is keyed → Claude,
     which is vision-capable). ``langchain_core`` is imported lazily so hermetic code never pays
-    for it.
+    for it. Unlike the text seam this needs no raised ``max_tokens`` — a QA verdict is a short JSON
+    object, so the provider default is ample.
     """
 
     async def invoke(prompt: str, frames: list[bytes]) -> str:

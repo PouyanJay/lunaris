@@ -152,13 +152,14 @@ async def test_a_persistent_defect_degrades_to_best_effort(
         scene, rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
     )
 
-    # Assert — bounded at the per-scene cap (4 repairs / 5 inspections), then degrades: the best
-    # renderable scene ships with the unresolved defect recorded.
+    # Assert — bounded at the per-scene cap (4 repairs / 5 inspections), then degrades: with every
+    # render equally defective (1 each), ties keep the EARLIEST renderable scene (the original),
+    # shipped with the unresolved defect recorded.
     assert len(codegen.visual_repairs) == 4
     assert renderer.renders == 4
     assert len(vision.inspected_frames) == 5
     assert result.unresolved_defects == (_DEFECT,)
-    assert result.scene.source  # a real renderable scene is kept, not None
+    assert result.scene.source == "# original\n"
 
 
 async def test_degrade_keeps_the_least_defective_render(
