@@ -704,16 +704,21 @@ def test_video_pipeline_is_the_real_pipeline_when_renderable(tmp_path: Path) -> 
 
 
 async def _seed_source(
-    queue: InMemoryVideoJobQueue, *, failed: bool = False, config: dict | None = None
+    queue: InMemoryVideoJobQueue,
+    *,
+    kind: VideoKind = VideoKind.LESSON,
+    failed: bool = False,
+    config: dict | None = None,
 ) -> VideoJob:
-    """Seed a source video job owned by USER_A (course-1 / lesson-1 / LESSON), settled READY unless
-    ``failed``. Returns the source job a regenerate points at."""
+    """Seed a source video job (id ``source-job``) owned by USER_A on course-1, settled READY unless
+    ``failed``. A LESSON job is on lesson-1; a course kind carries no lesson. Returns the job a
+    regenerate points at — the single settle-sequence authority for the regenerate tests."""
     job = VideoJob(
         id="source-job",
         user_id=USER_A,
         course_id="course-1",
-        lesson_id="lesson-1",
-        kind=VideoKind.LESSON,
+        lesson_id="lesson-1" if kind is VideoKind.LESSON else None,
+        kind=kind,
         input_hash="src-hash",
         config=config or {},
     )
@@ -930,3 +935,75 @@ async def test_a_course_video_is_never_flagged_stale(
     body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
 
     assert body["stale"] is False
+
+
+# ── variant coverage (V6-T4): regenerate x every kind; toggles/lengths gate end-to-end ──
+
+
+def _source_config(kind: VideoKind) -> dict:
+    # Course kinds carry the grounding snapshot the regenerate copies forward (AD-1).
+    config: dict = {"target_seconds": 75}
+    if kind is not VideoKind.LESSON:
+        config["grounding"] = {"topic": "Algorithms"}
+    return config
+
+
+@pytest.mark.parametrize("kind", list(VideoKind))
+@pytest.mark.parametrize("mode", ["retry", "simpler", "fresh", "add_narration"])
+async def test_regenerate_variant_enters_the_pipeline_for_every_kind(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, kind: VideoKind, mode: str
+) -> None:
+    # Every (mode x kind) from a finished source enqueues a job of the same kind, tagged with the
+    # mode; course kinds carry grounding forward, reuse modes carry the contract path, and Add
+    # narration forces voice on regardless of kind.
+    await _seed_source(queue, kind=kind, config=_source_config(kind))
+
+    response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": mode})
+
+    assert response.status_code == 202, (kind, mode, response.text)
+    new = response.json()["job"]
+    assert new["kind"] == kind.value
+    regenerate = new["config"]["regenerate"]
+    assert regenerate["mode"] == mode
+    if kind is not VideoKind.LESSON:
+        assert new["config"]["grounding"]["topic"] == "Algorithms"
+    if mode == "add_narration":
+        assert new["config"]["voice"] is True
+    if mode in ("retry", "add_narration"):
+        assert "contract_path" in regenerate  # the reuse modes hand the worker the prior contract
+    else:
+        assert "contract_path" not in regenerate  # the re-plan modes don't read it
+
+
+@pytest.mark.parametrize("kind", list(VideoKind))
+@pytest.mark.parametrize("mode", ["retry", "add_narration"])
+async def test_reuse_mode_refuses_a_failed_source_for_every_kind(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, kind: VideoKind, mode: str
+) -> None:
+    # A reuse mode needs a finished contract — a FAILED source of any kind is a 409.
+    await _seed_source(queue, kind=kind, failed=True, config=_source_config(kind))
+
+    response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": mode})
+
+    assert response.status_code == 409, (kind, mode)
+
+
+async def test_regenerate_clears_the_outdated_badge(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # A lesson video built under an old hash reads outdated; a Fresh regenerate rebuilds from the
+    # current lesson, so the regenerated job is no longer stale (the badge clears).
+    await _seed_ready(queue, input_hash="built-from-the-old-lesson")
+    before = (await client.get("/api/videos/ready-job", headers=auth_headers(USER_A))).json()
+    assert before["stale"] is True
+
+    regen = await client.post(
+        "/api/videos/ready-job/regenerate", headers=auth_headers(USER_A), json={"mode": "fresh"}
+    )
+    new_id = regen.json()["job"]["id"]
+    await queue.claim(worker_id="seed")
+    await queue.complete(job_id=new_id)
+
+    after = (await client.get(f"/api/videos/{new_id}", headers=auth_headers(USER_A))).json()
+    assert after["job"]["status"] == "ready"
+    assert after["stale"] is False

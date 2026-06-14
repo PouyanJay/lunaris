@@ -269,6 +269,32 @@ describe("LessonVideoHero", () => {
     expect(screen.getByRole("button", { name: /^regenerate$/i })).toBeInTheDocument();
   });
 
+  it("clears the outdated badge after regenerating the built video", async () => {
+    // Arrange — a built video resolves stale; the menu's Fresh take re-runs it to a fresh result.
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { ...readyView("built-1"), stale: true })) // resolve
+      .mockResolvedValueOnce(jsonResponse(202, queuedView("job-2"))) // regenerate
+      .mockResolvedValue(jsonResponse(200, { ...readyView("job-2"), stale: false })); // poll new
+    render(<LessonVideoHero {...PROPS} video={built} />);
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(screen.getByText("OUTDATED")).toBeInTheDocument();
+
+    // Act — regenerate via Fresh take.
+    fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+
+    // Assert — the regenerated video plays with the badge gone.
+    await waitFor(() => expect(screen.queryByText("OUTDATED")).toBeNull());
+    expect(screen.getByRole("button", { name: /play lesson video/i })).toBeInTheDocument();
+  });
+
   it("shows a fresh build-time lesson video with no outdated badge", async () => {
     const built: VideoArtifact = {
       kind: "lesson",
