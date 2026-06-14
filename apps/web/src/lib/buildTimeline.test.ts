@@ -204,9 +204,61 @@ describe("buildTimeline", () => {
       "Verify",
       "Resources",
       "Coverage",
+      "Videos",
       "Publish",
     ]);
     expect(phases.every((p) => p.status === "pending" && p.entries.length === 0)).toBe(true);
+  });
+
+  it("surfaces a Videos phase with per-lesson beats, between Coverage and Publish", () => {
+    const events = [
+      makeProgressEvent("coverage_verified", 0),
+      makeProgressEvent("lesson_videos", 1, {
+        label: "3 lesson videos ready",
+        videosTotal: 3,
+        videosDegraded: 0,
+      }),
+    ];
+    const agentEvents = [
+      makeAgentEvent("reasoning", 0, {
+        stage: "lesson_videos",
+        text: "Explainer video for “Routing” is ready.",
+      }),
+    ];
+
+    const phases = buildTimeline(events, agentEvents);
+
+    const labels = phases.map((p) => p.label);
+    expect(labels.indexOf("Coverage")).toBeLessThan(labels.indexOf("Videos"));
+    expect(labels.indexOf("Videos")).toBeLessThan(labels.indexOf("Publish"));
+
+    const videos = phase(phases, "Videos");
+    expect(videos.summary).toBe("3 lesson videos ready");
+    expect(videos.summaryTone).toBeUndefined(); // none degraded → no amber
+    expect(videos.entries).toEqual([
+      expect.objectContaining({ kind: "reasoning", text: "Explainer video for “Routing” is ready." }),
+    ]);
+  });
+
+  it("tints the Videos phase amber when a lesson video degraded", () => {
+    const phases = buildTimeline(
+      [
+        makeProgressEvent("lesson_videos", 0, {
+          label: "3 lesson videos · 2 ready · 1 needs a retry",
+          videosTotal: 3,
+          videosDegraded: 1,
+        }),
+      ],
+      [],
+    );
+
+    const videos = phase(phases, "Videos");
+    expect(videos.summary).toBe("3 lesson videos · 2 ready · 1 needs a retry");
+    expect(videos.summaryTone).toBe("warning");
+    // The amber tone is scoped to the Videos phase — no other phase picks it up.
+    expect(phases.filter((p) => p.label !== "Videos").every((p) => p.summaryTone === undefined)).toBe(
+      true,
+    );
   });
 
   it("buckets the seed_grounding beats under the Seeding phase, between Curriculum and Grounding", () => {

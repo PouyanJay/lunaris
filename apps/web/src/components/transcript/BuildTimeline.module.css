@@ -129,6 +129,12 @@ button.header:hover .label {
   color: var(--text-muted);
 }
 
+/* The Videos phase tints its tally amber when a lesson video degraded — the course published, but
+   some lessons need a retry (the warning token is the house "degraded, not failed" signal). */
+.summary[data-tone="warning"] {
+  color: var(--warning);
+}
+
 /* Elapsed span of a completed phase — right-aligned, quiet, tabular (mono) for a clean right
    column. (The active phase shows the LiveActivity status line here instead.) */
 .duration {

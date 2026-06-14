@@ -8,12 +8,14 @@ concern layered on top in P3; the backend stays deterministic.)
 """
 
 import asyncio
+from typing import NamedTuple
 
 import structlog
 from langchain_core.tools import BaseTool, tool
 from lunaris_runtime.capabilities import capture_build_capabilities
 from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import (
+    AgentEventKind,
     CapabilityBuildTag,
     CapabilityMode,
     Course,
@@ -122,6 +124,33 @@ def _apply_quality_gates(
         course.status = CourseStatus.PUBLISHED
 
 
+class _VideoOutcome(NamedTuple):
+    """One lesson's video result, in the voice the canvas reads: the module's title (the lesson's
+    subject — a lesson carries no title) and whether its video is ready."""
+
+    module_title: str
+    is_ready: bool
+
+
+def _videos_label(total: int, ready: int, degraded: int) -> str:
+    # Mirrors the voice of the other stage summaries ("21 concepts", "Coverage verified").
+    noun = "video" if total == 1 else "videos"
+    if degraded == 0:
+        return f"{total} lesson {noun} ready"
+    verb = "needs" if degraded == 1 else "need"
+    return f"{total} lesson {noun} · {ready} ready · {degraded} {verb} a retry"
+
+
+def _video_beat(outcome: _VideoOutcome) -> str:
+    # The degraded line deliberately offers a learner-facing retry call-to-action.
+    if outcome.is_ready:
+        return f"Explainer video for “{outcome.module_title}” is ready."
+    return (
+        f"Explainer video for “{outcome.module_title}” could not be generated — "
+        "retry it from the lesson."
+    )
+
+
 async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
     """Await the build's enqueued lesson videos and fold each into its lesson (V4-T1).
 
@@ -141,25 +170,35 @@ async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
         # abort the publish (plan §0). A wholesale collect failure ships the course video-less.
         logger.warning("agent_course_videos_collect_failed", run_id=draft.run_id, exc_info=True)
         return
-    stitched = 0
-    degraded = 0
+    outcomes: list[_VideoOutcome] = []  # drives the canvas Videos-phase beats
     for module in course.modules:
         for lesson in module.lessons:
             artifact = artifacts.get(lesson.id)
             if artifact is None:
                 continue
             lesson.video = artifact
-            if artifact.status is VideoJobStatus.READY:
-                stitched += 1
-            else:
-                degraded += 1
+            outcomes.append(_VideoOutcome(module.title, artifact.status is VideoJobStatus.READY))
+    if not outcomes:
+        return
+    ready = sum(1 for outcome in outcomes if outcome.is_ready)
+    degraded = len(outcomes) - ready
     logger.info(
         "agent_course_videos_stitched",
         run_id=draft.run_id,
         course_id=course.id,
-        ready=stitched,
+        ready=ready,
         degraded=degraded,
     )
+    # The canvas Videos phase (V4-T2): a coarse stage with the tally (degraded > 0 → amber on the
+    # web), then one per-lesson beat so each video's outcome reads as its own line under the phase.
+    await draft.progress.emit(
+        ProgressStage.LESSON_VIDEOS,
+        _videos_label(len(outcomes), ready, degraded),
+        videos_total=len(outcomes),
+        videos_degraded=degraded,
+    )
+    for outcome in outcomes:
+        await draft.agent.emit(AgentEventKind.REASONING, text=_video_beat(outcome))
 
 
 def _modules_from_graph(graph: PrerequisiteGraph) -> list[Module]:

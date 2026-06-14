@@ -93,6 +93,12 @@ async def _enqueue_cleared_module_videos(draft: CourseDraft, *, ready_module_ids
         job_id = await coordinator.enqueue_lesson(course_id=draft.course_id, lesson_id=lesson_id)
         if job_id is not None:
             draft.enqueued_video_jobs[lesson_id] = job_id
+            # Surface the overlap live: the canvas shows the video starting while later modules
+            # still author/verify (it lands in the active Lessons phase; the tally lands in Videos).
+            await draft.agent.emit(
+                AgentEventKind.REASONING,
+                text=f"Queued an explainer video for “{module.title}”.",
+            )
 
 
 def build_authoring_subgraph(

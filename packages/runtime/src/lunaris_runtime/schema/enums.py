@@ -60,7 +60,8 @@ class ProgressStage(StrEnum):
     verified against: first SEEDED from the sources the research stage already fetched, then
     DISCOVERED fresh to fill the gaps), each module is authored (one event per module), claims are
     verified, learning resources are curated per lesson, coverage is verified (CQ Phase 4 — every
-    researched competency is materially built, or honestly scoped out), and the run completes.
+    researched competency is materially built, or honestly scoped out), the lesson explainer videos
+    are awaited and stitched (V4), and the run completes.
     """
 
     RUN_STARTED = "run_started"
@@ -76,6 +77,9 @@ class ProgressStage(StrEnum):
     CLAIMS_VERIFIED = "claims_verified"
     RESOURCES_CURATED = "resources_curated"
     COVERAGE_VERIFIED = "coverage_verified"
+    # The explainer-video block (V4): finalize awaits the lesson videos enqueued during authoring,
+    # folding each into its lesson. Emitted once before publish, with the ready/degraded tally.
+    LESSON_VIDEOS = "lesson_videos"
     RUN_COMPLETED = "run_completed"
 
 

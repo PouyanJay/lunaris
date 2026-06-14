@@ -14,9 +14,12 @@ from pathlib import Path
 from langchain_core.messages import HumanMessage
 from lunaris_agent.coverage_critic import StubCoverageCritic
 from lunaris_agent.critic import MinimalCritic
+from lunaris_agent.harness.agent_reporter import AgentReporter
 from lunaris_agent.harness.authoring import build_authoring_subgraph
 from lunaris_agent.harness.authoring.stub_reviser import StubLessonReviser
 from lunaris_agent.harness.draft import CourseDraft
+from lunaris_agent.harness.progress_reporter import ProgressReporter
+from lunaris_agent.harness.stage_cursor import StageCursor
 from lunaris_agent.harness.tools import make_finalize_course_tool
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
@@ -27,11 +30,14 @@ from lunaris_runtime.persistence import (
     InMemoryVideoStorage,
 )
 from lunaris_runtime.schema import (
+    AgentEvent,
     BloomLevel,
     Citation,
     KnowledgeComponent,
     Module,
     PrerequisiteGraph,
+    ProgressEvent,
+    ProgressStage,
     VideoJob,
     VideoJobStatus,
 )
@@ -41,6 +47,22 @@ from lunaris_video.models.rendered_video import RenderedVideo
 
 _GROUNDED = "grounded"
 _OWNER = "user-a"
+
+
+class _RecordingProgressSink:
+    def __init__(self) -> None:
+        self.events: list[ProgressEvent] = []
+
+    async def emit(self, event: ProgressEvent) -> None:
+        self.events.append(event)
+
+
+class _RecordingAgentSink:
+    def __init__(self) -> None:
+        self.events: list[AgentEvent] = []
+
+    async def emit(self, event: AgentEvent) -> None:
+        self.events.append(event)
 
 
 def _marker_verifier() -> Verifier:
@@ -163,6 +185,109 @@ async def test_finalize_publishes_anyway_when_a_video_fails(tmp_path: Path) -> N
     assert lesson.video is not None
     assert lesson.video.status is VideoJobStatus.FAILED
     assert lesson.video.provenance is None
+
+
+async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(tmp_path: Path) -> None:
+    # Arrange — recording sinks + a shared cursor, exactly as the runner wires them, so beats bucket
+    # under the phase active when they fire (the canvas Videos phase, V4-T2).
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        InMemoryRunEventStore(),
+    )
+    coordinator = QueueVideoBuildCoordinator(
+        queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
+    )
+    draft = _draft_with_graph(coordinator)
+    progress_sink, agent_sink, cursor = (
+        _RecordingProgressSink(),
+        _RecordingAgentSink(),
+        StageCursor(),
+    )
+    draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
+    draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
+    await _author_and_enqueue(draft)
+    worker = VideoWorker(
+        queue=queue, pipeline=StubVideoPipeline(), storage=storage, events=events, worker_id="w"
+    )
+    await worker.run_once()
+    finalize = make_finalize_course_tool(
+        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
+    )
+
+    # Act
+    await finalize.ainvoke({})
+
+    # Assert — one LESSON_VIDEOS progress beat carrying the tally + summary (none degraded here)…
+    videos = [e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
+    assert len(videos) == 1
+    assert videos[0].videos_total == 1
+    assert videos[0].videos_degraded == 0
+    assert videos[0].label == "1 lesson video ready"
+    # …and exactly one per-lesson line, stamped INTO the Videos phase (the canvas buckets it there).
+    video_beats = [e for e in agent_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
+    assert len(video_beats) == 1
+    assert video_beats[0].text == "Explainer video for “Routing” is ready."
+
+
+async def test_finalize_videos_phase_reports_a_degraded_count(tmp_path: Path) -> None:
+    # Arrange — a failing pipeline so the one lesson video degrades.
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        InMemoryRunEventStore(),
+    )
+    coordinator = QueueVideoBuildCoordinator(
+        queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
+    )
+    draft = _draft_with_graph(coordinator)
+    progress_sink, agent_sink, cursor = (
+        _RecordingProgressSink(),
+        _RecordingAgentSink(),
+        StageCursor(),
+    )
+    draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
+    draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
+    await _author_and_enqueue(draft)
+    worker = VideoWorker(
+        queue=queue, pipeline=_FailingPipeline(), storage=storage, events=events, worker_id="w"
+    )
+    await worker.run_once()
+    finalize = make_finalize_course_tool(
+        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
+    )
+
+    # Act
+    await finalize.ainvoke({})
+
+    # Assert — the Videos phase reports the degrade in both the tally and the summary (web → amber)…
+    videos = next(e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS)
+    assert videos.videos_total == 1
+    assert videos.videos_degraded == 1
+    assert videos.label == "1 lesson video · 0 ready · 1 needs a retry"
+    # …and the per-lesson line carries the retry call-to-action.
+    video_beats = [e for e in agent_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
+    assert len(video_beats) == 1
+    assert "could not be generated" in video_beats[0].text
+
+
+async def test_finalize_emits_no_videos_phase_when_nothing_was_enqueued(tmp_path: Path) -> None:
+    # Arrange — a coordinator is wired but no module ever enqueued a video (nothing authored).
+    coordinator = QueueVideoBuildCoordinator(
+        queue=InMemoryVideoJobQueue(), storage=InMemoryVideoStorage(), owner_id=_OWNER
+    )
+    draft = _draft_with_graph(coordinator)
+    progress_sink = _RecordingProgressSink()
+    draft.progress = ProgressReporter("r1", progress_sink, cursor=StageCursor())
+    finalize = make_finalize_course_tool(
+        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
+    )
+
+    # Act — finalize with no enqueued videos.
+    await finalize.ainvoke({})
+
+    # Assert — no Videos phase is opened (the canvas leaves it pending), no vacuous 0/0 tally.
+    assert not any(e.stage is ProgressStage.LESSON_VIDEOS for e in progress_sink.events)
 
 
 class _FailingPipeline:
