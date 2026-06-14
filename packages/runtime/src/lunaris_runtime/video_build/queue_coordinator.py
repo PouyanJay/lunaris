@@ -73,7 +73,9 @@ class QueueVideoBuildCoordinator:
             config["grounding"] = grounding
         return config
 
-    async def enqueue_lesson(self, *, course_id: str, lesson_id: str) -> str | None:
+    async def enqueue_lesson(
+        self, *, course_id: str, lesson_id: str, content_hash: str = ""
+    ) -> str | None:
         existing = self._enqueued.get(lesson_id)
         if existing is not None:
             return existing  # one job per lesson per build (a re-verified clean module re-enters)
@@ -83,7 +85,12 @@ class QueueVideoBuildCoordinator:
             course_id=course_id,
             lesson_id=lesson_id,
             kind=VideoKind.LESSON,
-            input_hash=video_input_hash(course_id, lesson_id),
+            input_hash=video_input_hash(
+                course_id,
+                lesson_id,
+                content_hash=content_hash,
+                target_seconds=self._video_config.target_seconds(VideoKind.LESSON),
+            ),
             config=self._job_config(VideoKind.LESSON),
         )
         try:
@@ -136,7 +143,9 @@ class QueueVideoBuildCoordinator:
             course_id=course_id,
             lesson_id=None,  # course-level kinds carry no lesson
             kind=kind,
-            input_hash=video_input_hash(course_id, kind.value),
+            input_hash=video_input_hash(
+                course_id, kind.value, target_seconds=self._video_config.target_seconds(kind)
+            ),
             config=config,
         )
         try:

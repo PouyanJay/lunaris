@@ -1,4 +1,13 @@
+import type { VideoArtifact } from "../types/course";
 import { authedFetch } from "./apiClient";
+
+/** The job id to resolve a video artifact by: prefer the provenance jobId (the worker populates it
+ *  on a READY artifact) over the artifact's own jobId (the coordinator stamps it even when FAILED).
+ *  The single place that precedence lives — both the lesson hero and the course slot use it. */
+export function resolveJobId(artifact: VideoArtifact | null | undefined): string | null {
+  if (!artifact) return null;
+  return artifact.provenance?.jobId ?? artifact.jobId ?? null;
+}
 
 export type VideoJobStatus =
   | "queued"
@@ -22,12 +31,15 @@ export interface VideoJobWire {
 }
 
 /** The wire shape of `GET /api/videos/{id}` / the enqueue response: the job row plus signed
- *  playback URLs once it is ready. `captionsUrl` is present only for a narrated video. */
+ *  playback URLs once it is ready, and whether the lesson it was built from has since been revised
+ *  (`stale` — the reader's outdated badge, V6-T3). `captionsUrl` is present only for a narrated
+ *  video. */
 export interface VideoJobView {
   job: VideoJobWire;
   videoUrl: string | null;
   posterUrl: string | null;
   captionsUrl: string | null;
+  stale?: boolean;
 }
 
 /** How an enqueue attempt resolved — the three non-success shapes are product states, not

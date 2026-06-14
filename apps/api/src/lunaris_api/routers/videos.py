@@ -12,6 +12,7 @@ from lunaris_runtime.persistence import (
     VideoArtifactPaths,
 )
 from lunaris_runtime.schema import (
+    Lesson,
     RegenerateMode,
     VideoJob,
     VideoJobStatus,
@@ -19,7 +20,12 @@ from lunaris_runtime.schema import (
     VideoProvenance,
 )
 from lunaris_runtime.schema.base import CourseModel
-from lunaris_runtime.video_build import VideoConfig, video_config_from_map, video_input_hash
+from lunaris_runtime.video_build import (
+    VideoConfig,
+    lesson_video_input_hash,
+    video_config_from_map,
+    video_input_hash,
+)
 from lunaris_video.schemas import TimingManifest
 from pydantic import ValidationError
 
@@ -60,13 +66,15 @@ VideoConfigDep = Annotated[VideoConfig, Depends(caller_video_config)]
 
 class VideoJobView(CourseModel):
     """The wire shape of one video job: the row itself, playback URLs, a captions URL (narrated
-    videos only) and the grounding provenance once it is ready."""
+    videos only), the grounding provenance once it is ready, and whether the lesson it was built
+    from has since been revised (``stale`` — the reader's "outdated" badge, V6-T3)."""
 
     job: VideoJob
     video_url: str | None = None
     poster_url: str | None = None
     captions_url: str | None = None
     provenance: VideoProvenance | None = None
+    stale: bool = False
 
 
 class RegenerateRequest(CourseModel):
@@ -132,7 +140,9 @@ async def enqueue_lesson_video(
     response.headers["X-Request-Id"] = request_id
     if not video_config.enabled:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_VIDEO_DISABLED_DETAIL)
-    await _assert_owns_lesson(store, course_id=course_id, lesson_id=lesson_id, owner_id=owner_id)
+    lesson = await _load_owned_lesson(
+        store, course_id=course_id, lesson_id=lesson_id, owner_id=owner_id
+    )
     existing = await queue.find_active(
         course_id=course_id, lesson_id=lesson_id, kind=VideoKind.LESSON, owner_id=owner_id
     )
@@ -150,7 +160,11 @@ async def enqueue_lesson_video(
         course_id=course_id,
         lesson_id=lesson_id,
         kind=VideoKind.LESSON,
-        input_hash=video_input_hash(course_id, lesson_id),
+        # Fold the lesson's content + chosen length into the input hash so the staleness check can
+        # later flag the video outdated once the lesson is revised (V6-T3).
+        input_hash=lesson_video_input_hash(
+            course_id, lesson, target_seconds=video_config.target_seconds(VideoKind.LESSON)
+        ),
         config={
             "target_seconds": video_config.target_seconds(VideoKind.LESSON),
             "voice": video_config.voice,
@@ -172,6 +186,7 @@ async def regenerate_video(
     owner_id: Annotated[str, Depends(require_keyed_caller)],
     video_config: VideoConfigDep,
     queue: VideoJobQueueDep,
+    store: CourseStoreDep,
     response: Response,
 ) -> VideoJobView:
     """Re-run a video through the regenerate menu (plan §V6-T2). Works for any kind (lesson /
@@ -203,7 +218,10 @@ async def regenerate_video(
     if existing is not None:
         logger.info("video_job_regenerate_deduped", job_id=existing.id, source_job_id=source.id)
         return VideoJobView(job=existing)
-    new_job = _regenerate_job(source, payload.mode, video_config, owner_id)
+    # The regenerated lesson video is built from the CURRENT lesson, so it fingerprints the current
+    # content + length — otherwise it would read "outdated" the instant it finished (V6-T3).
+    input_hash = await _regenerate_input_hash(store, source, video_config)
+    new_job = _regenerate_job(source, payload.mode, video_config, owner_id, input_hash)
     await queue.enqueue(new_job)
     logger.info(
         "video_job_regenerate_enqueued",
@@ -215,11 +233,15 @@ async def regenerate_video(
 
 
 def _regenerate_job(
-    source: VideoJob, mode: RegenerateMode, video_config: VideoConfig, owner_id: str
+    source: VideoJob,
+    mode: RegenerateMode,
+    video_config: VideoConfig,
+    owner_id: str,
+    input_hash: str,
 ) -> VideoJob:
     """The new job a regenerate enqueues: the source's coordinates + grounding snapshot, the owner's
-    current length, the resolved voice (forced on for Add narration), and the regenerate descriptor
-    (the mode + the source's contract path for the reuse modes)."""
+    current length, the resolved voice (forced on for Add narration), the freshly recomputed input
+    hash, and the regenerate descriptor (the mode + the contract path for the reuse modes)."""
     config: dict[str, object] = {}
     grounding = source.config.get("grounding")
     if grounding is not None:
@@ -237,27 +259,86 @@ def _regenerate_job(
         course_id=source.course_id,
         lesson_id=source.lesson_id,
         kind=source.kind,
-        input_hash=source.input_hash,
+        input_hash=input_hash,
         config=config,
     )
 
 
-async def _assert_owns_lesson(
-    store: ICourseStore, *, course_id: str, lesson_id: str, owner_id: str
-) -> None:
-    """404 unless the caller owns ``course_id`` AND it contains ``lesson_id``.
+async def _regenerate_input_hash(
+    store: ICourseStore, source: VideoJob, video_config: VideoConfig
+) -> str:
+    """The input hash the regenerated job is built under: a LESSON re-fingerprints the current
+    lesson + length (so a Fresh/Simpler regenerate clears the outdated badge); a course video (no
+    lesson) re-fingerprints its current length; a vanished lesson keeps the source's hash."""
+    if source.kind is not VideoKind.LESSON or source.lesson_id is None:
+        # Course videos have no per-lesson content — re-fingerprint the current length only.
+        return video_input_hash(
+            source.course_id,
+            source.kind.value,
+            target_seconds=video_config.target_seconds(source.kind),
+        )
+    lesson = await _find_lesson(
+        store, course_id=source.course_id, lesson_id=source.lesson_id, owner_id=source.user_id
+    )
+    if lesson is None:
+        return source.input_hash
+    return lesson_video_input_hash(
+        source.course_id, lesson, target_seconds=video_config.target_seconds(VideoKind.LESSON)
+    )
 
-    ``load`` is owner-scoped and raises ``FileNotFoundError`` for a missing OR not-owned course, so
-    a not-found answer never leaks another tenant's course. The load is synchronous (file / blocking
-    supabase-py) — off-loaded so the event loop isn't blocked."""
+
+async def _find_lesson(
+    store: ICourseStore, *, course_id: str, lesson_id: str, owner_id: str
+) -> Lesson | None:
+    """The owner's lesson, or ``None`` if the course / lesson is missing or not owned. ``load`` is
+    owner-scoped and raises ``FileNotFoundError`` for a missing OR not-owned course (so a not-found
+    answer never leaks another tenant's course); it's synchronous (file / blocking supabase-py), so
+    it's off-loaded to keep the event loop free. The single course-load + lesson-find the enqueue
+    guard, the staleness check, and the regenerate recompute all share."""
     try:
         course = await asyncio.to_thread(lambda: store.load(course_id, owner_id=owner_id))
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
-        ) from exc
-    if not any(lesson.id == lesson_id for module in course.modules for lesson in module.lessons):
+    except FileNotFoundError:
+        return None
+    return next(
+        (
+            lesson
+            for module in course.modules
+            for lesson in module.lessons
+            if lesson.id == lesson_id
+        ),
+        None,
+    )
+
+
+async def _load_owned_lesson(
+    store: ICourseStore, *, course_id: str, lesson_id: str, owner_id: str
+) -> Lesson:
+    """The lesson if the caller owns the course and it contains the lesson, else 404. Returning it
+    lets enqueue fingerprint its content for the staleness key (V6-T3)."""
+    lesson = await _find_lesson(store, course_id=course_id, lesson_id=lesson_id, owner_id=owner_id)
+    if lesson is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
+    return lesson
+
+
+async def _lesson_video_stale(
+    store: ICourseStore, job: VideoJob, video_config: VideoConfig
+) -> bool:
+    """Whether a READY lesson video is outdated: recompute its input hash from the lesson's CURRENT
+    content + the caller's CURRENT length and compare to the hash it was built under (V6-T3). A
+    course-level video (no lesson to revise) or a missing course/lesson → not stale (the badge only
+    fires on a clear mismatch, never a guess)."""
+    if job.kind is not VideoKind.LESSON or job.lesson_id is None:
+        return False
+    lesson = await _find_lesson(
+        store, course_id=job.course_id, lesson_id=job.lesson_id, owner_id=job.user_id
+    )
+    if lesson is None:
+        return False
+    current = lesson_video_input_hash(
+        job.course_id, lesson, target_seconds=video_config.target_seconds(VideoKind.LESSON)
+    )
+    return current != job.input_hash
 
 
 @router.get(
@@ -267,11 +348,14 @@ async def _assert_owns_lesson(
 async def get_video_job(
     job_id: str,
     owner_id: CurrentUserIdDep,
+    video_config: VideoConfigDep,
     queue: VideoJobQueueDep,
     storage: VideoStorageDep,
+    store: CourseStoreDep,
     response: Response,
 ) -> VideoJobView:
-    """One job's status, owner-scoped; a READY job carries short-lived signed playback URLs.
+    """One job's status, owner-scoped; a READY job carries short-lived signed playback URLs and the
+    staleness flag (whether its lesson has since been revised — the reader's outdated badge, V6-T3).
 
     Deliberately NOT tier-gated (unlike enqueue): polling your own existing job consumes no
     generation capacity, and a user whose key was removed mid-flight must still see how their
@@ -287,13 +371,15 @@ async def get_video_job(
     if job.status != VideoJobStatus.READY:
         return VideoJobView(job=job)
     paths = VideoArtifactPaths.for_job(job)
-    # The four reads are independent — gather them so a READY status poll is one round-trip's worth
-    # of latency, not four sequential ones.
-    video_url, poster_url, captions_url, provenance = await asyncio.gather(
+    # The reads are independent — gather them so a READY status poll is one round-trip's worth of
+    # latency, not several sequential ones. Staleness re-loads the course to fingerprint the current
+    # lesson, so it joins the gather rather than serialising behind the signed-URL reads.
+    video_url, poster_url, captions_url, provenance, stale = await asyncio.gather(
         storage.signed_url(path=paths.mp4),
         storage.signed_url(path=paths.poster),
         _captions_url_if_narrated(storage, paths),
         _read_provenance(storage, paths.provenance),
+        _lesson_video_stale(store, job, video_config),
     )
     return VideoJobView(
         job=job,
@@ -301,6 +387,7 @@ async def get_video_job(
         poster_url=poster_url,
         captions_url=captions_url,
         provenance=provenance,
+        stale=stale,
     )
 
 

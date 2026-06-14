@@ -2,6 +2,7 @@ import { useCourseVideo } from "../../hooks/useCourseVideo";
 import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
 import type { CourseVideos, VideoArtifact } from "../../types/course";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
+import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
 import styles from "./OverviewSection.module.css";
 
@@ -76,6 +77,7 @@ function CourseVideoSlot({
             label={playLabel}
           />
           <div className={styles.regenerateRow}>
+            {state.stale && <OutdatedBadge />}
             <RegenerateMenu available={readyRegenModes(state.captionsUrl)} onSelect={regenerate} />
           </div>
         </>

@@ -186,6 +186,19 @@ describe("OverviewSection", () => {
     expect(JSON.parse(String((regen?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
   });
 
+  it("shows the outdated badge when a ready course video reports stale", async () => {
+    // The stale flag from the status read plumbs through useCourseVideo to the slot's badge.
+    fetchMock.mockImplementation((input) => {
+      const jobId = String(input).split("/videos/")[1] ?? "job";
+      return Promise.resolve(jsonResponse(200, { ...readyView(jobId), stale: true }));
+    });
+
+    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+
+    await screen.findByRole("button", { name: /play the course trailer/i });
+    expect(screen.getByText("OUTDATED")).toBeInTheDocument();
+  });
+
   it("offers a Try again menu on a failed course video and regenerates it", async () => {
     // Arrange — a FAILED artifact that still carries its job id (V6), so the slot can re-run it.
     const failed: VideoArtifact = {

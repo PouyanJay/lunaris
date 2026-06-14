@@ -19,10 +19,14 @@ class IVideoBuildCoordinator(Protocol):
     root, never re-derived here.
     """
 
-    async def enqueue_lesson(self, *, course_id: str, lesson_id: str) -> str | None:
+    async def enqueue_lesson(
+        self, *, course_id: str, lesson_id: str, content_hash: str = ""
+    ) -> str | None:
         """Enqueue a lesson-video job; return its job id, or ``None`` if it could not be enqueued
         (enqueue is best-effort — a queue hiccup must never break the build). Idempotent within a
-        build: the same lesson returns the same job id rather than a duplicate."""
+        build: the same lesson returns the same job id rather than a duplicate. ``content_hash``
+        (the lesson's authored-content fingerprint) folds into the job's input hash so the staleness
+        check (V6-T3) can later flag the video outdated once the lesson is revised."""
         ...
 
     async def enqueue_summary(

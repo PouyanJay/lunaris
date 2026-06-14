@@ -41,6 +41,7 @@ from lunaris_runtime.schema import (
     VideoKind,
     VideoProvenance,
 )
+from lunaris_runtime.video_build import lesson_video_input_hash
 from lunaris_video import StubVideoPipeline, VideoWorker
 from lunaris_video.schemas import BeatTiming, SceneTiming, TimingManifest
 
@@ -65,18 +66,23 @@ class _FakeCourseStore:
         return self._by_owner.pop((owner_id, course_id), None) is not None
 
 
-def _seeded_course_store() -> _FakeCourseStore:
-    """A store holding course-1 (owned by USER_A) with lesson-1 — the coordinates tests enqueue."""
-    store = _FakeCourseStore()
+def _seeded_lesson() -> Lesson:
+    """The lesson the seeded store holds (course-1 / lesson-1). The single source so the staleness
+    tests can recompute the exact input hash the GET will — a divergence would falsely read stale.
+    """
     segments = MerrillSegments(
         activate=Segment(), demonstrate=Segment(), apply=Segment(), integrate=Segment()
     )
+    return Lesson(id="lesson-1", segments=segments)
+
+
+def _seeded_course_store() -> _FakeCourseStore:
+    """A store holding course-1 (owned by USER_A) with lesson-1 — the coordinates tests enqueue."""
+    store = _FakeCourseStore()
     course = Course(
         id="course-1",
         topic="Algorithms",
-        modules=[
-            Module(id="m1", title="Sorting", lessons=[Lesson(id="lesson-1", segments=segments)])
-        ],
+        modules=[Module(id="m1", title="Sorting", lessons=[_seeded_lesson()])],
     )
     store.save(course, owner_id=USER_A)
     return store
@@ -861,3 +867,66 @@ async def test_regenerate_is_deduped_while_a_job_is_in_flight(
 async def test_regenerate_rejects_an_unknown_mode(client: httpx.AsyncClient) -> None:
     response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "teleport"})
     assert response.status_code == 422
+
+
+# ── staleness: the "outdated" badge (V6-T3) ────────────────────────────────────────
+
+
+async def _seed_ready(
+    queue: InMemoryVideoJobQueue,
+    *,
+    input_hash: str,
+    kind: VideoKind = VideoKind.LESSON,
+    lesson_id: str | None = "lesson-1",
+    job_id: str = "ready-job",
+) -> VideoJob:
+    job = VideoJob(
+        id=job_id,
+        user_id=USER_A,
+        course_id="course-1",
+        lesson_id=lesson_id,
+        kind=kind,
+        input_hash=input_hash,
+        config={"target_seconds": 75},
+    )
+    await queue.enqueue(job)
+    await queue.claim(worker_id="seed")
+    await queue.complete(job_id=job.id)
+    return job
+
+
+async def test_a_ready_lesson_video_is_not_stale_when_the_content_matches(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Built from the current lesson at the default length → the recomputed hash matches → not stale.
+    fresh = lesson_video_input_hash("course-1", _seeded_lesson(), target_seconds=75)
+    job = await _seed_ready(queue, input_hash=fresh)
+
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    assert body["job"]["status"] == "ready"
+    assert body["stale"] is False
+
+
+async def test_a_ready_lesson_video_is_stale_after_the_lesson_changes(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Built under an old content/length hash → the current lesson recomputes differently → outdated.
+    job = await _seed_ready(queue, input_hash="built-from-the-old-lesson")
+
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    assert body["stale"] is True
+
+
+async def test_a_course_video_is_never_flagged_stale(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # A trailer/intro has no single lesson to revise — the staleness check never fires for it.
+    job = await _seed_ready(
+        queue, input_hash="anything", kind=VideoKind.SUMMARY, lesson_id=None, job_id="summary-job"
+    )
+
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    assert body["stale"] is False

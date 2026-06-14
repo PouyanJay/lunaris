@@ -8,7 +8,7 @@ generation is off for the build, so the harness never re-derives the gate.
 """
 
 from .coordinator_protocol import IVideoBuildCoordinator
-from .input_hash import video_input_hash
+from .input_hash import lesson_content_fingerprint, lesson_video_input_hash, video_input_hash
 from .queue_coordinator import QueueVideoBuildCoordinator
 from .run_scope import resolve_video_coordinator, run_video_coordinator
 from .video_config import (
@@ -38,6 +38,8 @@ __all__ = [
     "IVideoBuildCoordinator",
     "QueueVideoBuildCoordinator",
     "VideoConfig",
+    "lesson_content_fingerprint",
+    "lesson_video_input_hash",
     "resolve_video_config",
     "resolve_video_coordinator",
     "run_video_coordinator",

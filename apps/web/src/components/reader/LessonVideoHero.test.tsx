@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { VideoArtifact } from "../../types/course";
 import { LessonVideoHero } from "./LessonVideoHero";
 
 const API = "http://api.test";
@@ -242,6 +243,46 @@ describe("LessonVideoHero", () => {
     fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
     expect(screen.queryByRole("menuitem", { name: /add narration/i })).toBeNull();
     expect(screen.getByRole("menuitem", { name: /^retry/i })).toBeInTheDocument();
+  });
+
+  it("resolves the build-time lesson video and flags it outdated when the lesson was revised", async () => {
+    // Arrange — the course shipped a lesson video; the status read reports it stale (lesson revised).
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockResolvedValue(jsonResponse(200, { ...readyView("built-1"), stale: true }));
+
+    // Act — no generate click: the built video resolves on its own.
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    // Assert — it resolved the BUILT job's url, then shows the outdated badge + the regenerate menu.
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/videos/built-1"),
+      expect.any(Object),
+    );
+    expect(screen.getByText("OUTDATED")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^regenerate$/i })).toBeInTheDocument();
+  });
+
+  it("shows a fresh build-time lesson video with no outdated badge", async () => {
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockResolvedValue(jsonResponse(200, { ...readyView("built-1"), stale: false }));
+
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(screen.queryByText("OUTDATED")).toBeNull();
   });
 
   it("resets to idle when the lesson changes", async () => {

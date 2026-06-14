@@ -4,6 +4,7 @@ import {
   fetchVideoJob,
   pollVideoJob,
   regenerateVideo,
+  resolveJobId,
   type RegenerateMode,
   type VideoJobStatus,
 } from "../lib/videoJobs";
@@ -18,7 +19,13 @@ export type CourseVideoState =
   | { phase: "absent" }
   | { phase: "loading" }
   | { phase: "working"; status: VideoJobStatus }
-  | { phase: "ready"; videoUrl: string; posterUrl: string | null; captionsUrl: string | null }
+  | {
+      phase: "ready";
+      videoUrl: string;
+      posterUrl: string | null;
+      captionsUrl: string | null;
+      stale: boolean;
+    }
   | { phase: "failed" };
 
 /** Resolve a course video's playable state from its payload artifact, and let the reader regenerate
@@ -36,7 +43,7 @@ export function useCourseVideo(
   // Depend on scalars (status + jobId), not the artifact object — Course is re-serialised on every
   // poll, so a new object reference each render would re-fire the fetch even when nothing changed.
   const status = artifact?.status ?? null;
-  const jobId = artifact ? (artifact.provenance?.jobId ?? artifact.jobId ?? null) : null;
+  const jobId = resolveJobId(artifact);
   const readyJobId = status === "ready" ? jobId : null;
   const [state, setState] = useState<CourseVideoState>(() =>
     initialState(apiBaseUrl, status, readyJobId),
@@ -90,6 +97,7 @@ function toCourseVideoState(
     videoUrl: string | null;
     posterUrl: string | null;
     captionsUrl: string | null;
+    stale?: boolean;
   } | null,
 ): CourseVideoState {
   return view?.videoUrl
@@ -98,6 +106,7 @@ function toCourseVideoState(
         videoUrl: view.videoUrl,
         posterUrl: view.posterUrl,
         captionsUrl: view.captionsUrl,
+        stale: view.stale ?? false,
       }
     : { phase: "failed" };
 }

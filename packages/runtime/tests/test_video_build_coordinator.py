@@ -107,7 +107,8 @@ async def test_enqueue_lesson_creates_a_queued_lesson_job() -> None:
     assert job.user_id == _OWNER
     assert job.status is VideoJobStatus.QUEUED
     assert job.config == {"target_seconds": 90, "voice": True}
-    assert job.input_hash == video_input_hash("c1", "m0-l0")
+    # The input hash folds the chosen length (V6-T3); no content_hash on the build path here.
+    assert job.input_hash == video_input_hash("c1", "m0-l0", content_hash="", target_seconds=90)
 
 
 async def test_enqueue_lesson_stamps_voice_off_when_the_tenant_disabled_narration() -> None:

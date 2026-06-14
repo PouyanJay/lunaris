@@ -4,15 +4,18 @@ import {
   enqueueLessonVideo,
   pollVideoJob,
   regenerateVideo,
+  resolveJobId,
   type RegenerateMode,
   type VideoJobStatus,
 } from "../lib/videoJobs";
+import type { VideoArtifact } from "../types/course";
 
 export const VIDEO_POLL_INTERVAL_MS = 2500;
 
 /** The hero slot's whole state machine, one discriminated union. `ready`/`failed` carry the source
- *  `jobId` so the regenerate menu (V6) can re-run them; `failed` is `null` only when the enqueue
- *  itself never produced a job. */
+ *  `jobId` so the regenerate menu (V6) can re-run them; `ready` also carries `stale` (the lesson was
+ *  revised since — the outdated badge, V6-T3). `failed` is `null` only when the enqueue itself never
+ *  produced a job. */
 export type LessonVideoState =
   | { phase: "idle" }
   | { phase: "working"; status: VideoJobStatus }
@@ -22,20 +25,23 @@ export type LessonVideoState =
       videoUrl: string;
       posterUrl: string | null;
       captionsUrl: string | null;
+      stale: boolean;
     }
   | { phase: "failed"; jobId: string | null }
   | { phase: "keyless"; detail: string }
   | { phase: "unavailable" };
 
-/** Drives one lesson's video generation: `generate()` enqueues and the hook polls the job until it
- *  settles; `regenerate(mode)` re-runs the last job through the menu (V6). State resets when the
- *  lesson changes — the slot always describes the lesson on screen. The job binding lives in memory
- *  only (V0): reloading the page returns to idle. */
+/** Drives one lesson's video: it resolves the build-time `video` (if the course shipped one — the
+ *  hero shows it with an outdated badge once the lesson is revised), `generate()` enqueues an
+ *  on-demand one, and `regenerate(mode)` re-runs the current job through the menu (V6). State resets
+ *  when the lesson changes — the slot always describes the lesson on screen. An on-demand binding
+ *  lives in memory only: reloading falls back to the build-time video, or idle when there is none. */
 export function useLessonVideo(
   apiBaseUrl: string,
   courseId: string,
   lessonId: string,
   pollIntervalMs: number = VIDEO_POLL_INTERVAL_MS,
+  video?: VideoArtifact | null,
 ): {
   state: LessonVideoState;
   generate: () => void;
@@ -46,13 +52,6 @@ export function useLessonVideo(
   const jobIdRef = useRef<string | null>(null);
 
   const stopPolling = useCallback(() => controllerRef.current?.abort(), []);
-
-  // A lesson change makes the slot the new lesson's: cancel any in-flight poll, back to idle.
-  useEffect(() => {
-    setState({ phase: "idle" });
-    jobIdRef.current = null;
-    return stopPolling;
-  }, [apiBaseUrl, courseId, lessonId, stopPolling]);
 
   const watch = useCallback(
     (jobId: string) => {
@@ -72,6 +71,7 @@ export function useLessonVideo(
               videoUrl: view.videoUrl,
               posterUrl: view.posterUrl,
               captionsUrl: view.captionsUrl,
+              stale: view.stale ?? false,
             });
           } else {
             setState({ phase: "failed", jobId });
@@ -81,6 +81,24 @@ export function useLessonVideo(
     },
     [apiBaseUrl, pollIntervalMs, stopPolling],
   );
+
+  // The slot belongs to the lesson on screen: cancel any in-flight poll and start from the
+  // build-time video (resolve it / show its failed state) — or idle when the course shipped none.
+  // Depend on the artifact's scalars, not the object (Course re-serialises on every poll).
+  const builtStatus = video?.status ?? null;
+  const builtJobId = resolveJobId(video);
+  useEffect(() => {
+    jobIdRef.current = null;
+    if (builtStatus === "ready" && builtJobId) {
+      setState({ phase: "working", status: "queued" });
+      watch(builtJobId);
+    } else if (builtStatus === "failed" && builtJobId) {
+      setState({ phase: "failed", jobId: builtJobId });
+    } else {
+      setState({ phase: "idle" });
+    }
+    return stopPolling;
+  }, [apiBaseUrl, courseId, lessonId, builtStatus, builtJobId, watch, stopPolling]);
 
   const generate = useCallback(() => {
     stopPolling();

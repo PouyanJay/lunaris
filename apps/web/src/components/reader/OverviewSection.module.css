@@ -69,11 +69,17 @@
   color: var(--text-secondary);
 }
 
-/* The regenerate affordance under a slot — a quiet right-aligned row (the menu opens above it). */
+/* The regenerate affordance under a slot — the menu opens above it. An outdated badge sits at the
+   start; with none, the menu stays right-aligned. */
 .regenerateRow {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
   margin-top: var(--space-2);
+}
+.regenerateRow > :only-child {
+  margin-left: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

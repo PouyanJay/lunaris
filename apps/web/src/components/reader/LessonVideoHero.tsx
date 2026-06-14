@@ -1,8 +1,10 @@
 import { useLessonVideo } from "../../hooks/useLessonVideo";
 import { FAILED_REGEN_MODES, readyRegenModes, type VideoJobStatus } from "../../lib/videoJobs";
+import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { LunarSpinner } from "../transcript/LunarSpinner";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
+import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
 import styles from "./LessonVideoHero.module.css";
 
@@ -10,6 +12,9 @@ interface LessonVideoHeroProps {
   apiBaseUrl: string;
   courseId: string;
   lessonId: string;
+  /** The build-time lesson video, if the course shipped one. Resolved + shown with an outdated
+   *  badge once the lesson is revised; absent ⇒ the on-demand generate affordance. */
+  video?: VideoArtifact | null;
   /** Poll cadence override for tests; defaults to the hook's production interval. */
   pollIntervalMs?: number;
 }
@@ -39,6 +44,7 @@ export function LessonVideoHero({
   apiBaseUrl,
   courseId,
   lessonId,
+  video,
   pollIntervalMs,
 }: LessonVideoHeroProps) {
   const { state, generate, regenerate } = useLessonVideo(
@@ -46,6 +52,7 @@ export function LessonVideoHero({
     courseId,
     lessonId,
     pollIntervalMs,
+    video,
   );
 
   if (state.phase === "unavailable") return null;
@@ -76,6 +83,7 @@ export function LessonVideoHero({
             label="Play lesson video"
           />
           <div className={styles.regenerateRow}>
+            {state.stale && <OutdatedBadge />}
             <RegenerateMenu available={readyRegenModes(state.captionsUrl)} onSelect={regenerate} />
           </div>
         </>

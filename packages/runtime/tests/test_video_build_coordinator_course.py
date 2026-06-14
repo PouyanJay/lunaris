@@ -91,7 +91,10 @@ async def test_enqueue_summary_stamps_kind_length_and_curriculum_grounding() -> 
     grounding = job.config["grounding"]
     assert grounding["topic"] == "Algorithms"
     assert [m["title"] for m in grounding["modules"]] == ["Sorting", "Searching"]
-    assert job.input_hash == video_input_hash("c1", "summary")
+    # The course-video input hash folds the kind's length (V6-T3); no per-lesson content_hash.
+    assert job.input_hash == video_input_hash(
+        "c1", "summary", target_seconds=target_seconds_for(VideoKind.SUMMARY)
+    )
 
 
 async def test_enqueue_overview_stamps_kind_length_and_brief_grounding() -> None:
