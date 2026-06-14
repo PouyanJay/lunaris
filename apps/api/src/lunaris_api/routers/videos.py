@@ -1,19 +1,25 @@
 import asyncio
-import hashlib
 import uuid
 from typing import Annotated
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from lunaris_runtime.logging import bind_request_id
-from lunaris_runtime.persistence import IVideoStorage, PersistenceError, VideoArtifactPaths
+from lunaris_runtime.persistence import (
+    ICourseStore,
+    IVideoStorage,
+    PersistenceError,
+    VideoArtifactPaths,
+)
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.schema.base import CourseModel
+from lunaris_runtime.video_build import video_input_hash
 from lunaris_video.schemas import TimingManifest
 from pydantic import ValidationError
 
 from ..config import Settings, get_settings
 from ..dependencies import (
+    CourseStoreDep,
     CredentialVaultDep,
     CurrentUserIdDep,
     VideoJobQueueDep,
@@ -78,24 +84,59 @@ async def enqueue_lesson_video(
     lesson_id: str,
     owner_id: Annotated[str, Depends(require_keyed_caller)],
     queue: VideoJobQueueDep,
+    store: CourseStoreDep,
     response: Response,
 ) -> VideoJobView:
-    """Enqueue one lesson-video job. The worker drains it; the job row is the status record."""
+    """Enqueue one lesson-video job. The worker drains it; the job row is the status record.
+
+    Two guards before enqueue (V4-T0, the V0-deferred safety): the caller must **own** the course
+    and the lesson must exist in it (else 404 — never spend worker capacity on a course you don't
+    own), and a **duplicate** is deduped — a video already queued/in-flight for this lesson is
+    returned rather than re-enqueued as a twin (idempotent Generate)."""
     request_id = uuid.uuid4().hex
     bind_request_id(request_id)
     response.headers["X-Request-Id"] = request_id
+    await _assert_owns_lesson(store, course_id=course_id, lesson_id=lesson_id, owner_id=owner_id)
+    existing = await queue.find_active(
+        course_id=course_id, lesson_id=lesson_id, kind=VideoKind.LESSON, owner_id=owner_id
+    )
+    if existing is not None:
+        logger.info(
+            "video_job_enqueue_deduped",
+            job_id=existing.id,
+            course_id=course_id,
+            lesson_id=lesson_id,
+        )
+        return VideoJobView(job=existing)
     job = VideoJob(
         id=uuid.uuid4().hex,
         user_id=owner_id,
         course_id=course_id,
         lesson_id=lesson_id,
         kind=VideoKind.LESSON,
-        # V0: the inputs are the lesson coordinates only; V2 folds the lesson content + config in.
-        input_hash=hashlib.sha256(f"{course_id}/{lesson_id}".encode()).hexdigest(),
+        input_hash=video_input_hash(course_id, lesson_id),
     )
     await queue.enqueue(job)
     logger.info("video_job_enqueued", job_id=job.id, course_id=course_id, lesson_id=lesson_id)
     return VideoJobView(job=job)
+
+
+async def _assert_owns_lesson(
+    store: ICourseStore, *, course_id: str, lesson_id: str, owner_id: str
+) -> None:
+    """404 unless the caller owns ``course_id`` AND it contains ``lesson_id``.
+
+    ``load`` is owner-scoped and raises ``FileNotFoundError`` for a missing OR not-owned course, so
+    a not-found answer never leaks another tenant's course. The load is synchronous (file / blocking
+    supabase-py) — off-loaded so the event loop isn't blocked."""
+    try:
+        course = await asyncio.to_thread(lambda: store.load(course_id, owner_id=owner_id))
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
+        ) from exc
+    if not any(lesson.id == lesson_id for module in course.modules for lesson in module.lessons):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found")
 
 
 @router.get(

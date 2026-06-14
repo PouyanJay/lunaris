@@ -2,7 +2,7 @@ import asyncio
 import os
 from datetime import UTC, datetime
 
-from lunaris_runtime.schema import VideoJob, VideoJobStatus
+from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 
 from .guard import guard
 from .persistence_error import PersistenceError
@@ -11,6 +11,8 @@ _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "video_jobs"
 _CLAIM_RPC = "claim_video_job"
+# The non-terminal statuses a job passes through before READY/FAILED — "active" for the dedup read.
+_TERMINAL_STATUSES = (VideoJobStatus.READY.value, VideoJobStatus.FAILED.value)
 
 
 class SupabaseVideoJobQueue:
@@ -114,6 +116,33 @@ class SupabaseVideoJobQueue:
             if owner_id is not None:
                 query = query.eq("user_id", owner_id)  # only the owner reads their job
             return query.limit(1).execute()
+
+        response = await asyncio.to_thread(_run)
+        rows = response.data or []
+        return VideoJob.model_validate(rows[0]) if rows else None
+
+    @guard("video_jobs find_active")
+    async def find_active(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            query = (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .select("*")
+                .eq("user_id", owner_id)  # owner-scoped (the app belt over the DB's RLS belt)
+                .eq("course_id", course_id)
+                .eq("kind", kind.value)
+                .not_.in_("status", list(_TERMINAL_STATUSES))  # queued or still in flight
+            )
+            # PostgREST: a null lesson_id (course-level kinds) needs `is`, not `eq`.
+            query = (
+                query.is_("lesson_id", "null")
+                if lesson_id is None
+                else query.eq("lesson_id", lesson_id)
+            )
+            return query.order("created_at", desc=True).limit(1).execute()
 
         response = await asyncio.to_thread(_run)
         rows = response.data or []
