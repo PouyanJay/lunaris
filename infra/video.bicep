@@ -42,7 +42,7 @@ param withByok bool = false
 @description('Max concurrent render replicas (plan §8.4 ceiling) — bounds wall-time and parallel spend.')
 param maxReplicas int = 3
 
-@description('Lease window (seconds): a job whose worker stops heartbeating for this long is treated as dead. Drives BOTH the KEDA stale-job query and the worker (via LUNARIS_VIDEO_LEASE_SECONDS), so they can never drift — this one param is their single source of truth.')
+@description('Lease window (seconds): a job whose worker stops heartbeating for this long is treated as dead and requeued by the worker sweep (V7-T4). Passed to the worker via LUNARIS_VIDEO_LEASE_SECONDS. (The KEDA scaler counts all non-terminal jobs, so it needs no lease.)')
 param leaseSeconds int = 300
 
 @description('vCPU/memory per replica. Manim rendering is CPU-bound; the default (2 vCPU / 4Gi) is the Consumption-Only ceiling and matches the render sandbox\'s 3 GiB memory cap.')
@@ -101,14 +101,14 @@ var baseEnv = concat(
   byokEnv
 )
 
-// KEDA PostgreSQL scaler: scale on jobs that need a worker — QUEUED rows, AND stale in-flight rows
-// (claimed but not heartbeated within ``leaseSeconds``, i.e. a dead worker). Counting the stale ones
-// is what lets a job stuck after a scale-to-zero wake a replica, whose lease sweep (V7-T4) then
-// requeues and re-claims it. targetQueryValue 1 → one replica per pending job (up to maxReplicas);
-// activationTargetQueryValue 0 → wake from zero as soon as one appears. Read-only + cheap (a partial
-// index backs status='queued'). The interval interpolates ``leaseSeconds`` — the same value the
-// worker gets via LUNARIS_VIDEO_LEASE_SECONDS — so the scaler and the sweep can never drift.
-var staleClause = 'status NOT IN (\'queued\', \'ready\', \'failed\') AND claimed_at < now() - interval \'${leaseSeconds} seconds\''
+// KEDA PostgreSQL scaler: scale on every job that still needs a worker — i.e. all NON-TERMINAL rows
+// (queued + in-flight planning…assembling). Counting in-flight rows (not just queued) is essential:
+// it keeps a replica alive for the whole render (a fresh claim drops the queued count to 0, so a
+// queued-only metric would scale the busy worker down mid-render) AND it lets a job a dead worker
+// left in-flight keep/wake a replica, whose lease sweep (V7-T4) then requeues and re-claims it. The
+// count falls to 0 only when everything is ready/failed → scale to zero. targetQueryValue 1 → one
+// replica per outstanding job (up to maxReplicas); activationTargetQueryValue 0 → wake from zero as
+// soon as one appears. Read-only + cheap.
 var scaleRules = hasScaler
   ? [
       {
@@ -116,7 +116,7 @@ var scaleRules = hasScaler
         custom: {
           type: 'postgresql'
           metadata: {
-            query: 'SELECT count(*)::int FROM public.video_jobs WHERE status = \'queued\' OR (${staleClause})'
+            query: 'SELECT count(*)::int FROM public.video_jobs WHERE status NOT IN (\'ready\', \'failed\')'
             targetQueryValue: '1'
             activationTargetQueryValue: '0'
           }

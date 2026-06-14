@@ -585,6 +585,59 @@ async def test_app_lifespan_runs_the_worker_end_to_end(
         get_settings.cache_clear()
 
 
+async def test_lifespan_does_not_drain_when_inproc_worker_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The cloud API posture (V7): video generation ON (so it still enqueues) but the in-process
+    # worker OFF — the dedicated worker container renders. The lifespan must NOT start a worker, so
+    # an enqueued job stays QUEUED here (no API stub worker stealing + stubbing it).
+    from lunaris_api import dependencies
+    from lunaris_runtime.persistence import CourseStore
+
+    monkeypatch.setattr(dependencies, "_in_memory_video_queue", InMemoryVideoJobQueue())
+    monkeypatch.setattr(dependencies, "_in_memory_video_storage", InMemoryVideoStorage())
+    monkeypatch.setenv("VIDEO_GENERATION_ENABLED", "true")
+    monkeypatch.setenv("LUNARIS_VIDEO_INPROC_WORKER", "false")  # the cloud API gate
+    monkeypatch.setenv("LUNARIS_VIDEO_WORKER_POLL_S", "0.01")
+    monkeypatch.setenv("SUPABASE_JWT_SECRET", JWT_SECRET)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("LUNARIS_PIPELINE", "stub")
+    monkeypatch.setenv("LUNARIS_COURSE_DIR", str(tmp_path))
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+    monkeypatch.setattr("lunaris_api.app.get_video_pipeline", lambda settings: StubVideoPipeline())
+    seg = MerrillSegments(
+        activate=Segment(), demonstrate=Segment(), apply=Segment(), integrate=Segment()
+    )
+    CourseStore(tmp_path).save(
+        Course(
+            id="course-1",
+            topic="t",
+            modules=[Module(id="m1", title="S", lessons=[Lesson(id="lesson-1", segments=seg)])],
+        )
+    )
+    get_settings.cache_clear()
+    try:
+        app = create_app()
+        async with app.router.lifespan_context(app):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                # Act — enqueue over HTTP (allowed: video generation is on).
+                job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"][
+                    "id"
+                ]
+                # Give any (wrongly-started) worker ample time to claim + settle it.
+                await asyncio.sleep(0.2)
+                body = (
+                    await client.get(f"/api/videos/{job_id}", headers=auth_headers(USER_A))
+                ).json()
+
+        # Assert — the job is still QUEUED: this process never drained it.
+        assert body["job"]["status"] == "queued"
+    finally:
+        get_settings.cache_clear()
+
+
 # ── variant coverage (V0-T5) ──────────────────────────────────────────────────────
 
 

@@ -46,7 +46,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     Settings come from the environment directly (not request DI — there is no request here); the
     queue/storage getters resolve to the same process singletons request handlers see, so an
-    enqueue over HTTP is visible to this worker. Gated by the operator kill-switch.
+    enqueue over HTTP is visible to this worker.
+
+    Two independent gates: ``video_generation_enabled`` is the operator kill-switch (also what lets
+    the API enqueue); ``video_inproc_worker_enabled`` is whether THIS process also drains the queue.
+    Locally (``make run``) both are on — one process enqueues + renders. In cloud the API keeps
+    enqueue on but turns the in-process worker OFF (app.bicep), so it never competes with the
+    dedicated worker container — without that gate the API's stub-pipeline workers (the lean API
+    image has no Manim) would race the real worker and settle jobs with placeholder media.
 
     The worker pool is supervised by the shared ``run_video_workers`` (V7-T0) — the exact same
     spawn-N + drain-on-stop coroutine the standalone worker container runs, so there is one worker
@@ -55,7 +62,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     settings = get_settings()
     supervisor: asyncio.Task[None] | None = None
-    if settings.video_generation_enabled:
+    if settings.video_generation_enabled and settings.video_inproc_worker_enabled:
         supervisor = asyncio.create_task(
             run_video_workers(
                 queue=get_video_job_queue(settings),

@@ -114,6 +114,10 @@ var baseEnv = [
   { name: 'LUNARIS_ENV', value: env }
   { name: 'LUNARIS_DRAFT_TIER_ENABLED', value: string(draftTierEnabled) }
   { name: 'VIDEO_GENERATION_ENABLED', value: string(videoGenerationEnabled) }
+  // The cloud API enqueues videos but NEVER drains the queue itself — the dedicated worker
+  // (infra/video.bicep) renders them. Without this, the API's stub-pipeline workers (the lean API
+  // image has no Manim) would race the real worker and settle jobs with placeholder media.
+  { name: 'LUNARIS_VIDEO_INPROC_WORKER', value: 'false' }
 ]
 
 // Point the keyless fallbacks at the self-hosted inference endpoints when wired; otherwise omit the

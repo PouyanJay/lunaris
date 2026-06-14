@@ -69,9 +69,14 @@ class Settings:
     # limiter, so more workers overlap renders without bursting the org limit. Cloud scales w/ KEDA.
     video_worker_count: int = 2
     # Lease window (seconds): a job whose worker hasn't heartbeated within it is considered dead and
-    # requeued by the sweep (V7-T4). In cloud this MUST equal the KEDA scaler's stale-job interval —
-    # infra/video.bicep sets both from its one `leaseSeconds` param (passed here as the env var).
+    # requeued by the sweep (V7-T4). The worker sweep uses it; infra/video.bicep passes it as the
+    # env var so the dedicated worker and any operator override agree.
     video_lease_seconds: int = 300
+    # Whether THIS process drains the queue in-process (V7). True (default) = the single-process
+    # path: `make run` locally runs the worker inside the API. The cloud API sets it False
+    # (app.bicep) so it ENQUEUES only and the dedicated worker container renders — otherwise the
+    # API's stub-pipeline workers (no Manim in the lean API image) would race the real worker.
+    video_inproc_worker_enabled: bool = True
 
     @property
     def has_supabase(self) -> bool:
@@ -126,6 +131,7 @@ def get_settings() -> Settings:
         video_worker_poll_seconds=_env_float("LUNARIS_VIDEO_WORKER_POLL_S", default=2.0),
         video_worker_count=_env_int("LUNARIS_VIDEO_WORKER_COUNT", default=2),
         video_lease_seconds=_env_int("LUNARIS_VIDEO_LEASE_SECONDS", default=300),
+        video_inproc_worker_enabled=_env_flag("LUNARIS_VIDEO_INPROC_WORKER", default=True),
     )
 
 
