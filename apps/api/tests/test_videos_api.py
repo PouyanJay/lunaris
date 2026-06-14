@@ -16,7 +16,12 @@ import pytest
 from _auth import JWT_SECRET, USER_A, USER_B, auth_headers
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
-from lunaris_api.dependencies import get_run_event_store, get_video_job_queue, get_video_storage
+from lunaris_api.dependencies import (
+    get_course_store,
+    get_run_event_store,
+    get_video_job_queue,
+    get_video_storage,
+)
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import (
     InMemoryRunEventStore,
@@ -24,9 +29,55 @@ from lunaris_runtime.persistence import (
     InMemoryVideoStorage,
     VideoArtifactPaths,
 )
-from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
+from lunaris_runtime.schema import (
+    Course,
+    Lesson,
+    MerrillSegments,
+    Module,
+    Segment,
+    VideoJob,
+    VideoKind,
+    VideoProvenance,
+)
 from lunaris_video import StubVideoPipeline, VideoWorker
 from lunaris_video.schemas import BeatTiming, SceneTiming, TimingManifest
+
+
+class _FakeCourseStore:
+    """An owner-scoped in-memory course store double — enough for the enqueue endpoint's ownership
+    check (a course owned by another user reads as not-found, like the real Supabase store)."""
+
+    def __init__(self) -> None:
+        self._by_owner: dict[tuple[str | None, str], Course] = {}
+
+    def save(self, course: Course, *, owner_id: str | None = None) -> None:
+        self._by_owner[(owner_id, course.id)] = course
+
+    def load(self, course_id: str, *, owner_id: str | None = None) -> Course:
+        course = self._by_owner.get((owner_id, course_id))
+        if course is None:
+            raise FileNotFoundError(course_id)
+        return course
+
+    def delete(self, course_id: str, *, owner_id: str | None = None) -> bool:
+        return self._by_owner.pop((owner_id, course_id), None) is not None
+
+
+def _seeded_course_store() -> _FakeCourseStore:
+    """A store holding course-1 (owned by USER_A) with lesson-1 — the coordinates tests enqueue."""
+    store = _FakeCourseStore()
+    segments = MerrillSegments(
+        activate=Segment(), demonstrate=Segment(), apply=Segment(), integrate=Segment()
+    )
+    course = Course(
+        id="course-1",
+        topic="Algorithms",
+        modules=[
+            Module(id="m1", title="Sorting", lessons=[Lesson(id="lesson-1", segments=segments)])
+        ],
+    )
+    store.save(course, owner_id=USER_A)
+    return store
 
 
 def _settings(tmp_path: Path, *, video_enabled: bool) -> Settings:
@@ -79,6 +130,7 @@ def _build_client(
     events: InMemoryRunEventStore,
     *,
     video_enabled: bool = True,
+    course_store: _FakeCourseStore | None = None,
 ) -> httpx.AsyncClient:
     clear_correlation()
     app = create_app()
@@ -88,6 +140,7 @@ def _build_client(
     app.dependency_overrides[get_video_job_queue] = lambda: queue
     app.dependency_overrides[get_video_storage] = lambda: storage
     app.dependency_overrides[get_run_event_store] = lambda: events
+    app.dependency_overrides[get_course_store] = lambda: course_store or _seeded_course_store()
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
 
 
@@ -177,6 +230,48 @@ async def test_enqueue_creates_an_owner_stamped_queued_job(
     assert body["videoUrl"] is None
     stored = await queue.get(job_id=job["id"])
     assert stored is not None and stored.user_id == USER_A
+
+
+# ── enqueue ownership + dedup (V4-T0, the V0-deferred safety) ──────────────────────
+
+
+async def test_enqueue_for_an_unowned_course_is_not_found(client: httpx.AsyncClient) -> None:
+    # Arrange / Act — USER_B is keyed + authed but does NOT own course-1 (seeded for USER_A).
+    response = await client.post(_ENQUEUE, headers=auth_headers(USER_B))
+
+    # Assert — 404 (missing or not-owned alike — existence is never leaked across tenants).
+    assert response.status_code == 404
+
+
+async def test_enqueue_for_a_missing_lesson_is_not_found(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Act — the course is owned, but it has no lesson "ghost".
+    response = await client.post(
+        "/api/courses/course-1/lessons/ghost/video", headers=auth_headers(USER_A)
+    )
+
+    # Assert — rejected before any job is created (the guard fires before spending capacity).
+    assert response.status_code == 404
+    assert await queue.claim(worker_id="probe") is None
+
+
+async def test_enqueue_dedupes_an_in_flight_lesson_video(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Act — two Generate requests for the same lesson while the first is still queued/in-flight.
+    first_response = await client.post(_ENQUEUE, headers=auth_headers(USER_A))
+    second_response = await client.post(_ENQUEUE, headers=auth_headers(USER_A))
+
+    # Assert — both accepted; the second returns the in-flight job, not a twin; one is claimable.
+    assert first_response.status_code == 202
+    assert second_response.status_code == 202
+    first = first_response.json()["job"]["id"]
+    second = second_response.json()["job"]["id"]
+    assert first == second
+    claimed = await queue.claim(worker_id="probe")
+    assert claimed is not None and claimed.id == first
+    assert await queue.claim(worker_id="probe") is None
 
 
 async def test_status_read_is_owner_scoped(client: httpx.AsyncClient) -> None:
@@ -381,6 +476,20 @@ async def test_app_lifespan_runs_the_worker_end_to_end(
     # pipeline: deterministic whether or not the render extra is installed (the real Manim
     # pipeline has its own smoke tests and would need a seeded course + toolchain here).
     monkeypatch.setattr("lunaris_api.app.get_video_pipeline", lambda settings: StubVideoPipeline())
+    # Seed course-1/lesson-1 in the file store so the enqueue endpoint's ownership check passes (the
+    # file store is single-user and ignores owner_id; the stub pipeline never loads the lesson).
+    from lunaris_runtime.persistence import CourseStore
+
+    seg = MerrillSegments(
+        activate=Segment(), demonstrate=Segment(), apply=Segment(), integrate=Segment()
+    )
+    CourseStore(tmp_path).save(
+        Course(
+            id="course-1",
+            topic="t",
+            modules=[Module(id="m1", title="S", lessons=[Lesson(id="lesson-1", segments=seg)])],
+        )
+    )
     get_settings.cache_clear()
     try:
         app = create_app()

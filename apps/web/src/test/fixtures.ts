@@ -300,6 +300,8 @@ export function makeProgressEvent(
     claimsSupported: null,
     claimsCut: null,
     gapCount: null,
+    videosTotal: null,
+    videosDegraded: null,
     status: null,
     ...extra,
   };

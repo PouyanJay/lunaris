@@ -433,6 +433,7 @@ export type ProgressStage =
   | "claims_verified"
   | "resources_curated"
   | "coverage_verified"
+  | "lesson_videos"
   | "run_completed";
 
 /** One streamed build update (mirrors the ProgressEvent schema, serialised camelCase). */
@@ -450,6 +451,10 @@ export interface ProgressEvent {
   claimsCut: number | null;
   /** Promised competencies left unbuilt on COVERAGE_VERIFIED (CQ Phase 4.2); 0 == clean. */
   gapCount: number | null;
+  /** Lesson-video tally on LESSON_VIDEOS (explainer-video V4): total enqueued, and how many
+   *  degraded (failed). `videosDegraded` > 0 renders the Videos phase amber. Null elsewhere. */
+  videosTotal: number | null;
+  videosDegraded: number | null;
   status: CourseStatus | null;
 }
 

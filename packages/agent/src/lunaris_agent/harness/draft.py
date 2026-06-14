@@ -22,6 +22,7 @@ from lunaris_runtime.schema import (
     PrerequisiteGraph,
     RiskTier,
 )
+from lunaris_runtime.video_build import IVideoBuildCoordinator
 
 from .agent_reporter import AgentReporter
 from .progress_reporter import ProgressReporter
@@ -70,6 +71,13 @@ class CourseDraft:
     # finalize folds them into the course's scope_note so the learner sees the gap — no silent zero.
     resource_coverage_gaps: list[str] = field(default_factory=list)
     course: Course | None = None
+    # Video V4: the build's video-enqueue coordinator, set by the runner from the run-scope
+    # ``ContextVar`` (None when video generation is off → the authoring loop enqueues nothing). The
+    # gate lives in the composition root; the harness only checks presence.
+    video_coordinator: IVideoBuildCoordinator | None = None
+    # lesson_id → job_id for every lesson video the build enqueued (the authoring loop fills this as
+    # modules clear verification; finalize awaits these jobs in V4-T1). Per-build, harness-only.
+    enqueued_video_jobs: dict[str, str] = field(default_factory=dict)
     # Stage-boundary progress emitter shared by every draft-bound tool + the authoring loop. Not a
     # constructor arg: it defaults to a no-op reporter (so tests/batch runs need no wiring) and the
     # runner swaps in a streaming sink-backed reporter when the API requests SSE.

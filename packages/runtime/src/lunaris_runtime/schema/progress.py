@@ -31,4 +31,9 @@ class ProgressEvent(CourseModel):
     # The number of promised competencies left unbuilt on COVERAGE_VERIFIED (CQ Phase 4.2); 0 == a
     # clean course. None on every other stage.
     gap_count: int | None = None
+    # The lesson-video tally on LESSON_VIDEOS (explainer-video V4): how many were enqueued and how
+    # many degraded (failed / could not converge). ``videos_degraded`` > 0 renders the phase amber.
+    # None on every other stage.
+    videos_total: int | None = None
+    videos_degraded: int | None = None
     status: CourseStatus | None = None

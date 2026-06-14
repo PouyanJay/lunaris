@@ -29,6 +29,7 @@ from lunaris_runtime.schema import (
     RunEvent,
     RunStatus,
 )
+from lunaris_runtime.video_build import IVideoBuildCoordinator, run_video_coordinator
 
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
@@ -64,6 +65,11 @@ CredentialResolver = Callable[[str], Awaitable[Mapping[str, str]]]
 # CredentialResolver but a distinct concept (non-secret model selection); None when config is not
 # per-user (auth off) → builds read the process env, today's behaviour.
 ConfigResolver = Callable[[str], Awaitable[Mapping[str, str]]]
+
+# Builds the per-run video-build coordinator for an owner (explainer-video V4): owner_id → the
+# coordinator that enqueues the build's lesson videos. Wired ONLY when the operator flag
+# VIDEO_GENERATION_ENABLED is on (its presence is the operator gate); None otherwise → no videos.
+VideoCoordinatorFactory = Callable[[str], IVideoBuildCoordinator]
 
 # A streamed item: a ("progress", ProgressEvent) stage, an ("agent", AgentEvent) transcript beat,
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
@@ -152,6 +158,7 @@ class CourseService:
         *,
         credential_resolver: CredentialResolver | None = None,
         config_resolver: ConfigResolver | None = None,
+        video_coordinator_factory: VideoCoordinatorFactory | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -167,6 +174,9 @@ class CourseService:
         # Resolves the owner's non-secret config (model selection) per run (None when config isn't
         # per-user → builds read the process env / code defaults).
         self._config_resolver = config_resolver
+        # Builds the per-run video-build coordinator (explainer-video V4). None when the operator
+        # kill-switch VIDEO_GENERATION_ENABLED is off → builds enqueue no videos (today's path).
+        self._video_coordinator_factory = video_coordinator_factory
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -293,6 +303,33 @@ class CourseService:
             return nullcontext()
         return run_config(config)
 
+    def _video_coordinator_for(
+        self, owner_id: str | None, credentials: Mapping[str, str] | None
+    ) -> IVideoBuildCoordinator | None:
+        """The build's video-enqueue coordinator, or ``None`` when video generation is off for it.
+
+        The whole V4 enqueue gate in one place (plan §V4-T0): the operator flag (the factory is
+        wired only when ``VIDEO_GENERATION_ENABLED`` is on), AND the build is **keyed** (video needs
+        Claude + a vision model — never a keyless Draft build), AND an **owner** is known (a
+        ``video_jobs`` row needs a ``user_id``; auth-off single-user builds get no videos). The
+        harness then only checks the coordinator's presence — it never re-derives this gate."""
+        if self._video_coordinator_factory is None or owner_id is None:
+            return None
+        if self._is_keyless_llm(credentials):
+            return None
+        return self._video_coordinator_factory(owner_id)
+
+    @staticmethod
+    def _video_scope(
+        coordinator: IVideoBuildCoordinator | None,
+    ) -> AbstractContextManager[None]:
+        """The run's video-build context: the coordinator when video is on for this build, else a
+        no-op. Entered alongside the credential + config scopes around the factory + create_task so
+        the run task inherits it (the harness reads it via ``resolve_video_coordinator``)."""
+        if coordinator is None:
+            return nullcontext()
+        return run_video_coordinator(coordinator)
+
     @staticmethod
     def _bridge_scope(bridge: DeviceBridge | None) -> AbstractContextManager[None]:
         """The run's device-bridge context: routes the build's LLM calls to the learner's tab when
@@ -329,15 +366,20 @@ class CourseService:
         admission = await self.admit_build(owner_id)
         credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
+        video_coordinator = self._video_coordinator_for(owner_id, credentials)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
         # Run the pipeline in a registered task so a separate request can cancel this build (the
         # await-full path has no SSE consumer to interrupt). The task is awaited here, so cancelling
         # it raises CancelledError at this await without cancelling the request coroutine itself.
-        # The credential + config scopes wrap the factory + create_task so the task inherits the
-        # tenant's keys + model choices (a context copy); the adapters then read them, not the env.
-        # No bridge scope here: device compute is stream-only (admit_build above gets no compute /
-        # run_id), so an await-full build always runs server-side.
-        with self._credential_scope(credentials), self._config_scope(config):
+        # The credential + config + video scopes wrap the factory + create_task so the task inherits
+        # the tenant's keys + model choices + video coordinator (a context copy); the harness then
+        # reads them, not the env. No bridge scope here: device compute is stream-only (admit_build
+        # above gets no compute / run_id), so an await-full build always runs server-side.
+        with (
+            self._credential_scope(credentials),
+            self._config_scope(config),
+            self._video_scope(video_coordinator),
+        ):
             pipeline = self._factory(self._store_for(owner_id))
             task = asyncio.create_task(
                 pipeline.run(
@@ -410,15 +452,17 @@ class CourseService:
             admission = await self.admit_build(owner_id)
         credentials = admission.credentials
         config = await self._resolve_run_config(owner_id)
+        video_coordinator = self._video_coordinator_for(owner_id, credentials)
         await self._record_start(run_id=run_id, course_id=course_id, topic=topic, owner_id=owner_id)
-        # The credential + config + bridge scopes wrap only the factory + create_task (no yields
-        # inside), so the run task inherits the tenant's keys + model choices + device bridge as a
-        # context copy while the generator's own context — the one live across each yield — never
-        # retains them. The terminal status is recorded by the task itself (_run_recording_status),
-        # disconnect-proof.
+        # The credential + config + video + bridge scopes wrap only the factory + create_task (no
+        # yields inside), so the run task inherits the tenant's keys + model choices + video
+        # coordinator + device bridge as a context copy while the generator's own context — the one
+        # live across each yield — never retains them. The terminal status is recorded by the task
+        # itself (_run_recording_status), disconnect-proof.
         with (
             self._credential_scope(credentials),
             self._config_scope(config),
+            self._video_scope(video_coordinator),
             self._bridge_scope(admission.device_bridge),
         ):
             pipeline = self._factory(self._store_for(owner_id))

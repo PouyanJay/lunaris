@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from lunaris_runtime.schema import VideoJob
+from lunaris_runtime.schema import VideoJob, VideoKind
 
 
 class IVideoJobQueue(Protocol):
@@ -23,8 +23,20 @@ class IVideoJobQueue(Protocol):
 
     async def heartbeat(self, *, job_id: str) -> None: ...
 
-    async def complete(self, *, job_id: str) -> None: ...
+    async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
+        """Settle the job READY. ``contract_hash`` (the planned scene-contracts fingerprint) is
+        written back when the pipeline produced one — the durable cross-process regeneration cache
+        key (V4-T1); ``None`` leaves the column untouched (e.g. a producer that built none)."""
+        ...
 
     async def fail(self, *, job_id: str, error: str) -> None: ...
 
     async def get(self, *, job_id: str, owner_id: str | None = None) -> VideoJob | None: ...
+
+    async def find_active(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        """The owner's most recent NON-terminal (queued or in-flight) job for this
+        (course, lesson, kind), or ``None`` if none is live. The enqueue endpoint dedups against it:
+        a second request for a video already being made returns that job instead of a duplicate."""
+        ...

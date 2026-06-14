@@ -33,6 +33,9 @@ export interface TimelinePhase {
   label: string;
   status: PhaseStatus;
   summary: string | null;
+  /** A warning tone on the summary — the Videos phase sets it when a lesson video degraded, so the
+   *  one-line tally reads amber (the build still published; some lessons need a retry). */
+  summaryTone?: "warning" | undefined;
   entries: TimelineEntry[];
   /** Wall-clock span of a DONE phase (ms), from its stage arrival back to the previous stage; null
    *  for active/pending phases or when stage arrival times were not captured. */
@@ -56,6 +59,7 @@ const PHASES: { stage: ProgressStage; label: string }[] = [
   { stage: "claims_verified", label: "Verify" },
   { stage: "resources_curated", label: "Resources" },
   { stage: "coverage_verified", label: "Coverage" },
+  { stage: "lesson_videos", label: "Videos" },
   { stage: "run_completed", label: "Publish" },
 ];
 
@@ -195,11 +199,23 @@ function statusFor(index: number, current: number): PhaseStatus {
   return "pending";
 }
 
+/** The most recent event recorded for a stage (events stream in order), or null. */
+function lastEventForStage(events: ProgressEvent[], stage: ProgressStage): ProgressEvent | null {
+  let last: ProgressEvent | null = null;
+  for (const event of events) if (event.stage === stage) last = event;
+  return last;
+}
+
 /** The latest progress label recorded for a stage (e.g. "21 concepts"), or null. */
 function summaryForStage(events: ProgressEvent[], stage: ProgressStage): string | null {
-  let summary: string | null = null;
-  for (const event of events) if (event.stage === stage) summary = event.label;
-  return summary;
+  return lastEventForStage(events, stage)?.label ?? null;
+}
+
+/** Whether the latest LESSON_VIDEOS event reported any degraded lesson video — drives the amber
+ *  tone on the Videos phase summary (the build published, but some lessons need a retry). */
+function videosDegraded(events: ProgressEvent[]): boolean {
+  const last = lastEventForStage(events, "lesson_videos");
+  return last?.videosDegraded != null && last.videosDegraded > 0;
 }
 
 /** A DONE phase's wall-clock span: its stage's arrival minus the previous stage's (run_started leads
@@ -246,6 +262,7 @@ export function buildTimeline(
       durationMs: null,
     });
   }
+  const degradedVideos = videosDegraded(events);
   PHASES.forEach((phase, index) => {
     const status = statusFor(index, current);
     phases.push({
@@ -253,6 +270,7 @@ export function buildTimeline(
       label: phase.label,
       status,
       summary: summaryForStage(events, phase.stage),
+      summaryTone: phase.stage === "lesson_videos" && degradedVideos ? "warning" : undefined,
       entries: entriesFor(phase.stage),
       durationMs: durationForPhase(index, status, stageTimes),
     });

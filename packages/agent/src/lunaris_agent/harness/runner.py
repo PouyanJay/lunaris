@@ -22,6 +22,7 @@ from lunaris_grounding import Verifier
 from lunaris_runtime.logging import bind_run_id, clear_correlation
 from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema import Clarification, Course, DiscoveryDepth, ProgressStage, RiskTier
+from lunaris_runtime.video_build import resolve_video_coordinator
 
 from ..coverage_critic import ICoverageCritic, StubCoverageCritic
 from ..critic import ICritic, MinimalCritic
@@ -198,6 +199,11 @@ class AgentCourseBuilder:
                 clarification=clarification,
                 discovery_depth=discovery_depth,
             )
+            # Video V4: pick up the run-scope video coordinator (the composition root set it only
+            # when video is enabled, keyed, and owned). The authoring loop enqueues a lesson video
+            # as each module clears; finalize awaits them. None on the video-off path → nothing
+            # enqueued. Read inside the run task so it's the copy CourseService bound around it.
+            draft.video_coordinator = resolve_video_coordinator()
             # One stage cursor per run, shared by both reporters: the ProgressReporter advances
             # it at each stage boundary, and the AgentReporter stamps every fine event's `stage`
             # from it, so the timeline buckets reasoning/tool beats under the active phase.

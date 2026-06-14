@@ -64,6 +64,10 @@ class Settings:
     video_generation_enabled: bool = False
     # How often the in-process video worker polls an idle queue (tests turn this way down).
     video_worker_poll_seconds: float = 2.0
+    # How many in-process video workers drain the queue concurrently (plan §8.4: 2 local). They
+    # share the queue (SKIP-LOCKED claims never double-serve) and the process-wide Claude rate
+    # limiter, so more workers overlap renders without bursting the org limit. Cloud scales w/ KEDA.
+    video_worker_count: int = 2
 
     @property
     def has_supabase(self) -> bool:
@@ -116,6 +120,7 @@ def get_settings() -> Settings:
         ),
         video_generation_enabled=_env_flag("VIDEO_GENERATION_ENABLED", default=False),
         video_worker_poll_seconds=_env_float("LUNARIS_VIDEO_WORKER_POLL_S", default=2.0),
+        video_worker_count=_env_int("LUNARIS_VIDEO_WORKER_COUNT", default=2),
     )
 
 

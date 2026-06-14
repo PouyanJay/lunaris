@@ -2,9 +2,12 @@ import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from lunaris_runtime.schema import VideoJob, VideoJobStatus
+from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 
 from .persistence_error import PersistenceError
+
+# The non-terminal statuses a job passes through before READY/FAILED — "active" for dedup.
+_TERMINAL = (VideoJobStatus.READY, VideoJobStatus.FAILED)
 
 
 class InMemoryVideoJobQueue:
@@ -53,8 +56,8 @@ class InMemoryVideoJobQueue:
             job.claimed_at = self._clock()
             job.updated_at = job.claimed_at
 
-    async def complete(self, *, job_id: str) -> None:
-        await self._settle(job_id, VideoJobStatus.READY, error=None)
+    async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
+        await self._settle(job_id, VideoJobStatus.READY, error=None, contract_hash=contract_hash)
 
     async def fail(self, *, job_id: str, error: str) -> None:
         await self._settle(job_id, VideoJobStatus.FAILED, error=error)
@@ -66,11 +69,39 @@ class InMemoryVideoJobQueue:
                 return None
             return job.model_copy(deep=True)
 
-    async def _settle(self, job_id: str, status: VideoJobStatus, *, error: str | None) -> None:
+    async def find_active(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        async with self._lock:
+            active = [
+                job
+                for job in self._jobs.values()
+                if job.user_id == owner_id
+                and job.course_id == course_id
+                and job.lesson_id == lesson_id
+                and job.kind == kind
+                and job.status not in _TERMINAL
+            ]
+            if not active:
+                return None
+            # Most recent first — same direction as the Supabase query's order(desc).limit(1).
+            active.sort(key=lambda job: (job.created_at or self._clock(), job.id), reverse=True)
+            return active[0].model_copy(deep=True)
+
+    async def _settle(
+        self,
+        job_id: str,
+        status: VideoJobStatus,
+        *,
+        error: str | None,
+        contract_hash: str | None = None,
+    ) -> None:
         async with self._lock:
             job = self._require(job_id, operation=f"settle {status.value}")
             job.status = status
             job.error = error
+            if contract_hash is not None:
+                job.contract_hash = contract_hash
             job.updated_at = self._clock()
 
     def _require(self, job_id: str, *, operation: str) -> VideoJob:

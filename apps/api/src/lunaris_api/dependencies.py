@@ -47,6 +47,7 @@ from lunaris_runtime.persistence import (
     SupabaseVideoJobQueue,
     SupabaseVideoStorage,
 )
+from lunaris_runtime.video_build import IVideoBuildCoordinator, QueueVideoBuildCoordinator
 from lunaris_video import (
     IVideoPipeline,
     StubVideoPipeline,
@@ -84,7 +85,13 @@ from .secrets import (
     SupabaseCredentialStore,
     build_secret_cipher,
 )
-from .service import ConfigResolver, CourseService, CredentialResolver, PipelineFactory
+from .service import (
+    ConfigResolver,
+    CourseService,
+    CredentialResolver,
+    PipelineFactory,
+    VideoCoordinatorFactory,
+)
 from .user_config import (
     PER_USER_CONFIG,
     InMemoryUserConfigStore,
@@ -222,9 +229,34 @@ VideoJobQueueDep = Annotated[IVideoJobQueue, Depends(get_video_job_queue)]
 VideoStorageDep = Annotated[IVideoStorage, Depends(get_video_storage)]
 
 
+def _video_coordinator_factory(
+    queue: IVideoJobQueue, storage: IVideoStorage
+) -> VideoCoordinatorFactory:
+    """Build a per-run video-build coordinator over the shared queue + storage (explainer-video V4).
+
+    Returned to ``CourseService`` only when ``VIDEO_GENERATION_ENABLED`` is on (so its presence is
+    the operator gate); the service calls it per keyed, owned build to enqueue that build's lesson
+    videos onto the same queue the lifespan worker drains, and (at finalize) to await them and read
+    the finished artifacts from the same storage the worker wrote them to."""
+
+    def build(owner_id: str) -> IVideoBuildCoordinator:
+        return QueueVideoBuildCoordinator(queue=queue, storage=storage, owner_id=owner_id)
+
+    return build
+
+
 def _resolve_course_store(settings: Settings) -> ICourseStore:
     """The finished-course store for the environment — Supabase (durable) or file (offline dev)."""
     return _supabase_course_store if settings.has_supabase else CourseStore(settings.course_dir)
+
+
+def get_course_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICourseStore:
+    """The finished-course store as a request dependency — used by the on-demand video enqueue
+    endpoint to verify the caller owns the course (and the lesson exists) before enqueuing."""
+    return _resolve_course_store(settings)
+
+
+CourseStoreDep = Annotated[ICourseStore, Depends(get_course_store)]
 
 
 def get_video_pipeline(settings: Settings) -> IVideoPipeline:
@@ -462,6 +494,14 @@ def get_course_service(
     # the store is the in-memory fallback. Cheap to always wire (the store is lazy); the resolver
     # only fires for an owned build.
     config_resolver = _runtime_config_resolver(user_config_store) if settings.has_auth else None
+    # Video generation (explainer-video V4) is gated by the operator kill-switch: wire the factory
+    # only when it's on, so a build enqueues videos only where the operator opted in (dev now, prod
+    # at V7). The per-build keyed + owner checks layer on top inside CourseService.
+    video_coordinator_factory = (
+        _video_coordinator_factory(get_video_job_queue(settings), get_video_storage(settings))
+        if settings.video_generation_enabled
+        else None
+    )
     return CourseService(
         store,
         factory,
@@ -470,6 +510,7 @@ def get_course_service(
         event_store,
         credential_resolver=resolver,
         config_resolver=config_resolver,
+        video_coordinator_factory=video_coordinator_factory,
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
         bridge_limits=BridgeLimits(

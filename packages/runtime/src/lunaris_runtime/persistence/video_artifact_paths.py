@@ -19,6 +19,8 @@ class VideoArtifactPaths:
     timing: str
     captions: str
     provenance: str
+    # Written at the source so finalize folds it into the lesson with a single storage read (V4-T1).
+    artifact: str
 
     @classmethod
     def for_job(cls, job: VideoJob) -> Self:
@@ -30,4 +32,5 @@ class VideoArtifactPaths:
             timing=f"{prefix}/timing.json",
             captions=f"{prefix}/captions.vtt",
             provenance=f"{prefix}/provenance.json",
+            artifact=f"{prefix}/artifact.json",
         )

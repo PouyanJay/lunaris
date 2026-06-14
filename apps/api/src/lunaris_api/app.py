@@ -48,25 +48,45 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     enqueue over HTTP is visible to this worker. Gated by the operator kill-switch.
     """
     settings = get_settings()
-    worker_task: asyncio.Task[None] | None = None
+    worker_tasks: list[asyncio.Task[None]] = []
     if settings.video_generation_enabled:
-        worker = VideoWorker(
-            queue=get_video_job_queue(settings),
-            pipeline=get_video_pipeline(settings),
-            storage=get_video_storage(settings),
-            events=get_run_event_store(settings),
-            worker_id=f"api-{os.getpid()}",
+        # N in-process workers (plan §8.4) draining one shared queue — SKIP-LOCKED claims mean two
+        # workers never get the same job, so renders overlap. The queue/pipeline/storage/events are
+        # the same singletons request handlers see, shared across all workers; ids distinguish them.
+        queue = get_video_job_queue(settings)
+        pipeline = get_video_pipeline(settings)
+        storage = get_video_storage(settings)
+        run_event_store = get_run_event_store(settings)
+        # Fail-open: a misconfigured 0 still gets one worker, never zero (which stalls all jobs).
+        worker_count = max(1, settings.video_worker_count)
+        for index in range(worker_count):
+            worker = VideoWorker(
+                queue=queue,
+                pipeline=pipeline,
+                storage=storage,
+                events=run_event_store,
+                worker_id=f"api-{os.getpid()}-{index}",
+            )
+            worker_tasks.append(
+                asyncio.create_task(
+                    worker.run_forever(poll_interval_seconds=settings.video_worker_poll_seconds)
+                )
+            )
+        _logger.info(
+            "video_workers_started",
+            count=worker_count,
+            poll_seconds=settings.video_worker_poll_seconds,
         )
-        worker_task = asyncio.create_task(
-            worker.run_forever(poll_interval_seconds=settings.video_worker_poll_seconds)
-        )
-        _logger.info("video_worker_started", poll_seconds=settings.video_worker_poll_seconds)
     yield
-    if worker_task is not None:
-        worker_task.cancel()
+    # Cancel all, then drain all — a job mid-render at shutdown stays PLANNING (claimed, not
+    # settled); the lease-expiry/requeue sweep (V7) re-queues it, so no work is lost silently.
+    for task in worker_tasks:
+        task.cancel()
+    for task in worker_tasks:
         with contextlib.suppress(asyncio.CancelledError):
-            await worker_task
-        _logger.info("video_worker_stopped")
+            await task
+    if worker_tasks:
+        _logger.info("video_workers_stopped", count=len(worker_tasks))
 
 
 def _register_routers(app: FastAPI) -> None:

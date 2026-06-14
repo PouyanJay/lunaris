@@ -129,7 +129,11 @@ function PhaseNode({ phase, expanded, expandable, onToggle, startedAt }: PhaseNo
     <>
       <span className={styles.dot} data-status={phase.status} aria-hidden="true" />
       <span className={styles.label}>{phase.label}</span>
-      {phase.summary && <span className={`mono ${styles.summary}`}>{phase.summary}</span>}
+      {phase.summary && (
+        <span className={`mono ${styles.summary}`} data-tone={phase.summaryTone}>
+          {phase.summary}
+        </span>
+      )}
       {phase.status === "active" && <LiveActivity phaseKey={phase.key} startedAt={startedAt} />}
       {duration && <span className={`mono ${styles.duration}`}>{duration}</span>}
     </>
