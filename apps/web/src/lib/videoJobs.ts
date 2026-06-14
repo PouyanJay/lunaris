@@ -20,6 +20,34 @@ export type VideoJobStatus =
   | "ready"
   | "failed";
 
+/** A determinate progress reading for a working video job: a percent (for the bar) and a plain-
+ *  language stage label (for the caption). Mapped from the job status the worker advances through
+ *  (planning → voicing? → rendering → assembling → ready); the percents rise monotonically so the
+ *  bar only ever moves forward. The terminal `ready`/`failed` are included for completeness — the
+ *  slot renders the player / failed message rather than this bar once a job settles. */
+export function videoProgress(status: VideoJobStatus): { percent: number; label: string } {
+  switch (status) {
+    case "queued":
+      return { percent: 6, label: "Queued" };
+    case "planning":
+      return { percent: 18, label: "Planning the storyboard" };
+    case "coding":
+      return { percent: 34, label: "Writing the animation" };
+    case "voicing":
+      return { percent: 46, label: "Recording the narration" };
+    case "rendering":
+      return { percent: 64, label: "Rendering the scenes" };
+    case "qa":
+      return { percent: 80, label: "Checking the visuals" };
+    case "assembling":
+      return { percent: 92, label: "Assembling the video" };
+    case "ready":
+      return { percent: 100, label: "Ready" };
+    case "failed":
+      return { percent: 100, label: "Couldn’t generate" };
+  }
+}
+
 export interface VideoJobWire {
   id: string;
   userId: string;
@@ -126,6 +154,27 @@ export async function regenerateVideo(
   }
   if (!response.ok) return { kind: "error" };
   return { kind: "accepted", view: (await response.json()) as VideoJobView };
+}
+
+/** The slot's currently in-flight (re)generate job, or null when nothing is rendering (204) or it
+ *  can't be read (gone, unauthorized, network). Keyed by the SOURCE job id the reader already holds
+ *  (`resolveJobId` of the persisted artifact) so a regenerate whose new job_id the artifact doesn't
+ *  know can still be re-attached after a refresh / navigate-away (the "nothing happening" bug). */
+export async function findActiveVideoJob(
+  apiBaseUrl: string,
+  sourceJobId: string,
+  signal?: AbortSignal,
+): Promise<VideoJobView | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/videos/${encodeURIComponent(sourceJobId)}/active`,
+      signal ? { signal } : undefined,
+    );
+    if (response.status === 204 || !response.ok) return null;
+    return (await response.json()) as VideoJobView;
+  } catch {
+    return null;
+  }
 }
 
 /** One job's current view, or null when it can't be read (gone, unauthorized, network). */

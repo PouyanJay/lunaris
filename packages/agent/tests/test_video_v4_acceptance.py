@@ -112,7 +112,7 @@ class _SelectiveFailPipeline:
         self._inner = StubVideoPipeline()
         self._a_started = a_started
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
         if job.lesson_id == _FIRST_CLEARED_LESSON_ID:
             self._a_started.set()
         if job.lesson_id == _FAILING_LESSON_ID:

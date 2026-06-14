@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   enqueueLessonVideo,
+  findActiveVideoJob,
   pollVideoJob,
   regenerateVideo,
   resolveJobId,
@@ -90,8 +91,7 @@ export function useLessonVideo(
   useEffect(() => {
     jobIdRef.current = null;
     if (builtStatus === "ready" && builtJobId) {
-      setState({ phase: "working", status: "queued" });
-      watch(builtJobId);
+      watch(builtJobId); // watch() sets the working state itself, then polls to ready
     } else if (builtStatus === "failed" && builtJobId) {
       setState({ phase: "failed", jobId: builtJobId });
     } else {
@@ -99,6 +99,21 @@ export function useLessonVideo(
     }
     return stopPolling;
   }, [apiBaseUrl, courseId, lessonId, builtStatus, builtJobId, watch, stopPolling]);
+
+  // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): ask
+  // the server for the slot's live job — keyed by the source job we DO hold — and watch it. Calling
+  // watch() aborts any poll the effect above started for the built artifact (shared controllerRef),
+  // so a live regenerate always takes precedence over the stale built state — surviving a refresh /
+  // navigate-away instead of the slot reverting to "couldn't generate".
+  useEffect(() => {
+    if (!builtJobId) return;
+    const controller = new AbortController();
+    void findActiveVideoJob(apiBaseUrl, builtJobId, controller.signal).then((view) => {
+      if (controller.signal.aborted || !view) return;
+      watch(view.job.id);
+    });
+    return () => controller.abort();
+  }, [apiBaseUrl, courseId, lessonId, builtJobId, watch]);
 
   const generate = useCallback(() => {
     stopPolling();

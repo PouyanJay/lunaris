@@ -116,6 +116,43 @@ async def test_fail_records_the_error() -> None:
     assert job.error == "render exploded"
 
 
+async def test_update_status_reflects_an_in_flight_stage() -> None:
+    # Arrange — a claimed (in-flight) job; the worker reports its render stage.
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job())
+    await queue.claim(worker_id="worker-a")
+
+    # Act
+    await queue.update_status(job_id="job-1", status=VideoJobStatus.RENDERING)
+
+    # Assert — the status poll now reads the real stage (the reader's progress bar).
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.RENDERING
+
+
+async def test_update_status_never_resurrects_a_settled_job() -> None:
+    # Arrange — a job that already settled READY (a late stage write races the settle).
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job())
+    await queue.claim(worker_id="worker-a")
+    await queue.complete(job_id="job-1")
+
+    # Act — a stale stage write must NOT move it back to a working status.
+    await queue.update_status(job_id="job-1", status=VideoJobStatus.RENDERING)
+
+    # Assert — still READY (best-effort: a terminal job is never un-settled).
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.READY
+
+
+async def test_update_status_on_a_vanished_job_is_a_silent_noop() -> None:
+    # Arrange — no such job (e.g. reaped). A progress write must never raise (unlike the settles).
+    queue = InMemoryVideoJobQueue()
+
+    # Act / Assert — no PersistenceError; just a no-op.
+    await queue.update_status(job_id="ghost", status=VideoJobStatus.RENDERING)
+
+
 async def test_heartbeat_refreshes_the_lease() -> None:
     # Arrange — an injected clock makes lease timing deterministic (no sleeps).
     ticks = iter(
@@ -340,6 +377,17 @@ class _FakeQuery:
         self._call["filters"][column] = value
         return self
 
+    @property
+    def not_(self) -> "_FakeQuery":
+        self._call["negate_next"] = True
+        return self
+
+    def in_(self, column: str, values: list[Any]) -> "_FakeQuery":
+        # `.not_.in_(...)` records a not-in filter; a bare `.in_(...)` an in filter.
+        key = "not_in" if self._call.pop("negate_next", False) else "in"
+        self._call.setdefault(key, {})[column] = list(values)
+        return self
+
     def limit(self, n: int) -> "_FakeQuery":
         return self
 
@@ -477,6 +525,33 @@ async def test_patching_a_vanished_job_raises() -> None:
     # Act / Assert — mirrors the in-memory double: never a silent no-op.
     with pytest.raises(PersistenceError):
         await queue.complete(job_id="ghost")
+
+
+async def test_update_status_patches_only_non_terminal_rows() -> None:
+    # Arrange
+    client = _FakeClient(update_count=1)
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act
+    await queue.update_status(job_id="job-1", status=VideoJobStatus.RENDERING)
+
+    # Assert — the patch sets the stage by id, but ONLY where the row is not already terminal (a
+    # late stage write must never resurrect a settled job), and stamps updated_at.
+    call = client.calls[0]
+    assert call["op"] == "update"
+    assert call["patch"]["status"] == "rendering"
+    assert "updated_at" in call["patch"]
+    assert call["filters"] == {"id": "job-1"}
+    assert call["not_in"] == {"status": ["ready", "failed"]}
+
+
+async def test_update_status_on_a_vanished_or_settled_job_is_a_silent_noop() -> None:
+    # Arrange — the filtered update matches zero rows (settled or gone).
+    client = _FakeClient(update_count=0)
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act / Assert — unlike the settle writes, a best-effort progress update never raises on 0 rows.
+    await queue.update_status(job_id="ghost", status=VideoJobStatus.RENDERING)
 
 
 async def test_fail_patches_status_and_error_by_id() -> None:

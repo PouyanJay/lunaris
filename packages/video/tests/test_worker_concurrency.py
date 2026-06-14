@@ -34,7 +34,7 @@ class _GatedPipeline:
         self.peak = 0
         self.reached_target = asyncio.Event()
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
         self.in_flight_count += 1
         self.peak = max(self.peak, self.in_flight_count)
         if self.in_flight_count >= self._target:

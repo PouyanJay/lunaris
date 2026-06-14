@@ -1,11 +1,11 @@
 import { useLessonVideo } from "../../hooks/useLessonVideo";
-import { FAILED_REGEN_MODES, readyRegenModes, type VideoJobStatus } from "../../lib/videoJobs";
+import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
 import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
-import { LunarSpinner } from "../transcript/LunarSpinner";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
+import { VideoProgress } from "./VideoProgress";
 import styles from "./LessonVideoHero.module.css";
 
 interface LessonVideoHeroProps {
@@ -19,27 +19,12 @@ interface LessonVideoHeroProps {
   pollIntervalMs?: number;
 }
 
-/** What each in-flight pipeline stage says under the shimmer (the worker's status machine).
- *  `ready`/`failed` exist only to keep the Record exhaustive (a new status is a compile error);
- *  the working stage never paints at a terminal status. */
-const WORKING_LABELS: Record<VideoJobStatus, string> = {
-  queued: "Queued",
-  planning: "Planning scenes",
-  coding: "Writing scenes",
-  rendering: "Rendering",
-  qa: "Checking quality",
-  voicing: "Adding narration",
-  assembling: "Assembling",
-  ready: "Ready",
-  failed: "Failed",
-};
-
 /** The lesson's video hero slot — the headline artifact above the prose (plan §0: hero slot).
  *
- *  One component, every state: a quiet generate affordance (idle), a shimmering 16:9 stage with a
- *  live status while the job works, the VideoFacade interaction once ready (poster → click →
- *  native player on the signed URL), a failed state with retry, the keyless refusal verbatim, and
- *  *nothing at all* when the operator kill-switch is off (a disabled feature leaves no husk). */
+ *  One component, every state: a quiet generate affordance (idle), a 16:9 stage with a determinate
+ *  progress bar + stage caption while the job works, the VideoFacade interaction once ready (poster
+ *  → click → native player on the signed URL), a failed state with retry, the keyless refusal
+ *  verbatim, and *nothing at all* when the operator kill-switch is off (no husk). */
 export function LessonVideoHero({
   apiBaseUrl,
   courseId,
@@ -68,7 +53,11 @@ export function LessonVideoHero({
         </div>
       )}
 
-      {state.phase === "working" && <WorkingStage status={state.status} />}
+      {state.phase === "working" && (
+        <div className={styles.stage}>
+          <VideoProgress status={state.status} label="Generating the lesson video" />
+        </div>
+      )}
 
       {state.phase === "ready" && (
         <>
@@ -112,17 +101,5 @@ export function LessonVideoHero({
         </p>
       )}
     </section>
-  );
-}
-
-function WorkingStage({ status }: { status: VideoJobStatus }) {
-  return (
-    <div className={styles.stage} role="status" aria-label="Generating lesson video">
-      <span className={styles.shimmer} aria-hidden="true" />
-      <span className={`mono ${styles.stageLabel}`}>
-        <LunarSpinner className={styles.spinner} />
-        {WORKING_LABELS[status] ?? "Working"}…
-      </span>
-    </div>
   );
 }

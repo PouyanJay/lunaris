@@ -195,5 +195,5 @@ async def test_finalize_leaves_videos_none_when_video_is_off(tmp_path: Path) -> 
 class _FailingPipeline:
     """A pipeline whose produce always raises — to prove finalize degrades, never blocks."""
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
         raise RuntimeError("render exploded")

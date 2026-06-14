@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 from importlib import resources
 
-from lunaris_runtime.schema import VideoJob, VideoProvenance
+from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoProvenance
 
 from lunaris_video.models.rendered_video import RenderedVideo
+from lunaris_video.protocols.video_pipeline_protocol import StageReporter
 
 # Minimal but valid regeneration artifacts so the stub exercises the same five-artifact upload
 # path the real pipeline does — the walking skeleton stays honest end to end.
@@ -22,7 +23,14 @@ class StubVideoPipeline:
     flows into the artifact + provenance), so the course-level spine is provable without Manim.
     """
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(
+        self, job: VideoJob, *, on_stage: StageReporter | None = None
+    ) -> RenderedVideo:
+        # The stub renders nothing, but it reports the two visible stages so the job spine exercises
+        # the progress path (status row + run_events) end to end, exactly as the real pipeline does.
+        if on_stage is not None:
+            await on_stage(VideoJobStatus.RENDERING)
+            await on_stage(VideoJobStatus.ASSEMBLING)
         assets = resources.files("lunaris_video") / "assets"
         return RenderedVideo(
             mp4=(assets / "stub.mp4").read_bytes(),

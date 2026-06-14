@@ -59,11 +59,18 @@ function readyView(jobId: string) {
 
 const fetchMock = vi.fn<typeof fetch>();
 
+/** No in-flight (re)generate for the slot — the default answer to the on-mount re-attach probe. */
+function noActive(): Response {
+  return new Response(null, { status: 204 });
+}
+
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
-  // Each GET /api/videos/{jobId} resolves to that job's signed URLs.
+  // GET /api/videos/{jobId}/active → 204 (nothing in flight); GET /api/videos/{jobId} → its URLs.
   fetchMock.mockImplementation((input) => {
-    const jobId = String(input).split("/videos/")[1] ?? "job";
+    const url = String(input);
+    if (url.endsWith("/active")) return Promise.resolve(noActive());
+    const jobId = url.split("/videos/")[1] ?? "job";
     return Promise.resolve(jsonResponse(200, readyView(jobId)));
   });
 });
@@ -151,7 +158,9 @@ describe("OverviewSection", () => {
   });
 
   it("shows a loading skeleton while the signed URL resolves, then the player", async () => {
-    // Arrange — hold the signed-URL fetch open so the transient loading state is observable.
+    // Arrange — hold the FIRST fetch (the ready-fetch effect, declared before the re-attach probe in
+    // useCourseVideo) open so the transient loading state is observable; later calls (incl. the
+    // /active probe) fall through to the beforeEach router (204 → no re-attach).
     let releaseUrl: (response: Response) => void = () => {};
     fetchMock.mockImplementationOnce(
       () => new Promise<Response>((resolve) => (releaseUrl = resolve)),
@@ -187,9 +196,12 @@ describe("OverviewSection", () => {
   });
 
   it("shows the outdated badge when a ready course video reports stale", async () => {
-    // The stale flag from the status read plumbs through useCourseVideo to the slot's badge.
+    // The stale flag from the status read plumbs through useCourseVideo to the slot's badge. /active
+    // is routed to 204 so the badge is asserted on the ready-fetch path, not the re-attach probe.
     fetchMock.mockImplementation((input) => {
-      const jobId = String(input).split("/videos/")[1] ?? "job";
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      const jobId = url.split("/videos/")[1] ?? "job";
       return Promise.resolve(jsonResponse(200, { ...readyView(jobId), stale: true }));
     });
 
@@ -210,9 +222,14 @@ describe("OverviewSection", () => {
     };
     fetchMock.mockReset();
     const queued = { ...readyView("sum-2"), job: { ...readyView("sum-2").job, status: "queued" } };
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(202, queued)) // regenerate POST
-      .mockResolvedValue(jsonResponse(200, readyView("sum-2"))); // poll → ready
+    // URL-routed (not call-order): /active → nothing in flight, /regenerate → the queued new job,
+    // /videos/{id} → its ready URLs — so the on-mount re-attach probe doesn't perturb the sequence.
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (url.includes("/regenerate")) return Promise.resolve(jsonResponse(202, queued));
+      return Promise.resolve(jsonResponse(200, readyView("sum-2")));
+    });
     render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
 
     // Act — the failed slot states it plainly and offers a Try again menu; Fresh take re-runs it.
@@ -226,6 +243,70 @@ describe("OverviewSection", () => {
       String(url).includes("/videos/sum-fail/regenerate"),
     );
     expect(JSON.parse(String((regen?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
+  });
+
+  it("re-attaches to an in-flight regenerate the failed artifact doesn't know about (Gap 1)", async () => {
+    // Arrange — the persisted artifact is the OLD failed job, but a regenerate is running under a
+    // NEW job id it doesn't carry (the user regenerated, then navigated away and back / refreshed).
+    const failed: VideoArtifact = {
+      kind: "summary",
+      status: "failed",
+      jobId: "sum-fail",
+      provenance: null,
+      narrated: false,
+    };
+    const activeJob = {
+      ...readyView("sum-regen"),
+      videoUrl: null,
+      posterUrl: null,
+      job: { ...readyView("sum-regen").job, status: "queued" },
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(jsonResponse(200, activeJob));
+      return Promise.resolve(jsonResponse(200, readyView("sum-regen")));
+    });
+
+    // Act — the on-mount probe discovers the live regenerate and watches it to a verdict.
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+
+    // Assert — the slot recovers the running job and plays it; it does NOT strand on "couldn't
+    // generate" (the "nothing happening" bug). The probe was keyed by the source job we held.
+    await screen.findByRole("button", { name: /play the course trailer/i });
+    expect(screen.queryByText(/couldn.t be generated/i)).toBeNull();
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).endsWith("/videos/sum-fail/active")),
+    ).toBe(true);
+  });
+
+  it("shows a labelled progress bar while a re-attached course video renders (Gap 2)", async () => {
+    // Arrange — the persisted artifact failed, but a regenerate is mid-render; the re-attach probe
+    // finds it and the slot reports its progress instead of a featureless shimmer.
+    const failed: VideoArtifact = {
+      kind: "summary",
+      status: "failed",
+      jobId: "sum-fail",
+      provenance: null,
+      narrated: false,
+    };
+    const rendering = {
+      ...readyView("sum-regen"),
+      videoUrl: null,
+      posterUrl: null,
+      job: { ...readyView("sum-regen").job, status: "rendering" },
+    };
+    // /active → the rendering job; the status poll stays rendering, so the bar is observable.
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(200, rendering)));
+
+    // Act
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+
+    // Assert — a determinate, labelled progress bar with the plain-language stage caption.
+    const bar = await screen.findByRole("progressbar", {
+      name: /generating what this course covers/i,
+    });
+    expect(Number(bar.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+    expect(screen.getByText(/rendering the scenes/i)).toBeInTheDocument();
   });
 
   it("renders nothing when neither course video was built", () => {

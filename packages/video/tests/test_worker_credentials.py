@@ -32,7 +32,7 @@ class _SecretSpyPipeline:
         self._inner = StubVideoPipeline()
         self.seen_key: str | None = "<<unset>>"
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
         self.seen_key = resolve_secret(_LLM_KEY)
         return await self._inner.produce(job)
 
@@ -134,7 +134,7 @@ async def test_concurrent_renders_never_see_each_others_keys(
             self._inner = StubVideoPipeline()
             self.seen: dict[str, str | None] = {}
 
-        async def produce(self, job: VideoJob) -> RenderedVideo:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             await both_in_flight.wait()  # both scopes are now active at the same time
             self.seen[job.user_id] = resolve_secret(_LLM_KEY)
             return await self._inner.produce(job)

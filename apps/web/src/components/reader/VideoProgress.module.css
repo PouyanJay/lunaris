@@ -1,0 +1,61 @@
+/* The render-in-progress state inside the shared 16:9 stage frame: a small determinate bar + a
+   stage caption. Calm and centered — it sits where the player/poster will, so the slot never jumps
+   when the video resolves. Tokens only; one accent (the fill); reduced-motion stops the animations. */
+
+.progress {
+  display: flex;
+  width: min(34ch, 78%);
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-500);
+  border-radius: var(--radius-full);
+  animation: videoProgressSpin 0.8s linear infinite;
+}
+
+.track {
+  height: 4px;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-full);
+}
+
+.fill {
+  height: 100%;
+  background: var(--accent-500);
+  border-radius: var(--radius-full);
+  transition: width 600ms var(--ease);
+}
+
+@keyframes videoProgressSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+  .fill {
+    transition: none;
+  }
+}

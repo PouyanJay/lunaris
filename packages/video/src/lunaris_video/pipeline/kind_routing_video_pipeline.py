@@ -5,7 +5,7 @@ from lunaris_runtime.schema import VideoJob, VideoKind
 
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.models.rendered_video import RenderedVideo
-from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline
+from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline, StageReporter
 
 _logger = structlog.get_logger(__name__)
 
@@ -23,9 +23,11 @@ class KindRoutingVideoPipeline:
     def __init__(self, *, pipelines: Mapping[VideoKind, IVideoPipeline]) -> None:
         self._pipelines = dict(pipelines)
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(
+        self, job: VideoJob, *, on_stage: StageReporter | None = None
+    ) -> RenderedVideo:
         pipeline = self._pipelines.get(job.kind)
         if pipeline is None:
             raise VideoPipelineError(f"no video pipeline configured for kind {job.kind.value}")
         _logger.info("kind_routing.dispatch", job_id=job.id, kind=job.kind.value)
-        return await pipeline.produce(job)
+        return await pipeline.produce(job, on_stage=on_stage)

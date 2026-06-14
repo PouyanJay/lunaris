@@ -57,6 +57,17 @@ class InMemoryVideoJobQueue:
             job.claimed_at = self._clock()
             job.updated_at = job.claimed_at
 
+    async def update_status(self, *, job_id: str, status: VideoJobStatus) -> None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            # Best-effort progress write: never resurrect a settled job (a stage racing the settle
+            # must not un-settle it), and a vanished job is a silent no-op — unlike the settle
+            # writes, a progress update must never fail the render.
+            if job is None or job.status in _TERMINAL:
+                return
+            job.status = status
+            job.updated_at = self._clock()
+
     async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
         await self._settle(job_id, VideoJobStatus.READY, error=None, contract_hash=contract_hash)
 

@@ -4,7 +4,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from lunaris_runtime.schema import DegradedScene, RegenerateMode, VideoJob, VideoProvenance
+from lunaris_runtime.schema import (
+    DegradedScene,
+    RegenerateMode,
+    VideoJob,
+    VideoJobStatus,
+    VideoProvenance,
+)
 from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
@@ -19,6 +25,7 @@ from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContr
 from lunaris_video.protocols.render_cache_protocol import IRenderCache
 from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesizer
 from lunaris_video.protocols.video_assembler_protocol import IVideoAssembler
+from lunaris_video.protocols.video_pipeline_protocol import StageReporter
 from lunaris_video.schemas import (
     FRAMING_ONLY_SENTINEL,
     TimingManifest,
@@ -43,6 +50,11 @@ SynthesizerProvider = Callable[[], ISpeechSynthesizer | None]
 
 def _no_synthesizer() -> ISpeechSynthesizer | None:
     """The default provider: no synthesizer, so any voice-on job fails fast (no key configured)."""
+    return None
+
+
+async def _no_stage(_: VideoJobStatus) -> None:
+    """No-op stage reporter: a producer whose caller doesn't track progress reports nowhere."""
     return None
 
 
@@ -104,7 +116,10 @@ class VideoPipeline:
         self._synthesizer_provider = synthesizer_provider
         self._sync_gate = sync_gate
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(
+        self, job: VideoJob, *, on_stage: StageReporter | None = None
+    ) -> RenderedVideo:
+        report = on_stage or _no_stage
         source = await self._source_provider.load(job)
         contract = await self._resolve_contract(job, source)
         self._factual_gate.check(contract, source.packet)
@@ -125,9 +140,14 @@ class VideoPipeline:
         workdir = self._workdir_for(job)
         # Audio-drives-video: resolve the timing manifest BEFORE the render so the scene code is
         # built against the exact per-beat windows — the WPM estimate (silent) or measured TTS
-        # (voiced). The render half is identical either way.
+        # (voiced). The render half is identical either way. A voiced job synthesizes narration here
+        # (minutes of TTS), so it reports VOICING before; a silent job's WPM estimate is instant.
+        if voice is not None:
+            await report(VideoJobStatus.VOICING)
         manifest, audio_dir = await self._resolve_timing(contract, voice, synthesizer, workdir)
+        await report(VideoJobStatus.RENDERING)
         qa_results = await self._render_scenes(contract, manifest, workdir)
+        await report(VideoJobStatus.ASSEMBLING)
         rendered = [result.scene for result in qa_results]
         video = await self._assembler.assemble(
             rendered, contract, manifest=manifest, workdir=workdir, audio_dir=audio_dir
