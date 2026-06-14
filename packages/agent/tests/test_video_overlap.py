@@ -91,10 +91,10 @@ class _StartSignalPipeline:
         self._started = started
         self._lesson_id = lesson_id
 
-    async def produce(self, job: VideoJob) -> object:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> object:
         if job.lesson_id == self._lesson_id:
             self._started.set()
-        return await self._inner.produce(job)
+        return await self._inner.produce(job, on_stage=on_stage)
 
 
 def _draft() -> CourseDraft:
