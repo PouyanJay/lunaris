@@ -80,7 +80,9 @@ export function LessonVideoHero({
 
       {state.phase === "failed" && (
         <div className={styles.failed} role="alert">
-          <span className={styles.failedTitle}>Couldn’t generate the video.</span>
+          <span className={styles.failedTitle}>
+            {state.error ?? "Couldn’t generate the video."}
+          </span>
           {state.jobId ? (
             <RegenerateMenu
               available={FAILED_REGEN_MODES}

@@ -27,7 +27,7 @@ export type CourseVideoState =
       captionsUrl: string | null;
       stale: boolean;
     }
-  | { phase: "failed" };
+  | { phase: "failed"; error?: string | null };
 
 /** Resolve a course video's playable state from its payload artifact, and let the reader regenerate
  *  it (explainer-video V5 + V6).
@@ -64,7 +64,7 @@ export function useCourseVideo(
         signal: controller.signal,
         intervalMs: pollIntervalMs,
         onWorking: (workingStatus) => setState({ phase: "working", status: workingStatus }),
-        onSettled: (view) => setState(toCourseVideoState(view.videoUrl ? view : null)),
+        onSettled: (view) => setState(toCourseVideoState(view)),
       });
     },
     [apiBaseUrl, pollIntervalMs],
@@ -81,7 +81,7 @@ export function useCourseVideo(
     setState({ phase: "loading" });
     void fetchVideoJob(apiBaseUrl, readyJobId, controller.signal).then((view) => {
       if (controller.signal.aborted) return;
-      setState(toCourseVideoState(view?.videoUrl ? view : null));
+      setState(toCourseVideoState(view));
     });
     return () => controller.abort();
   }, [apiBaseUrl, readyJobId, status]);
@@ -121,6 +121,7 @@ export function useCourseVideo(
 
 function toCourseVideoState(
   view: {
+    job?: { error?: string | null };
     videoUrl: string | null;
     posterUrl: string | null;
     captionsUrl: string | null;
@@ -135,7 +136,7 @@ function toCourseVideoState(
         captionsUrl: view.captionsUrl,
         stale: view.stale ?? false,
       }
-    : { phase: "failed" };
+    : { phase: "failed", error: view?.job?.error ?? null };
 }
 
 function initialState(

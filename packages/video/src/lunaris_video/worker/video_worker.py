@@ -21,6 +21,7 @@ from lunaris_runtime.schema import (
     VideoProvenance,
 )
 
+from lunaris_video.errors import VideoPipelineError
 from lunaris_video.models.rendered_video import RenderedVideo
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline, StageReporter
 from lunaris_video.schemas import TimingManifest
@@ -120,11 +121,10 @@ class VideoWorker:
             artifact = _build_artifact(job, rendered)
             await self._upload_artifacts(job, rendered, artifact)
         except Exception as exc:
-            # Full detail to the logs; only the class name to the owner-readable job row.
+            # Full detail to the logs; only an owner-safe reason to the job row (the reader shows
+            # it) — an actionable user_detail when the failure has one, else just the class name.
             _logger.exception("video_worker.job_failed")
-            await self._queue.fail(
-                job_id=job.id, error=f"video generation failed ({type(exc).__name__})"
-            )
+            await self._queue.fail(job_id=job.id, error=_user_error(exc))
             await sequence.emit(VideoJobStatus.FAILED, _STAGE_LABELS[VideoJobStatus.FAILED])
             return
 
@@ -248,6 +248,16 @@ class VideoWorker:
             data=artifact.model_dump_json(by_alias=True).encode(),
             content_type="application/json",
         )
+
+
+def _user_error(exc: Exception) -> str:
+    """The owner-readable failure reason for the job row. A ``VideoPipelineError`` may carry an
+    actionable ``user_detail`` (e.g. the Gate-D-retry-exhausted "turn off narration" line); without
+    one — including any non-pipeline (infrastructure) error — only the exception class name is
+    surfaced, so the full exception stays in the logs, never the owner-readable row."""
+    if isinstance(exc, VideoPipelineError) and exc.user_detail:
+        return exc.user_detail
+    return f"video generation failed ({type(exc).__name__})"
 
 
 def _build_artifact(job: VideoJob, rendered: RenderedVideo) -> VideoArtifact:

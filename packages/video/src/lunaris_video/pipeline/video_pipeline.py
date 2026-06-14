@@ -14,7 +14,7 @@ from lunaris_runtime.schema import (
 from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
-from lunaris_video.errors import VideoPipelineError
+from lunaris_video.errors import SyncGateError, VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedVideo, SceneQaResult
@@ -41,6 +41,14 @@ _logger = structlog.get_logger(__name__)
 _ELEVENLABS_PROVIDER = "elevenlabs"
 _DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 _DEFAULT_VOICE_MODEL = "eleven_multilingual_v2"
+
+# The owner-safe, actionable reason shown when a narrated video can't be synced even after the
+# plainer retry — never a raw vision critique. The two actions a user actually has: regenerate, or
+# drop narration for a silent (sync-exempt) version.
+_SYNC_FAILED_DETAIL = (
+    "We couldn't line the narration up with the visuals, even after a simpler retry. "
+    "Try regenerating, or turn off narration in Settings for a silent version."
+)
 
 # A synthesizer provider is a thunk: it resolves the tenant's ElevenLabs key (the contextvar seam)
 # at produce time and returns a synthesizer, or None when no key is available. Resolving per produce
@@ -121,7 +129,33 @@ class VideoPipeline:
     ) -> RenderedVideo:
         report = on_stage or _no_stage
         source = await self._source_provider.load(job)
-        contract = await self._resolve_contract(job, source)
+        try:
+            return await self._produce_once(job, source, report, force_simplify=False)
+        except SyncGateError as exc:
+            # Shipping a voiced video whose words describe what isn't on screen is worse than an
+            # honest failure, so a Gate D desync is never degraded. Retry ONCE with plainer scenes
+            # (far easier to sync); a second miss fails clean. The store runs only after Gate D
+            # passes, so the first attempt left no cached artifact — the retry is clean.
+            _logger.warning(
+                "video_pipeline.sync_retry_simpler",
+                job_id=job.id,
+                beat_id=exc.beat_id,
+                reason=exc.reason,
+            )
+            try:
+                return await self._produce_once(job, source, report, force_simplify=True)
+            except SyncGateError as retry_exc:
+                raise SyncGateError(
+                    retry_exc.beat_id, reason=retry_exc.reason, user_detail=_SYNC_FAILED_DETAIL
+                ) from retry_exc
+
+    async def _produce_once(
+        self, job: VideoJob, source: LessonSource, report: StageReporter, *, force_simplify: bool
+    ) -> RenderedVideo:
+        """One full pass: plan → gates → render → assemble → (Gate D). Raises ``SyncGateError`` if
+        the narrated video desyncs, which ``produce`` catches to retry plainer. ``force_simplify``
+        re-plans with the simplify directive (the Gate-D retry), ignoring any reuse mode."""
+        contract = await self._resolve_contract(job, source, force_simplify=force_simplify)
         self._factual_gate.check(contract, source.packet)
         digest = contract_hash(contract)
 
@@ -171,7 +205,9 @@ class VideoPipeline:
         )
         return self._stamp_provenance(video, job, contract, digest)
 
-    async def _resolve_contract(self, job: VideoJob, source: LessonSource) -> VideoContract:
+    async def _resolve_contract(
+        self, job: VideoJob, source: LessonSource, *, force_simplify: bool = False
+    ) -> VideoContract:
         """The contract this produce renders — the regenerate menu's four entry points (V6-T2).
 
         ``RETRY`` / ``ADD_NARRATION`` re-render the prior job's planned contract (reused from
@@ -179,17 +215,20 @@ class VideoPipeline:
         job's voice toggle is on. ``SIMPLER`` re-plans with the simplify directive; ``FRESH`` (or no
         regenerate) plans normally. A reuse mode whose prior contract is missing falls back to a
         fresh plan rather than failing the regenerate.
+
+        ``force_simplify`` (the Gate-D sync retry) overrides all of that: re-plan the plainest
+        scenes regardless of mode — the reused/normal contract just desynced, so reusing it would
+        desync again.
         """
         mode = _regenerate_mode(job)
-        if mode is not None and mode.reuses_contract:
+        if not force_simplify and mode is not None and mode.reuses_contract:
             prior = await self._prior_contract_provider.load(job)
             if prior is not None:
                 _logger.info("video_pipeline.contract_reused", job_id=job.id, mode=mode.value)
                 return prior
             _logger.info("video_pipeline.no_prior_contract", job_id=job.id, mode=mode.value)
-        return await self._plan(
-            source, _target_seconds(job), simplify=mode is RegenerateMode.SIMPLER
-        )
+        simplify = force_simplify or mode is RegenerateMode.SIMPLER
+        return await self._plan(source, _target_seconds(job), simplify=simplify)
 
     async def _plan(
         self, source: LessonSource, target_seconds: int, *, simplify: bool

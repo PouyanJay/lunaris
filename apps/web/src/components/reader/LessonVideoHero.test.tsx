@@ -46,10 +46,10 @@ function readyView(jobId = "job-1", captionsUrl: string | null = null) {
   };
 }
 
-function failedView(jobId = "job-1") {
+function failedView(jobId = "job-1", error = "Narration couldn’t be synced to the visuals.") {
   return {
     ...queuedView(jobId),
-    job: { ...queuedView(jobId).job, status: "failed", error: "video generation failed" },
+    job: { ...queuedView(jobId).job, status: "failed", error },
   };
 }
 
@@ -193,7 +193,8 @@ describe("LessonVideoHero", () => {
     // Act — generate, watch it fail.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
     const tryAgain = await screen.findByRole("button", { name: /try again/i });
-    expect(screen.getByText(/couldn.t generate/i)).toBeInTheDocument();
+    // The failed state surfaces the worker's actionable reason (job.error), not a generic line.
+    expect(screen.getByText(/narration couldn.t be synced/i)).toBeInTheDocument();
 
     // Act — open the menu and pick Fresh take; the regenerated job renders.
     fireEvent.click(tryAgain);
