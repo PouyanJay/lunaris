@@ -21,6 +21,7 @@ from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.schemas import (
     ChapteredSceneContracts,
+    QaDefect,
     QaVerdict,
     SceneContract,
     SceneTiming,
@@ -66,6 +67,19 @@ class _SpyRenderer:
 class _CleanVision:
     async def inspect(self, frames: list[bytes], scene: SceneContract) -> QaVerdict:
         return QaVerdict(passed=True)
+
+
+class _StubbornVision:
+    """Gate B's vision double that never passes — every scene exhausts the repair budget, so the
+    gate degrades to best-effort (the pipeline ships the video with the defects recorded)."""
+
+    def __init__(self, issue: str = "title text overflows the frame") -> None:
+        self._issue = issue
+
+    async def inspect(self, frames: list[bytes], scene: SceneContract) -> QaVerdict:
+        return QaVerdict(
+            passed=False, defects=[QaDefect(issue=self._issue, fix_hint="scale to fit")]
+        )
 
 
 class _FakeFrames:
@@ -176,6 +190,7 @@ def _pipeline(
     sync_gate: SyncGate | None = None,
     chaptered: bool = False,
     prior_contract_provider: IPriorContractProvider | None = None,
+    vision: object | None = None,
 ) -> VideoPipeline:
     codegen = codegen or _CodegenStub()
     return VideoPipeline(
@@ -184,7 +199,10 @@ def _pipeline(
         factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
         visual_qa_gate=VisualQaGate(
-            vision=_CleanVision(), codegen=codegen, renderer=renderer, frames=_FakeFrames()
+            vision=vision or _CleanVision(),
+            codegen=codegen,
+            renderer=renderer,
+            frames=_FakeFrames(),
         ),
         assembler=assembler,
         cache=cache,
@@ -242,6 +260,43 @@ async def test_produce_stamps_grounding_provenance_at_the_source(
     assert provenance.claim_ids == ["c1"]
     assert provenance.contract_hash  # the regeneration key, populated
     assert provenance.generated_at  # an ISO-8601 instant, stamped at the source
+
+
+async def test_a_persistent_gate_b_defect_ships_the_best_render_with_degraded_provenance(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — Gate B never passes (a stubborn title-overflow defect). The whole video must NOT
+    # fail on one scene (the 'publish anyway' degrade); it ships the best render with the defect on
+    # record in provenance.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path, vision=_StubbornVision())
+
+    # Act — produces a real video despite the unclearable defect (no SceneQaError bubbles up).
+    video = await pipeline.produce(_job())
+
+    # Assert — the artifact exists AND its provenance honestly records the degraded scene.
+    assert video.mp4[4:8] == b"ftyp"
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert len(provenance.degraded_scenes) == 1
+    degraded = provenance.degraded_scenes[0]
+    assert degraded.scene_id == "S1_problem"
+    assert "title text overflows the frame" in degraded.issues
+
+
+async def test_a_clean_video_records_no_degraded_scenes(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — every scene passes Gate B (the default clean vision).
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    pipeline = _pipeline(invoke, _SpyRenderer(), _SpyAssembler(), ContractHashCache(), tmp_path)
+
+    # Act
+    video = await pipeline.produce(_job())
+
+    # Assert — a clean render leaves the degrade list empty (provenance says nothing was degraded).
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.degraded_scenes == []
 
 
 async def test_a_cache_hit_restamps_provenance_for_the_requesting_job(

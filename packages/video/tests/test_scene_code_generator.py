@@ -31,6 +31,12 @@ class S1Problem(Scene):
 """
 
 
+def _valid_source_for(scene: SceneContract) -> str:
+    # The validator rejects a class name that does not match the scene, so a repair test whose scene
+    # is not S1Problem needs source carrying that scene's own class name.
+    return _VALID_SOURCE.replace("S1Problem", scene.scene_class_name)
+
+
 async def test_generate_returns_validated_source(
     make_scene: Callable[..., SceneContract],
 ) -> None:
@@ -154,6 +160,50 @@ async def test_both_repair_prompts_keep_the_beat_timing_windows(
         for beat in timing.beats:
             assert beat.id in prompt
             assert f"{beat.anim_s}" in prompt
+
+
+async def test_visual_repair_prompt_adds_hook_title_guidance_for_a_hook_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a hook scene is the stubborn Gate-B archetype; its visual-repair prompt gets the
+    # extra targeted guidance (overflow / contrast / overlap) so the repair has a better shot.
+    scene = make_scene(1, "hook")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.repair_visual(
+        scene,
+        source=_valid_source_for(scene),
+        defects=[QaDefect(issue="title overflows", fix_hint="scale it")],
+        timing=_timing_for(scene),
+    )
+
+    # Assert — the hook/title hint is present, naming the concrete fix.
+    prompt = stub.prompts[0]
+    assert "HOOK / TITLE" in prompt
+    assert "scale_to_fit_width" in prompt
+
+
+async def test_visual_repair_prompt_omits_hook_guidance_for_a_body_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — an ordinary mechanism scene is not a hook/title, so the prompt stays focused on its
+    # own defects without the title-card guidance.
+    scene = make_scene(2, "mechanism")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.repair_visual(
+        scene,
+        source=_valid_source_for(scene),
+        defects=[QaDefect(issue="overlap", fix_hint="separate")],
+        timing=_timing_for(scene),
+    )
+
+    # Assert
+    assert "HOOK / TITLE" not in stub.prompts[0]
 
 
 @pytest.mark.parametrize(
