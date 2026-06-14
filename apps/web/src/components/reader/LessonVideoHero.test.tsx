@@ -90,9 +90,9 @@ describe("LessonVideoHero", () => {
     // Act — the user asks for the video.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
 
-    // Assert — findByRole polls until React flushes the enqueue response → working transition;
-    // the status poll's promise is still pending here, so the working state is observable.
-    expect(await screen.findByRole("status")).toBeInTheDocument();
+    // Assert — findByRole polls until React flushes the enqueue response → working transition; the
+    // status poll's promise is still pending here, so the working state (a progress bar) is observable.
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
     releasePoll(jsonResponse(200, readyView()));
     // …then the ready poster; playing mounts a native <video> on the signed URL.
     const play = await screen.findByRole("button", { name: /play lesson video/i });

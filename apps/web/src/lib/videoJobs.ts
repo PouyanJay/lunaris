@@ -20,6 +20,34 @@ export type VideoJobStatus =
   | "ready"
   | "failed";
 
+/** A determinate progress reading for a working video job: a percent (for the bar) and a plain-
+ *  language stage label (for the caption). Mapped from the job status the worker advances through
+ *  (planning → voicing? → rendering → assembling → ready); the percents rise monotonically so the
+ *  bar only ever moves forward. The terminal `ready`/`failed` are included for completeness — the
+ *  slot renders the player / failed message rather than this bar once a job settles. */
+export function videoProgress(status: VideoJobStatus): { percent: number; label: string } {
+  switch (status) {
+    case "queued":
+      return { percent: 6, label: "Queued" };
+    case "planning":
+      return { percent: 18, label: "Planning the storyboard" };
+    case "coding":
+      return { percent: 34, label: "Writing the animation" };
+    case "voicing":
+      return { percent: 46, label: "Recording the narration" };
+    case "rendering":
+      return { percent: 64, label: "Rendering the scenes" };
+    case "qa":
+      return { percent: 80, label: "Checking the visuals" };
+    case "assembling":
+      return { percent: 92, label: "Assembling the video" };
+    case "ready":
+      return { percent: 100, label: "Ready" };
+    case "failed":
+      return { percent: 100, label: "Couldn’t generate" };
+  }
+}
+
 export interface VideoJobWire {
   id: string;
   userId: string;

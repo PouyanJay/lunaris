@@ -36,10 +36,12 @@
   color: var(--text-secondary);
 }
 
-/* The 16:9 stage every media state shares (mirrors VideoFacade's frame). */
+/* The 16:9 stage the working state uses (mirrors VideoFacade's frame); it centres the progress bar,
+   so resolving to the player never shifts the layout. */
 .stage {
-  position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   aspect-ratio: 16 / 9;
   width: 100%;
   overflow: hidden;
@@ -48,50 +50,9 @@
   border-radius: var(--radius-md);
 }
 
-/* Working: shimmer + a centred mono status line. */
-.shimmer {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    100deg,
-    var(--bg-subtle) 30%,
-    var(--bg-muted) 50%,
-    var(--bg-subtle) 70%
-  );
-  background-size: 200% 100%;
-  animation: heroShimmer 1.4s var(--ease) infinite;
-}
-
-@keyframes heroShimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
-
-.stageLabel {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-size: var(--text-xs);
-  letter-spacing: 0.1em;
-  /* --text-secondary, not --text-muted: this is meaningful status text on the shimmer and must
-     hold 4.5:1 in both themes (enterprise-ui review B1). */
-  color: var(--text-secondary);
-}
-
-.spinner {
-  flex: none;
-}
-
-/* The ready state's poster→play→native-player stage lives in GeneratedVideoPlayer (shared with the
-   course Overview section); this module keeps only the idle / working / failed / keyless states. */
+/* Working: the determinate progress bar + stage caption live in the shared VideoProgress component.
+   The ready state's poster→play→native-player stage lives in GeneratedVideoPlayer (also shared with
+   the course Overview section); this module keeps only the idle / working / failed / keyless states. */
 
 /* Failed: a recoverable state with the retry beside the message. */
 .failed {
@@ -119,10 +80,4 @@
   background: var(--bg-subtle);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .shimmer {
-    animation: none;
-  }
 }

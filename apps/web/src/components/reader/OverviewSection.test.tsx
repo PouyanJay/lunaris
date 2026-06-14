@@ -274,6 +274,36 @@ describe("OverviewSection", () => {
     ).toBe(true);
   });
 
+  it("shows a labelled progress bar while a re-attached course video renders (Gap 2)", async () => {
+    // Arrange — the persisted artifact failed, but a regenerate is mid-render; the re-attach probe
+    // finds it and the slot reports its progress instead of a featureless shimmer.
+    const failed: VideoArtifact = {
+      kind: "summary",
+      status: "failed",
+      jobId: "sum-fail",
+      provenance: null,
+      narrated: false,
+    };
+    const rendering = {
+      ...readyView("sum-regen"),
+      videoUrl: null,
+      posterUrl: null,
+      job: { ...readyView("sum-regen").job, status: "rendering" },
+    };
+    // /active → the rendering job; the status poll stays rendering, so the bar is observable.
+    fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(200, rendering)));
+
+    // Act
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+
+    // Assert — a determinate, labelled progress bar with the plain-language stage caption.
+    const bar = await screen.findByRole("progressbar", {
+      name: /generating what this course covers/i,
+    });
+    expect(Number(bar.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
+    expect(screen.getByText(/rendering the scenes/i)).toBeInTheDocument();
+  });
+
   it("renders nothing when neither course video was built", () => {
     // Arrange / Act — a video-on build where both course-level renders were absent.
     const { container } = render(<OverviewSection videos={{}} apiBaseUrl={API} />);

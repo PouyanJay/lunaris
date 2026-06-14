@@ -4,6 +4,7 @@ import type { CourseVideos, VideoArtifact } from "../../types/course";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
+import { VideoProgress } from "./VideoProgress";
 import styles from "./OverviewSection.module.css";
 
 interface OverviewSectionProps {
@@ -63,9 +64,14 @@ function CourseVideoSlot({
       {/* h2: a peer of the lesson title under the course h1 — the Overview renders before the lesson,
           so an h3 here would skip a level (a11y heading hierarchy). */}
       <h2 className={styles.slotTitle}>{title}</h2>
-      {(state.phase === "loading" || state.phase === "working") && (
+      {state.phase === "loading" && (
         <div className={styles.stage} role="status" aria-label={`Loading ${title}`}>
           <span className={styles.shimmer} aria-hidden="true" />
+        </div>
+      )}
+      {state.phase === "working" && (
+        <div className={styles.stage}>
+          <VideoProgress status={state.status} label={`Generating ${title}`} />
         </div>
       )}
       {state.phase === "ready" && (
