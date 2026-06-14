@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   enqueueLessonVideo,
+  findActiveVideoJob,
   pollVideoJob,
   regenerateVideo,
   resolveJobId,
@@ -99,6 +100,20 @@ export function useLessonVideo(
     }
     return stopPolling;
   }, [apiBaseUrl, courseId, lessonId, builtStatus, builtJobId, watch, stopPolling]);
+
+  // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): ask
+  // the server for the slot's live job — keyed by the source job we DO hold — and watch it. A live
+  // job wins over the stale built state, so a regenerate survives a refresh / navigate-away instead
+  // of the slot reverting to "couldn't generate".
+  useEffect(() => {
+    if (!builtJobId) return;
+    const controller = new AbortController();
+    void findActiveVideoJob(apiBaseUrl, builtJobId, controller.signal).then((view) => {
+      if (controller.signal.aborted || !view) return;
+      watch(view.job.id);
+    });
+    return () => controller.abort();
+  }, [apiBaseUrl, courseId, lessonId, builtJobId, watch]);
 
   const generate = useCallback(() => {
     stopPolling();

@@ -128,6 +128,27 @@ export async function regenerateVideo(
   return { kind: "accepted", view: (await response.json()) as VideoJobView };
 }
 
+/** The slot's currently in-flight (re)generate job, or null when nothing is rendering (204) or it
+ *  can't be read (gone, unauthorized, network). Keyed by the SOURCE job id the reader already holds
+ *  (`resolveJobId` of the persisted artifact) so a regenerate whose new job_id the artifact doesn't
+ *  know can still be re-attached after a refresh / navigate-away (the "nothing happening" bug). */
+export async function findActiveVideoJob(
+  apiBaseUrl: string,
+  sourceJobId: string,
+  signal?: AbortSignal,
+): Promise<VideoJobView | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/videos/${encodeURIComponent(sourceJobId)}/active`,
+      signal ? { signal } : undefined,
+    );
+    if (response.status === 204 || !response.ok) return null;
+    return (await response.json()) as VideoJobView;
+  } catch {
+    return null;
+  }
+}
+
 /** One job's current view, or null when it can't be read (gone, unauthorized, network). */
 export async function fetchVideoJob(
   apiBaseUrl: string,

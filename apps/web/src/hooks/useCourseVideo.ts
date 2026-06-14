@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchVideoJob,
+  findActiveVideoJob,
   pollVideoJob,
   regenerateVideo,
   resolveJobId,
@@ -50,6 +51,25 @@ export function useCourseVideo(
   );
   const controllerRef = useRef<AbortController | null>(null);
 
+  // Watch one job to a verdict: working while it renders, ready/failed once it settles. Shared by
+  // the regenerate path and the on-mount re-attach so both surface progress identically.
+  const watch = useCallback(
+    (watchJobId: string) => {
+      if (!apiBaseUrl) return;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      setState({ phase: "working", status: "queued" });
+      void pollVideoJob(apiBaseUrl, watchJobId, {
+        signal: controller.signal,
+        intervalMs: pollIntervalMs,
+        onWorking: (workingStatus) => setState({ phase: "working", status: workingStatus }),
+        onSettled: (view) => setState(toCourseVideoState(view.videoUrl ? view : null)),
+      });
+    },
+    [apiBaseUrl, pollIntervalMs],
+  );
+
   useEffect(() => {
     controllerRef.current?.abort();
     if (status !== "ready" || !readyJobId || !apiBaseUrl) {
@@ -66,6 +86,20 @@ export function useCourseVideo(
     return () => controller.abort();
   }, [apiBaseUrl, readyJobId, status]);
 
+  // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): on
+  // mount, ask the server for the slot's live job — keyed by the source job we hold — and watch it.
+  // A live job wins over the stale built state, so a regenerate survives a refresh / navigate-away
+  // instead of the slot showing the old failed/empty state.
+  useEffect(() => {
+    if (!apiBaseUrl || !jobId) return;
+    const controller = new AbortController();
+    void findActiveVideoJob(apiBaseUrl, jobId, controller.signal).then((view) => {
+      if (controller.signal.aborted || !view) return;
+      watch(view.job.id);
+    });
+    return () => controller.abort();
+  }, [apiBaseUrl, jobId, watch]);
+
   const regenerate = useCallback(
     (mode: RegenerateMode) => {
       if (!apiBaseUrl || !jobId) return;
@@ -76,17 +110,10 @@ export function useCourseVideo(
           setState({ phase: "failed" });
           return;
         }
-        const controller = new AbortController();
-        controllerRef.current = controller;
-        void pollVideoJob(apiBaseUrl, result.view.job.id, {
-          signal: controller.signal,
-          intervalMs: pollIntervalMs,
-          onWorking: (workingStatus) => setState({ phase: "working", status: workingStatus }),
-          onSettled: (view) => setState(toCourseVideoState(view.videoUrl ? view : null)),
-        });
+        watch(result.view.job.id);
       });
     },
-    [apiBaseUrl, jobId, pollIntervalMs],
+    [apiBaseUrl, jobId, watch],
   );
 
   return { state, regenerate };

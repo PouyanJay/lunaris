@@ -274,6 +274,69 @@ async def test_enqueue_stamps_the_tenants_length_and_voice(
     assert stored.config["voice"] is False
 
 
+# ── Gap 1: re-attach to the slot's active job ─────────────────────────────────────
+
+
+async def test_active_returns_the_in_flight_job_for_the_slot(
+    client: httpx.AsyncClient,
+) -> None:
+    # Arrange — enqueue a lesson video; it is the slot's active (non-terminal) job.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+
+    # Act — the reader (holding the source jobId) asks for the slot's current active job.
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
+
+    # Assert — the in-flight job is returned (here, the job itself, still rendering).
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == job_a
+    assert body["status"] not in ("ready", "failed")
+
+
+async def test_active_finds_a_regenerate_started_after_the_source_settled(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the source job failed; a regenerate enqueued a NEW job for the same slot, whose id
+    # the persisted (failed) artifact does not know.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.fail(job_id=job_a, error="qa failed")
+    job_b = (
+        await client.post(
+            f"/api/videos/{job_a}/regenerate", headers=auth_headers(USER_A), json={"mode": "fresh"}
+        )
+    ).json()["job"]["id"]
+
+    # Act — the reader still only knows the OLD (failed) job id.
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
+
+    # Assert — it re-attaches to the live regenerate, not the stale failed source.
+    assert response.status_code == 200
+    assert response.json()["job"]["id"] == job_b
+
+
+async def test_active_is_204_when_nothing_is_in_flight(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the slot's only job settled; nothing is rendering.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.fail(job_id=job_a, error="x")
+
+    # Act / Assert — no active job → 204, so the reader keeps its terminal state.
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
+    assert response.status_code == 204
+
+
+async def test_active_is_404_for_another_users_source_job(
+    client: httpx.AsyncClient,
+) -> None:
+    # Arrange — A's job; B must not probe it (existence never leaks across tenants).
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+
+    # Act / Assert
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_B))
+    assert response.status_code == 404
+
+
 # ── enqueue + status read ─────────────────────────────────────────────────────────
 
 

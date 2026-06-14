@@ -55,6 +55,11 @@ function failedView(jobId = "job-1") {
 
 const fetchMock = vi.fn<typeof fetch>();
 
+/** No in-flight (re)generate for the slot — the default answer to the on-mount re-attach probe. */
+function noActive(): Response {
+  return new Response(null, { status: 204 });
+}
+
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -254,7 +259,13 @@ describe("LessonVideoHero", () => {
       provenance: null,
       narrated: false,
     };
-    fetchMock.mockResolvedValue(jsonResponse(200, { ...readyView("built-1"), stale: true }));
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/active")
+          ? noActive()
+          : jsonResponse(200, { ...readyView("built-1"), stale: true }),
+      ),
+    );
 
     // Act — no generate click: the built video resolves on its own.
     render(<LessonVideoHero {...PROPS} video={built} />);
@@ -278,10 +289,17 @@ describe("LessonVideoHero", () => {
       provenance: null,
       narrated: false,
     };
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, { ...readyView("built-1"), stale: true })) // resolve
-      .mockResolvedValueOnce(jsonResponse(202, queuedView("job-2"))) // regenerate
-      .mockResolvedValue(jsonResponse(200, { ...readyView("job-2"), stale: false })); // poll new
+    // URL-routed so the on-mount re-attach probe (/active → nothing in flight) doesn't perturb the
+    // resolve → regenerate → poll-new sequence.
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (url.includes("/regenerate"))
+        return Promise.resolve(jsonResponse(202, queuedView("job-2")));
+      if (url.includes("/videos/built-1"))
+        return Promise.resolve(jsonResponse(200, { ...readyView("built-1"), stale: true }));
+      return Promise.resolve(jsonResponse(200, { ...readyView("job-2"), stale: false }));
+    });
     render(<LessonVideoHero {...PROPS} video={built} />);
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.getByText("OUTDATED")).toBeInTheDocument();
@@ -303,12 +321,45 @@ describe("LessonVideoHero", () => {
       provenance: null,
       narrated: false,
     };
-    fetchMock.mockResolvedValue(jsonResponse(200, { ...readyView("built-1"), stale: false }));
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/active")
+          ? noActive()
+          : jsonResponse(200, { ...readyView("built-1"), stale: false }),
+      ),
+    );
 
     render(<LessonVideoHero {...PROPS} video={built} />);
 
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.queryByText("OUTDATED")).toBeNull();
+  });
+
+  it("re-attaches to an in-flight regenerate after a reload (Gap 1)", async () => {
+    // Arrange — the persisted built artifact is FAILED (the old job), but a regenerate is running
+    // under a new job id the artifact doesn't carry. The on-mount probe re-attaches to it.
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "failed",
+      jobId: "built-fail",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(jsonResponse(200, queuedView("regen-1")));
+      return Promise.resolve(jsonResponse(200, readyView("regen-1")));
+    });
+
+    // Act — the probe finds the live regenerate and watches it to a playable video.
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    // Assert — the slot recovers the running job (not the stale failed state), keyed by the source
+    // job id we held.
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).endsWith("/videos/built-fail/active")),
+    ).toBe(true);
   });
 
   it("resets to idle when the lesson changes", async () => {
