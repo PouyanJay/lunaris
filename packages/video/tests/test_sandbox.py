@@ -2,15 +2,52 @@
 wall-clock kill, minimal env, bounded output, bounded file writes — proven by running actual
 children, not by asserting on argv strings."""
 
+import resource
 import sys
 from pathlib import Path
 
 import pytest
 from lunaris_video.rendering import run_sandboxed
+from lunaris_video.rendering.sandbox import _apply_rlimits, _nproc_limit
 
 
 def _python(code: str) -> list[str]:
     return [sys.executable, "-c", code]
+
+
+def test_nproc_cap_is_off_in_process_and_on_in_the_dedicated_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # In-process (no dedicated-worker flag): RLIMIT_NPROC is per-UID, so capping it would throttle
+    # the API the worker shares a UID with — the resolver must return None (no cap) there.
+    monkeypatch.delenv("LUNARIS_VIDEO_DEDICATED_WORKER", raising=False)
+    assert _nproc_limit() is None
+
+    # The dedicated worker container (its own UID) sets the flag — the cap turns on, with a sane
+    # default and an env override; a bogus override falls back to the default rather than disabling.
+    monkeypatch.setenv("LUNARIS_VIDEO_DEDICATED_WORKER", "1")
+    assert _nproc_limit() == 512
+    monkeypatch.setenv("LUNARIS_VIDEO_NPROC_LIMIT", "64")
+    assert _nproc_limit() == 64
+    monkeypatch.setenv("LUNARIS_VIDEO_NPROC_LIMIT", "not-a-number")
+    assert _nproc_limit() == 512
+
+
+def test_apply_rlimits_caps_nproc_only_when_a_limit_is_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # White-box: record setrlimit calls instead of mutating the test process's real limits.
+    calls: list[int] = []
+    monkeypatch.setattr(resource, "setrlimit", lambda which, limits: calls.append(which))
+
+    # In-process mode (nproc_limit=None): the fork-bomb cap must NOT be applied (protects the API).
+    _apply_rlimits(mem_limit_bytes=1, cpu_seconds=1, nproc_limit=None)
+    assert resource.RLIMIT_NPROC not in calls
+
+    # Dedicated worker (a concrete cap): RLIMIT_NPROC is set, alongside the existing limits.
+    calls.clear()
+    _apply_rlimits(mem_limit_bytes=1, cpu_seconds=1, nproc_limit=128)
+    assert resource.RLIMIT_NPROC in calls
 
 
 async def test_a_hanging_child_is_killed_at_the_wall_clock(tmp_path: Path) -> None:

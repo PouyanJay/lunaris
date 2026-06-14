@@ -68,6 +68,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The dedicated video-worker image (explainer-video V7) — built + pushed by SHA (the same
+      # ACR/lunaris-video-worker:<sha> ref cd-prod imports). Gated on the per-env flag so envs with
+      # video off pay nothing.
+      - name: Build & push video-worker image (linux/amd64)
+        if: vars.VIDEO_GENERATION_ENABLED == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-video-worker:${{ github.sha }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
       - name: Setup Supabase CLI
         if: vars.SUPABASE_DB_POOLER_HOST != ''
         uses: supabase/setup-cli@v1
@@ -82,7 +97,7 @@ jobs:
           PGPW: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           ENCPW=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PGPW'],safe=''))")
-          URL="postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${ENCPW}@${{ vars.SUPABASE_DB_POOLER_HOST }}:5432/postgres"
+          URL="postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${ENCPW}@${{ vars.SUPABASE_DB_POOLER_HOST }}:5432/postgres?sslmode=require"
           supabase db push --db-url "$URL"
 
       - name: Note migration skip
@@ -110,7 +125,42 @@ jobs:
               withByok="${{ vars.WITH_BYOK || 'false' }}" \
               draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
-              keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}"
+              keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}" \
+              videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}"
+
+      # The dedicated video-worker Container App (explainer-video V7) — drains video_jobs and renders
+      # Manim. Deployed only where video is on; KEDA scales it 0→N on the pending-job count, so it
+      # sits at zero until the API (with the flag on) enqueues. The KEDA scaler reads a read-only
+      # count over the same IPv4 pooler the migrations use; without a pooler host it deploys scaler-
+      # less (idles at 0) instead of failing.
+      - name: Deploy video worker (video.bicep, dev)
+        if: vars.VIDEO_GENERATION_ENABLED == 'true'
+        env:
+          PGPW: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          PG_CONN=""
+          if [ -n "${{ vars.SUPABASE_DB_POOLER_HOST }}" ]; then
+            ENCPW=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PGPW'],safe=''))")
+            PG_CONN="postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${ENCPW}@${{ vars.SUPABASE_DB_POOLER_HOST }}:5432/postgres?sslmode=require"
+          else
+            echo "::warning::SUPABASE_DB_POOLER_HOST unset — video worker deploys without the KEDA scaler (idles at 0)."
+          fi
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-dev-video-${{ github.run_number }}" \
+            --template-file infra/video.bicep \
+            --parameters \
+              env=dev \
+              location="${{ vars.LOCATION }}" \
+              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-video-worker:${{ github.sha }}" \
+              managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
+              managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              keyVaultUri="${{ vars.KEYVAULT_URI }}" \
+              supabaseUrl="${{ vars.SUPABASE_URL }}" \
+              withByok="${{ vars.WITH_BYOK || 'false' }}" \
+              videoJobsDbConnection="$PG_CONN"
 
       # Alert rules scope to the Container App, so they deploy right after it (idempotent).
       - name: Deploy alert rules (alerts.bicep, dev)

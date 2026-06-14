@@ -83,3 +83,17 @@ class SupabaseVideoStorage:
                 f"download for {path!r} returned {type(data).__name__}, not bytes"
             )
         return bytes(data)
+
+    @guard("course-videos delete")
+    async def delete(self, *, paths: list[str]) -> None:
+        if not paths:
+            return  # nothing to remove — don't round-trip an empty batch
+
+        client = self._ensure_client()
+
+        def _run() -> object:
+            bucket = client.storage.from_(_BUCKET)  # type: ignore[attr-defined]
+            # remove() is idempotent: missing paths are simply not in the returned list, not errors.
+            return bucket.remove(paths)
+
+        await asyncio.to_thread(_run)

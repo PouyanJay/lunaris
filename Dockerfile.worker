@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1
+#
+# Container image for the Lunaris VIDEO WORKER (explainer-video V7). It runs the SAME VideoWorker
+# loop the API runs in-process (plan §1.1) — composed from the SAME lunaris-api dependencies.py, so
+# there is zero drift between the two deployments and the cloud worker can resolve per-job tenant
+# keys from the BYOK vault. The only difference is the entry point (`lunaris_api.worker_entrypoint`)
+# and that the Manim render toolchain (cairo/pango + ffmpeg, NO LaTeX) is baked in here, never in the
+# lean API image (Dockerfile.api). Shipped to a dedicated, KEDA-scaled Azure Container App
+# (infra/video.bicep) so CPU-bound renders never share a replica with latency-sensitive API/SSE
+# traffic. Built in CI (no push) and, in cd-*, pushed to ACR.
+
+# ── builder: resolve lunaris-api + the render extra (Manim CE) into /app/.venv ────────────────────
+FROM python:3.12-slim AS builder
+
+# Pinned uv (matches the repo's toolchain + Dockerfile.api) copied from the official image.
+COPY --from=ghcr.io/astral-sh/uv:0.11.17 /uv /usr/local/bin/uv
+
+ENV UV_PYTHON_PREFERENCE=only-system \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
+# Build headers for any source builds in the Manim closure (pycairo / ManimPango compile against
+# cairo + pango headers when a matching wheel isn't used). Builder-only — the runtime stage carries
+# just the shared libraries.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential pkg-config libcairo2-dev libpango1.0-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# The render extra (`--extra render` → lunaris-video[render] = Manim CE) rides on lunaris-api's
+# closure; the worker entry point lives in lunaris_api, so apps/api is copied. apps/web + tests are
+# excluded via .dockerignore.
+COPY pyproject.toml uv.lock ./
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --package lunaris-api --extra render --no-dev
+
+# ── runtime: slim, non-root, render libs + ffmpeg, venv on PATH ───────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    LUNARIS_ENV=production \
+    # The worker runs as its OWN UID in this image, so the per-UID fork-bomb cap (RLIMIT_NPROC) in
+    # the render sandbox is safe to apply here — flip it on (it stays off in the in-process API).
+    LUNARIS_VIDEO_DEDICATED_WORKER=1
+
+# Debian security point-release upgrade (CI Trivy-gates fixable HIGH/CRITICAL), then the render
+# runtime: the cairo + pango/glib shared libraries Manim's C extensions load, and ffmpeg (a system
+# binary, not a wheel) for the assembler's concat / mux / poster. NO LaTeX (texlive) — the skill's
+# no-LaTeX rule keeps the image hundreds of MB smaller (plan §V7-T0). apt lists are dropped to keep
+# the layer slim + reproducible.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
+        libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libglib2.0-0 ffmpeg \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Unprivileged runtime user — generated Manim is untrusted code (principle 6): it runs in the
+# subprocess sandbox (rlimits + minimal env) AND the whole container drops root, so a sandbox escape
+# still lands as an unprivileged user with no way to write the image or read another UID's processes.
+RUN useradd --create-home --uid 1000 app
+WORKDIR /app
+COPY --from=builder --chown=app:app /app /app
+
+# Fail the BUILD if the render toolchain's native libraries are missing — `import manim` loads the
+# cairo/pango C extensions, so a missing runtime lib surfaces here, not at first render in cloud.
+RUN python -c "import manim; print('manim', manim.__version__)"
+
+USER app
+
+# No EXPOSE / HTTP ingress — the worker has no port. KEDA scales it on the pending-job COUNT in
+# Postgres (infra/video.bicep), not on HTTP traffic; "liveness" is draining the queue. ACA sends
+# SIGTERM on scale-in, which the entry point turns into a graceful, lease-preserving shutdown.
+CMD ["python", "-m", "lunaris_api.worker_entrypoint"]

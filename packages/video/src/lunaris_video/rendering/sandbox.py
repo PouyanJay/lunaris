@@ -26,6 +26,14 @@ _MEM_LIMIT_ENV = "LUNARIS_VIDEO_MEM_LIMIT_BYTES"
 # loop — delaying the asyncio wall-clock kill — still gets a hard kernel SIGXCPU.
 _CPU_LIMIT_MULTIPLIER = 4
 _CPU_LIMIT_GRACE_S = 30
+# Fork-bomb control (V7). RLIMIT_NPROC is PER-UID, so it is unusable in the in-process worker (it
+# would throttle the API the worker shares a UID with). The dedicated worker container runs as its
+# OWN UID with nothing else under it (Dockerfile.worker sets LUNARIS_VIDEO_DEDICATED_WORKER=1), so
+# the cap is safe there — and stops a hostile render from exhausting the host's process table. 512
+# is ample for a render (manim + a few sequential ffmpeg children); override with _NPROC_LIMIT_ENV.
+_DEDICATED_WORKER_ENV = "LUNARIS_VIDEO_DEDICATED_WORKER"
+_NPROC_LIMIT_ENV = "LUNARIS_VIDEO_NPROC_LIMIT"
+_DEFAULT_NPROC_LIMIT = 512
 
 
 def _build_minimal_env(home: Path) -> dict[str, str]:
@@ -44,31 +52,55 @@ def _build_minimal_env(home: Path) -> dict[str, str]:
     }
 
 
-def _mem_limit_bytes() -> int:
-    raw = os.getenv(_MEM_LIMIT_ENV)
+def _positive_int_env(name: str, default: int) -> int:
+    """A positive int from env ``name``, falling back to ``default`` when unset, non-numeric, or
+    non-positive — so a bogus override degrades safely rather than weakening a limit to zero."""
+    raw = os.getenv(name)
     if raw is None:
-        return _DEFAULT_MEM_LIMIT_BYTES
+        return default
     try:
         value = int(raw)
     except ValueError:
-        return _DEFAULT_MEM_LIMIT_BYTES
-    return value if value > 0 else _DEFAULT_MEM_LIMIT_BYTES
+        return default
+    return value if value > 0 else default
 
 
-def _apply_rlimits(*, mem_limit_bytes: int, cpu_seconds: int) -> None:  # pragma: no cover (child)
+def _mem_limit_bytes() -> int:
+    return _positive_int_env(_MEM_LIMIT_ENV, _DEFAULT_MEM_LIMIT_BYTES)
+
+
+def _nproc_limit() -> int | None:
+    """The per-UID process cap for the render child, or ``None`` to leave RLIMIT_NPROC untouched.
+
+    Returns ``None`` in the in-process worker (no dedicated-worker flag) — RLIMIT_NPROC is per-UID,
+    so a cap there would throttle the API the worker shares a UID with. The dedicated worker
+    container sets ``LUNARIS_VIDEO_DEDICATED_WORKER=1`` (its own UID), turning the fork-bomb cap on;
+    a bogus or non-positive override degrades to the default rather than disabling the guard.
+    """
+    if os.getenv(_DEDICATED_WORKER_ENV) != "1":
+        return None
+    return _positive_int_env(_NPROC_LIMIT_ENV, _DEFAULT_NPROC_LIMIT)
+
+
+def _apply_rlimits(
+    *, mem_limit_bytes: int, cpu_seconds: int, nproc_limit: int | None
+) -> None:  # pragma: no cover (child)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     resource.setrlimit(
         resource.RLIMIT_FSIZE, (_DEFAULT_FSIZE_LIMIT_BYTES, _DEFAULT_FSIZE_LIMIT_BYTES)
     )
     resource.setrlimit(resource.RLIMIT_NOFILE, (_NOFILE_LIMIT, _NOFILE_LIMIT))
-    # CPU + AS are suppressed the same way: a host that already imposes a tighter limit (a stricter
-    # container) must DEGRADE containment, never fail every render. NOTE: neither is a fork-bomb
-    # control — RLIMIT_NPROC is per-UID, so lowering it in this in-process (API-shared-UID) worker
-    # would starve the API itself; PID-namespace isolation is the V7 container's job.
+    # CPU + AS + NPROC are suppressed the same way: a host that already imposes a tighter limit (a
+    # stricter container) must DEGRADE containment, never fail every render.
     with contextlib.suppress(ValueError, OSError):
         resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 5))
     with contextlib.suppress(ValueError, OSError):
         resource.setrlimit(resource.RLIMIT_AS, (mem_limit_bytes, mem_limit_bytes))
+    # Fork-bomb cap — only when the dedicated worker container asked for it (its own UID). Per-UID,
+    # so NEVER applied in the in-process worker (it would throttle the shared-UID API).
+    if nproc_limit is not None:
+        with contextlib.suppress(ValueError, OSError):
+            resource.setrlimit(resource.RLIMIT_NPROC, (nproc_limit, nproc_limit))
 
 
 async def run_sandboxed(argv: list[str], *, cwd: Path, timeout_s: float) -> SandboxResult:
@@ -88,17 +120,21 @@ async def run_sandboxed(argv: list[str], *, cwd: Path, timeout_s: float) -> Sand
     - **Bounded output.** Only the stdout/stderr TAILS are kept — a print-loop can't balloon
       worker memory or logs.
 
-    NOT contained at this in-process layer, and REQUIRED of the V7 worker container (its own
-    non-root UID + PID/network namespaces): **egress** — a hostile render can still reach the
-    network, an SSRF risk against the cloud metadata endpoint / internal services even though the
-    env carries no secrets; and **fork bombs** — RLIMIT_NPROC is per-UID and unusable in a worker
-    sharing the API's UID. V7 MUST run with an egress-deny default and a process-namespace.
+    Two gaps were deferred from the in-process worker to the V7 dedicated container (its own
+    non-root UID): **fork bombs** — now capped via RLIMIT_NPROC, which is safe to set per-UID once
+    nothing but the worker runs under that UID (``_nproc_limit`` / Dockerfile.worker sets the flag);
+    and **egress** — a hostile render can still reach the network (an SSRF risk against the cloud
+    metadata endpoint / internal services even though its env carries no secrets). A per-subprocess
+    network namespace needs caps ACA Consumption does not grant, so egress containment stays at the
+    no-secrets-env layer here; tightening it (a netns / egress-deny sidecar) is a documented
+    follow-up, weighed in the V7 security review.
     """
     (cwd / "tmp").mkdir(parents=True, exist_ok=True)
     apply_rlimits = functools.partial(
         _apply_rlimits,
         mem_limit_bytes=_mem_limit_bytes(),
         cpu_seconds=int(timeout_s) * _CPU_LIMIT_MULTIPLIER + _CPU_LIMIT_GRACE_S,
+        nproc_limit=_nproc_limit(),
     )
     process = await asyncio.create_subprocess_exec(
         *argv,

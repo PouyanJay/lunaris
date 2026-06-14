@@ -47,6 +47,9 @@ param keylessLlmBaseUrl string = ''
 @description('Internal base URL of the keyless embeddings endpoint (the bge-large-en-v1.5 service). Empty = the localhost default.')
 param keylessEmbeddingsBaseUrl string = ''
 
+@description('Explainer-video generation operator kill-switch (V7). False (the default) keeps the API from enqueuing any video jobs, so the dedicated worker stays scaled to zero — prod stays dark until this flips. True (dev, and prod at the V7-T5 rollout) lets keyed+owned builds enqueue videos.')
+param videoGenerationEnabled bool = false
+
 @description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')
 param minReplicas int = (env == 'prod') ? 1 : 0
 param maxReplicas int = 3
@@ -110,6 +113,7 @@ var baseEnv = [
   { name: 'LUNARIS_CORS_ORIGINS', value: corsOrigins }
   { name: 'LUNARIS_ENV', value: env }
   { name: 'LUNARIS_DRAFT_TIER_ENABLED', value: string(draftTierEnabled) }
+  { name: 'VIDEO_GENERATION_ENABLED', value: string(videoGenerationEnabled) }
 ]
 
 // Point the keyless fallbacks at the self-hosted inference endpoints when wired; otherwise omit the

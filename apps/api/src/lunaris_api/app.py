@@ -8,11 +8,12 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from lunaris_runtime.logging import configure_logging
-from lunaris_video import VideoWorker
+from lunaris_video import run_video_workers
 
 from .config import get_settings
 from .dependencies import (
     get_run_event_store,
+    get_video_credential_resolver,
     get_video_job_queue,
     get_video_pipeline,
     get_video_storage,
@@ -41,52 +42,40 @@ _logger = structlog.get_logger()
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Own the in-process video worker for the app's lifetime (plan §1.1: locally the worker runs
-    inside the API process; in cloud the same loop ships as its own container in V7).
+    inside the API process; in cloud the same loop ships as its own container — V7).
 
     Settings come from the environment directly (not request DI — there is no request here); the
     queue/storage getters resolve to the same process singletons request handlers see, so an
     enqueue over HTTP is visible to this worker. Gated by the operator kill-switch.
+
+    The worker pool is supervised by the shared ``run_video_workers`` (V7-T0) — the exact same
+    spawn-N + drain-on-stop coroutine the standalone worker container runs, so there is one worker
+    code path, never a fork. Here it runs as a background task cancelled on shutdown; the container
+    runs it under a SIGTERM-wired stop event. ``video_workers_started/stopped`` log from inside it.
     """
     settings = get_settings()
-    worker_tasks: list[asyncio.Task[None]] = []
+    supervisor: asyncio.Task[None] | None = None
     if settings.video_generation_enabled:
-        # N in-process workers (plan §8.4) draining one shared queue — SKIP-LOCKED claims mean two
-        # workers never get the same job, so renders overlap. The queue/pipeline/storage/events are
-        # the same singletons request handlers see, shared across all workers; ids distinguish them.
-        queue = get_video_job_queue(settings)
-        pipeline = get_video_pipeline(settings)
-        storage = get_video_storage(settings)
-        run_event_store = get_run_event_store(settings)
-        # Fail-open: a misconfigured 0 still gets one worker, never zero (which stalls all jobs).
-        worker_count = max(1, settings.video_worker_count)
-        for index in range(worker_count):
-            worker = VideoWorker(
-                queue=queue,
-                pipeline=pipeline,
-                storage=storage,
-                events=run_event_store,
-                worker_id=f"api-{os.getpid()}-{index}",
+        supervisor = asyncio.create_task(
+            run_video_workers(
+                queue=get_video_job_queue(settings),
+                pipeline=get_video_pipeline(settings),
+                storage=get_video_storage(settings),
+                events=get_run_event_store(settings),
+                count=settings.video_worker_count,
+                poll_interval_seconds=settings.video_worker_poll_seconds,
+                worker_id_prefix=f"api-{os.getpid()}",
+                credential_resolver=get_video_credential_resolver(settings),
+                lease_seconds=settings.video_lease_seconds,
             )
-            worker_tasks.append(
-                asyncio.create_task(
-                    worker.run_forever(poll_interval_seconds=settings.video_worker_poll_seconds)
-                )
-            )
-        _logger.info(
-            "video_workers_started",
-            count=worker_count,
-            poll_seconds=settings.video_worker_poll_seconds,
         )
     yield
-    # Cancel all, then drain all — a job mid-render at shutdown stays PLANNING (claimed, not
-    # settled); the lease-expiry/requeue sweep (V7) re-queues it, so no work is lost silently.
-    for task in worker_tasks:
-        task.cancel()
-    for task in worker_tasks:
+    # Cancel the supervisor; it cancels + drains its workers in turn. A job mid-render at shutdown
+    # stays PLANNING (claimed, not settled); the lease-expiry/requeue sweep (V7) re-queues it.
+    if supervisor is not None:
+        supervisor.cancel()
         with contextlib.suppress(asyncio.CancelledError):
-            await task
-    if worker_tasks:
-        _logger.info("video_workers_stopped", count=len(worker_tasks))
+            await supervisor
 
 
 def _register_routers(app: FastAPI) -> None:

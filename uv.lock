@@ -1574,6 +1574,11 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
 ]
 
+[package.optional-dependencies]
+render = [
+    { name = "lunaris-video", extra = ["render"] },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=44" },
@@ -1583,11 +1588,13 @@ requires-dist = [
     { name = "lunaris-grounding", editable = "packages/grounding" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "lunaris-video", editable = "packages/video" },
+    { name = "lunaris-video", extras = ["render"], marker = "extra == 'render'", editable = "packages/video" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
     { name = "python-multipart", specifier = ">=0.0.18" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
+provides-extras = ["render"]
 
 [[package]]
 name = "lunaris-eval"
