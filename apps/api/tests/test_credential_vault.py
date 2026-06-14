@@ -77,6 +77,41 @@ async def test_set_rejects_an_empty_or_control_char_value() -> None:
         await vault.set(user_id="u-1", provider="anthropic", value="line\nbreak")
 
 
+async def test_set_trims_surrounding_whitespace_from_a_pasted_key() -> None:
+    # A trailing space/newline from a copy-paste would otherwise 401 a valid key (and last4 would be
+    # wrong). The vault trims, so the stored + revealed value is clean.
+    vault = _vault()
+
+    status = await vault.set(user_id="u-1", provider="anthropic", value="  sk-ant-secret-key\n")
+
+    assert await vault.reveal(user_id="u-1", provider="anthropic") == "sk-ant-secret-key"
+    assert status.last4 == "-key"  # last4 is taken from the trimmed value, not the raw paste
+
+
+async def test_set_rejects_a_whitespace_only_value() -> None:
+    # Trimming a blank paste leaves an empty value → the non-empty guard still fires.
+    vault = _vault()
+    with pytest.raises(ValueError):
+        await vault.set(user_id="u-1", provider="anthropic", value="   ")
+
+
+async def test_test_trims_before_probing() -> None:
+    # The probe must see the trimmed key (what gets stored), not the raw paste.
+    seen: list[str] = []
+
+    class _RecordingValidator:
+        async def validate(self, name: str, value: str) -> None:
+            seen.append(value)
+
+    vault = CredentialVault(
+        store=InMemoryCredentialStore(),
+        cipher=SecretCipher(_MASTER_KEY),
+        validator=_RecordingValidator(),
+    )
+    await vault.test(provider="elevenlabs", value="  sk_live_key  ")
+    assert seen == ["sk_live_key"]
+
+
 async def test_set_rejects_an_unknown_provider() -> None:
     vault = _vault()
     with pytest.raises(UnknownProviderError):

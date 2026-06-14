@@ -209,8 +209,8 @@ async def test_test_probe_reports_not_ok_for_a_bad_key(tmp_path: Path) -> None:
 async def test_elevenlabs_probe_reports_not_ok_for_a_rejected_key(tmp_path: Path) -> None:
     # Arrange — the REAL ElevenLabs validator with an injected probe that 401s, so the Settings
     # "Test" button's whole path (router → composite → elevenlabs probe) is exercised end to end.
-    async def reject(value: str) -> int:
-        return 401
+    async def reject(value: str) -> tuple[int, str]:
+        return 401, "invalid_api_key"
 
     validator = CompositeSecretValidator([ElevenLabsProbeValidator(probe=reject)])
     async with _build_client(tmp_path, validator=validator) as client:

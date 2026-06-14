@@ -40,6 +40,7 @@ class CredentialVault:
         malformed value, or ``SecretValidationError`` if the provider probe rejects the key. A
         rejected key is never stored."""
         self._require_known(provider)
+        value = value.strip()  # a trailing space/newline from a paste would 401 a valid key
         self._require_valid_value(value)
         # Probe before persisting, so a rejected key is never stored (parity with the file store).
         await self._validator.validate(provider, value)
@@ -69,6 +70,7 @@ class CredentialVault:
         ``ValueError`` for a malformed request, or ``SecretValidationError`` if the provider rejects
         the key."""
         self._require_known(provider)
+        value = value.strip()  # match set(): probe the key as it would be stored
         self._require_valid_value(value)
         await self._validator.validate(provider, value)
 
