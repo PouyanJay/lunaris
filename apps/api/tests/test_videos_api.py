@@ -337,6 +337,32 @@ async def test_active_is_404_for_another_users_source_job(
     assert response.status_code == 404
 
 
+async def test_active_resolves_a_course_level_video_slot(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a course-level SUMMARY video (the Overview "what this course covers" slot) has no
+    # lesson_id; the re-attach must resolve the slot on the null-lesson path too, not just lessons.
+    await queue.enqueue(
+        VideoJob(
+            id="sum-1",
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=None,
+            kind=VideoKind.SUMMARY,
+            input_hash="h",
+        )
+    )
+
+    # Act
+    response = await client.get("/api/videos/sum-1/active", headers=auth_headers(USER_A))
+
+    # Assert — the in-flight course-level job is returned (the Overview slot re-attaches).
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == "sum-1"
+    assert body["lessonId"] is None
+
+
 # ── enqueue + status read ─────────────────────────────────────────────────────────
 
 
