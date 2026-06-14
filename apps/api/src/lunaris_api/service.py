@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
-from lunaris_runtime.credentials import run_credentials
+from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import (
     ICourseStore,
@@ -59,11 +59,6 @@ RUNS_LIMIT_MAX = 200
 
 # Builds the per-run course pipeline (stub / live orchestrator / deep agent) from the shared store.
 PipelineFactory = Callable[[ICourseStore], CoursePipeline]
-
-# Resolves a user's BYOK provider keys for a run: user_id → {env-var name: key} for the keys they've
-# set (absent providers omitted). Wired from the CredentialVault when BYOK is configured; None when
-# BYOK is off (then builds run on the process environment — the admin/single-user/test path).
-CredentialResolver = Callable[[str], Awaitable[Mapping[str, str]]]
 
 # Resolves a user's non-secret runtime config for a run: user_id → {env-var name: value} for the
 # config keys they've set (absent keys omitted → the run-config env/default fallback). Same shape as

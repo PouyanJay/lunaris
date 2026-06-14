@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 
 import structlog
+from lunaris_runtime.credentials import CredentialResolver
 from lunaris_runtime.persistence import IRunEventStore, IVideoJobQueue, IVideoStorage
 
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline
@@ -19,6 +20,7 @@ async def run_video_workers(
     count: int,
     poll_interval_seconds: float,
     worker_id_prefix: str,
+    credential_resolver: CredentialResolver | None = None,
     stop: asyncio.Event | None = None,
 ) -> None:
     """Spawn ``count`` workers draining one shared queue; run until cancelled or ``stop`` is set.
@@ -31,7 +33,9 @@ async def run_video_workers(
     silently. ``count`` is floored at 1 (a misconfigured 0 would stall the queue forever).
 
     The workers share the passed queue/pipeline/storage/events: SKIP-LOCKED claims mean two never
-    get the same job, so renders overlap; ``worker_id_prefix`` distinguishes them in the logs.
+    get the same job, so renders overlap; ``worker_id_prefix`` distinguishes them in the logs. The
+    optional ``credential_resolver`` (the cloud worker's BYOK vault resolver) renders each job on
+    its owner's keys — see ``VideoWorker``.
     """
     workers = [
         VideoWorker(
@@ -40,6 +44,7 @@ async def run_video_workers(
             storage=storage,
             events=events,
             worker_id=f"{worker_id_prefix}-{index}",
+            credential_resolver=credential_resolver,
         )
         for index in range(max(1, count))
     ]

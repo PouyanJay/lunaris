@@ -463,6 +463,26 @@ def _byok_credential_resolver(vault: CredentialVault) -> CredentialResolver:
 
 
 @lru_cache
+def get_video_credential_resolver(settings: Settings) -> CredentialResolver | None:
+    """The BYOK resolver the video worker renders each job's owner on (explainer-video V7-T1).
+
+    Composed like the request-time vault (``get_credential_vault``) but OUTSIDE request DI — the
+    worker (the lifespan task locally, the dedicated container in cloud) has no request to lean on,
+    so it selects the store directly rather than through the ``Depends``-annotated getter, and is
+    cached as a startup singleton. ``None`` when BYOK is off (no master key — local dev /
+    single-user) → the render reads the process env, unchanged. In cloud the worker carries no
+    provider keys, so this is what lets a keyed tenant's render authenticate as them; an unset key
+    degrades honestly (silent voice, or a failed render with no LLM key), never billing a platform
+    key."""
+    cipher = _build_cipher(settings.key_enc_master)
+    if cipher is None:
+        return None
+    store = _supabase_credential_store if settings.has_supabase else _in_memory_credential_store
+    vault = CredentialVault(store=store, cipher=cipher, validator=get_secret_validator())
+    return _byok_credential_resolver(vault)
+
+
+@lru_cache
 def _get_keyless_build_throttle(settings: Settings) -> KeylessBuildThrottle:
     """The process-wide keyless-build throttle for the given settings (T6).
 

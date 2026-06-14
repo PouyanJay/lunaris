@@ -28,6 +28,7 @@ from lunaris_video import run_video_workers
 from .config import get_settings
 from .dependencies import (
     get_run_event_store,
+    get_video_credential_resolver,
     get_video_job_queue,
     get_video_pipeline,
     get_video_storage,
@@ -58,6 +59,7 @@ async def _run() -> None:
         count=settings.video_worker_count,
         poll_interval_seconds=settings.video_worker_poll_seconds,
         worker_id_prefix=f"worker-{os.getpid()}",
+        credential_resolver=get_video_credential_resolver(settings),
         stop=stop,
     )
     _logger.info("video_worker_container_stopped")
