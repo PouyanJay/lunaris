@@ -87,6 +87,26 @@ class SupabaseVideoJobQueue:
         now = datetime.now(UTC).isoformat()
         await self._patch(job_id, {"claimed_at": now, "updated_at": now})
 
+    @guard("video_jobs update_status")
+    async def update_status(self, *, job_id: str, status: VideoJobStatus) -> None:
+        client = self._ensure_client()
+        patch = {"status": status.value, "updated_at": datetime.now(UTC).isoformat()}
+
+        # Filter on non-terminal so a stage write that races the settle never resurrects a READY/
+        # FAILED job. A 0-row update (job settled or gone) is a deliberate no-op here, NOT the
+        # PersistenceError that `_patch` raises — a best-effort progress write must never fail the
+        # render. (`@guard` still surfaces a genuine backend error as PersistenceError.)
+        def _run() -> object:
+            return (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .update(patch)
+                .eq("id", job_id)
+                .not_.in_("status", list(_TERMINAL_STATUSES))
+                .execute()
+            )
+
+        await asyncio.to_thread(_run)
+
     @guard("video_jobs complete")
     async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
         patch: dict[str, object] = {

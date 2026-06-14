@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from lunaris_runtime.schema import VideoJob, VideoKind
+from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 
 from .lease_sweep_result import LeaseSweepResult
 
@@ -24,6 +24,14 @@ class IVideoJobQueue(Protocol):
     async def claim(self, *, worker_id: str) -> VideoJob | None: ...
 
     async def heartbeat(self, *, job_id: str) -> None: ...
+
+    async def update_status(self, *, job_id: str, status: VideoJobStatus) -> None:
+        """Reflect an in-flight stage (coding / rendering / qa / voicing / assembling) on the job
+        row so the status read shows real progress (the reader's progress bar). Best-effort and
+        idempotent: it never moves a TERMINAL job — a late stage write that races a settle must not
+        un-settle it — and a vanished or already-settled job is a silent no-op (unlike the settle
+        writes, a progress update must never fail the render)."""
+        ...
 
     async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:
         """Settle the job READY. ``contract_hash`` (the planned scene-contracts fingerprint) is

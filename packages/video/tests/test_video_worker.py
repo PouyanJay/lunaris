@@ -112,11 +112,51 @@ async def test_run_once_processes_a_job_end_to_end() -> None:
     assert artifact.narrated is False  # the stub is silent
 
 
+async def test_the_worker_reflects_pipeline_stages_on_the_job_and_the_log() -> None:
+    # Arrange — the pipeline reports its stages; the worker must reflect each on the job row (the
+    # status poll → the reader's progress bar) AND append it to the run_events log (the canvas).
+    class _StagedPipeline:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
+            assert on_stage is not None
+            await on_stage(VideoJobStatus.RENDERING)
+            await on_stage(VideoJobStatus.ASSEMBLING)
+            return RenderedVideo(
+                mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
+                poster=b"\xff\xd8\xff" + b"x" * 600,
+                contracts_json=b"{}",
+                timing_json=b"{}",
+            )
+
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        InMemoryRunEventStore(),
+    )
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, events, pipeline=_StagedPipeline())
+
+    # Act
+    await worker.run_once()
+
+    # Assert — the lifecycle log walks planning (claim) → rendering → assembling → ready, gap-free,
+    # and the job row ends READY (the terminal settle wins over the last stage).
+    recorded = await events.list_for_run(run_id="job-1", owner_id=_OWNER)
+    assert [e.payload.get("status") for e in recorded] == [
+        "planning",
+        "rendering",
+        "assembling",
+        "ready",
+    ]
+    assert [e.seq for e in recorded] == [0, 1, 2, 3]
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.READY
+
+
 async def test_a_narrated_video_uploads_a_captions_track() -> None:
     # Arrange — a narrated render carries WebVTT captions; a silent one (the stub) carries none (the
     # exact-path-set assertion in test_run_once_processes_a_job_end_to_end proves silent uploads 0).
     class _NarratedPipeline:
-        async def produce(self, job: VideoJob) -> RenderedVideo:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             return RenderedVideo(
                 mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
                 poster=b"\xff\xd8\xff" + b"x" * 600,
@@ -182,7 +222,7 @@ async def test_a_requeued_job_does_not_collide_run_events_seqs() -> None:
     started = asyncio.Event()
 
     class _LostMidRender:
-        async def produce(self, job: VideoJob) -> RenderedVideo:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             started.set()
             await asyncio.Event().wait()  # never resolves — the worker dies here
             raise AssertionError("unreachable")  # pragma: no cover
@@ -240,7 +280,7 @@ async def test_run_once_binds_the_job_id_into_log_context_while_working() -> Non
     captured: dict[str, object] = {}
 
     class _CapturingPipeline:
-        async def produce(self, job: VideoJob) -> RenderedVideo:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             captured.update(structlog.contextvars.get_contextvars())
             return RenderedVideo(
                 mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
@@ -272,7 +312,7 @@ async def test_run_once_binds_the_job_id_into_log_context_while_working() -> Non
 async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> None:
     # Arrange
     class _ExplodingPipeline:
-        async def produce(self, job: VideoJob) -> RenderedVideo:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             raise RuntimeError("manim exploded: /tmp/secret/path leaked")
 
     queue, storage, events = (

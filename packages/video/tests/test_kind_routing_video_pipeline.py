@@ -15,7 +15,7 @@ class _MarkerPipeline:
         self.marker = marker
         self.produced: list[VideoJob] = []
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
         self.produced.append(job)
         return RenderedVideo(
             mp4=self.marker.encode(), poster=b"p", contracts_json=b"{}", timing_json=b"{}"

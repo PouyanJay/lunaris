@@ -116,6 +116,43 @@ async def test_fail_records_the_error() -> None:
     assert job.error == "render exploded"
 
 
+async def test_update_status_reflects_an_in_flight_stage() -> None:
+    # Arrange — a claimed (in-flight) job; the worker reports its render stage.
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job())
+    await queue.claim(worker_id="worker-a")
+
+    # Act
+    await queue.update_status(job_id="job-1", status=VideoJobStatus.RENDERING)
+
+    # Assert — the status poll now reads the real stage (the reader's progress bar).
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.RENDERING
+
+
+async def test_update_status_never_resurrects_a_settled_job() -> None:
+    # Arrange — a job that already settled READY (a late stage write races the settle).
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job())
+    await queue.claim(worker_id="worker-a")
+    await queue.complete(job_id="job-1")
+
+    # Act — a stale stage write must NOT move it back to a working status.
+    await queue.update_status(job_id="job-1", status=VideoJobStatus.RENDERING)
+
+    # Assert — still READY (best-effort: a terminal job is never un-settled).
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.READY
+
+
+async def test_update_status_on_a_vanished_job_is_a_silent_noop() -> None:
+    # Arrange — no such job (e.g. reaped). A progress write must never raise (unlike the settles).
+    queue = InMemoryVideoJobQueue()
+
+    # Act / Assert — no PersistenceError; just a no-op.
+    await queue.update_status(job_id="ghost", status=VideoJobStatus.RENDERING)
+
+
 async def test_heartbeat_refreshes_the_lease() -> None:
     # Arrange — an injected clock makes lease timing deterministic (no sleeps).
     ticks = iter(

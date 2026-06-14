@@ -22,10 +22,21 @@ from lunaris_runtime.schema import (
 )
 
 from lunaris_video.models.rendered_video import RenderedVideo
-from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline
+from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline, StageReporter
 from lunaris_video.schemas import TimingManifest
 
 _logger = structlog.get_logger(__name__)
+
+# The human-readable label each job status carries on its run_event — what the reader's progress bar
+# shows. Coarse on purpose (the stages the pipeline actually reports), not per-scene.
+_STAGE_LABELS: dict[VideoJobStatus, str] = {
+    VideoJobStatus.PLANNING: "claimed — producing video",
+    VideoJobStatus.VOICING: "recording narration",
+    VideoJobStatus.RENDERING: "rendering scenes",
+    VideoJobStatus.ASSEMBLING: "assembling the video",
+    VideoJobStatus.READY: "video ready",
+    VideoJobStatus.FAILED: "video generation failed",
+}
 
 
 class VideoWorker:
@@ -99,11 +110,11 @@ class VideoWorker:
 
     async def _process(self, job: VideoJob) -> None:
         sequence = _EventSequence(self._events, job)
-        await sequence.emit(VideoJobStatus.PLANNING, "claimed — producing video")
+        await sequence.emit(VideoJobStatus.PLANNING, _STAGE_LABELS[VideoJobStatus.PLANNING])
         _logger.info("video_worker.job_claimed", kind=job.kind.value, attempts=job.attempts)
 
         try:
-            rendered = await self._produce(job)
+            rendered = await self._produce(job, sequence)
             artifact = _build_artifact(job, rendered)
             await self._upload_artifacts(job, rendered, artifact)
         except Exception as exc:
@@ -112,33 +123,56 @@ class VideoWorker:
             await self._queue.fail(
                 job_id=job.id, error=f"video generation failed ({type(exc).__name__})"
             )
-            await sequence.emit(VideoJobStatus.FAILED, "video generation failed")
+            await sequence.emit(VideoJobStatus.FAILED, _STAGE_LABELS[VideoJobStatus.FAILED])
             return
 
         # Write the planned contract fingerprint back onto the job row — the durable cross-process
         # regeneration cache key (V4-T1; V1 deferred it). None when the producer built none.
         contract_hash = artifact.provenance.contract_hash if artifact.provenance else None
         await self._queue.complete(job_id=job.id, contract_hash=contract_hash)
-        await sequence.emit(VideoJobStatus.READY, "video ready")
+        await sequence.emit(VideoJobStatus.READY, _STAGE_LABELS[VideoJobStatus.READY])
         _logger.info("video_worker.job_ready", job_id=job.id)
 
-    async def _produce(self, job: VideoJob) -> RenderedVideo:
+    async def _produce(self, job: VideoJob, sequence: "_EventSequence") -> RenderedVideo:
         """Render the job inside its owner's credential scope (V7-T1), with a heartbeat (V7-T4).
 
         Only the pipeline's provider calls (Claude / ElevenLabs) are scoped — infrastructure work
         (queue, storage, events) reads the process env and must never enter a tenant-only scope, so
         upload + settle stay outside it. A concurrent heartbeat extends the lease while the render
         runs, so the lease-timeout sweep can tell a live worker from a dead one (the heartbeat is
-        outside the credential scope — it touches only the queue's own infra credentials)."""
+        outside the credential scope — it touches only the queue's own infra credentials).
+
+        ``on_stage`` lets the pipeline report its render stages (voicing/rendering/assembling); the
+        worker reflects each on the job row + the run_events log for the reader's progress bar."""
         heartbeat = asyncio.create_task(self._heartbeat(job.id))
         try:
             credentials = await self._resolve_credentials(job)
             with self._credential_scope(credentials):
-                return await self._pipeline.produce(job)
+                return await self._pipeline.produce(
+                    job, on_stage=self._stage_reporter(job, sequence)
+                )
         finally:
             heartbeat.cancel()
             with suppress(asyncio.CancelledError):
                 await heartbeat
+
+    def _stage_reporter(self, job: VideoJob, sequence: "_EventSequence") -> StageReporter:
+        """A reporter the pipeline calls per render stage. It reflects the stage on the job row (the
+        status read → the reader's progress bar) and the run_events log (the build canvas).
+
+        Best-effort: a progress write never fails the render. The queue/events clients use the
+        worker's own infra creds (service-role from env), so calling them from inside the job's
+        tenant credential scope is harmless — the scope carries only the tenant's LLM keys, which
+        these never read."""
+
+        async def report(stage: VideoJobStatus) -> None:
+            try:
+                await self._queue.update_status(job_id=job.id, status=stage)
+            except PersistenceError:
+                _logger.warning("video_worker.stage_update_failed", stage=stage.value)
+            await sequence.emit(stage, _STAGE_LABELS.get(stage, stage.value))
+
+        return report
 
     async def _heartbeat(self, job_id: str) -> None:
         """Extend the job's lease every ``heartbeat_interval_s`` until cancelled (render done). A

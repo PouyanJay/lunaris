@@ -48,7 +48,7 @@ class _HeldRenderPipeline:
         self._release = release
         self._inner = StubVideoPipeline()
 
-    async def produce(self, job: VideoJob) -> RenderedVideo:
+    async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
         await self._release.wait()
         return await self._inner.produce(job)
 

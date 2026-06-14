@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 from _stubs import FakeLessonProvider, StubInvokeModel, manifest_for
-from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
+from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.video_build import target_seconds_for
 from lunaris_video.assembly import build_webvtt
 from lunaris_video.errors import FactualGateError
@@ -369,6 +369,56 @@ async def test_a_clean_video_records_no_degraded_scenes(
     # Assert — a clean render leaves the degrade list empty (provenance says nothing was degraded).
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
     assert provenance.degraded_scenes == []
+
+
+async def test_produce_reports_its_render_stages_for_the_progress_bar(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — a silent job; the pipeline must report the visible render stages so the worker can
+    # reflect them on the job row (the reader's progress bar). Silent = no voicing stage.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    pipeline = _pipeline(invoke, _SpyRenderer(), _SpyAssembler(), ContractHashCache(), tmp_path)
+    stages: list[VideoJobStatus] = []
+
+    async def on_stage(stage: VideoJobStatus) -> None:
+        stages.append(stage)
+
+    # Act
+    await pipeline.produce(_job(), on_stage=on_stage)
+
+    # Assert — rendering then assembling, in order (planning + ready are the worker's own bookends).
+    assert stages == [VideoJobStatus.RENDERING, VideoJobStatus.ASSEMBLING]
+
+
+async def test_a_voiced_produce_reports_a_voicing_stage_first(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — a voiced job synthesizes narration (minutes of TTS), so it reports VOICING before
+    # rendering — the bar shouldn't sit still through the slowest stage.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        _SpyAssembler(),
+        ContractHashCache(),
+        tmp_path,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_passing_sync_gate(),
+    )
+    stages: list[VideoJobStatus] = []
+
+    async def on_stage(stage: VideoJobStatus) -> None:
+        stages.append(stage)
+
+    # Act
+    await pipeline.produce(_voiced_job(), on_stage=on_stage)
+
+    # Assert — voicing precedes rendering precedes assembling.
+    assert stages == [
+        VideoJobStatus.VOICING,
+        VideoJobStatus.RENDERING,
+        VideoJobStatus.ASSEMBLING,
+    ]
 
 
 async def test_a_cache_hit_restamps_provenance_for_the_requesting_job(
