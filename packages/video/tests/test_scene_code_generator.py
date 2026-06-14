@@ -31,6 +31,12 @@ class S1Problem(Scene):
 """
 
 
+def _valid_source_for(scene: SceneContract) -> str:
+    # The validator rejects a class name that does not match the scene, so a repair test whose scene
+    # is not S1Problem needs source carrying that scene's own class name.
+    return _VALID_SOURCE.replace("S1Problem", scene.scene_class_name)
+
+
 async def test_generate_returns_validated_source(
     make_scene: Callable[..., SceneContract],
 ) -> None:
@@ -156,6 +162,50 @@ async def test_both_repair_prompts_keep_the_beat_timing_windows(
             assert f"{beat.anim_s}" in prompt
 
 
+async def test_visual_repair_prompt_adds_hook_title_guidance_for_a_hook_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a hook scene is the stubborn Gate-B archetype; its visual-repair prompt gets the
+    # extra targeted guidance (overflow / contrast / overlap) so the repair has a better shot.
+    scene = make_scene(1, "hook")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.repair_visual(
+        scene,
+        source=_valid_source_for(scene),
+        defects=[QaDefect(issue="title overflows", fix_hint="scale it")],
+        timing=_timing_for(scene),
+    )
+
+    # Assert — the hook/title hint is present, naming the concrete fix.
+    prompt = stub.prompts[0]
+    assert "HOOK / TITLE" in prompt
+    assert "scale_to_fit_width" in prompt
+
+
+async def test_visual_repair_prompt_omits_hook_guidance_for_a_body_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — an ordinary mechanism scene is not a hook/title, so the prompt stays focused on its
+    # own defects without the title-card guidance.
+    scene = make_scene(2, "mechanism")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.repair_visual(
+        scene,
+        source=_valid_source_for(scene),
+        defects=[QaDefect(issue="overlap", fix_hint="separate")],
+        timing=_timing_for(scene),
+    )
+
+    # Assert
+    assert "HOOK / TITLE" not in stub.prompts[0]
+
+
 @pytest.mark.parametrize(
     "violation",
     [
@@ -192,6 +242,73 @@ def test_validator_rejects_wrong_class_name(make_scene: Callable[..., SceneContr
         validate_scene_source(
             _VALID_SOURCE.replace("S1Problem", "WrongName"), make_scene(1, "problem")
         )
+
+
+def test_validator_normalizes_smart_quotes_that_would_break_parsing(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the model used typographic (curly) double-quotes as string delimiters; Python
+    # rejects them ("invalid character U+201C"). Normalize before compile, not via a wasted repair
+    # turn (the prod S1_hook smart-quote failure). Built with chr() so this source stays ASCII.
+    ldq, rdq = chr(0x201C), chr(0x201D)  # left / right double quotation marks
+    smart = _VALID_SOURCE.replace('title_bar("Sorting")', f"title_bar({ldq}Sorting{rdq})")
+
+    # Act — without normalization this raises ValueError("does not parse"); with it it passes.
+    result = validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert — the smart quotes are gone, replaced by straight ASCII quotes that parse.
+    assert ldq not in result and rdq not in result
+    assert 'title_bar("Sorting")' in result
+
+
+def test_validator_normalizes_em_en_dash_and_ellipsis(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — typographic dashes/ellipsis the model emits (here in a comment): a literal em-dash
+    # in code position is a SyntaxError, so normalize all of them everywhere, deterministically.
+    # Built with chr() so this test's own source stays ASCII.
+    em, en, ellipsis = chr(0x2014), chr(0x2013), chr(0x2026)
+    smart = _VALID_SOURCE.replace(
+        "self.play(FadeIn(title))",
+        f"self.play(FadeIn(title))  # step 1 {em} setup {en} then {ellipsis}",
+    )
+
+    # Act
+    result = validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert — em-dash, en-dash and ellipsis are normalized to ASCII.
+    assert all(ch not in result for ch in (em, en, ellipsis))
+    assert "step 1 - setup - then ..." in result
+
+
+@pytest.mark.parametrize(
+    "codepoint, replacement",
+    [
+        (0x2014, "-"),  # em dash
+        (0x2013, "-"),  # en dash
+        (0x2012, "-"),  # figure dash
+        (0x2018, "'"),  # left single quote
+        (0x2019, "'"),  # right single quote
+        (0x201C, '"'),  # left double quote
+        (0x201D, '"'),  # right double quote
+        (0x2026, "..."),  # ellipsis
+        (0x00A0, " "),  # no-break space
+    ],
+)
+def test_validator_normalizes_each_smart_codepoint(
+    make_scene: Callable[..., SceneContract], codepoint: int, replacement: str
+) -> None:
+    # Arrange — every codepoint in the normalization table is replaced with its ASCII form (built
+    # with chr() so this test's own source stays ASCII). Placed in a comment, valid either way, so
+    # the assertion isolates the normalization, not a parse side effect.
+    smart = _VALID_SOURCE.replace("clear_scene(self)", f"clear_scene(self)  # a{chr(codepoint)}b")
+
+    # Act
+    result = validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert
+    assert chr(codepoint) not in result
+    assert f"a{replacement}b" in result
 
 
 def test_validator_rejects_unparseable_source(make_scene: Callable[..., SceneContract]) -> None:

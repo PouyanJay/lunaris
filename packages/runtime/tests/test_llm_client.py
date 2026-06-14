@@ -44,6 +44,28 @@ def test_builder_injects_the_scoped_tenant_key(monkeypatch) -> None:
     assert _SpyChatAnthropic.last_kwargs["api_key"] == "tenant-key"
 
 
+def test_builder_sets_max_tokens_when_given(monkeypatch) -> None:
+    # A caller that emits a large response (the video chaptered-overview planner) raises the output
+    # ceiling so it is not truncated by ChatAnthropic's low default (the prod EOF failure).
+    monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")
+
+    build_chat_model("claude-opus-4-8", max_tokens=16384)
+
+    assert _SpyChatAnthropic.last_kwargs["max_tokens"] == 16384
+
+
+def test_builder_omits_max_tokens_by_default(monkeypatch) -> None:
+    # Default behaviour unchanged: no max_tokens forced onto the client (the provider default
+    # holds), so every existing caller keeps its current ceiling.
+    monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")
+
+    build_chat_model("claude-opus-4-8")
+
+    assert "max_tokens" not in _SpyChatAnthropic.last_kwargs
+
+
 def test_builder_uses_env_when_no_scope(monkeypatch) -> None:
     monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")
@@ -68,6 +90,17 @@ def test_falls_back_to_local_openai_when_no_anthropic_key(monkeypatch) -> None:
     assert kwargs["base_url"] == "http://localhost:8080/v1"
     assert kwargs["model"] == "qwen2.5-3b-instruct"
     assert kwargs["api_key"] == "no-key-required"
+
+
+def test_keyless_fallback_ignores_max_tokens(monkeypatch) -> None:
+    # max_tokens is a keyed-path knob (video is keyed-only); passing it must not break the keyless
+    # fallback or leak onto the local OpenAI client, which sizes its own budget from the ctx window.
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    build_chat_model("claude-opus-4-8", max_tokens=16384)
+
+    assert "max_tokens" not in _SpyChatOpenAI.last_kwargs
 
 
 def test_fallback_honours_env_overrides(monkeypatch) -> None:

@@ -12,6 +12,7 @@ from lunaris_video.grounding import CourseGroundingPacketBuilder
 from lunaris_video.pipeline.contract_hash_cache import ContractHashCache
 from lunaris_video.pipeline.kind_routing_video_pipeline import KindRoutingVideoPipeline
 from lunaris_video.pipeline.model_adapters import (
+    VIDEO_MAX_OUTPUT_TOKENS,
     build_text_invoke,
     build_vision_invoke,
     default_video_model,
@@ -87,7 +88,9 @@ def _pipeline_maker(
     fast and a silent build never pays.
     """
     model = model_id or default_video_model()
-    text_invoke = build_text_invoke(model)
+    # The planner (chaptered overview especially) + codegen emit large responses; raise the output
+    # ceiling so a big contract is not truncated by the provider default (the prod EOF failure).
+    text_invoke = build_text_invoke(model, max_tokens=VIDEO_MAX_OUTPUT_TOKENS)
     vision_invoke = build_vision_invoke(model)
     codegen = SceneCodeGenerator(invoke=text_invoke)
     renderer = SceneRenderer()

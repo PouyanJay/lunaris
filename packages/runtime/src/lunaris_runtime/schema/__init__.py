@@ -69,7 +69,7 @@ from .source_evaluation import SourceEvaluation
 from .standard_research import CompetencyArea, ResearchSource, StandardResearch
 from .video_artifact import VideoArtifact
 from .video_job import VideoJob
-from .video_provenance import VideoProvenance
+from .video_provenance import DegradedScene, VideoProvenance
 from .visual_spec import (
     BeforeAfterSpec,
     ComparisonRow,
@@ -120,6 +120,7 @@ __all__ = [
     "CourseSettings",
     "CourseStatus",
     "CourseVideos",
+    "DegradedScene",
     "DeliverableShape",
     "DetailDepth",
     "DiscoveryDepth",

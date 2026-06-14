@@ -100,7 +100,7 @@ CURRENT SOURCE (renders, but visually defective)
 
 DEFECTS FOUND (fix every one)
 {defects}
-
+{archetype_hint}
 BEAT TIMING (unchanged — keep each beat's animations + waits summing to EXACTLY its window):
 {timing}
 
@@ -115,6 +115,21 @@ _FORMAT_REPAIR_TEMPLATE = """
 
 Your previous reply was rejected before rendering: {error}
 Respond again with ONLY the corrected, complete Python source for the scene file."""
+
+# Hook/title scenes are the stubborn Gate-B failures: one big headline on a near-empty frame, so the
+# usual defects are overflow / low contrast / overlap, not diagram problems. When a defective scene
+# is one of these archetypes, the visual-repair prompt gets this extra, targeted guidance.
+_HOOK_TITLE_HINT = """\
+THIS IS A HOOK / TITLE scene — the spatial defects these archetypes fail on most; fix them directly:
+- OVERFLOW is the #1 failure: scale_to_fit_width(headline, config.frame_width - 1.0) BEFORE you
+  animate it, and wrap or shorten a long title — never let big text clip the frame edges.
+- LOW CONTRAST: a title reads in INK (or ACCENT for one emphasized word) on the background; a
+  subtitle in MUTED. Never a low-contrast hue that fails a squint test.
+- OVERLAP / CENTERING: stack title + subtitle/kicker in a VGroup(...).arrange(DOWN, buff=0.4) and
+  center the group; never Transform one title onto another in the same spot — FadeOut then FadeIn.
+"""
+# Slugs/archetypes that mark a scene as a hook/title card (matched case-insensitively).
+_HOOK_TITLE_MARKERS = ("hook", "title", "intro")
 
 
 class SceneCodeGenerator:
@@ -165,6 +180,7 @@ class SceneCodeGenerator:
             scene_json=scene.model_dump_json(indent=2),
             source=source,
             defects=_format_defects(defects),
+            archetype_hint=_archetype_hint(scene),
             timing=_format_timing(timing),
             scene_class_name=scene.scene_class_name,
         )
@@ -187,6 +203,13 @@ class SceneCodeGenerator:
             parse,
             repair_instruction=_FORMAT_REPAIR_TEMPLATE,
         )
+
+
+def _archetype_hint(scene: SceneContract) -> str:
+    # Extra repair guidance for the archetypes Gate B fails on most — empty for every other scene,
+    # so the visual-repair prompt only carries the hook/title hint when it is actually a hook/title.
+    haystack = f"{scene.id} {scene.archetype}".lower()
+    return _HOOK_TITLE_HINT if any(m in haystack for m in _HOOK_TITLE_MARKERS) else ""
 
 
 def _format_defects(defects: list[QaDefect]) -> str:

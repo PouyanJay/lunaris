@@ -5,6 +5,7 @@ the job; infrastructure errors are logged and retried next poll), every artifact
 under run_id = job_id, and the job_id is bound into structlog contextvars while the job runs."""
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import structlog
@@ -163,6 +164,75 @@ async def test_run_once_appends_the_job_lifecycle_to_run_events() -> None:
     statuses = [event.payload.get("status") for event in recorded]
     assert statuses[0] == "planning"  # claimed
     assert statuses[-1] == "ready"  # settled
+
+
+async def test_a_requeued_job_does_not_collide_run_events_seqs() -> None:
+    # Arrange — run_events has a UNIQUE (run_id, seq) index; a video job's lifecycle is logged under
+    # run_id = job_id, gap-free from 0. A worker lost mid-render (KEDA scale / deploy / OOM) leaves
+    # the job in-flight with its planning event (seq 0) on record; the lease sweep requeues it and a
+    # SECOND worker re-claims it. The re-claim must NOT restart seq at 0 and collide.
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    clock = [now]
+    queue = InMemoryVideoJobQueue(clock=lambda: clock[0])
+    storage, events = InMemoryVideoStorage(), InMemoryRunEventStore()
+    await queue.enqueue(_job())
+
+    # Attempt 1: the worker claims, emits its planning event, then is lost mid-render (produce hangs
+    # until the worker task is cancelled — the job is never settled).
+    started = asyncio.Event()
+
+    class _LostMidRender:
+        async def produce(self, job: VideoJob) -> RenderedVideo:
+            started.set()
+            await asyncio.Event().wait()  # never resolves — the worker dies here
+            raise AssertionError("unreachable")  # pragma: no cover
+
+    worker = _worker(queue, storage, events, pipeline=_LostMidRender())
+    task = asyncio.create_task(worker.run_once())
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert [e.seq for e in await events.list_for_run(run_id="job-1")] == [0]  # planning, abandoned
+
+    # The lease expires; the sweep requeues the in-flight job for another worker.
+    clock[0] = now + timedelta(seconds=120)
+    await queue.sweep_stale_leases(lease_seconds=60, max_attempts=5)
+
+    # Attempt 2: a healthy worker re-claims and runs it to completion.
+    assert await _worker(queue, storage, events).run_once() is True
+
+    # Assert — the re-claim continued PAST the abandoned attempt's seq 0 (no collision dropped its
+    # events): every seq is unique and the 'ready' settle event survived to the log.
+    recorded = await events.list_for_run(run_id="job-1", owner_id=_OWNER)
+    seqs = [e.seq for e in recorded]
+    assert seqs == sorted(seqs)
+    assert len(seqs) == len(set(seqs))  # no duplicate (run_id, seq)
+    assert recorded[-1].payload.get("status") == "ready"  # the re-claim's settle landed
+
+
+async def test_event_seq_seed_falls_back_to_zero_when_the_store_read_fails() -> None:
+    # Arrange — seeding the seq reads latest_seq; if that read hiccups, the lifecycle log is
+    # best-effort, so the worker still emits (from 0) and the job still settles READY.
+    class _SeedReadFailsStore(InMemoryRunEventStore):
+        async def latest_seq(self, *, run_id: str, owner_id: str | None = None) -> int | None:
+            raise PersistenceError("seed read failed")
+
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        _SeedReadFailsStore(),
+    )
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, events)
+
+    # Act / Assert — the unreadable seed never fails the job; it completes and logs from seq 0.
+    assert await worker.run_once() is True
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.READY
+    recorded = await events.list_for_run(run_id="job-1", owner_id=_OWNER)
+    assert [e.seq for e in recorded] == list(range(len(recorded)))
+    assert recorded[0].seq == 0
 
 
 async def test_run_once_binds_the_job_id_into_log_context_while_working() -> None:

@@ -2,7 +2,12 @@
 fallback and test stub), and the Supabase-backed log's row mapping + query shape proven against a
 fake client (no live Postgres in CI)."""
 
-from lunaris_runtime.persistence import InMemoryRunEventStore, SupabaseRunEventStore
+import pytest
+from lunaris_runtime.persistence import (
+    InMemoryRunEventStore,
+    PersistenceError,
+    SupabaseRunEventStore,
+)
 from lunaris_runtime.schema import RunEvent, RunEventKind
 
 
@@ -29,6 +34,50 @@ async def test_append_then_list_returns_events_in_seq_order() -> None:
     # Assert — ascending seq, gap-free emission order.
     assert [e.seq for e in events] == [0, 1, 2]
     assert events[0].kind == RunEventKind.PROGRESS
+
+
+async def test_append_rejects_a_duplicate_seq_for_a_run() -> None:
+    # Arrange — the in-memory store mirrors the DB's UNIQUE (run_id, seq) index, so a re-used seq is
+    # a failed insert (the constraint a re-claimed video job's seq-0 restart trips), not a silent
+    # duplicate.
+    store = InMemoryRunEventStore()
+    await store.append(events=[_event("r-1", "c-1", 0, RunEventKind.PROGRESS)])
+
+    # Act / Assert
+    with pytest.raises(PersistenceError):
+        await store.append(events=[_event("r-1", "c-1", 0, RunEventKind.AGENT)])
+    # The rejected append is atomic — r-1 still holds only its one original event.
+    assert [e.seq for e in await store.list_for_run(run_id="r-1")] == [0]
+
+
+async def test_latest_seq_is_none_for_a_run_with_no_events() -> None:
+    # Arrange / Act / Assert — no events → no seed → a fresh worker starts at 0.
+    store = InMemoryRunEventStore()
+    assert await store.latest_seq(run_id="ghost") is None
+
+
+async def test_latest_seq_returns_the_highest_seq() -> None:
+    # Arrange
+    store = InMemoryRunEventStore()
+    await store.append(
+        events=[
+            _event("r-1", "c-1", 0, RunEventKind.PROGRESS),
+            _event("r-1", "c-1", 1, RunEventKind.AGENT),
+        ]
+    )
+
+    # Act / Assert — the seed a re-claimed worker continues PAST.
+    assert await store.latest_seq(run_id="r-1") == 1
+
+
+async def test_latest_seq_is_none_for_a_non_owner() -> None:
+    # Arrange — A's run; B must not learn its seq (mirrors list_for_run's owner scoping).
+    store = InMemoryRunEventStore()
+    await store.append(events=[_event("r-1", "c-1", 0, RunEventKind.PROGRESS)], owner_id="user-a")
+
+    # Act / Assert
+    assert await store.latest_seq(run_id="r-1", owner_id="user-b") is None
+    assert await store.latest_seq(run_id="r-1", owner_id="user-a") == 0
 
 
 async def test_list_for_unknown_run_is_empty() -> None:
@@ -155,6 +204,10 @@ class _FakeQuery:
     def range(self, start: int, end: int) -> "_FakeQuery":
         self._calls.append(("range", start, end))
         self._range = (start, end)
+        return self
+
+    def limit(self, count: int) -> "_FakeQuery":
+        self._calls.append(("limit", count))
         return self
 
     def execute(self) -> _FakeResponse:
@@ -301,6 +354,32 @@ async def test_supabase_list_for_run_terminates_on_an_exactly_divisible_count() 
     assert len(events) == 2000
     range_calls = [c for c in client.calls if c[0] == "range"]
     assert range_calls == [("range", 0, 999), ("range", 1000, 1999), ("range", 2000, 2999)]
+
+
+async def test_supabase_latest_seq_reads_one_row_seq_desc() -> None:
+    # Arrange — the highest-seq row the DB would return for order(seq).desc().limit(1).
+    client = _FakeClient(select_data=[{"seq": 7}])
+    store = _store_with(client)
+
+    # Act
+    latest = await store.latest_seq(run_id="r-1")
+
+    # Assert — a single-row read scoped to the run, ordered seq desc, limited to 1; the seq mapped.
+    assert latest == 7
+    assert ("table", "run_events") in client.calls
+    assert ("eq", "run_id", "r-1") in client.calls
+    assert ("order", "seq", True) in client.calls
+    assert ("limit", 1) in client.calls
+
+
+async def test_supabase_latest_seq_is_none_for_a_run_with_no_events() -> None:
+    # Arrange — an empty result (a run that never logged, or another owner's).
+    client = _FakeClient(select_data=[])
+    store = _store_with(client)
+
+    # Act / Assert — no rows → None (the worker then seeds at 0).
+    assert await store.latest_seq(run_id="r-1", owner_id="user-7") is None
+    assert ("eq", "user_id", "user-7") in client.calls
 
 
 async def test_supabase_delete_for_course_returns_the_exact_count() -> None:

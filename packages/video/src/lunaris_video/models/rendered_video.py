@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from lunaris_runtime.schema import DegradedScene
 
 
 @dataclass(frozen=True)
@@ -25,3 +27,8 @@ class RenderedVideo:
     # when this is present.
     captions: bytes | None = None
     provenance_json: bytes | None = None
+    # Scenes Gate B shipped as best-effort (the 'publish anyway' degrade). Carried ON the bundle so
+    # it survives the contract-hash cache — a later job that hits the cache reuses the SAME render,
+    # so it must reuse the SAME degrade record (provenance stays honest across cache hits). Empty
+    # when every scene passed QA cleanly.
+    degraded_scenes: tuple[DegradedScene, ...] = field(default_factory=tuple)

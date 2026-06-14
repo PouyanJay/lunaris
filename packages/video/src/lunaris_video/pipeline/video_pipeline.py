@@ -4,14 +4,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import structlog
-from lunaris_runtime.schema import RegenerateMode, VideoJob, VideoProvenance
+from lunaris_runtime.schema import DegradedScene, RegenerateMode, VideoJob, VideoProvenance
 from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
-from lunaris_video.models import RenderedScene, RenderedVideo
+from lunaris_video.models import RenderedVideo, SceneQaResult
 from lunaris_video.models.lesson_source import LessonSource
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourceProvider
@@ -114,24 +114,26 @@ class VideoPipeline:
         # both paths — and the cache key the artifact lives under (silent and voiced are distinct).
         voice, synthesizer, cache_key = self._resolve_voice(job, digest)
 
-        # Provenance is built at the source and stamped fresh per produce — even on a cache hit it
-        # must carry THIS job's id/timestamp, not the job that first rendered the contract.
-        provenance = self._provenance_bytes(job, contract, digest)
-
         cached = await self._cache.fetch(cache_key)
         if cached is not None:
+            # Provenance is restamped per produce (THIS job's id/timestamp), but the degrade record
+            # rides on the cached bundle — a cache hit reuses the same render, so the same scenes
+            # are degraded (provenance stays honest without re-rendering to recompute it).
             _logger.info("video_pipeline.cache_hit", job_id=job.id, contract_hash=digest)
-            return replace(cached, provenance_json=provenance)
+            return self._stamp_provenance(cached, job, contract, digest)
 
         workdir = self._workdir_for(job)
         # Audio-drives-video: resolve the timing manifest BEFORE the render so the scene code is
         # built against the exact per-beat windows — the WPM estimate (silent) or measured TTS
         # (voiced). The render half is identical either way.
         manifest, audio_dir = await self._resolve_timing(contract, voice, synthesizer, workdir)
-        rendered = await self._render_scenes(contract, manifest, workdir)
+        qa_results = await self._render_scenes(contract, manifest, workdir)
+        rendered = [result.scene for result in qa_results]
         video = await self._assembler.assemble(
             rendered, contract, manifest=manifest, workdir=workdir, audio_dir=audio_dir
         )
+        # Record any best-effort (degraded) scenes ON the bundle so the degrade survives the cache.
+        video = replace(video, degraded_scenes=_degraded_scenes(qa_results))
         if voice is not None:
             # Gate D runs on the muxed video, narrated-only: each spoken beat's midpoint frame must
             # show what the narration says, or the job fails clean. _resolve_voice guarantees the
@@ -145,8 +147,9 @@ class VideoPipeline:
             scenes=len(rendered),
             narrated=voice is not None,
             grounded_claim_ids=len(_cited_claim_ids(contract)),
+            degraded_scenes=len(video.degraded_scenes),
         )
-        return replace(video, provenance_json=provenance)
+        return self._stamp_provenance(video, job, contract, digest)
 
     async def _resolve_contract(self, job: VideoJob, source: LessonSource) -> VideoContract:
         """The contract this produce renders — the regenerate menu's four entry points (V6-T2).
@@ -223,7 +226,15 @@ class VideoPipeline:
         manifest = await synthesizer.synthesize(contract, voice=voice, audio_dir=audio_dir)
         return manifest, audio_dir
 
-    def _provenance_bytes(self, job: VideoJob, contract: VideoContract, digest: str) -> bytes:
+    def _stamp_provenance(
+        self, video: RenderedVideo, job: VideoJob, contract: VideoContract, digest: str
+    ) -> RenderedVideo:
+        """Stamp the requesting job's provenance onto the artifact (fresh render or cache hit).
+
+        Built at the source and per produce, so even a cache hit carries THIS job's id/timestamp,
+        not the job that first rendered the contract. ``degraded_scenes`` comes off the bundle (set
+        at render, preserved through the cache) so a degraded scene's record is never dropped.
+        """
         provenance = VideoProvenance(
             job_id=job.id,
             course_id=job.course_id,
@@ -234,23 +245,24 @@ class VideoPipeline:
             input_hash=job.input_hash,
             claim_ids=_cited_claim_ids(contract),
             generated_at=datetime.now(UTC).isoformat(),
+            degraded_scenes=list(video.degraded_scenes),
         )
-        return provenance.model_dump_json(by_alias=True).encode()
+        return replace(video, provenance_json=provenance.model_dump_json(by_alias=True).encode())
 
     async def _render_scenes(
         self, contract: VideoContract, manifest: TimingManifest, workdir: Path
-    ) -> list[RenderedScene]:
-        rendered: list[RenderedScene] = []
+    ) -> list[SceneQaResult]:
+        results: list[SceneQaResult] = []
         for scene in contract.scenes:
             timing = manifest[scene.id]
             passed_render = await self._render_gate.render_scene(
                 scene, topic=contract.topic, timing=timing, workdir=workdir
             )
-            cleared = await self._visual_qa_gate.inspect_scene(
+            result = await self._visual_qa_gate.inspect_scene(
                 scene, rendered=passed_render, timing=timing, workdir=workdir
             )
-            rendered.append(cleared)
-        return rendered
+            results.append(result)
+        return results
 
     def _workdir_for(self, job: VideoJob) -> Path:
         workdir = self._workspace_root / job.id
@@ -289,6 +301,19 @@ def _voice_spec(job: VideoJob) -> VoiceSpec:
         provider=_ELEVENLABS_PROVIDER,
         voice_id=str(config.get("voice_id") or _DEFAULT_VOICE_ID),
         model=str(config.get("voice_model") or _DEFAULT_VOICE_MODEL),
+    )
+
+
+def _degraded_scenes(results: list[SceneQaResult]) -> tuple[DegradedScene, ...]:
+    # The provenance record of every scene Gate B shipped as best-effort (the 'publish anyway'
+    # degrade) — a scene that passed QA cleanly contributes none. Ordered by render order.
+    return tuple(
+        DegradedScene(
+            scene_id=result.scene.scene_id,
+            issues=[defect.issue for defect in result.unresolved_defects],
+        )
+        for result in results
+        if result.unresolved_defects
     )
 
 
