@@ -22,11 +22,12 @@ export interface VideoJobWire {
 }
 
 /** The wire shape of `GET /api/videos/{id}` / the enqueue response: the job row plus signed
- *  playback URLs once it is ready. */
+ *  playback URLs once it is ready. `captionsUrl` is present only for a narrated video. */
 export interface VideoJobView {
   job: VideoJobWire;
   videoUrl: string | null;
   posterUrl: string | null;
+  captionsUrl: string | null;
 }
 
 /** How an enqueue attempt resolved — the three non-success shapes are product states, not

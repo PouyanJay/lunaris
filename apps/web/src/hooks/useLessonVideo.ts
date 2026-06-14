@@ -13,7 +13,7 @@ export const VIDEO_POLL_INTERVAL_MS = 2500;
 export type LessonVideoState =
   | { phase: "idle" }
   | { phase: "working"; status: VideoJobStatus }
-  | { phase: "ready"; videoUrl: string; posterUrl: string | null }
+  | { phase: "ready"; videoUrl: string; posterUrl: string | null; captionsUrl: string | null }
   | { phase: "failed" }
   | { phase: "keyless"; detail: string }
   | { phase: "unavailable" };
@@ -48,7 +48,12 @@ export function useLessonVideo(
 
   const settle = useCallback((view: VideoJobView) => {
     if (view.job.status === "ready" && view.videoUrl) {
-      setState({ phase: "ready", videoUrl: view.videoUrl, posterUrl: view.posterUrl });
+      setState({
+        phase: "ready",
+        videoUrl: view.videoUrl,
+        posterUrl: view.posterUrl,
+        captionsUrl: view.captionsUrl,
+      });
     } else {
       setState({ phase: "failed" });
     }

@@ -103,6 +103,37 @@ async def test_run_once_processes_a_job_end_to_end() -> None:
     assert provenance.input_hash == _job().input_hash
 
 
+async def test_a_narrated_video_uploads_a_captions_track() -> None:
+    # Arrange — a narrated render carries WebVTT captions; a silent one (the stub) carries none (the
+    # exact-path-set assertion in test_run_once_processes_a_job_end_to_end proves silent uploads 0).
+    class _NarratedPipeline:
+        async def produce(self, job: VideoJob) -> RenderedVideo:
+            return RenderedVideo(
+                mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
+                poster=b"\xff\xd8\xff" + b"x" * 600,
+                contracts_json=b"{}",
+                timing_json=b"{}",
+                captions=b"WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello.\n",
+            )
+
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        InMemoryRunEventStore(),
+    )
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, events, pipeline=_NarratedPipeline())
+
+    # Act
+    assert await worker.run_once() is True
+
+    # Assert — the captions ride under the job prefix with the WebVTT content type.
+    captions_path = f"{_OWNER}/course-1/job-1/captions.vtt"
+    assert captions_path in storage.paths()
+    assert storage.content_type(captions_path) == "text/vtt"
+    assert storage.read(captions_path).startswith(b"WEBVTT")
+
+
 async def test_run_once_appends_the_job_lifecycle_to_run_events() -> None:
     # Arrange
     queue, storage, events = (

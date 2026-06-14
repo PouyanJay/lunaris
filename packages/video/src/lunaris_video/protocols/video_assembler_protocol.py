@@ -10,7 +10,9 @@ class IVideoAssembler(Protocol):
 
     ``manifest`` is the SAME manifest that drove the render (audio-drives-video): the assembler
     persists it as ``timing.json`` rather than re-deriving it, so the manifest the scene code was
-    built against and the one shipped to the player are guaranteed identical.
+    built against and the one shipped to the player are guaranteed identical. ``audio_dir`` holds
+    the per-beat clips a voiced manifest references — required when the manifest is voiced (the
+    assembler mixes + muxes them and emits WebVTT captions), ignored for a silent one.
     """
 
     async def assemble(
@@ -20,4 +22,5 @@ class IVideoAssembler(Protocol):
         *,
         manifest: TimingManifest,
         workdir: Path,
+        audio_dir: Path | None = None,
     ) -> RenderedVideo: ...

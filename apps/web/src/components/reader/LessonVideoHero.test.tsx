@@ -31,15 +31,17 @@ function queuedView(jobId = "job-1") {
     },
     videoUrl: null,
     posterUrl: null,
+    captionsUrl: null,
   };
 }
 
-function readyView(jobId = "job-1") {
+function readyView(jobId = "job-1", captionsUrl: string | null = null) {
   return {
     ...queuedView(jobId),
     job: { ...queuedView(jobId).job, status: "ready" },
     videoUrl: `https://signed.example/u/course-1/${jobId}/final.mp4?token=t`,
     posterUrl: `https://signed.example/u/course-1/${jobId}/poster.jpg?token=t`,
+    captionsUrl,
   };
 }
 
@@ -94,11 +96,40 @@ describe("LessonVideoHero", () => {
     expect(video?.src).toContain("final.mp4");
     expect(video?.poster).toContain("poster.jpg");
     expect(video?.hasAttribute("controls")).toBe(true);
+    // A silent video carries no captions track and no CORS opt-in.
+    expect(video?.querySelector("track")).toBeNull();
+    expect(video?.hasAttribute("crossorigin")).toBe(false);
     // The enqueue was a POST to the right route (order-independent matcher).
     expect(fetchMock).toHaveBeenCalledWith(
       `${API}/api/courses/course-1/lessons/lesson-1/video`,
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("attaches a WebVTT captions track for a narrated video", async () => {
+    // Arrange — a narrated video ships a captions URL (the silent path has none).
+    const captionsUrl = "https://signed.example/u/course-1/job-1/captions.vtt?token=t";
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(202, queuedView()))
+      .mockResolvedValue(jsonResponse(200, readyView("job-1", captionsUrl)));
+    render(<LessonVideoHero {...PROPS} />);
+
+    // Act — generate, then play.
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /play lesson video/i }));
+
+    // Assert — the player carries a default English captions <track> on the signed VTT, and the
+    // <video> opts into CORS so the cross-origin track loads (WCAG 2.2 AA captions).
+    const video = document.querySelector("video");
+    const track = video?.querySelector("track");
+    expect(track).not.toBeNull();
+    expect(track?.getAttribute("kind")).toBe("captions");
+    expect(track?.src).toContain("captions.vtt");
+    expect(track?.hasAttribute("default")).toBe(true);
+    // WCAG 2.2 AA: the track must declare its language and a human label.
+    expect(track?.getAttribute("srclang")).toBe("en");
+    expect(track?.getAttribute("label")).toBe("English");
+    expect(video?.getAttribute("crossorigin")).toBe("anonymous");
   });
 
   it("shows the keyless refusal and withdraws the generate affordance", async () => {

@@ -17,6 +17,7 @@ class VideoArtifactPaths:
     poster: str
     contracts: str
     timing: str
+    captions: str
     provenance: str
 
     @classmethod
@@ -27,5 +28,6 @@ class VideoArtifactPaths:
             poster=f"{prefix}/poster.jpg",
             contracts=f"{prefix}/scene_contracts.json",
             timing=f"{prefix}/timing.json",
+            captions=f"{prefix}/captions.vtt",
             provenance=f"{prefix}/provenance.json",
         )

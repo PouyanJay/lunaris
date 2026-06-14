@@ -43,3 +43,9 @@ class TimingManifest(RootModel[dict[str, SceneTiming]]):
 
     def scene_ids(self) -> list[str]:
         return list(self.root)
+
+    @property
+    def is_voiced(self) -> bool:
+        """True once any beat has a synthesized clip — the measured path. Silent (estimate)
+        manifests carry no audio, so the assembler skips the mux and ships no captions."""
+        return any(beat.audio is not None for scene in self.root.values() for beat in scene.beats)
