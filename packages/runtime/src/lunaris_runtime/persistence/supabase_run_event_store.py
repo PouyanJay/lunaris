@@ -83,6 +83,23 @@ class SupabaseRunEventStore:
         ]
         await asyncio.to_thread(lambda: client.table(_TABLE).insert(rows).execute())  # type: ignore[attr-defined]
 
+    @guard("run_events latest seq")
+    async def latest_seq(self, *, run_id: str, owner_id: str | None = None) -> int | None:
+        """The run's highest ``seq`` (one row, ``order(seq).desc().limit(1)``), or ``None`` if it
+        has none — the seed a re-claimed worker continues from so its events never collide with a
+        prior attempt's under the UNIQUE ``(run_id, seq)`` index."""
+        client = self._ensure_client()
+
+        def _run() -> object:
+            query = client.table(_TABLE).select("seq").eq("run_id", run_id)  # type: ignore[attr-defined]
+            if owner_id is not None:
+                query = query.eq("user_id", owner_id)  # another user's transcript reads as empty
+            return query.order("seq", desc=True).limit(1).execute()
+
+        response = await asyncio.to_thread(_run)
+        rows = response.data or []  # type: ignore[attr-defined]
+        return int(rows[0]["seq"]) if rows else None
+
     @guard("run_events list")
     async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]:
         client = self._ensure_client()

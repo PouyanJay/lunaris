@@ -38,9 +38,9 @@ class VideoWorker:
       (queue/storage down) is logged and absorbed — the next poll retries. A worker crash-loop
       must never be one bad job away.
     - **job_id is the run-scope.** Bound into structlog contextvars for every log line inside the
-      job, and used as ``run_id`` for the lifecycle events appended to ``run_events`` (gap-free
-      seq from 0), so one job triangulates across queue → worker → storage → API exactly like a
-      build run does.
+      job, and used as ``run_id`` for the lifecycle events appended to ``run_events`` (seq seeded
+      from the store so a re-claim continues past a prior attempt's events, never colliding), so
+      one job triangulates across queue → worker → storage → API exactly like a build run does.
     - **Errors stored on the job are user-safe.** The full exception goes to the logs; the job
       row gets only the exception class name (the row is owner-readable wire data).
     - **The render runs on the JOB OWNER's keys.** When a ``credential_resolver`` is wired (the
@@ -234,7 +234,14 @@ def _build_artifact(job: VideoJob, rendered: RenderedVideo) -> VideoArtifact:
 
 
 class _EventSequence:
-    """Gap-free, best-effort lifecycle events for one job (run_id = job_id)."""
+    """Gap-free, best-effort lifecycle events for one job (run_id = job_id).
+
+    The seq is seeded from the store on first emit, not hard-started at 0: a job whose first worker
+    was lost mid-render is re-claimed and a fresh ``_EventSequence`` is built, but the prior
+    attempt's events still hold seqs 0.. under the run_id, and the DB's UNIQUE ``(run_id, seq)``
+    index rejects a re-used seq. Continuing PAST the prior attempt keeps a re-claim's transcript
+    from colliding (and silently vanishing — the append is best-effort) instead of restarting at 0.
+    """
 
     def __init__(self, events: IRunEventStore, job: VideoJob) -> None:
         self._events = events
@@ -242,13 +249,14 @@ class _EventSequence:
         self._course_id = job.course_id
         self._owner_id = job.user_id
         self._video_kind = job.kind.value
-        self._seq = 0
+        self._seq: int | None = None  # seeded from the store on first emit
 
     async def emit(self, status: VideoJobStatus, label: str) -> None:
+        seq = await self._ensure_seq()
         event = RunEvent(
             run_id=self._run_id,
             course_id=self._course_id,
-            seq=self._seq,
+            seq=seq,
             kind=RunEventKind.PROGRESS,
             payload={
                 "event": "video_job",
@@ -260,8 +268,19 @@ class _EventSequence:
         )
         try:
             await self._events.append(events=[event], owner_id=self._owner_id)
-            self._seq += 1
+            self._seq = seq + 1
         except PersistenceError:
             # Append failures never fail the job (IRunEventStore is best-effort at the call
-            # site). _seq was NOT incremented — the logged value IS the seq that failed.
-            _logger.exception("video_worker.event_append_failed", seq=self._seq)
+            # site). _seq was NOT advanced — the logged value IS the seq that failed.
+            _logger.exception("video_worker.event_append_failed", seq=seq)
+
+    async def _ensure_seq(self) -> int:
+        if self._seq is None:
+            try:
+                latest = await self._events.latest_seq(run_id=self._run_id, owner_id=self._owner_id)
+            except PersistenceError:
+                # Best-effort: if the seed read fails, start at 0 (the common first-attempt case);
+                # a genuine collision is then absorbed by emit, never fatal to the job.
+                latest = None
+            self._seq = 0 if latest is None else latest + 1
+        return self._seq

@@ -28,6 +28,16 @@ class IRunEventStore(Protocol):
 
     async def append(self, *, events: Sequence[RunEvent], owner_id: str | None = None) -> None: ...
 
+    async def latest_seq(self, *, run_id: str, owner_id: str | None = None) -> int | None:
+        """The highest ``seq`` a run has logged, or ``None`` if it has none.
+
+        Lets a writer that may run more than once for the same ``run_id`` (a re-claimed video job
+        whose first worker was lost mid-render) continue the gap-free sequence PAST the prior
+        attempt's events instead of restarting at 0 — the DB's UNIQUE ``(run_id, seq)`` index
+        rejects a re-used seq, so a naive restart drops the re-claim's whole transcript.
+        """
+        ...
+
     async def list_for_run(self, *, run_id: str, owner_id: str | None = None) -> list[RunEvent]: ...
 
     async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int: ...
