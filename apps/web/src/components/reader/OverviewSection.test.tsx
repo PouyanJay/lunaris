@@ -158,7 +158,9 @@ describe("OverviewSection", () => {
   });
 
   it("shows a loading skeleton while the signed URL resolves, then the player", async () => {
-    // Arrange — hold the signed-URL fetch open so the transient loading state is observable.
+    // Arrange — hold the FIRST fetch (the ready-fetch effect, declared before the re-attach probe in
+    // useCourseVideo) open so the transient loading state is observable; later calls (incl. the
+    // /active probe) fall through to the beforeEach router (204 → no re-attach).
     let releaseUrl: (response: Response) => void = () => {};
     fetchMock.mockImplementationOnce(
       () => new Promise<Response>((resolve) => (releaseUrl = resolve)),
@@ -194,9 +196,12 @@ describe("OverviewSection", () => {
   });
 
   it("shows the outdated badge when a ready course video reports stale", async () => {
-    // The stale flag from the status read plumbs through useCourseVideo to the slot's badge.
+    // The stale flag from the status read plumbs through useCourseVideo to the slot's badge. /active
+    // is routed to 204 so the badge is asserted on the ready-fetch path, not the re-attach probe.
     fetchMock.mockImplementation((input) => {
-      const jobId = String(input).split("/videos/")[1] ?? "job";
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      const jobId = url.split("/videos/")[1] ?? "job";
       return Promise.resolve(jsonResponse(200, { ...readyView(jobId), stale: true }));
     });
 

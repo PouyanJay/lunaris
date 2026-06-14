@@ -28,7 +28,9 @@ from lunaris_video.schemas import TimingManifest
 _logger = structlog.get_logger(__name__)
 
 # The human-readable label each job status carries on its run_event — what the reader's progress bar
-# shows. Coarse on purpose (the stages the pipeline actually reports), not per-scene.
+# shows. Coarse on purpose, not per-scene. PLANNING/READY/FAILED are emitted by the worker itself
+# (claim + settle); VOICING/RENDERING/ASSEMBLING are reported by the pipeline via on_stage. A status
+# absent here falls back to its bare enum value in the reporter (a forgotten label, never a crash).
 _STAGE_LABELS: dict[VideoJobStatus, str] = {
     VideoJobStatus.PLANNING: "claimed — producing video",
     VideoJobStatus.VOICING: "recording narration",
@@ -166,11 +168,14 @@ class VideoWorker:
         these never read."""
 
         async def report(stage: VideoJobStatus) -> None:
+            # Airtight best-effort: the reporter runs INSIDE the pipeline's produce, so any escape
+            # would fail the render. Absorb everything (a flaky status/event write must not), while
+            # CancelledError still propagates so a worker shutdown isn't swallowed mid-render.
             try:
                 await self._queue.update_status(job_id=job.id, status=stage)
-            except PersistenceError:
-                _logger.warning("video_worker.stage_update_failed", stage=stage.value)
-            await sequence.emit(stage, _STAGE_LABELS.get(stage, stage.value))
+                await sequence.emit(stage, _STAGE_LABELS.get(stage, stage.value))
+            except Exception:
+                _logger.warning("video_worker.stage_report_failed", stage=stage.value)
 
         return report
 

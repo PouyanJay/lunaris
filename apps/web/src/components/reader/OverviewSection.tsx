@@ -1,5 +1,5 @@
 import { useCourseVideo } from "../../hooks/useCourseVideo";
-import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
+import { FAILED_REGEN_MODES, readyRegenModes, resolveJobId } from "../../lib/videoJobs";
 import type { CourseVideos, VideoArtifact } from "../../types/course";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
@@ -95,7 +95,7 @@ function CourseVideoSlot({
               This video couldn’t be generated. The rest of the course is unaffected.
             </p>
           </div>
-          {artifact?.jobId && (
+          {resolveJobId(artifact) && (
             <div className={styles.regenerateRow}>
               <RegenerateMenu
                 available={FAILED_REGEN_MODES}

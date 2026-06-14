@@ -345,18 +345,26 @@ describe("LessonVideoHero", () => {
       provenance: null,
       narrated: false,
     };
+    // The re-attached job renders (status=rendering) so the working progress bar is observable
+    // before it would settle; /videos/regen-1 stays rendering.
+    const renderingView = {
+      ...readyView("regen-1"),
+      videoUrl: null,
+      job: { ...readyView("regen-1").job, status: "rendering" },
+    };
     fetchMock.mockImplementation((input) => {
       const url = String(input);
       if (url.endsWith("/active")) return Promise.resolve(jsonResponse(200, queuedView("regen-1")));
-      return Promise.resolve(jsonResponse(200, readyView("regen-1")));
+      return Promise.resolve(jsonResponse(200, renderingView));
     });
 
-    // Act — the probe finds the live regenerate and watches it to a playable video.
+    // Act — the probe finds the live regenerate and watches it.
     render(<LessonVideoHero {...PROPS} video={built} />);
 
-    // Assert — the slot recovers the running job (not the stale failed state), keyed by the source
-    // job id we held.
-    await screen.findByRole("button", { name: /play lesson video/i });
+    // Assert — the slot recovers the running job and shows its progress bar (not the stale failed
+    // state), keyed by the source job id we held.
+    const bar = await screen.findByRole("progressbar", { name: /generating the lesson video/i });
+    expect(Number(bar.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
     expect(
       fetchMock.mock.calls.some(([url]) => String(url).endsWith("/videos/built-fail/active")),
     ).toBe(true);

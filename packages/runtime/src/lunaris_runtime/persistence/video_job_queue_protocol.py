@@ -26,11 +26,12 @@ class IVideoJobQueue(Protocol):
     async def heartbeat(self, *, job_id: str) -> None: ...
 
     async def update_status(self, *, job_id: str, status: VideoJobStatus) -> None:
-        """Reflect an in-flight stage (coding / rendering / qa / voicing / assembling) on the job
-        row so the status read shows real progress (the reader's progress bar). Best-effort and
-        idempotent: it never moves a TERMINAL job — a late stage write that races a settle must not
-        un-settle it — and a vanished or already-settled job is a silent no-op (unlike the settle
-        writes, a progress update must never fail the render)."""
+        """Reflect an in-flight stage (e.g. voicing / rendering / assembling) on the job row so the
+        status read shows real progress (the reader's progress bar). Which stages the pipeline
+        actually reports is the producer's business. Best-effort and idempotent: it never moves a
+        TERMINAL job — a late stage write that races a settle must not un-settle it — and a vanished
+        or already-settled job is a silent no-op (unlike the settle writes, a progress update must
+        never fail the render)."""
         ...
 
     async def complete(self, *, job_id: str, contract_hash: str | None = None) -> None:

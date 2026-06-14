@@ -14,12 +14,14 @@ interface VideoProgressProps {
  *  "working, here's how far" instead of "nothing happening". The percent + caption come from the job
  *  status the worker advances through; ``role="progressbar"`` exposes the value to assistive tech. */
 export function VideoProgress({ status, label }: VideoProgressProps) {
-  const { percent, label: stage } = videoProgress(status);
+  // `label` is the accessible context for the bar; `stageCaption` is the plain-language stage text
+  // shown to everyone. Distinct concerns — kept distinctly named.
+  const { percent, label: stageCaption } = videoProgress(status);
   return (
     <div className={styles.progress}>
       <p className={styles.stage}>
         <span className={styles.spinner} aria-hidden="true" />
-        <span>{stage}…</span>
+        <span>{stageCaption}…</span>
       </p>
       <div
         className={styles.track}
@@ -28,7 +30,7 @@ export function VideoProgress({ status, label }: VideoProgressProps) {
         aria-valuenow={percent}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuetext={`${stage}, ${percent}%`}
+        aria-valuetext={`${stageCaption}, ${percent}%`}
       >
         <div className={styles.fill} style={{ width: `${percent}%` }} />
       </div>

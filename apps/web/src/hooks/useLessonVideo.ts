@@ -91,8 +91,7 @@ export function useLessonVideo(
   useEffect(() => {
     jobIdRef.current = null;
     if (builtStatus === "ready" && builtJobId) {
-      setState({ phase: "working", status: "queued" });
-      watch(builtJobId);
+      watch(builtJobId); // watch() sets the working state itself, then polls to ready
     } else if (builtStatus === "failed" && builtJobId) {
       setState({ phase: "failed", jobId: builtJobId });
     } else {
@@ -102,9 +101,10 @@ export function useLessonVideo(
   }, [apiBaseUrl, courseId, lessonId, builtStatus, builtJobId, watch, stopPolling]);
 
   // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): ask
-  // the server for the slot's live job — keyed by the source job we DO hold — and watch it. A live
-  // job wins over the stale built state, so a regenerate survives a refresh / navigate-away instead
-  // of the slot reverting to "couldn't generate".
+  // the server for the slot's live job — keyed by the source job we DO hold — and watch it. Calling
+  // watch() aborts any poll the effect above started for the built artifact (shared controllerRef),
+  // so a live regenerate always takes precedence over the stale built state — surviving a refresh /
+  // navigate-away instead of the slot reverting to "couldn't generate".
   useEffect(() => {
     if (!builtJobId) return;
     const controller = new AbortController();

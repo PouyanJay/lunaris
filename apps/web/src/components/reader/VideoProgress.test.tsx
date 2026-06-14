@@ -15,19 +15,23 @@ describe("VideoProgress", () => {
     expect(screen.getByText(/rendering the scenes/i)).toBeInTheDocument();
   });
 
-  it("only ever moves the bar forward as the job advances through its stages", () => {
-    const { rerender } = render(<VideoProgress status="planning" label="x" />);
+  it("only ever moves the bar forward across the full stage chain", () => {
+    const { rerender } = render(<VideoProgress status="queued" label="x" />);
     const at = (status: Parameters<typeof VideoProgress>[0]["status"]) => {
       rerender(<VideoProgress status={status} label="x" />);
       return Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"));
     };
 
-    // planning → rendering → assembling rises monotonically, ending below the terminal 100.
-    const planning = at("planning");
-    const rendering = at("rendering");
-    const assembling = at("assembling");
-    expect(rendering).toBeGreaterThan(planning);
-    expect(assembling).toBeGreaterThan(rendering);
-    expect(assembling).toBeLessThan(100);
+    // Every in-flight stage rises monotonically (no two equal, no regression), ending below the
+    // terminal 100 — so the bar never stalls or jumps backward whatever order stages arrive in.
+    const percents = (
+      ["queued", "planning", "coding", "voicing", "rendering", "qa", "assembling"] as const
+    ).map(at);
+    percents.reduce((prev, cur) => {
+      expect(cur).toBeGreaterThan(prev);
+      return cur;
+    });
+    expect(Math.max(...percents)).toBeLessThan(100);
+    expect(at("ready")).toBe(100);
   });
 });

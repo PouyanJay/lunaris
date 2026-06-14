@@ -344,6 +344,7 @@ async def _lesson_video_stale(
 @router.get(
     "/videos/{job_id}/active",
     response_model=VideoJobView,
+    responses={204: {"description": "No job in flight for the slot"}},
     dependencies=[Depends(require_video_generation_enabled)],
 )
 async def get_active_video_job(
@@ -365,16 +366,20 @@ async def get_active_video_job(
     """
     request_id = uuid.uuid4().hex
     bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id  # stamped before any 404, like the sibling routes
     source = await queue.get(job_id=job_id, owner_id=owner_id)
     if source is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video job not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video job not found",
+            headers={"X-Request-Id": request_id},
+        )
     active = await queue.find_active(
         course_id=source.course_id,
         lesson_id=source.lesson_id,
         kind=source.kind,
         owner_id=owner_id,
     )
-    response.headers["X-Request-Id"] = request_id
     if active is None:
         return Response(
             status_code=status.HTTP_204_NO_CONTENT, headers={"X-Request-Id": request_id}

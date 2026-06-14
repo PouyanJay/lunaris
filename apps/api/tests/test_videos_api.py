@@ -286,11 +286,11 @@ async def test_active_returns_the_in_flight_job_for_the_slot(
     # Act — the reader (holding the source jobId) asks for the slot's current active job.
     response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
 
-    # Assert — the in-flight job is returned (here, the job itself, still rendering).
+    # Assert — the in-flight job is returned (here, the job itself, freshly queued).
     assert response.status_code == 200
     body = response.json()["job"]
     assert body["id"] == job_a
-    assert body["status"] not in ("ready", "failed")
+    assert body["status"] == "queued"
 
 
 async def test_active_finds_a_regenerate_started_after_the_source_settled(
@@ -309,9 +309,11 @@ async def test_active_finds_a_regenerate_started_after_the_source_settled(
     # Act — the reader still only knows the OLD (failed) job id.
     response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
 
-    # Assert — it re-attaches to the live regenerate, not the stale failed source.
+    # Assert — it re-attaches to the live (queued) regenerate, not the stale failed source.
     assert response.status_code == 200
-    assert response.json()["job"]["id"] == job_b
+    body = response.json()["job"]
+    assert body["id"] == job_b
+    assert body["status"] == "queued"
 
 
 async def test_active_is_204_when_nothing_is_in_flight(
