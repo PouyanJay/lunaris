@@ -244,6 +244,43 @@ def test_validator_rejects_wrong_class_name(make_scene: Callable[..., SceneContr
         )
 
 
+def test_validator_normalizes_smart_quotes_that_would_break_parsing(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the model used typographic (curly) double-quotes as string delimiters; Python
+    # rejects them ("invalid character U+201C"). Normalize before compile, not via a wasted repair
+    # turn (the prod S1_hook smart-quote failure). Built with chr() so this source stays ASCII.
+    ldq, rdq = chr(0x201C), chr(0x201D)  # left / right double quotation marks
+    smart = _VALID_SOURCE.replace('title_bar("Sorting")', f"title_bar({ldq}Sorting{rdq})")
+
+    # Act — without normalization this raises ValueError("does not parse"); with it it passes.
+    result = validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert — the smart quotes are gone, replaced by straight ASCII quotes that parse.
+    assert ldq not in result and rdq not in result
+    assert 'title_bar("Sorting")' in result
+
+
+def test_validator_normalizes_em_en_dash_and_ellipsis(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — typographic dashes/ellipsis the model emits (here in a comment): a literal em-dash
+    # in code position is a SyntaxError, so normalize all of them everywhere, deterministically.
+    # Built with chr() so this test's own source stays ASCII.
+    em, en, ellipsis = chr(0x2014), chr(0x2013), chr(0x2026)
+    smart = _VALID_SOURCE.replace(
+        "self.play(FadeIn(title))",
+        f"self.play(FadeIn(title))  # step 1 {em} setup {en} then {ellipsis}",
+    )
+
+    # Act
+    result = validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert — em-dash, en-dash and ellipsis are normalized to ASCII.
+    assert all(ch not in result for ch in (em, en, ellipsis))
+    assert "step 1 - setup - then ..." in result
+
+
 def test_validator_rejects_unparseable_source(make_scene: Callable[..., SceneContract]) -> None:
     # Arrange / Act / Assert
     with pytest.raises(ValueError):
