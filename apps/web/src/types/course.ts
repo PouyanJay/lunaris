@@ -4,6 +4,7 @@
  * modelled; extend as more of the course surface is built out.
  */
 
+import type { VideoJobStatus } from "../lib/videoJobs";
 import type { GoalType } from "./clarifier";
 
 export type BloomLevel = "remember" | "understand" | "apply" | "analyze" | "evaluate" | "create";
@@ -396,6 +397,42 @@ export interface CourseScope {
   excludes: string[];
 }
 
+/** Which explainer video a job produces (mirrors the runtime `VideoKind`). */
+export type VideoKind = "summary" | "overview" | "lesson";
+
+/** A generated video as it rides in the course payload (explainer-video V2/V5): its grounding
+ *  provenance + playback metadata. The reader resolves the short-lived signed playback URL from
+ *  `provenance.jobId` via `GET /api/videos/{jobId}`. `provenance` is absent on a FAILED video. */
+export interface VideoArtifact {
+  kind: VideoKind;
+  status: VideoJobStatus;
+  provenance?: VideoProvenance | null;
+  narrated: boolean;
+  durationS?: number | null;
+}
+
+/** Where a generated video came from — structural provenance (CLAUDE.md). `jobId` is also the
+ *  handle the reader uses to fetch the video's signed URLs. `lessonId` is null for course-level. */
+export interface VideoProvenance {
+  jobId: string;
+  courseId: string;
+  lessonId?: string | null;
+  kind: VideoKind;
+  model: string;
+  contractHash: string;
+  inputHash: string;
+  claimIds: string[];
+  generatedAt: string;
+}
+
+/** The course's opening videos — the V5 Overview section: a SUMMARY trailer and an OVERVIEW intro.
+ *  Each is absent until the build stitches it (or its render degraded); the whole block is absent on
+ *  a pre-V5 / video-off course → the reader shows no Overview section. */
+export interface CourseVideos {
+  summary?: VideoArtifact | null;
+  overview?: VideoArtifact | null;
+}
+
 export interface Course {
   id: string;
   topic: string;
@@ -415,6 +452,8 @@ export interface Course {
    *  and persisted, so a Draft course carries the honest record of the fallback that built it.
    *  Absent on pre-T5 courses → the reader shows no build-provenance strip. */
   buildCapabilities?: CapabilityBuildTag[];
+  /** The course's opening videos (explainer-video V5); absent on a pre-V5 / video-off course. */
+  videos?: CourseVideos | null;
   status: CourseStatus;
 }
 

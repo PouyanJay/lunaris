@@ -9,13 +9,40 @@ draft, and returns a compact summary for the agent to reason over before authori
 
 import structlog
 from langchain_core.tools import BaseTool, tool
-from lunaris_runtime.schema import ProgressStage
+from lunaris_runtime.schema import ProgressStage, VideoKind
 
 from ...coverage import framework_coverage
 from ...subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
 from ..draft import CourseDraft
 
 logger = structlog.get_logger()
+
+
+async def _enqueue_course_videos(draft: CourseDraft) -> None:
+    """Enqueue the SUMMARY trailer + OVERVIEW intro for the build (V5-T2), best-effort.
+
+    Called once the curriculum is designed — both grounding inputs (the researched brief and the
+    modules) are final here. ``video_coordinator is None`` (video off / keyless / unowned) makes it
+    a no-op, so the gate lives in the composition root and the harness only checks presence. The
+    coordinator dedups per build and swallows queue errors — a hiccup degrades to "no course video",
+    not a broken build. The returned job ids ride on the draft for finalize to await.
+    """
+    coordinator = draft.video_coordinator
+    if coordinator is None:
+        return
+    summary_job = await coordinator.enqueue_summary(
+        course_id=draft.course_id, topic=draft.topic, modules=draft.modules
+    )
+    if summary_job is not None:
+        draft.enqueued_course_videos[VideoKind.SUMMARY] = summary_job
+    # The overview grounds in the brief + its researched standard; skip it on a briefless
+    # (direct-assembly) build, which has nothing to ground the intro against.
+    if draft.brief is not None:
+        overview_job = await coordinator.enqueue_overview(
+            course_id=draft.course_id, brief=draft.brief
+        )
+        if overview_job is not None:
+            draft.enqueued_course_videos[VideoKind.OVERVIEW] = overview_job
 
 
 def make_design_curriculum_tool(
@@ -68,6 +95,12 @@ def make_design_curriculum_tool(
             f"Designed curriculum: {len(modules)} modules",
             module_count=len(modules),
         )
+        # Enqueue the course-level videos now (V5-T2): this is the first point where BOTH the
+        # researched brief (research_standard ran before curriculum) and the curriculum are final —
+        # both the OVERVIEW (brief + standard) and SUMMARY (curriculum) ground correctly while their
+        # ~3-min / ~75s renders overlap the long authoring phase still ahead. No coordinator (video
+        # off / keyless / unowned) ⇒ a no-op, so the gate stays in the composition root.
+        await _enqueue_course_videos(draft)
         return {
             "moduleCount": len(modules),
             "modules": [

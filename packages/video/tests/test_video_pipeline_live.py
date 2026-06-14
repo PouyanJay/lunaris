@@ -1,7 +1,7 @@
 """Live, key-gated acceptance: the REAL pipeline renders a real lesson on live Claude.
 
 Deselected unless ``-m eval``; needs ANTHROPIC_API_KEY and the render extra. Drives the full
-LessonVideoPipeline with real model adapters — Claude plans the scene contracts, writes the Manim,
+VideoPipeline with real model adapters — Claude plans the scene contracts, writes the Manim,
 and judges the frames (Gate B) — and asserts a real multi-scene MP4 comes out. This is the V1
 acceptance criterion "key-gated live eval renders a real lesson": no scripted model, real renders.
 
@@ -19,7 +19,7 @@ from lunaris_video.codegen import SceneCodeGenerator
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
-from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
+from lunaris_video.pipeline import ContractHashCache, VideoPipeline
 from lunaris_video.pipeline.model_adapters import (
     build_text_invoke,
     build_vision_invoke,
@@ -90,7 +90,7 @@ class _FixedLessonProvider:
 
 
 async def _produce_with_fresh_takes(
-    pipeline: LessonVideoPipeline, job: VideoJob, *, attempts: int
+    pipeline: VideoPipeline, job: VideoJob, *, attempts: int
 ) -> tuple[object, list[str]]:
     """Produce, re-planning on a gate failure (the product's 'Fresh take') up to ``attempts``.
 
@@ -127,8 +127,8 @@ async def test_a_real_lesson_renders_on_live_claude(tmp_path, capsys) -> None:
     model = default_video_model()
     codegen = SceneCodeGenerator(invoke=build_text_invoke(model))
     renderer = SceneRenderer(timeout_s=300)
-    pipeline = LessonVideoPipeline(
-        lesson_provider=_FixedLessonProvider(),
+    pipeline = VideoPipeline(
+        source_provider=_FixedLessonProvider(),
         planner=ScenePlanner(invoke=build_text_invoke(model)),
         factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
@@ -181,8 +181,8 @@ async def test_a_real_lesson_renders_narrated_on_live_claude_and_elevenlabs(
     codegen = SceneCodeGenerator(invoke=build_text_invoke(model))
     renderer = SceneRenderer(timeout_s=300)
     frames = FrameExtractor()
-    pipeline = LessonVideoPipeline(
-        lesson_provider=_FixedLessonProvider(),
+    pipeline = VideoPipeline(
+        source_provider=_FixedLessonProvider(),
         planner=ScenePlanner(invoke=build_text_invoke(model)),
         factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),

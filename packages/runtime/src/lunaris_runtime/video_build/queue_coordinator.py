@@ -1,13 +1,14 @@
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from uuid import uuid4
 
 import structlog
 from pydantic import ValidationError
 
 from ..persistence import IVideoJobQueue, IVideoStorage, PersistenceError, VideoArtifactPaths
-from ..schema import VideoArtifact, VideoJob, VideoJobStatus, VideoKind
+from ..schema import CourseBrief, Module, VideoArtifact, VideoJob, VideoJobStatus, VideoKind
 from .input_hash import video_input_hash
+from .video_lengths import target_seconds_for
 
 logger = structlog.get_logger()
 
@@ -51,6 +52,7 @@ class QueueVideoBuildCoordinator:
         self._await_timeout_s = await_timeout_s
         self._poll_s = poll_s
         self._enqueued: dict[str, str] = {}  # lesson_id → job_id (per-build dedup)
+        self._enqueued_course: dict[VideoKind, str] = {}  # summary/overview → job_id (per build)
 
     async def enqueue_lesson(self, *, course_id: str, lesson_id: str) -> str | None:
         existing = self._enqueued.get(lesson_id)
@@ -84,38 +86,117 @@ class QueueVideoBuildCoordinator:
         )
         return job.id
 
+    async def enqueue_summary(
+        self, *, course_id: str, topic: str, modules: Sequence[Module]
+    ) -> str | None:
+        # The trailer grounds in the designed curriculum; snapshot topic + the modules (without the
+        # not-yet-authored lessons) onto the job so the worker grounds it without the unpersisted
+        # course (AD-1). model_dump(mode="json") keeps the config JSON-serialisable for the queue.
+        grounding = {
+            "topic": topic,
+            "modules": [module.model_dump(mode="json") for module in modules],
+        }
+        return await self._enqueue_course_video(VideoKind.SUMMARY, course_id, grounding)
+
+    async def enqueue_overview(self, *, course_id: str, brief: CourseBrief) -> str | None:
+        # The intro grounds in the brief + researched standard; snapshot the whole brief (it carries
+        # ``research`` once the research stage ran) onto the job — same AD-1 rationale as summary.
+        grounding = {"brief": brief.model_dump(mode="json")}
+        return await self._enqueue_course_video(VideoKind.OVERVIEW, course_id, grounding)
+
+    async def _enqueue_course_video(
+        self, kind: VideoKind, course_id: str, grounding: dict[str, object]
+    ) -> str | None:
+        existing = self._enqueued_course.get(kind)
+        if existing is not None:
+            return existing  # one summary + one overview per build
+        config = dict(self._config)
+        config["target_seconds"] = target_seconds_for(kind)
+        config["grounding"] = grounding
+        job = VideoJob(
+            id=uuid4().hex,
+            user_id=self._owner_id,
+            course_id=course_id,
+            lesson_id=None,  # course-level kinds carry no lesson
+            kind=kind,
+            input_hash=video_input_hash(course_id, kind.value),
+            config=config,
+        )
+        try:
+            await self._queue.enqueue(job)
+        except PersistenceError:
+            # Best-effort, like enqueue_lesson: a queue hiccup degrades to "no course video",
+            # never a dead build.
+            logger.warning(
+                "video_build_course_enqueue_failed",
+                course_id=course_id,
+                kind=kind.value,
+                exc_info=True,
+            )
+            return None
+        self._enqueued_course[kind] = job.id
+        logger.info(
+            "video_build_course_enqueued", job_id=job.id, course_id=course_id, kind=kind.value
+        )
+        return job.id
+
     async def collect(self, jobs_by_lesson: Mapping[str, str]) -> dict[str, VideoArtifact]:
-        # Await every job concurrently so the blocking wall-time is the slowest job, not the sum.
-        # ``return_exceptions`` makes the degrade structural: even an unforeseen error from an await
-        # becomes a FAILED artifact, so a video can NEVER abort the publish (plan §0 / AD-9).
-        lesson_ids = list(jobs_by_lesson)
+        return await self._collect(jobs_by_lesson, degraded_kind=VideoKind.LESSON)
+
+    async def collect_course_videos(
+        self, jobs_by_kind: Mapping[VideoKind, str]
+    ) -> dict[VideoKind, VideoArtifact]:
+        # Each course-level job degrades to ITS OWN kind, so the reader's Overview section shows the
+        # right retry state per slot — hence collect keys by kind and uses it as the degrade kind.
         results = await asyncio.gather(
             *(
-                self._await_artifact(lesson_id, jobs_by_lesson[lesson_id])
-                for lesson_id in lesson_ids
+                self._await_artifact(job_id, degraded_kind=kind)
+                for kind, job_id in jobs_by_kind.items()
             ),
             return_exceptions=True,
         )
-        artifacts: dict[str, VideoArtifact] = {}
-        for lesson_id, result in zip(lesson_ids, results, strict=True):
-            if isinstance(result, BaseException):
-                logger.warning(
-                    "video_build_collect_unexpected_error", lesson_id=lesson_id, exc_info=result
-                )
-                result = VideoArtifact(kind=VideoKind.LESSON, status=VideoJobStatus.FAILED)
-            artifacts[lesson_id] = result
+        artifacts: dict[VideoKind, VideoArtifact] = {}
+        for kind, result in zip(jobs_by_kind, results, strict=True):
+            artifacts[kind] = self._degrade_on_error(result, degraded_kind=kind)
         return artifacts
 
-    async def _await_artifact(self, lesson_id: str, job_id: str) -> VideoArtifact:
+    async def _collect(
+        self, jobs_by_key: Mapping[str, str], *, degraded_kind: VideoKind
+    ) -> dict[str, VideoArtifact]:
+        # Await every job concurrently so the blocking wall-time is the slowest job, not the sum.
+        # ``return_exceptions`` makes the degrade structural: even an unforeseen error from an await
+        # becomes a FAILED artifact, so a video can NEVER abort the publish (plan §0 / AD-9).
+        keys = list(jobs_by_key)
+        results = await asyncio.gather(
+            *(self._await_artifact(jobs_by_key[key], degraded_kind=degraded_kind) for key in keys),
+            return_exceptions=True,
+        )
+        return {
+            key: self._degrade_on_error(result, degraded_kind=degraded_kind)
+            for key, result in zip(keys, results, strict=True)
+        }
+
+    @staticmethod
+    def _degrade_on_error(
+        result: VideoArtifact | BaseException, *, degraded_kind: VideoKind
+    ) -> VideoArtifact:
+        if isinstance(result, BaseException):
+            logger.warning(
+                "video_build_collect_unexpected_error", kind=degraded_kind.value, exc_info=result
+            )
+            return VideoArtifact(kind=degraded_kind, status=VideoJobStatus.FAILED)
+        return result
+
+    async def _await_artifact(self, job_id: str, *, degraded_kind: VideoKind) -> VideoArtifact:
         job = await self._await_terminal(job_id)
         if job is not None and job.status is VideoJobStatus.READY:
             artifact = await self._download_artifact(job)
             if artifact is not None:
                 return artifact
-        # FAILED, unreadable, or still running past the timeout → the retry-state artifact. The
-        # course publishes anyway; the lesson hero shows the regenerate menu (plan §0 policy).
-        logger.info("video_build_lesson_degraded", job_id=job_id, lesson_id=lesson_id)
-        return VideoArtifact(kind=VideoKind.LESSON, status=VideoJobStatus.FAILED)
+        # FAILED, unreadable, or still running past the timeout → the retry-state artifact (carrying
+        # the right kind). The course publishes anyway; the hero shows the regenerate menu (§0).
+        logger.info("video_build_degraded", job_id=job_id, kind=degraded_kind.value)
+        return VideoArtifact(kind=degraded_kind, status=VideoJobStatus.FAILED)
 
     async def _await_terminal(self, job_id: str) -> VideoJob | None:
         """Poll the job until it settles READY/FAILED, returning it. ``None`` means "give up and

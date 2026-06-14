@@ -1,0 +1,76 @@
+/* The course Overview section: the trailer + topic-intro videos the course opens with. A region of
+   stacked slots (eyebrow + title + 16:9 stage) — one border level per region (the stage), no panel
+   wrapping the bordered stages (avoids cards-in-cards). */
+
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  margin-bottom: var(--space-8);
+}
+
+.slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.slotTitle {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The 16:9 frame the loading + failed states share with the ready player, so resolving the signed
+   URL never shifts the layout. */
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    var(--bg-subtle) 30%,
+    var(--bg-muted) 50%,
+    var(--bg-subtle) 70%
+  );
+  background-size: 200% 100%;
+  animation: overviewShimmer 1.4s var(--ease) infinite;
+}
+
+@keyframes overviewShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Failed: an honest, calm message inside the same frame — the course stays fully usable without it. */
+.failedLabel {
+  max-width: 40ch;
+  margin: 0;
+  padding: 0 var(--space-4);
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+  }
+}

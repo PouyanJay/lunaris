@@ -1,7 +1,8 @@
-"""LessonVideoPipeline tests: the real orchestration (PLAN → Gate A → Gate B → ASSEMBLE) wired
+"""VideoPipeline tests: the real orchestration (PLAN → Gate A → Gate B → ASSEMBLE) wired
 from real planner/gates with stubbed leaf seams, plus the contract-hash cache that skips the whole
-render half on an unchanged contract. Fakes stand in only for I/O leaves (model, renderer, vision,
-frames, assembler, lesson source)."""
+render half on an unchanged contract, and the chaptered (overview) path that concatenates every
+chapter's scenes into one MP4. Fakes stand in only for I/O leaves (model, renderer, vision, frames,
+assembler, lesson source)."""
 
 import json
 from pathlib import Path
@@ -9,14 +10,16 @@ from pathlib import Path
 import pytest
 from _stubs import FakeLessonProvider, StubInvokeModel, manifest_for
 from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
+from lunaris_runtime.video_build import target_seconds_for
 from lunaris_video.assembly import build_webvtt
 from lunaris_video.errors import FactualGateError, VoiceUnavailableError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
-from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
-from lunaris_video.pipeline.lesson_video_pipeline import SynthesizerProvider
+from lunaris_video.pipeline import ContractHashCache, VideoPipeline
+from lunaris_video.pipeline.video_pipeline import SynthesizerProvider, _target_seconds
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.schemas import (
+    ChapteredSceneContracts,
     QaVerdict,
     SceneContract,
     SceneTiming,
@@ -170,10 +173,11 @@ def _pipeline(
     codegen: _CodegenStub | None = None,
     synthesizer_provider: SynthesizerProvider = lambda: None,
     sync_gate: SyncGate | None = None,
-) -> LessonVideoPipeline:
+    chaptered: bool = False,
+) -> VideoPipeline:
     codegen = codegen or _CodegenStub()
-    return LessonVideoPipeline(
-        lesson_provider=FakeLessonProvider(),
+    return VideoPipeline(
+        source_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=invoke),
         factual_gate=FactualGate(),
         render_gate=RenderGate(codegen=codegen, renderer=renderer),
@@ -184,6 +188,7 @@ def _pipeline(
         cache=cache,
         workspace_root=workspace,
         model_id="claude-test-model",
+        chaptered=chaptered,
         synthesizer_provider=synthesizer_provider,
         sync_gate=sync_gate,
     )
@@ -382,3 +387,64 @@ async def test_voice_on_without_a_key_fails_fast_before_rendering(
         await pipeline.produce(_voiced_job())
     assert renderer.renders == 0
     assert assembler.calls == 0
+
+
+# ── V5: the chaptered (overview) path + configurable lengths ────────────────────────────
+
+
+def _chaptered_draft_json(make_chaptered_contract) -> str:
+    contract = make_chaptered_contract().model_dump(mode="json")
+    keys = ("topic", "audience", "visual_archetypes_used", "asset_strategy", "chapters")
+    return json.dumps({k: contract[k] for k in keys})
+
+
+def _overview_job() -> VideoJob:
+    return VideoJob(
+        id="job-overview",
+        user_id="00000000-0000-0000-0000-000000000001",
+        course_id="course-1",
+        lesson_id=None,  # course-level: no lesson
+        kind=VideoKind.OVERVIEW,
+        input_hash="hash-ovr",
+    )
+
+
+async def test_chaptered_overview_concatenates_every_chapter_into_one_mp4(
+    make_chaptered_contract, tmp_path: Path
+) -> None:
+    # Arrange — the chaptered fixture is 2 chapters x 2 scenes; the pipeline is in chaptered mode
+    # (the overview kind), so PLAN takes the chaptered branch.
+    invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path, chaptered=True)
+
+    # Act
+    rendered = await pipeline.produce(_overview_job())
+
+    # Assert — every chapter's scenes render (4 = 2x2), then a SINGLE assemble call concatenates
+    # them into ONE continuous MP4 (plan §0: a chaptered contract → one video).
+    assert renderer.renders == 4
+    assert assembler.calls == 1
+    assert isinstance(assembler.received_contract, ChapteredSceneContracts)
+    assert len(assembler.received_contract.chapters) == 2
+    assert len(assembler.received_contract.scenes) == 4  # chapters flattened in render order
+    assert rendered.mp4  # one artifact
+
+
+def test_target_seconds_falls_back_to_the_kind_default_when_unconfigured() -> None:
+    # A job with no configured length designs to its kind's product default (V5-T1).
+    job = VideoJob(id="j", user_id="u", course_id="c1", kind=VideoKind.OVERVIEW, input_hash="h")
+    assert _target_seconds(job) == target_seconds_for(VideoKind.OVERVIEW)
+
+
+def test_target_seconds_uses_the_configured_length_when_present() -> None:
+    # A snapshotted custom length (a future per-user config, V6) is respected over the default.
+    job = VideoJob(
+        id="j",
+        user_id="u",
+        course_id="c1",
+        kind=VideoKind.OVERVIEW,
+        input_hash="h",
+        config={"target_seconds": 240},
+    )
+    assert _target_seconds(job) == 240

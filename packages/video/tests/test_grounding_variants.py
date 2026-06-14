@@ -23,9 +23,9 @@ from lunaris_runtime.schema import (
 )
 from lunaris_video.errors import FactualGateError
 from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
-from lunaris_video.grounding import LessonGroundingPacketBuilder
+from lunaris_video.grounding import CourseGroundingPacketBuilder
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
-from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
+from lunaris_video.pipeline import ContractHashCache, VideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.schemas import (
     QaVerdict,
@@ -177,11 +177,11 @@ def _job() -> VideoJob:
     )
 
 
-def _pipeline(course: Course, draft_json: str, workspace: Path) -> LessonVideoPipeline:
+def _pipeline(course: Course, draft_json: str, workspace: Path) -> VideoPipeline:
     codegen, renderer = _Codegen(), _Renderer()
-    return LessonVideoPipeline(
-        lesson_provider=CourseStoreLessonSourceProvider(
-            _FakeCourseStore(course), packet_builder=LessonGroundingPacketBuilder()
+    return VideoPipeline(
+        source_provider=CourseStoreLessonSourceProvider(
+            _FakeCourseStore(course), packet_builder=CourseGroundingPacketBuilder()
         ),
         planner=ScenePlanner(invoke=StubInvokeModel([draft_json])),
         factual_gate=FactualGate(),

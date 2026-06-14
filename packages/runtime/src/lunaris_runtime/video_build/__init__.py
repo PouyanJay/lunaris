@@ -11,11 +11,13 @@ from .coordinator_protocol import IVideoBuildCoordinator
 from .input_hash import video_input_hash
 from .queue_coordinator import QueueVideoBuildCoordinator
 from .run_scope import resolve_video_coordinator, run_video_coordinator
+from .video_lengths import target_seconds_for
 
 __all__ = [
     "IVideoBuildCoordinator",
     "QueueVideoBuildCoordinator",
     "resolve_video_coordinator",
     "run_video_coordinator",
+    "target_seconds_for",
     "video_input_hash",
 ]

@@ -5,12 +5,14 @@ from pathlib import Path
 
 import structlog
 from lunaris_runtime.schema import VideoJob, VideoProvenance
+from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
 from lunaris_video.errors import VideoPipelineError, VoiceUnavailableError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedScene, RenderedVideo
+from lunaris_video.models.lesson_source import LessonSource
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourceProvider
 from lunaris_video.protocols.render_cache_protocol import IRenderCache
@@ -18,7 +20,6 @@ from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesiz
 from lunaris_video.protocols.video_assembler_protocol import IVideoAssembler
 from lunaris_video.schemas import (
     FRAMING_ONLY_SENTINEL,
-    SceneContracts,
     TimingManifest,
     VideoContract,
     VoiceSpec,
@@ -26,7 +27,6 @@ from lunaris_video.schemas import (
 
 _logger = structlog.get_logger(__name__)
 
-_DEFAULT_TARGET_SECONDS = 75
 # ElevenLabs "Rachel" + the high-quality multilingual model — the default course voice when the job
 # config doesn't name one (one voice per course; §0). A future per-user config (V6) overrides these.
 _ELEVENLABS_PROVIDER = "elevenlabs"
@@ -44,8 +44,8 @@ def _no_synthesizer() -> ISpeechSynthesizer | None:
     return None
 
 
-class LessonVideoPipeline:
-    """The real lesson-video pipeline (``IVideoPipeline``): lesson → contract → scenes → MP4.
+class VideoPipeline:
+    """The real video pipeline (``IVideoPipeline``): a source → contract → scenes → one MP4.
 
     PLAN once, then Gate C (factual: every narrated figure must be grounded in a cited claim —
     runs on the contract before any render so a smuggled figure costs no compute), then resolve the
@@ -58,14 +58,17 @@ class LessonVideoPipeline:
     grounded, rendered, synced or pass QA raises a ``VideoPipelineError`` subclass; the worker
     settles the job FAILED with the evidence and a partial video is never returned.
 
-    V1 plans lesson videos only (flat ``SceneContracts``); the chaptered overview kind arrives in
-    V5 behind the same interface.
+    One class serves all three kinds (V5): the injected ``source_provider`` decides what it grounds
+    against (a lesson from the store, or a course-level grounding snapshot), and ``chaptered`` picks
+    the flat plan (lesson/summary) vs the chaptered plan (the ~3-min overview). Everything below
+    — gates, render, assemble — works on the ``VideoContract`` union, so the kind never leaks past
+    PLAN. ``KindRoutingVideoPipeline`` maps each ``VideoKind`` to its configured instance.
     """
 
     def __init__(
         self,
         *,
-        lesson_provider: ILessonSourceProvider,
+        source_provider: ILessonSourceProvider,
         planner: ScenePlanner,
         factual_gate: FactualGate,
         render_gate: RenderGate,
@@ -74,10 +77,11 @@ class LessonVideoPipeline:
         cache: IRenderCache,
         workspace_root: Path,
         model_id: str,
+        chaptered: bool = False,
         synthesizer_provider: SynthesizerProvider = _no_synthesizer,
         sync_gate: SyncGate | None = None,
     ) -> None:
-        self._lesson_provider = lesson_provider
+        self._source_provider = source_provider
         self._planner = planner
         self._factual_gate = factual_gate
         self._render_gate = render_gate
@@ -86,15 +90,18 @@ class LessonVideoPipeline:
         self._cache = cache
         self._workspace_root = workspace_root
         self._model_id = model_id
+        # Chaptered = the overview kind (a ~3-min topic intro), planned as chapters that concatenate
+        # into one MP4; flat = a single-arc lesson/summary. A config property, not a per-job branch.
+        self._chaptered = chaptered
         # The voice seams. The defaults make a bare pipeline silent-only; the composition root wires
         # both together for the keyed path, so a voiced produce always has a synthesizer + Gate D.
         self._synthesizer_provider = synthesizer_provider
         self._sync_gate = sync_gate
 
     async def produce(self, job: VideoJob) -> RenderedVideo:
-        lesson = await self._lesson_provider.load(job)
-        contract = await self._planner.plan(lesson, target_seconds=_target_seconds(job))
-        self._factual_gate.check(contract, lesson.packet)
+        source = await self._source_provider.load(job)
+        contract = await self._plan(source, _target_seconds(job))
+        self._factual_gate.check(contract, source.packet)
         digest = contract_hash(contract)
 
         # The voice toggle decides voiced vs silent WITHOUT re-planning — the contract above feeds
@@ -135,6 +142,13 @@ class LessonVideoPipeline:
         )
         return replace(video, provenance_json=provenance)
 
+    async def _plan(self, source: LessonSource, target_seconds: int) -> VideoContract:
+        """PLAN the contract for this pipeline's kind: chaptered for the overview, flat otherwise.
+        Both share the grounding moat (the packet on ``source``) and the injected style/gates."""
+        if self._chaptered:
+            return await self._planner.plan_chaptered(source, target_seconds=target_seconds)
+        return await self._planner.plan(source, target_seconds=target_seconds)
+
     def _resolve_voice(
         self, job: VideoJob, digest: str
     ) -> tuple[VoiceSpec | None, ISpeechSynthesizer | None, str]:
@@ -157,7 +171,7 @@ class LessonVideoPipeline:
 
     async def _resolve_timing(
         self,
-        contract: SceneContracts,
+        contract: VideoContract,
         voice: VoiceSpec | None,
         synthesizer: ISpeechSynthesizer | None,
         workdir: Path,
@@ -185,7 +199,7 @@ class LessonVideoPipeline:
         return provenance.model_dump_json(by_alias=True).encode()
 
     async def _render_scenes(
-        self, contract: SceneContracts, manifest: TimingManifest, workdir: Path
+        self, contract: VideoContract, manifest: TimingManifest, workdir: Path
     ) -> list[RenderedScene]:
         rendered: list[RenderedScene] = []
         for scene in contract.scenes:
@@ -206,8 +220,10 @@ class LessonVideoPipeline:
 
 
 def _target_seconds(job: VideoJob) -> int:
+    # The length snapshotted onto the job at enqueue (V5-T2) wins; absent, fall back to the kind's
+    # product default — so PLAN always designs to a length, kind-aware, with no duplicated constant.
     raw = job.config.get("target_seconds")
-    return int(raw) if isinstance(raw, int) else _DEFAULT_TARGET_SECONDS
+    return int(raw) if isinstance(raw, int) else target_seconds_for(job.kind)
 
 
 def _wants_voice(job: VideoJob) -> bool:

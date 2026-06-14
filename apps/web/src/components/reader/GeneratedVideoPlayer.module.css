@@ -1,0 +1,81 @@
+/* The shared 16:9 stage for a Lunaris-generated MP4: poster until clicked, then the native player
+   (the VideoFacade interaction). Used by the lesson hero and the course Overview section alike. */
+
+.stage {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* The whole stage is the play target (the VideoFacade pattern). */
+.poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: var(--bg-muted);
+  cursor: pointer;
+}
+
+.poster:focus-visible {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 2px var(--bg-muted),
+    inset 0 0 0 4px var(--focus-ring);
+}
+
+.posterImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.posterGlyph {
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--scrim);
+  color: var(--gray-0);
+  padding-left: 3px; /* optical centring of the triangle */
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.poster:hover .play,
+.poster:focus-visible .play {
+  background: var(--accent-600);
+}
+
+.player {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: var(--bg-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play {
+    transition: none;
+  }
+}

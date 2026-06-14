@@ -1,3 +1,4 @@
 from lunaris_video.sourcing.course_store_lesson_provider import CourseStoreLessonSourceProvider
+from lunaris_video.sourcing.course_video_source_provider import CourseVideoSourceProvider
 
-__all__ = ["CourseStoreLessonSourceProvider"]
+__all__ = ["CourseStoreLessonSourceProvider", "CourseVideoSourceProvider"]

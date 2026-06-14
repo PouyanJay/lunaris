@@ -51,7 +51,7 @@ from lunaris_runtime.video_build import IVideoBuildCoordinator, QueueVideoBuildC
 from lunaris_video import (
     IVideoPipeline,
     StubVideoPipeline,
-    build_lesson_video_pipeline,
+    build_video_pipeline,
 )
 from structlog.contextvars import bind_contextvars
 
@@ -276,7 +276,9 @@ def get_video_pipeline(settings: Settings) -> IVideoPipeline:
     workspace_root = Path(tempfile.gettempdir()) / "lunaris-video-workspace"
     workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     workspace_root.chmod(0o700)  # mkdir(exist_ok) skips mode on a pre-existing dir; enforce it
-    return build_lesson_video_pipeline(
+    # The kind-routing pipeline (V5): one worker pipeline that routes lesson / summary / overview
+    # jobs to their configured inner pipelines (the overview chaptered).
+    return build_video_pipeline(
         store=_resolve_course_store(settings), workspace_root=workspace_root
     )
 
