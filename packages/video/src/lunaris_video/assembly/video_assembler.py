@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 import structlog
@@ -40,7 +39,7 @@ class VideoAssembler:
         mp4_bytes, poster_bytes = await asyncio.gather(
             asyncio.to_thread(final_mp4.read_bytes), asyncio.to_thread(poster.read_bytes)
         )
-        timing_json = json.dumps(estimate_timing(contract), indent=2).encode()
+        timing_json = estimate_timing(contract).model_dump_json(indent=2).encode()
         contracts_json = contract.model_dump_json(indent=2).encode()
         _logger.info("video_assembler.assembled", scenes=len(scenes), mp4_bytes=len(mp4_bytes))
         return RenderedVideo(

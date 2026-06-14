@@ -20,13 +20,13 @@ def test_timing_has_the_skill_manifest_shape(
     # Act
     timing = estimate_timing(contract)
 
-    # Assert — one entry per scene; each beat carries the skill's estimate fields.
-    assert set(timing) == {scene.id for scene in contract.scenes}
-    first = timing[contract.scenes[0].id]
-    beat = first["beats"][0]
-    assert set(beat) == {"id", "audio_s", "anim_s", "audio", "estimated"}
-    assert beat["audio"] is None
-    assert beat["estimated"] is True
+    # Assert — one entry per scene; the serialized beat carries the skill's exact estimate fields.
+    assert set(timing.scene_ids()) == {scene.id for scene in contract.scenes}
+    beat = timing[contract.scenes[0].id].beats[0]
+    serialized = beat.model_dump()
+    assert set(serialized) == {"id", "audio_s", "anim_s", "audio", "estimated"}
+    assert beat.audio is None
+    assert beat.estimated is True
 
 
 def test_spoken_beat_duration_follows_the_wpm_model(
@@ -45,9 +45,9 @@ def test_spoken_beat_duration_follows_the_wpm_model(
     timing = estimate_timing(SceneContracts(**_with_scenes(scene)))
 
     # Assert
-    beat = timing[scene.id]["beats"][0]
-    assert beat["audio_s"] == 2.75
-    assert beat["anim_s"] == 2.75
+    beat = timing[scene.id].beats[0]
+    assert beat.audio_s == 2.75
+    assert beat.anim_s == 2.75
 
 
 def test_silent_beat_uses_its_visual_floor_not_speech() -> None:
@@ -66,10 +66,10 @@ def test_silent_beat_uses_its_visual_floor_not_speech() -> None:
     timing = estimate_timing(SceneContracts(**_with_scenes(scene)))
 
     # Assert — no speech time, the floor drives the on-screen duration.
-    beat = timing[scene.id]["beats"][0]
-    assert beat["audio_s"] == 0.0
-    assert beat["anim_s"] == 1.5
-    assert timing[scene.id]["total_s"] == 1.5
+    scene_timing = timing[scene.id]
+    assert scene_timing.beats[0].audio_s == 0.0
+    assert scene_timing.beats[0].anim_s == 1.5
+    assert scene_timing.total_s == 1.5
 
 
 def test_estimate_constants_match_the_pinned_skill_script() -> None:
