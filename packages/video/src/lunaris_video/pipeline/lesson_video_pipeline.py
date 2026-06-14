@@ -5,6 +5,7 @@ from pathlib import Path
 import structlog
 from lunaris_runtime.schema import VideoJob, VideoProvenance
 
+from lunaris_video.assembly import estimate_timing
 from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedScene, RenderedVideo
@@ -12,7 +13,12 @@ from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourceProvider
 from lunaris_video.protocols.render_cache_protocol import IRenderCache
 from lunaris_video.protocols.video_assembler_protocol import IVideoAssembler
-from lunaris_video.schemas import FRAMING_ONLY_SENTINEL, SceneContracts, VideoContract
+from lunaris_video.schemas import (
+    FRAMING_ONLY_SENTINEL,
+    SceneContracts,
+    TimingManifest,
+    VideoContract,
+)
 
 _logger = structlog.get_logger(__name__)
 
@@ -73,8 +79,14 @@ class LessonVideoPipeline:
             return replace(cached, provenance_json=provenance)
 
         workdir = self._workdir_for(job)
-        rendered = await self._render_scenes(contract, workdir)
-        video = await self._assembler.assemble(rendered, contract, workdir=workdir)
+        # Audio-drives-video: resolve the timing manifest BEFORE the render so the scene code is
+        # built against the exact per-beat windows. V3 silent path = the WPM estimate; the voiced
+        # path swaps a measured manifest in here (V3-T5) — the render half is identical either way.
+        manifest = estimate_timing(contract)
+        rendered = await self._render_scenes(contract, manifest, workdir)
+        video = await self._assembler.assemble(
+            rendered, contract, manifest=manifest, workdir=workdir
+        )
         await self._cache.store(digest, video)
         _logger.info(
             "video_pipeline.produced",
@@ -98,14 +110,17 @@ class LessonVideoPipeline:
         )
         return provenance.model_dump_json(by_alias=True).encode()
 
-    async def _render_scenes(self, contract: SceneContracts, workdir: Path) -> list[RenderedScene]:
+    async def _render_scenes(
+        self, contract: SceneContracts, manifest: TimingManifest, workdir: Path
+    ) -> list[RenderedScene]:
         rendered: list[RenderedScene] = []
         for scene in contract.scenes:
+            timing = manifest[scene.id]
             passed_render = await self._render_gate.render_scene(
-                scene, topic=contract.topic, workdir=workdir
+                scene, topic=contract.topic, timing=timing, workdir=workdir
             )
             cleared = await self._visual_qa_gate.inspect_scene(
-                scene, rendered=passed_render, workdir=workdir
+                scene, rendered=passed_render, timing=timing, workdir=workdir
             )
             rendered.append(cleared)
         return rendered

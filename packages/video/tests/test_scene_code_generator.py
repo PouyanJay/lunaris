@@ -6,7 +6,17 @@ from collections.abc import Callable
 import pytest
 from _stubs import StubInvokeModel
 from lunaris_video.codegen import SceneCodeGenerator, validate_scene_source
-from lunaris_video.schemas import SceneContract
+from lunaris_video.schemas import BeatTiming, QaDefect, SceneContract, SceneTiming
+
+
+def _timing_for(scene: SceneContract) -> SceneTiming:
+    # A distinct, non-round window per beat so a test can spot the exact value in the prompt.
+    beats = [
+        BeatTiming(id=beat.id, audio_s=0.0, anim_s=round(2.5 + i, 2), audio=None, estimated=True)
+        for i, beat in enumerate(scene.beats)
+    ]
+    return SceneTiming(beats=beats, total_s=round(sum(b.anim_s for b in beats), 2))
+
 
 _VALID_SOURCE = """\
 from manim import *
@@ -27,9 +37,10 @@ async def test_generate_returns_validated_source(
     # Arrange — the model wraps its code in fences; the validator strips them.
     stub = StubInvokeModel([f"```python\n{_VALID_SOURCE}```"])
     codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
 
     # Act
-    source = await codegen.generate(make_scene(1, "problem"), topic="merge sort")
+    source = await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
 
     # Assert
     assert source.startswith("from manim import *")
@@ -46,7 +57,7 @@ async def test_generate_prompt_carries_contract_and_patterns(
     scene = make_scene(1, "problem")
 
     # Act
-    await codegen.generate(scene, topic="merge sort")
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
 
     # Assert — the scene's contract JSON, the pinned no-pivot rule, and the exact class name
     # the renderer will select are all in the prompt.
@@ -56,6 +67,26 @@ async def test_generate_prompt_carries_contract_and_patterns(
     assert "class S1Problem(Scene):" in prompt
 
 
+async def test_generate_prompt_carries_the_exact_beat_timing_windows(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — audio-drives-video: the codegen must receive each beat's FIXED on-screen window so
+    # the generated scene's run_times/waits sum to it (not just honour min_visual_s).
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+    timing = _timing_for(scene)
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=timing)
+
+    # Assert — every beat id and its exact window second are in the prompt.
+    prompt = stub.prompts[0]
+    for beat in timing.beats:
+        assert beat.id in prompt
+        assert f"{beat.anim_s}" in prompt
+
+
 async def test_latex_in_a_completion_triggers_a_repair_turn(
     make_scene: Callable[..., SceneContract],
 ) -> None:
@@ -63,9 +94,10 @@ async def test_latex_in_a_completion_triggers_a_repair_turn(
     bad = _VALID_SOURCE.replace('title_bar("Sorting")', 'MathTex(r"\\frac{1}{2}")')
     stub = StubInvokeModel([bad, _VALID_SOURCE])
     codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
 
     # Act
-    source = await codegen.generate(make_scene(1, "problem"), topic="merge sort")
+    source = await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
 
     # Assert
     assert len(stub.prompts) == 2
@@ -80,18 +112,48 @@ async def test_repair_prompt_embeds_source_and_stack_trace(
     stub = StubInvokeModel([_VALID_SOURCE])
     codegen = SceneCodeGenerator(invoke=stub)
     failing_source = _VALID_SOURCE.replace("FadeIn", "FadeInFrom")
+    scene = make_scene(1, "problem")
 
     # Act
     await codegen.repair(
-        make_scene(1, "problem"),
+        scene,
         source=failing_source,
         error_tail="NameError: name 'FadeInFrom' is not defined",
+        timing=_timing_for(scene),
     )
 
     # Assert — the model sees exactly what failed and how.
     prompt = stub.prompts[0]
     assert "FadeInFrom" in prompt
     assert "NameError" in prompt
+
+
+async def test_both_repair_prompts_keep_the_beat_timing_windows(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a repaired scene must still hit its windows, so both repair templates carry timing.
+    scene = make_scene(1, "problem")
+    timing = _timing_for(scene)
+
+    # Act — drive each repair arm once.
+    render_stub = StubInvokeModel([_VALID_SOURCE])
+    await SceneCodeGenerator(invoke=render_stub).repair(
+        scene, source=_VALID_SOURCE, error_tail="boom", timing=timing
+    )
+    visual_stub = StubInvokeModel([_VALID_SOURCE])
+    await SceneCodeGenerator(invoke=visual_stub).repair_visual(
+        scene,
+        source=_VALID_SOURCE,
+        defects=[QaDefect(issue="overlap", fix_hint="separate them")],
+        timing=timing,
+    )
+
+    # Assert — both repair prompts carry every beat's exact window (not just the generate prompt).
+    for stub in (render_stub, visual_stub):
+        prompt = stub.prompts[0]
+        for beat in timing.beats:
+            assert beat.id in prompt
+            assert f"{beat.anim_s}" in prompt
 
 
 @pytest.mark.parametrize(

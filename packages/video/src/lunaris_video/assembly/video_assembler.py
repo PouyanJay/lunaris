@@ -3,12 +3,11 @@ from pathlib import Path
 
 import structlog
 
-from lunaris_video.assembly.timing_estimator import estimate_timing
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.models.rendered_scene import RenderedScene
 from lunaris_video.models.rendered_video import RenderedVideo
 from lunaris_video.rendering.sandbox import run_sandboxed
-from lunaris_video.schemas import VideoContract
+from lunaris_video.schemas import TimingManifest, VideoContract
 
 _logger = structlog.get_logger(__name__)
 
@@ -22,13 +21,19 @@ class VideoAssembler:
 
     Concat is a stream-copy (``-c copy``): every scene shares the renderer's encoder settings, so
     the join needs no re-encode (the skill's calibration). The poster is the final video's first
-    frame as JPEG (the reader's hero-slot still). ``timing.json`` is the WPM estimate — the video
-    is silent now but voice-ready. ffmpeg runs in the hardened sandbox; the scenes are
+    frame as JPEG (the reader's hero-slot still). ``timing.json`` is the SAME manifest that drove
+    the render (estimated when silent, measured when voiced) — persisted, never re-derived, so the
+    code and the player agree. ffmpeg runs in the hardened sandbox; the scenes are
     untrusted-codegen output.
     """
 
     async def assemble(
-        self, scenes: list[RenderedScene], contract: VideoContract, *, workdir: Path
+        self,
+        scenes: list[RenderedScene],
+        contract: VideoContract,
+        *,
+        manifest: TimingManifest,
+        workdir: Path,
     ) -> RenderedVideo:
         if not scenes:
             raise VideoPipelineError("cannot assemble a video with no rendered scenes")
@@ -39,7 +44,7 @@ class VideoAssembler:
         mp4_bytes, poster_bytes = await asyncio.gather(
             asyncio.to_thread(final_mp4.read_bytes), asyncio.to_thread(poster.read_bytes)
         )
-        timing_json = estimate_timing(contract).model_dump_json(indent=2).encode()
+        timing_json = manifest.model_dump_json(indent=2).encode()
         contracts_json = contract.model_dump_json(indent=2).encode()
         _logger.info("video_assembler.assembled", scenes=len(scenes), mp4_bytes=len(mp4_bytes))
         return RenderedVideo(

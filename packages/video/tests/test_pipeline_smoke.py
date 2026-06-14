@@ -17,7 +17,7 @@ from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.qa import VisionQaInspector
 from lunaris_video.rendering import FrameExtractor, SceneRenderer
-from lunaris_video.schemas import SceneContract, SceneContracts
+from lunaris_video.schemas import SceneContract, SceneContracts, SceneTiming
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("manim") is None,
@@ -29,7 +29,7 @@ class _SceneFromContractCodegen:
     """Emits a trivial but valid Manim scene whose class matches the contract — stands in for the
     LLM so the REAL renderer/assembler path is exercised end to end."""
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
         return (
             "from manim import *\n"
             "from style_tokens import *\n\n\n"
@@ -41,11 +41,15 @@ class _SceneFromContractCodegen:
             "        self.play(FadeOut(t), run_time=0.2)\n"
         )
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
-        return await self.generate(scene, topic="")
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
+        return await self.generate(scene, topic="", timing=timing)
 
-    async def repair_visual(self, scene: SceneContract, *, source: str, defects) -> str:
-        return await self.generate(scene, topic="")
+    async def repair_visual(
+        self, scene: SceneContract, *, source: str, defects, timing: SceneTiming
+    ) -> str:
+        return await self.generate(scene, topic="", timing=timing)
 
 
 class _PassingVision:

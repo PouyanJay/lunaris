@@ -7,14 +7,20 @@ import json
 from pathlib import Path
 
 import pytest
-from _stubs import FakeLessonProvider, StubInvokeModel
+from _stubs import FakeLessonProvider, StubInvokeModel, manifest_for
 from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
 from lunaris_video.errors import FactualGateError
 from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.planning import ScenePlanner
-from lunaris_video.schemas import QaVerdict, SceneContract, VideoContract
+from lunaris_video.schemas import (
+    QaVerdict,
+    SceneContract,
+    SceneTiming,
+    TimingManifest,
+    VideoContract,
+)
 
 _SCENE_SOURCE = (
     "from manim import *\n"
@@ -62,16 +68,25 @@ class _FakeFrames:
 class _SpyAssembler:
     def __init__(self) -> None:
         self.calls = 0
+        self.received_manifest: TimingManifest | None = None
+        self.received_contract: VideoContract | None = None
 
     async def assemble(
-        self, scenes: list[RenderedScene], contract: VideoContract, *, workdir: Path
+        self,
+        scenes: list[RenderedScene],
+        contract: VideoContract,
+        *,
+        manifest: TimingManifest,
+        workdir: Path,
     ) -> RenderedVideo:
         self.calls += 1
+        self.received_manifest = manifest
+        self.received_contract = contract
         return RenderedVideo(
             mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
             poster=b"\xff\xd8\xff" + b"x" * 600,
             contracts_json=contract.model_dump_json().encode(),
-            timing_json=b"{}",
+            timing_json=manifest.model_dump_json().encode(),
         )
 
 
@@ -85,15 +100,24 @@ def _draft_json(make_lesson_contract) -> str:
 
 
 class _CodegenStub:
-    """A codegen seam that always returns valid scene source (Gate A/B never need to repair)."""
+    """A codegen seam that always returns valid scene source (Gate A/B never need to repair);
+    records the per-scene timing it was handed (the audio-drives-video inversion's instrument)."""
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    def __init__(self) -> None:
+        self.generate_timings: list[SceneTiming] = []
+
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
+        self.generate_timings.append(timing)
         return _SCENE_SOURCE
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
         return _SCENE_SOURCE
 
-    async def repair_visual(self, scene: SceneContract, *, source: str, defects) -> str:
+    async def repair_visual(
+        self, scene: SceneContract, *, source: str, defects, timing: SceneTiming
+    ) -> str:
         return _SCENE_SOURCE
 
 
@@ -103,8 +127,9 @@ def _pipeline(
     assembler: _SpyAssembler,
     cache: ContractHashCache,
     workspace: Path,
+    codegen: _CodegenStub | None = None,
 ) -> LessonVideoPipeline:
-    codegen = _CodegenStub()
+    codegen = codegen or _CodegenStub()
     return LessonVideoPipeline(
         lesson_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=invoke),
@@ -235,3 +260,25 @@ async def test_an_unchanged_contract_hits_the_cache_and_skips_rendering(
     assert assembler.calls == 1
     assert second.mp4 == first.mp4
     assert second.contracts_json == first.contracts_json
+
+
+async def test_the_timing_manifest_drives_codegen_then_is_persisted_unchanged(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — audio-drives-video: ONE manifest is resolved before the render, fed to the codegen,
+    # and persisted as timing.json, so the code the model wrote and the player's manifest agree.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    codegen = _CodegenStub()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path, codegen=codegen)
+
+    # Act
+    await pipeline.produce(_job())
+
+    # Assert — the persisted manifest is the estimate of the planned contract (computed once, before
+    # the render), and every scene's slice of THAT manifest drove the codegen (not render-then-fit).
+    manifest = assembler.received_manifest
+    assert manifest is not None
+    assert manifest == manifest_for(assembler.received_contract)
+    per_scene_timings = [manifest[scene_id] for scene_id in manifest.scene_ids()]
+    assert codegen.generate_timings == per_scene_timings

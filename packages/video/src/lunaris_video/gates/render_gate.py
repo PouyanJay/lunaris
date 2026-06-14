@@ -8,7 +8,7 @@ from lunaris_video.gates.style_tokens_writer import ensure_style_tokens
 from lunaris_video.models.rendered_scene import RenderedScene
 from lunaris_video.protocols.scene_code_generator_protocol import ISceneCodeGenerator
 from lunaris_video.protocols.scene_renderer_protocol import ISceneRenderer
-from lunaris_video.schemas import SceneContract
+from lunaris_video.schemas import SceneContract, SceneTiming
 
 _logger = structlog.get_logger(__name__)
 
@@ -36,11 +36,11 @@ class RenderGate:
         self._renderer = renderer
 
     async def render_scene(
-        self, scene: SceneContract, *, topic: str, workdir: Path
+        self, scene: SceneContract, *, topic: str, timing: SceneTiming, workdir: Path
     ) -> RenderedScene:
         await asyncio.to_thread(ensure_style_tokens, workdir)
         scene_file = workdir / f"{scene.id}.py"
-        source = await self._codegen.generate(scene, topic=topic)
+        source = await self._codegen.generate(scene, topic=topic, timing=timing)
         for attempt in range(1, _TOTAL_RENDER_BUDGET + 1):
             await asyncio.to_thread(scene_file.write_text, source, encoding="utf-8")
             result = await self._renderer.render(scene_file, scene.scene_class_name)
@@ -57,5 +57,7 @@ class RenderGate:
                 raise SceneRenderError(
                     scene.id, attempts=_TOTAL_RENDER_BUDGET, error_tail=result.error_tail
                 )
-            source = await self._codegen.repair(scene, source=source, error_tail=result.error_tail)
+            source = await self._codegen.repair(
+                scene, source=source, error_tail=result.error_tail, timing=timing
+            )
         raise AssertionError("unreachable")  # pragma: no cover

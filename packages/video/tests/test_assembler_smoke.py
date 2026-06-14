@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from lunaris_video.assembly import VideoAssembler
+from lunaris_video.assembly import VideoAssembler, estimate_timing
 from lunaris_video.gates import ensure_style_tokens
 from lunaris_video.models import RenderedScene
 from lunaris_video.rendering import SceneRenderer
@@ -51,8 +51,10 @@ async def test_two_scenes_assemble_into_one_video(
     ]
     contract = make_lesson_contract()
 
-    # Act
-    video = await VideoAssembler().assemble(scenes, contract, workdir=tmp_path)
+    # Act — the assembler persists the SAME manifest the render was built against, never re-derives.
+    video = await VideoAssembler().assemble(
+        scenes, contract, manifest=estimate_timing(contract), workdir=tmp_path
+    )
 
     # Assert — a real concatenated MP4, a real JPEG poster, and the regeneration manifests. The
     # manifests pin that BOTH scenes made it into the bundle, not just that some bytes were emitted.

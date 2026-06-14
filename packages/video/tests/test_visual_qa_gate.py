@@ -9,9 +9,12 @@ import pytest
 from lunaris_video.errors import SceneQaError
 from lunaris_video.gates import VisualQaGate
 from lunaris_video.models import RenderedScene, RenderResult
-from lunaris_video.schemas import QaDefect, QaVerdict, SceneContract
+from lunaris_video.schemas import QaDefect, QaVerdict, SceneContract, SceneTiming
 
 _DEFECT = QaDefect(issue="blades detached from nacelle", fix_hint="add a pivot anchor")
+# Gate B passes the scene timing straight to the visual-repair codegen (which the fake ignores) — it
+# never indexes per-beat, so any valid manifest entry exercises the loop under test.
+_ANY_TIMING = SceneTiming(beats=[], total_s=0.0)
 
 
 class _FakeVision:
@@ -38,7 +41,7 @@ class _FakeVisualRepairCodegen:
         self.visual_repairs: list[list[QaDefect]] = []
 
     async def repair_visual(
-        self, scene: SceneContract, *, source: str, defects: list[QaDefect]
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
     ) -> str:
         self.visual_repairs.append(defects)
         return f"{source}# visual repair {len(self.visual_repairs)}\n"
@@ -79,7 +82,7 @@ async def test_a_clean_scene_passes_without_repair(
 
     # Act
     result = await gate.inspect_scene(
-        make_scene(1, "problem"), rendered=_rendered(tmp_path), workdir=tmp_path
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
     )
 
     # Assert — inspected once, no repair, the original artifact returned unchanged.
@@ -98,7 +101,7 @@ async def test_a_seeded_defect_is_caught_and_repaired(
 
     # Act
     result = await gate.inspect_scene(
-        make_scene(1, "problem"), rendered=_rendered(tmp_path), workdir=tmp_path
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
     )
 
     # Assert — the defect drove a targeted source repair, re-render, and re-inspection.
@@ -119,7 +122,9 @@ async def test_a_persistent_defect_exhausts_repairs_and_fails_clean(
 
     # Act
     with pytest.raises(SceneQaError) as excinfo:
-        await gate.inspect_scene(scene, rendered=_rendered(tmp_path), workdir=tmp_path)
+        await gate.inspect_scene(
+            scene, rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
+        )
 
     # Assert — bounded (3 repairs / 4 inspections), the failure names the unresolved defect.
     assert len(codegen.visual_repairs) == 3

@@ -12,7 +12,10 @@ import pytest
 from lunaris_video.errors import SceneRenderError
 from lunaris_video.gates import RenderGate, ensure_style_tokens
 from lunaris_video.rendering import SceneRenderer
-from lunaris_video.schemas import SceneContract
+from lunaris_video.schemas import SceneContract, SceneTiming
+
+# Gate A passes the timing straight to the scripted codegen (which ignores it); never indexed.
+_ANY_TIMING = SceneTiming(beats=[], total_s=0.0)
 
 pytestmark = pytest.mark.skipif(
     importlib.util.find_spec("manim") is None,
@@ -52,10 +55,12 @@ class _ScriptedCodegen:
         self._source = source
         self.repair_tails: list[str] = []
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
         return self._source
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
         self.repair_tails.append(error_tail)
         return self._source
 
@@ -89,7 +94,9 @@ async def test_a_known_bad_scene_exhausts_repairs_against_real_manim(
 
     # Act
     with pytest.raises(SceneRenderError) as excinfo:
-        await gate.render_scene(make_scene(1, "problem"), topic="t", workdir=tmp_path)
+        await gate.render_scene(
+            make_scene(1, "problem"), topic="t", timing=_ANY_TIMING, workdir=tmp_path
+        )
 
     # Assert — every repair turn saw the real seeded stack trace; the failure is clean and
     # carries the evidence.
