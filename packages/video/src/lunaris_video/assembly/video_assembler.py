@@ -17,6 +17,11 @@ _POSTER_TIMEOUT_S = 60.0
 _AUDIO_TIMEOUT_S = 180.0  # covers both the mix (build the track) and the mux (overlay it)
 _AUDIO_RATE = 44100
 
+# The muxed (narrated) video the assembler writes into the workdir — the artifact Gate D inspects
+# (it runs on the muxed video, after assembly). A shared name is the contract between the writer
+# (this assembler) and the reader (the pipeline's Gate-D step), so neither passes a path around.
+NARRATED_VIDEO_NAME = "narrated.mp4"
+
 
 class VideoAssembler:
     """Stage 4: concat the cleared per-scene MP4s, mux narration when voiced, extract a poster, and
@@ -108,7 +113,7 @@ class VideoAssembler:
             return silent_mp4, None
         if audio_dir is None:
             raise VideoPipelineError("a voiced manifest needs an audio_dir to mux narration")
-        narrated_mp4 = workdir / "narrated.mp4"
+        narrated_mp4 = workdir / NARRATED_VIDEO_NAME
         await self._mux_narration(silent_mp4, narrated_mp4, manifest, audio_dir, workdir=workdir)
         return narrated_mp4, build_webvtt(contract, manifest).encode()
 

@@ -89,6 +89,7 @@ class _Assembler:
         *,
         manifest: TimingManifest,
         workdir: Path,
+        audio_dir: Path | None = None,
     ) -> RenderedVideo:
         return RenderedVideo(
             mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
