@@ -30,13 +30,11 @@ from lunaris_runtime.persistence import (
     InMemoryVideoStorage,
 )
 from lunaris_runtime.schema import (
-    AgentEvent,
     BloomLevel,
     Citation,
     KnowledgeComponent,
     Module,
     PrerequisiteGraph,
-    ProgressEvent,
     ProgressStage,
     VideoJob,
     VideoJobStatus,
@@ -47,22 +45,6 @@ from lunaris_video.models.rendered_video import RenderedVideo
 
 _GROUNDED = "grounded"
 _OWNER = "user-a"
-
-
-class _RecordingProgressSink:
-    def __init__(self) -> None:
-        self.events: list[ProgressEvent] = []
-
-    async def emit(self, event: ProgressEvent) -> None:
-        self.events.append(event)
-
-
-class _RecordingAgentSink:
-    def __init__(self) -> None:
-        self.events: list[AgentEvent] = []
-
-    async def emit(self, event: AgentEvent) -> None:
-        self.events.append(event)
 
 
 def _marker_verifier() -> Verifier:
@@ -187,9 +169,11 @@ async def test_finalize_publishes_anyway_when_a_video_fails(tmp_path: Path) -> N
     assert lesson.video.provenance is None
 
 
-async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(tmp_path: Path) -> None:
-    # Arrange — recording sinks + a shared cursor, exactly as the runner wires them, so beats bucket
-    # under the phase active when they fire (the canvas Videos phase, V4-T2).
+async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(
+    tmp_path: Path, progress_sink, agent_sink
+) -> None:
+    # Arrange — a shared cursor across both reporters, exactly as the runner wires them, so beats
+    # bucket under the phase active when they fire (the canvas Videos phase, V4-T2).
     queue, storage, events = (
         InMemoryVideoJobQueue(),
         InMemoryVideoStorage(),
@@ -199,11 +183,7 @@ async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(tmp_path: Pat
         queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
     )
     draft = _draft_with_graph(coordinator)
-    progress_sink, agent_sink, cursor = (
-        _RecordingProgressSink(),
-        _RecordingAgentSink(),
-        StageCursor(),
-    )
+    cursor = StageCursor()
     draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
     draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
     await _author_and_enqueue(draft)
@@ -230,7 +210,9 @@ async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(tmp_path: Pat
     assert video_beats[0].text == "Explainer video for “Routing” is ready."
 
 
-async def test_finalize_videos_phase_reports_a_degraded_count(tmp_path: Path) -> None:
+async def test_finalize_videos_phase_reports_a_degraded_count(
+    tmp_path: Path, progress_sink, agent_sink
+) -> None:
     # Arrange — a failing pipeline so the one lesson video degrades.
     queue, storage, events = (
         InMemoryVideoJobQueue(),
@@ -241,11 +223,7 @@ async def test_finalize_videos_phase_reports_a_degraded_count(tmp_path: Path) ->
         queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
     )
     draft = _draft_with_graph(coordinator)
-    progress_sink, agent_sink, cursor = (
-        _RecordingProgressSink(),
-        _RecordingAgentSink(),
-        StageCursor(),
-    )
+    cursor = StageCursor()
     draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
     draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
     await _author_and_enqueue(draft)
@@ -271,13 +249,14 @@ async def test_finalize_videos_phase_reports_a_degraded_count(tmp_path: Path) ->
     assert "could not be generated" in video_beats[0].text
 
 
-async def test_finalize_emits_no_videos_phase_when_nothing_was_enqueued(tmp_path: Path) -> None:
+async def test_finalize_emits_no_videos_phase_when_nothing_was_enqueued(
+    tmp_path: Path, progress_sink
+) -> None:
     # Arrange — a coordinator is wired but no module ever enqueued a video (nothing authored).
     coordinator = QueueVideoBuildCoordinator(
         queue=InMemoryVideoJobQueue(), storage=InMemoryVideoStorage(), owner_id=_OWNER
     )
     draft = _draft_with_graph(coordinator)
-    progress_sink = _RecordingProgressSink()
     draft.progress = ProgressReporter("r1", progress_sink, cursor=StageCursor())
     finalize = make_finalize_course_tool(
         MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
