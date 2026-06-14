@@ -74,6 +74,8 @@ from .secrets import (
     BYOK_PROVIDERS,
     KNOWN_SECRETS,
     AnthropicProbeValidator,
+    CompositeSecretValidator,
+    ElevenLabsProbeValidator,
     ICredentialStore,
     InMemoryCredentialStore,
     ISecretValidator,
@@ -300,8 +302,10 @@ def get_secret_store(settings: Annotated[Settings, Depends(get_settings)]) -> Se
 
 
 def get_secret_validator() -> ISecretValidator:
-    """The live secret validator (probes Anthropic). Tests override with an accepting one."""
-    return AnthropicProbeValidator()
+    """The live secret validator (probes Anthropic + ElevenLabs). Tests override with an accepting
+    one. Each probe no-ops for a name that is not its own, so composing them covers every keyed
+    provider with one validator."""
+    return CompositeSecretValidator([AnthropicProbeValidator(), ElevenLabsProbeValidator()])
 
 
 SecretStoreDep = Annotated[SecretStore, Depends(get_secret_store)]

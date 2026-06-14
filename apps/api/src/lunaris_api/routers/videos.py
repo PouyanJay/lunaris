@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import uuid
 from typing import Annotated
@@ -8,6 +9,7 @@ from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.persistence import IVideoStorage, PersistenceError, VideoArtifactPaths
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.schema.base import CourseModel
+from lunaris_video.schemas import TimingManifest
 from pydantic import ValidationError
 
 from ..config import Settings, get_settings
@@ -30,12 +32,13 @@ _KEYLESS_DETAIL = (
 
 
 class VideoJobView(CourseModel):
-    """The wire shape of one video job: the row itself, playback URLs and the grounding provenance
-    once it is ready."""
+    """The wire shape of one video job: the row itself, playback URLs, a captions URL (narrated
+    videos only) and the grounding provenance once it is ready."""
 
     job: VideoJob
     video_url: str | None = None
     poster_url: str | None = None
+    captions_url: str | None = None
     provenance: VideoProvenance | None = None
 
 
@@ -122,11 +125,20 @@ async def get_video_job(
     if job.status != VideoJobStatus.READY:
         return VideoJobView(job=job)
     paths = VideoArtifactPaths.for_job(job)
+    # The four reads are independent — gather them so a READY status poll is one round-trip's worth
+    # of latency, not four sequential ones.
+    video_url, poster_url, captions_url, provenance = await asyncio.gather(
+        storage.signed_url(path=paths.mp4),
+        storage.signed_url(path=paths.poster),
+        _captions_url_if_narrated(storage, paths),
+        _read_provenance(storage, paths.provenance),
+    )
     return VideoJobView(
         job=job,
-        video_url=await storage.signed_url(path=paths.mp4),
-        poster_url=await storage.signed_url(path=paths.poster),
-        provenance=await _read_provenance(storage, paths.provenance),
+        video_url=video_url,
+        poster_url=poster_url,
+        captions_url=captions_url,
+        provenance=provenance,
     )
 
 
@@ -139,3 +151,19 @@ async def _read_provenance(storage: IVideoStorage, path: str) -> VideoProvenance
         # reason distinguishes the expected case (a pre-V2 job has no artifact) from schema drift.
         logger.warning("video_provenance_unavailable", path=path, reason=type(exc).__name__)
         return None
+
+
+async def _captions_url_if_narrated(
+    storage: IVideoStorage, paths: VideoArtifactPaths
+) -> str | None:
+    """A signed captions URL — but ONLY for a narrated video, so the player never attaches a track
+    that 404s. The timing manifest (always present for a READY job) is the source of truth for
+    narrated-ness; a silent or pre-V3 job is voiceless and gets no captions URL."""
+    try:
+        manifest = TimingManifest.model_validate_json(await storage.download(path=paths.timing))
+    except (PersistenceError, ValidationError) as exc:
+        logger.warning("video_timing_unavailable", path=paths.timing, reason=type(exc).__name__)
+        return None
+    if not manifest.is_voiced:
+        return None
+    return await storage.signed_url(path=paths.captions)

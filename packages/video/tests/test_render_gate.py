@@ -13,21 +13,25 @@ import pytest
 from lunaris_video.errors import SceneRenderError
 from lunaris_video.gates import RenderGate
 from lunaris_video.models import RenderResult
-from lunaris_video.schemas import SceneContract
+from lunaris_video.schemas import SceneContract, SceneTiming
 from lunaris_video.style import render_style_tokens_source
 
 _SOURCE_TEMPLATE = "from manim import *\nfrom style_tokens import *\n# attempt {n}\n"
 _ALWAYS_FAIL = 99  # more failures than the repair budget — the renderer never succeeds
+# Gate A passes the timing straight to the codegen (the fake ignores it); it never indexes per-beat.
+_ANY_TIMING = SceneTiming(beats=[], total_s=0.0)
 
 
 class _FakeCodegen:
     def __init__(self) -> None:
         self.repair_calls: list[str] = []
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
         return _SOURCE_TEMPLATE.format(n=0)
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
         self.repair_calls.append(error_tail)
         return _SOURCE_TEMPLATE.format(n=len(self.repair_calls))
 
@@ -57,7 +61,9 @@ async def test_first_attempt_success_needs_no_repair(
     gate = RenderGate(codegen=codegen, renderer=renderer)
 
     # Act
-    rendered = await gate.render_scene(make_scene(1, "problem"), topic="t", workdir=tmp_path)
+    rendered = await gate.render_scene(
+        make_scene(1, "problem"), topic="t", timing=_ANY_TIMING, workdir=tmp_path
+    )
 
     # Assert
     assert rendered.mp4_path.is_file()
@@ -73,7 +79,9 @@ async def test_one_failure_is_repaired_with_the_stack_trace(
     gate = RenderGate(codegen=codegen, renderer=renderer)
 
     # Act
-    rendered = await gate.render_scene(make_scene(1, "problem"), topic="t", workdir=tmp_path)
+    rendered = await gate.render_scene(
+        make_scene(1, "problem"), topic="t", timing=_ANY_TIMING, workdir=tmp_path
+    )
 
     # Assert — repaired once, the repair saw the trace, the SECOND source rendered.
     assert codegen.repair_calls == ["Traceback: boom"]
@@ -94,7 +102,7 @@ async def test_a_known_bad_scene_exhausts_repairs_and_fails_clean(
 
     # Act
     with pytest.raises(SceneRenderError) as excinfo:
-        await gate.render_scene(scene, topic="t", workdir=tmp_path)
+        await gate.render_scene(scene, topic="t", timing=_ANY_TIMING, workdir=tmp_path)
 
     # Assert — 1 initial + 3 repairs, then a clean failure carrying the evidence; the last
     # attempt's source stays on disk for diagnosis.
@@ -114,7 +122,9 @@ async def test_style_tokens_are_written_beside_the_scenes(
     gate = RenderGate(codegen=_FakeCodegen(), renderer=_FakeRenderer(failures=0))
 
     # Act
-    await gate.render_scene(make_scene(1, "problem"), topic="t", workdir=tmp_path)
+    await gate.render_scene(
+        make_scene(1, "problem"), topic="t", timing=_ANY_TIMING, workdir=tmp_path
+    )
 
     # Assert — the generated module is written beside the scenes (so `from style_tokens import *`
     # resolves) and IS the canonical generated source. The exact hex values are pinned to

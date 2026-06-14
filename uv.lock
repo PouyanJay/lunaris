@@ -1563,6 +1563,7 @@ source = { editable = "apps/api" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "lunaris-agent" },
     { name = "lunaris-grounding" },
     { name = "lunaris-runtime" },
@@ -1577,6 +1578,7 @@ dependencies = [
 requires-dist = [
     { name = "cryptography", specifier = ">=44" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "lunaris-agent", editable = "packages/agent" },
     { name = "lunaris-grounding", editable = "packages/grounding" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
@@ -1678,6 +1680,7 @@ name = "lunaris-video"
 version = "0.0.0"
 source = { editable = "packages/video" }
 dependencies = [
+    { name = "httpx" },
     { name = "lunaris-runtime" },
     { name = "pydantic" },
     { name = "structlog" },
@@ -1690,6 +1693,7 @@ render = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "manim", marker = "extra == 'render'", specifier = ">=0.19" },
     { name = "pydantic", specifier = ">=2.9" },

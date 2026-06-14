@@ -17,7 +17,7 @@ from lunaris_runtime.schema import VideoJob, VideoKind
 from lunaris_video.assembly import VideoAssembler
 from lunaris_video.codegen import SceneCodeGenerator
 from lunaris_video.errors import VideoPipelineError
-from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
+from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.pipeline.model_adapters import (
@@ -26,8 +26,9 @@ from lunaris_video.pipeline.model_adapters import (
     default_video_model,
 )
 from lunaris_video.planning import ScenePlanner
-from lunaris_video.qa import VisionQaInspector
+from lunaris_video.qa import SyncQaInspector, VisionQaInspector
 from lunaris_video.rendering import FrameExtractor, SceneRenderer
+from lunaris_video.voice import ElevenLabsSpeechSynthesizer
 
 pytestmark = pytest.mark.eval
 
@@ -105,14 +106,15 @@ async def _produce_with_fresh_takes(
     return None, failures
 
 
-def _job() -> VideoJob:
+def _job(job_id: str = "live-eval-job", *, voice: bool = False) -> VideoJob:
     return VideoJob(
-        id="live-eval-job",
+        id=job_id,
         user_id="00000000-0000-0000-0000-000000000001",
         course_id="course-1",
         lesson_id="lesson-1",
         kind=VideoKind.LESSON,
         input_hash="h",
+        config={"voice": True} if voice else {},
     )
 
 
@@ -163,3 +165,64 @@ async def test_a_real_lesson_renders_on_live_claude(tmp_path, capsys) -> None:
         print(f"\nlive video: {scenes} scenes, ~{total:.1f}s, {kb} KB")
         for failure in failures:
             print(f"  (fresh take needed) {failure}")
+
+
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="needs ANTHROPIC_API_KEY")
+@pytest.mark.skipif(not os.getenv("ELEVENLABS_API_KEY"), reason="needs ELEVENLABS_API_KEY")
+@pytest.mark.skipif(
+    importlib.util.find_spec("manim") is None, reason="render extra not installed (make video-deps)"
+)
+async def test_a_real_lesson_renders_narrated_on_live_claude_and_elevenlabs(
+    tmp_path, capsys
+) -> None:
+    # Arrange — the real voiced pipeline: live Claude plans/codes/QAs, ElevenLabs narrates, the
+    # render is timing-driven by measured audio, the assembler muxes + captions, Gate D syncs.
+    model = default_video_model()
+    codegen = SceneCodeGenerator(invoke=build_text_invoke(model))
+    renderer = SceneRenderer(timeout_s=300)
+    frames = FrameExtractor()
+    pipeline = LessonVideoPipeline(
+        lesson_provider=_FixedLessonProvider(),
+        planner=ScenePlanner(invoke=build_text_invoke(model)),
+        factual_gate=FactualGate(),
+        render_gate=RenderGate(codegen=codegen, renderer=renderer),
+        visual_qa_gate=VisualQaGate(
+            vision=VisionQaInspector(invoke=build_vision_invoke(model)),
+            codegen=codegen,
+            renderer=renderer,
+            frames=frames,
+        ),
+        assembler=VideoAssembler(),
+        cache=ContractHashCache(),
+        workspace_root=tmp_path,
+        model_id=model,
+        synthesizer_provider=lambda: ElevenLabsSpeechSynthesizer(
+            api_key=os.environ["ELEVENLABS_API_KEY"]
+        ),
+        sync_gate=SyncGate(
+            vision=SyncQaInspector(invoke=build_vision_invoke(model)), frames=frames
+        ),
+    )
+
+    # Act — narrated-in-one-pass, allowing fresh-take re-plans on a gate failure.
+    video, failures = await _produce_with_fresh_takes(
+        pipeline, _job("live-eval-voiced", voice=True), attempts=_FRESH_TAKE_ATTEMPTS
+    )
+
+    # Assert — a real, multi-scene, narrated MP4: the timing is MEASURED (clips, not the estimate),
+    # a valid WebVTT track with cues shipped, and the video came out only because Gate D passed.
+    assert video is not None, "no fresh take produced a narrated video:\n" + "\n".join(failures)
+    assert video.mp4[4:8] == b"ftyp"
+    contracts = json.loads(video.contracts_json)
+    assert len(contracts["scenes"]) >= 3
+    timing = json.loads(video.timing_json)
+    assert any(beat["audio"] for scene in timing.values() for beat in scene["beats"]), (
+        "narrated timing must carry measured clips, not the silent estimate"
+    )
+    total = sum(scene["total_s"] for scene in timing.values())
+    assert total >= _MIN_TOTAL_SECONDS  # a real lesson, not a degenerate few-second stub
+    assert video.captions is not None
+    assert video.captions.startswith(b"WEBVTT") and b"-->" in video.captions
+    with capsys.disabled():
+        scenes, caption_bytes = len(contracts["scenes"]), len(video.captions)
+        print(f"\nlive narrated: {scenes} scenes, ~{total:.1f}s, captions {caption_bytes} B")

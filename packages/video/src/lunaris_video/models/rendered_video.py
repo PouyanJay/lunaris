@@ -20,4 +20,8 @@ class RenderedVideo:
     poster: bytes
     contracts_json: bytes
     timing_json: bytes
+    # WebVTT captions — present only for a narrated video (beats and measured timing); ``None`` for
+    # a silent one, which has no audio to caption (plan principle 8). The player adds the track only
+    # when this is present.
+    captions: bytes | None = None
     provenance_json: bytes | None = None

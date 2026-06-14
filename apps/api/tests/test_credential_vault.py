@@ -97,6 +97,22 @@ async def test_statuses_lists_every_provider() -> None:
     assert statuses["anthropic"].is_set is False
 
 
+async def test_elevenlabs_is_a_supported_byok_provider() -> None:
+    # ElevenLabs is the V3 voice key — the same vault, the same round-trip as the LLM/search keys.
+    vault = _vault()
+
+    # Act
+    status = await vault.set(user_id="u-1", provider="elevenlabs", value="sk_eleven_secret")
+    revealed = await vault.reveal(user_id="u-1", provider="elevenlabs")
+
+    # Assert — round-trips, lists with the others, masks to last4.
+    assert revealed == "sk_eleven_secret"
+    assert status.provider == "elevenlabs"
+    assert status.last4 == "cret"
+    statuses = {s.provider: s for s in await vault.statuses(user_id="u-1")}
+    assert statuses["elevenlabs"].is_set is True
+
+
 async def test_delete_removes_a_key_and_is_owner_scoped() -> None:
     # Arrange
     vault = _vault()

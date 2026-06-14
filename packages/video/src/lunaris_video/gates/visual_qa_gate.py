@@ -9,7 +9,7 @@ from lunaris_video.protocols.frame_extractor_protocol import IFrameExtractor
 from lunaris_video.protocols.scene_code_generator_protocol import ISceneCodeGenerator
 from lunaris_video.protocols.scene_renderer_protocol import ISceneRenderer
 from lunaris_video.protocols.vision_qa_protocol import IVisionQa
-from lunaris_video.schemas import QaDefect, SceneContract
+from lunaris_video.schemas import QaDefect, SceneContract, SceneTiming
 
 _logger = structlog.get_logger(__name__)
 
@@ -44,7 +44,7 @@ class VisualQaGate:
         self._frames = frames
 
     async def inspect_scene(
-        self, scene: SceneContract, *, rendered: RenderedScene, workdir: Path
+        self, scene: SceneContract, *, rendered: RenderedScene, timing: SceneTiming, workdir: Path
     ) -> RenderedScene:
         current = rendered
         for inspection in range(_INSPECTIONS):
@@ -60,7 +60,7 @@ class VisualQaGate:
                     scene.id, attempts=_INSPECTIONS, error_tail=_defects_tail(verdict.defects)
                 )
             current = await self._repair_and_rerender(
-                scene, current, defects=verdict.defects, workdir=workdir
+                scene, current, defects=verdict.defects, timing=timing, workdir=workdir
             )
         raise AssertionError("unreachable")  # pragma: no cover
 
@@ -70,9 +70,12 @@ class VisualQaGate:
         current: RenderedScene,
         *,
         defects: list[QaDefect],
+        timing: SceneTiming,
         workdir: Path,
     ) -> RenderedScene:
-        source = await self._codegen.repair_visual(scene, source=current.source, defects=defects)
+        source = await self._codegen.repair_visual(
+            scene, source=current.source, defects=defects, timing=timing
+        )
         scene_file = workdir / f"{scene.id}.py"
         await asyncio.to_thread(scene_file.write_text, source, encoding="utf-8")
         result = await self._renderer.render(scene_file, scene.scene_class_name)

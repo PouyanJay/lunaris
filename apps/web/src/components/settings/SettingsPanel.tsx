@@ -54,6 +54,12 @@ const FIELDS = [
     placeholder: "AIza…",
   },
   {
+    name: "elevenlabs",
+    label: "ElevenLabs API key",
+    hint: "Narrates explainer videos in one pass when voice is on — optional; without it videos render silent.",
+    placeholder: "sk_…",
+  },
+  {
     name: "langsmith",
     label: "LangSmith API key",
     hint: "Tracing/observability (optional). Read at startup — restart to apply.",

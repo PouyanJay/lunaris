@@ -1,15 +1,22 @@
 from typing import Protocol
 
-from lunaris_video.schemas import QaDefect, SceneContract
+from lunaris_video.schemas import QaDefect, SceneContract, SceneTiming
 
 
 class ISceneCodeGenerator(Protocol):
-    """The CODE-stage seam: generation, render repair (Gate A), and visual repair (Gate B)."""
+    """The CODE-stage seam: generation, render repair (Gate A), and visual repair (Gate B).
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str: ...
+    ``timing`` is the scene's resolved per-beat windows (audio-drives-video): the generated and
+    repaired source must make each beat's animations + waits sum to its window, so the visuals stay
+    locked to the narration the manifest measured (or estimated).
+    """
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str: ...
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str: ...
+
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str: ...
 
     async def repair_visual(
-        self, scene: SceneContract, *, source: str, defects: list[QaDefect]
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
     ) -> str: ...

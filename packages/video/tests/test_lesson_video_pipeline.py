@@ -7,14 +7,24 @@ import json
 from pathlib import Path
 
 import pytest
-from _stubs import FakeLessonProvider, StubInvokeModel
+from _stubs import FakeLessonProvider, StubInvokeModel, manifest_for
 from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
-from lunaris_video.errors import FactualGateError
-from lunaris_video.gates import FactualGate, RenderGate, VisualQaGate
+from lunaris_video.assembly import build_webvtt
+from lunaris_video.errors import FactualGateError, VoiceUnavailableError
+from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
+from lunaris_video.pipeline.lesson_video_pipeline import SynthesizerProvider
 from lunaris_video.planning import ScenePlanner
-from lunaris_video.schemas import QaVerdict, SceneContract, VideoContract
+from lunaris_video.schemas import (
+    QaVerdict,
+    SceneContract,
+    SceneTiming,
+    SyncVerdict,
+    TimingManifest,
+    VideoContract,
+)
+from lunaris_video.voice import StubSpeechSynthesizer
 
 _SCENE_SOURCE = (
     "from manim import *\n"
@@ -62,16 +72,31 @@ class _FakeFrames:
 class _SpyAssembler:
     def __init__(self) -> None:
         self.calls = 0
+        self.received_manifest: TimingManifest | None = None
+        self.received_contract: VideoContract | None = None
+        self.received_audio_dir: Path | None = None
 
     async def assemble(
-        self, scenes: list[RenderedScene], contract: VideoContract, *, workdir: Path
+        self,
+        scenes: list[RenderedScene],
+        contract: VideoContract,
+        *,
+        manifest: TimingManifest,
+        workdir: Path,
+        audio_dir: Path | None = None,
     ) -> RenderedVideo:
         self.calls += 1
+        self.received_manifest = manifest
+        self.received_contract = contract
+        self.received_audio_dir = audio_dir
+        # Mirror the real assembler: captions ride only on a voiced (audio_dir-backed) render.
+        captions = build_webvtt(contract, manifest).encode() if audio_dir is not None else None
         return RenderedVideo(
             mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
             poster=b"\xff\xd8\xff" + b"x" * 600,
             contracts_json=contract.model_dump_json().encode(),
-            timing_json=b"{}",
+            timing_json=manifest.model_dump_json().encode(),
+            captions=captions,
         )
 
 
@@ -85,16 +110,55 @@ def _draft_json(make_lesson_contract) -> str:
 
 
 class _CodegenStub:
-    """A codegen seam that always returns valid scene source (Gate A/B never need to repair)."""
+    """A codegen seam that always returns valid scene source (Gate A/B never need to repair);
+    records the per-scene timing it was handed (the audio-drives-video inversion's instrument)."""
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    def __init__(self) -> None:
+        self.generate_timings: list[SceneTiming] = []
+
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
+        self.generate_timings.append(timing)
         return _SCENE_SOURCE
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
         return _SCENE_SOURCE
 
-    async def repair_visual(self, scene: SceneContract, *, source: str, defects) -> str:
+    async def repair_visual(
+        self, scene: SceneContract, *, source: str, defects, timing: SceneTiming
+    ) -> str:
         return _SCENE_SOURCE
+
+
+class _PassingSyncVision:
+    """Gate D's vision double — every beat's frame matches its narration."""
+
+    async def inspect(self, frame: bytes, *, narration: str, beat_id: str) -> SyncVerdict:
+        return SyncVerdict(matches=True)
+
+
+class _DummyFrameExtractor:
+    """An ``ISyncFrameExtractor`` double for the hermetic voiced path (no real mp4 to probe)."""
+
+    async def extract_at(self, mp4_path: Path, at_seconds: float) -> bytes:
+        return b"frame"
+
+
+def _passing_sync_gate() -> SyncGate:
+    return SyncGate(vision=_PassingSyncVision(), frames=_DummyFrameExtractor())
+
+
+def _voiced_job(job_id: str = "job-voiced") -> VideoJob:
+    return VideoJob(
+        id=job_id,
+        user_id="00000000-0000-0000-0000-000000000001",
+        course_id="course-1",
+        lesson_id="lesson-1",
+        kind=VideoKind.LESSON,
+        input_hash="hash-1",
+        config={"voice": True},
+    )
 
 
 def _pipeline(
@@ -103,8 +167,11 @@ def _pipeline(
     assembler: _SpyAssembler,
     cache: ContractHashCache,
     workspace: Path,
+    codegen: _CodegenStub | None = None,
+    synthesizer_provider: SynthesizerProvider = lambda: None,
+    sync_gate: SyncGate | None = None,
 ) -> LessonVideoPipeline:
-    codegen = _CodegenStub()
+    codegen = codegen or _CodegenStub()
     return LessonVideoPipeline(
         lesson_provider=FakeLessonProvider(),
         planner=ScenePlanner(invoke=invoke),
@@ -117,6 +184,8 @@ def _pipeline(
         cache=cache,
         workspace_root=workspace,
         model_id="claude-test-model",
+        synthesizer_provider=synthesizer_provider,
+        sync_gate=sync_gate,
     )
 
 
@@ -235,3 +304,81 @@ async def test_an_unchanged_contract_hits_the_cache_and_skips_rendering(
     assert assembler.calls == 1
     assert second.mp4 == first.mp4
     assert second.contracts_json == first.contracts_json
+
+
+async def test_the_timing_manifest_drives_codegen_then_is_persisted_unchanged(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — audio-drives-video: ONE manifest is resolved before the render, fed to the codegen,
+    # and persisted as timing.json, so the code the model wrote and the player's manifest agree.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    codegen = _CodegenStub()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path, codegen=codegen)
+
+    # Act
+    await pipeline.produce(_job())
+
+    # Assert — the persisted manifest is the estimate of the planned contract (computed once, before
+    # the render), and every scene's slice of THAT manifest drove the codegen (not render-then-fit).
+    manifest = assembler.received_manifest
+    assert manifest is not None
+    assert manifest == manifest_for(assembler.received_contract)
+    per_scene_timings = [manifest[scene_id] for scene_id in manifest.scene_ids()]
+    assert codegen.generate_timings == per_scene_timings
+
+
+async def test_one_contract_renders_silent_and_narrated_with_no_replan(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — the SAME lesson, run silent then narrated. The planner reply repeats (the stub),
+    # so both produces plan the identical contract: the voice toggle must never re-plan.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, cache = _SpyRenderer(), ContractHashCache()
+    silent_assembler, narrated_assembler = _SpyAssembler(), _SpyAssembler()
+    silent_pipeline = _pipeline(invoke, renderer, silent_assembler, cache, tmp_path)
+    narrated_pipeline = _pipeline(
+        invoke,
+        renderer,
+        narrated_assembler,
+        cache,
+        tmp_path,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_passing_sync_gate(),
+    )
+
+    # Act — one contract, two modes.
+    silent = await silent_pipeline.produce(_job())
+    narrated = await narrated_pipeline.produce(_voiced_job())
+
+    # Assert — IDENTICAL contract (no re-plan); only the manifest/audio/captions differ.
+    assert silent.contracts_json == narrated.contracts_json
+    # No re-plan, mechanistically: the planner ran exactly once per produce (not extra). And the two
+    # modes cache under DISTINCT keys, so each rendered from a cold start (no cross-mode cache hit).
+    assert len(invoke.prompts) == 2
+    assert renderer.renders == 2
+    assert silent_assembler.received_audio_dir is None
+    assert narrated_assembler.received_audio_dir is not None
+    assert silent.captions is None
+    assert narrated.captions is not None
+    # Silent manifest = WPM estimate; narrated = measured TTS (a different, audio-driven timeline).
+    assert silent_assembler.received_manifest is not None
+    assert narrated_assembler.received_manifest is not None
+    assert silent_assembler.received_manifest.is_voiced is False
+    assert narrated_assembler.received_manifest.is_voiced is True
+    assert silent_assembler.received_manifest != narrated_assembler.received_manifest
+
+
+async def test_voice_on_without_a_key_fails_fast_before_rendering(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — voice ON, but the default provider has no synthesizer (no validated key).
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path)
+
+    # Act / Assert — the job fails fast (the toggle requires a key); nothing was rendered.
+    with pytest.raises(VoiceUnavailableError):
+        await pipeline.produce(_voiced_job())
+    assert renderer.renders == 0
+    assert assembler.calls == 0

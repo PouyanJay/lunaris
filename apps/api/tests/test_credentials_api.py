@@ -18,7 +18,13 @@ from _doubles import RejectingValidator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_credential_store, get_secret_validator
-from lunaris_api.secrets import AcceptingValidator, InMemoryCredentialStore, ISecretValidator
+from lunaris_api.secrets import (
+    AcceptingValidator,
+    CompositeSecretValidator,
+    ElevenLabsProbeValidator,
+    InMemoryCredentialStore,
+    ISecretValidator,
+)
 from lunaris_runtime.logging import clear_correlation
 
 _JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long-xxxx"
@@ -87,6 +93,24 @@ async def test_set_then_list_shows_the_key_masked(client: httpx.AsyncClient) -> 
     by_provider = {row["provider"]: row for row in listed.json()}
     assert by_provider["anthropic"] == {"provider": "anthropic", "isSet": True, "last4": "cret"}
     assert by_provider["search"]["isSet"] is False
+    # The V3 voice key rides the same router; the list always surfaces it (set or unset).
+    assert by_provider["elevenlabs"]["isSet"] is False
+
+
+async def test_elevenlabs_voice_key_sets_and_lists_through_the_same_route(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act — set the ElevenLabs voice key, then list.
+    put = await client.put(
+        "/api/credentials/elevenlabs", json={"value": "sk_eleven_secret"}, headers=_auth(_USER_A)
+    )
+    listed = await client.get("/api/credentials", headers=_auth(_USER_A))
+
+    # Assert — same masked surface as every other provider.
+    assert put.status_code == 200
+    assert put.json() == {"provider": "elevenlabs", "isSet": True, "last4": "cret"}
+    by_provider = {row["provider"]: row for row in listed.json()}
+    assert by_provider["elevenlabs"] == {"provider": "elevenlabs", "isSet": True, "last4": "cret"}
 
 
 async def test_keys_are_isolated_per_user(client: httpx.AsyncClient) -> None:
@@ -180,6 +204,26 @@ async def test_test_probe_reports_not_ok_for_a_bad_key(tmp_path: Path) -> None:
     body = response.json()
     assert body["ok"] is False
     assert body["detail"]
+
+
+async def test_elevenlabs_probe_reports_not_ok_for_a_rejected_key(tmp_path: Path) -> None:
+    # Arrange — the REAL ElevenLabs validator with an injected probe that 401s, so the Settings
+    # "Test" button's whole path (router → composite → elevenlabs probe) is exercised end to end.
+    async def reject(value: str) -> int:
+        return 401
+
+    validator = CompositeSecretValidator([ElevenLabsProbeValidator(probe=reject)])
+    async with _build_client(tmp_path, validator=validator) as client:
+        # Act
+        response = await client.post(
+            "/api/credentials/elevenlabs/test", json={"value": "sk_bad"}, headers=_auth(_USER_A)
+        )
+
+    # Assert — a probe is a query: 200 with ok=False + a safe, value-free detail.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is False
+    assert "rejected" in body["detail"].lower()
 
 
 async def test_anonymous_request_is_401(client: httpx.AsyncClient) -> None:

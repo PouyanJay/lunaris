@@ -26,6 +26,7 @@ from lunaris_runtime.persistence import (
 )
 from lunaris_runtime.schema import VideoJob, VideoKind, VideoProvenance
 from lunaris_video import StubVideoPipeline, VideoWorker
+from lunaris_video.schemas import BeatTiming, SceneTiming, TimingManifest
 
 
 def _settings(tmp_path: Path, *, video_enabled: bool) -> Settings:
@@ -266,6 +267,64 @@ async def test_a_ready_job_surfaces_non_empty_claim_ids_on_the_wire(
 
     # Assert — the grounded claim ids reach the wire unchanged (a grounded video, not framing-only).
     assert body["provenance"]["claimIds"] == ["c1", "c3"]
+
+
+def _timing(*, voiced: bool) -> TimingManifest:
+    clip = "S1_intro_b1.mp3" if voiced else None
+    return TimingManifest(
+        {
+            "S1_intro": SceneTiming(
+                beats=[
+                    BeatTiming(id="b1", audio_s=1.0, anim_s=1.2, audio=clip, estimated=not voiced)
+                ],
+                total_s=1.2,
+            )
+        }
+    )
+
+
+async def test_a_narrated_ready_job_offers_a_signed_captions_url(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — a READY job whose persisted timing manifest is VOICED, with a captions track staged.
+    job = await _drive_to_ready(client, queue)
+    paths = VideoArtifactPaths.for_job(job)
+    await storage.upload(
+        path=paths.timing,
+        data=_timing(voiced=True).model_dump_json().encode(),
+        content_type="application/json",
+    )
+    await storage.upload(
+        path=paths.captions,
+        data=b"WEBVTT\n\n00:00:00.000 --> 00:00:01.200\nHello.\n",
+        content_type="text/vtt",
+    )
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — the player gets a signed captions track under the job prefix.
+    assert body["captionsUrl"] is not None
+    assert f"{USER_A}/course-1/{job.id}/captions.vtt" in body["captionsUrl"]
+
+
+async def test_a_silent_ready_job_offers_no_captions_url(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — a READY job whose persisted timing manifest is the SILENT estimate (no clips).
+    job = await _drive_to_ready(client, queue)
+    paths = VideoArtifactPaths.for_job(job)
+    await storage.upload(
+        path=paths.timing,
+        data=_timing(voiced=False).model_dump_json().encode(),
+        content_type="application/json",
+    )
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — a silent video has no audio, so no captions track is offered.
+    assert body["captionsUrl"] is None
 
 
 async def test_a_ready_job_without_provenance_degrades_to_null(

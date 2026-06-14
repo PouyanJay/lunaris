@@ -6,7 +6,15 @@ is what lets a single bad reply drive a "exhaust the repair budget" test without
 """
 
 from lunaris_runtime.schema import VideoJob
+from lunaris_video.assembly import estimate_timing
 from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
+from lunaris_video.schemas import TimingManifest, VideoContract
+
+
+def manifest_for(contract: VideoContract) -> TimingManifest:
+    """The estimate manifest a timing-driven render is built against (V3-T2) — the same one the
+    assembler persists, so tests assert codegen and timing.json agree."""
+    return estimate_timing(contract)
 
 
 class StubInvokeModel:

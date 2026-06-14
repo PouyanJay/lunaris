@@ -15,6 +15,7 @@ KNOWN_SECRETS: dict[str, str] = {
     "supabaseServiceRole": "SUPABASE_SERVICE_ROLE_KEY",
     "search": "SEARCH_API_KEY",
     "youtube": "YOUTUBE_API_KEY",
+    "elevenlabs": "ELEVENLABS_API_KEY",
     "langsmith": "LANGSMITH_API_KEY",
 }
 

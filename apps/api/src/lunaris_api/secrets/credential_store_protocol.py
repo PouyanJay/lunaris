@@ -7,7 +7,7 @@ from .crypto import EncryptedSecret
 # platform infra (Supabase) or observability (LangSmith) keys, which stay operator-owned. Must stay
 # in lockstep with the ``provider`` CHECK in the provider_credentials migration: a new provider is a
 # change in both places.
-BYOK_PROVIDERS: tuple[str, ...] = ("anthropic", "voyage", "search", "youtube")
+BYOK_PROVIDERS: tuple[str, ...] = ("anthropic", "voyage", "search", "youtube", "elevenlabs")
 
 
 @dataclass(frozen=True)

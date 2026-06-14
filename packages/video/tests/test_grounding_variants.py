@@ -27,7 +27,13 @@ from lunaris_video.grounding import LessonGroundingPacketBuilder
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, LessonVideoPipeline
 from lunaris_video.planning import ScenePlanner
-from lunaris_video.schemas import QaVerdict, SceneContract, VideoContract
+from lunaris_video.schemas import (
+    QaVerdict,
+    SceneContract,
+    SceneTiming,
+    TimingManifest,
+    VideoContract,
+)
 from lunaris_video.sourcing import CourseStoreLessonSourceProvider
 
 _OWNER = "00000000-0000-0000-0000-000000000001"
@@ -51,13 +57,17 @@ class _Renderer:
 
 
 class _Codegen:
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
         return _SCENE_SOURCE
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
         return _SCENE_SOURCE
 
-    async def repair_visual(self, scene: SceneContract, *, source: str, defects) -> str:
+    async def repair_visual(
+        self, scene: SceneContract, *, source: str, defects, timing: SceneTiming
+    ) -> str:
         return _SCENE_SOURCE
 
 
@@ -73,13 +83,19 @@ class _Frames:
 
 class _Assembler:
     async def assemble(
-        self, scenes: list[RenderedScene], contract: VideoContract, *, workdir: Path
+        self,
+        scenes: list[RenderedScene],
+        contract: VideoContract,
+        *,
+        manifest: TimingManifest,
+        workdir: Path,
+        audio_dir: Path | None = None,
     ) -> RenderedVideo:
         return RenderedVideo(
             mp4=b"\x00\x00\x00\x18ftyp" + b"x" * 2000,
             poster=b"\xff\xd8\xff" + b"x" * 600,
             contracts_json=contract.model_dump_json().encode(),
-            timing_json=b"{}",
+            timing_json=manifest.model_dump_json().encode(),
         )
 
 

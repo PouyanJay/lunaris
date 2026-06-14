@@ -35,6 +35,12 @@ const PROVIDERS = [
     hint: "Richer video resources (duration / channel) — optional; falls back to search.",
     placeholder: "AIza…",
   },
+  {
+    provider: "elevenlabs",
+    label: "ElevenLabs API key",
+    hint: "Narrates explainer videos in one pass when voice is on — optional; without it videos render silent.",
+    placeholder: "sk_…",
+  },
 ] as const;
 
 type State =

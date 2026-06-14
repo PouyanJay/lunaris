@@ -4,7 +4,7 @@ import structlog
 from lunaris_runtime.resilience import invoke_with_parse_repair
 
 from lunaris_video.codegen.scene_validator import validate_scene_source
-from lunaris_video.schemas import QaDefect, SceneContract
+from lunaris_video.schemas import QaDefect, SceneContract, SceneTiming
 from lunaris_video.skill import read_skill_asset
 
 _logger = structlog.get_logger(__name__)
@@ -29,7 +29,8 @@ HARD RULES (violations are rejected automatically)
 - Use the style tokens (BG, INK, MUTED, ACCENT, DANGER, GREEN, PANEL, ALT, FONT) and the
   helpers (title_bar, make_array, hand_axes, smooth_curve, pivot_anchor, clear_scene) from
   style_tokens — never hardcode colors or fonts.
-- Implement every beat in order; honor each beat's min_visual_s as a minimum on-screen time.
+- Implement every beat in order. Each beat's animations and waits MUST sum to EXACTLY its
+  on-screen window from BEAT TIMING below — the narration is synced to these durations.
 - Any group that rotates or orbits needs an explicit pivot anchor (pivot_anchor helper) —
   never rotate about get_center() of an asymmetric group.
 - End the scene by fading out all mobjects (clear_scene(self)) for clean concat boundaries.
@@ -46,6 +47,18 @@ LAYOUT & LEGIBILITY (the spatial defects Gate B rejects — get these right the 
 - Every label must be next_to a mobject that is actually on screen at that moment — if you label
   an "input", draw the input object; an unattached label reading into empty space is rejected.
 - Size for the frame: scale_to_fit_width any text that might overflow its box BEFORE animating it.
+
+BEAT TIMING (audio-drives-video — these on-screen windows are FIXED; the narration is timed to them)
+Each beat's animations and waits must sum to EXACTLY its window in seconds:
+{timing}
+Never let a beat drift from its window — the audio is synced to these exact durations. Put this
+helper at the top of construct() and drive each beat through it so the totals are exact:
+    def beat(anims, total):
+        used = 0.0
+        for anim, run_time in anims:
+            self.play(anim, run_time=run_time)
+            used += run_time
+        self.wait(max(0.05, total - used))
 
 PATTERNS REFERENCE (verbatim from the pinned skill — follow it)
 {patterns}
@@ -66,6 +79,9 @@ CURRENT SOURCE (failing)
 RENDER FAILURE (stack trace / stderr tail)
 {error_tail}
 
+BEAT TIMING (unchanged — each beat's animations + waits must still sum to EXACTLY its window):
+{timing}
+
 The HARD RULES still apply: CE only; no LaTeX (no MathTex/Tex/Title/BulletedList/include_numbers);
 `from manim import *` and `from style_tokens import *`; exactly one class
 `class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
@@ -84,6 +100,9 @@ CURRENT SOURCE (renders, but visually defective)
 
 DEFECTS FOUND (fix every one)
 {defects}
+
+BEAT TIMING (unchanged — keep each beat's animations + waits summing to EXACTLY its window):
+{timing}
 
 Common spatial fixes (from the pinned patterns): rotate groups about an explicit pivot anchor,
 not get_center(); keep labels next_to their object across Transforms; compute max extent vs a
@@ -113,22 +132,26 @@ class SceneCodeGenerator:
         # never touches the filesystem on the hot path.
         self._patterns = read_skill_asset("references/manim-patterns.md")
 
-    async def generate(self, scene: SceneContract, *, topic: str) -> str:
+    async def generate(self, scene: SceneContract, *, topic: str, timing: SceneTiming) -> str:
         prompt = _GENERATE_TEMPLATE.format(
             scene_json=scene.model_dump_json(indent=2),
             topic=topic,
             scene_class_name=scene.scene_class_name,
+            timing=_format_timing(timing),
             patterns=self._patterns,
         )
         source = await self._complete(prompt, scene)
         _logger.info("scene_codegen.generated", scene_id=scene.id, chars=len(source))
         return source
 
-    async def repair(self, scene: SceneContract, *, source: str, error_tail: str) -> str:
+    async def repair(
+        self, scene: SceneContract, *, source: str, error_tail: str, timing: SceneTiming
+    ) -> str:
         prompt = _REPAIR_RENDER_TEMPLATE.format(
             scene_json=scene.model_dump_json(indent=2),
             source=source,
             error_tail=error_tail,
+            timing=_format_timing(timing),
             scene_class_name=scene.scene_class_name,
         )
         repaired = await self._complete(prompt, scene)
@@ -136,12 +159,13 @@ class SceneCodeGenerator:
         return repaired
 
     async def repair_visual(
-        self, scene: SceneContract, *, source: str, defects: list[QaDefect]
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
     ) -> str:
         prompt = _REPAIR_VISUAL_TEMPLATE.format(
             scene_json=scene.model_dump_json(indent=2),
             source=source,
             defects=_format_defects(defects),
+            timing=_format_timing(timing),
             scene_class_name=scene.scene_class_name,
         )
         repaired = await self._complete(prompt, scene)
@@ -169,3 +193,7 @@ def _format_defects(defects: list[QaDefect]) -> str:
     return "\n".join(
         f"{n}. {defect.issue} — fix: {defect.fix_hint}" for n, defect in enumerate(defects, 1)
     )
+
+
+def _format_timing(timing: SceneTiming) -> str:
+    return "\n".join(f"- {beat.id}: {beat.anim_s}s" for beat in timing.beats)

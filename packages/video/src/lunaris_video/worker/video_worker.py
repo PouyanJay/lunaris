@@ -112,6 +112,12 @@ class VideoWorker:
         await self._storage.upload(
             path=paths.timing, data=rendered.timing_json, content_type="application/json"
         )
+        # WebVTT captions ride only on a narrated video — a silent one writes none rather than an
+        # empty track (the API then offers no captions URL, and the player adds no track).
+        if rendered.captions is not None:
+            await self._storage.upload(
+                path=paths.captions, data=rendered.captions, content_type="text/vtt"
+            )
         # Structural-provenance contract (CLAUDE.md): persisted as its own artifact so the API can
         # thread it onto the wire independently of the playback artifacts. A producer that built no
         # provenance writes none rather than a bogus empty object.

@@ -8,6 +8,7 @@ const READY = [
   { provider: "voyage", isSet: false, last4: null },
   { provider: "search", isSet: false, last4: null },
   { provider: "youtube", isSet: false, last4: null },
+  { provider: "elevenlabs", isSet: false, last4: null },
 ];
 
 /** Routes the credentials API by method + path. `onMutate` shapes PUT/DELETE/POST responses. */
@@ -39,6 +40,7 @@ describe("CredentialsPanel", () => {
     expect(screen.getByLabelText("Voyage embeddings key")).toBeInTheDocument();
     expect(screen.getByLabelText("Search API key (Tavily)")).toBeInTheDocument();
     expect(screen.getByLabelText("YouTube API key")).toBeInTheDocument();
+    expect(screen.getByLabelText("ElevenLabs API key")).toBeInTheDocument();
     // anthropic is set → shows its last4 (masked), never the value; input is a password field.
     expect(screen.getByText(/set ····9abc/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Anthropic API key")).toHaveAttribute("type", "password");

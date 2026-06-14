@@ -61,7 +61,11 @@ export function LessonVideoHero({
       {state.phase === "working" && <WorkingStage status={state.status} />}
 
       {state.phase === "ready" && (
-        <ReadyPlayer videoUrl={state.videoUrl} posterUrl={state.posterUrl} />
+        <ReadyPlayer
+          videoUrl={state.videoUrl}
+          posterUrl={state.posterUrl}
+          captionsUrl={state.captionsUrl}
+        />
       )}
 
       {state.phase === "failed" && (
@@ -94,7 +98,15 @@ function WorkingStage({ status }: { status: VideoJobStatus }) {
   );
 }
 
-function ReadyPlayer({ videoUrl, posterUrl }: { videoUrl: string; posterUrl: string | null }) {
+function ReadyPlayer({
+  videoUrl,
+  posterUrl,
+  captionsUrl,
+}: {
+  videoUrl: string;
+  posterUrl: string | null;
+  captionsUrl: string | null;
+}) {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -112,7 +124,9 @@ function ReadyPlayer({ videoUrl, posterUrl }: { videoUrl: string; posterUrl: str
       </span>
       {playing ? (
         /* The artifact is our own MP4 on a signed URL — a native element, no third party.
-           Captions arrive with narrated videos in V3 (the silent stub has none to caption). */
+           A narrated video also ships a WebVTT track (V3); the signed URL is cross-origin, so the
+           <video> opts into CORS (`crossOrigin`) for the <track> to load. A silent video has no
+           captionsUrl, so no track is attached. */
         <video
           ref={videoRef}
           className={styles.player}
@@ -120,7 +134,12 @@ function ReadyPlayer({ videoUrl, posterUrl }: { videoUrl: string; posterUrl: str
           poster={posterUrl ?? undefined}
           controls
           autoPlay
-        />
+          crossOrigin={captionsUrl ? "anonymous" : undefined}
+        >
+          {captionsUrl && (
+            <track kind="captions" src={captionsUrl} srcLang="en" label="English" default />
+          )}
+        </video>
       ) : (
         <button
           type="button"
