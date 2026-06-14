@@ -1,0 +1,64 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* A popover panel — raised surface, hairline border, a soft layered shadow (the one place depth is
+   warranted: it floats above the slot). Anchored to the trigger; opens above so it never pushes the
+   failed/ready slot's layout. */
+.menu {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  min-width: 14rem;
+  padding: var(--space-1);
+  background: var(--surface-raised);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.item:hover,
+.item:focus-visible {
+  background: var(--bg-muted);
+  outline: none;
+}
+
+.item:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.itemLabel {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.itemDescription {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Phone: a comfortable tap target per item (WCAG 2.5.5). */
+@media (max-width: 768px) {
+  .item {
+    padding: var(--space-3);
+  }
+}

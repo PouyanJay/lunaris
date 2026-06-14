@@ -692,3 +692,172 @@ def test_video_pipeline_is_the_real_pipeline_when_renderable(tmp_path: Path) -> 
     # Assert — keyed renders run the real plan→render→QA→assemble pipeline, routed by kind so a
     # lesson / summary / overview job each reaches its configured inner pipeline (V5).
     assert isinstance(pipeline, KindRoutingVideoPipeline)
+
+
+# ── the regenerate menu (V6-T2) ────────────────────────────────────────────────────
+
+
+async def _seed_source(
+    queue: InMemoryVideoJobQueue, *, failed: bool = False, config: dict | None = None
+) -> VideoJob:
+    """Seed a source video job owned by USER_A (course-1 / lesson-1 / LESSON), settled READY unless
+    ``failed``. Returns the source job a regenerate points at."""
+    job = VideoJob(
+        id="source-job",
+        user_id=USER_A,
+        course_id="course-1",
+        lesson_id="lesson-1",
+        kind=VideoKind.LESSON,
+        input_hash="src-hash",
+        config=config or {},
+    )
+    await queue.enqueue(job)
+    await queue.claim(worker_id="seed")  # QUEUED → in-flight so it can settle terminal
+    if failed:
+        await queue.fail(job_id=job.id, error="render exploded")
+    else:
+        await queue.complete(job_id=job.id)
+    return job
+
+
+_REGEN = "/api/videos/source-job/regenerate"
+
+
+async def test_regenerate_fresh_enqueues_a_new_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a finished source video.
+    await _seed_source(queue)
+
+    # Act — Fresh take.
+    response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "fresh"})
+
+    # Assert — a brand-new job (distinct id) carrying the fresh regenerate descriptor + coordinates.
+    assert response.status_code == 202, response.text
+    new_job = response.json()["job"]
+    assert new_job["id"] != "source-job"
+    assert new_job["status"] == "queued"
+    assert new_job["lessonId"] == "lesson-1"
+    # config is a free-form dict, so its nested keys stay as written (model fields camelise, this
+    # doesn't): regenerate carries the mode + the source job id.
+    assert new_job["config"]["regenerate"]["mode"] == "fresh"
+    assert new_job["config"]["regenerate"]["source_job_id"] == "source-job"
+
+
+async def test_regenerate_simpler_works_from_a_failed_source(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # A re-plan mode regenerates even a failed video (there's nothing to reuse, so it re-plans).
+    await _seed_source(queue, failed=True)
+
+    response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "simpler"})
+
+    assert response.status_code == 202
+    assert response.json()["job"]["config"]["regenerate"]["mode"] == "simpler"
+
+
+async def test_retry_requires_a_finished_source(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Retry reuses the prior contract — a FAILED source has none, so the reuse modes are refused.
+    await _seed_source(queue, failed=True)
+
+    response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "retry"})
+
+    assert response.status_code == 409
+    assert "fresh" in response.json()["detail"].lower()
+
+
+async def test_reuse_modes_refuse_an_in_flight_source(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # The 409 guard is any non-READY status, not just FAILED — a still-rendering source has no
+    # stored contract either, for both reuse modes.
+    job = VideoJob(
+        id="source-job",
+        user_id=USER_A,
+        course_id="course-1",
+        lesson_id="lesson-1",
+        kind=VideoKind.LESSON,
+        input_hash="h",
+    )
+    await queue.enqueue(job)  # left QUEUED (never settled)
+
+    for mode in ("retry", "add_narration"):
+        response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": mode})
+        assert response.status_code == 409, mode
+
+
+async def test_add_narration_forces_voice_on_and_carries_the_contract_path(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Add narration reuses the finished contract and turns narration on regardless of the toggle.
+    await _seed_source(queue)
+
+    response = await client.post(
+        _REGEN, headers=auth_headers(USER_A), json={"mode": "add_narration"}
+    )
+
+    assert response.status_code == 202
+    config = response.json()["job"]["config"]
+    assert config["voice"] is True
+    assert config["regenerate"]["mode"] == "add_narration"
+    # The reuse modes carry the source's contract storage path for the worker to load.
+    assert (
+        f"{USER_A}/course-1/source-job/scene_contracts.json"
+        in config["regenerate"]["contract_path"]
+    )
+
+
+async def test_regenerate_unknown_job_is_404(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/api/videos/ghost/regenerate", headers=auth_headers(USER_A), json={"mode": "fresh"}
+    )
+    assert response.status_code == 404
+
+
+async def test_regenerate_not_owned_is_404(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # The source is owned by USER_A; USER_B can't see it (existence is not leaked).
+    await _seed_source(queue)
+    response = await client.post(_REGEN, headers=auth_headers(USER_B), json={"mode": "fresh"})
+    assert response.status_code == 404
+
+
+async def test_regenerate_refused_when_video_disabled_in_settings(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The per-user master toggle gates regenerate too (every enqueue point).
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    user_config = InMemoryUserConfigStore()
+    await user_config.set(user_id=USER_A, key="videoEnabled", value="false")
+    await _seed_source(queue)
+    async with _build_client(
+        tmp_path, queue, storage, events, user_config_store=user_config
+    ) as client:
+        response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "fresh"})
+
+    assert response.status_code == 403
+
+
+async def test_regenerate_is_deduped_while_a_job_is_in_flight(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # A regenerate must not stack on a live job for the same coordinates — it returns the live one.
+    await _seed_source(queue)
+    first = (await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "fresh"})).json()
+    # The first regenerate is now QUEUED (live) for course-1/lesson-1; a second returns it.
+    second = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "simpler"})
+
+    assert second.status_code == 202
+    assert second.json()["job"]["id"] == first["job"]["id"]
+
+
+async def test_regenerate_rejects_an_unknown_mode(client: httpx.AsyncClient) -> None:
+    response = await client.post(_REGEN, headers=auth_headers(USER_A), json={"mode": "teleport"})
+    assert response.status_code == 422

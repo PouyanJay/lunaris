@@ -423,3 +423,24 @@ class VideoJobStatus(StrEnum):
     ASSEMBLING = "assembling"
     READY = "ready"
     FAILED = "failed"
+
+
+class RegenerateMode(StrEnum):
+    """How a video regenerate re-enters the pipeline (explainer-video V6-T2 — the regenerate menu).
+
+    ``FRESH`` and ``SIMPLER`` re-plan from the source (``SIMPLER`` steers the planner toward fewer
+    scenes / the plainest archetypes); ``RETRY`` and ``ADD_NARRATION`` reuse the prior job's planned
+    contract and re-render from there (Stage 2+), ``ADD_NARRATION`` additionally turning narration
+    on — so the menu's four choices each enter the pipeline at the right node. Carried on the new
+    job's ``config["regenerate"]``; absent ⇒ an ordinary fresh build.
+    """
+
+    RETRY = "retry"
+    SIMPLER = "simpler"
+    FRESH = "fresh"
+    ADD_NARRATION = "add_narration"
+
+    @property
+    def reuses_contract(self) -> bool:
+        """Whether this mode re-renders the prior contract (Stage 2+) rather than re-planning."""
+        return self in (RegenerateMode.RETRY, RegenerateMode.ADD_NARRATION)

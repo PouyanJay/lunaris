@@ -284,9 +284,12 @@ def get_video_pipeline(settings: Settings) -> IVideoPipeline:
     workspace_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     workspace_root.chmod(0o700)  # mkdir(exist_ok) skips mode on a pre-existing dir; enforce it
     # The kind-routing pipeline (V5): one worker pipeline that routes lesson / summary / overview
-    # jobs to their configured inner pipelines (the overview chaptered).
+    # jobs to their configured inner pipelines (the overview chaptered). Storage is wired so a
+    # regenerate (V6-T2) can reuse the prior job's contract from the artifact store.
     return build_video_pipeline(
-        store=_resolve_course_store(settings), workspace_root=workspace_root
+        store=_resolve_course_store(settings),
+        workspace_root=workspace_root,
+        storage=get_video_storage(settings),
     )
 
 

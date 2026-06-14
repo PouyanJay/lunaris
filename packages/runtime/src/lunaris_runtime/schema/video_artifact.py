@@ -15,10 +15,14 @@ class VideoArtifact(CourseModel):
     ``provenance`` is ``None`` for a video that has none — a FAILED job carries a retry-state
     artifact that may never have planned a contract (V4-T1). A READY artifact always carries it
     (provenance is built at the source the moment the contract is planned and Gate C passes).
+
+    ``job_id`` is the source job — present even when FAILED (unlike ``provenance``), so the reader's
+    regenerate menu (V6-T2) can re-run any artifact, finished or not.
     """
 
     kind: VideoKind
     status: VideoJobStatus
+    job_id: str | None = None
     provenance: VideoProvenance | None = None
     narrated: bool = False
     duration_s: float | None = None

@@ -60,7 +60,7 @@ may assert; a downstream gate diffs every on-screen number and comparison agains
   ["c1", "c3"]), or to ["{framing_sentinel}"] for a scene that states no empirical facts.
 - State a number, ranking or comparison ONLY if it appears verbatim in a claim the scene cites.
   Never invent a figure, and never cite a claim id that is not listed above.
-
+{regenerate_directive}
 ARCHETYPE REFERENCE (verbatim from the pinned skill)
 {archetypes}
 
@@ -81,6 +81,19 @@ _NO_CLAIMS_BLOCK = (
     "- No verified claims are available for this lesson, so EVERY scene must be framing only: set "
     f'its "sources" to ["{FRAMING_ONLY_SENTINEL}"] and state no numbers, rankings or comparisons.'
 )
+
+# The "Simpler" regenerate directive (V6-T2): steer PLAN toward the fewest, plainest scenes when a
+# prior version was too complex or failed quality checks. Injected into the {regenerate_directive}
+# slot; empty for an ordinary plan. The leading newline keeps the section spaced from the grounding
+# block above it.
+_SIMPLER_DIRECTIVE = """
+REGENERATE — SIMPLER (a prior version was too complex or failed quality checks; make this one
+plainer):
+- Plan the FEWEST scenes that still tell the arc (prefer 2-3, never more than 4).
+- Use ONLY the plainest archetypes — a title card, a single labelled diagram, one focused
+  comparison. Avoid dense multi-part mechanisms and busy composite scenes.
+- Fewer beats per scene; one idea per scene. Clarity over completeness.
+"""
 
 _CHAPTERED_PROMPT_TEMPLATE = """\
 You are the PLAN stage of an explainer-video pipeline. Turn this topic into a CHAPTERED overview
@@ -117,7 +130,7 @@ may assert; a downstream gate diffs every on-screen number and comparison agains
   ["c1", "c3"]), or to ["{framing_sentinel}"] for a scene that states no empirical facts.
 - State a number, ranking or comparison ONLY if it appears verbatim in a claim the scene cites.
   Never invent a figure, and never cite a claim id that is not listed above.
-
+{regenerate_directive}
 ARCHETYPE REFERENCE (verbatim from the pinned skill)
 {archetypes}
 
@@ -157,8 +170,9 @@ class ScenePlanner:
         source: LessonSource,
         *,
         target_seconds: int = target_seconds_for(VideoKind.LESSON),
+        simplify: bool = False,
     ) -> SceneContracts:
-        prompt = _build_prompt(source, target_seconds)
+        prompt = _build_prompt(source, target_seconds, simplify=simplify)
         valid_claim_ids = set(source.packet.claim_ids)
         draft = await invoke_with_parse_repair(
             self._invoke,
@@ -184,7 +198,7 @@ class ScenePlanner:
         return contract
 
     async def plan_chaptered(
-        self, source: LessonSource, *, target_seconds: int
+        self, source: LessonSource, *, target_seconds: int, simplify: bool = False
     ) -> ChapteredSceneContracts:
         """Plan a CHAPTERED contract — the OVERVIEW kind (V5-T1).
 
@@ -192,9 +206,10 @@ class ScenePlanner:
         of 3-4 scenes that concatenate into one MP4 (plan §0); the chapter count scales with
         ``target_seconds``. Same discipline as the flat ``plan``: the model emits the chapters, the
         system injects ``global_style`` + verifier gates, and a scene citing an unknown claim id
-        earns a repair turn — so a longer video never loosens the grounding moat.
+        earns a repair turn — so a longer video never loosens the grounding moat. ``simplify`` (the
+        V6 Simpler regenerate) steers toward fewer, plainer scenes.
         """
-        prompt = _build_chaptered_prompt(source, target_seconds)
+        prompt = _build_chaptered_prompt(source, target_seconds, simplify=simplify)
         valid_claim_ids = set(source.packet.claim_ids)
         draft = await invoke_with_parse_repair(
             self._invoke,
@@ -226,7 +241,7 @@ def _suggested_chapters(target_seconds: int) -> int:
     return max(2, math.ceil(target_seconds / _SECONDS_PER_CHAPTER))
 
 
-def _build_prompt(source: LessonSource, target_seconds: int) -> str:
+def _build_prompt(source: LessonSource, target_seconds: int, *, simplify: bool) -> str:
     return _PROMPT_TEMPLATE.format(
         course_topic=source.course_topic,
         lesson_title=source.lesson_title,
@@ -235,11 +250,12 @@ def _build_prompt(source: LessonSource, target_seconds: int) -> str:
         target_seconds=target_seconds,
         grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK),
         framing_sentinel=FRAMING_ONLY_SENTINEL,
+        regenerate_directive=_SIMPLER_DIRECTIVE if simplify else "",
         archetypes=read_skill_asset("references/archetypes.md"),
     )
 
 
-def _build_chaptered_prompt(source: LessonSource, target_seconds: int) -> str:
+def _build_chaptered_prompt(source: LessonSource, target_seconds: int, *, simplify: bool) -> str:
     return _CHAPTERED_PROMPT_TEMPLATE.format(
         course_topic=source.course_topic,
         unit_title=source.lesson_title,
@@ -249,6 +265,7 @@ def _build_chaptered_prompt(source: LessonSource, target_seconds: int) -> str:
         chapter_count=_suggested_chapters(target_seconds),
         grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK_CHAPTERED),
         framing_sentinel=FRAMING_ONLY_SENTINEL,
+        regenerate_directive=_SIMPLER_DIRECTIVE if simplify else "",
         archetypes=read_skill_asset("references/archetypes.md"),
     )
 

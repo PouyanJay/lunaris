@@ -69,6 +69,13 @@
   color: var(--text-secondary);
 }
 
+/* The regenerate affordance under a slot — a quiet right-aligned row (the menu opens above it). */
+.regenerateRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .shimmer {
     animation: none;

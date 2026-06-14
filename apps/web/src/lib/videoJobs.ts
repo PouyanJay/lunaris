@@ -65,6 +65,57 @@ export async function enqueueLessonVideo(
   return { kind: "accepted", view: (await response.json()) as VideoJobView };
 }
 
+/** The four regenerate-menu modes (V6-T2). RETRY / ADD_NARRATION reuse the prior contract (so they
+ *  need a finished source); SIMPLER / FRESH re-plan. Mirrors the server enum. */
+export type RegenerateMode = "retry" | "simpler" | "fresh" | "add_narration";
+
+/** A failed video has no planned contract to reuse, so only the re-plan modes apply. */
+export const FAILED_REGEN_MODES: RegenerateMode[] = ["fresh", "simpler"];
+
+/** A finished video can reuse its contract; a silent one can also have narration added. */
+export function readyRegenModes(captionsUrl: string | null): RegenerateMode[] {
+  const modes: RegenerateMode[] = ["retry", "simpler", "fresh"];
+  if (!captionsUrl) modes.push("add_narration");
+  return modes;
+}
+
+/** How a regenerate attempt resolved. `conflict` = the reuse modes need a finished source (409);
+ *  `disabled` = video turned off in Settings or the kill-switch (403/404); `error` = retryable. */
+export type RegenerateResult =
+  | { kind: "accepted"; view: VideoJobView }
+  | { kind: "conflict"; detail: string }
+  | { kind: "disabled" }
+  | { kind: "error" };
+
+/** Re-run a video through the regenerate menu (`POST /api/videos/{id}/regenerate`). The source job
+ *  is identified by id; the server enqueues a new job entering the pipeline at the mode's node. */
+export async function regenerateVideo(
+  apiBaseUrl: string,
+  jobId: string,
+  mode: RegenerateMode,
+): Promise<RegenerateResult> {
+  let response: Response;
+  try {
+    response = await authedFetch(
+      `${apiBaseUrl}/api/videos/${encodeURIComponent(jobId)}/regenerate`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode }),
+      },
+    );
+  } catch {
+    return { kind: "error" };
+  }
+  if (response.status === 403 || response.status === 404) return { kind: "disabled" };
+  if (response.status === 409) {
+    const body = (await response.json().catch(() => null)) as { detail?: string } | null;
+    return { kind: "conflict", detail: body?.detail ?? "This video hasn't finished yet." };
+  }
+  if (!response.ok) return { kind: "error" };
+  return { kind: "accepted", view: (await response.json()) as VideoJobView };
+}
+
 /** One job's current view, or null when it can't be read (gone, unauthorized, network). */
 export async function fetchVideoJob(
   apiBaseUrl: string,
@@ -81,4 +132,50 @@ export async function fetchVideoJob(
   } catch {
     return null;
   }
+}
+
+const TERMINAL: ReadonlySet<VideoJobStatus> = new Set(["ready", "failed"]);
+
+/** Poll a job until it settles (`ready`/`failed`) or `signal` aborts: `onWorking` fires for each
+ *  in-flight status, `onSettled` once for the terminal view. A missed read (null) is retried — a
+ *  transient blip must not strand a slow job, and the abort is the intended stop. Shared by the
+ *  on-demand hero and the course-video slot so both regenerate-and-watch identically. */
+export async function pollVideoJob(
+  apiBaseUrl: string,
+  jobId: string,
+  opts: {
+    signal: AbortSignal;
+    intervalMs: number;
+    onWorking: (status: VideoJobStatus) => void;
+    onSettled: (view: VideoJobView) => void;
+  },
+): Promise<void> {
+  while (!opts.signal.aborted) {
+    const view = await fetchVideoJob(apiBaseUrl, jobId, opts.signal);
+    if (opts.signal.aborted) return;
+    if (view === null) {
+      await delay(opts.intervalMs, opts.signal);
+      continue;
+    }
+    if (TERMINAL.has(view.job.status)) {
+      opts.onSettled(view);
+      return;
+    }
+    opts.onWorking(view.job.status);
+    await delay(opts.intervalMs, opts.signal);
+  }
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }

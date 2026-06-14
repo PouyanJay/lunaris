@@ -163,7 +163,9 @@ describe("LessonVideoHero", () => {
 
   it("disappears entirely when the feature is switched off", async () => {
     // Arrange — the kill-switch: the surface does not exist (404).
-    fetchMock.mockResolvedValueOnce(jsonResponse(404, { detail: "Video generation is not enabled" }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, { detail: "Video generation is not enabled" }),
+    );
     const { container } = render(<LessonVideoHero {...PROPS} />);
 
     // Act
@@ -173,23 +175,73 @@ describe("LessonVideoHero", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
-  it("surfaces a failed job with a retry that re-enqueues", async () => {
-    // Arrange — enqueue accepts, the poll reports the job failed, the retry enqueues again.
+  it("surfaces a failed job and regenerates from the Try again menu", async () => {
+    // Arrange — enqueue accepts, the poll reports failed; the menu's Fresh take re-runs end to end.
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(202, queuedView()))
-      .mockResolvedValueOnce(jsonResponse(200, failedView()))
-      .mockResolvedValueOnce(jsonResponse(202, queuedView("job-2")))
-      .mockResolvedValue(jsonResponse(200, readyView("job-2")));
+      .mockResolvedValueOnce(jsonResponse(202, queuedView())) // enqueue
+      .mockResolvedValueOnce(jsonResponse(200, failedView())) // poll → failed
+      .mockResolvedValueOnce(jsonResponse(202, queuedView("job-2"))) // regenerate
+      .mockResolvedValue(jsonResponse(200, readyView("job-2"))); // poll → ready
     render(<LessonVideoHero {...PROPS} />);
 
     // Act — generate, watch it fail.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
-    const retry = await screen.findByRole("button", { name: /try again/i });
+    const tryAgain = await screen.findByRole("button", { name: /try again/i });
     expect(screen.getByText(/couldn.t generate/i)).toBeInTheDocument();
 
-    // Act — retry succeeds end-to-end.
-    fireEvent.click(retry);
+    // Act — open the menu and pick Fresh take; the regenerated job renders.
+    fireEvent.click(tryAgain);
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+
     expect(await screen.findByRole("button", { name: /play lesson video/i })).toBeInTheDocument();
+    const regenerate = fetchMock.mock.calls.find(([url]) => String(url).includes("/regenerate"));
+    expect(JSON.parse(String((regenerate?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
+  });
+
+  it("falls back to the failed state when a regenerate is refused (409)", async () => {
+    // Arrange — generate → fail; then the menu's Retry hits a 409 (the contract can't be reused).
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(202, queuedView())) // enqueue
+      .mockResolvedValueOnce(jsonResponse(200, failedView())) // poll → failed
+      .mockResolvedValueOnce(jsonResponse(409, { detail: "hasn't finished" })); // regenerate
+    render(<LessonVideoHero {...PROPS} />);
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+    const tryAgain = await screen.findByRole("button", { name: /try again/i });
+
+    // Act — open the menu, pick Fresh take, but the server refuses.
+    fireEvent.click(tryAgain);
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+
+    // Assert — the slot stays failed (the Try again menu reappears), no broken player.
+    expect(await screen.findByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /play lesson video/i })).toBeNull();
+  });
+
+  it("offers Add narration on a ready silent video but not a narrated one", async () => {
+    // A silent ready video (no captions) → the menu includes Add narration.
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(202, queuedView()))
+      .mockResolvedValue(jsonResponse(200, readyView("job-1", null)));
+    const { unmount } = render(<LessonVideoHero {...PROPS} />);
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+    await screen.findByRole("button", { name: /play lesson video/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
+    expect(screen.getByRole("menuitem", { name: /add narration/i })).toBeInTheDocument();
+    unmount();
+
+    // A narrated ready video (captions present) → Add narration is hidden.
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(202, queuedView()))
+      .mockResolvedValue(jsonResponse(200, readyView("job-1", "https://signed/c.vtt")));
+    render(<LessonVideoHero {...PROPS} />);
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+    await screen.findByRole("button", { name: /play lesson video/i });
+
+    fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
+    expect(screen.queryByRole("menuitem", { name: /add narration/i })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /^retry/i })).toBeInTheDocument();
   });
 
   it("resets to idle when the lesson changes", async () => {

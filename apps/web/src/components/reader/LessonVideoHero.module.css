@@ -5,6 +5,13 @@
   margin-bottom: var(--space-6);
 }
 
+/* The regenerate affordance under a ready video — a quiet right-aligned row (the menu opens above). */
+.regenerateRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
 /* Idle: a quiet, single-row affordance — the lesson is complete without it. */
 .idle {
   display: flex;

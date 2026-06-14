@@ -165,6 +165,7 @@ def _build_artifact(job: VideoJob, rendered: RenderedVideo) -> VideoArtifact:
     return VideoArtifact(
         kind=job.kind,
         status=VideoJobStatus.READY,
+        job_id=job.id,
         provenance=provenance,
         narrated=manifest.is_voiced,
         duration_s=manifest.total_s,

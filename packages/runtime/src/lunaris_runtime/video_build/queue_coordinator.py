@@ -211,9 +211,10 @@ class QueueVideoBuildCoordinator:
             if artifact is not None:
                 return artifact
         # FAILED, unreadable, or still running past the timeout → the retry-state artifact (carrying
-        # the right kind). The course publishes anyway; the hero shows the regenerate menu (§0).
+        # the right kind + the job id so the reader's regenerate menu can re-run it). The course
+        # publishes anyway; the slot shows the regenerate menu (§0 / V6-T2).
         logger.info("video_build_degraded", job_id=job_id, kind=degraded_kind.value)
-        return VideoArtifact(kind=degraded_kind, status=VideoJobStatus.FAILED)
+        return VideoArtifact(kind=degraded_kind, status=VideoJobStatus.FAILED, job_id=job_id)
 
     async def _await_terminal(self, job_id: str) -> VideoJob | None:
         """Poll the job until it settles READY/FAILED, returning it. ``None`` means "give up and

@@ -18,6 +18,7 @@ from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, VideoPipeline
 from lunaris_video.pipeline.video_pipeline import SynthesizerProvider, _target_seconds
 from lunaris_video.planning import ScenePlanner
+from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.schemas import (
     ChapteredSceneContracts,
     QaVerdict,
@@ -174,6 +175,7 @@ def _pipeline(
     synthesizer_provider: SynthesizerProvider = lambda: None,
     sync_gate: SyncGate | None = None,
     chaptered: bool = False,
+    prior_contract_provider: IPriorContractProvider | None = None,
 ) -> VideoPipeline:
     codegen = codegen or _CodegenStub()
     return VideoPipeline(
@@ -191,6 +193,7 @@ def _pipeline(
         chaptered=chaptered,
         synthesizer_provider=synthesizer_provider,
         sync_gate=sync_gate,
+        prior_contract_provider=prior_contract_provider,
     )
 
 
@@ -455,3 +458,120 @@ def test_target_seconds_uses_the_configured_length_when_present() -> None:
         config={"target_seconds": 240},
     )
     assert _target_seconds(job) == 240
+
+
+# ── V6-T2: the regenerate menu's pipeline entry nodes ───────────────────────────────────
+
+
+class _StubPriorContract:
+    """A prior-contract provider that returns a fixed contract (the reuse path), counting loads."""
+
+    def __init__(self, contract: VideoContract) -> None:
+        self._contract = contract
+        self.loads = 0
+
+    async def load(self, job: VideoJob) -> VideoContract | None:
+        self.loads += 1
+        return self._contract
+
+
+def _regen_job(mode: str, *, voice: bool = False) -> VideoJob:
+    config: dict[str, object] = {"regenerate": {"mode": mode}}
+    if voice:
+        config["voice"] = True
+    return VideoJob(
+        id="job-regen",
+        user_id="00000000-0000-0000-0000-000000000001",
+        course_id="course-1",
+        lesson_id="lesson-1",
+        kind=VideoKind.LESSON,
+        input_hash="hash-1",
+        config=config,
+    )
+
+
+async def test_fresh_regenerate_replans_without_the_simpler_directive(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Fresh take = an ordinary plan: the planner runs once, with no Simpler steering.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    pipeline = _pipeline(invoke, _SpyRenderer(), _SpyAssembler(), ContractHashCache(), tmp_path)
+
+    await pipeline.produce(_regen_job("fresh"))
+
+    assert len(invoke.prompts) == 1
+    assert "SIMPLER" not in invoke.prompts[0]
+
+
+async def test_simpler_regenerate_injects_the_simpler_directive(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Simpler = re-plan with the directive steering toward fewer, plainest scenes.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    pipeline = _pipeline(invoke, _SpyRenderer(), _SpyAssembler(), ContractHashCache(), tmp_path)
+
+    await pipeline.produce(_regen_job("simpler"))
+
+    assert len(invoke.prompts) == 1
+    assert "SIMPLER" in invoke.prompts[0]
+
+
+async def test_retry_reuses_the_prior_contract_without_planning(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Retry = reuse the prior contract (Stage 2+): the planner is NEVER invoked, but it renders.
+    prior = _StubPriorContract(make_lesson_contract())
+    invoke = StubInvokeModel([])  # any plan call would IndexError — proving none happened
+    renderer = _SpyRenderer()
+    pipeline = _pipeline(
+        invoke,
+        renderer,
+        _SpyAssembler(),
+        ContractHashCache(),
+        tmp_path,
+        prior_contract_provider=prior,
+    )
+
+    await pipeline.produce(_regen_job("retry"))
+
+    assert prior.loads == 1
+    assert invoke.prompts == []  # bypassed the PLAN stage entirely
+    assert renderer.renders > 0  # Stage 2+ still ran
+
+
+async def test_retry_without_a_prior_contract_falls_back_to_planning(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # No prior contract available (the default no-op provider) → reuse degrades to a fresh plan.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    pipeline = _pipeline(invoke, _SpyRenderer(), _SpyAssembler(), ContractHashCache(), tmp_path)
+
+    await pipeline.produce(_regen_job("retry"))
+
+    assert len(invoke.prompts) == 1  # fell back to planning
+
+
+async def test_add_narration_reuses_the_contract_and_narrates(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Add narration = reuse the prior contract (no re-plan) + the voice pass.
+    prior = _StubPriorContract(make_lesson_contract())
+    invoke = StubInvokeModel([])
+    assembler = _SpyAssembler()
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        assembler,
+        ContractHashCache(),
+        tmp_path,
+        prior_contract_provider=prior,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_passing_sync_gate(),
+    )
+
+    video = await pipeline.produce(_regen_job("add_narration", voice=True))
+
+    assert prior.loads == 1
+    assert invoke.prompts == []  # reused, not re-planned
+    assert assembler.received_audio_dir is not None  # narrated (muxed)
+    assert video.captions is not None

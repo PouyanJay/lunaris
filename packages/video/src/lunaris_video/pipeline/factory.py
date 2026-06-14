@@ -2,7 +2,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from lunaris_runtime.credentials import resolve_secret
-from lunaris_runtime.persistence import ICourseStore
+from lunaris_runtime.persistence import ICourseStore, IVideoStorage
 from lunaris_runtime.schema import VideoKind
 
 from lunaris_video.assembly import VideoAssembler
@@ -19,10 +19,15 @@ from lunaris_video.pipeline.model_adapters import (
 from lunaris_video.pipeline.video_pipeline import VideoPipeline
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourceProvider
+from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesizer
 from lunaris_video.qa import SyncQaInspector, VisionQaInspector
 from lunaris_video.rendering import FrameExtractor, SceneRenderer
-from lunaris_video.sourcing import CourseStoreLessonSourceProvider, CourseVideoSourceProvider
+from lunaris_video.sourcing import (
+    CourseStoreLessonSourceProvider,
+    CourseVideoSourceProvider,
+    StoragePriorContractProvider,
+)
 from lunaris_video.voice import ElevenLabsSpeechSynthesizer
 
 _ELEVENLABS_KEY_ENV = "ELEVENLABS_API_KEY"
@@ -33,7 +38,11 @@ _PipelineMaker = Callable[[ILessonSourceProvider, bool], VideoPipeline]
 
 
 def build_video_pipeline(
-    *, store: ICourseStore, workspace_root: Path, model_id: str | None = None
+    *,
+    store: ICourseStore,
+    workspace_root: Path,
+    model_id: str | None = None,
+    storage: IVideoStorage | None = None,
 ) -> KindRoutingVideoPipeline:
     """Wire the worker's real pipeline — one per kind behind a kind router (V5).
 
@@ -41,8 +50,15 @@ def build_video_pipeline(
     (flat) + OVERVIEW (chaptered) pipelines grounded on the per-job grounding snapshot — all sharing
     one model/codegen/render/QA toolchain (V4: sharing a pipeline's stateless tools across workers
     is safe; only each ContractHashCache is per-pipeline). The router dispatches each job by kind.
+    ``storage`` (the artifact store) wires the prior-contract reuse for the regenerate menu (V6-T2);
+    omitted, regenerate jobs simply re-plan.
     """
-    make = _pipeline_maker(workspace_root=workspace_root, model_id=model_id)
+    prior_contract_provider = StoragePriorContractProvider(storage) if storage is not None else None
+    make = _pipeline_maker(
+        workspace_root=workspace_root,
+        model_id=model_id,
+        prior_contract_provider=prior_contract_provider,
+    )
     packet_builder = CourseGroundingPacketBuilder()
     lesson_source = CourseStoreLessonSourceProvider(store, packet_builder=packet_builder)
     course_source = CourseVideoSourceProvider(packet_builder=packet_builder)
@@ -55,7 +71,12 @@ def build_video_pipeline(
     )
 
 
-def _pipeline_maker(*, workspace_root: Path, model_id: str | None) -> _PipelineMaker:
+def _pipeline_maker(
+    *,
+    workspace_root: Path,
+    model_id: str | None,
+    prior_contract_provider: IPriorContractProvider | None,
+) -> _PipelineMaker:
     """Build the shared toolchain once and return a maker for per-kind ``VideoPipeline``s.
 
     One ``SceneCodeGenerator``/``SceneRenderer``/``FrameExtractor``/planner/vision-invoke is shared
@@ -96,6 +117,7 @@ def _pipeline_maker(*, workspace_root: Path, model_id: str | None) -> _PipelineM
             chaptered=chaptered,
             synthesizer_provider=synthesizer_provider,
             sync_gate=SyncGate(vision=SyncQaInspector(invoke=vision_invoke), frames=frames),
+            prior_contract_provider=prior_contract_provider,
         )
 
     return make

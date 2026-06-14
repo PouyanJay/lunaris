@@ -11,7 +11,13 @@ from lunaris_runtime.persistence import (
     PersistenceError,
     VideoArtifactPaths,
 )
-from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
+from lunaris_runtime.schema import (
+    RegenerateMode,
+    VideoJob,
+    VideoJobStatus,
+    VideoKind,
+    VideoProvenance,
+)
 from lunaris_runtime.schema.base import CourseModel
 from lunaris_runtime.video_build import VideoConfig, video_config_from_map, video_input_hash
 from lunaris_video.schemas import TimingManifest
@@ -61,6 +67,17 @@ class VideoJobView(CourseModel):
     poster_url: str | None = None
     captions_url: str | None = None
     provenance: VideoProvenance | None = None
+
+
+class RegenerateRequest(CourseModel):
+    """Body of a regenerate request: which of the four menu modes to re-run (V6-T2)."""
+
+    mode: RegenerateMode
+
+
+_REUSE_UNAVAILABLE_DETAIL = (
+    "This video hasn't finished yet — use Fresh take or Simpler to generate it."
+)
 
 
 def require_video_generation_enabled(
@@ -142,6 +159,87 @@ async def enqueue_lesson_video(
     await queue.enqueue(job)
     logger.info("video_job_enqueued", job_id=job.id, course_id=course_id, lesson_id=lesson_id)
     return VideoJobView(job=job)
+
+
+@router.post(
+    "/videos/{job_id}/regenerate",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_video_generation_enabled)],
+)
+async def regenerate_video(
+    job_id: str,
+    payload: RegenerateRequest,
+    owner_id: Annotated[str, Depends(require_keyed_caller)],
+    video_config: VideoConfigDep,
+    queue: VideoJobQueueDep,
+    response: Response,
+) -> VideoJobView:
+    """Re-run a video through the regenerate menu (plan §V6-T2). Works for any kind (lesson /
+    summary / overview), keyed by the source job.
+
+    Each mode re-enters the pipeline at the right node: ``RETRY`` / ``ADD_NARRATION`` reuse the
+    source's planned contract (so they need a finished source — else 409), ``SIMPLER`` / ``FRESH``
+    re-plan. The new job inherits the source's coordinates + grounding snapshot (course videos plan
+    against it, AD-1) and the source's contract path (for the reuse modes); its length + voice come
+    from the owner's current config, except ``ADD_NARRATION`` forces narration on. A regenerate
+    already in flight for these coordinates is returned rather than stacked."""
+    request_id = uuid.uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
+    if not video_config.enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_VIDEO_DISABLED_DETAIL)
+    source = await queue.get(job_id=job_id, owner_id=owner_id)
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Video job not found")
+    if payload.mode.reuses_contract and source.status is not VideoJobStatus.READY:
+        # No finished contract to re-render — a 409 the reader maps to "use Fresh take / Simpler".
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_REUSE_UNAVAILABLE_DETAIL)
+    existing = await queue.find_active(
+        course_id=source.course_id,
+        lesson_id=source.lesson_id,
+        kind=source.kind,
+        owner_id=owner_id,
+    )
+    if existing is not None:
+        logger.info("video_job_regenerate_deduped", job_id=existing.id, source_job_id=source.id)
+        return VideoJobView(job=existing)
+    new_job = _regenerate_job(source, payload.mode, video_config, owner_id)
+    await queue.enqueue(new_job)
+    logger.info(
+        "video_job_regenerate_enqueued",
+        job_id=new_job.id,
+        source_job_id=source.id,
+        mode=payload.mode.value,
+    )
+    return VideoJobView(job=new_job)
+
+
+def _regenerate_job(
+    source: VideoJob, mode: RegenerateMode, video_config: VideoConfig, owner_id: str
+) -> VideoJob:
+    """The new job a regenerate enqueues: the source's coordinates + grounding snapshot, the owner's
+    current length, the resolved voice (forced on for Add narration), and the regenerate descriptor
+    (the mode + the source's contract path for the reuse modes)."""
+    config: dict[str, object] = {}
+    grounding = source.config.get("grounding")
+    if grounding is not None:
+        config["grounding"] = grounding  # course videos plan against their own snapshot (AD-1)
+    config["target_seconds"] = video_config.target_seconds(source.kind)
+    config["voice"] = True if mode is RegenerateMode.ADD_NARRATION else video_config.voice
+    regenerate: dict[str, object] = {"mode": mode.value, "source_job_id": source.id}
+    if mode.reuses_contract:
+        # Only the reuse modes read the source's contract; re-plan modes ignore it.
+        regenerate["contract_path"] = VideoArtifactPaths.for_job(source).contracts
+    config["regenerate"] = regenerate
+    return VideoJob(
+        id=uuid.uuid4().hex,
+        user_id=owner_id,
+        course_id=source.course_id,
+        lesson_id=source.lesson_id,
+        kind=source.kind,
+        input_hash=source.input_hash,
+        config=config,
+    )
 
 
 async def _assert_owns_lesson(
