@@ -211,6 +211,30 @@ async def test_a_requeued_job_does_not_collide_run_events_seqs() -> None:
     assert recorded[-1].payload.get("status") == "ready"  # the re-claim's settle landed
 
 
+async def test_event_seq_seed_falls_back_to_zero_when_the_store_read_fails() -> None:
+    # Arrange — seeding the seq reads latest_seq; if that read hiccups, the lifecycle log is
+    # best-effort, so the worker still emits (from 0) and the job still settles READY.
+    class _SeedReadFailsStore(InMemoryRunEventStore):
+        async def latest_seq(self, *, run_id: str, owner_id: str | None = None) -> int | None:
+            raise PersistenceError("seed read failed")
+
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        _SeedReadFailsStore(),
+    )
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, events)
+
+    # Act / Assert — the unreadable seed never fails the job; it completes and logs from seq 0.
+    assert await worker.run_once() is True
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.READY
+    recorded = await events.list_for_run(run_id="job-1", owner_id=_OWNER)
+    assert [e.seq for e in recorded] == list(range(len(recorded)))
+    assert recorded[0].seq == 0
+
+
 async def test_run_once_binds_the_job_id_into_log_context_while_working() -> None:
     # Arrange — a pipeline double that captures the structlog contextvars active DURING the job.
     captured: dict[str, object] = {}

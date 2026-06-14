@@ -281,6 +281,36 @@ def test_validator_normalizes_em_en_dash_and_ellipsis(
     assert "step 1 - setup - then ..." in result
 
 
+@pytest.mark.parametrize(
+    "codepoint, replacement",
+    [
+        (0x2014, "-"),  # em dash
+        (0x2013, "-"),  # en dash
+        (0x2012, "-"),  # figure dash
+        (0x2018, "'"),  # left single quote
+        (0x2019, "'"),  # right single quote
+        (0x201C, '"'),  # left double quote
+        (0x201D, '"'),  # right double quote
+        (0x2026, "..."),  # ellipsis
+        (0x00A0, " "),  # no-break space
+    ],
+)
+def test_validator_normalizes_each_smart_codepoint(
+    make_scene: Callable[..., SceneContract], codepoint: int, replacement: str
+) -> None:
+    # Arrange — every codepoint in the normalization table is replaced with its ASCII form (built
+    # with chr() so this test's own source stays ASCII). Placed in a comment, valid either way, so
+    # the assertion isolates the normalization, not a parse side effect.
+    smart = _VALID_SOURCE.replace("clear_scene(self)", f"clear_scene(self)  # a{chr(codepoint)}b")
+
+    # Act
+    result = validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert
+    assert chr(codepoint) not in result
+    assert f"a{replacement}b" in result
+
+
 def test_validator_rejects_unparseable_source(make_scene: Callable[..., SceneContract]) -> None:
     # Arrange / Act / Assert
     with pytest.raises(ValueError):

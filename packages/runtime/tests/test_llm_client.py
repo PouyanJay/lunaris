@@ -92,6 +92,17 @@ def test_falls_back_to_local_openai_when_no_anthropic_key(monkeypatch) -> None:
     assert kwargs["api_key"] == "no-key-required"
 
 
+def test_keyless_fallback_ignores_max_tokens(monkeypatch) -> None:
+    # max_tokens is a keyed-path knob (video is keyed-only); passing it must not break the keyless
+    # fallback or leak onto the local OpenAI client, which sizes its own budget from the ctx window.
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    build_chat_model("claude-opus-4-8", max_tokens=16384)
+
+    assert "max_tokens" not in _SpyChatOpenAI.last_kwargs
+
+
 def test_fallback_honours_env_overrides(monkeypatch) -> None:
     # The model + endpoint are a one-line env swap, so the seam isn't locked to one runtime/model.
     monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)

@@ -284,6 +284,78 @@ async def test_a_persistent_gate_b_defect_ships_the_best_render_with_degraded_pr
     assert "title text overflows the frame" in degraded.issues
 
 
+class _VisionFailingScene:
+    """Passes every scene except the one whose id matches — to prove degrade is per-scene."""
+
+    def __init__(self, failing_scene_id: str, issue: str = "label drifts off its object") -> None:
+        self._failing = failing_scene_id
+        self._issue = issue
+
+    async def inspect(self, frames: list[bytes], scene: SceneContract) -> QaVerdict:
+        if scene.id == self._failing:
+            return QaVerdict(
+                passed=False, defects=[QaDefect(issue=self._issue, fix_hint="re-anchor it")]
+            )
+        return QaVerdict(passed=True)
+
+
+def _two_scene_draft(make_lesson_contract) -> str:
+    contract = make_lesson_contract().model_dump(mode="json")
+    keys = ("topic", "audience", "visual_archetypes_used", "asset_strategy")
+    draft = {k: contract[k] for k in keys}
+    draft["scenes"] = contract["scenes"][:2]  # S1_problem (clean) + S2_key_insight (degrades)
+    return json.dumps(draft)
+
+
+async def test_only_the_degraded_scenes_are_recorded_not_the_clean_ones(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — a 2-scene video where scene 1 passes Gate B and scene 2 never clears: degrade is
+    # per-scene, so provenance records ONLY scene 2 (the clean scene contributes nothing).
+    invoke = StubInvokeModel([_two_scene_draft(make_lesson_contract)])
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        _SpyAssembler(),
+        ContractHashCache(),
+        tmp_path,
+        vision=_VisionFailingScene("S2_key_insight"),
+    )
+
+    # Act
+    video = await pipeline.produce(_job())
+
+    # Assert — exactly the one degraded scene, named, with its issue; the clean scene is absent.
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert [d.scene_id for d in provenance.degraded_scenes] == ["S2_key_insight"]
+    assert provenance.degraded_scenes[0].issues == ["label drifts off its object"]
+
+
+async def test_a_chaptered_overview_degrades_per_scene_without_failing(
+    make_chaptered_contract, tmp_path: Path
+) -> None:
+    # Arrange — the overview (chaptered) path is the one that failed on prod; a stubborn Gate-B
+    # defect on every scene must degrade it too, not fail the whole overview.
+    invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        _SpyAssembler(),
+        ContractHashCache(),
+        tmp_path,
+        chaptered=True,
+        vision=_StubbornVision(),
+    )
+
+    # Act — produces the overview MP4 despite every scene degrading (no SceneQaError bubbles up).
+    video = await pipeline.produce(_overview_job())
+
+    # Assert — all 4 chaptered scenes ship as best-effort, each recorded in provenance.
+    assert video.mp4
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert len(provenance.degraded_scenes) == 4
+
+
 async def test_a_clean_video_records_no_degraded_scenes(
     make_lesson_contract, tmp_path: Path
 ) -> None:
