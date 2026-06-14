@@ -5,6 +5,7 @@ from pathlib import Path
 
 import structlog
 from lunaris_runtime.schema import VideoJob, VideoProvenance
+from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
 from lunaris_video.errors import VideoPipelineError, VoiceUnavailableError
@@ -26,7 +27,6 @@ from lunaris_video.schemas import (
 
 _logger = structlog.get_logger(__name__)
 
-_DEFAULT_TARGET_SECONDS = 75
 # ElevenLabs "Rachel" + the high-quality multilingual model — the default course voice when the job
 # config doesn't name one (one voice per course; §0). A future per-user config (V6) overrides these.
 _ELEVENLABS_PROVIDER = "elevenlabs"
@@ -206,8 +206,10 @@ class LessonVideoPipeline:
 
 
 def _target_seconds(job: VideoJob) -> int:
+    # The length snapshotted onto the job at enqueue (V5-T2) wins; absent, fall back to the kind's
+    # product default — so PLAN always designs to a length, kind-aware, with no duplicated constant.
     raw = job.config.get("target_seconds")
-    return int(raw) if isinstance(raw, int) else _DEFAULT_TARGET_SECONDS
+    return int(raw) if isinstance(raw, int) else target_seconds_for(job.kind)
 
 
 def _wants_voice(job: VideoJob) -> bool:

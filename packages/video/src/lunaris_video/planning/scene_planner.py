@@ -1,17 +1,29 @@
+import math
 from collections.abc import Awaitable, Callable
 
 import structlog
 from lunaris_runtime.resilience import invoke_with_parse_repair
+from lunaris_runtime.schema import VideoKind
+from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.models.grounding_packet import GroundingPacket
 from lunaris_video.models.lesson_source import LessonSource
-from lunaris_video.schemas import FRAMING_ONLY_SENTINEL, ContractDraft, SceneContracts
+from lunaris_video.schemas import (
+    FRAMING_ONLY_SENTINEL,
+    ChapteredContractDraft,
+    ChapteredSceneContracts,
+    ContractDraft,
+    SceneContract,
+    SceneContracts,
+)
 from lunaris_video.skill import read_skill_asset
 from lunaris_video.style import video_global_style
 
 _logger = structlog.get_logger(__name__)
 
-_DEFAULT_TARGET_SECONDS = 75
+# A chaptered video runs roughly one chapter per started minute (each chapter is 3-4 scenes inside
+# the skill's validated envelope); at least two, so "chaptered" always means more than one chapter.
+_SECONDS_PER_CHAPTER = 60
 
 _PROMPT_TEMPLATE = """\
 You are the PLAN stage of an explainer-video pipeline. Turn ONE lesson into scene contracts —
@@ -70,15 +82,69 @@ _NO_CLAIMS_BLOCK = (
     f'its "sources" to ["{FRAMING_ONLY_SENTINEL}"] and state no numbers, rankings or comparisons.'
 )
 
+_CHAPTERED_PROMPT_TEMPLATE = """\
+You are the PLAN stage of an explainer-video pipeline. Turn this topic into a CHAPTERED overview
+video — a continuous {target_seconds}-second tour that opens a course. It is longer than a single
+explainer, so it is organized into chapters; the chapters concatenate into ONE MP4.
+
+TOPIC
+- Course topic: {course_topic}
+- This video: {unit_title}
+- Audience: {audience}
+- Framing notes (for the arc and phrasing only — the facts you may assert are the verified claims
+  below, NOT whatever this text happens to say), between the markers:
+--- FRAMING START ---
+{prose}
+--- FRAMING END ---
+
+ENVELOPE
+- Organize into about {chapter_count} chapters; give each a short title and 3 to 4 scenes.
+- Each scene is 15-25 seconds; the whole video totals about {target_seconds} seconds.
+- Each chapter stays inside the skill's validated 3-to-5-scene envelope; together the chapters tell
+  one arc: what the topic is -> why it matters -> where the course takes you.
+- 3-6 beats per scene. Each beat is an object with: id ("b1", "b2", ...), action (what happens
+  visually), narration (the exact self-contained clause(s) spoken DURING that action; write for the
+  ear, about 2.4 words per second), and min_visual_s (a float floor so fast speech cannot rush the
+  visual; REQUIRED when narration is the empty string).
+- Scene ids match S<N>_<slug> and are UNIQUE across the WHOLE video (not per chapter); slugs are
+  lowercase snake_case. Chapter ids are "ch1", "ch2", ....
+- Assign each scene exactly one primary archetype from the reference below; compose at most two.
+
+GROUNDING (this pipeline stage has no research access — the verified claims are the ONLY facts you
+may assert; a downstream gate diffs every on-screen number and comparison against them)
+{grounding_block}
+- Per scene, set "sources" to the list of claim ids the scene draws its facts from (e.g.
+  ["c1", "c3"]), or to ["{framing_sentinel}"] for a scene that states no empirical facts.
+- State a number, ranking or comparison ONLY if it appears verbatim in a claim the scene cites.
+  Never invent a figure, and never cite a claim id that is not listed above.
+
+ARCHETYPE REFERENCE (verbatim from the pinned skill)
+{archetypes}
+
+OUTPUT
+Respond with ONLY one JSON object — no prose, no code fences — with EXACTLY these fields:
+  "topic": string, "audience": string, "visual_archetypes_used": [strings],
+  "asset_strategy": string (e.g. "tier-a procedural"), "chapters": [ {{"id": string, "title":
+  string, "scenes": [scene objects as specified: id, archetype, narration (full spoken script, the
+  beats' narrations joined), objects (semantic on-screen object list), beats, sources, duration_s]}}
+  ].
+Do NOT include global_style, voice, or verifier_gates — the system injects those."""
+
+_NO_CLAIMS_BLOCK_CHAPTERED = (
+    "- No verified claims are available for this video, so EVERY scene must be framing only: set "
+    f'its "sources" to ["{FRAMING_ONLY_SENTINEL}"] and state no numbers, rankings or comparisons.'
+)
+
 
 class ScenePlanner:
-    """The PLAN node: lesson in, validated ``SceneContracts`` out (plan §1.2).
+    """The PLAN node: a video source in, a validated contract out (plan §1.2).
 
-    The model emits a ``ContractDraft`` (everything creative); the system injects what is not
-    the model's to decide — ``global_style`` from the enterprise-ui token map and the spec's
-    verifier gates. V2 also hands the model the lesson's verifier-PASSED claims and lets it pick
-    *which* a scene cites — never invent figures — rejecting any draft that cites a claim id the
-    packet does not list. ``invoke`` is the package's only model seam (a plain async text
+    ``plan`` produces a flat ``SceneContracts`` (lesson + summary); ``plan_chaptered`` produces a
+    ``ChapteredSceneContracts`` for the longer overview (V5-T1). In both, the model emits a draft of
+    everything creative; the system injects what is not the model's to decide — ``global_style``
+    from the enterprise-ui token map and the spec's verifier gates — and lets the model pick *which*
+    verified claims a scene cites (never invent figures), rejecting any draft that cites a claim id
+    the packet does not list. ``invoke`` is the package's only model seam (a plain async text
     completion), so the planner is testable with a scripted stub and the composition root chooses
     the actual chat model (BYOK, rate limiting, keyless fallback all live behind it).
     """
@@ -87,10 +153,13 @@ class ScenePlanner:
         self._invoke = invoke
 
     async def plan(
-        self, lesson: LessonSource, *, target_seconds: int = _DEFAULT_TARGET_SECONDS
+        self,
+        source: LessonSource,
+        *,
+        target_seconds: int = target_seconds_for(VideoKind.LESSON),
     ) -> SceneContracts:
-        prompt = _build_prompt(lesson, target_seconds)
-        valid_claim_ids = set(lesson.packet.claim_ids)
+        prompt = _build_prompt(source, target_seconds)
+        valid_claim_ids = set(source.packet.claim_ids)
         draft = await invoke_with_parse_repair(
             self._invoke,
             prompt,
@@ -114,26 +183,83 @@ class ScenePlanner:
         )
         return contract
 
+    async def plan_chaptered(
+        self, source: LessonSource, *, target_seconds: int
+    ) -> ChapteredSceneContracts:
+        """Plan a CHAPTERED contract — the OVERVIEW kind (V5-T1).
 
-def _build_prompt(lesson: LessonSource, target_seconds: int) -> str:
+        A ~3-minute topic intro exceeds the skill's 3-5-scene envelope, so it is planned as chapters
+        of 3-4 scenes that concatenate into one MP4 (plan §0); the chapter count scales with
+        ``target_seconds``. Same discipline as the flat ``plan``: the model emits the chapters, the
+        system injects ``global_style`` + verifier gates, and a scene citing an unknown claim id
+        earns a repair turn — so a longer video never loosens the grounding moat.
+        """
+        prompt = _build_chaptered_prompt(source, target_seconds)
+        valid_claim_ids = set(source.packet.claim_ids)
+        draft = await invoke_with_parse_repair(
+            self._invoke,
+            prompt,
+            lambda text: _parse_chaptered_draft(text, valid_claim_ids),
+            repair_instruction=_REPAIR_TEMPLATE,
+        )
+        contract = ChapteredSceneContracts(
+            topic=draft.topic,
+            audience=draft.audience,
+            visual_archetypes_used=draft.visual_archetypes_used,
+            asset_strategy=draft.asset_strategy,
+            global_style=video_global_style(),
+            chapters=draft.chapters,
+        )
+        _logger.info(
+            "scene_planner.chaptered_contract_planned",
+            chapter_count=len(contract.chapters),
+            scene_count=len(contract.scenes),
+            target_seconds=target_seconds,
+            grounded_claims=len(valid_claim_ids),
+        )
+        return contract
+
+
+def _suggested_chapters(target_seconds: int) -> int:
+    """One chapter per started minute, at least two — so "chaptered" always means >1 chapter, and
+    the count rises with length (ceil, not round, so there's no half-minute rounding surprise)."""
+    return max(2, math.ceil(target_seconds / _SECONDS_PER_CHAPTER))
+
+
+def _build_prompt(source: LessonSource, target_seconds: int) -> str:
     return _PROMPT_TEMPLATE.format(
-        course_topic=lesson.course_topic,
-        lesson_title=lesson.lesson_title,
-        audience=lesson.audience,
-        prose=lesson.prose,
+        course_topic=source.course_topic,
+        lesson_title=source.lesson_title,
+        audience=source.audience,
+        prose=source.prose,
         target_seconds=target_seconds,
-        grounding_block=_grounding_block(lesson.packet),
+        grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK),
         framing_sentinel=FRAMING_ONLY_SENTINEL,
         archetypes=read_skill_asset("references/archetypes.md"),
     )
 
 
-def _grounding_block(packet: GroundingPacket) -> str:
+def _build_chaptered_prompt(source: LessonSource, target_seconds: int) -> str:
+    return _CHAPTERED_PROMPT_TEMPLATE.format(
+        course_topic=source.course_topic,
+        unit_title=source.lesson_title,
+        audience=source.audience,
+        prose=source.prose,
+        target_seconds=target_seconds,
+        chapter_count=_suggested_chapters(target_seconds),
+        grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK_CHAPTERED),
+        framing_sentinel=FRAMING_ONLY_SENTINEL,
+        archetypes=read_skill_asset("references/archetypes.md"),
+    )
+
+
+def _grounding_block(packet: GroundingPacket, no_claims_block: str) -> str:
     # Two structurally different prompt sections — a citable claim list, or a hard "no claims
     # exist, assert nothing" prohibition — feed the template's single {grounding_block} slot, so
-    # the branch lives here rather than inline in _PROMPT_TEMPLATE.
+    # the branch lives here rather than inline in the template. The no-claims wording differs by
+    # kind (lesson vs course-level video), so the caller passes it.
     if packet.is_empty:
-        return _NO_CLAIMS_BLOCK
+        return no_claims_block
     lines = ["- VERIFIED CLAIMS (cite a scene's facts by these ids):"]
     lines += [
         f"  [{claim.id}] {claim.text} (source: {claim.source_label})" for claim in packet.claims
@@ -142,15 +268,33 @@ def _grounding_block(packet: GroundingPacket) -> str:
 
 
 def _parse_draft(text: str, valid_claim_ids: set[str]) -> ContractDraft:
-    # Both failure modes raise ValueError because invoke_with_parse_repair takes ONE parser and
-    # treats a ValueError as the repair trigger — so unknown-claim-id validation lives here (not
-    # post-parse in plan()) precisely so the model gets the offending id in its repair turn and
-    # can self-correct rather than the job failing outright.
+    draft = ContractDraft.model_validate_json(_json_object(text))
+    _validate_scene_sources(draft.scenes, valid_claim_ids)
+    return draft
+
+
+def _parse_chaptered_draft(text: str, valid_claim_ids: set[str]) -> ChapteredContractDraft:
+    draft = ChapteredContractDraft.model_validate_json(_json_object(text))
+    _validate_scene_sources(
+        [scene for chapter in draft.chapters for scene in chapter.scenes], valid_claim_ids
+    )
+    return draft
+
+
+def _json_object(text: str) -> str:
+    # The outermost ``{ … }`` span (first brace to last) — captures the object even when the model
+    # wraps it in prose; a missing object raises ValueError, which triggers a repair turn.
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         raise ValueError("completion contains no JSON object")
-    draft = ContractDraft.model_validate_json(text[start : end + 1])
-    for scene in draft.scenes:
+    return text[start : end + 1]
+
+
+def _validate_scene_sources(scenes: list[SceneContract], valid_claim_ids: set[str]) -> None:
+    # Unknown-claim-id validation raises ValueError (not a post-parse check in plan()) precisely so
+    # invoke_with_parse_repair feeds the offending id back to the model in its repair turn so it can
+    # self-correct, rather than the job failing outright. Shared by the flat and chaptered parsers.
+    for scene in scenes:
         if scene.sources == [FRAMING_ONLY_SENTINEL]:
             continue
         unknown = [source for source in scene.sources if source not in valid_claim_ids]
@@ -159,4 +303,3 @@ def _parse_draft(text: str, valid_claim_ids: set[str]) -> ContractDraft:
                 f"scene {scene.id} cites unknown claim ids {unknown} — cite only the listed "
                 f'claim ids or use ["{FRAMING_ONLY_SENTINEL}"]'
             )
-    return draft
