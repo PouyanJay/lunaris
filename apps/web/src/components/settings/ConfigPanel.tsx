@@ -1,10 +1,12 @@
 import { useId, useState } from "react";
 
 import { useConfig } from "../../hooks/useConfig";
-import { ConfigError, updateConfig, type ConfigSetting } from "../../lib/config";
+import { useConfigSaver, type SaveFeedback } from "../../hooks/useConfigSaver";
+import { VIDEO_CONFIG_KEYS, boolToConfigValue, type ConfigSetting } from "../../lib/config";
 import { Button } from "../primitives/Button";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { Switch } from "../primitives/Switch";
+import { SaveResult } from "./SaveResult";
 import styles from "./Config.module.css";
 
 interface ConfigPanelProps {
@@ -31,31 +33,21 @@ const DESCRIPTIONS: Record<string, string> = {
 // Known Claude model ids for the dropdown; the current value is always included even if newer.
 const KNOWN_MODELS = ["claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"] as const;
 
-type Feedback = { tone: "ok" | "error"; message: string };
+type Feedback = SaveFeedback;
 
 /** The non-secret Configuration section: LangSmith tracing/project + the strong/worker model tiers,
  *  each shown with its current value + default. LangSmith vars are read at startup, so a change is
- *  flagged "restart to apply"; model vars take effect on the next build. */
+ *  flagged "restart to apply"; model vars take effect on the next build. The video settings render
+ *  in their own Video section (the three-layer disclosure), so they're filtered out here. */
 export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
-  const [busy, setBusy] = useState<Record<string, boolean>>({});
-  const [feedback, setFeedback] = useState<Record<string, Feedback>>({});
+  const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
-  async function save(name: string, value: string, restartRequired: boolean) {
-    setBusy((prev) => ({ ...prev, [name]: true }));
-    setFeedback(({ [name]: _removed, ...rest }) => rest);
-    try {
-      apply(await updateConfig(apiBaseUrl, name, value));
-      const message = restartRequired ? "Saved — restart to apply" : "Saved";
-      setFeedback((prev) => ({ ...prev, [name]: { tone: "ok", message } }));
-    } catch (error: unknown) {
-      const message = error instanceof ConfigError ? error.message : "Couldn't save.";
-      setFeedback((prev) => ({ ...prev, [name]: { tone: "error", message } }));
-    } finally {
-      setBusy((prev) => ({ ...prev, [name]: false }));
-    }
-  }
+  const settings =
+    state.status === "ready"
+      ? state.settings.filter((setting) => !VIDEO_CONFIG_KEYS.has(setting.name))
+      : [];
 
   return (
     <CollapsibleSection eyebrow="Configuration" title="Runtime configuration" defaultOpen={false}>
@@ -72,7 +64,7 @@ export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelPr
       )}
       {state.status === "ready" && (
         <div className={styles.rows}>
-          {state.settings.map((setting) => (
+          {settings.map((setting) => (
             <ConfigRow
               key={setting.name}
               setting={setting}
@@ -80,7 +72,9 @@ export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelPr
               feedback={feedback[setting.name]}
               draft={drafts[setting.name]}
               onDraft={(value) => setDrafts((prev) => ({ ...prev, [setting.name]: value }))}
-              onSave={(value) => save(setting.name, value, setting.restartRequired)}
+              onSave={(value) =>
+                save(setting.name, value, { restartRequired: setting.restartRequired })
+              }
             />
           ))}
         </div>
@@ -116,7 +110,7 @@ function ConfigRow({ setting, busy, feedback, draft, onDraft, onSave }: ConfigRo
             disabled={busy}
             aria-labelledby={labelId}
             aria-describedby={hintId}
-            onChange={(checked) => onSave(checked ? "true" : "false")}
+            onChange={(checked) => onSave(boolToConfigValue(checked))}
           />
         )}
       </div>
@@ -153,14 +147,7 @@ function ConfigRow({ setting, busy, feedback, draft, onDraft, onSave }: ConfigRo
         {setting.restartRequired && <span className={styles.restart}>restart to apply</span>}
       </div>
 
-      {feedback && (
-        <p
-          className={feedback.tone === "error" ? styles.error : styles.ok}
-          role={feedback.tone === "error" ? "alert" : "status"}
-        >
-          {feedback.message}
-        </p>
-      )}
+      <SaveResult feedback={feedback} />
     </div>
   );
 }

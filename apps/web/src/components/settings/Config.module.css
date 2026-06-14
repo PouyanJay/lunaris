@@ -40,11 +40,12 @@
   gap: var(--space-2);
 }
 
+/* The three form controls share one skin (border, radius, focus ring); only their sizing differs:
+   the text/model control fills its row, the video length control sits compact in the row head. */
 .input,
-.select {
-  flex: 1;
+.select,
+.lengthSelect {
   min-width: 0;
-  height: 36px;
   padding: 0 var(--space-3);
   font-size: var(--text-sm);
   color: var(--text);
@@ -53,8 +54,18 @@
   border-radius: var(--radius-md);
   transition: border-color var(--dur) var(--ease);
 }
-.input {
+.input,
+.select {
+  flex: 1;
+  height: 36px;
+}
+.input,
+.lengthSelect {
   font-family: var(--font-mono);
+}
+/* Compact: sized to its content (the row head), not stretched like the full-width controls. */
+.lengthSelect {
+  height: 32px;
 }
 
 .input::placeholder {
@@ -63,15 +74,29 @@
 }
 
 .input:hover,
-.select:hover {
+.select:hover,
+.lengthSelect:hover {
   border-color: var(--text-muted);
 }
 
 .input:focus-visible,
-.select:focus-visible {
+.select:focus-visible,
+.lengthSelect:focus-visible {
   outline: none;
   border-color: var(--accent-500);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The "needs a key" affordance (keyless tier): a calm, hairline-bounded note that guides the fix —
+   not an alarm. Tinted with the accent-soft wash so it reads as guidance, not error. */
+.notice {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 /* The default value + restart caveat, shown beneath each control. */
@@ -118,7 +143,8 @@
 /* Phone: the editable control + select become ≥44px tap targets (WCAG 2.5.5). */
 @media (max-width: 768px) {
   .input,
-  .select {
+  .select,
+  .lengthSelect {
     height: 44px;
   }
 }

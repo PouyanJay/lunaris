@@ -1,7 +1,7 @@
 import { authedFetch } from "./apiClient";
 /** Config API client. Unlike secrets, these values ARE shown — we read them back and edit them. */
 
-export type ConfigKind = "toggle" | "text" | "model";
+export type ConfigKind = "toggle" | "text" | "model" | "number";
 
 export interface ConfigSetting {
   name: string;
@@ -11,6 +11,24 @@ export interface ConfigSetting {
   /** True when the value is read at process start (langsmith) — a change needs a restart. */
   restartRequired: boolean;
 }
+
+// The explainer-video config keys (V6). The Video section owns these; the generic Runtime
+// configuration panel filters them out so they render once, in their own three-layer disclosure.
+export const VIDEO_MASTER_KEY = "videoEnabled";
+export const VIDEO_VOICE_KEY = "videoVoice";
+export const VIDEO_LENGTH_KEYS = [
+  "videoSummarySeconds",
+  "videoOverviewSeconds",
+  "videoLessonSeconds",
+] as const;
+export const VIDEO_CONFIG_KEYS: ReadonlySet<string> = new Set<string>([
+  VIDEO_MASTER_KEY,
+  VIDEO_VOICE_KEY,
+  ...VIDEO_LENGTH_KEYS,
+]);
+
+/** The wire value for a toggle setting — the one place the boolean ⇄ "true"/"false" mapping lives. */
+export const boolToConfigValue = (on: boolean): string => (on ? "true" : "false");
 
 export class ConfigError extends Error {
   constructor(message: string, options?: ErrorOptions) {
