@@ -15,14 +15,14 @@ from lunaris_runtime.schema import (
     VideoKind,
 )
 from lunaris_video.errors import VideoPipelineError
-from lunaris_video.grounding import LessonGroundingPacketBuilder
+from lunaris_video.grounding import CourseGroundingPacketBuilder
 from lunaris_video.models import PacketKind
 from lunaris_video.sourcing import CourseStoreLessonSourceProvider
 
 
 def _provider(course: Course | None) -> CourseStoreLessonSourceProvider:
     return CourseStoreLessonSourceProvider(
-        _FakeCourseStore(course), packet_builder=LessonGroundingPacketBuilder()
+        _FakeCourseStore(course), packet_builder=CourseGroundingPacketBuilder()
     )
 
 

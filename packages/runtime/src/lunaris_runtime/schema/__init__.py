@@ -6,6 +6,7 @@ from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
 from .course_run import CourseRun
 from .course_scope import CourseScope
+from .course_videos import CourseVideos
 from .enums import (
     AcquisitionMode,
     AgentEventKind,
@@ -117,6 +118,7 @@ __all__ = [
     "CourseScope",
     "CourseSettings",
     "CourseStatus",
+    "CourseVideos",
     "DeliverableShape",
     "DetailDepth",
     "DiscoveryDepth",

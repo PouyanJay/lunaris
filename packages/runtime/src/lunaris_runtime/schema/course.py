@@ -3,6 +3,7 @@ from pydantic import Field
 from .base import CourseModel
 from .build_provenance import CapabilityBuildTag
 from .course_scope import CourseScope
+from .course_videos import CourseVideos
 from .enums import CourseStatus, GoalType
 from .instruction import Module
 from .knowledge import Citation, PrerequisiteGraph
@@ -36,3 +37,7 @@ class Course(CourseModel):
     build_capabilities: list[CapabilityBuildTag] = Field(default_factory=list)
     status: CourseStatus = CourseStatus.DIAGNOSING
     budget_ledger: BudgetLedger = Field(default_factory=BudgetLedger)
+    # The course's opening videos — the V5 Overview section (a SUMMARY trailer + an OVERVIEW intro).
+    # None until the build's finalize stitches them (V5-T2); a course built before V5, with video
+    # off, or whose course render degraded carries none — the reader shows no Overview section.
+    videos: CourseVideos | None = None
