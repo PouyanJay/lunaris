@@ -132,13 +132,16 @@ class VideoPipeline:
         try:
             return await self._produce_once(job, source, report, force_simplify=False)
         except SyncGateError as exc:
-            # Gate D (voiced only): the narration and visuals don't line up. That is a scene-quality
-            # / re-plan case, NOT something to ship — a voiced video where the words describe what
-            # isn't on screen is worse than an honest failure. Auto-retry ONCE with a plainer plan
-            # (fewer, simplest scenes are far easier to sync), then fail clean with an actionable
-            # reason. The first attempt cached nothing (the store runs only after Gate D passes), so
-            # the retry is clean.
-            _logger.warning("video_pipeline.sync_retry_simpler", job_id=job.id, beat_id=exc.beat_id)
+            # Shipping a voiced video whose words describe what isn't on screen is worse than an
+            # honest failure, so a Gate D desync is never degraded. Retry ONCE with plainer scenes
+            # (far easier to sync); a second miss fails clean. The store runs only after Gate D
+            # passes, so the first attempt left no cached artifact — the retry is clean.
+            _logger.warning(
+                "video_pipeline.sync_retry_simpler",
+                job_id=job.id,
+                beat_id=exc.beat_id,
+                reason=exc.reason,
+            )
             try:
                 return await self._produce_once(job, source, report, force_simplify=True)
             except SyncGateError as retry_exc:

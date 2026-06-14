@@ -93,7 +93,9 @@ export function useLessonVideo(
     if (builtStatus === "ready" && builtJobId) {
       watch(builtJobId); // watch() sets the working state itself, then polls to ready
     } else if (builtStatus === "failed" && builtJobId) {
-      setState({ phase: "failed", jobId: builtJobId });
+      // The persisted built artifact carries no failure reason; a live re-attach (below) supplies
+      // one if a job is actually in flight. Explicit null keeps every failed-state shape consistent.
+      setState({ phase: "failed", jobId: builtJobId, error: null });
     } else {
       setState({ phase: "idle" });
     }

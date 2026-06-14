@@ -21,6 +21,7 @@ from lunaris_runtime.schema import (
     VideoProvenance,
 )
 
+from lunaris_video.errors import VideoPipelineError
 from lunaris_video.models.rendered_video import RenderedVideo
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline, StageReporter
 from lunaris_video.schemas import TimingManifest
@@ -252,11 +253,10 @@ class VideoWorker:
 def _user_error(exc: Exception) -> str:
     """The owner-readable failure reason for the job row. A ``VideoPipelineError`` may carry an
     actionable ``user_detail`` (e.g. the Gate-D-retry-exhausted "turn off narration" line); without
-    one, only the exception class name is surfaced — the full exception stays in the logs, never the
-    owner-readable row."""
-    detail = getattr(exc, "user_detail", None)
-    if isinstance(detail, str) and detail:
-        return detail
+    one — including any non-pipeline (infrastructure) error — only the exception class name is
+    surfaced, so the full exception stays in the logs, never the owner-readable row."""
+    if isinstance(exc, VideoPipelineError) and exc.user_detail:
+        return exc.user_detail
     return f"video generation failed ({type(exc).__name__})"
 
 

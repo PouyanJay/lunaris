@@ -24,6 +24,7 @@ from lunaris_runtime.schema import (
     VideoProvenance,
 )
 from lunaris_video import RenderedVideo, StubVideoPipeline, VideoWorker
+from lunaris_video.errors import SyncGateError
 
 _OWNER = "00000000-0000-0000-0000-000000000001"
 
@@ -343,8 +344,6 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
 async def test_an_actionable_failure_reason_reaches_the_job_row() -> None:
     # Arrange — a VideoPipelineError carrying a user_detail (the Gate-D-retry-exhausted case). The
     # owner-readable row gets the actionable line; the internal vision critique never does.
-    from lunaris_video.errors import SyncGateError
-
     class _DesyncPipeline:
         async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             raise SyncGateError(

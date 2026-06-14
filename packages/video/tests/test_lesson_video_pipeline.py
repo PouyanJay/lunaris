@@ -578,8 +578,10 @@ async def test_a_voiced_desync_retries_simpler_then_succeeds(
 ) -> None:
     # Arrange — Gate D desyncs on the FIRST attempt's first spoken beat, but the (plainer) retry
     # lines up. A voiced narration/visual mismatch is a re-plan case, not something to ship.
+    # StubInvokeModel repeats its one reply, so both plans yield the same contract JSON — only the
+    # prompts differ (attempt 2 carries the Simpler directive), which is what the test checks.
     invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
-    vision = _FlakySyncVision(fail_first=1)
+    vision = _FlakySyncVision(fail_first=1)  # only attempt 1's first beat desyncs
     pipeline = _pipeline(
         invoke,
         _SpyRenderer(),
@@ -593,10 +595,12 @@ async def test_a_voiced_desync_retries_simpler_then_succeeds(
     # Act — the desync is recovered automatically; a real video ships.
     video = await pipeline.produce(_voiced_job())
 
-    # Assert — it re-planned exactly once, with the Simpler directive (plainer scenes sync easier).
+    # Assert — it re-planned exactly once, with the Simpler directive (plainer scenes sync easier),
+    # and Gate D actually ran on the retry (>1 inspection — not a swallowed second SyncGateError).
     assert video.mp4
     assert len(invoke.prompts) == 2
     assert "SIMPLER" in invoke.prompts[1]
+    assert vision.calls >= 2
 
 
 async def test_a_voiced_desync_that_wont_simplify_fails_with_an_actionable_reason(
@@ -605,7 +609,7 @@ async def test_a_voiced_desync_that_wont_simplify_fails_with_an_actionable_reaso
     # Arrange — Gate D never lines up (a stubborn scene). After the plainer retry, the job fails —
     # never shipping a voiced mismatch — but with a clear, owner-safe reason, not a raw critique.
     invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
-    vision = _FlakySyncVision(fail_first=999)
+    vision = _FlakySyncVision(fail_first=999)  # never matches (well past 2 beats x 2 attempts)
     pipeline = _pipeline(
         invoke,
         _SpyRenderer(),
