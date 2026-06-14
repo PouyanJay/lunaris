@@ -17,6 +17,14 @@ dependencies = [
     "cryptography>=44",
 ]
 
+[project.optional-dependencies]
+# The dedicated video-worker image (Dockerfile.worker / explainer-video V7) reuses the API's exact
+# composition (dependencies.py) so the cloud worker resolves per-job tenant keys from the vault with
+# zero drift from the in-process worker — and it also needs the Manim render toolchain. Pull it in
+# via lunaris-video's own `render` extra (Manim CE) rather than re-declaring Manim here. The lean API
+# image (Dockerfile.api) syncs WITHOUT this extra, so it never carries Manim.
+render = ["lunaris-video[render]"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

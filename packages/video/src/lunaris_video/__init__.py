@@ -4,6 +4,7 @@ from lunaris_video.pipeline.kind_routing_video_pipeline import KindRoutingVideoP
 from lunaris_video.pipeline.stub_video_pipeline import StubVideoPipeline
 from lunaris_video.pipeline.video_pipeline import VideoPipeline
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline
+from lunaris_video.worker.runner import run_video_workers
 from lunaris_video.worker.video_worker import VideoWorker
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "VideoPipeline",
     "VideoWorker",
     "build_video_pipeline",
+    "run_video_workers",
 ]
