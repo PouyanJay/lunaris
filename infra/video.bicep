@@ -36,8 +36,8 @@ param supabaseUrl string
 @secure()
 param videoJobsDbConnection string = ''
 
-@description('Inject the BYOK AES master key from Key Vault as LUNARIS_KEY_ENC_MASTER. Required for real rendering: the worker decrypts each job owner\'s provider keys from the vault. The secret MUST already exist in the vault or the deploy fails.')
-param withByok bool = true
+@description('Inject the BYOK AES master key from Key Vault as LUNARIS_KEY_ENC_MASTER. Required for real rendering — the worker decrypts each job owner\'s provider keys from the vault — so any video-enabled environment MUST set WITH_BYOK=true (the secret must already exist in the vault). Defaults false to match app.bicep, keeping the CD WITH_BYOK var the single source of truth.')
+param withByok bool = false
 
 @description('Max concurrent render replicas (plan §8.4 ceiling) — bounds wall-time and parallel spend.')
 param maxReplicas int = 3
