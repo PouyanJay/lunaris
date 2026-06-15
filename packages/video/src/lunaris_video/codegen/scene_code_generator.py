@@ -111,6 +111,37 @@ apply: CE only; no LaTeX; `from manim import *` and `from style_tokens import *`
 `class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
 end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
 
+_REPAIR_SYNC_TEMPLATE = """\
+You are repairing a Manim CE scene whose narration and visuals are OUT OF SYNC. The sync gate
+extracted the frame at a narrated beat's MIDPOINT and the element the words describe was not on
+screen yet. Fix the TIMING of this beat so the narrated element is on screen by its midpoint; do not
+redesign the scene, change any narration, or touch any other beat.
+
+SCENE CONTRACT (JSON)
+{scene_json}
+
+CURRENT SOURCE (renders, but this beat desyncs)
+{source}
+
+DESYNCED BEAT
+beat {beat_id}: {reason}
+
+THE FIX (from the pinned narration-sync guide)
+- Move the reveal of the named element to the START of this beat's window: play its
+  FadeIn/Create/Write/Transform FIRST, then HOLD it (self.wait) the rest of the window. The thing
+  the words name must be fully on screen by the beat's MIDPOINT — never introduced in the tail.
+- If the beat narrates motion, put the motion at the START of the window and the static hold at the
+  end, so the words describing the motion land while it is happening, not after it has stopped.
+- Keep every other beat exactly as it is — only this beat's internal ordering changes.
+
+BEAT TIMING (unchanged — each beat's animations + waits must still sum to EXACTLY its window):
+{timing}
+
+The HARD RULES still apply: CE only; no LaTeX (no MathTex/Tex/Title/BulletedList/include_numbers);
+`from manim import *` and `from style_tokens import *`; exactly one class
+`class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
+end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
+
 _FORMAT_REPAIR_TEMPLATE = """
 
 Your previous reply was rejected before rendering: {error}
@@ -190,6 +221,23 @@ class SceneCodeGenerator:
             scene_id=scene.id,
             defect_count=len(defects),
             chars=len(repaired),
+        )
+        return repaired
+
+    async def repair_sync(
+        self, scene: SceneContract, *, source: str, beat_id: str, reason: str, timing: SceneTiming
+    ) -> str:
+        prompt = _REPAIR_SYNC_TEMPLATE.format(
+            scene_json=scene.model_dump_json(indent=2),
+            source=source,
+            beat_id=beat_id,
+            reason=reason,
+            timing=_format_timing(timing),
+            scene_class_name=scene.scene_class_name,
+        )
+        repaired = await self._complete(prompt, scene)
+        _logger.info(
+            "scene_codegen.sync_repaired", scene_id=scene.id, beat_id=beat_id, chars=len(repaired)
         )
         return repaired
 

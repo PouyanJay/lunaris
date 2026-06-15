@@ -200,7 +200,10 @@ async def test_a_real_lesson_renders_narrated_on_live_claude_and_elevenlabs(
             api_key=os.environ["ELEVENLABS_API_KEY"]
         ),
         sync_gate=SyncGate(
-            vision=SyncQaInspector(invoke=build_vision_invoke(model)), frames=frames
+            vision=SyncQaInspector(invoke=build_vision_invoke(model)),
+            frames=frames,
+            codegen=codegen,
+            renderer=renderer,
         ),
     )
 

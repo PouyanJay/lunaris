@@ -13,7 +13,7 @@ from lunaris_runtime.schema import (
 )
 from lunaris_runtime.video_build import target_seconds_for
 
-from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
+from lunaris_video.assembly import estimate_timing
 from lunaris_video.errors import SyncGateError, VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
@@ -180,7 +180,15 @@ class VideoPipeline:
             await report(VideoJobStatus.VOICING)
         manifest, audio_dir = await self._resolve_timing(contract, voice, synthesizer, workdir)
         await report(VideoJobStatus.RENDERING)
-        qa_results = await self._render_scenes(contract, manifest, workdir)
+        # Gate D (sync) runs per scene in the render loop when voiced: each spoken beat's midpoint
+        # frame must show what its narration says, or a targeted repair re-renders that scene. The
+        # frame's VISUAL is identical pre/post mux, so checking the per-scene render before assembly
+        # lets the repair loop re-render one scene, not re-assemble the whole video. A desync that
+        # survives the repair budget raises ``SyncGateError``, which ``produce`` recovers by
+        # delivering silent. _resolve_voice guarantees the gate is present whenever voice is, so a
+        # voiced render passes it down; a silent render passes None and skips Gate D entirely.
+        sync_gate = self._sync_gate if voice is not None else None
+        qa_results = await self._render_scenes(contract, manifest, workdir, sync_gate=sync_gate)
         await report(VideoJobStatus.ASSEMBLING)
         rendered = [result.scene for result in qa_results]
         video = await self._assembler.assemble(
@@ -188,12 +196,6 @@ class VideoPipeline:
         )
         # Record any best-effort (degraded) scenes ON the bundle so the degrade survives the cache.
         video = replace(video, degraded_scenes=_degraded_scenes(qa_results))
-        if voice is not None:
-            # Gate D runs on the muxed video, narrated-only: each spoken beat's midpoint frame must
-            # show what the narration says, or the job fails clean. _resolve_voice guarantees the
-            # gate is present whenever voice is — a narrated video is never shipped unverified.
-            assert self._sync_gate is not None
-            await self._sync_gate.check(workdir / NARRATED_VIDEO_NAME, contract, manifest)
         await self._cache.store(cache_key, video)
         _logger.info(
             "video_pipeline.produced",
@@ -309,7 +311,12 @@ class VideoPipeline:
         return replace(video, provenance_json=provenance.model_dump_json(by_alias=True).encode())
 
     async def _render_scenes(
-        self, contract: VideoContract, manifest: TimingManifest, workdir: Path
+        self,
+        contract: VideoContract,
+        manifest: TimingManifest,
+        workdir: Path,
+        *,
+        sync_gate: SyncGate | None,
     ) -> list[SceneQaResult]:
         results: list[SceneQaResult] = []
         for scene in contract.scenes:
@@ -317,10 +324,19 @@ class VideoPipeline:
             passed_render = await self._render_gate.render_scene(
                 scene, topic=contract.topic, timing=timing, workdir=workdir
             )
-            result = await self._visual_qa_gate.inspect_scene(
+            qa = await self._visual_qa_gate.inspect_scene(
                 scene, rendered=passed_render, timing=timing, workdir=workdir
             )
-            results.append(result)
+            scene_render = qa.scene
+            if sync_gate is not None:
+                # Gate D may re-render this scene to fix a desync; any Gate-B degrade record is
+                # preserved — it describes a spatial defect the timing repair does not touch.
+                scene_render = await sync_gate.inspect_scene(
+                    scene, rendered=qa.scene, timing=timing, workdir=workdir
+                )
+            results.append(
+                SceneQaResult(scene=scene_render, unresolved_defects=qa.unresolved_defects)
+            )
         return results
 
     def _workdir_for(self, job: VideoJob) -> Path:

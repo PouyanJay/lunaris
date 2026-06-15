@@ -148,6 +148,11 @@ class _CodegenStub:
     ) -> str:
         return _SCENE_SOURCE
 
+    async def repair_sync(
+        self, scene: SceneContract, *, source: str, beat_id: str, reason: str, timing: SceneTiming
+    ) -> str:
+        return _SCENE_SOURCE
+
 
 class _PassingSyncVision:
     """Gate D's vision double — every beat's frame matches its narration."""
@@ -157,8 +162,9 @@ class _PassingSyncVision:
 
 
 class _FlakySyncVision:
-    """Desyncs the first ``fail_first`` beat inspections, then matches — models a first attempt that
-    fails Gate D and a plainer retry that lines up (or, with a huge count, never lines up)."""
+    """Desyncs the first ``fail_first`` beat inspections, then matches — models a scene whose first
+    beat inspection desyncs and a later (post-repair) inspection lines up (or, with a huge count,
+    never lines up, so the per-scene repair loop exhausts its budget)."""
 
     def __init__(self, fail_first: int) -> None:
         self.calls = 0
@@ -171,8 +177,17 @@ class _FlakySyncVision:
         return SyncVerdict(matches=True)
 
 
-def _sync_gate_with(vision: object) -> SyncGate:
-    return SyncGate(vision=vision, frames=_DummyFrameExtractor())
+def _sync_gate_with(
+    vision: object, *, codegen: object | None = None, renderer: object | None = None
+) -> SyncGate:
+    # Gate D is now a per-scene repair loop: on a desync it drives repair_sync → re-render. The
+    # hermetic gate gets its own codegen/renderer spies (a passing vision never exercises them).
+    return SyncGate(
+        vision=vision,
+        frames=_DummyFrameExtractor(),
+        codegen=codegen or _CodegenStub(),
+        renderer=renderer or _SpyRenderer(),
+    )
 
 
 class _DummyFrameExtractor:
@@ -183,7 +198,7 @@ class _DummyFrameExtractor:
 
 
 def _passing_sync_gate() -> SyncGate:
-    return SyncGate(vision=_PassingSyncVision(), frames=_DummyFrameExtractor())
+    return _sync_gate_with(_PassingSyncVision())
 
 
 def _voiced_job(job_id: str = "job-voiced") -> VideoJob:
@@ -573,15 +588,15 @@ async def test_one_contract_renders_silent_and_narrated_with_no_replan(
     assert silent_assembler.received_manifest != narrated_assembler.received_manifest
 
 
-async def test_a_voiced_desync_retries_simpler_then_succeeds(
+async def test_a_voiced_desync_is_fixed_by_the_sync_repair_loop_without_replanning(
     make_lesson_contract, tmp_path: Path
 ) -> None:
-    # Arrange — Gate D desyncs on the FIRST attempt's first spoken beat, but the (plainer) retry
-    # lines up. A voiced narration/visual mismatch is a re-plan case, not something to ship.
-    # StubInvokeModel repeats its one reply, so both plans yield the same contract JSON — only the
-    # prompts differ (attempt 2 carries the Simpler directive), which is what the test checks.
+    # Arrange — Gate D desyncs on the first spoken beat, but a targeted sync repair (move the reveal
+    # to the start of the window) lines it up. The fix is LOCAL: re-render this one scene, never
+    # re-plan the whole video — the repair loop is the right axis, not a whole-video re-plan.
     invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
-    vision = _FlakySyncVision(fail_first=1)  # only attempt 1's first beat desyncs
+    vision = _FlakySyncVision(fail_first=1)  # the first beat inspection desyncs, then it lines up
+    sync_renderer, sync_codegen = _SpyRenderer(), _CodegenStub()
     pipeline = _pipeline(
         invoke,
         _SpyRenderer(),
@@ -589,17 +604,17 @@ async def test_a_voiced_desync_retries_simpler_then_succeeds(
         ContractHashCache(),
         tmp_path,
         synthesizer_provider=lambda: StubSpeechSynthesizer(),
-        sync_gate=_sync_gate_with(vision),
+        sync_gate=_sync_gate_with(vision, codegen=sync_codegen, renderer=sync_renderer),
     )
 
-    # Act — the desync is recovered automatically; a real video ships.
+    # Act — the desync is recovered in-scene; a real video ships.
     video = await pipeline.produce(_voiced_job())
 
-    # Assert — it re-planned exactly once, with the Simpler directive (plainer scenes sync easier),
-    # and Gate D actually ran on the retry (>1 inspection — not a swallowed second SyncGateError).
+    # Assert — NO re-plan (the planner ran exactly once), the sync gate drove one targeted repair
+    # (re-rendering just this scene), and Gate D ran (>1 inspection — the repair converged).
     assert video.mp4
-    assert len(invoke.prompts) == 2
-    assert "SIMPLER" in invoke.prompts[1]
+    assert len(invoke.prompts) == 1
+    assert sync_renderer.renders == 1
     assert vision.calls >= 2
 
 
