@@ -47,6 +47,10 @@ ENVELOPE
   visually), narration (the exact self-contained clause(s) spoken DURING that action; write for
   the ear, about 2.4 words per second), and min_visual_s (a float floor so fast speech cannot
   rush the visual; REQUIRED when narration is the empty string).
+- ONE reveal per beat: each beat introduces ONE new visual element or state, named in its narration.
+  If a clause introduces two ("the network, THEN the loss"), SPLIT it into two beats. The renderer
+  front-loads each beat's reveal to the start of its window, so a beat that introduces a second
+  element midway would not be on screen when its words are spoken (it would desync).
 - Scene ids match S<N>_<slug> (e.g. "S1_problem"); slugs are lowercase snake_case.
 - Assign each scene exactly one primary archetype from the reference below; compose at most two.
   Never invent a free-form visual when an archetype fits.
@@ -119,6 +123,10 @@ ENVELOPE
   visually), narration (the exact self-contained clause(s) spoken DURING that action; write for the
   ear, about 2.4 words per second), and min_visual_s (a float floor so fast speech cannot rush the
   visual; REQUIRED when narration is the empty string).
+- ONE reveal per beat: each beat introduces ONE new visual element or state, named in its narration.
+  If a clause introduces two ("the network, THEN the loss"), SPLIT it into two beats. The renderer
+  front-loads each beat's reveal to the start of its window, so a beat that introduces a second
+  element midway would not be on screen when its words are spoken (it would desync).
 - Scene ids match S<N>_<slug> and are UNIQUE across the WHOLE video (not per chapter); slugs are
   lowercase snake_case. Chapter ids are "ch1", "ch2", ....
 - Assign each scene exactly one primary archetype from the reference below; compose at most two.

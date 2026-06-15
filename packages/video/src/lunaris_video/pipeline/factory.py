@@ -119,7 +119,12 @@ def _pipeline_maker(
             model_id=model,
             chaptered=chaptered,
             synthesizer_provider=synthesizer_provider,
-            sync_gate=SyncGate(vision=SyncQaInspector(invoke=vision_invoke), frames=frames),
+            sync_gate=SyncGate(
+                vision=SyncQaInspector(invoke=vision_invoke),
+                frames=frames,
+                codegen=codegen,
+                renderer=renderer,
+            ),
             prior_contract_provider=prior_contract_provider,
         )
 

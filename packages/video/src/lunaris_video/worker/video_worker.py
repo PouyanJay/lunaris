@@ -252,9 +252,10 @@ class VideoWorker:
 
 def _user_error(exc: Exception) -> str:
     """The owner-readable failure reason for the job row. A ``VideoPipelineError`` may carry an
-    actionable ``user_detail`` (e.g. the Gate-D-retry-exhausted "turn off narration" line); without
-    one — including any non-pipeline (infrastructure) error — only the exception class name is
-    surfaced, so the full exception stays in the logs, never the owner-readable row."""
+    actionable ``user_detail``; without one — including any non-pipeline (infrastructure) error —
+    only the exception class name is surfaced, so the full exception stays in the logs, never the
+    owner-readable row. (A Gate-D desync no longer fails the job — it ships silent — so this path is
+    for grounding/render failures.)"""
     if isinstance(exc, VideoPipelineError) and exc.user_detail:
         return exc.user_detail
     return f"video generation failed ({type(exc).__name__})"

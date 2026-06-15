@@ -93,6 +93,25 @@ async def test_generate_prompt_carries_the_exact_beat_timing_windows(
         assert f"{beat.anim_s}" in prompt
 
 
+async def test_generate_prompt_tells_the_model_to_front_load_each_reveal(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — sync is deterministic only if the narrated element is on screen by the beat MIDPOINT
+    # (where Gate D samples). The generate prompt must instruct the model to front-load each reveal,
+    # so it doesn't build the named element up across the window and desync at the midpoint.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the prompt names the midpoint constraint and the front-load fix.
+    prompt = stub.prompts[0].lower()
+    assert "midpoint" in prompt
+    assert "front-load" in prompt
+
+
 async def test_latex_in_a_completion_triggers_a_repair_turn(
     make_scene: Callable[..., SceneContract],
 ) -> None:
@@ -160,6 +179,38 @@ async def test_both_repair_prompts_keep_the_beat_timing_windows(
         for beat in timing.beats:
             assert beat.id in prompt
             assert f"{beat.anim_s}" in prompt
+
+
+async def test_repair_sync_prompt_carries_the_beat_reason_and_front_load_fix(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — Gate D's repair turn must tell the model EXACTLY what desynced (which beat + the
+    # vision reason) and the fix (move the reveal to the start so it's on screen by the midpoint).
+    # Without a live run this is the only check that the core repair prompt isn't watered down.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+    timing = _timing_for(scene)
+
+    # Act
+    await codegen.repair_sync(
+        scene,
+        source=_VALID_SOURCE,
+        beat_id="b2",
+        reason="the loss is named but not on screen yet",
+        timing=timing,
+    )
+
+    # Assert — the offending beat, the verbatim vision reason, the front-load instruction, and the
+    # midpoint constraint are all in the prompt, plus the unchanged beat-timing windows.
+    prompt = stub.prompts[0]
+    assert "b2" in prompt
+    assert "the loss is named but not on screen yet" in prompt
+    lowered = prompt.lower()
+    assert "start" in lowered  # "move the reveal ... to the START of this beat's window"
+    assert "midpoint" in lowered
+    for beat in timing.beats:
+        assert f"{beat.anim_s}" in prompt  # the windows still ride along (timing unchanged)
 
 
 async def test_visual_repair_prompt_adds_hook_title_guidance_for_a_hook_scene(

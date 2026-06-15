@@ -13,7 +13,7 @@ from lunaris_runtime.schema import (
 )
 from lunaris_runtime.video_build import target_seconds_for
 
-from lunaris_video.assembly import NARRATED_VIDEO_NAME, estimate_timing
+from lunaris_video.assembly import estimate_timing
 from lunaris_video.errors import SyncGateError, VideoPipelineError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
@@ -41,14 +41,6 @@ _logger = structlog.get_logger(__name__)
 _ELEVENLABS_PROVIDER = "elevenlabs"
 _DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 _DEFAULT_VOICE_MODEL = "eleven_multilingual_v2"
-
-# The owner-safe, actionable reason shown when a narrated video can't be synced even after the
-# plainer retry — never a raw vision critique. The two actions a user actually has: regenerate, or
-# drop narration for a silent (sync-exempt) version.
-_SYNC_FAILED_DETAIL = (
-    "We couldn't line the narration up with the visuals, even after a simpler retry. "
-    "Try regenerating, or turn off narration in Settings for a silent version."
-)
 
 # A synthesizer provider is a thunk: it resolves the tenant's ElevenLabs key (the contextvar seam)
 # at produce time and returns a synthesizer, or None when no key is available. Resolving per produce
@@ -130,38 +122,44 @@ class VideoPipeline:
         report = on_stage or _no_stage
         source = await self._source_provider.load(job)
         try:
-            return await self._produce_once(job, source, report, force_simplify=False)
+            return await self._produce_once(job, source, report)
         except SyncGateError as exc:
-            # Shipping a voiced video whose words describe what isn't on screen is worse than an
-            # honest failure, so a Gate D desync is never degraded. Retry ONCE with plainer scenes
-            # (far easier to sync); a second miss fails clean. The store runs only after Gate D
-            # passes, so the first attempt left no cached artifact — the retry is clean.
+            # The per-scene Gate D repair loop could not sync a beat. Shipping a voiced video whose
+            # words describe what isn't on screen is worse than no narration, so fall back to the
+            # clean SILENT version (sync-exempt) — "flawless or silent", never a mismatch — and flag
+            # it in provenance so the reader can offer "regenerate to add narration". The voiced
+            # attempt raised before its cache.store, so it left no artifact; the silent re-produce
+            # uses the bare-digest (silent) cache key and renders fresh.
             _logger.warning(
-                "video_pipeline.sync_retry_simpler",
+                "video_pipeline.desync_delivered_silent",
                 job_id=job.id,
                 beat_id=exc.beat_id,
                 reason=exc.reason,
             )
-            try:
-                return await self._produce_once(job, source, report, force_simplify=True)
-            except SyncGateError as retry_exc:
-                raise SyncGateError(
-                    retry_exc.beat_id, reason=retry_exc.reason, user_detail=_SYNC_FAILED_DETAIL
-                ) from retry_exc
+            return await self._produce_once(job, source, report, unsynced_beat=exc.beat_id)
 
     async def _produce_once(
-        self, job: VideoJob, source: LessonSource, report: StageReporter, *, force_simplify: bool
+        self,
+        job: VideoJob,
+        source: LessonSource,
+        report: StageReporter,
+        *,
+        unsynced_beat: str | None = None,
     ) -> RenderedVideo:
-        """One full pass: plan → gates → render → assemble → (Gate D). Raises ``SyncGateError`` if
-        the narrated video desyncs, which ``produce`` catches to retry plainer. ``force_simplify``
-        re-plans with the simplify directive (the Gate-D retry), ignoring any reuse mode."""
-        contract = await self._resolve_contract(job, source, force_simplify=force_simplify)
+        """One full pass: plan → gates → render (+ Gate D when voiced) → assemble. Raises
+        ``SyncGateError`` if a beat desyncs past the repair budget, which ``produce`` catches to
+        deliver silent. ``unsynced_beat`` set (the desync fallback) renders the sync-exempt silent
+        version AND records on provenance that narration was dropped for that desync."""
+        contract = await self._resolve_contract(job, source)
         self._factual_gate.check(contract, source.packet)
         digest = contract_hash(contract)
 
         # The voice toggle decides voiced vs silent WITHOUT re-planning — the contract above feeds
         # both paths — and the cache key the artifact lives under (silent and voiced are distinct).
-        voice, synthesizer, cache_key = self._resolve_voice(job, digest)
+        # The desync fallback (``unsynced_beat`` set) forces silent regardless of the toggle.
+        voice, synthesizer, cache_key = self._resolve_voice(
+            job, digest, force_silent=unsynced_beat is not None
+        )
 
         cached = await self._cache.fetch(cache_key)
         if cached is not None:
@@ -169,7 +167,9 @@ class VideoPipeline:
             # rides on the cached bundle — a cache hit reuses the same render, so the same scenes
             # are degraded (provenance stays honest without re-rendering to recompute it).
             _logger.info("video_pipeline.cache_hit", job_id=job.id, contract_hash=digest)
-            return self._stamp_provenance(cached, job, contract, digest)
+            return self._stamp_provenance(
+                cached, job, contract, digest, unsynced_beat=unsynced_beat
+            )
 
         workdir = self._workdir_for(job)
         # Audio-drives-video: resolve the timing manifest BEFORE the render so the scene code is
@@ -180,7 +180,11 @@ class VideoPipeline:
             await report(VideoJobStatus.VOICING)
         manifest, audio_dir = await self._resolve_timing(contract, voice, synthesizer, workdir)
         await report(VideoJobStatus.RENDERING)
-        qa_results = await self._render_scenes(contract, manifest, workdir)
+        # Gate D runs pre-mux (per-scene render) so a desync re-renders ONE scene, not the whole
+        # muxed video — the frame's visual is identical either way. Silent passes None to skip it
+        # (_resolve_voice guarantees the gate when voice is set).
+        sync_gate = self._sync_gate if voice is not None else None
+        qa_results = await self._render_scenes(contract, manifest, workdir, sync_gate=sync_gate)
         await report(VideoJobStatus.ASSEMBLING)
         rendered = [result.scene for result in qa_results]
         video = await self._assembler.assemble(
@@ -188,12 +192,6 @@ class VideoPipeline:
         )
         # Record any best-effort (degraded) scenes ON the bundle so the degrade survives the cache.
         video = replace(video, degraded_scenes=_degraded_scenes(qa_results))
-        if voice is not None:
-            # Gate D runs on the muxed video, narrated-only: each spoken beat's midpoint frame must
-            # show what the narration says, or the job fails clean. _resolve_voice guarantees the
-            # gate is present whenever voice is — a narrated video is never shipped unverified.
-            assert self._sync_gate is not None
-            await self._sync_gate.check(workdir / NARRATED_VIDEO_NAME, contract, manifest)
         await self._cache.store(cache_key, video)
         _logger.info(
             "video_pipeline.produced",
@@ -203,11 +201,9 @@ class VideoPipeline:
             grounded_claim_ids=len(_cited_claim_ids(contract)),
             degraded_scenes=len(video.degraded_scenes),
         )
-        return self._stamp_provenance(video, job, contract, digest)
+        return self._stamp_provenance(video, job, contract, digest, unsynced_beat=unsynced_beat)
 
-    async def _resolve_contract(
-        self, job: VideoJob, source: LessonSource, *, force_simplify: bool = False
-    ) -> VideoContract:
+    async def _resolve_contract(self, job: VideoJob, source: LessonSource) -> VideoContract:
         """The contract this produce renders — the regenerate menu's four entry points (V6-T2).
 
         ``RETRY`` / ``ADD_NARRATION`` re-render the prior job's planned contract (reused from
@@ -215,19 +211,15 @@ class VideoPipeline:
         job's voice toggle is on. ``SIMPLER`` re-plans with the simplify directive; ``FRESH`` (or no
         regenerate) plans normally. A reuse mode whose prior contract is missing falls back to a
         fresh plan rather than failing the regenerate.
-
-        ``force_simplify`` (the Gate-D sync retry) overrides all of that: re-plan the plainest
-        scenes regardless of mode — the reused/normal contract just desynced, so reusing it would
-        desync again.
         """
         mode = _regenerate_mode(job)
-        if not force_simplify and mode is not None and mode.reuses_contract:
+        if mode is not None and mode.reuses_contract:
             prior = await self._prior_contract_provider.load(job)
             if prior is not None:
                 _logger.info("video_pipeline.contract_reused", job_id=job.id, mode=mode.value)
                 return prior
             _logger.info("video_pipeline.no_prior_contract", job_id=job.id, mode=mode.value)
-        simplify = force_simplify or mode is RegenerateMode.SIMPLER
+        simplify = mode is RegenerateMode.SIMPLER
         return await self._plan(source, _target_seconds(job), simplify=simplify)
 
     async def _plan(
@@ -243,7 +235,7 @@ class VideoPipeline:
         return await self._planner.plan(source, target_seconds=target_seconds, simplify=simplify)
 
     def _resolve_voice(
-        self, job: VideoJob, digest: str
+        self, job: VideoJob, digest: str, *, force_silent: bool = False
     ) -> tuple[VoiceSpec | None, ISpeechSynthesizer | None, str]:
         """Decide voiced vs silent for this job and the cache key its artifact lives under, without
         re-planning. Silent gives (None, None, digest).
@@ -251,9 +243,10 @@ class VideoPipeline:
         The voice toggle (V6) defaults ON, but an ElevenLabs key is OPTIONAL BYOK — so "voice on +
         no key" is the common keyed-user state and must **degrade to silent (voice-ready)** per §0,
         never fail: a build of a keyed user who never added an ElevenLabs key would otherwise FAIL
-        every video. A voiced render still needs the sync gate (Gate D) — a pipeline wired for voice
-        but missing it is a wiring bug, not a user state, so that stays a hard error."""
-        if not _wants_voice(job):
+        every video. ``force_silent`` is the desync fallback — render silent regardless of the
+        toggle. A voiced render still needs the sync gate (Gate D) — a pipeline wired for voice but
+        missing it is a wiring bug, not a user state, so that stays a hard error."""
+        if force_silent or not _wants_voice(job):
             return None, None, digest
         synthesizer = self._synthesizer_provider()
         if synthesizer is None:
@@ -286,13 +279,20 @@ class VideoPipeline:
         return manifest, audio_dir
 
     def _stamp_provenance(
-        self, video: RenderedVideo, job: VideoJob, contract: VideoContract, digest: str
+        self,
+        video: RenderedVideo,
+        job: VideoJob,
+        contract: VideoContract,
+        digest: str,
+        *,
+        unsynced_beat: str | None = None,
     ) -> RenderedVideo:
         """Stamp the requesting job's provenance onto the artifact (fresh render or cache hit).
 
         Built at the source and per produce, so even a cache hit carries THIS job's id/timestamp,
         not the job that first rendered the contract. ``degraded_scenes`` comes off the bundle (set
         at render, preserved through the cache) so a degraded scene's record is never dropped.
+        ``unsynced_beat`` (the desync fallback) flags that narration was dropped to a silent render.
         """
         provenance = VideoProvenance(
             job_id=job.id,
@@ -305,11 +305,17 @@ class VideoPipeline:
             claim_ids=_cited_claim_ids(contract),
             generated_at=datetime.now(UTC).isoformat(),
             degraded_scenes=list(video.degraded_scenes),
+            narration_dropped_for_desync=unsynced_beat is not None,
         )
         return replace(video, provenance_json=provenance.model_dump_json(by_alias=True).encode())
 
     async def _render_scenes(
-        self, contract: VideoContract, manifest: TimingManifest, workdir: Path
+        self,
+        contract: VideoContract,
+        manifest: TimingManifest,
+        workdir: Path,
+        *,
+        sync_gate: SyncGate | None,
     ) -> list[SceneQaResult]:
         results: list[SceneQaResult] = []
         for scene in contract.scenes:
@@ -317,10 +323,19 @@ class VideoPipeline:
             passed_render = await self._render_gate.render_scene(
                 scene, topic=contract.topic, timing=timing, workdir=workdir
             )
-            result = await self._visual_qa_gate.inspect_scene(
+            qa = await self._visual_qa_gate.inspect_scene(
                 scene, rendered=passed_render, timing=timing, workdir=workdir
             )
-            results.append(result)
+            scene_render = qa.scene
+            if sync_gate is not None:
+                # Gate D may re-render this scene to fix a desync; any Gate-B degrade record is
+                # preserved — it describes a spatial defect the timing repair does not touch.
+                scene_render = await sync_gate.inspect_scene(
+                    scene, rendered=qa.scene, timing=timing, workdir=workdir
+                )
+            results.append(
+                SceneQaResult(scene=scene_render, unresolved_defects=qa.unresolved_defects)
+            )
         return results
 
     def _workdir_for(self, job: VideoJob) -> Path:
