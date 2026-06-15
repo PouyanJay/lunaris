@@ -1,9 +1,11 @@
 import asyncio
 from pathlib import Path
+from typing import NamedTuple
 
 import structlog
 
 from lunaris_video.assembly.caption_builder import build_webvtt
+from lunaris_video.assembly.scene_timing import SCENE_CLOSE_FADE_S
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.models.rendered_scene import RenderedScene
 from lunaris_video.models.rendered_video import RenderedVideo
@@ -11,6 +13,29 @@ from lunaris_video.rendering.sandbox import run_sandboxed
 from lunaris_video.schemas import TimingManifest, VideoContract
 
 _logger = structlog.get_logger(__name__)
+
+
+class _AudioSegment(NamedTuple):
+    """One span of the narration track: a beat's clip (``clip`` set) or silence (``clip`` None),
+    held for exactly ``seconds`` on the timeline."""
+
+    clip: str | None
+    seconds: float
+
+
+def _audio_segments(manifest: TimingManifest) -> list[_AudioSegment]:
+    """The ordered audio spans for the whole video: each beat's clip (or silence) for exactly its
+    ``anim_s`` window, then a ``SCENE_CLOSE_FADE_S`` silent span after each scene matching the
+    render's closing fade. That per-scene tail is what keeps the audio track exactly as long as the
+    video — scene for scene — so narration never drifts ahead of the visuals at a scene boundary
+    (the drift would otherwise compound by the fade length at every boundary)."""
+    segments: list[_AudioSegment] = []
+    for scene_id in manifest.scene_ids():
+        for beat in manifest[scene_id].beats:
+            segments.append(_AudioSegment(beat.audio, beat.anim_s))
+        segments.append(_AudioSegment(None, SCENE_CLOSE_FADE_S))
+    return segments
+
 
 _CONCAT_TIMEOUT_S = 120.0
 _POSTER_TIMEOUT_S = 60.0
@@ -129,8 +154,9 @@ class VideoAssembler:
         """Mix the per-beat clips + computed silences into one track and mux it onto the video.
 
         Each beat occupies exactly its ``anim_s`` window (a clip padded to that length, or pure
-        silence for a silent beat), concatenated in scene order — the same timeline the render was
-        built against, so video and audio stay locked (the skill's deterministic sync)."""
+        silence for a silent beat), and each scene is followed by a ``SCENE_CLOSE_FADE_S`` silent
+        tail matching the render's closing fade — the same timeline the render was built against, so
+        video and audio stay locked scene for scene (the skill's deterministic sync)."""
         narration_wav = workdir / "narration.wav"
         await self._mix_audio(manifest, audio_dir, narration_wav, workdir=workdir)
         argv = [
@@ -152,25 +178,23 @@ class VideoAssembler:
         filters: list[str] = []
         labels: list[str] = []
         clip_index = 0
-        for scene_id in manifest.scene_ids():
-            for beat in manifest[scene_id].beats:
-                segment = f"[s{len(labels)}]"
-                if beat.audio:
-                    # A clip padded with trailing silence to exactly its window. anim_s is
-                    # max(audio_s + pad, floor) >= audio_s, so the clip always fits (never cut).
-                    inputs += ["-i", str(audio_dir / beat.audio)]
-                    filters.append(
-                        f"[{clip_index}:a]aformat=sample_rates={_AUDIO_RATE}:channel_layouts=stereo,"
-                        f"apad,atrim=0:{beat.anim_s}{segment}"
-                    )
-                    clip_index += 1
-                else:
-                    filters.append(
-                        f"anullsrc=r={_AUDIO_RATE}:cl=stereo,atrim=0:{beat.anim_s}{segment}"
-                    )
-                labels.append(segment)
-        # The filtergraph is the per-beat segments, then a concat filter that joins all of them, in
-        # order, into one audio-only stream [out] (n = segment count, v=0 video, a=1 audio).
+        for index, span in enumerate(_audio_segments(manifest)):
+            label = f"[s{index}]"
+            if span.clip:
+                # A clip padded with trailing silence to exactly its window. anim_s is
+                # max(audio_s + pad, floor) >= audio_s, so the clip always fits (never cut).
+                inputs += ["-i", str(audio_dir / span.clip)]
+                filters.append(
+                    f"[{clip_index}:a]aformat=sample_rates={_AUDIO_RATE}:channel_layouts=stereo,"
+                    f"apad,atrim=0:{span.seconds}{label}"
+                )
+                clip_index += 1
+            else:
+                # A silent span: a silent beat, or a scene's closing-fade tail (matches the render).
+                filters.append(f"anullsrc=r={_AUDIO_RATE}:cl=stereo,atrim=0:{span.seconds}{label}")
+            labels.append(label)
+        # The filtergraph is the per-beat + per-scene-fade segments, then a concat filter that joins
+        # all of them, in order, into one audio-only stream [out] (v=0 video, a=1 audio).
         graph = ";".join(filters) + f";{''.join(labels)}concat=n={len(labels)}:v=0:a=1[out]"
         argv = ["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", graph,
                 "-map", "[out]", out_wav.name]  # fmt: skip

@@ -8,7 +8,7 @@ timing), so a narrated video ships WCAG-2.2-AA captions that line up with what i
 import re
 from collections.abc import Callable
 
-from lunaris_video.assembly import build_webvtt, estimate_timing
+from lunaris_video.assembly import SCENE_CLOSE_FADE_S, build_webvtt, estimate_timing
 from lunaris_video.schemas import (
     Beat,
     BeatTiming,
@@ -71,6 +71,39 @@ def test_cue_timestamps_are_cumulative_webvtt_clocks() -> None:
     assert "00:00:03.420 --> 00:00:08.520" in vtt
 
 
+def test_cue_clocks_include_the_per_scene_closing_fade_gap() -> None:
+    # Arrange — TWO scenes. Each scene's video ends with a clear_scene fade (SCENE_CLOSE_FADE_S)
+    # that plays AFTER its beats, so scene 2's video — and its narration — starts that much later
+    # than the sum of scene 1's beat windows. The caption clock must include that gap or it drifts
+    # ahead of the video by the fade duration at every scene boundary (the cross-scene drift bug).
+    manifest = TimingManifest(
+        {
+            "S1_a": SceneTiming(
+                beats=[
+                    BeatTiming(id="b1", audio_s=1.8, anim_s=2.0, audio="a.mp3", estimated=False)
+                ],
+                total_s=2.0,
+            ),
+            "S2_b": SceneTiming(
+                beats=[
+                    BeatTiming(id="b1", audio_s=2.8, anim_s=3.0, audio="b.mp3", estimated=False)
+                ],
+                total_s=3.0,
+            ),
+        }
+    )
+    contract = _two_scene_contract()
+
+    # Act
+    vtt = build_webvtt(contract, manifest)
+
+    # Assert — scene 1's cue is 0 → 2.000s; scene 2's cue starts at 2.0 + SCENE_CLOSE_FADE_S, NOT at
+    # 2.000s (which is where it would land if the fade gap were ignored — the drift bug).
+    assert SCENE_CLOSE_FADE_S == 0.7  # the fade the assert clocks below assume
+    assert "00:00:00.000 --> 00:00:02.000" in vtt
+    assert "00:00:02.700 --> 00:00:05.700" in vtt  # 2.0 + 0.7 fade → 5.7
+
+
 def test_a_silent_manifest_has_no_captions() -> None:
     # A silent (estimate) video carries no audio, so it ships no caption cues — just the header.
     contract = _single_scene_contract()
@@ -100,6 +133,28 @@ def test_a_whitespace_only_beat_emits_no_cue_even_when_voiced() -> None:
     # Only the second (spoken) beat cues; the whitespace beat advances the clock silently.
     assert vtt.count("-->") == 1
     assert "The second beat." in vtt
+
+
+def _two_scene_contract() -> SceneContracts:
+    def _scene(scene_id: str, text: str) -> SceneContract:
+        return SceneContract(
+            id=scene_id,
+            archetype="process/flow",
+            narration=text,
+            objects=["a thing"],
+            beats=[Beat(id="b1", action="a", narration=text)],
+            sources=["framing only - no empirical claims"],
+            duration_s=9,
+        )
+
+    return SceneContracts(
+        topic="t",
+        audience="a",
+        visual_archetypes_used=["process/flow"],
+        asset_strategy="tier-a procedural",
+        global_style=video_global_style(),
+        scenes=[_scene("S1_a", "Scene one."), _scene("S2_b", "Scene two.")],
+    )
 
 
 def _single_scene_contract(first_narration: str = "The first beat.") -> SceneContracts:
