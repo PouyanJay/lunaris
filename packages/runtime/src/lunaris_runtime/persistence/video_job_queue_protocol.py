@@ -57,8 +57,8 @@ class IVideoJobQueue(Protocol):
     ) -> VideoJob | None:
         """The owner's most recent READY job for this (course, lesson, kind), or ``None``. The
         reader's re-attach probe surfaces it when nothing is in flight, so a successful regenerate
-        the persisted (build) artifact does not point to still shows — and re-resolves on every
-        reload — instead of the slot reverting to a stale failed/old built artifact."""
+        that the persisted (build) artifact does not point to is still shown — and re-resolves on
+        every reload — instead of the slot reverting to a stale failed/old built artifact."""
         ...
 
     async def sweep_stale_leases(

@@ -95,16 +95,18 @@ export function useCourseVideo(
     const controller = new AbortController();
     void findActiveVideoJob(apiBaseUrl, jobId, controller.signal).then((view) => {
       if (controller.signal.aborted) return;
-      if (view) {
-        watch(view.job.id); // in-flight job OR a completed regenerate the built artifact can't see
-      } else if (status === "failed") {
+      if (view && view.job.id !== readyJobId) {
+        // A newer take the built artifact can't see — an in-flight job or a completed regenerate.
+        // Skip when it's the READY job the effect above already fetched (don't double-poll a slot).
+        watch(view.job.id);
+      } else if (!view && status === "failed") {
         // No live job and no successful take: settle on the honest failed state (the loading state
         // above only deferred it until this probe resolved).
         setState({ phase: "failed" });
       }
     });
     return () => controller.abort();
-  }, [apiBaseUrl, jobId, status, watch]);
+  }, [apiBaseUrl, jobId, readyJobId, status, watch]);
 
   const regenerate = useCallback(
     (mode: RegenerateMode) => {

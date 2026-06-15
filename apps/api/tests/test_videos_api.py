@@ -374,9 +374,12 @@ async def test_active_surfaces_a_completed_course_level_regenerate(
     # Act — the reader holds the OLD (failed) course-level job id.
     response = await client.get("/api/videos/sum-old/active", headers=auth_headers(USER_A))
 
-    # Assert — the latest READY course-level job is surfaced (null-lesson path).
+    # Assert — the latest READY course-level job is surfaced via the null-lesson (lesson_id=None)
+    # path, and it is the READY one (the gate the endpoint actually checks), not just any newer job.
     assert response.status_code == 200
-    assert response.json()["job"]["id"] == "sum-new"
+    body = response.json()["job"]
+    assert body["id"] == "sum-new"
+    assert body["status"] == "ready"
 
 
 async def test_active_is_204_when_nothing_is_in_flight(
@@ -387,6 +390,21 @@ async def test_active_is_204_when_nothing_is_in_flight(
     await queue.fail(job_id=job_a, error="x")
 
     # Act / Assert — no active job and no READY take → 204, so the reader keeps its terminal state.
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
+    assert response.status_code == 204
+
+
+async def test_active_is_204_when_the_source_is_itself_the_latest_ready(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the slot built successfully and there is no newer take: the source the reader holds
+    # IS the latest READY job. The probe must NOT echo it back (that would re-poll the same job on
+    # every mount); the `latest_ready.id != source.id` guard keeps it a 204 so the reader keeps the
+    # ready state it already shows.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=job_a, contract_hash="h")  # the build itself reached READY
+
+    # Act / Assert
     response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
     assert response.status_code == 204
 

@@ -114,9 +114,11 @@ export function useLessonVideo(
     const controller = new AbortController();
     void findActiveVideoJob(apiBaseUrl, builtJobId, controller.signal).then((view) => {
       if (controller.signal.aborted) return;
-      if (view) {
-        watch(view.job.id); // in-flight job OR a completed regenerate the built artifact can't see
-      } else if (builtStatus === "failed") {
+      if (view && view.job.id !== jobIdRef.current) {
+        // A newer take the built artifact can't see — an in-flight job or a completed regenerate.
+        // Skip when it's the job the first effect is already watching (don't double-poll a slot).
+        watch(view.job.id);
+      } else if (!view && builtStatus === "failed") {
         // No live job and no successful take: the slot genuinely failed. Show it now — the resolving
         // state above only deferred the message until this probe settled.
         setState({ phase: "failed", jobId: builtJobId, error: null });
