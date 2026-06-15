@@ -4,6 +4,7 @@ from pathlib import Path
 import structlog
 
 from lunaris_video.errors import SceneFrameExtractionError
+from lunaris_video.rendering.duration_probe import probe_scene_duration
 from lunaris_video.rendering.sandbox import run_sandboxed
 
 _logger = structlog.get_logger(__name__)
@@ -11,7 +12,6 @@ _logger = structlog.get_logger(__name__)
 # The skill's QA sampling: defects appear and disappear as a scene animates, so one frame is
 # never enough — sample early/middle/late (a validated defect was only visible late in its scene).
 _SAMPLE_FRACTIONS = (0.30, 0.60, 0.90)
-_FFPROBE_TIMEOUT_S = 30.0
 _FFMPEG_TIMEOUT_S = 60.0
 
 
@@ -25,7 +25,7 @@ class FrameExtractor:
     """
 
     async def extract(self, mp4_path: Path) -> list[bytes]:
-        duration = await self._probe_duration(mp4_path)
+        duration = await probe_scene_duration(mp4_path)
         frames: list[bytes] = []
         for fraction in _SAMPLE_FRACTIONS:
             frame_path = mp4_path.with_name(f"{mp4_path.stem}_qa_{int(fraction * 100)}.png")
@@ -43,29 +43,6 @@ class FrameExtractor:
         frame_path = mp4_path.with_name(f"{mp4_path.stem}_sync_{int(at_seconds * 1000)}.png")
         await self._extract_one(mp4_path, frame_path, timestamp=at_seconds)
         return await asyncio.to_thread(frame_path.read_bytes)
-
-    async def _probe_duration(self, mp4_path: Path) -> float:
-        argv = [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-            mp4_path.name,
-        ]
-        result = await run_sandboxed(argv, cwd=mp4_path.parent, timeout_s=_FFPROBE_TIMEOUT_S)
-        if not result.succeeded:
-            raise SceneFrameExtractionError(
-                f"ffprobe failed on {mp4_path.name}: {result.stderr_tail}"
-            )
-        try:
-            return float(result.stdout_tail.strip())
-        except ValueError as exc:
-            raise SceneFrameExtractionError(
-                f"ffprobe returned no duration for {mp4_path.name}"
-            ) from exc
 
     async def _extract_one(self, mp4_path: Path, frame_path: Path, *, timestamp: float) -> None:
         argv = [

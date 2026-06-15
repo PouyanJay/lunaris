@@ -7,7 +7,7 @@ from lunaris_runtime.schema import VideoKind
 
 from lunaris_video.assembly import VideoAssembler
 from lunaris_video.codegen import SceneCodeGenerator
-from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
+from lunaris_video.gates import FactualGate, LengthGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.grounding import CourseGroundingPacketBuilder
 from lunaris_video.pipeline.contract_hash_cache import ContractHashCache
 from lunaris_video.pipeline.kind_routing_video_pipeline import KindRoutingVideoPipeline
@@ -23,7 +23,7 @@ from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourc
 from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesizer
 from lunaris_video.qa import SyncQaInspector, VisionQaInspector
-from lunaris_video.rendering import FrameExtractor, SceneRenderer
+from lunaris_video.rendering import FrameExtractor, SceneRenderer, probe_scene_duration
 from lunaris_video.sourcing import (
     CourseStoreLessonSourceProvider,
     CourseVideoSourceProvider,
@@ -125,6 +125,7 @@ def _pipeline_maker(
                 codegen=codegen,
                 renderer=renderer,
             ),
+            length_gate=LengthGate(probe=probe_scene_duration),
             prior_contract_provider=prior_contract_provider,
         )
 
