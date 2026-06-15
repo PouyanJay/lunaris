@@ -54,6 +54,10 @@ ENVELOPE
 - Scene ids match S<N>_<slug> (e.g. "S1_problem"); slugs are lowercase snake_case.
 - Assign each scene exactly one primary archetype from the reference below; compose at most two.
   Never invent a free-form visual when an archetype fits.
+- COMPLEXITY BUDGET: a scene shows at most ~10 distinct elements at once. Reveal a bigger structure
+  (a wide network, a long pipeline) incrementally across its beats — one layer or step per beat — or
+  summarize it; never plan a scene that draws everything at once (it renders as a crammed tangle).
+  Use the network/graph archetype for any "nodes wired together" visual (network or neural net).
 - Find the one inspired beat: one scene where the visual's FORM carries the argument. If every
   scene is a generic template fill, revise before answering.
 
@@ -130,6 +134,10 @@ ENVELOPE
 - Scene ids match S<N>_<slug> and are UNIQUE across the WHOLE video (not per chapter); slugs are
   lowercase snake_case. Chapter ids are "ch1", "ch2", ....
 - Assign each scene exactly one primary archetype from the reference below; compose at most two.
+- COMPLEXITY BUDGET: a scene shows at most ~10 distinct elements at once. Reveal a bigger structure
+  (a wide network, a long pipeline) incrementally across its beats — one layer or step per beat — or
+  summarize it; never plan a scene that draws everything at once (it renders as a crammed tangle).
+  Use the network/graph archetype for any "nodes wired together" visual (network or neural net).
 
 GROUNDING (this pipeline stage has no research access — the verified claims are the ONLY facts you
 may assert; a downstream gate diffs every on-screen number and comparison against them)

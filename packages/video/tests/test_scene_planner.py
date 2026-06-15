@@ -72,6 +72,42 @@ async def test_planner_builds_a_contract_with_injected_style(
     assert len(contract.scenes) == len(payload["scenes"])  # type: ignore[arg-type]
 
 
+async def test_plan_prompt_carries_the_complexity_budget(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a scene that draws too many elements at once renders as a crammed tangle (the
+    # neural-net hook failure). The plan prompt must impose a complexity budget: reveal a big
+    # structure incrementally across beats, never all at once.
+    payload = _draft_payload(make_lesson_contract)
+    stub = StubInvokeModel([json.dumps(payload)])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan(_lesson())
+
+    # Assert
+    prompt = stub.prompts[0].lower()
+    assert "complexity budget" in prompt
+    assert "incrementally" in prompt
+
+
+async def test_plan_prompt_offers_the_network_graph_archetype(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — the archetype taxonomy must include a node-and-edge form so a "web of units wired
+    # together" maps to a validated layout instead of a free-form (crammed) drawing. It flows into
+    # the prompt verbatim from the pinned archetypes.md.
+    payload = _draft_payload(make_lesson_contract)
+    stub = StubInvokeModel([json.dumps(payload)])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan(_lesson())
+
+    # Assert
+    assert "network/graph" in stub.prompts[0]
+
+
 async def test_model_cannot_choose_global_style(
     make_lesson_contract: Callable[..., SceneContracts],
 ) -> None:

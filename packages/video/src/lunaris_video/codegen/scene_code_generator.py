@@ -1,4 +1,6 @@
+import re
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 import structlog
 from lunaris_runtime.resilience import invoke_with_parse_repair
@@ -27,8 +29,8 @@ HARD RULES (violations are rejected automatically)
     from style_tokens import *
 - Define exactly one class: `class {scene_class_name}(Scene):` with a `construct` method.
 - Use the style tokens (BG, INK, MUTED, ACCENT, DANGER, GREEN, PANEL, ALT, FONT) and the
-  helpers (title_bar, make_array, hand_axes, smooth_curve, pivot_anchor, clear_scene) from
-  style_tokens — never hardcode colors or fonts.
+  helpers (title_bar, make_array, hand_axes, smooth_curve, pivot_anchor, hero_title,
+  make_network, clear_scene) from style_tokens — never hardcode colors or fonts.
 - Implement every beat in order. Each beat's animations and waits MUST sum to EXACTLY its
   on-screen window from BEAT TIMING below — the narration is synced to these durations.
 - Any group that rotates or orbits needs an explicit pivot anchor (pivot_anchor helper) —
@@ -50,7 +52,7 @@ LAYOUT & LEGIBILITY (the spatial defects Gate B rejects — get these right the 
 - Every label must be next_to a mobject that is actually on screen at that moment — if you label
   an "input", draw the input object; an unattached label reading into empty space is rejected.
 - Size for the frame: scale_to_fit_width any text that might overflow its box BEFORE animating it.
-
+{archetype_guidance}
 BEAT TIMING (audio-drives-video — these on-screen windows are FIXED; the narration is timed to them)
 Each beat's animations and waits must sum to EXACTLY its window in seconds:
 {timing}
@@ -160,20 +162,63 @@ _FORMAT_REPAIR_TEMPLATE = """
 Your previous reply was rejected before rendering: {error}
 Respond again with ONLY the corrected, complete Python source for the scene file."""
 
-# Hook/title scenes are the stubborn Gate-B failures: one big headline on a near-empty frame, so the
-# usual defects are overflow / low contrast / overlap, not diagram problems. When a defective scene
-# is one of these archetypes, the visual-repair prompt gets this extra, targeted guidance.
-_HOOK_TITLE_HINT = """\
+# The two stubborn Gate-B archetypes get targeted guidance — front-loaded into GENERATE so the first
+# render is already clean, and repeated at REPAIR as the safety net. Every other archetype carries
+# neither (the prompt stays focused on the scene's own contract).
+#
+# Hook/title: one big headline on a near-empty frame, so the failures are overflow / low contrast /
+# overlap, not diagram problems.
+_HOOK_TITLE_BUILD = """\
+- HOOK / TITLE scene: build the card from hero_title(headline, subtitle, kicker) — it scales the
+  headline to the frame and centers the group, so the title can never overflow the edges or sit
+  off-centre (the two defects these scenes fail on). Headline in INK (at most one ACCENT word),
+  subtitle in MUTED; never hand-place Text or Transform one title onto another."""
+_HOOK_TITLE_REPAIR = """\
 THIS IS A HOOK / TITLE scene — the spatial defects these archetypes fail on most; fix them directly:
-- OVERFLOW is the #1 failure: scale_to_fit_width(headline, config.frame_width - 1.0) BEFORE you
-  animate it, and wrap or shorten a long title — never let big text clip the frame edges.
+- OVERFLOW is the #1 failure: build the card from hero_title(...) (it runs
+  scale_to_fit_width on the headline for you), or scale_to_fit_width(headline, config.frame_width -
+  1.0) BEFORE you animate it — never let big text clip the frame edges.
 - LOW CONTRAST: a title reads in INK (or ACCENT for one emphasized word) on the background; a
   subtitle in MUTED. Never a low-contrast hue that fails a squint test.
 - OVERLAP / CENTERING: stack title + subtitle/kicker in a VGroup(...).arrange(DOWN, buff=0.4) and
-  center the group; never Transform one title onto another in the same spot — FadeOut then FadeIn.
-"""
-# Slugs/archetypes that mark a scene as a hook/title card (matched case-insensitively).
-_HOOK_TITLE_MARKERS = ("hook", "title", "intro")
+  center the group; never Transform one title onto another — FadeOut then FadeIn."""
+
+# Network/graph: a "web of nodes" whose ad-hoc coordinates cram into one side, half-formed.
+_NETWORK_BUILD = """\
+- NETWORK / GRAPH scene (a "web of nodes", neural net, or pipeline): build it from
+  make_network(layer_sizes) — it lays the nodes out in fit-to-frame columns and wires them, so the
+  graph can never cram into one side. Reveal it LAYER BY LAYER across the beats (never Create the
+  whole graph at once); keep ~6 nodes per layer and summarize a bigger network rather than drawing
+  every unit."""
+_NETWORK_REPAIR = """\
+THIS IS A NETWORK / GRAPH scene — fix the crammed-tangle defects these fail on:
+- Replace any hand-placed node coordinates with make_network(layer_sizes): it lays the nodes out in
+  fit-to-frame columns and wires them, centred — so they cannot pack into one side or overflow.
+- Reveal the graph LAYER BY LAYER (Create one column + its incoming edges at a time), never the
+  whole tangle at once; cap ~6 nodes per layer and summarize a bigger network."""
+
+
+@dataclass(frozen=True)
+class _ArchetypeGuidance:
+    # Targeted guidance for one stubborn archetype, with its GENERATE-time "build it clean" hint and
+    # REPAIR-time "fix these defects" hint. ``archetype_markers`` match anywhere in the scene's
+    # declared archetype (the planner's visual-form decision — the authoritative signal); the looser
+    # ``slug_markers`` match only as WHOLE words of the scene id, so a body scene like
+    # "S3_intro_to_backprop" or "S4_graph_traversal" does not pick up title/network guidance.
+    archetype_markers: tuple[str, ...]
+    slug_markers: tuple[str, ...]
+    build: str
+    repair: str
+
+
+_ARCHETYPE_GUIDANCE: tuple[_ArchetypeGuidance, ...] = (
+    # Hook/title is a narrative position, not a taxonomy archetype, so it keys off the slug; "intro"
+    # is deliberately excluded (too many "S3_intro_to_X" body scenes). Network/graph IS a taxonomy
+    # archetype, so it keys off the declared archetype only — never the slug, where "graph" collides
+    # with graph-algorithm content scenes.
+    _ArchetypeGuidance(("hook", "title"), ("hook", "title"), _HOOK_TITLE_BUILD, _HOOK_TITLE_REPAIR),
+    _ArchetypeGuidance(("network", "graph", "neural"), (), _NETWORK_BUILD, _NETWORK_REPAIR),
+)
 
 
 class SceneCodeGenerator:
@@ -196,6 +241,7 @@ class SceneCodeGenerator:
             scene_json=scene.model_dump_json(indent=2),
             topic=topic,
             scene_class_name=scene.scene_class_name,
+            archetype_guidance=_generate_archetype_guidance(scene),
             timing=_format_timing(timing),
             patterns=self._patterns,
         )
@@ -266,11 +312,36 @@ class SceneCodeGenerator:
         )
 
 
+def _selected_guidance(scene: SceneContract) -> list[_ArchetypeGuidance]:
+    # The stubborn-archetype guidance that applies to this scene: an archetype-substring match (the
+    # authoritative visual-form signal) OR a whole-word slug match (so "graph" / "intro" inside a
+    # body scene's id can't misfire). See _ArchetypeGuidance for why the two are separate.
+    archetype = scene.archetype.lower()
+    slug_words = set(re.split(r"[^a-z0-9]+", scene.id.lower()))
+    return [
+        g
+        for g in _ARCHETYPE_GUIDANCE
+        if any(m in archetype for m in g.archetype_markers)
+        or any(m in slug_words for m in g.slug_markers)
+    ]
+
+
+def _generate_archetype_guidance(scene: SceneContract) -> str:
+    # GENERATE-time guidance, front-loaded so the first render of a stubborn archetype is already
+    # clean — empty (no section at all) for every other scene.
+    selected = _selected_guidance(scene)
+    if not selected:
+        return ""
+    hints = "\n".join(g.build for g in selected)
+    return f"\nARCHETYPE GUIDANCE (stubborn archetype — build it clean the first time):\n{hints}\n"
+
+
 def _archetype_hint(scene: SceneContract) -> str:
-    # Extra repair guidance for the archetypes Gate B fails on most — empty for every other scene,
-    # so the visual-repair prompt only carries the hook/title hint when it is actually a hook/title.
-    haystack = f"{scene.id} {scene.archetype}".lower()
-    return _HOOK_TITLE_HINT if any(m in haystack for m in _HOOK_TITLE_MARKERS) else ""
+    # REPAIR-time guidance for the archetypes Gate B fails on most — empty for every other scene, so
+    # the visual-repair prompt only carries it when the scene actually is one of them. The trailing
+    # newline keeps a blank line before BEAT TIMING in the repair template.
+    selected = _selected_guidance(scene)
+    return "\n".join(g.repair for g in selected) + "\n" if selected else ""
 
 
 def _format_defects(defects: list[QaDefect]) -> str:

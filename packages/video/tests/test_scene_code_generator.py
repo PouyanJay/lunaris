@@ -130,6 +130,140 @@ async def test_generate_prompt_forbids_timing_outside_a_beat(
     assert "outside a beat" in prompt
 
 
+async def test_generate_prompt_names_the_layout_helpers(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the hard-rules helper list must name the validated layout primitives the model is
+    # meant to call instead of hand-placing mobjects, including the new hero_title / make_network.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert
+    prompt = stub.prompts[0]
+    assert "hero_title" in prompt
+    assert "make_network" in prompt
+
+
+async def test_generate_prompt_adds_hook_title_guidance_for_a_hook_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the hook/title card is a stubborn Gate-B archetype (overflow / centering). Front-
+    # load its build guidance into the FIRST generation so the render is clean before any repair,
+    # not only after a Gate-B miss feeds the repair-time hint.
+    scene = make_scene(1, "hook")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the archetype-guidance section and the hook helper are both in the GENERATE prompt.
+    prompt = stub.prompts[0]
+    assert "ARCHETYPE GUIDANCE" in prompt
+    assert "HOOK / TITLE" in prompt
+    assert "hero_title" in prompt
+
+
+async def test_generate_prompt_adds_network_guidance_for_a_network_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a "web of nodes" (neural net / graph) has no native layout, so codegen used to
+    # hand-roll coordinates and cram them. The generate prompt must steer it to make_network and a
+    # layer-by-layer reveal.
+    scene = make_scene(2, "architecture", archetype="network/graph")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="neural networks", timing=_timing_for(scene))
+
+    # Assert
+    prompt = stub.prompts[0]
+    assert "ARCHETYPE GUIDANCE" in prompt
+    assert "NETWORK / GRAPH" in prompt
+    assert "make_network" in prompt
+
+
+async def test_generate_prompt_omits_archetype_guidance_for_a_plain_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — an ordinary mechanism scene is neither a hook nor a network, so the prompt carries
+    # no archetype-guidance section (it stays focused; that section rides only on stubborn cases).
+    scene = make_scene(3, "mechanism", archetype="process/flow")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — both the section header and the per-archetype labels are absent.
+    prompt = stub.prompts[0]
+    assert "ARCHETYPE GUIDANCE" not in prompt
+    assert "HOOK / TITLE" not in prompt
+    assert "NETWORK / GRAPH" not in prompt
+
+
+async def test_generate_prompt_omits_hook_guidance_for_an_intro_body_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a body scene whose slug merely contains "intro" (e.g. "S3_intro_to_backprop") is NOT
+    # a title card; slug markers match whole words only and "intro" is excluded, so it gets no
+    # hook/title guidance that would wrongly push it toward a hero_title card.
+    scene = make_scene(3, "intro_to_backprop", archetype="process/flow")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="neural networks", timing=_timing_for(scene))
+
+    # Assert
+    assert "HOOK / TITLE" not in stub.prompts[0]
+
+
+async def test_generate_prompt_omits_network_guidance_for_a_graph_content_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a scene ABOUT graphs but drawn as a process/flow walkthrough must not pick up the
+    # network guidance: network keys off the declared archetype, never the slug (where "graph"
+    # collides with graph-algorithm content).
+    scene = make_scene(2, "graph_traversal", archetype="process/flow")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="graph algorithms", timing=_timing_for(scene))
+
+    # Assert
+    assert "NETWORK / GRAPH" not in stub.prompts[0]
+
+
+async def test_visual_repair_prompt_adds_network_guidance_for_a_network_scene(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the network archetype gets targeted repair guidance too (fit-to-frame + reveal),
+    # mirroring the hook/title repair hint, so a crammed-network defect has a recipe to fix it.
+    scene = make_scene(2, "architecture", archetype="network/graph")
+    stub = StubInvokeModel([_valid_source_for(scene)])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.repair_visual(
+        scene,
+        source=_valid_source_for(scene),
+        defects=[QaDefect(issue="nodes crammed into one side", fix_hint="lay them out")],
+        timing=_timing_for(scene),
+    )
+
+    # Assert
+    prompt = stub.prompts[0]
+    assert "NETWORK / GRAPH" in prompt
+    assert "make_network" in prompt
+
+
 async def test_latex_in_a_completion_triggers_a_repair_turn(
     make_scene: Callable[..., SceneContract],
 ) -> None:
@@ -271,8 +405,9 @@ async def test_visual_repair_prompt_omits_hook_guidance_for_a_body_scene(
         timing=_timing_for(scene),
     )
 
-    # Assert
+    # Assert — neither stubborn-archetype hint rides on an ordinary mechanism scene.
     assert "HOOK / TITLE" not in stub.prompts[0]
+    assert "NETWORK / GRAPH" not in stub.prompts[0]
 
 
 @pytest.mark.parametrize(
