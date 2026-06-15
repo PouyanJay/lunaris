@@ -34,6 +34,9 @@ HARD RULES (violations are rejected automatically)
 - Any group that rotates or orbits needs an explicit pivot anchor (pivot_anchor helper) —
   never rotate about get_center() of an asymmetric group.
 - End the scene by fading out all mobjects (clear_scene(self)) for clean concat boundaries.
+- The scene is EXACTLY its beats (each filling its window) followed by that one clear_scene(self).
+  Put NO self.wait(), self.play() or pause OUTSIDE a beat — its narration audio matches the beats
+  plus that closing fade, so any extra time makes the render longer than its audio and desyncs it.
 
 LAYOUT & LEGIBILITY (the spatial defects Gate B rejects — get these right the first time)
 - ONE Text per value. Never stack, overlap, or Transform one Text onto another in the same spot —

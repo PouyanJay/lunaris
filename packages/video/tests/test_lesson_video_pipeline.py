@@ -13,7 +13,7 @@ from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoPro
 from lunaris_runtime.video_build import target_seconds_for
 from lunaris_video.assembly import build_webvtt
 from lunaris_video.errors import FactualGateError
-from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
+from lunaris_video.gates import FactualGate, LengthGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, VideoPipeline
 from lunaris_video.pipeline.video_pipeline import SynthesizerProvider, _target_seconds
@@ -222,6 +222,7 @@ def _pipeline(
     codegen: _CodegenStub | None = None,
     synthesizer_provider: SynthesizerProvider = lambda: None,
     sync_gate: SyncGate | None = None,
+    length_gate: LengthGate | None = None,
     chaptered: bool = False,
     prior_contract_provider: IPriorContractProvider | None = None,
     vision: object | None = None,
@@ -245,6 +246,7 @@ def _pipeline(
         chaptered=chaptered,
         synthesizer_provider=synthesizer_provider,
         sync_gate=sync_gate,
+        length_gate=length_gate,
         prior_contract_provider=prior_contract_provider,
     )
 
@@ -651,6 +653,46 @@ async def test_a_voiced_desync_that_wont_repair_delivers_silent(
     assert provenance.narration_dropped_for_desync is True
 
 
+def _drift_length_gate(actual_seconds: float) -> LengthGate:
+    # A length gate whose probe reports a fixed render duration regardless of the scene — set it far
+    # from any real timeline to force the drift (Gate 1) path deterministically in a hermetic test.
+    async def probe(mp4_path: Path) -> float:
+        return actual_seconds
+
+    return LengthGate(probe=probe)
+
+
+async def test_a_voiced_scene_that_drifts_in_length_delivers_silent(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — a voiced job whose Gate D (sync) passes, but Gate 1 (length) finds the render is
+    # nowhere near its audio timeline (the probe reports a wildly wrong duration). The narration
+    # would drift against the visuals, so the video must fall back to SILENT — never ship a desync.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    assembler = _SpyAssembler()
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        assembler,
+        ContractHashCache(),
+        tmp_path,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_passing_sync_gate(),
+        length_gate=_drift_length_gate(9999.0),
+    )
+
+    # Act — a real video ships (no TimingGateError bubbles up to the worker).
+    video = await pipeline.produce(_voiced_job())
+
+    # Assert — delivered SILENT, with the desync flagged in provenance (same fallback as a Gate D
+    # miss — the reader can offer to regenerate and add narration).
+    assert video.mp4
+    assert assembler.received_audio_dir is None
+    assert video.captions is None
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.narration_dropped_for_desync is True
+
+
 async def test_voice_on_without_a_key_degrades_to_silent(
     make_lesson_contract, tmp_path: Path
 ) -> None:
@@ -787,6 +829,36 @@ async def test_a_voiced_chaptered_overview_desync_delivers_silent(
     video = await pipeline.produce(_voiced_overview_job())
 
     # Assert — one MP4, silent, with the desync flagged in provenance.
+    assert video.mp4
+    assert assembler.received_audio_dir is None
+    assert video.captions is None
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.narration_dropped_for_desync is True
+
+
+async def test_a_voiced_chaptered_overview_that_drifts_in_length_delivers_silent(
+    make_chaptered_contract, tmp_path: Path
+) -> None:
+    # Arrange — Gate 1 (length) guards the chaptered overview too: a scene whose render is far from
+    # its audio timeline must fall back to the silent overview, never ship a desynced narrated one.
+    invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
+    assembler = _SpyAssembler()
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        assembler,
+        ContractHashCache(),
+        tmp_path,
+        chaptered=True,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_passing_sync_gate(),
+        length_gate=_drift_length_gate(9999.0),
+    )
+
+    # Act — ships (no TimingGateError bubbles up), delivered silent.
+    video = await pipeline.produce(_voiced_overview_job())
+
+    # Assert — one MP4, silent (no muxed audio, no captions), with the desync flagged in provenance.
     assert video.mp4
     assert assembler.received_audio_dir is None
     assert video.captions is None

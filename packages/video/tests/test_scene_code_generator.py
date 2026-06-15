@@ -112,6 +112,24 @@ async def test_generate_prompt_tells_the_model_to_front_load_each_reveal(
     assert "front-load" in prompt
 
 
+async def test_generate_prompt_forbids_timing_outside_a_beat(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a deterministic length gate asserts each scene renders to exactly its beats + the
+    # closing fade. So the scene must be ONLY the beats (each filling its window) plus clear_scene —
+    # any stray wait/animation outside a beat makes the render longer than its audio and desyncs.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the prompt forbids timing outside a beat (the length-gate constraint).
+    prompt = stub.prompts[0].lower()
+    assert "outside a beat" in prompt
+
+
 async def test_latex_in_a_completion_triggers_a_repair_turn(
     make_scene: Callable[..., SceneContract],
 ) -> None:
