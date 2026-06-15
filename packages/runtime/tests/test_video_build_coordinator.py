@@ -273,3 +273,8 @@ class _FailingQueue:
         self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
     ) -> VideoJob | None:
         return None
+
+    async def find_latest_ready(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        return None

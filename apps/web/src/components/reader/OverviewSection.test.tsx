@@ -232,8 +232,9 @@ describe("OverviewSection", () => {
     });
     render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
 
-    // Act — the failed slot states it plainly and offers a Try again menu; Fresh take re-runs it.
-    expect(screen.getByText(/couldn.t be generated/i)).toBeInTheDocument();
+    // Act — the failed slot resolves (the on-mount probe finds no newer take), states it plainly,
+    // and offers a Try again menu; Fresh take re-runs it.
+    expect(await screen.findByText(/couldn.t be generated/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
 
@@ -341,8 +342,9 @@ describe("OverviewSection", () => {
     });
     render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
 
-    // Act — Try again → Fresh take → the regenerate polls to a failure carrying the reason.
-    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    // Act — Try again (shown once the on-mount probe settles) → Fresh take → the regenerate polls
+    // to a failure carrying the reason.
+    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
 
     // Assert — the actionable reason is shown.

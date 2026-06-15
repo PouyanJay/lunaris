@@ -172,6 +172,33 @@ class SupabaseVideoJobQueue:
         rows = response.data or []
         return VideoJob.model_validate(rows[0]) if rows else None
 
+    @guard("video_jobs find_latest_ready")
+    async def find_latest_ready(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        client = self._ensure_client()
+
+        def _run() -> object:
+            query = (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .select("*")
+                .eq("user_id", owner_id)  # owner-scoped (the app belt over the DB's RLS belt)
+                .eq("course_id", course_id)
+                .eq("kind", kind.value)
+                .eq("status", VideoJobStatus.READY.value)  # only a finished, playable render
+            )
+            # PostgREST: a null lesson_id (course-level kinds) needs `is`, not `eq`.
+            query = (
+                query.is_("lesson_id", "null")
+                if lesson_id is None
+                else query.eq("lesson_id", lesson_id)
+            )
+            return query.order("created_at", desc=True).limit(1).execute()
+
+        response = await asyncio.to_thread(_run)
+        rows = response.data or []
+        return VideoJob.model_validate(rows[0]) if rows else None
+
     @guard("video_jobs sweep")
     async def sweep_stale_leases(
         self, *, lease_seconds: int, max_attempts: int

@@ -316,14 +316,95 @@ async def test_active_finds_a_regenerate_started_after_the_source_settled(
     assert body["status"] == "queued"
 
 
+async def test_active_surfaces_a_completed_regenerate_when_the_source_failed(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the source (build) job FAILED; a regenerate then ran to completion (READY) for the
+    # same slot. Nothing is in flight now. The reader still only holds the failed source id (the
+    # persisted artifact's jobId), and must see the GOOD render rather than reverting to the failed
+    # built artifact (the "my regenerated video disappeared on reload/tab-switch" bug).
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.fail(job_id=job_a, error="qa failed")
+    job_b = (
+        await client.post(
+            f"/api/videos/{job_a}/regenerate", headers=auth_headers(USER_A), json={"mode": "fresh"}
+        )
+    ).json()["job"]["id"]
+    await queue.complete(job_id=job_b, contract_hash="h")  # the regenerate reached READY
+
+    # Act — the reader probes with the OLD (failed) source id it still holds.
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
+
+    # Assert — the completed regenerate is surfaced (200), so the reader displays it AND re-resolves
+    # it on every reload, instead of falling back to the stale failed artifact.
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == job_b
+    assert body["status"] == "ready"
+
+
+async def test_active_surfaces_a_completed_course_level_regenerate(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the null-lesson (course-level SUMMARY) path: the original course video failed, a
+    # newer take for the same slot is READY. The Overview slot must surface the good one too.
+    await queue.enqueue(
+        VideoJob(
+            id="sum-old",
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=None,
+            kind=VideoKind.SUMMARY,
+            input_hash="h",
+        )
+    )
+    await queue.fail(job_id="sum-old", error="x")
+    await queue.enqueue(
+        VideoJob(
+            id="sum-new",
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=None,
+            kind=VideoKind.SUMMARY,
+            input_hash="h",
+        )
+    )
+    await queue.complete(job_id="sum-new", contract_hash="h")
+
+    # Act — the reader holds the OLD (failed) course-level job id.
+    response = await client.get("/api/videos/sum-old/active", headers=auth_headers(USER_A))
+
+    # Assert — the latest READY course-level job is surfaced via the null-lesson (lesson_id=None)
+    # path, and it is the READY one (the gate the endpoint actually checks), not just any newer job.
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == "sum-new"
+    assert body["status"] == "ready"
+
+
 async def test_active_is_204_when_nothing_is_in_flight(
     client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
 ) -> None:
-    # Arrange — the slot's only job settled; nothing is rendering.
+    # Arrange — the slot's only job settled FAILED and no successful take exists; nothing rendering.
     job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
     await queue.fail(job_id=job_a, error="x")
 
-    # Act / Assert — no active job → 204, so the reader keeps its terminal state.
+    # Act / Assert — no active job and no READY take → 204, so the reader keeps its terminal state.
+    response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
+    assert response.status_code == 204
+
+
+async def test_active_is_204_when_the_source_is_itself_the_latest_ready(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the slot built successfully and there is no newer take: the source the reader holds
+    # IS the latest READY job. The probe must NOT echo it back (that would re-poll the same job on
+    # every mount); the `latest_ready.id != source.id` guard keeps it a 204 so the reader keeps the
+    # ready state it already shows.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=job_a, contract_hash="h")  # the build itself reached READY
+
+    # Act / Assert
     response = await client.get(f"/api/videos/{job_a}/active", headers=auth_headers(USER_A))
     assert response.status_code == 204
 
