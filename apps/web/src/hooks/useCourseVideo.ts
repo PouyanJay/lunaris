@@ -47,7 +47,7 @@ export function useCourseVideo(
   const jobId = resolveJobId(artifact);
   const readyJobId = status === "ready" ? jobId : null;
   const [state, setState] = useState<CourseVideoState>(() =>
-    initialState(apiBaseUrl, status, readyJobId),
+    initialState(apiBaseUrl, status, jobId),
   );
   const controllerRef = useRef<AbortController | null>(null);
 
@@ -73,7 +73,7 @@ export function useCourseVideo(
   useEffect(() => {
     controllerRef.current?.abort();
     if (status !== "ready" || !readyJobId || !apiBaseUrl) {
-      setState(initialState(apiBaseUrl, status, readyJobId)); // absent or failed — nothing to fetch
+      setState(initialState(apiBaseUrl, status, jobId)); // absent / failed — resolve via the probe
       return;
     }
     const controller = new AbortController();
@@ -84,7 +84,7 @@ export function useCourseVideo(
       setState(toCourseVideoState(view));
     });
     return () => controller.abort();
-  }, [apiBaseUrl, readyJobId, status]);
+  }, [apiBaseUrl, readyJobId, jobId, status]);
 
   // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): on
   // mount, ask the server for the slot's live job — keyed by the source job we hold — and watch it.
@@ -94,11 +94,17 @@ export function useCourseVideo(
     if (!apiBaseUrl || !jobId) return;
     const controller = new AbortController();
     void findActiveVideoJob(apiBaseUrl, jobId, controller.signal).then((view) => {
-      if (controller.signal.aborted || !view) return;
-      watch(view.job.id);
+      if (controller.signal.aborted) return;
+      if (view) {
+        watch(view.job.id); // in-flight job OR a completed regenerate the built artifact can't see
+      } else if (status === "failed") {
+        // No live job and no successful take: settle on the honest failed state (the loading state
+        // above only deferred it until this probe resolved).
+        setState({ phase: "failed" });
+      }
     });
     return () => controller.abort();
-  }, [apiBaseUrl, jobId, watch]);
+  }, [apiBaseUrl, jobId, status, watch]);
 
   const regenerate = useCallback(
     (mode: RegenerateMode) => {
@@ -145,8 +151,10 @@ function initialState(
   jobId: string | null,
 ): CourseVideoState {
   if (status === null) return { phase: "absent" };
-  // Not READY, no resolvable jobId, or no api base to fetch from → the honest failed state. A
-  // resolvable READY artifact starts loading until the signed URL comes back (no broken-player flash).
-  if (status !== "ready" || !jobId || !apiBaseUrl) return { phase: "failed" };
+  // No api base or no resolvable jobId → the honest failed state. Otherwise start loading: a READY
+  // artifact until its signed URL comes back (no broken-player flash), and a FAILED one until the
+  // re-attach probe settles — it may surface a successful regenerate the payload doesn't point to,
+  // so we resolve before showing the failed message rather than flashing it.
+  if (!jobId || !apiBaseUrl) return { phase: "failed" };
   return { phase: "loading" };
 }

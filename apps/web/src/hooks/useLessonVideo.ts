@@ -93,9 +93,11 @@ export function useLessonVideo(
     if (builtStatus === "ready" && builtJobId) {
       watch(builtJobId); // watch() sets the working state itself, then polls to ready
     } else if (builtStatus === "failed" && builtJobId) {
-      // The persisted built artifact carries no failure reason; a live re-attach (below) supplies
-      // one if a job is actually in flight. Explicit null keeps every failed-state shape consistent.
-      setState({ phase: "failed", jobId: builtJobId, error: null });
+      // Resolve before failing: the re-attach probe (below) may surface a successful regenerate the
+      // persisted (failed) artifact doesn't point to. Show a resolving state until the probe settles
+      // — it falls back to the failed message only when there is genuinely no newer take, so the
+      // slot never flashes "couldn't generate" before showing a good regenerate.
+      setState({ phase: "working", status: "queued" });
     } else {
       setState({ phase: "idle" });
     }
@@ -111,11 +113,17 @@ export function useLessonVideo(
     if (!builtJobId) return;
     const controller = new AbortController();
     void findActiveVideoJob(apiBaseUrl, builtJobId, controller.signal).then((view) => {
-      if (controller.signal.aborted || !view) return;
-      watch(view.job.id);
+      if (controller.signal.aborted) return;
+      if (view) {
+        watch(view.job.id); // in-flight job OR a completed regenerate the built artifact can't see
+      } else if (builtStatus === "failed") {
+        // No live job and no successful take: the slot genuinely failed. Show it now — the resolving
+        // state above only deferred the message until this probe settled.
+        setState({ phase: "failed", jobId: builtJobId, error: null });
+      }
     });
     return () => controller.abort();
-  }, [apiBaseUrl, courseId, lessonId, builtJobId, watch]);
+  }, [apiBaseUrl, courseId, lessonId, builtJobId, builtStatus, watch]);
 
   const generate = useCallback(() => {
     stopPolling();

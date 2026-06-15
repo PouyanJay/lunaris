@@ -380,11 +380,21 @@ async def get_active_video_job(
         kind=source.kind,
         owner_id=owner_id,
     )
-    if active is None:
-        return Response(
-            status_code=status.HTTP_204_NO_CONTENT, headers={"X-Request-Id": request_id}
-        )
-    return VideoJobView(job=active)
+    if active is not None:
+        return VideoJobView(job=active)
+    # Nothing in flight: surface the slot's latest SUCCESSFUL render if it is a newer take than the
+    # source the reader holds (a completed regenerate the persisted artifact does not point to).
+    # This is what makes a successful regenerate persist — the reader re-resolves it on every mount
+    # instead of reverting to the stale failed/old built artifact when the live job has settled.
+    latest_ready = await queue.find_latest_ready(
+        course_id=source.course_id,
+        lesson_id=source.lesson_id,
+        kind=source.kind,
+        owner_id=owner_id,
+    )
+    if latest_ready is not None and latest_ready.id != source.id:
+        return VideoJobView(job=latest_ready)
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"X-Request-Id": request_id})
 
 
 @router.get(

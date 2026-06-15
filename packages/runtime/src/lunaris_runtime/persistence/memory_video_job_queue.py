@@ -100,6 +100,25 @@ class InMemoryVideoJobQueue:
             active.sort(key=lambda job: (job.created_at or self._clock(), job.id), reverse=True)
             return active[0].model_copy(deep=True)
 
+    async def find_latest_ready(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        async with self._lock:
+            ready = [
+                job
+                for job in self._jobs.values()
+                if job.user_id == owner_id
+                and job.course_id == course_id
+                and job.lesson_id == lesson_id
+                and job.kind == kind
+                and job.status == VideoJobStatus.READY
+            ]
+            if not ready:
+                return None
+            # Most recent first — same direction as the Supabase query's order(desc).limit(1).
+            ready.sort(key=lambda job: (job.created_at or self._clock(), job.id), reverse=True)
+            return ready[0].model_copy(deep=True)
+
     async def sweep_stale_leases(
         self, *, lease_seconds: int, max_attempts: int
     ) -> LeaseSweepResult:

@@ -52,6 +52,15 @@ class IVideoJobQueue(Protocol):
         a second request for a video already being made returns that job instead of a duplicate."""
         ...
 
+    async def find_latest_ready(
+        self, *, course_id: str, lesson_id: str | None, kind: VideoKind, owner_id: str
+    ) -> VideoJob | None:
+        """The owner's most recent READY job for this (course, lesson, kind), or ``None``. The
+        reader's re-attach probe surfaces it when nothing is in flight, so a successful regenerate
+        the persisted (build) artifact does not point to still shows — and re-resolves on every
+        reload — instead of the slot reverting to a stale failed/old built artifact."""
+        ...
+
     async def sweep_stale_leases(
         self, *, lease_seconds: int, max_attempts: int
     ) -> LeaseSweepResult:
