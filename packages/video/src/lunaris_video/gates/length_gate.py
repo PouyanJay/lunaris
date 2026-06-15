@@ -14,9 +14,9 @@ _logger = structlog.get_logger(__name__)
 # (0.5s+ / 0.7s). This catches the latter without false-positiving on the former.
 _TOLERANCE_S = 0.15
 
-# Probes a rendered scene MP4 for its duration in seconds. Injectable so the gate is testable with
-# no real render; the composition root wires the sandboxed ffprobe.
-DurationProbe = Callable[[Path], Awaitable[float]]
+# Injectable so the gate is testable with no real render: the composition root wires the sandboxed
+# ffprobe; tests supply a stub. Private — callers inject the concrete probe, not this type.
+_DurationProbe = Callable[[Path], Awaitable[float]]
 
 
 class LengthGate:
@@ -31,7 +31,7 @@ class LengthGate:
     silent video — a desynced voiced one is never shipped.
     """
 
-    def __init__(self, *, probe: DurationProbe) -> None:
+    def __init__(self, *, probe: _DurationProbe) -> None:
         self._probe = probe
 
     async def check(self, scene_id: str, mp4_path: Path, total_s: float) -> None:

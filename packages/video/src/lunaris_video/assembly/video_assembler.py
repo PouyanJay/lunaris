@@ -180,7 +180,7 @@ class VideoAssembler:
         clip_index = 0
         for index, span in enumerate(_audio_segments(manifest)):
             label = f"[s{index}]"
-            if span.clip:
+            if span.clip is not None:
                 # A clip padded with trailing silence to exactly its window. anim_s is
                 # max(audio_s + pad, floor) >= audio_s, so the clip always fits (never cut).
                 inputs += ["-i", str(audio_dir / span.clip)]

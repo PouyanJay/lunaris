@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from lunaris_video.assembly import VideoAssembler, estimate_timing
+from lunaris_video.assembly import SCENE_CLOSE_FADE_S, VideoAssembler, estimate_timing
 from lunaris_video.gates import ensure_style_tokens
 from lunaris_video.models import RenderedScene
 from lunaris_video.rendering import SceneRenderer
@@ -98,6 +98,56 @@ async def test_a_voiced_manifest_muxes_narration_and_emits_captions(tmp_path: Pa
     assert video.captions.startswith(b"WEBVTT")
     assert b"-->" in video.captions  # a structurally valid cue block, not a bare header
     assert b"Hello world." in video.captions
+
+
+async def test_the_narration_track_is_exactly_video_length_across_a_scene_boundary(
+    tmp_path: Path,
+) -> None:
+    # Real ffmpeg: a TWO-scene voiced manifest mixed through the real amix/concat filtergraph. The
+    # narration track must be exactly as long as the concatenated video — every beat window PLUS one
+    # closing-fade tail per scene — so the audio never drifts at a scene boundary (the drift bug).
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    _make_silence(audio_dir / "S1_b1.mp3", seconds=1.8)
+    _make_silence(audio_dir / "S2_b1.mp3", seconds=2.8)
+    manifest = TimingManifest(
+        {
+            "S1_a": SceneTiming(
+                beats=[
+                    BeatTiming(id="b1", audio_s=1.8, anim_s=2.0, audio="S1_b1.mp3", estimated=False)
+                ],
+                total_s=2.0,
+            ),
+            "S2_b": SceneTiming(
+                beats=[
+                    BeatTiming(
+                        id="b1", audio_s=2.8, anim_s=3.0, audio="S2_b1.mp3", estimated=False
+                    ),
+                    BeatTiming(id="b2", audio_s=0.0, anim_s=1.5, audio=None, estimated=False),
+                ],
+                total_s=4.5,
+            ),
+        }
+    )
+    out_wav = tmp_path / "narration.wav"
+
+    # Act — the real mixer.
+    await VideoAssembler()._mix_audio(manifest, audio_dir, out_wav, workdir=tmp_path)
+
+    # Assert — every beat window (2.0 + 3.0 + 1.5) plus one closing fade per scene (2 x 0.7) = the
+    # video's length; the boundary fade tail is what keeps the second scene's audio from starting
+    # early. Sample-exact PCM, so the residual is well under a frame.
+    expected = 2.0 + 3.0 + 1.5 + 2 * SCENE_CLOSE_FADE_S
+    assert abs(_probe_duration(out_wav) - expected) < 0.05
+
+
+def _probe_duration(path: Path) -> float:
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "csv=p=0", str(path)],
+        check=True, capture_output=True, text=True,
+    )  # fmt: skip
+    return float(out.stdout.strip())
 
 
 def _make_silence(path: Path, *, seconds: float) -> None:

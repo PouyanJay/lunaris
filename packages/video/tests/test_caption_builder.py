@@ -8,7 +8,7 @@ timing), so a narrated video ships WCAG-2.2-AA captions that line up with what i
 import re
 from collections.abc import Callable
 
-from lunaris_video.assembly import SCENE_CLOSE_FADE_S, build_webvtt, estimate_timing
+from lunaris_video.assembly import build_webvtt, estimate_timing
 from lunaris_video.schemas import (
     Beat,
     BeatTiming,
@@ -98,8 +98,8 @@ def test_cue_clocks_include_the_per_scene_closing_fade_gap() -> None:
     vtt = build_webvtt(contract, manifest)
 
     # Assert — scene 1's cue is 0 → 2.000s; scene 2's cue starts at 2.0 + SCENE_CLOSE_FADE_S, NOT at
-    # 2.000s (which is where it would land if the fade gap were ignored — the drift bug).
-    assert SCENE_CLOSE_FADE_S == 0.7  # the fade the assert clocks below assume
+    # 2.000s (where it would land if the fade gap were ignored — the drift bug). The literal clocks
+    # below assume the 0.7s fade, which test_audio_mix pins to clear_scene's run_time.
     assert "00:00:00.000 --> 00:00:02.000" in vtt
     assert "00:00:02.700 --> 00:00:05.700" in vtt  # 2.0 + 0.7 fade → 5.7
 

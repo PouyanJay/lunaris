@@ -56,5 +56,5 @@ def test_audio_segments_pad_each_scene_with_its_closing_fade() -> None:
     ]
     # The whole track equals every beat window plus one closing fade per scene — i.e. the video's
     # length (each scene's video is total_s + the fade), so |audio - video| is only frame jitter.
-    total = sum(seg.seconds for seg in _audio_segments(manifest))
+    total = sum(seconds for _, seconds in segments)
     assert round(total, 3) == round(2.0 + 3.0 + 1.5 + 2 * SCENE_CLOSE_FADE_S, 3)

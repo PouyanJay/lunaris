@@ -10,6 +10,7 @@ import pytest
 from lunaris_video.assembly import SCENE_CLOSE_FADE_S
 from lunaris_video.errors import TimingGateError
 from lunaris_video.gates import LengthGate
+from lunaris_video.gates.length_gate import _TOLERANCE_S
 
 _TOTAL_S = 6.2  # an arbitrary scene timeline; the closing fade is added on top
 
@@ -35,6 +36,19 @@ async def test_a_scene_within_a_frame_of_its_timeline_passes(tmp_path: Path) -> 
     # ~one 30fps frame (0.017s) off is pure quantization — well inside tolerance, no raise.
     gate = _gate(_TOTAL_S + SCENE_CLOSE_FADE_S + 0.017)
     await gate.check("S1_x", tmp_path / "S1X.mp4", _TOTAL_S)
+
+
+async def test_drift_just_within_tolerance_passes(tmp_path: Path) -> None:
+    # Just inside the tolerance boundary — must NOT raise (pins the threshold from below).
+    gate = _gate(_TOTAL_S + SCENE_CLOSE_FADE_S + _TOLERANCE_S - 0.001)
+    await gate.check("S1_x", tmp_path / "S1X.mp4", _TOTAL_S)
+
+
+async def test_drift_just_beyond_tolerance_fails(tmp_path: Path) -> None:
+    # Just outside the tolerance boundary — must raise (pins the threshold from above).
+    gate = _gate(_TOTAL_S + SCENE_CLOSE_FADE_S + _TOLERANCE_S + 0.001)
+    with pytest.raises(TimingGateError):
+        await gate.check("S1_x", tmp_path / "S1X.mp4", _TOTAL_S)
 
 
 async def test_a_scene_longer_than_its_timeline_fails(tmp_path: Path) -> None:

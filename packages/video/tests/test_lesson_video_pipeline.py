@@ -858,9 +858,10 @@ async def test_a_voiced_chaptered_overview_that_drifts_in_length_delivers_silent
     # Act — ships (no TimingGateError bubbles up), delivered silent.
     video = await pipeline.produce(_voiced_overview_job())
 
-    # Assert — one MP4, silent, with the desync flagged in provenance.
+    # Assert — one MP4, silent (no muxed audio, no captions), with the desync flagged in provenance.
     assert video.mp4
     assert assembler.received_audio_dir is None
+    assert video.captions is None
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
     assert provenance.narration_dropped_for_desync is True
 

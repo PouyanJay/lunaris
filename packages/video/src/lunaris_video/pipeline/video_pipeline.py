@@ -347,9 +347,9 @@ class VideoPipeline:
                     scene, rendered=qa.scene, timing=timing, workdir=workdir
                 )
             if length_gate is not None:
-                # Gate 1 (cheap, deterministic) runs after the scene's final render: its duration
-                # must match its audio timeline (total_s + the closing fade) or the narration drifts
-                # against the visuals. A miss raises TimingGateError → the pipeline delivers silent.
+                # Runs after Gate D's possible re-render, so it measures the scene's FINAL state. A
+                # miss (the render isn't as long as its audio timeline) raises TimingGateError → the
+                # pipeline delivers silent.
                 await length_gate.check(scene.id, scene_render.mp4_path, timing.total_s)
             results.append(
                 SceneQaResult(scene=scene_render, unresolved_defects=qa.unresolved_defects)
