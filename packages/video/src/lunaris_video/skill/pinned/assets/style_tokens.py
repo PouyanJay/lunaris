@@ -87,3 +87,68 @@ def clear_scene(scene, run_time=0.7):
     """Clean concat boundary: fade out everything."""
     if scene.mobjects:
         scene.play(*[FadeOut(m) for m in scene.mobjects], run_time=run_time)
+
+
+def hero_title(headline, subtitle=None, kicker=None, max_width=None):
+    """Centered title card for hook / title scenes. An optional ACCENT kicker (eyebrow) sits above
+    and a MUTED subtitle below a bold INK headline; the headline and subtitle scale to fit the
+    frame, so a long title can never clip the edges (the #1 hook/title defect). Returns a centered
+    VGroup -- build hook/title cards from this, never from hand-placed Text."""
+    if max_width is None:
+        max_width = config.frame_width - 1.6
+    group = VGroup()
+    if kicker:
+        group.add(Text(kicker, font_size=24, color=ACCENT, weight=BOLD, font=FONT))
+    head = Text(headline, font_size=52, color=INK, weight=BOLD, font=FONT)
+    if head.width > max_width:
+        head.scale_to_fit_width(max_width)
+    group.add(head)
+    if subtitle:
+        sub = Text(subtitle, font_size=28, color=MUTED, font=FONT)
+        if sub.width > max_width:
+            sub.scale_to_fit_width(max_width)
+        group.add(sub)
+    group.arrange(DOWN, buff=0.35)
+    return group.move_to(ORIGIN)
+
+
+def make_network(layer_sizes, node_radius=0.2, width=9.0, height=4.4,
+                 node_color=ALT, edge_color=MUTED):
+    """Deterministic layered node-and-edge network (neural nets, graphs, pipelines).
+
+    layer_sizes: nodes per layer, e.g. [3, 4, 4, 2]. Nodes are evenly spaced in one column per
+    layer and centered vertically; every node wires to every node in the next layer. The whole
+    graph is fit inside (width, height) and centered, so it can never cram into one side of the
+    frame. Returns a VGroup with .layers (list of per-layer node VGroups), .edges (VGroup of
+    Lines) and .nodes (flat VGroup). Reveal it LAYER BY LAYER across beats (Create each column
+    with the edges feeding it) -- never Create the whole graph at once, which reads as a tangle."""
+    n_layers = len(layer_sizes)
+    xs = [0.0] if n_layers == 1 else [
+        -width / 2 + i * width / (n_layers - 1) for i in range(n_layers)
+    ]
+    layers = []
+    for li, count in enumerate(layer_sizes):
+        ys = [0.0] if count == 1 else [
+            height / 2 - j * height / (count - 1) for j in range(count)
+        ]
+        column = VGroup(*[
+            Circle(radius=node_radius, stroke_color=node_color, stroke_width=2.5,
+                   fill_color=PANEL, fill_opacity=1.0).move_to([xs[li], y, 0])
+            for y in ys
+        ])
+        layers.append(column)
+    edges = VGroup()
+    for left, right in zip(layers, layers[1:]):
+        for a in left:
+            for b in right:
+                edges.add(Line(a.get_center(), b.get_center(),
+                               color=edge_color, stroke_width=1.4))
+    nodes = VGroup(*[node for column in layers for node in column])
+    network = VGroup(edges, nodes)
+    if network.width > width:
+        network.scale_to_fit_width(width)
+    if network.height > height:
+        network.scale_to_fit_height(height)
+    network.move_to(ORIGIN)
+    network.layers, network.edges, network.nodes = layers, edges, nodes
+    return network
