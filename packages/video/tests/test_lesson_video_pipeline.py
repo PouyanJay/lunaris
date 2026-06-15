@@ -719,6 +719,81 @@ async def test_chaptered_overview_concatenates_every_chapter_into_one_mp4(
     assert rendered.mp4  # one artifact
 
 
+def _voiced_overview_job() -> VideoJob:
+    return VideoJob(
+        id="job-overview-voiced",
+        user_id="00000000-0000-0000-0000-000000000001",
+        course_id="course-1",
+        lesson_id=None,
+        kind=VideoKind.OVERVIEW,
+        input_hash="hash-ovr",
+        config={"voice": True},
+    )
+
+
+# ── T5: Gate D sync — variant coverage across the chaptered (overview) kind ──────────────
+# The prod failure was a course-level (summary) video; the overview is the OTHER course-level kind
+# and the only one that plans the CHAPTERED path, so it gets its own sync-outcome coverage here.
+
+
+async def test_a_voiced_chaptered_overview_converges_and_ships_narrated(
+    make_chaptered_contract, tmp_path: Path
+) -> None:
+    # Arrange — a voiced overview whose every beat syncs: Gate D runs per scene across all 4
+    # chaptered scenes and passes, so the narrated overview ships (one MP4, muxed, captioned).
+    invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
+    assembler = _SpyAssembler()
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        assembler,
+        ContractHashCache(),
+        tmp_path,
+        chaptered=True,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_passing_sync_gate(),
+    )
+
+    # Act
+    video = await pipeline.produce(_voiced_overview_job())
+
+    # Assert — narrated (muxed + captioned), not a desync fallback.
+    assert video.mp4
+    assert assembler.received_audio_dir is not None
+    assert video.captions is not None
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.narration_dropped_for_desync is False
+
+
+async def test_a_voiced_chaptered_overview_desync_delivers_silent(
+    make_chaptered_contract, tmp_path: Path
+) -> None:
+    # Arrange — a voiced overview whose Gate D never lines up: the same silent fallback as the flat
+    # kind must hold for the chaptered overview (the course-level path), never a hard fail.
+    invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
+    assembler = _SpyAssembler()
+    pipeline = _pipeline(
+        invoke,
+        _SpyRenderer(),
+        assembler,
+        ContractHashCache(),
+        tmp_path,
+        chaptered=True,
+        synthesizer_provider=lambda: StubSpeechSynthesizer(),
+        sync_gate=_sync_gate_with(_FlakySyncVision(fail_first=999)),
+    )
+
+    # Act — ships (no SyncGateError bubbles up), delivered silent.
+    video = await pipeline.produce(_voiced_overview_job())
+
+    # Assert — one MP4, silent, with the desync flagged in provenance.
+    assert video.mp4
+    assert assembler.received_audio_dir is None
+    assert video.captions is None
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.narration_dropped_for_desync is True
+
+
 def test_target_seconds_falls_back_to_the_kind_default_when_unconfigured() -> None:
     # A job with no configured length designs to its kind's product default (V5-T1).
     job = VideoJob(id="j", user_id="u", course_id="c1", kind=VideoKind.OVERVIEW, input_hash="h")
