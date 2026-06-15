@@ -2,14 +2,14 @@ from lunaris_video.errors.video_pipeline_error import VideoPipelineError
 
 
 class SyncGateError(VideoPipelineError):
-    """Gate D verdict: a beat's frame at its audio midpoint doesn't show what its narration says.
+    """Gate D verdict: a beat's frame at its midpoint doesn't show what its narration says.
 
-    Narrated-only: the audio-drives-video render makes sync deterministic by construction, so a
-    mismatch is a codegen / scene-quality case the pipeline first tries to recover by re-planning
-    plainer (easier-to-sync) scenes — only a SECOND miss fails the job (the whole video, never a
-    narration/visual mismatch shipped: worse for a voiced video than an honest failure). ``reason``
-    carries the vision model's account of the mismatch for the failure record; ``user_detail`` (set
-    on the retry-exhausted miss) is the owner-safe, actionable line the reader shows.
+    Narrated-only: raised by the per-scene Gate D repair loop when a beat cannot be synced within
+    the repair budget. ``VideoPipeline.produce`` catches this to deliver the clean SILENT version
+    (rather than ship a narration/visual mismatch — worse for a voiced video than no narration at
+    all), flagging it on provenance. ``reason`` carries the vision model's account of the mismatch
+    for the log. ``user_detail`` is unused on this path but kept on ``VideoPipelineError`` for
+    consistency with the error hierarchy.
     """
 
     def __init__(self, beat_id: str, *, reason: str, user_detail: str | None = None) -> None:

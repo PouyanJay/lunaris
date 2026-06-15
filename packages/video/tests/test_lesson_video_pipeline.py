@@ -12,7 +12,7 @@ from _stubs import FakeLessonProvider, StubInvokeModel, manifest_for
 from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind, VideoProvenance
 from lunaris_runtime.video_build import target_seconds_for
 from lunaris_video.assembly import build_webvtt
-from lunaris_video.errors import FactualGateError, SyncGateError
+from lunaris_video.errors import FactualGateError
 from lunaris_video.gates import FactualGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
 from lunaris_video.pipeline import ContractHashCache, VideoPipeline
@@ -618,30 +618,37 @@ async def test_a_voiced_desync_is_fixed_by_the_sync_repair_loop_without_replanni
     assert vision.calls >= 2
 
 
-async def test_a_voiced_desync_that_wont_simplify_fails_with_an_actionable_reason(
+async def test_a_voiced_desync_that_wont_repair_delivers_silent(
     make_lesson_contract, tmp_path: Path
 ) -> None:
-    # Arrange — Gate D never lines up (a stubborn scene). After the plainer retry, the job fails —
-    # never shipping a voiced mismatch — but with a clear, owner-safe reason, not a raw critique.
+    # Arrange — Gate D never lines up (a stubborn beat the per-scene repair loop can't fix). The
+    # video must NOT hard-fail and must NOT ship a desynced narration: it falls back to the clean
+    # SILENT version ("flawless or silent"), with the reason recorded in provenance so the reader
+    # can offer "regenerate to add narration".
     invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
-    vision = _FlakySyncVision(fail_first=999)  # never matches (well past 2 beats x 2 attempts)
+    vision = _FlakySyncVision(fail_first=999)  # never matches → the per-scene repair loop exhausts
+    assembler = _SpyAssembler()
     pipeline = _pipeline(
         invoke,
         _SpyRenderer(),
-        _SpyAssembler(),
+        assembler,
         ContractHashCache(),
         tmp_path,
         synthesizer_provider=lambda: StubSpeechSynthesizer(),
         sync_gate=_sync_gate_with(vision),
     )
 
-    # Act / Assert
-    with pytest.raises(SyncGateError) as excinfo:
-        await pipeline.produce(_voiced_job())
-    assert len(invoke.prompts) == 2  # tried once, then once plainer, then gave up
-    assert excinfo.value.user_detail is not None
-    assert "narration" in excinfo.value.user_detail.lower()
-    assert "silent" in excinfo.value.user_detail.lower()
+    # Act — a real video ships (the SyncGateError is caught in VideoPipeline.produce, which re-runs
+    # _produce_once forcing silent; nothing bubbles up to the worker).
+    video = await pipeline.produce(_voiced_job())
+
+    # Assert — delivered SILENT (no muxed audio, no captions), and provenance flags that narration
+    # was dropped for a desync so the reader can surface "delivered silent, regenerate to add it".
+    assert video.mp4
+    assert assembler.received_audio_dir is None
+    assert video.captions is None
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.narration_dropped_for_desync is True
 
 
 async def test_voice_on_without_a_key_degrades_to_silent(
@@ -664,6 +671,10 @@ async def test_voice_on_without_a_key_degrades_to_silent(
     assert assembler.received_manifest is not None
     assert assembler.received_manifest.is_voiced is False  # WPM estimate, not measured TTS
     assert video.captions is None
+    # A no-key degrade is NOT a desync — narration was never attempted, so the flag stays False
+    # (distinguishes this silent video from the desync-fallback silent video).
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.narration_dropped_for_desync is False
 
 
 # ── V5: the chaptered (overview) path + configurable lengths ────────────────────────────
