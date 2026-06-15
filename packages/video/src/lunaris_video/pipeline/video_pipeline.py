@@ -180,13 +180,9 @@ class VideoPipeline:
             await report(VideoJobStatus.VOICING)
         manifest, audio_dir = await self._resolve_timing(contract, voice, synthesizer, workdir)
         await report(VideoJobStatus.RENDERING)
-        # Gate D (sync) runs per scene in the render loop when voiced: each spoken beat's midpoint
-        # frame must show what its narration says, or a targeted repair re-renders that scene. The
-        # frame's VISUAL is identical pre/post mux, so checking the per-scene render before assembly
-        # lets the repair loop re-render one scene, not re-assemble the whole video. A desync that
-        # survives the repair budget raises ``SyncGateError``, which ``produce`` recovers by
-        # delivering silent. _resolve_voice guarantees the gate is present whenever voice is, so a
-        # voiced render passes it down; a silent render passes None and skips Gate D entirely.
+        # Gate D runs pre-mux (per-scene render) so a desync re-renders ONE scene, not the whole
+        # muxed video — the frame's visual is identical either way. Silent passes None to skip it
+        # (_resolve_voice guarantees the gate when voice is set).
         sync_gate = self._sync_gate if voice is not None else None
         qa_results = await self._render_scenes(contract, manifest, workdir, sync_gate=sync_gate)
         await report(VideoJobStatus.ASSEMBLING)

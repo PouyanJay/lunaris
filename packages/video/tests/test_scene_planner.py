@@ -136,9 +136,10 @@ async def test_prompt_requires_one_reveal_per_beat(
     await planner.plan(_lesson(), target_seconds=80)
 
     # Assert — the one-reveal-per-beat discipline (and the split instruction) is in the prompt.
+    # Match the exact instructional phrase, not a bare "split" the lesson prose could supply.
     prompt = stub.prompts[0].lower()
     assert "one reveal per beat" in prompt
-    assert "split" in prompt
+    assert "split it into two beats" in prompt
 
 
 def _two_claim_packet() -> GroundingPacket:

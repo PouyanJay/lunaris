@@ -49,10 +49,10 @@ async def test_chaptered_prompt_requires_one_reveal_per_beat(
     # Act
     await planner.plan_chaptered(_overview_source(), target_seconds=_OVERVIEW_SECONDS)
 
-    # Assert
+    # Assert — match the exact instructional phrase, not a bare "split" the prose may supply.
     prompt = stub.prompts[0].lower()
     assert "one reveal per beat" in prompt
-    assert "split" in prompt
+    assert "split it into two beats" in prompt
 
 
 async def test_chaptered_planner_builds_a_contract_with_injected_style(

@@ -45,10 +45,8 @@ class VideoProvenance(CourseModel):
     # degrade). Empty for a video where every scene passed QA cleanly — and absent from older
     # artifact.json, which still loads (default + populate_by_name).
     degraded_scenes: list[DegradedScene] = Field(default_factory=list)
-    # True when narration was requested but a beat could not be synced even after the Gate D repair
-    # loop, so the video was delivered SILENT (sync-exempt) rather than shipping a desynced voice —
-    # "flawless or silent", never a mismatch. The reader can offer "regenerate to add narration".
-    # Named for what happened (narration dropped) so the wire flag isn't misread as "narration is on
-    # screen but out of sync". False (+ absent from older artifact.json) for a silent-by-choice or
-    # cleanly-narrated video.
+    # True when narration was requested but Gate D's repair loop could not sync a beat, so the video
+    # shipped SILENT rather than deliver a desynced voice (the reader can offer "regenerate to add
+    # narration"). False (+ absent from older artifact.json) for a silent-by-choice or cleanly-
+    # narrated video. Named for what happened — narration dropped, not "on screen but out of sync".
     narration_dropped_for_desync: bool = False

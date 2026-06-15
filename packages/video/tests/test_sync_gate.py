@@ -165,6 +165,29 @@ async def test_a_desynced_beat_is_repaired_re_rendered_and_re_checked(
     assert result.source.endswith("# sync repair 1\n")
 
 
+async def test_a_later_beat_desync_is_repaired_after_an_earlier_beat_passes(
+    make_scene: Callable[..., SceneContract], tmp_path: Path
+) -> None:
+    # Arrange — b1 syncs but b2 (a LATER beat) desyncs once, then lines up. This exercises the
+    # non-first-beat path: the cursor must advance past b1 before sampling b2's midpoint (the
+    # coverage the old multi-scene check pinned with a later-ordinal failure).
+    vision = _FakeSyncVision(fail_beat="b2", fail_rounds=1)
+    codegen, renderer = _RepairSyncCodegen(), _FakeRenderer()
+    gate = _gate(vision, codegen, renderer)
+
+    # Act
+    result = await gate.inspect_scene(
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_timing(), workdir=tmp_path
+    )
+
+    # Assert — the repair named b2 (not b1), and each inspection walked b1 (passing) before b2: the
+    # first round desyncs at b2, the post-repair round re-walks b1 then b2 and converges.
+    assert codegen.repairs == [("b2", _DESYNC_REASON)]
+    assert renderer.renders == 1
+    assert vision.inspected == ["b1", "b2", "b1", "b2"]
+    assert result.source.endswith("# sync repair 1\n")
+
+
 async def test_a_persistent_desync_exhausts_the_budget_and_fails_clean(
     make_scene: Callable[..., SceneContract], tmp_path: Path
 ) -> None:
@@ -207,7 +230,7 @@ async def test_a_sync_repair_that_breaks_the_render_fails_clean(
             workdir=tmp_path,
         )
     assert excinfo.value.beat_id == "b1"
-    assert excinfo.value.reason  # the failure record always carries the vision reason
+    assert excinfo.value.reason == _DESYNC_REASON  # the failure record carries the vision reason
     assert renderer.renders == 1
 
 
