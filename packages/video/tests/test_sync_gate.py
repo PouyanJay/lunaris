@@ -2,9 +2,9 @@
 samples the frame at the beat's midpoint on THIS scene's timeline and asks the vision seam whether
 it shows what the narration says; on a miss it drives a targeted ``repair_sync`` codegen turn (move
 the reveal to the start of the window), re-renders ONLY that scene, and re-checks — to the cap. A
-scene that syncs ships; a beat whose desync survives the budget raises ``SyncGateError`` (which the
-pipeline recovers by delivering the silent version — see the pipeline tests). The frame's visual is
-identical pre/post mux, so the check runs on the per-scene render before assembly.
+scene that syncs returns ``(render, None)``; a beat whose desync survives the budget is shipped
+best-effort — the gate returns the closest render and the unsynced beat id, never silencing the
+video. The frame's visual is identical pre/post mux, so the check runs on the per-scene render.
 
 Fakes stand in for vision, frame extraction, codegen and the renderer; the loop under test is real.
 """
@@ -12,9 +12,8 @@ Fakes stand in for vision, frame extraction, codegen and the renderer; the loop 
 from collections.abc import Callable
 from pathlib import Path
 
-import pytest
-from lunaris_video.errors import SyncGateError
 from lunaris_video.gates import SyncGate
+from lunaris_video.gates.sync_gate import _REPAIR_CAP_PER_SCENE
 from lunaris_video.models import RenderedScene, RenderResult
 from lunaris_video.schemas import Beat, BeatTiming, SceneContract, SceneTiming, SyncVerdict
 
@@ -90,7 +89,7 @@ class _FakeRenderer:
 
 class _RendererFailingAfter:
     """Succeeds for the first ``ok`` renders, then fails — models a sync repair that breaks the
-    render (the gate must fail clean, not loop forever)."""
+    render (the gate must degrade to the best prior render, not loop forever)."""
 
     def __init__(self, ok: int) -> None:
         self.renders = 0
@@ -127,14 +126,15 @@ async def test_a_synced_scene_passes_without_repair(
     gate = SyncGate(vision=vision, frames=frames, codegen=codegen, renderer=renderer)
 
     # Act
-    result = await gate.inspect_scene(
+    scene, unsynced = await gate.inspect_scene(
         make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_timing(), workdir=tmp_path
     )
 
-    # Assert — passed untouched: no repair, no re-render, the original artifact returned. Only the
-    # two SPOKEN beats were inspected, each sampled at its window midpoint on THIS scene's timeline
-    # (the silent b3 advances the clock but is never sampled).
-    assert result.source == "# original\n"
+    # Assert — passed untouched: no repair, no re-render, the original artifact returned, no
+    # unsynced beat. Only the two SPOKEN beats were inspected, each sampled at its window midpoint
+    # on THIS scene's timeline (the silent b3 advances the clock but is never sampled).
+    assert unsynced is None
+    assert scene.source == "# original\n"
     assert codegen.repairs == []
     assert renderer.renders == 0
     assert vision.inspected == ["b1", "b2"]
@@ -153,16 +153,17 @@ async def test_a_desynced_beat_is_repaired_re_rendered_and_re_checked(
     gate = _gate(vision, codegen, renderer)
 
     # Act
-    result = await gate.inspect_scene(
+    scene, unsynced = await gate.inspect_scene(
         make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_timing(), workdir=tmp_path
     )
 
     # Assert — the desync drove ONE targeted sync repair (carrying the offending beat + the vision
     # model's reason), a re-render of just this scene, and a re-check that passed; the repaired
-    # source ships.
+    # source ships with no unsynced beat.
+    assert unsynced is None
     assert codegen.repairs == [("b1", _DESYNC_REASON)]
     assert renderer.renders == 1
-    assert result.source.endswith("# sync repair 1\n")
+    assert scene.source.endswith("# sync repair 1\n")
 
 
 async def test_a_later_beat_desync_is_repaired_after_an_earlier_beat_passes(
@@ -176,19 +177,20 @@ async def test_a_later_beat_desync_is_repaired_after_an_earlier_beat_passes(
     gate = _gate(vision, codegen, renderer)
 
     # Act
-    result = await gate.inspect_scene(
+    scene, unsynced = await gate.inspect_scene(
         make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_timing(), workdir=tmp_path
     )
 
     # Assert — the repair named b2 (not b1), and each inspection walked b1 (passing) before b2: the
-    # first round desyncs at b2, the post-repair round re-walks b1 then b2 and converges.
+    # first round desyncs at b2, the post-repair round re-walks b1 then b2 and converges (synced).
+    assert unsynced is None
     assert codegen.repairs == [("b2", _DESYNC_REASON)]
     assert renderer.renders == 1
     assert vision.inspected == ["b1", "b2", "b1", "b2"]
-    assert result.source.endswith("# sync repair 1\n")
+    assert scene.source.endswith("# sync repair 1\n")
 
 
-async def test_a_persistent_desync_exhausts_the_budget_and_fails_clean(
+async def test_a_persistent_desync_ships_the_best_render_and_records_the_beat(
     make_scene: Callable[..., SceneContract], tmp_path: Path
 ) -> None:
     # Arrange — b1 never lines up, no matter how many repairs.
@@ -196,23 +198,24 @@ async def test_a_persistent_desync_exhausts_the_budget_and_fails_clean(
     codegen, renderer = _RepairSyncCodegen(), _FakeRenderer()
     gate = _gate(vision, codegen, renderer)
 
-    # Act / Assert — bounded at the per-scene cap (3 repairs / 4 inspections), then fails clean,
-    # naming the offending beat and the vision reason (the pipeline turns this into a silent video).
-    with pytest.raises(SyncGateError) as excinfo:
-        await gate.inspect_scene(
-            make_scene(1, "problem"),
-            rendered=_rendered(tmp_path),
-            timing=_timing(),
-            workdir=tmp_path,
-        )
-    assert excinfo.value.beat_id == "b1"
-    assert excinfo.value.reason == _DESYNC_REASON
-    assert len(vision.inspected) == 4  # _INSPECTIONS = 1 + 3 repairs (catches a loop off-by-one)
-    assert len(codegen.repairs) == 3
-    assert renderer.renders == 3
+    # Act — bounded at the per-scene cap (3 repairs / 4 inspections), then DEGRADES (never raises):
+    # ships the closest render and records the unsynced beat so the video stays voiced.
+    scene, unsynced = await gate.inspect_scene(
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_timing(), workdir=tmp_path
+    )
+
+    # Assert — the offending beat is reported (not raised), the LAST repair render ships, and the
+    # loop ran its full budget (cap repairs / cap+1 inspections).
+    assert unsynced == "b1"
+    assert scene.source.endswith(
+        f"# sync repair {_REPAIR_CAP_PER_SCENE}\n"
+    )  # the last render ships
+    assert len(vision.inspected) == _REPAIR_CAP_PER_SCENE + 1  # 1 initial + cap repairs
+    assert len(codegen.repairs) == _REPAIR_CAP_PER_SCENE
+    assert renderer.renders == _REPAIR_CAP_PER_SCENE
 
 
-async def test_a_sync_repair_that_breaks_the_render_fails_clean(
+async def test_a_sync_repair_that_breaks_the_render_ships_the_best_prior_render(
     make_scene: Callable[..., SceneContract], tmp_path: Path
 ) -> None:
     # Arrange — b1 desyncs and the first sync repair breaks the render entirely.
@@ -220,17 +223,17 @@ async def test_a_sync_repair_that_breaks_the_render_fails_clean(
     codegen, renderer = _RepairSyncCodegen(), _RendererFailingAfter(ok=0)
     gate = _gate(vision, codegen, renderer)
 
-    # Act / Assert — a repair that breaks the render stops the loop and fails clean (no infinite
-    # render storm); exactly one (failed) repair-render attempt was made.
-    with pytest.raises(SyncGateError) as excinfo:
-        await gate.inspect_scene(
-            make_scene(1, "problem"),
-            rendered=_rendered(tmp_path),
-            timing=_timing(),
-            workdir=tmp_path,
-        )
-    assert excinfo.value.beat_id == "b1"
-    assert excinfo.value.reason == _DESYNC_REASON  # the failure record carries the vision reason
+    # Act — a repair that breaks the render stops the loop (no render storm) and degrades: ships the
+    # best prior renderable scene (the original) and records the unsynced beat.
+    scene, unsynced = await gate.inspect_scene(
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_timing(), workdir=tmp_path
+    )
+
+    # Assert — the repair WAS attempted (carrying the vision reason) before the render broke, then
+    # one (failed) repair-render, then degrade to the original renderable scene.
+    assert unsynced == "b1"
+    assert codegen.repairs == [("b1", _DESYNC_REASON)]
+    assert scene.source == "# original\n"
     assert renderer.renders == 1
 
 
