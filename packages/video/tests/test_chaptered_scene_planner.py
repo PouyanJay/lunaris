@@ -38,6 +38,23 @@ def _chaptered_draft_payload(
     }
 
 
+async def test_chaptered_prompt_requires_one_reveal_per_beat(
+    make_chaptered_contract: Callable[..., ChapteredSceneContracts],
+) -> None:
+    # Arrange — the overview path needs the same sync discipline: one reveal per beat so each beat's
+    # element can be front-loaded to its window start (present at the midpoint Gate D samples).
+    stub = StubInvokeModel([json.dumps(_chaptered_draft_payload(make_chaptered_contract))])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan_chaptered(_overview_source(), target_seconds=_OVERVIEW_SECONDS)
+
+    # Assert
+    prompt = stub.prompts[0].lower()
+    assert "one reveal per beat" in prompt
+    assert "split" in prompt
+
+
 async def test_chaptered_planner_builds_a_contract_with_injected_style(
     make_chaptered_contract: Callable[..., ChapteredSceneContracts],
 ) -> None:

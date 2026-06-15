@@ -123,6 +123,24 @@ async def test_prompt_carries_lesson_and_pinned_skill_context(
     assert "framing only - no empirical claims" in prompt
 
 
+async def test_prompt_requires_one_reveal_per_beat(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — sync is deterministic only if each beat's narrated element can sit on screen from
+    # the START of its window. A beat that introduces TWO things desyncs at the midpoint, so planner
+    # must split compound narration into one-reveal beats (pairs with the codegen front-load rule).
+    stub = StubInvokeModel([json.dumps(_draft_payload(make_lesson_contract))])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan(_lesson(), target_seconds=80)
+
+    # Assert — the one-reveal-per-beat discipline (and the split instruction) is in the prompt.
+    prompt = stub.prompts[0].lower()
+    assert "one reveal per beat" in prompt
+    assert "split" in prompt
+
+
 def _two_claim_packet() -> GroundingPacket:
     return _packet(
         GroundedClaim(
