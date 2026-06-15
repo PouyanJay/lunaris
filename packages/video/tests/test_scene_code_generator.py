@@ -93,6 +93,25 @@ async def test_generate_prompt_carries_the_exact_beat_timing_windows(
         assert f"{beat.anim_s}" in prompt
 
 
+async def test_generate_prompt_tells_the_model_to_front_load_each_reveal(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — sync is deterministic only if the narrated element is on screen by the beat MIDPOINT
+    # (where Gate D samples). The generate prompt must instruct the model to front-load each reveal,
+    # so it doesn't build the named element up across the window and desync at the midpoint.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the prompt names the midpoint constraint and the front-load fix.
+    prompt = stub.prompts[0].lower()
+    assert "midpoint" in prompt
+    assert "front-load" in prompt
+
+
 async def test_latex_in_a_completion_triggers_a_repair_turn(
     make_scene: Callable[..., SceneContract],
 ) -> None:

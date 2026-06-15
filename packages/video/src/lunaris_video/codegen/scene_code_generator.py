@@ -60,6 +60,16 @@ helper at the top of construct() and drive each beat through it so the totals ar
             used += run_time
         self.wait(max(0.05, total - used))
 
+SYNC — the element the narration names must be ON SCREEN by each beat's MIDPOINT (a sync gate
+samples the frame there and rejects a beat whose narrated thing is not yet shown). So:
+- FRONT-LOAD every reveal: play the FadeIn/Create/Write/Transform of the thing the words name in
+  the FIRST part of the beat (well under half its window), then HOLD it for the rest. Never put the
+  named element in the tail of the window — at the midpoint it would still be missing.
+- If a beat narrates motion, run the motion at the START of the window and hold at the end, so the
+  words land while it is happening, not after it has stopped.
+- The beat() helper already holds at the end: pass the reveal anims FIRST with short run_times so
+  the trailing hold — and thus the on-screen presence — covers the midpoint.
+
 PATTERNS REFERENCE (verbatim from the pinned skill — follow it)
 {patterns}
 
