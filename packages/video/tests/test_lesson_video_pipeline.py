@@ -620,13 +620,12 @@ async def test_a_voiced_desync_is_fixed_by_the_sync_repair_loop_without_replanni
     assert vision.calls >= 2
 
 
-async def test_a_voiced_desync_that_wont_repair_delivers_silent(
+async def test_a_voiced_desync_that_wont_repair_ships_voiced_best_effort(
     make_lesson_contract, tmp_path: Path
 ) -> None:
     # Arrange — Gate D never lines up (a stubborn beat the per-scene repair loop can't fix). The
-    # video must NOT hard-fail and must NOT ship a desynced narration: it falls back to the clean
-    # SILENT version ("flawless or silent"), with the reason recorded in provenance so the reader
-    # can offer "regenerate to add narration".
+    # product requires every course to carry narration, so the video must STILL ship VOICED (muxed +
+    # captioned), with the imperfect beat recorded in provenance — never silenced.
     invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
     vision = _FlakySyncVision(fail_first=999)  # never matches → the per-scene repair loop exhausts
     assembler = _SpyAssembler()
@@ -640,17 +639,17 @@ async def test_a_voiced_desync_that_wont_repair_delivers_silent(
         sync_gate=_sync_gate_with(vision),
     )
 
-    # Act — a real video ships (the SyncGateError is caught in VideoPipeline.produce, which re-runs
-    # _produce_once forcing silent; nothing bubbles up to the worker).
+    # Act — a voiced video ships (nothing bubbles up; the gate degraded best-effort).
     video = await pipeline.produce(_voiced_job())
 
-    # Assert — delivered SILENT (no muxed audio, no captions), and provenance flags that narration
-    # was dropped for a desync so the reader can surface "delivered silent, regenerate to add it".
+    # Assert — VOICED (muxed audio + captions), with the unsynced beat recorded as a degraded scene.
     assert video.mp4
-    assert assembler.received_audio_dir is None
-    assert video.captions is None
+    assert assembler.received_audio_dir is not None
+    assert video.captions is not None
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
-    assert provenance.narration_dropped_for_desync is True
+    assert provenance.degraded_scenes
+    issues = [issue for scene in provenance.degraded_scenes for issue in scene.issues]
+    assert any("not fully in sync" in issue for issue in issues)
 
 
 def _drift_length_gate(actual_seconds: float) -> LengthGate:
@@ -662,12 +661,12 @@ def _drift_length_gate(actual_seconds: float) -> LengthGate:
     return LengthGate(probe=probe)
 
 
-async def test_a_voiced_scene_that_drifts_in_length_delivers_silent(
+async def test_a_voiced_scene_that_drifts_in_length_ships_voiced_best_effort(
     make_lesson_contract, tmp_path: Path
 ) -> None:
     # Arrange — a voiced job whose Gate D (sync) passes, but Gate 1 (length) finds the render is
-    # nowhere near its audio timeline (the probe reports a wildly wrong duration). The narration
-    # would drift against the visuals, so the video must fall back to SILENT — never ship a desync.
+    # nowhere near its audio timeline (the probe reports a wildly wrong duration). The video must
+    # STILL ship VOICED, with the timing drift recorded — never silenced.
     invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
     assembler = _SpyAssembler()
     pipeline = _pipeline(
@@ -681,16 +680,17 @@ async def test_a_voiced_scene_that_drifts_in_length_delivers_silent(
         length_gate=_drift_length_gate(9999.0),
     )
 
-    # Act — a real video ships (no TimingGateError bubbles up to the worker).
+    # Act — a voiced video ships (nothing bubbles up; Gate 1 recorded the drift).
     video = await pipeline.produce(_voiced_job())
 
-    # Assert — delivered SILENT, with the desync flagged in provenance (same fallback as a Gate D
-    # miss — the reader can offer to regenerate and add narration).
+    # Assert — VOICED (muxed audio + captions), with the timing drift recorded as a degraded scene.
     assert video.mp4
-    assert assembler.received_audio_dir is None
-    assert video.captions is None
+    assert assembler.received_audio_dir is not None
+    assert video.captions is not None
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
-    assert provenance.narration_dropped_for_desync is True
+    assert provenance.degraded_scenes
+    issues = [issue for scene in provenance.degraded_scenes for issue in scene.issues]
+    assert any("timing off" in issue for issue in issues)
 
 
 async def test_voice_on_without_a_key_degrades_to_silent(
@@ -713,10 +713,10 @@ async def test_voice_on_without_a_key_degrades_to_silent(
     assert assembler.received_manifest is not None
     assert assembler.received_manifest.is_voiced is False  # WPM estimate, not measured TTS
     assert video.captions is None
-    # A no-key degrade is NOT a desync — narration was never attempted, so the flag stays False
-    # (distinguishes this silent video from the desync-fallback silent video).
+    # No key is the ONLY reason a voice-on build ships silent now (a sync imperfection ships voiced
+    # best-effort instead) — and an absent key is not a degraded scene.
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
-    assert provenance.narration_dropped_for_desync is False
+    assert provenance.degraded_scenes == []
 
 
 # ── V5: the chaptered (overview) path + configurable lengths ────────────────────────────
@@ -799,19 +799,19 @@ async def test_a_voiced_chaptered_overview_converges_and_ships_narrated(
     # Act
     video = await pipeline.produce(_voiced_overview_job())
 
-    # Assert — narrated (muxed + captioned), not a desync fallback.
+    # Assert — narrated (muxed + captioned), and a clean sync records no degraded scenes.
     assert video.mp4
     assert assembler.received_audio_dir is not None
     assert video.captions is not None
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
-    assert provenance.narration_dropped_for_desync is False
+    assert provenance.degraded_scenes == []
 
 
-async def test_a_voiced_chaptered_overview_desync_delivers_silent(
+async def test_a_voiced_chaptered_overview_desync_ships_voiced_best_effort(
     make_chaptered_contract, tmp_path: Path
 ) -> None:
-    # Arrange — a voiced overview whose Gate D never lines up: the same silent fallback as the flat
-    # kind must hold for the chaptered overview (the course-level path), never a hard fail.
+    # Arrange — a voiced overview whose Gate D never lines up: the same best-effort policy as the
+    # flat kind must hold for the chaptered overview (the course-level path) — voiced, never silent.
     invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
     assembler = _SpyAssembler()
     pipeline = _pipeline(
@@ -825,22 +825,23 @@ async def test_a_voiced_chaptered_overview_desync_delivers_silent(
         sync_gate=_sync_gate_with(_FlakySyncVision(fail_first=999)),
     )
 
-    # Act — ships (no SyncGateError bubbles up), delivered silent.
+    # Act — ships voiced (nothing bubbles up; the gate degraded best-effort).
     video = await pipeline.produce(_voiced_overview_job())
 
-    # Assert — one MP4, silent, with the desync flagged in provenance.
+    # Assert — one VOICED MP4 (muxed + captioned), with the unsynced beats recorded.
     assert video.mp4
-    assert assembler.received_audio_dir is None
-    assert video.captions is None
+    assert assembler.received_audio_dir is not None
+    assert video.captions is not None
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
-    assert provenance.narration_dropped_for_desync is True
+    issues = [issue for scene in provenance.degraded_scenes for issue in scene.issues]
+    assert any("not fully in sync" in issue for issue in issues)
 
 
-async def test_a_voiced_chaptered_overview_that_drifts_in_length_delivers_silent(
+async def test_a_voiced_chaptered_overview_that_drifts_in_length_ships_voiced_best_effort(
     make_chaptered_contract, tmp_path: Path
 ) -> None:
-    # Arrange — Gate 1 (length) guards the chaptered overview too: a scene whose render is far from
-    # its audio timeline must fall back to the silent overview, never ship a desynced narrated one.
+    # Arrange — Gate 1 (length) guards the chaptered overview too, best-effort: a scene whose render
+    # is far from its audio timeline is recorded, not silenced — the overview still ships voiced.
     invoke = StubInvokeModel([_chaptered_draft_json(make_chaptered_contract)])
     assembler = _SpyAssembler()
     pipeline = _pipeline(
@@ -855,15 +856,16 @@ async def test_a_voiced_chaptered_overview_that_drifts_in_length_delivers_silent
         length_gate=_drift_length_gate(9999.0),
     )
 
-    # Act — ships (no TimingGateError bubbles up), delivered silent.
+    # Act — ships voiced (nothing bubbles up; Gate 1 recorded the drift).
     video = await pipeline.produce(_voiced_overview_job())
 
-    # Assert — one MP4, silent (no muxed audio, no captions), with the desync flagged in provenance.
+    # Assert — one VOICED MP4 (muxed + captioned), with the timing drift recorded.
     assert video.mp4
-    assert assembler.received_audio_dir is None
-    assert video.captions is None
+    assert assembler.received_audio_dir is not None
+    assert video.captions is not None
     provenance = VideoProvenance.model_validate_json(video.provenance_json)
-    assert provenance.narration_dropped_for_desync is True
+    issues = [issue for scene in provenance.degraded_scenes for issue in scene.issues]
+    assert any("timing off" in issue for issue in issues)
 
 
 def test_target_seconds_falls_back_to_the_kind_default_when_unconfigured() -> None:

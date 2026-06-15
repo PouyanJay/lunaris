@@ -79,6 +79,23 @@ def make_turbine(scale=1.0):
 # animate: Rotate(t.blades, angle=TAU, about_point=t.hub_anchor.get_center())
 ```
 
+### Network / layered graph (nodes + edges) — the `make_network` helper
+Neural nets, computational graphs, and pipelines are nodes wired together. Never hand-place
+node coordinates (the result crams into one side, half-formed — PITFALL 9). Use the helper:
+```python
+net = make_network([3, 4, 4, 2])          # nodes per layer; fits the frame, centered
+# net.layers : list of per-layer node VGroups (columns, left→right)
+# net.edges  : VGroup of the connecting Lines (drawn under the nodes)
+# net.nodes  : flat VGroup of every node Circle
+# reveal LAYER BY LAYER so a beat's words land on the column it names — never all at once:
+self.play(Create(net.layers[0]))
+for col in net.layers[1:]:
+    self.play(Create(col), Create(VGroup(*[e for e in net.edges if _feeds(e, col)])))
+```
+Simpler and just as clean: `Create(net.edges)` then `LaggedStart(*[Create(c) for c in
+net.layers])` if the beats don't need per-column timing. Keep it readable — ≤ ~6 nodes per
+layer; summarize a bigger network with a vertical "…" between two representative nodes.
+
 ### Scene hygiene
 End every non-final scene with `self.play(*[FadeOut(m) for m in self.mobjects])` so
 concatenated scenes cut cleanly. Keep one breathing `self.wait(1.5-2.0)` on each
@@ -123,3 +140,10 @@ point's neighbors are NOT. And when Gate B forces a label relocation, re-check t
 label's NEW neighbors — fixing one collision routinely creates another one step away
 (observed: moving a label DOWN cleared its northern neighbor and grazed its southern
 one). Expect map scenes to take one extra QA iteration; budget for it.
+
+**P9 — Hand-placed networks cram into one side.** A "web of nodes wired together" laid
+out with ad-hoc coordinates packs the nodes into a corner and Creates the whole tangle at
+once, so the narrated unit is never cleanly on screen (the neural-net hook failure). Fix:
+`make_network(layer_sizes)` for a frame-fitting, centered layout, and reveal it layer by
+layer so each beat's words land on the column it names. Cap on-screen size (≤ ~6 nodes per
+layer); summarize a bigger network rather than drawing every unit.

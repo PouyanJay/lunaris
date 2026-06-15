@@ -16,10 +16,16 @@ Ask of the scene's narration: what is the *shape* of the claim?
 | "over time..." / historical narrative / stages | timeline/sequence |
 | "where" / geographic or anatomical | spatial/map |
 | "how much" / "how fast it grows" / magnitudes | quantity/data |
+| "nodes wired together" / a network, graph, neural net, or pipeline of stages | network/graph |
 | abstract concept with no native visual | concrete metaphor |
 
 A scene may compose two (e.g., comparison + quantity = side-by-side bars). More than
 two means the scene is overloaded — split it.
+
+**Complexity budget.** A scene shows at most ~10 distinct elements at once. A structure
+with more parts (a wide network, a long pipeline) is REVEALED incrementally across beats —
+layer by layer, step by step — or summarized to its readable essence. Drawing every part at
+once is the crammed-tangle failure mode; pick the archetype whose helper reveals progressively.
 
 ## Archetype implementation notes (Manim CE, no LaTeX)
 
@@ -73,6 +79,17 @@ Highest risk, highest reward. Only use when the metaphor structurally maps to th
 mechanism (winding a signal around a circle ↔ Fourier; spotlight ↔ attention). Build
 from primitives like any other asset. If no structural metaphor exists, fall back to
 process/flow with good annotation — a forced metaphor is worse than a plain diagram.
+
+### network/graph
+Nodes wired together — neural nets, computational graphs, dependency graphs, layered
+pipelines. Use the `make_network(layer_sizes)` helper (e.g. `[3, 4, 4, 2]`): it lays
+nodes out in evenly spaced columns (one per layer), wires each node to the next layer,
+and fits the whole graph inside the frame, so it can never cram into one side. Reveal it
+LAYER BY LAYER across beats — `Create` one column with the edges feeding it, hold, then
+the next — never `Create` the whole graph at once (a wall of edges reads as a tangle).
+Keep it readable: ≤ ~6 nodes per layer and ≤ 5 layers on screen; summarize a bigger
+network ("…" between two representative nodes) rather than drawing every unit. Label the
+layers (input / hidden / output) with `Text` `next_to` each column, never inside a node.
 
 ## Asset strategy ladder (for non-procedural subjects)
 

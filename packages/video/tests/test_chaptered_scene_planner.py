@@ -55,6 +55,23 @@ async def test_chaptered_prompt_requires_one_reveal_per_beat(
     assert "split it into two beats" in prompt
 
 
+async def test_chaptered_prompt_carries_the_complexity_budget(
+    make_chaptered_contract: Callable[..., ChapteredSceneContracts],
+) -> None:
+    # Arrange — the overview path needs the same budget as the flat plan: a structure with many
+    # parts is revealed incrementally, never drawn all at once (the crammed-tangle failure mode).
+    stub = StubInvokeModel([json.dumps(_chaptered_draft_payload(make_chaptered_contract))])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan_chaptered(_overview_source(), target_seconds=_OVERVIEW_SECONDS)
+
+    # Assert
+    prompt = stub.prompts[0].lower()
+    assert "complexity budget" in prompt
+    assert "incrementally" in prompt
+
+
 async def test_chaptered_planner_builds_a_contract_with_injected_style(
     make_chaptered_contract: Callable[..., ChapteredSceneContracts],
 ) -> None:

@@ -14,7 +14,7 @@ from lunaris_runtime.schema import (
 from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.assembly import estimate_timing
-from lunaris_video.errors import SyncGateError, TimingGateError, VideoPipelineError
+from lunaris_video.errors import VideoPipelineError
 from lunaris_video.gates import FactualGate, LengthGate, RenderGate, SyncGate, VisualQaGate
 from lunaris_video.hashing import contract_hash
 from lunaris_video.models import RenderedVideo, SceneQaResult
@@ -124,48 +124,23 @@ class VideoPipeline:
     ) -> RenderedVideo:
         report = on_stage or _no_stage
         source = await self._source_provider.load(job)
-        try:
-            return await self._produce_once(job, source, report)
-        except (SyncGateError, TimingGateError) as exc:
-            # A voiced scene desynced: Gate D (vision) couldn't match a beat to its words, or Gate 1
-            # (length) found the render isn't as long as its audio timeline. Shipping a voiced video
-            # whose narration drifts from the visuals is worse than none, so fall back to the
-            # clean SILENT version — "flawless or silent", never a mismatch — and flag it in
-            # provenance so the reader can offer "regenerate to add narration". The voiced attempt
-            # raised before its cache.store, so it left no artifact; the silent re-produce uses the
-            # bare-digest (silent) cache key and renders fresh.
-            marker = exc.beat_id if isinstance(exc, SyncGateError) else exc.scene_id
-            _logger.warning(
-                "video_pipeline.desync_delivered_silent",
-                job_id=job.id,
-                gate="sync" if isinstance(exc, SyncGateError) else "length",
-                marker=marker,
-            )
-            return await self._produce_once(job, source, report, desync_marker=marker)
+        return await self._produce_once(job, source, report)
 
     async def _produce_once(
-        self,
-        job: VideoJob,
-        source: LessonSource,
-        report: StageReporter,
-        *,
-        desync_marker: str | None = None,
+        self, job: VideoJob, source: LessonSource, report: StageReporter
     ) -> RenderedVideo:
-        """One full pass: plan → gates → render (+ Gate 1/Gate D when voiced) → assemble. Raises
-        ``TimingGateError`` / ``SyncGateError`` if a scene's timing or sync can't be made right —
-        ``produce`` catches to deliver silent. ``desync_marker`` set (the desync fallback — the beat
-        or scene that couldn't be synced) renders the sync-exempt silent version AND records on
-        provenance that narration was dropped for that desync."""
+        """One full pass: plan → gates → render (+ Gate 1/Gate D when voiced) → assemble. Gate D and
+        Gate 1 are best-effort: a beat that won't sync or a scene whose render drifts from its audio
+        timeline is shipped anyway and recorded in provenance, never silenced — the product requires
+        every course to carry narration, so a voiced video is always delivered when a key is
+        available (silent only when voice is off or no ElevenLabs key)."""
         contract = await self._resolve_contract(job, source)
         self._factual_gate.check(contract, source.packet)
         digest = contract_hash(contract)
 
         # The voice toggle decides voiced vs silent WITHOUT re-planning — the contract above feeds
         # both paths — and the cache key the artifact lives under (silent and voiced are distinct).
-        # The desync fallback (``desync_marker`` set) forces silent regardless of the toggle.
-        voice, synthesizer, cache_key = self._resolve_voice(
-            job, digest, force_silent=desync_marker is not None
-        )
+        voice, synthesizer, cache_key = self._resolve_voice(job, digest)
 
         cached = await self._cache.fetch(cache_key)
         if cached is not None:
@@ -173,9 +148,7 @@ class VideoPipeline:
             # rides on the cached bundle — a cache hit reuses the same render, so the same scenes
             # are degraded (provenance stays honest without re-rendering to recompute it).
             _logger.info("video_pipeline.cache_hit", job_id=job.id, contract_hash=digest)
-            return self._stamp_provenance(
-                cached, job, contract, digest, desync_marker=desync_marker
-            )
+            return self._stamp_provenance(cached, job, contract, digest)
 
         workdir = self._workdir_for(job)
         # Audio-drives-video: resolve the timing manifest BEFORE the render so the scene code is
@@ -186,9 +159,10 @@ class VideoPipeline:
             await report(VideoJobStatus.VOICING)
         manifest, audio_dir = await self._resolve_timing(contract, voice, synthesizer, workdir)
         await report(VideoJobStatus.RENDERING)
-        # Gate 1 (length) + Gate D (sync) run pre-mux (per-scene render) so a miss re-renders or
-        # fails ONE scene, not the whole muxed video — the visual is identical pre/post mux. Silent
-        # passes None to skip them (_resolve_voice guarantees both gates when voice is set).
+        # Gate D (sync) + Gate 1 (length) run pre-mux (per-scene render) so a repair re-renders ONE
+        # scene, not the whole muxed video — the visual is identical pre/post mux. Both are
+        # best-effort: an unfixable scene ships anyway, recorded in provenance. Silent passes None
+        # to skip them (_resolve_voice guarantees both gates when voice is set).
         voiced = voice is not None
         qa_results = await self._render_scenes(
             contract,
@@ -213,7 +187,7 @@ class VideoPipeline:
             grounded_claim_ids=len(_cited_claim_ids(contract)),
             degraded_scenes=len(video.degraded_scenes),
         )
-        return self._stamp_provenance(video, job, contract, digest, desync_marker=desync_marker)
+        return self._stamp_provenance(video, job, contract, digest)
 
     async def _resolve_contract(self, job: VideoJob, source: LessonSource) -> VideoContract:
         """The contract this produce renders — the regenerate menu's four entry points (V6-T2).
@@ -247,18 +221,18 @@ class VideoPipeline:
         return await self._planner.plan(source, target_seconds=target_seconds, simplify=simplify)
 
     def _resolve_voice(
-        self, job: VideoJob, digest: str, *, force_silent: bool = False
+        self, job: VideoJob, digest: str
     ) -> tuple[VoiceSpec | None, ISpeechSynthesizer | None, str]:
         """Decide voiced vs silent for this job and the cache key its artifact lives under, without
-        re-planning. Silent gives (None, None, digest).
+        re-planning. Silent gives (None, None, digest) — ONLY when voice is off or no ElevenLabs key
+        is resolvable (a sync imperfection no longer silences a video; see ``_produce_once``).
 
         The voice toggle (V6) defaults ON, but an ElevenLabs key is OPTIONAL BYOK — so "voice on +
         no key" is the common keyed-user state and must **degrade to silent (voice-ready)** per §0,
         never fail: a build of a keyed user who never added an ElevenLabs key would otherwise FAIL
-        every video. ``force_silent`` is the desync fallback — render silent regardless of the
-        toggle. A voiced render still needs the sync gate (Gate D) — a pipeline wired for voice but
-        missing it is a wiring bug, not a user state, so that stays a hard error."""
-        if force_silent or not _wants_voice(job):
+        every video. A voiced render still needs the sync gate (Gate D) — a pipeline wired for voice
+        but missing it is a wiring bug, not a user state, so that stays a hard error."""
+        if not _wants_voice(job):
             return None, None, digest
         synthesizer = self._synthesizer_provider()
         if synthesizer is None:
@@ -291,20 +265,14 @@ class VideoPipeline:
         return manifest, audio_dir
 
     def _stamp_provenance(
-        self,
-        video: RenderedVideo,
-        job: VideoJob,
-        contract: VideoContract,
-        digest: str,
-        *,
-        desync_marker: str | None = None,
+        self, video: RenderedVideo, job: VideoJob, contract: VideoContract, digest: str
     ) -> RenderedVideo:
         """Stamp the requesting job's provenance onto the artifact (fresh render or cache hit).
 
         Built at the source and per produce, so even a cache hit carries THIS job's id/timestamp,
         not the job that first rendered the contract. ``degraded_scenes`` comes off the bundle (set
-        at render, preserved through the cache) so a degraded scene's record is never dropped.
-        ``desync_marker`` (the desync fallback) flags that narration was dropped to a silent render.
+        at render, preserved through the cache) so a degraded scene — including a best-effort sync
+        imperfection (Gate D / Gate 1) — is never dropped from the record.
         """
         provenance = VideoProvenance(
             job_id=job.id,
@@ -317,7 +285,6 @@ class VideoPipeline:
             claim_ids=_cited_claim_ids(contract),
             generated_at=datetime.now(UTC).isoformat(),
             degraded_scenes=list(video.degraded_scenes),
-            narration_dropped_for_desync=desync_marker is not None,
         )
         return replace(video, provenance_json=provenance.model_dump_json(by_alias=True).encode())
 
@@ -340,19 +307,28 @@ class VideoPipeline:
                 scene, rendered=passed_render, timing=timing, workdir=workdir
             )
             scene_render = qa.scene
+            sync_issues: list[str] = []
             if sync_gate is not None:
-                # Gate D may re-render this scene to fix a desync; any Gate-B degrade record is
-                # preserved — it describes a spatial defect the timing repair does not touch.
-                scene_render = await sync_gate.inspect_scene(
+                # Gate D may re-render this scene to fix a desync; a beat that still won't sync is
+                # shipped best-effort and recorded (the Gate-B degrade record is preserved alongside
+                # — it describes a spatial defect the timing repair does not touch).
+                scene_render, unsynced_beat = await sync_gate.inspect_scene(
                     scene, rendered=qa.scene, timing=timing, workdir=workdir
                 )
+                if unsynced_beat is not None:
+                    sync_issues.append(f"narration not fully in sync (beat {unsynced_beat})")
             if length_gate is not None:
-                # Runs after Gate D's possible re-render, so it measures the scene's FINAL state. A
-                # miss (the render isn't as long as its audio timeline) raises TimingGateError → the
-                # pipeline delivers silent.
-                await length_gate.check(scene.id, scene_render.mp4_path, timing.total_s)
+                # Runs after Gate D's possible re-render, so it measures the scene's FINAL state.
+                # Drift (the render isn't as long as its audio timeline) is recorded, not silenced.
+                drift = await length_gate.evaluate(scene.id, scene_render.mp4_path, timing.total_s)
+                if drift is not None:
+                    sync_issues.append(f"scene timing off its audio by {drift:+.2f}s")
             results.append(
-                SceneQaResult(scene=scene_render, unresolved_defects=qa.unresolved_defects)
+                SceneQaResult(
+                    scene=scene_render,
+                    unresolved_defects=qa.unresolved_defects,
+                    sync_issues=tuple(sync_issues),
+                )
             )
         return results
 
@@ -397,16 +373,15 @@ def _voice_spec(job: VideoJob) -> VoiceSpec:
 
 
 def _degraded_scenes(results: list[SceneQaResult]) -> tuple[DegradedScene, ...]:
-    # The provenance record of every scene Gate B shipped as best-effort (the 'publish anyway'
-    # degrade) — a scene that passed QA cleanly contributes none. Ordered by render order.
-    return tuple(
-        DegradedScene(
-            scene_id=result.scene.scene_id,
-            issues=[defect.issue for defect in result.unresolved_defects],
-        )
-        for result in results
-        if result.unresolved_defects
-    )
+    # The provenance record of every scene shipped best-effort (the 'publish anyway' degrade): Gate
+    # B's spatial defects AND Gate D / Gate 1's sync imperfections. A scene that passed every gate
+    # cleanly contributes none. Ordered by render order.
+    degraded: list[DegradedScene] = []
+    for result in results:
+        issues = [defect.issue for defect in result.unresolved_defects] + list(result.sync_issues)
+        if issues:
+            degraded.append(DegradedScene(scene_id=result.scene.scene_id, issues=issues))
+    return tuple(degraded)
 
 
 def _cited_claim_ids(contract: VideoContract) -> list[str]:

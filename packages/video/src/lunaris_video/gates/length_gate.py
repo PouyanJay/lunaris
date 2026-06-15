@@ -4,7 +4,6 @@ from pathlib import Path
 import structlog
 
 from lunaris_video.assembly import SCENE_CLOSE_FADE_S
-from lunaris_video.errors import TimingGateError
 
 _logger = structlog.get_logger(__name__)
 
@@ -25,26 +24,28 @@ class LengthGate:
     fade — within a few frames.
 
     A mismatch means a beat's animations overran their window, or the closing fade is missing/extra,
-    so the narration would drift against the visuals (and the error compounds across scenes). Unlike
-    Gate D (the vision sync check), this is a single ``ffprobe`` with no model call, so it runs as a
-    cheap pre-check; a miss raises ``TimingGateError``, which the pipeline recovers by delivering a
-    silent video — a desynced voiced one is never shipped.
+    so the narration drifts against the visuals (and the error compounds across scenes). Unlike Gate
+    D (the vision sync check), this is a single ``ffprobe`` with no model call, so it's a cheap
+    deterministic measurement. ``evaluate`` returns the drift in seconds when it exceeds tolerance
+    (else ``None``); the pipeline ships the video best-effort and records the drift in provenance —
+    the voiceover is never dropped (every course carries narration).
     """
 
     def __init__(self, *, probe: _DurationProbe) -> None:
         self._probe = probe
 
-    async def check(self, scene_id: str, mp4_path: Path, total_s: float) -> None:
+    async def evaluate(self, scene_id: str, mp4_path: Path, total_s: float) -> float | None:
         actual = await self._probe(mp4_path)
         expected = total_s + SCENE_CLOSE_FADE_S
-        drift = actual - expected
+        drift = round(actual - expected, 3)
         if abs(drift) > _TOLERANCE_S:
             _logger.warning(
                 "length_gate.scene_drift",
                 scene_id=scene_id,
                 expected=round(expected, 3),
                 actual=round(actual, 3),
-                drift=round(drift, 3),
+                drift=drift,
             )
-            raise TimingGateError(scene_id, expected=expected, actual=actual)
-        _logger.info("length_gate.scene_passed", scene_id=scene_id, drift=round(drift, 3))
+            return drift
+        _logger.info("length_gate.scene_passed", scene_id=scene_id, drift=drift)
+        return None
