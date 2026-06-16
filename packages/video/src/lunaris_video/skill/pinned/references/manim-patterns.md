@@ -147,3 +147,17 @@ once, so the narrated unit is never cleanly on screen (the neural-net hook failu
 `make_network(layer_sizes)` for a frame-fitting, centered layout, and reveal it layer by
 layer so each beat's words land on the column it names. Cap on-screen size (≤ ~6 nodes per
 layer); summarize a bigger network rather than drawing every unit.
+
+**P10 — Malformed numeric literals.** A number jammed against a name (`2x`, `3pi`) is an
+"invalid decimal literal" SyntaxError — the model meant `2 * x`. (Bare `.5` / `5.` parse but
+read poorly and invite this mistake.) Fix: always put an operator between a number and a name
+(`2 * x`, never `2x`); write decimals with a digit on BOTH sides of the point (`0.5`, `5.0`),
+and never put a comma or stray character inside a numeric literal. (Do NOT rely on a tool to
+"repair" `.5`/`5.` — those are valid Python; rewriting them deterministically would corrupt
+on-screen numbers like `"Step 5."`, so the rule lives here as guidance, not a post-fix.)
+
+**P11 — Unterminated string literals.** The #1 codegen parse failure: a quote opened and never
+closed on the same line, or a bare string spanning lines. Fix: straight ASCII quotes only
+(`"` or `'`), never smart/curly quotes; CLOSE every quote on the SAME line; write a line break
+inside a string as the two characters `\n` (never a real newline mid-string); and build a long
+message from adjacent pieces (`"part one " "part two"`), never one line-spanning string.
