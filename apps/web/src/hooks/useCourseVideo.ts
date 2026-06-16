@@ -10,13 +10,14 @@ import {
   type RegenerateMode,
   type VideoJobStatus,
 } from "../lib/videoJobs";
-import type { VideoArtifact } from "../types/course";
+import type { DegradedScene, VideoArtifact } from "../types/course";
 
 export const COURSE_VIDEO_POLL_INTERVAL_MS = 2500;
 
 /** What the Overview section knows about one course-level video. A build-time artifact is already
  *  terminal in the payload, so the resting states are ready / failed; `working` appears only while a
- *  regenerate (V6) the user triggered is in flight. */
+ *  regenerate (V6) the user triggered is in flight. `ready` carries `stale` (the outdated badge) and
+ *  `degradedScenes` (scenes shipped flagged — the degraded badge). */
 export type CourseVideoState =
   | { phase: "absent" }
   | { phase: "loading" }
@@ -27,6 +28,7 @@ export type CourseVideoState =
       posterUrl: string | null;
       captionsUrl: string | null;
       stale: boolean;
+      degradedScenes: DegradedScene[];
     }
   | { phase: "failed"; error?: string | null };
 
@@ -164,6 +166,7 @@ function toCourseVideoState(
     videoUrl: string | null;
     posterUrl: string | null;
     captionsUrl: string | null;
+    provenance?: { degradedScenes?: DegradedScene[] } | null;
     stale?: boolean;
   } | null,
 ): CourseVideoState {
@@ -174,6 +177,7 @@ function toCourseVideoState(
         posterUrl: view.posterUrl,
         captionsUrl: view.captionsUrl,
         stale: view.stale ?? false,
+        degradedScenes: view.provenance?.degradedScenes ?? [],
       }
     : { phase: "failed", error: view?.job?.error ?? null };
 }

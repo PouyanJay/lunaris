@@ -1,6 +1,7 @@
 import { useCourseVideo } from "../../hooks/useCourseVideo";
 import { FAILED_REGEN_MODES, readyRegenModes, resolveJobId } from "../../lib/videoJobs";
 import type { CourseVideos, VideoArtifact } from "../../types/course";
+import { DegradedBadge } from "./DegradedBadge";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
@@ -85,6 +86,7 @@ function CourseVideoSlot({
           />
           <div className={styles.regenerateRow}>
             {state.stale && <OutdatedBadge />}
+            <DegradedBadge scenes={state.degradedScenes} />
             <RegenerateMenu available={readyRegenModes(state.captionsUrl)} onSelect={regenerate} />
           </div>
         </>

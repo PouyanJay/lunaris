@@ -112,6 +112,95 @@ async def test_generate_prompt_tells_the_model_to_front_load_each_reveal(
     assert "front-load" in prompt
 
 
+async def test_generate_prompt_states_the_valid_literal_rules(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the dominant prod codegen failure is "unterminated string literal" (then bad
+    # decimals). The GENERATE prompt must state the literal rules up front so the first render is
+    # already parseable, not reliant on a parse-repair turn.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the section header and the concrete string + decimal rules are present.
+    prompt = stub.prompts[0]
+    assert "VALID PYTHON LITERALS" in prompt
+    assert "ASCII quotes only" in prompt
+    assert "unterminated string" in prompt.lower()
+    assert "0.5" in prompt and "5.0" in prompt  # decimals need digits on both sides
+
+
+async def test_format_repair_turn_restates_the_literal_rules(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — when ANY completion (here a render-repair) is rejected before render, the format-
+    # repair turn must restate the literal rules even though the underlying repair template doesn't
+    # carry them, so a parse-class failure gets the rules it needs to self-correct.
+    scene = make_scene(1, "problem")
+    stub = StubInvokeModel(["not valid python source", _VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act — first completion fails validation → a format-repair turn fires.
+    await codegen.repair(scene, source=_VALID_SOURCE, error_tail="boom", timing=_timing_for(scene))
+
+    # Assert — the second (repair) prompt carries the literal rules, sourced from the format-repair
+    # template (the base render-repair template never mentions them).
+    assert len(stub.prompts) == 2
+    assert "VALID PYTHON LITERALS" in stub.prompts[1]
+
+
+_UNTERMINATED_STRING_SOURCE = (
+    "from manim import *\n"
+    "from style_tokens import *\n\n\n"
+    "class S1Problem(Scene):\n"
+    "    def construct(self):\n"
+    '        label = "oops\n'  # an unterminated string literal — the #1 prod parse failure
+)
+
+
+async def test_repair_turn_adds_a_targeted_hint_for_an_unterminated_string(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the first completion has an unterminated string, so compile() rejects it with
+    # "unterminated string literal". The codegen supplies a targeted hint for that error class so
+    # the repair turn gets pointed guidance, not just the generic restate (B3).
+    scene = make_scene(1, "problem")
+    stub = StubInvokeModel([_UNTERMINATED_STRING_SOURCE, _VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the repair prompt carries the distinctive targeted-fix marker and close-the-string
+    # guidance (phrasing the raw SyntaxError text never contains, so it proves the hint fired).
+    assert len(stub.prompts) == 2
+    repair_prompt = stub.prompts[1]
+    assert "TARGETED FIX" in repair_prompt
+    assert "close the string on the same line" in repair_prompt.lower()
+
+
+async def test_repair_turn_has_no_targeted_hint_for_a_non_literal_error(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a completion rejected for a NON parse-literal reason (missing the style import) must
+    # not pick up a literal-class hint: the targeted hint is per-error-class, never blanket.
+    scene = make_scene(1, "problem")
+    stub = StubInvokeModel(
+        [_VALID_SOURCE.replace("from style_tokens import *\n", ""), _VALID_SOURCE]
+    )
+    codegen = SceneCodeGenerator(invoke=stub)
+
+    # Act
+    await codegen.generate(scene, topic="merge sort", timing=_timing_for(scene))
+
+    # Assert — the repair turn restates the rules generically but adds no targeted-fix block.
+    assert len(stub.prompts) == 2
+    assert "TARGETED FIX" not in stub.prompts[1]
+
+
 async def test_generate_prompt_forbids_timing_outside_a_beat(
     make_scene: Callable[..., SceneContract],
 ) -> None:

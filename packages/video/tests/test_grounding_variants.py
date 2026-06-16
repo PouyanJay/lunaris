@@ -244,22 +244,26 @@ async def test_a_lesson_whose_claim_was_cut_cannot_assert_the_cut_figure(tmp_pat
     assert "1000" in caught.value.unsupported
 
 
-async def test_a_mixed_lesson_keeps_the_supported_claim_and_drops_the_cut_one(
-    tmp_path: Path,
-) -> None:
+async def test_a_grounded_scene_smuggling_a_cut_figure_ships_degraded(tmp_path: Path) -> None:
     # Arrange — one SUPPORTED claim (figure 8) survives into the packet as c1; one CUT claim
-    # (figure 1000) is dropped. A scene grounds on c1 and narrates BOTH figures: the supported 8 is
-    # fine, the cut 1000 is not — proving the builder filters per-claim, not per-lesson.
+    # (figure 1000) is dropped. A GROUNDED scene grounds on c1 and narrates BOTH figures: the
+    # supported 8 is fine, the cut 1000 is not. Under the severity-tiered policy a grounded scene's
+    # extra unsupported figure is MINOR — the video ships with the scene flagged, not lost.
     course = _course(
         _supported("Merge sort sorts 8 elements.", "cite-clrs"),
         _cut("Merge sort is 1000x faster than every other sort."),
     )
     draft = _draft(sources=["c1"], narration="It sorts 8 elements and is 1000x faster.")
 
-    # Act / Assert — only the cut figure is unsupported; the supported one passed.
-    with pytest.raises(FactualGateError) as caught:
-        await _pipeline(course, draft, tmp_path).produce(_job())
-    assert caught.value.unsupported == ["1000"]
+    # Act — the video is produced, not failed.
+    video = await _pipeline(course, draft, tmp_path).produce(_job())
+
+    # Assert — it ships grounded on the surviving claim, but its provenance flags the scene as
+    # degraded with the cut figure named, so the artifact is honest about what it couldn't verify.
+    provenance = VideoProvenance.model_validate_json(video.provenance_json)
+    assert provenance.claim_ids == ["c1"]
+    assert [d.scene_id for d in provenance.degraded_scenes] == ["S1_intro"]
+    assert "1000" in " ".join(provenance.degraded_scenes[0].issues)
 
 
 async def test_a_mixed_lesson_ships_when_it_asserts_only_the_supported_figure(

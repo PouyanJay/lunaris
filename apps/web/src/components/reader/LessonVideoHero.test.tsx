@@ -281,6 +281,64 @@ describe("LessonVideoHero", () => {
     expect(screen.getByRole("button", { name: /^regenerate$/i })).toBeInTheDocument();
   });
 
+  it("flags a built video whose build shipped scenes degraded", async () => {
+    // Arrange — the built lesson video resolves READY but its provenance carries degraded scenes
+    // (a figure the factual gate couldn't verify + a spatial defect Gate B couldn't clear).
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/active")
+          ? noActive()
+          : jsonResponse(200, {
+              ...readyView("built-1"),
+              provenance: {
+                degradedScenes: [
+                  { sceneId: "S1_hook", issues: ["title overflows the frame"] },
+                  { sceneId: "S2_mechanism", issues: ["states a figure no cited source verifies: 80"] },
+                ],
+              },
+            }),
+      ),
+    );
+
+    // Act — no generate click: the built video resolves on its own.
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    // Assert — it plays, and the degraded badge names the count + lists the issues on hover.
+    await screen.findByRole("button", { name: /play lesson video/i });
+    const badge = screen.getByText(/2 scenes degraded/i).closest("[title]");
+    expect(badge?.getAttribute("title")).toContain("states a figure no cited source verifies: 80");
+  });
+
+  it("shows no degraded badge for a clean built video", async () => {
+    // Arrange — a built video that passed every gate carries no degraded scenes.
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockImplementation((input) =>
+      Promise.resolve(
+        String(input).endsWith("/active") ? noActive() : jsonResponse(200, readyView("built-1")),
+      ),
+    );
+
+    // Act
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    // Assert — the player resolves with no degraded badge in sight.
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(screen.queryByText(/degraded/i)).toBeNull();
+  });
+
   it("clears the outdated badge after regenerating the built video", async () => {
     // Arrange — a built video resolves stale; the menu's Fresh take re-runs it to a fresh result.
     const built: VideoArtifact = {

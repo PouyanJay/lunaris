@@ -417,6 +417,15 @@ export interface VideoArtifact {
   durationS?: number | null;
 }
 
+/** A scene the build shipped best-effort because a gate couldn't fully clear it (the 'publish
+ *  anyway' degrade): a spatial defect Gate B couldn't repair, a sync imperfection, or a figure the
+ *  factual gate couldn't verify. `issues` are the human-readable reasons, surfaced in the reader's
+ *  degraded badge so the artifact is honest about what is imperfect. */
+export interface DegradedScene {
+  sceneId: string;
+  issues: string[];
+}
+
 /** Where a generated video came from — structural provenance (CLAUDE.md). `jobId` is also the
  *  handle the reader uses to fetch the video's signed URLs. `lessonId` is null for course-level. */
 export interface VideoProvenance {
@@ -429,6 +438,9 @@ export interface VideoProvenance {
   inputHash: string;
   claimIds: string[];
   generatedAt: string;
+  /** Scenes shipped flagged because a gate couldn't fully clear them; empty/absent when every scene
+   *  passed cleanly (older artifacts omit it). */
+  degradedScenes?: DegradedScene[];
 }
 
 /** The course's opening videos — the V5 Overview section: a SUMMARY trailer and an OVERVIEW intro.
