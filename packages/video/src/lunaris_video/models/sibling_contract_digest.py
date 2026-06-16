@@ -11,10 +11,14 @@ class SiblingContractDigest:
     re-inventing in a vacuum, which is what trips the factual gate on a blind Fresh-take re-plan).
 
     Deliberately a small summary, not the whole contract: the planner needs *what an upstream
-    covers*, not its every beat, and the prompt has a token budget. ``covers`` is the one-line
-    "what this video teaches" line; richer fields (per-scene archetypes, key terms) are folded in
-    by the digest builder.
+    covers*, not its every beat, and the prompt has a token budget. ``covers`` is the upstream
+    video's topic line; ``archetypes`` are the visual forms it used (so the downstream stays
+    visually consistent); ``key_terms`` are the notable on-screen objects it introduced (so the
+    downstream reuses them rather than re-defining). The two collections default empty so a digest
+    can be built by hand from a title + covers line alone.
     """
 
     lesson_title: str
     covers: str
+    archetypes: tuple[str, ...] = ()
+    key_terms: tuple[str, ...] = ()
