@@ -108,8 +108,10 @@ async def test_a_targeted_hint_is_appended_to_the_repair_prompt() -> None:
         targeted_hint=lambda error: "TARGETED: close it" if "bad content" in error else None,
     )
 
-    # Assert — the repair turn carries the generic instruction AND the targeted hint, after it.
+    # Assert — the hint fires only on the repair turn, never the original call; the repair turn
+    # carries the generic instruction AND the targeted hint, with the hint last.
     assert result == "ok"
+    assert "TARGETED" not in invoke.prompts[0]
     repair_prompt = invoke.prompts[1]
     assert _REPAIR.format(error="bad content 'broken'") in repair_prompt
     assert repair_prompt.endswith("TARGETED: close it")

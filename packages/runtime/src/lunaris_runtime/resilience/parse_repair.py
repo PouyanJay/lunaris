@@ -14,12 +14,12 @@ import structlog
 
 from .retry import retry_on_rate_limit
 
-logger = structlog.get_logger()
+_logger = structlog.get_logger(__name__)
 
-# One repair turn beyond the original generation, plus three retries: a parse that fails
-# repeatedly (the dominant case is codegen "unterminated string literal") earns a fourth attempt
-# before a hard build failure. Raised 3 -> 4 in quality-hardening B3; at most one extra LLM call on
-# the unlucky path. Symbolic callers (vision/sync QA, the planners) and their tests track this.
+# Four attempts = one repair turn beyond the original generation, plus three retries: a parse that
+# fails repeatedly (the dominant case is codegen "unterminated string literal") earns a fourth
+# attempt before a hard build failure, at most one extra LLM call on the unlucky path. Symbolic
+# callers (vision/sync QA, the planners) and their tests track this constant.
 DEFAULT_PARSE_REPAIR_ATTEMPTS = 4
 
 
@@ -53,7 +53,7 @@ async def invoke_with_parse_repair[T](
             if attempt == max_attempts:
                 raise
             error = str(exc)
-            logger.warning(
+            _logger.warning(
                 "llm_parse_repair", attempt=attempt, max_attempts=max_attempts, error=error
             )
             attempt_prompt = prompt + repair_instruction.replace("{error}", error)

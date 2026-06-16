@@ -101,7 +101,8 @@ def test_a_grounded_scene_smuggling_a_figure_degrades_not_fails() -> None:
     # Act
     violations = FactualGate().check(contract, packet)
 
-    # Assert — the scene is flagged with the unsupported figure, and the video is NOT failed.
+    # Assert — only this scene is flagged, with the unsupported figure, and the video is NOT failed.
+    assert list(violations) == ["S1_scene"]
     assert "99" in " ".join(violations["S1_scene"])
 
 
@@ -179,6 +180,7 @@ def test_a_figure_in_a_beat_narration_is_also_recorded() -> None:
 
     # Act / Assert — the gate reads beat narration too, so the hidden 73% is recorded (not raised).
     violations = FactualGate().check(_contract(scene), packet)
+    assert list(violations) == ["S1_scene"]
     assert "73" in " ".join(violations["S1_scene"])
 
 

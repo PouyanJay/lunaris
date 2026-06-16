@@ -55,7 +55,7 @@ class _Violation:
     scene_id: str
     severity: _Severity
     message: str
-    unsupported: list[str]
+    unsupported: tuple[str, ...]
 
 
 class FactualGate:
@@ -89,7 +89,7 @@ class FactualGate:
         major = next((v for v in violations if v.severity is _Severity.MAJOR), None)
         if major is not None:
             raise FactualGateError(
-                major.scene_id, unsupported=major.unsupported, detail=major.message
+                major.scene_id, unsupported=list(major.unsupported), detail=major.message
             )
         degraded: dict[str, list[str]] = defaultdict(list)
         for violation in violations:
@@ -123,13 +123,13 @@ def _framing_violations(
                 scene.id,
                 _Severity.MAJOR,
                 f"framing-only scene states figures {ordered}",
-                ordered,
+                tuple(ordered),
             )
         )
     if _COMPARISON.search(narration):
         violations.append(
             _Violation(
-                scene.id, _Severity.MAJOR, "framing-only scene makes an empirical comparison", []
+                scene.id, _Severity.MAJOR, "framing-only scene makes an empirical comparison", ()
             )
         )
     return violations
@@ -147,7 +147,7 @@ def _grounded_violations(
                 scene.id,
                 _Severity.MAJOR,
                 f"cites claim {missing_claim!r}, absent from the grounding packet",
-                [],
+                (),
             )
         ]
     smuggled = sorted(figures - supported)
@@ -159,7 +159,7 @@ def _grounded_violations(
                 scene.id,
                 _Severity.MINOR,
                 f"states a figure no cited source verifies: {', '.join(smuggled)}",
-                smuggled,
+                tuple(smuggled),
             )
         ]
     return []
