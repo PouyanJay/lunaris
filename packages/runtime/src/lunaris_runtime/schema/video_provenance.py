@@ -10,12 +10,13 @@ from .enums import VideoKind
 class DegradedScene(CourseModel):
     """A scene a gate could not fully clear, shipped anyway as the best-effort render.
 
-    Two degrade sources merge here: Gate B's visual defects (spatial defects that survived the
-    repair budget, or where a repair broke the render), and Gate D / Gate 1's sync imperfections (a
-    beat that wouldn't sync, or a scene whose render drifted from its audio timeline). In every case
-    the pipeline ships rather than failing the video or dropping narration — the unresolved
-    ``issues`` are recorded here so the artifact's provenance is honest about what is imperfect
-    instead of presenting a degraded scene as clean.
+    Three degrade sources merge here: Gate B's visual defects (spatial defects that survived the
+    repair budget, or where a repair broke the render), Gate D / Gate 1's sync imperfections (a beat
+    that wouldn't sync, or a scene whose render drifted from its audio timeline), and Gate C's MINOR
+    factual flags (a grounded scene narrating a figure no cited source supports — degraded rather
+    than failing the whole video). In every case the pipeline ships rather than failing the video or
+    dropping narration — the unresolved ``issues`` are recorded here so the artifact's provenance is
+    honest about what is imperfect instead of presenting a degraded scene as clean.
     """
 
     scene_id: str

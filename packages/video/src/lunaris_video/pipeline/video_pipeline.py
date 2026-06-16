@@ -135,7 +135,11 @@ class VideoPipeline:
         every course to carry narration, so a voiced video is always delivered when a key is
         available (silent only when voice is off or no ElevenLabs key)."""
         contract = await self._resolve_contract(job, source)
-        self._factual_gate.check(contract, source.packet)
+        # Gate C is severity-tiered: a MAJOR violation (framing-smuggling / ungrounded) raises here,
+        # pre-render, and the worker settles the job FAILED; MINOR violations (a grounded scene's
+        # extra unsupported figure) are returned per scene and folded into the degrade record below,
+        # so one stray figure flags its scene instead of losing the whole video.
+        factual_issues = self._factual_gate.check(contract, source.packet)
         digest = contract_hash(contract)
 
         # The voice toggle decides voiced vs silent WITHOUT re-planning — the contract above feeds
@@ -170,6 +174,7 @@ class VideoPipeline:
             workdir,
             sync_gate=self._sync_gate if voiced else None,
             length_gate=self._length_gate if voiced else None,
+            factual_issues=factual_issues,
         )
         await report(VideoJobStatus.ASSEMBLING)
         rendered = [result.scene for result in qa_results]
@@ -296,6 +301,7 @@ class VideoPipeline:
         *,
         sync_gate: SyncGate | None,
         length_gate: LengthGate | None,
+        factual_issues: dict[str, list[str]],
     ) -> list[SceneQaResult]:
         results: list[SceneQaResult] = []
         for scene in contract.scenes:
@@ -328,6 +334,9 @@ class VideoPipeline:
                     scene=scene_render,
                     unresolved_defects=qa.unresolved_defects,
                     sync_issues=tuple(sync_issues),
+                    # Gate C's MINOR flags for this scene (an unsupported figure in a grounded
+                    # scene), carried alongside Gate B/D's so the scene ships flagged, not failed.
+                    factual_issues=tuple(factual_issues.get(scene.id, ())),
                 )
             )
         return results
@@ -374,11 +383,16 @@ def _voice_spec(job: VideoJob) -> VoiceSpec:
 
 def _degraded_scenes(results: list[SceneQaResult]) -> tuple[DegradedScene, ...]:
     # The provenance record of every scene shipped best-effort (the 'publish anyway' degrade): Gate
-    # B's spatial defects AND Gate D / Gate 1's sync imperfections. A scene that passed every gate
-    # cleanly contributes none. Ordered by render order.
+    # B's spatial defects, Gate D / Gate 1's sync imperfections, AND Gate C's MINOR factual flags (a
+    # grounded scene's unsupported figure). A scene that passed every gate cleanly contributes none.
+    # Ordered by render order.
     degraded: list[DegradedScene] = []
     for result in results:
-        issues = [defect.issue for defect in result.unresolved_defects] + list(result.sync_issues)
+        issues = (
+            [defect.issue for defect in result.unresolved_defects]
+            + list(result.sync_issues)
+            + list(result.factual_issues)
+        )
         if issues:
             degraded.append(DegradedScene(scene_id=result.scene.scene_id, issues=issues))
     return tuple(degraded)
