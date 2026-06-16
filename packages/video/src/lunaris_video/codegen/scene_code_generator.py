@@ -52,6 +52,8 @@ LAYOUT & LEGIBILITY (the spatial defects Gate B rejects — get these right the 
 - Every label must be next_to a mobject that is actually on screen at that moment — if you label
   an "input", draw the input object; an unattached label reading into empty space is rejected.
 - Size for the frame: scale_to_fit_width any text that might overflow its box BEFORE animating it.
+
+{literal_rules}
 {archetype_guidance}
 BEAT TIMING (audio-drives-video — these on-screen windows are FIXED; the narration is timed to them)
 Each beat's animations and waits must sum to EXACTLY its window in seconds:
@@ -157,10 +159,29 @@ The HARD RULES still apply: CE only; no LaTeX (no MathTex/Tex/Title/BulletedList
 `class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
 end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
 
-_FORMAT_REPAIR_TEMPLATE = """
+# The codegen parse failures seen most on prod, stated as rules. Front-loaded into GENERATE so the
+# first render already parses, and restated by the format-repair turn (the base render/visual/sync
+# repair templates don't carry it) so a parse-class rejection from any path gets the rules to
+# self-correct. ASCII-only on purpose (the section is itself the example): backslashes are escaped
+# (\\n) so the prompt shows the literal \n / \t / \\ escapes, and no smart punctuation leaks into a
+# prompt about ASCII.
+_VALID_LITERALS = """\
+VALID PYTHON LITERALS (the most common codegen parse failures: get these right the first time)
+- Strings: straight ASCII quotes only (" or '), never smart/curly quotes. CLOSE every quote on the
+  SAME line; a quoted string must never span lines or be left open (an unterminated string literal
+  is the #1 parse failure). For a line break inside a string write the two characters \\n; build a
+  long message from adjacent pieces ("part one " "part two"), never a bare line-spanning string.
+- Numbers: write decimals with a digit on BOTH sides of the point (0.5 and 5.0, never .5 or 5.); put
+  an operator between a number and a name (2 * x, never 2x); no commas or stray characters inside a
+  numeric literal.
+- Backslashes: the only backslash allowed is a valid string escape (\\n, \\t, \\\\); never leave a
+  stray backslash in code."""
 
-Your previous reply was rejected before rendering: {error}
-Respond again with ONLY the corrected, complete Python source for the scene file."""
+_FORMAT_REPAIR_TEMPLATE = (
+    "\n\nYour previous reply was rejected before rendering: {error}\n"
+    + _VALID_LITERALS
+    + "\nRespond again with ONLY the corrected, complete Python source for the scene file."
+)
 
 # The two stubborn Gate-B archetypes get targeted guidance — front-loaded into GENERATE so the first
 # render is already clean, and repeated at REPAIR as the safety net. Every other archetype carries
@@ -241,6 +262,7 @@ class SceneCodeGenerator:
             scene_json=scene.model_dump_json(indent=2),
             topic=topic,
             scene_class_name=scene.scene_class_name,
+            literal_rules=_VALID_LITERALS,
             archetype_guidance=_generate_archetype_guidance(scene),
             timing=_format_timing(timing),
             patterns=self._patterns,
