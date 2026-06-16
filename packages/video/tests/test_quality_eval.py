@@ -142,3 +142,66 @@ async def test_meets_ceiling_gates_on_both_degrade_rate_and_failures() -> None:
     assert report.meets_ceiling(max_degraded_scene_rate=0.1, max_failures=1) is False
     # The failure ceiling bites (default tolerates zero failures).
     assert report.meets_ceiling(max_degraded_scene_rate=0.2) is False
+
+
+def _chaptered_video(
+    chapters: list[list[str]], *, degraded: list[str] | None = None
+) -> RenderedVideo:
+    """A canned chaptered (overview-kind) bundle: ``chapters`` is the per-chapter scene-id lists."""
+    degraded = degraded or []
+    contracts = {"chapters": [{"scenes": [{"id": sid} for sid in ch]} for ch in chapters]}
+    return RenderedVideo(
+        mp4=b"\x00\x00\x00\x18ftyp",
+        poster=b"\xff\xd8\xff",
+        contracts_json=json.dumps(contracts).encode(),
+        timing_json=b"{}",
+        degraded_scenes=tuple(DegradedScene(scene_id=sid, issues=["desync"]) for sid in degraded),
+    )
+
+
+async def test_eval_aggregates_a_full_variant_matrix_of_kinds_voice_and_outcomes() -> None:
+    # Arrange — the variant matrix C4 must handle in ONE report: a flat lesson (clean), a flat
+    # summary degraded on a VISUAL defect (silent), a chaptered overview degraded on a SYNC defect
+    # (voiced — emits the per-gate telemetry), and a lesson that hard-fails (Gate C major). This is
+    # the journey's variant-coverage task for the harness: every kind, both degrade sources, and all
+    # three outcomes flow through the same aggregation.
+    async def produce(topic: TopicSpec) -> RenderedVideo:
+        if topic.id == "lesson_clean":
+            return _video(["S1", "S2", "S3"])
+        if topic.id == "summary_visual":
+            structlog.get_logger("t").info(
+                "video_pipeline.produced", degraded_by_kind={"visual": 2, "sync": 0, "factual": 0}
+            )
+            return _video(["S1", "S2", "S3", "S4"], degraded=["S2", "S4"])
+        if topic.id == "overview_sync":
+            structlog.get_logger("t").info(
+                "video_pipeline.produced", degraded_by_kind={"visual": 0, "sync": 1, "factual": 0}
+            )
+            return _chaptered_video([["S1", "S2"], ["S3"]], degraded=["S3"])
+        raise FactualGateError("S1", unsupported=["42%"], detail="smuggled")
+
+    topics = [
+        TopicSpec(id="lesson_clean", label="lesson, silent, clean"),
+        TopicSpec(id="summary_visual", label="summary, visual degrade"),
+        TopicSpec(id="overview_sync", label="overview (chaptered), voiced sync degrade"),
+        TopicSpec(id="lesson_failed", label="lesson, factual hard-fail"),
+    ]
+
+    # Act
+    report = await VideoQualityEval().run(topics, produce)
+
+    # Assert — outcomes across kinds: 3 produced (1 clean + 2 degraded), 1 failed.
+    assert report.produced == 3
+    assert report.degraded == 2
+    assert report.failed == 1
+    # Scene counts span the flat (3 + 4) and chaptered (2 + 1) shapes; the failed topic adds none.
+    assert report.total_scenes == 3 + 4 + 3
+    assert report.degraded_scenes == 3  # S2, S4 (summary) + S3 (overview)
+    # The per-gate split distinguishes the visual-degraded summary from the sync-degraded overview.
+    assert report.degraded_by_kind == {"visual": 2, "sync": 1, "factual": 0}
+    assert report.failures_by_kind == {VideoFailureKind.FACTUAL.value: 1}
+
+    by_id = {result.topic_id: result for result in report.results}
+    assert by_id["overview_sync"].status is QualityStatus.PRODUCED_DEGRADED
+    assert by_id["overview_sync"].scene_count == 3  # counted across both chapters
+    assert by_id["lesson_failed"].failure_kind is VideoFailureKind.FACTUAL
