@@ -5,10 +5,12 @@ the job; infrastructure errors are logged and retried next poll), every artifact
 under run_id = job_id, and the job_id is bound into structlog contextvars while the job runs."""
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
 import structlog
+from lunaris_runtime.logging import configure_logging
 from lunaris_runtime.persistence import (
     InMemoryRunEventStore,
     InMemoryVideoJobQueue,
@@ -25,9 +27,17 @@ from lunaris_runtime.schema import (
 )
 from lunaris_video import RenderedVideo, StubVideoPipeline, VideoWorker
 from lunaris_video.errors import FactualGateError, SceneRenderError, VideoPipelineError
-from structlog.testing import capture_logs
 
 _OWNER = "00000000-0000-0000-0000-000000000001"
+
+
+def _json_log_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object]]:
+    """The structured stdout log lines emitted so far (the project logs JSON to stdout)."""
+    return [
+        json.loads(line)
+        for line in capsys.readouterr().out.splitlines()
+        if line.strip().startswith("{")
+    ]
 
 
 def _job(job_id: str = "job-1") -> VideoJob:
@@ -357,12 +367,20 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
     ],
 )
 async def test_job_failed_logs_a_structured_failure_taxonomy(
-    exc: Exception, expected_kind: str, expected_scene: str | None
+    exc: Exception,
+    expected_kind: str,
+    expected_scene: str | None,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Arrange — each exception class the pipeline can raise maps to a queryable failure_kind, so the
     # failure taxonomy is a first-class structured read (no more az/KQL spelunking, E1). The exact
     # class rides alongside (failure_class) so a coarse kind is always disambiguable, and a scene_id
-    # is captured when the error carries one.
+    # is captured when the error carries one. Read off stdout JSON (not structlog's capture_logs):
+    # the agent package exercises this module logger under the cached JSON pipeline, so by the time
+    # this test runs the logger is frozen and capture_logs cannot intercept it — reading the
+    # configured stdout sink is order-independent (the apps/api recorder tests do the same).
+    configure_logging(json_output=True)
+
     class _ExplodingPipeline:
         async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             raise exc
@@ -376,11 +394,10 @@ async def test_job_failed_logs_a_structured_failure_taxonomy(
     worker = _worker(queue, storage, events, pipeline=_ExplodingPipeline())
 
     # Act
-    with capture_logs() as logs:
-        assert await worker.run_once() is True
+    assert await worker.run_once() is True
 
     # Assert — exactly one job_failed event, carrying the taxonomy fields.
-    failed = [e for e in logs if e["event"] == "video_worker.job_failed"]
+    failed = [e for e in _json_log_lines(capsys) if e.get("event") == "video_worker.job_failed"]
     assert len(failed) == 1
     assert failed[0]["failure_kind"] == expected_kind
     assert failed[0]["failure_class"] == type(exc).__name__
