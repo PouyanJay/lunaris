@@ -27,12 +27,17 @@ def _beats() -> list[Beat]:
     ]
 
 
-def _scene(number: int, slug: str, archetype: str = "process/flow") -> SceneContract:
+def _scene(
+    number: int,
+    slug: str,
+    archetype: str = "process/flow",
+    objects: list[str] | None = None,
+) -> SceneContract:
     return SceneContract(
         id=f"S{number}_{slug}",
         archetype=archetype,
         narration="Sorting is everywhere. Start with eight numbers.",
-        objects=["title card", "indexed array of 8 cells"],
+        objects=objects if objects is not None else ["title card", "indexed array of 8 cells"],
         beats=_beats(),
         sources=["framing only - no empirical claims"],
         duration_s=18,

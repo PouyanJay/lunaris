@@ -7,6 +7,8 @@ from lunaris_video.models.rendered_scene import RenderedScene
 from lunaris_video.models.rendered_video import RenderedVideo
 from lunaris_video.models.sandbox_result import SandboxResult
 from lunaris_video.models.scene_qa_result import SceneQaResult
+from lunaris_video.models.sibling_contract_digest import SiblingContractDigest
+from lunaris_video.models.video_dependency_map import VideoDependencyMap
 
 __all__ = [
     "GroundedClaim",
@@ -18,4 +20,6 @@ __all__ = [
     "RenderedVideo",
     "SandboxResult",
     "SceneQaResult",
+    "SiblingContractDigest",
+    "VideoDependencyMap",
 ]
