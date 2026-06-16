@@ -396,12 +396,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       };
     }
     if (state.status === "streaming") {
-      const { runId } = state;
+      const { runId, reconnecting } = state;
       return {
         title: state.topic,
         meta: (
           <>
-            <StatusDot label="building" tone="accent" live />
+            {/* Reconnecting = the live feed dropped but the build is still running server-side; the
+                timeline keeps advancing from the durable log, so the label stays "in progress". */}
+            <StatusDot label={reconnecting ? "reconnecting" : "building"} tone="accent" live />
             <Button onClick={() => termination.request(runId)}>Terminate</Button>
           </>
         ),

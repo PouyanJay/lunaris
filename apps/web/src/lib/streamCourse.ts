@@ -13,6 +13,9 @@ interface StreamCourseOptions {
    *  bridge worker needs it immediately (the first completion can be parked before the
    *  first progress event lands). */
   onRunId?: (runId: string) => void;
+  /** Called once with the course id from the X-Course-Id header, before any frame — lets a caller
+   *  whose stream drops re-attach to the durable build by polling this id for the finished course. */
+  onCourseId?: (courseId: string) => void;
   /** The learner's opt-in confirm answers (P7.5); absent → today's inferred-only build. */
   clarification?: Clarification;
   /** How hard auto-discovery searches (P6.3); absent → the moderate `standard` default. */
@@ -35,7 +38,16 @@ interface StreamCourseOptions {
 export async function streamCourse(
   apiBaseUrl: string,
   topic: string,
-  { onProgress, onAgent, onRunId, clarification, discoveryDepth, compute, signal }: StreamCourseOptions,
+  {
+    onProgress,
+    onAgent,
+    onRunId,
+    onCourseId,
+    clarification,
+    discoveryDepth,
+    compute,
+    signal,
+  }: StreamCourseOptions,
 ): Promise<Course> {
   const params = new URLSearchParams({ topic });
   if (clarification) params.set("clarification", JSON.stringify(clarification));
@@ -56,6 +68,8 @@ export async function streamCourse(
   }
   const runId = response.headers.get("X-Run-Id");
   if (runId) onRunId?.(runId);
+  const courseId = response.headers.get("X-Course-Id");
+  if (courseId) onCourseId?.(courseId);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -83,7 +97,12 @@ export async function streamCourse(
   }
 
   if (!course) {
-    throw new CourseLoadError("The build stream ended before the course was ready.");
+    // The body closed before the terminal `course` frame. On a long build this is most often a
+    // transient disconnect (proxy/idle timeout), not a failure — flag it so the caller can
+    // re-attach to the durable run rather than reporting a broken build.
+    throw new CourseLoadError("The build stream ended before the course was ready.", {
+      streamIncomplete: true,
+    });
   }
   return course;
 }

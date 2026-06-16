@@ -117,7 +117,9 @@ def create_app() -> FastAPI:
         # or the preflight 400s and the fetch surfaces as a network error in the UI.
         allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["*"],
-        expose_headers=["X-Run-Id", "X-Request-Id"],
+        # The SPA reads these off responses; cross-origin (app vs api subdomain) they must be
+        # exposed or the browser hides them. X-Course-Id lets a dropped build stream re-attach.
+        expose_headers=["X-Run-Id", "X-Course-Id", "X-Request-Id"],
     )
     _register_routers(app)
     return app

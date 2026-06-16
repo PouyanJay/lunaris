@@ -49,12 +49,6 @@ describe("streamCourse", () => {
     await expect(streamCourse("http://api", "x", {})).rejects.toBeInstanceOf(CourseLoadError);
   });
 
-  it("throws if the stream ends without a course frame", async () => {
-    stubStream([progressFrame("run_started", 0)]);
-
-    await expect(streamCourse("http://api", "x", {})).rejects.toBeInstanceOf(CourseLoadError);
-  });
-
   it("passes the topic and abort signal through to fetch", async () => {
     const fetchMock = vi.fn().mockResolvedValue(sseStreamResponse([courseFrame()]));
     vi.stubGlobal("fetch", fetchMock);
@@ -82,6 +76,31 @@ describe("streamCourse", () => {
     await streamCourse("http://api", "x", {});
 
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("compute=");
+  });
+
+  it("reports the course id from the X-Course-Id header before any frame arrives", async () => {
+    // The reconnect path needs the course id as soon as the response starts — a stream that drops
+    // before the terminal frame re-attaches by polling this id for the finished course.
+    stubStream([progressFrame("run_started", 0), courseFrame()], {
+      headers: { "X-Course-Id": "course-7" },
+    });
+    const arrivals: string[] = [];
+
+    await streamCourse("http://api", "x", {
+      onCourseId: (courseId) => arrivals.push(`course:${courseId}`),
+      onProgress: () => arrivals.push("progress"),
+    });
+
+    expect(arrivals[0]).toBe("course:course-7");
+  });
+
+  it("flags a stream that ends without a course as streamIncomplete (a likely transient drop)", async () => {
+    stubStream([progressFrame("run_started", 0)]);
+
+    const error = await streamCourse("http://api", "x", {}).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(CourseLoadError);
+    expect((error as CourseLoadError).streamIncomplete).toBe(true);
   });
 
   it("reports the run id from the X-Run-Id header before any frame arrives", async () => {

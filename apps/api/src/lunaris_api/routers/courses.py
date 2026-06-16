@@ -110,8 +110,10 @@ async def stream_course(
     camelCase JSON; absent, the build uses the interpreter's inference. ``compute=device``
     on a keyless build serves the LLM from the learner's browser over the run's device
     bridge (registered before the response, so the tab can poll as soon as it holds the
-    ``X-Run-Id``); keyed builds ignore it. The generated ``run_id`` is returned in
-    ``X-Run-Id`` (sent before the body) for cross-layer correlation.
+    ``X-Run-Id``); keyed builds ignore it. The generated ``run_id`` and ``course_id`` are
+    returned in ``X-Run-Id`` / ``X-Course-Id`` (both sent before the body) — the run id for
+    cross-layer correlation, the course id so a dropped stream can re-attach to the durable
+    build by polling that course for its finished payload.
     """
     course_id = uuid4().hex
     run_id = uuid4().hex
@@ -141,6 +143,10 @@ async def stream_course(
         media_type="text/event-stream",
         headers={
             "X-Run-Id": run_id,
+            # The course id is allocated up front too, so a client whose stream drops before the
+            # terminal `course` frame can re-attach to the durable build — polling this course id
+            # for the finished payload — instead of falsely reporting a broken build.
+            "X-Course-Id": course_id,
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # disable proxy buffering so events flush live
         },

@@ -223,6 +223,10 @@ async def test_stream_yields_ordered_progress_then_final_course(client: httpx.As
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     run_id = response.headers["x-run-id"]
+    # The course id is also sent up front (before the body) so a client whose stream drops can
+    # re-attach to the durable build by polling this id for the finished course. It's a uuid4 hex.
+    course_id = response.headers["x-course-id"]
+    assert len(course_id) == 32 and course_id.isalnum()
 
     # Assert — frame contract: ordered progress stages, then exactly one terminal course.
     frames = _parse_sse(response.text)
