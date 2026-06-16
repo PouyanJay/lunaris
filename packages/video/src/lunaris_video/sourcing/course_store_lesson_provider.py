@@ -92,7 +92,8 @@ class CourseStoreLessonSourceProvider:
     async def _upstream_digest(
         self, job: VideoJob, course: Course, lesson_id: str
     ) -> SiblingContractDigest | None:
-        assert self._video_storage is not None  # guarded by _upstream_digests
+        if self._video_storage is None:  # an invariant of the only caller; a guard, not assert(-O)
+            raise VideoPipelineError("upstream digest requested without a video store")
         module, lesson = _find_lesson(course, lesson_id)
         artifact = lesson.video
         if (
@@ -112,6 +113,8 @@ class CourseStoreLessonSourceProvider:
             )
             return None
         try:
+            # An upstream is always a LESSON (a downstream depends on lessons, never the overview),
+            # so its contract is the flat SceneContracts, not the chaptered overview form.
             contract = SceneContracts.model_validate_json(data)
         except ValidationError:
             _logger.warning(

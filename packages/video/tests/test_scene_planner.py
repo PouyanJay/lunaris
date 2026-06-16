@@ -171,7 +171,8 @@ async def test_plan_prompt_carries_upstream_key_terms_and_visuals(
     prompt = stub.prompts[0]
     assert "the perceptron unit" in prompt
     assert "synaptic weights" in prompt
-    assert "visuals:" in prompt  # the archetype label renders alongside the term list
+    # The label+value together are distinctive to the upstream block (not the base archetype list).
+    assert "visuals: network/graph" in prompt
 
 
 async def test_plan_prompt_has_no_upstream_section_without_siblings(

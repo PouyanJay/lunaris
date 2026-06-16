@@ -106,3 +106,48 @@ def test_transitive_prerequisites_are_included() -> None:
 
     # Assert — m3 depends on BOTH m2 (direct) and m1 (transitive), in topo order.
     assert dep.upstream_of("m3-l0") == ("m1-l0", "m2-l0")
+
+
+def test_same_module_lessons_are_never_each_others_upstream() -> None:
+    # Arrange — k1 -> k2, but BOTH KCs live in one module taught by two lessons. The prereq edge
+    # must NOT make one lesson depend on the other: same-module lessons share KCs (the real
+    # dependency is cross-module).
+    graph = PrerequisiteGraph(
+        nodes=[_kc("k1"), _kc("k2")],
+        edges=[Edge(from_="k1", to="k2", strength=1.0)],
+        topo_order=["k1", "k2"],
+        is_acyclic=True,
+    )
+    course = Course(
+        id="c",
+        topic="t",
+        modules=[_module("m1", kcs=["k1", "k2"], lesson_ids=["m1-l0", "m1-l1"])],
+        graph=graph,
+    )
+
+    # Act
+    dep = project_video_dependencies(course)
+
+    # Assert
+    assert dep.upstream_of("m1-l0") == ()
+    assert dep.upstream_of("m1-l1") == ()
+
+
+def test_an_ungraphed_course_yields_no_dependencies() -> None:
+    # Arrange — modules with KCs but a default (empty) graph: no edges, no topo_order.
+    course = Course(
+        id="c",
+        topic="t",
+        modules=[
+            _module("m1", kcs=["k1"], lesson_ids=["m1-l0"]),
+            _module("m2", kcs=["k2"], lesson_ids=["m2-l0"]),
+        ],
+    )
+
+    # Act
+    dep = project_video_dependencies(course)
+
+    # Assert — every lesson a root; order falls back to appearance.
+    assert dep.upstream_of("m2-l0") == ()
+    assert dep.upstream_of("m1-l0") == ()
+    assert dep.order == ("m1-l0", "m2-l0")

@@ -343,6 +343,22 @@ async def test_a_missing_upstream_contract_is_skipped() -> None:
     assert source.upstream_siblings == ()
 
 
+async def test_an_unparseable_upstream_contract_is_skipped() -> None:
+    # Arrange — l1's video is READY and its contract is in storage, but the bytes are garbage
+    # (schema drift / partial write). The digest is skipped, the load still succeeds.
+    course = _two_lesson_course(
+        l1_video=VideoArtifact(kind=VideoKind.LESSON, status=VideoJobStatus.READY, job_id="job-l1")
+    )
+    storage = _FakeVideoStorage({_upstream_contract_path(): b"not a scene contract at all"})
+    provider = _provider_with_storage(course, storage)
+
+    # Act
+    source = await provider.load(_l2_job())
+
+    # Assert
+    assert source.upstream_siblings == ()
+
+
 async def test_a_root_lesson_has_no_upstream(
     make_lesson_contract: Callable[..., SceneContracts],
 ) -> None:

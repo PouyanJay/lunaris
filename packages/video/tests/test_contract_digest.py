@@ -59,6 +59,6 @@ def test_digest_handles_a_chaptered_overview_contract(
     # Act
     digest = digest_of("Course overview", contract)
 
-    # Assert
+    # Assert — the on-screen objects flatten across the chapters' scenes into key_terms.
     assert digest.covers == contract.topic
-    assert digest.key_terms  # flattened from the chapters' scenes
+    assert "title card" in digest.key_terms
