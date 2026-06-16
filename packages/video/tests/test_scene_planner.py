@@ -16,6 +16,7 @@ from lunaris_video.models import (
     SiblingContractDigest,
 )
 from lunaris_video.planning import ScenePlanner
+from lunaris_video.planning.scene_planner import MAX_SCENE_OBJECTS
 from lunaris_video.schemas import FRAMING_ONLY_SENTINEL, SceneContracts
 from lunaris_video.skill import read_skill_asset
 from lunaris_video.style import video_global_style
@@ -95,6 +96,66 @@ async def test_plan_prompt_carries_the_complexity_budget(
     prompt = stub.prompts[0].lower()
     assert "complexity budget" in prompt
     assert "incrementally" in prompt
+
+
+async def test_plan_prompt_states_the_explicit_object_budget(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — the complexity budget is now ENFORCED post-parse, so the prompt must state the exact
+    # object ceiling (not a vague "~10") and tell the model to split rather than cram.
+    stub = StubInvokeModel([json.dumps(_draft_payload(make_lesson_contract))])
+
+    # Act
+    await ScenePlanner(invoke=stub).plan(_lesson())
+
+    # Assert — the explicit number and the split instruction are in the prompt.
+    prompt = stub.prompts[0].lower()
+    assert f"at most {MAX_SCENE_OBJECTS}" in prompt
+    assert "split" in prompt
+
+
+async def test_planner_repairs_an_over_budget_scene(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — the first completion crams one scene with far more on-screen objects than the budget
+    # (the crammed-tangle failure); the repair turn must name the scene and the limit; the second
+    # completion is within budget.
+    over_budget = _draft_payload(make_lesson_contract)
+    over_budget["scenes"][0]["objects"] = [  # type: ignore[index]
+        f"element {n}" for n in range(MAX_SCENE_OBJECTS + 3)
+    ]
+    stub = StubInvokeModel(
+        [json.dumps(over_budget), json.dumps(_draft_payload(make_lesson_contract))]
+    )
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    contract = await planner.plan(_lesson())
+
+    # Assert — a distinct repair turn named the offending scene and the budget; the retry is clean.
+    assert len(stub.prompts) == 2
+    assert stub.prompts[0] != stub.prompts[1]
+    assert "S1_problem" in stub.prompts[1]
+    assert str(MAX_SCENE_OBJECTS) in stub.prompts[1]
+    assert all(len(scene.objects) <= MAX_SCENE_OBJECTS for scene in contract.scenes)
+
+
+async def test_planner_accepts_a_scene_exactly_at_the_object_budget(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — the boundary is inclusive: exactly MAX_SCENE_OBJECTS objects is allowed (no repair).
+    at_budget = _draft_payload(make_lesson_contract)
+    at_budget["scenes"][0]["objects"] = [  # type: ignore[index]
+        f"element {n}" for n in range(MAX_SCENE_OBJECTS)
+    ]
+    stub = StubInvokeModel([json.dumps(at_budget)])
+
+    # Act
+    contract = await ScenePlanner(invoke=stub).plan(_lesson())
+
+    # Assert — accepted on the first try.
+    assert len(stub.prompts) == 1
+    assert len(contract.scenes[0].objects) == MAX_SCENE_OBJECTS
 
 
 async def test_plan_prompt_offers_the_network_graph_archetype(
