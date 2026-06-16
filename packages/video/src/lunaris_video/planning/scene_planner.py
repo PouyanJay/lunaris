@@ -8,6 +8,7 @@ from lunaris_runtime.video_build import target_seconds_for
 
 from lunaris_video.models.grounding_packet import GroundingPacket
 from lunaris_video.models.lesson_source import LessonSource
+from lunaris_video.models.sibling_contract_digest import SiblingContractDigest
 from lunaris_video.schemas import (
     FRAMING_ONLY_SENTINEL,
     ChapteredContractDraft,
@@ -39,7 +40,7 @@ LESSON
 --- LESSON TEXT START ---
 {prose}
 --- LESSON TEXT END ---
-
+{upstream_context}
 ENVELOPE
 - 3 to 5 scenes, each 15-30 seconds; total duration about {target_seconds} seconds.
 - Standard arc: problem/hook -> key insight -> mechanism step-by-step -> consequence -> verdict.
@@ -263,12 +264,27 @@ def _build_prompt(source: LessonSource, target_seconds: int, *, simplify: bool) 
         lesson_title=source.lesson_title,
         audience=source.audience,
         prose=source.prose,
+        upstream_context=_upstream_block(source.upstream_siblings),
         target_seconds=target_seconds,
         grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK),
         framing_sentinel=FRAMING_ONLY_SENTINEL,
         regenerate_directive=_SIMPLER_DIRECTIVE if simplify else "",
         archetypes=read_skill_asset("references/archetypes.md"),
     )
+
+
+def _upstream_block(siblings: tuple[SiblingContractDigest, ...]) -> str:
+    # The upstream sibling videos this lesson builds on (its prerequisites in the course's video
+    # DAG), so the planner reuses their framing instead of re-inventing in a vacuum. Empty (no
+    # section at all) for a root lesson, an un-graphed course, or any kind with no upstream.
+    if not siblings:
+        return ""
+    lines = [
+        "\nPRIOR VIDEOS IN THIS COURSE (this lesson comes AFTER them — build on what they",
+        "established, reuse their terminology, and do NOT re-explain or contradict them):",
+    ]
+    lines += [f"- {sibling.lesson_title}: {sibling.covers}" for sibling in siblings]
+    return "\n".join(lines) + "\n"
 
 
 def _build_chaptered_prompt(source: LessonSource, target_seconds: int, *, simplify: bool) -> str:

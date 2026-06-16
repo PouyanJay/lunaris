@@ -8,7 +8,13 @@ from collections.abc import Callable
 import pytest
 from _stubs import StubInvokeModel
 from lunaris_runtime.resilience import DEFAULT_PARSE_REPAIR_ATTEMPTS
-from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
+from lunaris_video.models import (
+    GroundedClaim,
+    GroundingPacket,
+    LessonSource,
+    PacketKind,
+    SiblingContractDigest,
+)
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.schemas import FRAMING_ONLY_SENTINEL, SceneContracts
 from lunaris_video.skill import read_skill_asset
@@ -106,6 +112,35 @@ async def test_plan_prompt_offers_the_network_graph_archetype(
 
     # Assert
     assert "network/graph" in stub.prompts[0]
+
+
+async def test_plan_prompt_carries_upstream_sibling_context(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a lesson downstream of a prerequisite one: its planner must see what the upstream
+    # video already covers so it builds on it (reuses terms, doesn't re-explain or re-invent — the
+    # cause of the blind Fresh-take factual-gate failure).
+    upstream = SiblingContractDigest(
+        lesson_title="What a neuron is",
+        covers="a single neuron computing a weighted sum of its inputs",
+    )
+    source = LessonSource(
+        course_topic="Neural networks",
+        lesson_title="How a network learns",
+        audience="curious newcomers",
+        prose="Backprop adjusts weights to shrink error.",
+        upstream_siblings=(upstream,),
+    )
+    stub = StubInvokeModel([json.dumps(_draft_payload(make_lesson_contract))])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan(source)
+
+    # Assert — the upstream video's title and what it covers ride in the prompt.
+    prompt = stub.prompts[0]
+    assert "What a neuron is" in prompt
+    assert "a single neuron computing a weighted sum of its inputs" in prompt
 
 
 async def test_model_cannot_choose_global_style(

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 
 from lunaris_video.models.grounding_packet import GroundingPacket
 from lunaris_video.models.packet_kind import PacketKind
+from lunaris_video.models.sibling_contract_digest import SiblingContractDigest
 
 
 def _empty_lesson_packet() -> GroundingPacket:
@@ -24,6 +25,11 @@ class LessonSource:
     audience: str
     prose: str
     packet: GroundingPacket = field(default_factory=_empty_lesson_packet)
+    # Digests of the UPSTREAM sibling videos this lesson depends on (its prerequisites in the
+    # course's video DAG), so the planner builds on them instead of re-inventing. Empty for a root
+    # lesson, an un-graphed course, or a kind with no upstream (overview). Carried here so the
+    # planner stays a pure function of its source.
+    upstream_siblings: tuple[SiblingContractDigest, ...] = ()
 
     def __post_init__(self) -> None:
         # A blank field here would surface later as a model hallucination (an empty lesson block
