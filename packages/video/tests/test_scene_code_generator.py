@@ -680,6 +680,27 @@ def test_validator_sanitization_is_idempotent_on_its_own_output(
     assert _sanitized_events(logs) == []
 
 
+def test_validator_logs_both_fixes_when_crlf_and_smart_punctuation_coexist(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the two transforms are independent: a completion with BOTH CRLF endings and a smart
+    # dash must record both fixes (one per fix discriminator), not collapse into one or mask each
+    # other. Variant coverage for the sanitizer's composition.
+    em = chr(0x2014)
+    mixed = _VALID_SOURCE.replace("clear_scene(self)", f"clear_scene(self)  # a {em} b").replace(
+        "\n", "\r\n"
+    )
+
+    # Act
+    with capture_logs() as logs:
+        result = validate_scene_source(mixed, make_scene(1, "problem"))
+
+    # Assert — neither artifact survives, and each fix is audited exactly once.
+    assert "\r" not in result and em not in result
+    assert len(_sanitized_events(logs, "line_endings")) == 1
+    assert len(_sanitized_events(logs, "smart_punctuation")) == 1
+
+
 def test_validator_rejects_unparseable_source(make_scene: Callable[..., SceneContract]) -> None:
     # Arrange / Act / Assert
     with pytest.raises(ValueError):
