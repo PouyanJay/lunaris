@@ -371,6 +371,45 @@ describe("LessonVideoHero", () => {
     ).toBe(true);
   });
 
+  it("re-mints an expired signed URL on a playback error, no page refresh needed", async () => {
+    // Arrange — generate → ready; status reads serve a (soon-to-expire) URL until the reader hits a
+    // load error, after which they re-mint a FRESH one. The token is keyed on an explicit flag set
+    // right before the error, so the test doesn't depend on how many status reads the hook makes.
+    let remintRequested = false;
+    fetchMock.mockImplementation((input, init) => {
+      const url = String(input);
+      if ((init as RequestInit | undefined)?.method === "POST") {
+        return Promise.resolve(jsonResponse(202, queuedView())); // enqueue
+      }
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      const token = remintRequested ? "fresh" : "stale"; // the live URL only after the load error
+      return Promise.resolve(
+        jsonResponse(200, {
+          ...readyView(),
+          videoUrl: `https://signed.example/u/course-1/job-1/final.mp4?token=${token}`,
+        }),
+      );
+    });
+    render(<LessonVideoHero {...PROPS} />);
+
+    // Act — generate, then play; the player mounts on the (now stale) signed URL.
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /play lesson video/i }));
+    await waitFor(() =>
+      expect(document.querySelector("video")?.src).toContain("token=stale"),
+    );
+
+    // Act — the expired URL fails to load; the slot re-mints itself instead of stranding silently.
+    remintRequested = true;
+    fireEvent.error(document.querySelector("video") as HTMLVideoElement);
+
+    // Assert — a fresh signed URL is fetched and the keyed <video> remounts and autoplays on it.
+    await waitFor(() => expect(document.querySelector("video")?.src).toContain("token=fresh"));
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/api/videos/job-1")).length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
   it("resets to idle when the lesson changes", async () => {
     // Arrange — lesson-1's job is ready…
     fetchMock

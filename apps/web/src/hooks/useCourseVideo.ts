@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  fetchFreshPlaybackUrls,
   fetchVideoJob,
   findActiveVideoJob,
   pollVideoJob,
@@ -40,7 +41,11 @@ export function useCourseVideo(
   apiBaseUrl: string | undefined,
   artifact: VideoArtifact | null | undefined,
   pollIntervalMs: number = COURSE_VIDEO_POLL_INTERVAL_MS,
-): { state: CourseVideoState; regenerate: (mode: RegenerateMode) => void } {
+): {
+  state: CourseVideoState;
+  regenerate: (mode: RegenerateMode) => void;
+  refresh: () => Promise<void>;
+} {
   // Depend on scalars (status + jobId), not the artifact object — Course is re-serialised on every
   // poll, so a new object reference each render would re-fire the fetch even when nothing changed.
   const status = artifact?.status ?? null;
@@ -50,12 +55,16 @@ export function useCourseVideo(
     initialState(apiBaseUrl, status, jobId),
   );
   const controllerRef = useRef<AbortController | null>(null);
+  // The job whose URLs are currently on screen (the built ready job, or a re-attached/regenerated
+  // one). Used to re-mint the signed URLs on playback error — they expire ~1h after they resolve.
+  const shownJobIdRef = useRef<string | null>(null);
 
   // Watch one job to a verdict: working while it renders, ready/failed once it settles. Shared by
   // the regenerate path and the on-mount re-attach so both surface progress identically.
   const watch = useCallback(
     (watchJobId: string) => {
       if (!apiBaseUrl) return;
+      shownJobIdRef.current = watchJobId;
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -78,6 +87,7 @@ export function useCourseVideo(
     }
     const controller = new AbortController();
     controllerRef.current = controller;
+    shownJobIdRef.current = readyJobId;
     setState({ phase: "loading" });
     void fetchVideoJob(apiBaseUrl, readyJobId, controller.signal).then((view) => {
       if (controller.signal.aborted) return;
@@ -124,7 +134,28 @@ export function useCourseVideo(
     [apiBaseUrl, jobId, watch],
   );
 
-  return { state, regenerate };
+  // Re-mint the shown job's short-lived signed URLs (they expire ~1h after they resolve). The player
+  // calls this when its <video> fails to load the expired URL; we re-fetch the same job and swap
+  // fresh URLs into the ready state, remounting the player on the live URL — no page reload.
+  const refresh = useCallback(async () => {
+    const id = shownJobIdRef.current;
+    if (!apiBaseUrl || !id) return;
+    const fresh = await fetchFreshPlaybackUrls(apiBaseUrl, id);
+    if (!fresh || shownJobIdRef.current !== id) return; // gone, not ready, or the slot moved on
+    setState((prev) =>
+      prev.phase === "ready"
+        ? {
+            ...prev,
+            videoUrl: fresh.videoUrl,
+            posterUrl: fresh.posterUrl,
+            captionsUrl: fresh.captionsUrl,
+            stale: fresh.stale ?? prev.stale,
+          }
+        : prev,
+    );
+  }, [apiBaseUrl]);
+
+  return { state, regenerate, refresh };
 }
 
 function toCourseVideoState(

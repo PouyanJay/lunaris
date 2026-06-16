@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import styles from "./GeneratedVideoPlayer.module.css";
 
@@ -8,6 +8,10 @@ interface GeneratedVideoPlayerProps {
   captionsUrl: string | null;
   /** The play button's accessible name, e.g. "Play course overview" / "Play lesson video". */
   label: string;
+  /** Called when the <video> fails to load — typically because the signed URL expired (~1h TTL).
+   *  Should re-fetch the job and update `videoUrl` so the player remounts on a live URL. Omit where
+   *  there is nothing to re-mint (the standalone unit tests). */
+  refreshPlayback?: () => void | Promise<void>;
 }
 
 /** The shared facade for a Lunaris-generated MP4: a 16:9 stage showing the poster until clicked,
@@ -20,23 +24,39 @@ export function GeneratedVideoPlayer({
   posterUrl,
   captionsUrl,
   label,
+  refreshPlayback,
 }: GeneratedVideoPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // The signed URLs we've already tried to re-mint after a load error. A Set, not a flag: one play
+  // session can outlive several expiries (URL A re-mints to B, B later expires to C), and each URL
+  // earns exactly one re-mint — so a genuinely dead URL fails once instead of looping the re-fetch.
+  const refreshedUrlsRef = useRef<Set<string>>(new Set());
 
-  // Playing unmounts the focused poster button — move focus onto the player so keyboard users land
-  // on the controls instead of falling back to <body> (WCAG 2.4.3).
+  // Playing — or a re-mint that remounts the keyed element — replaces the focused control: move
+  // focus onto the player so keyboard users land on the controls, not <body> (WCAG 2.4.3).
   useEffect(() => {
     if (playing) videoRef.current?.focus();
-  }, [playing]);
+  }, [playing, videoUrl]);
+
+  // The signed URL expired while the reader sat on the page: re-mint it once. The fresh URL flows
+  // back as a new `videoUrl` prop, remounting the keyed <video> (below) so it autoplays on the
+  // live URL — no page refresh. Guarded per-URL so a truly dead URL doesn't loop the re-fetch.
+  const handleError = useCallback(() => {
+    if (!refreshPlayback || refreshedUrlsRef.current.has(videoUrl)) return;
+    refreshedUrlsRef.current.add(videoUrl);
+    void refreshPlayback();
+  }, [refreshPlayback, videoUrl]);
 
   return (
     <div className={styles.stage}>
       {playing ? (
         /* The artifact is our own MP4 on a signed URL — a native element, no third party. A narrated
            video also ships a WebVTT track (V3); the signed URL is cross-origin, so the <video> opts
-           into CORS (`crossOrigin`) for the <track> to load. A silent video has no captionsUrl. */
+           into CORS (`crossOrigin`) for the <track> to load. A silent video has no captionsUrl.
+           Keyed by the URL so a re-minted (post-expiry) URL remounts the element and autoplays. */
         <video
+          key={videoUrl}
           ref={videoRef}
           className={styles.player}
           src={videoUrl}
@@ -44,6 +64,7 @@ export function GeneratedVideoPlayer({
           controls
           autoPlay
           crossOrigin={captionsUrl ? "anonymous" : undefined}
+          onError={handleError}
         >
           {captionsUrl && (
             <track kind="captions" src={captionsUrl} srcLang="en" label="English" default />

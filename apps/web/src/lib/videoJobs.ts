@@ -177,6 +177,29 @@ export async function findActiveVideoJob(
   }
 }
 
+/** Re-mint a ready job's short-lived signed playback URLs — they expire ~1h after they resolve, so a
+ *  reader who sits on the page then presses play loads a dead URL. Returns the fresh URL set while
+ *  the job is still READY, or null when it can't be re-minted (gone / not playable) so the caller
+ *  keeps what it has. Both the lesson hero and the course slot re-mint through this on a load error. */
+export async function fetchFreshPlaybackUrls(
+  apiBaseUrl: string,
+  jobId: string,
+): Promise<{
+  videoUrl: string;
+  posterUrl: string | null;
+  captionsUrl: string | null;
+  stale: boolean | undefined;
+} | null> {
+  const view = await fetchVideoJob(apiBaseUrl, jobId);
+  if (!view?.videoUrl) return null;
+  return {
+    videoUrl: view.videoUrl,
+    posterUrl: view.posterUrl,
+    captionsUrl: view.captionsUrl,
+    stale: view.stale,
+  };
+}
+
 /** One job's current view, or null when it can't be read (gone, unauthorized, network). */
 export async function fetchVideoJob(
   apiBaseUrl: string,
