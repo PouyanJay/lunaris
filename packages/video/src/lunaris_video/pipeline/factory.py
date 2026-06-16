@@ -23,7 +23,12 @@ from lunaris_video.protocols.lesson_source_provider_protocol import ILessonSourc
 from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.protocols.speech_synthesizer_protocol import ISpeechSynthesizer
 from lunaris_video.qa import SyncQaInspector, VisionQaInspector
-from lunaris_video.rendering import FrameExtractor, SceneRenderer, probe_scene_duration
+from lunaris_video.rendering import (
+    FrameExtractor,
+    SceneRenderer,
+    pad_scene_tail,
+    probe_scene_duration,
+)
 from lunaris_video.sourcing import (
     CourseStoreLessonSourceProvider,
     CourseVideoSourceProvider,
@@ -128,7 +133,7 @@ def _pipeline_maker(
                 codegen=codegen,
                 renderer=renderer,
             ),
-            length_gate=LengthGate(probe=probe_scene_duration),
+            length_gate=LengthGate(probe=probe_scene_duration, pad=pad_scene_tail),
             prior_contract_provider=prior_contract_provider,
         )
 
