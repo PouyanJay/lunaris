@@ -143,6 +143,50 @@ async def test_plan_prompt_carries_upstream_sibling_context(
     assert "a single neuron computing a weighted sum of its inputs" in prompt
 
 
+async def test_plan_prompt_carries_upstream_key_terms_and_visuals(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a richer digest: the on-screen terms the upstream introduced (so the downstream
+    # reuses them, not re-defines) and the visual archetypes it used (so the downstream stays
+    # consistent). Both must reach the prompt.
+    upstream = SiblingContractDigest(
+        lesson_title="What a neuron is",
+        covers="a single neuron computing a weighted sum",
+        archetypes=("network/graph",),
+        key_terms=("the perceptron unit", "synaptic weights"),
+    )
+    source = LessonSource(
+        course_topic="Neural networks",
+        lesson_title="How a network learns",
+        audience="curious newcomers",
+        prose="Backprop adjusts weights.",
+        upstream_siblings=(upstream,),
+    )
+    stub = StubInvokeModel([json.dumps(_draft_payload(make_lesson_contract))])
+
+    # Act
+    await ScenePlanner(invoke=stub).plan(source)
+
+    # Assert
+    prompt = stub.prompts[0]
+    assert "the perceptron unit" in prompt
+    assert "synaptic weights" in prompt
+    assert "visuals:" in prompt  # the archetype label renders alongside the term list
+
+
+async def test_plan_prompt_has_no_upstream_section_without_siblings(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a root lesson (no upstream): the section must be entirely absent, not a blank line.
+    stub = StubInvokeModel([json.dumps(_draft_payload(make_lesson_contract))])
+
+    # Act
+    await ScenePlanner(invoke=stub).plan(_lesson())
+
+    # Assert
+    assert "PRIOR VIDEOS IN THIS COURSE" not in stub.prompts[0]
+
+
 async def test_model_cannot_choose_global_style(
     make_lesson_contract: Callable[..., SceneContracts],
 ) -> None:

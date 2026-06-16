@@ -283,7 +283,15 @@ def _upstream_block(siblings: tuple[SiblingContractDigest, ...]) -> str:
         "\nPRIOR VIDEOS IN THIS COURSE (this lesson comes AFTER them — build on what they",
         "established, reuse their terminology, and do NOT re-explain or contradict them):",
     ]
-    lines += [f"- {sibling.lesson_title}: {sibling.covers}" for sibling in siblings]
+    for sibling in siblings:
+        lines.append(f"- {sibling.lesson_title}: {sibling.covers}")
+        extras = []
+        if sibling.key_terms:
+            extras.append("already on screen: " + ", ".join(sibling.key_terms))
+        if sibling.archetypes:
+            extras.append("visuals: " + ", ".join(sibling.archetypes))
+        if extras:
+            lines.append("  (" + "; ".join(extras) + ")")
     return "\n".join(lines) + "\n"
 
 
