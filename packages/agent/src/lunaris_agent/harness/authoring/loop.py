@@ -24,7 +24,6 @@ from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from lunaris_grounding import Evidence, Verifier, render_evidence
 from lunaris_runtime.schema import AgentEventKind, Module, ProgressStage, RiskTier, VerifierStatus
-from lunaris_runtime.video_build import lesson_content_fingerprint
 
 from ...lesson_claims import iter_claims
 from ...subagents.module_author import LessonAssembler
@@ -69,43 +68,6 @@ def _cut_texts_by_module(draft: CourseDraft) -> dict[str, list[str]]:
 
 def _is_goal_critical(module: Module, goal_concept: str | None) -> bool:
     return goal_concept is not None and goal_concept in module.kcs
-
-
-async def _enqueue_cleared_module_videos(draft: CourseDraft, *, ready_module_ids: set[str]) -> None:
-    """Enqueue a lesson-video job for each ready module whose video isn't already enqueued (V4-T0).
-
-    "Ready" = the module's lessons are final and won't be revised again: a module with no cut claims
-    after a verify pass (it won't re-enter ``revise``), or every module at ``triage`` (the loop is
-    done). Enqueuing the moment a module clears — not when the whole loop ends — is what overlaps
-    video rendering with the rest of the build (plan §0). No coordinator (video off) ⇒ a no-op, so
-    the gate stays in the composition root. Dedup is the draft's ``enqueued_video_jobs`` keys, so a
-    module enqueues exactly once even though ``verify`` runs each round.
-    """
-    coordinator = draft.video_coordinator
-    if coordinator is None:
-        return
-    for module in draft.modules:
-        if module.id not in ready_module_ids or not module.lessons:
-            continue
-        # One lesson per module today (the assembler stamps a single ``{module.id}-l0``).
-        lesson = module.lessons[0]
-        if lesson.id in draft.enqueued_video_jobs:
-            continue
-        # Fold the just-authored content into the job's input hash so a later lesson revision marks
-        # the built video outdated (V6-T3).
-        job_id = await coordinator.enqueue_lesson(
-            course_id=draft.course_id,
-            lesson_id=lesson.id,
-            content_hash=lesson_content_fingerprint(lesson),
-        )
-        if job_id is not None:
-            draft.enqueued_video_jobs[lesson.id] = job_id
-            # Surface the overlap live: the canvas shows the video starting while later modules
-            # still author/verify (it lands in the active Lessons phase; the tally lands in Videos).
-            await draft.agent.emit(
-                AgentEventKind.REASONING,
-                text=f"Queued an explainer video for “{module.title}”.",
-            )
 
 
 def build_authoring_subgraph(
@@ -206,10 +168,6 @@ def build_authoring_subgraph(
                 f"{supported} supported, {cut} cut."
             ),
         )
-        # A module with no cut claims this pass is final (it won't re-enter ``revise``) — enqueue
-        # its lesson video now so it renders while the remaining modules still revise (the overlap).
-        ready = {module.id for module in draft.modules if module.id not in cut_by_module}
-        await _enqueue_cleared_module_videos(draft, ready_module_ids=ready)
         return {"cut": cut}
 
     async def revise(state: AuthoringState) -> AuthoringState:
@@ -282,11 +240,6 @@ def build_authoring_subgraph(
             f"Authored {len(draft.modules)} modules over {rounds} revision round(s); "
             f"{residual} claim(s) remained unsupported and were cut"
             + (" (goal-critical → flagged for review)." if goal_critical else ".")
-        )
-        # The loop is done: every authored module is final (a residual-cut module still publishes
-        # its supported claims), so enqueue any lesson video not enqueued during the verify rounds.
-        await _enqueue_cleared_module_videos(
-            draft, ready_module_ids={module.id for module in draft.modules}
         )
         return {"messages": [AIMessage(content=report)]}
 
