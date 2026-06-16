@@ -8,7 +8,9 @@ import {
   type ChatBackend,
   type DeviceProgress,
 } from "../lib/deviceEngine";
-import { CourseLoadError } from "../lib/loadCourse";
+import { CourseLoadError, fetchCourseById } from "../lib/loadCourse";
+import { fetchRunEvents, fetchRuns } from "../lib/runs";
+import { splitRunEvents } from "../lib/splitRunEvents";
 import { streamCourse } from "../lib/streamCourse";
 import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
@@ -27,12 +29,18 @@ export type BuildState =
       // this build by run_id and (once ready) replay it in the Build tab; on a device build it is
       // also what the bridge worker polls. Undefined until known.
       runId: string | undefined;
+      // The course_id, captured from the X-Course-Id header — the key to re-attach to the durable
+      // build (poll its finished course) if the live SSE stream drops. Undefined until known.
+      courseId: string | undefined;
       // Client-stamped stage arrival times (wall-clock), for the timeline's per-phase durations.
       stageTimes: StageTimes;
       // Whether THIS tab is serving the build's completions. Captured at generate time — the
       // dropdown can change mid-build without changing where the running build computes — and
       // rendered as the in-build "keep this tab open" notice.
       servedByThisDevice: boolean;
+      // True once the live SSE stream dropped and we re-attached to the durable run by polling its
+      // persisted event log + finished course. The build never stopped; only the live feed did.
+      reconnecting: boolean;
     }
   // runId is carried from the streaming state so the ready course's Build tab can replay this run.
   | { status: "ready"; course: Course; runId: string | undefined }
@@ -95,31 +103,44 @@ interface StreamBuildOptions {
  *  is present. Module-level (not a closure in the hook) so every input is an explicit parameter. */
 function streamBuild(options: StreamBuildOptions): void {
   const { apiBaseUrl, topic, clarification, discoveryDepth, engine, controller, setState } = options;
+  // Captured from the response headers for the reconnect path: closures over local lets, since the
+  // .catch needs them and they land before any frame (so they're set well before a drop).
+  let runId: string | undefined;
+  let courseId: string | undefined;
   setState({
     status: "streaming",
     topic,
     events: [],
     agentEvents: [],
     runId: undefined,
+    courseId: undefined,
     stageTimes: {},
     servedByThisDevice: engine !== null,
+    reconnecting: false,
   });
   streamCourse(apiBaseUrl, topic, {
     ...(clarification ? { clarification } : {}),
     ...(discoveryDepth ? { discoveryDepth } : {}),
     ...(engine ? { compute: "device" as const } : {}),
     signal: controller.signal,
-    onRunId: (runId) => {
+    onRunId: (id) => {
+      runId = id;
       if (engine && !controller.signal.aborted) {
         // The worker stops on its own when the run ends (404) or this build is aborted. A worker
         // failure is the server's to handle (liveness fails the run, surfacing via the stream);
         // the debug trace just keeps a broken worker diagnosable.
-        runBuildBridgeWorker({ apiBaseUrl, runId, engine, signal: controller.signal }).catch(
+        runBuildBridgeWorker({ apiBaseUrl, runId: id, engine, signal: controller.signal }).catch(
           (error: unknown) => console.debug("build bridge worker stopped", error),
         );
       }
       setState((prev) =>
-        prev.status === "streaming" ? { ...prev, runId: prev.runId ?? runId } : prev,
+        prev.status === "streaming" ? { ...prev, runId: prev.runId ?? id } : prev,
+      );
+    },
+    onCourseId: (id) => {
+      courseId = id;
+      setState((prev) =>
+        prev.status === "streaming" ? { ...prev, courseId: prev.courseId ?? id } : prev,
       );
     },
     onProgress: (event) => {
@@ -139,9 +160,143 @@ function streamBuild(options: StreamBuildOptions): void {
     })
     .catch((error: unknown) => {
       if (controller.signal.aborted) return;
+      // A server build whose live stream dropped before the course arrived is very likely a
+      // transient disconnect — the build is a durable server task that keeps running. Re-attach to
+      // it instead of falsely reporting a broken build. A device build can't (its model lives in
+      // this tab, which the stream drop implicates), so it falls through to the error state.
+      if (
+        engine === null &&
+        error instanceof CourseLoadError &&
+        error.streamIncomplete &&
+        runId &&
+        courseId
+      ) {
+        void reconnectBuild({
+          apiBaseUrl,
+          runId,
+          courseId,
+          topic,
+          discoveryDepth,
+          controller,
+          setState,
+        });
+        return;
+      }
       const message = buildFailureMessage(error, engine !== null);
       setState({ status: "error", message, topic, discoveryDepth: discoveryDepth ?? "standard" });
     });
+}
+
+/** How often a reconnected build re-checks the durable run (mirrors the opened-run recheck): it
+ *  refreshes the live timeline from the event log, finishes when the course persists, and gives up
+ *  only when the run itself ends failed/cancelled. */
+export const BUILD_RECONNECT_POLL_INTERVAL_MS = 3000;
+
+interface ReconnectOptions {
+  apiBaseUrl: string;
+  runId: string;
+  courseId: string;
+  topic: string;
+  discoveryDepth: DiscoveryDepth | undefined;
+  controller: AbortController;
+  setState: SetBuildState;
+}
+
+/**
+ * Re-attach to a build whose live SSE stream dropped before the course arrived. The build is a
+ * durable server task that keeps running, so instead of reporting an error we poll the persisted
+ * run: keep the timeline advancing from the event log, resolve to the finished course once it
+ * persists, and surface a real error only when the run itself ends failed/cancelled. Polling stops
+ * on the controller's abort (a new build, reset, or unmount).
+ */
+async function reconnectBuild(options: ReconnectOptions): Promise<void> {
+  const { apiBaseUrl, runId, courseId, topic, discoveryDepth, controller, setState } = options;
+  const { signal } = controller;
+  setState((prev) => (prev.status === "streaming" ? { ...prev, reconnecting: true } : prev));
+
+  while (!signal.aborted) {
+    // Keep the live timeline advancing from the durable event log (best-effort; a blip retries
+    // next tick). Don't clobber the shown timeline with an empty read while the log write lags.
+    try {
+      const rows = await fetchRunEvents(apiBaseUrl, runId, signal);
+      if (signal.aborted) return;
+      if (rows.length > 0) {
+        const { events, agentEvents } = splitRunEvents(rows);
+        setState((prev) => (prev.status === "streaming" ? { ...prev, events, agentEvents } : prev));
+      }
+    } catch {
+      // transient — the next tick retries
+    }
+
+    // The build persists its course only on success: a successful fetch is the completion signal.
+    try {
+      const course = await fetchCourseById(apiBaseUrl, courseId, signal);
+      if (signal.aborted) return;
+      setState({ status: "ready", course, runId });
+      return;
+    } catch (error) {
+      if (signal.aborted) return;
+      // 404 = still building, and a transport error (no status) = a transient blip — both keep
+      // polling. A definite non-404 HTTP status (e.g. 401 session expired, 5xx) is a real failure:
+      // surface it rather than spin the loop forever.
+      const status = error instanceof CourseLoadError ? error.status : undefined;
+      if (status !== undefined && status !== 404) {
+        setState({
+          status: "error",
+          message:
+            error instanceof CourseLoadError
+              ? error.message
+              : "An unexpected error occurred while building the course.",
+          topic,
+          discoveryDepth: discoveryDepth ?? "standard",
+        });
+        return;
+      }
+    }
+
+    // No course yet: only a terminal run status (failed/cancelled) ends the wait with an error.
+    try {
+      const runs = await fetchRuns(apiBaseUrl, signal);
+      if (signal.aborted) return;
+      const run = runs.find((candidate) => candidate.runId === runId);
+      if (run && (run.status === "failed" || run.status === "cancelled")) {
+        setState({
+          status: "error",
+          message:
+            run.status === "cancelled"
+              ? "This build was cancelled."
+              : "The build failed before the course was ready.",
+          topic,
+          discoveryDepth: discoveryDepth ?? "standard",
+        });
+        return;
+      }
+    } catch {
+      // run-history blip — keep waiting on the course
+    }
+
+    await abortableDelay(BUILD_RECONNECT_POLL_INTERVAL_MS, signal);
+  }
+}
+
+/** A `setTimeout` that also settles immediately when `signal` aborts, so a pending reconnect tick
+ *  never outlives the build it belongs to (a new build, reset, or unmount). */
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 /** The learner-facing failure copy. A device build's stream most often dies because this tab

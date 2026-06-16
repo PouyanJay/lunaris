@@ -9,10 +9,18 @@ export class CourseLoadError extends Error {
   /** HTTP status when the failure came from a response (absent for transport/parse errors). Lets
    *  callers distinguish a 404 (course not persisted yet / gone) from other failures. */
   readonly status?: number | undefined;
-  constructor(message: string, options?: ErrorOptions & { status?: number }) {
+  /** True when a build's SSE stream ended before the terminal course frame arrived — a likely
+   *  transient disconnect (proxy/idle timeout on a long build), not a failure. Lets the caller
+   *  re-attach to the durable run instead of reporting a broken build. */
+  readonly streamIncomplete?: boolean | undefined;
+  constructor(
+    message: string,
+    options?: ErrorOptions & { status?: number; streamIncomplete?: boolean },
+  ) {
     super(message, options);
     this.name = "CourseLoadError";
     this.status = options?.status;
+    this.streamIncomplete = options?.streamIncomplete;
   }
 }
 
