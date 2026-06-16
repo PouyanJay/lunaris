@@ -1,7 +1,6 @@
 import asyncio
 from collections.abc import Mapping
 from contextlib import AbstractContextManager, nullcontext, suppress
-from enum import StrEnum
 
 import structlog
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
@@ -21,12 +20,12 @@ from lunaris_runtime.schema import (
     VideoJobStatus,
     VideoProvenance,
 )
-from pydantic import ValidationError
 
-from lunaris_video.errors import FactualGateError, SceneRenderError, VideoPipelineError
+from lunaris_video.errors import VideoPipelineError
 from lunaris_video.models.rendered_video import RenderedVideo
 from lunaris_video.protocols.video_pipeline_protocol import IVideoPipeline, StageReporter
 from lunaris_video.schemas import TimingManifest
+from lunaris_video.worker.failure_taxonomy import VideoFailureKind
 
 _logger = structlog.get_logger(__name__)
 
@@ -129,7 +128,7 @@ class VideoWorker:
             # first-class query (failure_kind) without leaking internals to the owner-readable row.
             _logger.exception(
                 "video_worker.job_failed",
-                failure_kind=_failure_kind(exc).value,
+                failure_kind=VideoFailureKind.classify(exc).value,
                 failure_class=type(exc).__name__,
                 scene_id=getattr(exc, "scene_id", None),
             )
@@ -257,41 +256,6 @@ class VideoWorker:
             data=artifact.model_dump_json(by_alias=True).encode(),
             content_type="application/json",
         )
-
-
-class _VideoFailureKind(StrEnum):
-    """The queryable taxonomy a failed job logs (E1) — coarse on purpose; ``failure_class`` carries
-    the exact exception type for disambiguation. Sync and length no longer fail a job (they degrade
-    best-effort since #100/#101), so they are deliberately absent here."""
-
-    FACTUAL = "factual"  # Gate C major: a smuggled / ungrounded figure (caught pre-render)
-    RENDER = "render"  # Gate A: a scene exhausted its render-repair budget
-    CODEGEN_PARSE = "codegen_parse"  # generated source never parsed (parse-repair exhausted)
-    PIPELINE = "pipeline"  # any other VideoPipelineError
-    INFRASTRUCTURE = "infrastructure"  # non-pipeline: queue / storage / unexpected
-
-
-def _failure_kind(exc: Exception) -> _VideoFailureKind:
-    """Classify a job failure into the taxonomy. Order matters: the specific ``VideoPipelineError``
-    subclasses are tested before the base.
-
-    A pydantic ``ValidationError`` IS a ``ValueError``, but it is NOT the codegen parse path — it is
-    a schema/structured-data failure (a corrupt stored artifact in ``_build_artifact``, or a planner
-    whose structured output never validated), so it is bucketed INFRASTRUCTURE and ruled out first.
-    ``CODEGEN_PARSE`` is then the bare ``ValueError`` that ``validate_scene_source`` raises when the
-    generated Manim source will not parse — the dominant prod failure. ``failure_class`` always
-    names the exact type, so a coarse kind is never ambiguous."""
-    if isinstance(exc, FactualGateError):
-        return _VideoFailureKind.FACTUAL
-    if isinstance(exc, SceneRenderError):
-        return _VideoFailureKind.RENDER
-    if isinstance(exc, VideoPipelineError):
-        return _VideoFailureKind.PIPELINE
-    if isinstance(exc, ValidationError):
-        return _VideoFailureKind.INFRASTRUCTURE
-    if isinstance(exc, ValueError):
-        return _VideoFailureKind.CODEGEN_PARSE
-    return _VideoFailureKind.INFRASTRUCTURE
 
 
 def _user_error(exc: Exception) -> str:
