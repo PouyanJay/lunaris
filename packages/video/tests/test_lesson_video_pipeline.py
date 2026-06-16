@@ -346,23 +346,24 @@ async def test_produced_event_logs_the_degraded_issue_histogram(
     assert produced[0]["degraded_scenes"] == 1
 
 
+def _qa_result(
+    scene_id: str,
+    *,
+    defects: tuple[QaDefect, ...] = (),
+    sync: tuple[str, ...] = (),
+    factual: tuple[str, ...] = (),
+) -> SceneQaResult:
+    scene = RenderedScene(scene_id=scene_id, mp4_path=Path(f"{scene_id}.mp4"), source="x")
+    return SceneQaResult(
+        scene=scene, unresolved_defects=defects, sync_issues=sync, factual_issues=factual
+    )
+
+
 def test_degraded_issue_histogram_counts_issues_by_kind() -> None:
     # Arrange — the histogram counts ISSUES (not scenes) across the three gate sources, so a scene
-    # with two spatial defects contributes 2 to "visual". A clean run yields all zeros.
-    def _result(
-        scene_id: str,
-        *,
-        defects: tuple[QaDefect, ...] = (),
-        sync: tuple[str, ...] = (),
-        factual: tuple[str, ...] = (),
-    ) -> SceneQaResult:
-        scene = RenderedScene(scene_id=scene_id, mp4_path=Path(f"{scene_id}.mp4"), source="x")
-        return SceneQaResult(
-            scene=scene, unresolved_defects=defects, sync_issues=sync, factual_issues=factual
-        )
-
+    # with two spatial defects contributes 2 to "visual"; a clean scene contributes nothing.
     results = [
-        _result(
+        _qa_result(
             "S1",
             defects=(
                 QaDefect(issue="overlap", fix_hint="separate"),
@@ -370,13 +371,18 @@ def test_degraded_issue_histogram_counts_issues_by_kind() -> None:
             ),
             sync=("beat b2 not in sync",),
         ),
-        _result("S2", factual=("figure 42% unsupported", "comparison unsupported")),
-        _result("S3"),  # clean — contributes nothing
+        _qa_result("S2", factual=("figure 42% unsupported", "comparison unsupported")),
+        _qa_result("S3"),  # clean — contributes nothing
     ]
 
     # Act / Assert
     assert _degraded_issue_histogram(results) == {"visual": 2, "sync": 1, "factual": 2}
-    assert _degraded_issue_histogram([_result("S0")]) == {"visual": 0, "sync": 0, "factual": 0}
+
+
+def test_degraded_issue_histogram_is_all_zeros_for_clean_scenes() -> None:
+    # Arrange / Act / Assert — the all-zeros baseline: a clean produce reports no bias and the
+    # histogram is silent (every kind zero), proving the counts come only from real degradations.
+    assert _degraded_issue_histogram([_qa_result("S0")]) == {"visual": 0, "sync": 0, "factual": 0}
 
 
 class _VisionFailingScene:

@@ -27,6 +27,7 @@ from lunaris_runtime.schema import (
 )
 from lunaris_video import RenderedVideo, StubVideoPipeline, VideoWorker
 from lunaris_video.errors import FactualGateError, SceneRenderError, VideoPipelineError
+from pydantic import BaseModel, ValidationError
 
 _OWNER = "00000000-0000-0000-0000-000000000001"
 
@@ -38,6 +39,30 @@ def _json_log_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object
         for line in capsys.readouterr().out.splitlines()
         if line.strip().startswith("{")
     ]
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _configure_json_logging() -> None:
+    # The failure-taxonomy test reads structured logs off stdout JSON (not structlog.testing's
+    # capture_logs): the agent package exercises this module's logger under the cached JSON
+    # pipeline, so by the time the suite reaches here the logger is frozen and capture can't catch
+    # it — reading the configured stdout sink is order-independent (the apps/api recorder tests do
+    # the same). Configure once per module so the intent is explicit, not repeated per parametrize.
+    configure_logging(json_output=True)
+
+
+def _a_validation_error() -> ValidationError:
+    # A real pydantic ValidationError — what _build_artifact raises on a corrupt stored artifact, or
+    # a planner whose structured output never validates. It IS a ValueError, so the taxonomy must
+    # rule it out before the codegen-parse branch.
+    class _Model(BaseModel):
+        value: int
+
+    try:
+        _Model(value="not an int")  # type: ignore[arg-type]
+    except ValidationError as exc:
+        return exc
+    raise AssertionError("expected a ValidationError")  # pragma: no cover
 
 
 def _job(job_id: str = "job-1") -> VideoJob:
@@ -363,6 +388,8 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
         (SceneRenderError("S1_hook", attempts=4, error_tail="boom"), "render", "S1_hook"),
         (ValueError("source does not parse: unterminated string literal"), "codegen_parse", None),
         (VideoPipelineError("some pipeline failure"), "pipeline", None),
+        # A pydantic ValidationError is a ValueError but is a schema failure, not codegen parse.
+        (_a_validation_error(), "infrastructure", None),
         (RuntimeError("queue exploded"), "infrastructure", None),
     ],
 )
@@ -375,12 +402,8 @@ async def test_job_failed_logs_a_structured_failure_taxonomy(
     # Arrange — each exception class the pipeline can raise maps to a queryable failure_kind, so the
     # failure taxonomy is a first-class structured read (no more az/KQL spelunking, E1). The exact
     # class rides alongside (failure_class) so a coarse kind is always disambiguable, and a scene_id
-    # is captured when the error carries one. Read off stdout JSON (not structlog's capture_logs):
-    # the agent package exercises this module logger under the cached JSON pipeline, so by the time
-    # this test runs the logger is frozen and capture_logs cannot intercept it — reading the
-    # configured stdout sink is order-independent (the apps/api recorder tests do the same).
-    configure_logging(json_output=True)
-
+    # is captured when the error carries one. (Logging is configured once by the module fixture; the
+    # event is read off stdout JSON — see _configure_json_logging for why not capture_logs.)
     class _ExplodingPipeline:
         async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
             raise exc

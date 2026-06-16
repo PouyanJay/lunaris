@@ -10,10 +10,11 @@ from lunaris_video.schemas import BeatTiming, QaDefect, SceneContract, SceneTimi
 from structlog.testing import capture_logs
 
 
-def _sanitized_events(logs: list[dict[str, object]], fix: str | None = None) -> list[dict]:
-    # The deterministic-sanitization audit trail (B2): every `codegen.sanitized` event, optionally
-    # filtered to one fix discriminator. The presence/absence of these is what lets us measure how
-    # often a completion is recovered deterministically vs by an LLM parse-repair turn.
+def _sanitized_events(
+    logs: list[dict[str, object]], fix: str | None = None
+) -> list[dict[str, object]]:
+    # The `codegen.sanitized` events, optionally filtered to one fix discriminator — their presence
+    # or absence is what proves a completion was recovered deterministically (not by an LLM turn).
     return [
         e for e in logs if e["event"] == "codegen.sanitized" and (fix is None or e["fix"] == fix)
     ]

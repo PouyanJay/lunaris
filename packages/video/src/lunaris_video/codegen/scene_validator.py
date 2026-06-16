@@ -84,9 +84,7 @@ def _sanitize(source: str, scene: SceneContract) -> str:
         _logger.info("codegen.sanitized", scene_id=scene.id, fix="line_endings")
     translated = normalized.translate(_SMART_PUNCTUATION)
     if translated != normalized:
-        codepoints = sorted(
-            {f"U+{ord(ch):04X}" for ch in normalized if ord(ch) in _SMART_PUNCTUATION}
-        )
+        codepoints = sorted(f"U+{cp:04X}" for cp in _SMART_PUNCTUATION if chr(cp) in normalized)
         _logger.info(
             "codegen.sanitized", scene_id=scene.id, fix="smart_punctuation", codepoints=codepoints
         )

@@ -21,6 +21,7 @@ from lunaris_runtime.schema import (
     VideoJobStatus,
     VideoProvenance,
 )
+from pydantic import ValidationError
 
 from lunaris_video.errors import FactualGateError, SceneRenderError, VideoPipelineError
 from lunaris_video.models.rendered_video import RenderedVideo
@@ -270,17 +271,24 @@ class _VideoFailureKind(StrEnum):
     INFRASTRUCTURE = "infrastructure"  # non-pipeline: queue / storage / unexpected
 
 
-def _failure_kind(exc: BaseException) -> _VideoFailureKind:
+def _failure_kind(exc: Exception) -> _VideoFailureKind:
     """Classify a job failure into the taxonomy. Order matters: the specific ``VideoPipelineError``
-    subclasses are tested before the base. A bare ``ValueError`` (a pydantic ``ValidationError`` is
-    one too) is the parse-exhaustion path — ``invoke_with_parse_repair`` re-raises the validator's
-    ``ValueError`` unwrapped — overwhelmingly codegen on prod; ``failure_class`` says which."""
+    subclasses are tested before the base.
+
+    A pydantic ``ValidationError`` IS a ``ValueError``, but it is NOT the codegen parse path — it is
+    a schema/structured-data failure (a corrupt stored artifact in ``_build_artifact``, or a planner
+    whose structured output never validated), so it is bucketed INFRASTRUCTURE and ruled out first.
+    ``CODEGEN_PARSE`` is then the bare ``ValueError`` that ``validate_scene_source`` raises when the
+    generated Manim source will not parse — the dominant prod failure. ``failure_class`` always
+    names the exact type, so a coarse kind is never ambiguous."""
     if isinstance(exc, FactualGateError):
         return _VideoFailureKind.FACTUAL
     if isinstance(exc, SceneRenderError):
         return _VideoFailureKind.RENDER
     if isinstance(exc, VideoPipelineError):
         return _VideoFailureKind.PIPELINE
+    if isinstance(exc, ValidationError):
+        return _VideoFailureKind.INFRASTRUCTURE
     if isinstance(exc, ValueError):
         return _VideoFailureKind.CODEGEN_PARSE
     return _VideoFailureKind.INFRASTRUCTURE
