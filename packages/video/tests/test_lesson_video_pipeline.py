@@ -14,9 +14,13 @@ from lunaris_runtime.video_build import target_seconds_for
 from lunaris_video.assembly import build_webvtt
 from lunaris_video.errors import FactualGateError
 from lunaris_video.gates import FactualGate, LengthGate, RenderGate, SyncGate, VisualQaGate
-from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult
+from lunaris_video.models import RenderedScene, RenderedVideo, RenderResult, SceneQaResult
 from lunaris_video.pipeline import ContractHashCache, VideoPipeline
-from lunaris_video.pipeline.video_pipeline import SynthesizerProvider, _target_seconds
+from lunaris_video.pipeline.video_pipeline import (
+    SynthesizerProvider,
+    _degraded_issue_histogram,
+    _target_seconds,
+)
 from lunaris_video.planning import ScenePlanner
 from lunaris_video.protocols.prior_contract_provider_protocol import IPriorContractProvider
 from lunaris_video.schemas import (
@@ -30,6 +34,7 @@ from lunaris_video.schemas import (
     VideoContract,
 )
 from lunaris_video.voice import StubSpeechSynthesizer
+from structlog.testing import capture_logs
 
 _SCENE_SOURCE = (
     "from manim import *\n"
@@ -318,6 +323,60 @@ async def test_a_persistent_gate_b_defect_ships_the_best_render_with_degraded_pr
     degraded = provenance.degraded_scenes[0]
     assert degraded.scene_id == "S1_problem"
     assert "title text overflows the frame" in degraded.issues
+
+
+async def test_produced_event_logs_the_degraded_issue_histogram(
+    make_lesson_contract, tmp_path: Path
+) -> None:
+    # Arrange — a stubborn Gate-B defect degrades the one scene with a spatial (visual) issue. The
+    # produced event must carry a per-kind histogram of the degraded issues (E1), so a build's
+    # degradation profile is a structured read, not a hand-count off the artifact.
+    invoke = StubInvokeModel([_draft_json(make_lesson_contract)])
+    renderer, assembler, cache = _SpyRenderer(), _SpyAssembler(), ContractHashCache()
+    pipeline = _pipeline(invoke, renderer, assembler, cache, tmp_path, vision=_StubbornVision())
+
+    # Act
+    with capture_logs() as logs:
+        await pipeline.produce(_job())
+
+    # Assert — one visual issue, no sync/factual issues (silent job, no smuggled figure).
+    produced = [e for e in logs if e["event"] == "video_pipeline.produced"]
+    assert len(produced) == 1
+    assert produced[0]["degraded_by_kind"] == {"visual": 1, "sync": 0, "factual": 0}
+    assert produced[0]["degraded_scenes"] == 1
+
+
+def test_degraded_issue_histogram_counts_issues_by_kind() -> None:
+    # Arrange — the histogram counts ISSUES (not scenes) across the three gate sources, so a scene
+    # with two spatial defects contributes 2 to "visual". A clean run yields all zeros.
+    def _result(
+        scene_id: str,
+        *,
+        defects: tuple[QaDefect, ...] = (),
+        sync: tuple[str, ...] = (),
+        factual: tuple[str, ...] = (),
+    ) -> SceneQaResult:
+        scene = RenderedScene(scene_id=scene_id, mp4_path=Path(f"{scene_id}.mp4"), source="x")
+        return SceneQaResult(
+            scene=scene, unresolved_defects=defects, sync_issues=sync, factual_issues=factual
+        )
+
+    results = [
+        _result(
+            "S1",
+            defects=(
+                QaDefect(issue="overlap", fix_hint="separate"),
+                QaDefect(issue="overflow", fix_hint="scale"),
+            ),
+            sync=("beat b2 not in sync",),
+        ),
+        _result("S2", factual=("figure 42% unsupported", "comparison unsupported")),
+        _result("S3"),  # clean — contributes nothing
+    ]
+
+    # Act / Assert
+    assert _degraded_issue_histogram(results) == {"visual": 2, "sync": 1, "factual": 2}
+    assert _degraded_issue_histogram([_result("S0")]) == {"visual": 0, "sync": 0, "factual": 0}
 
 
 class _VisionFailingScene:

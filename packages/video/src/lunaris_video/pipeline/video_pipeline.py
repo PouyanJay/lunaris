@@ -191,6 +191,7 @@ class VideoPipeline:
             narrated=voice is not None,
             grounded_claim_ids=len(_cited_claim_ids(contract)),
             degraded_scenes=len(video.degraded_scenes),
+            degraded_by_kind=_degraded_issue_histogram(qa_results),
         )
         return self._stamp_provenance(video, job, contract, digest)
 
@@ -396,6 +397,18 @@ def _degraded_scenes(results: list[SceneQaResult]) -> tuple[DegradedScene, ...]:
         if issues:
             degraded.append(DegradedScene(scene_id=result.scene.scene_id, issues=issues))
     return tuple(degraded)
+
+
+def _degraded_issue_histogram(results: list[SceneQaResult]) -> dict[str, int]:
+    # The per-kind count of degraded ISSUES across this produce (not scenes): Gate B spatial defects
+    # (visual), Gate D / Gate 1 sync imperfections (sync), and Gate C MINOR factual flags (factual).
+    # A scene with two spatial defects contributes 2 to "visual"; a clean produce is all zeros.
+    # Logged on `produced` so a build's degradation profile is a structured read (E1).
+    return {
+        "visual": sum(len(result.unresolved_defects) for result in results),
+        "sync": sum(len(result.sync_issues) for result in results),
+        "factual": sum(len(result.factual_issues) for result in results),
+    }
 
 
 def _cited_claim_ids(contract: VideoContract) -> list[str]:

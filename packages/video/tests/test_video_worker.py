@@ -24,7 +24,8 @@ from lunaris_runtime.schema import (
     VideoProvenance,
 )
 from lunaris_video import RenderedVideo, StubVideoPipeline, VideoWorker
-from lunaris_video.errors import VideoPipelineError
+from lunaris_video.errors import FactualGateError, SceneRenderError, VideoPipelineError
+from structlog.testing import capture_logs
 
 _OWNER = "00000000-0000-0000-0000-000000000001"
 
@@ -339,6 +340,51 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
     assert recorded[-1].payload.get("status") == "failed"
     assert [event.seq for event in recorded] == list(range(len(recorded)))
     assert storage.paths() == []  # nothing half-uploaded presented as done
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected_kind", "expected_scene"),
+    [
+        (
+            FactualGateError("S2_mechanism", unsupported=["42%"], detail="smuggled figure"),
+            "factual",
+            "S2_mechanism",
+        ),
+        (SceneRenderError("S1_hook", attempts=4, error_tail="boom"), "render", "S1_hook"),
+        (ValueError("source does not parse: unterminated string literal"), "codegen_parse", None),
+        (VideoPipelineError("some pipeline failure"), "pipeline", None),
+        (RuntimeError("queue exploded"), "infrastructure", None),
+    ],
+)
+async def test_job_failed_logs_a_structured_failure_taxonomy(
+    exc: Exception, expected_kind: str, expected_scene: str | None
+) -> None:
+    # Arrange — each exception class the pipeline can raise maps to a queryable failure_kind, so the
+    # failure taxonomy is a first-class structured read (no more az/KQL spelunking, E1). The exact
+    # class rides alongside (failure_class) so a coarse kind is always disambiguable, and a scene_id
+    # is captured when the error carries one.
+    class _ExplodingPipeline:
+        async def produce(self, job: VideoJob, *, on_stage=None) -> RenderedVideo:
+            raise exc
+
+    queue, storage, events = (
+        InMemoryVideoJobQueue(),
+        InMemoryVideoStorage(),
+        InMemoryRunEventStore(),
+    )
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, events, pipeline=_ExplodingPipeline())
+
+    # Act
+    with capture_logs() as logs:
+        assert await worker.run_once() is True
+
+    # Assert — exactly one job_failed event, carrying the taxonomy fields.
+    failed = [e for e in logs if e["event"] == "video_worker.job_failed"]
+    assert len(failed) == 1
+    assert failed[0]["failure_kind"] == expected_kind
+    assert failed[0]["failure_class"] == type(exc).__name__
+    assert failed[0]["scene_id"] == expected_scene
 
 
 async def test_an_actionable_failure_reason_reaches_the_job_row() -> None:
