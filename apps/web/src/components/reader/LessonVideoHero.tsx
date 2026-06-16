@@ -2,6 +2,7 @@ import { useLessonVideo } from "../../hooks/useLessonVideo";
 import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
 import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
+import { DegradedBadge } from "./DegradedBadge";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
@@ -74,6 +75,7 @@ export function LessonVideoHero({
           />
           <div className={styles.regenerateRow}>
             {state.stale && <OutdatedBadge />}
+            <DegradedBadge scenes={state.degradedScenes} />
             <RegenerateMenu available={readyRegenModes(state.captionsUrl)} onSelect={regenerate} />
           </div>
         </>

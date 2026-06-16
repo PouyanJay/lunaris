@@ -10,14 +10,14 @@ import {
   type RegenerateMode,
   type VideoJobStatus,
 } from "../lib/videoJobs";
-import type { VideoArtifact } from "../types/course";
+import type { DegradedScene, VideoArtifact } from "../types/course";
 
 export const VIDEO_POLL_INTERVAL_MS = 2500;
 
 /** The hero slot's whole state machine, one discriminated union. `ready`/`failed` carry the source
  *  `jobId` so the regenerate menu (V6) can re-run them; `ready` also carries `stale` (the lesson was
- *  revised since — the outdated badge, V6-T3). `failed` is `null` only when the enqueue itself never
- *  produced a job. */
+ *  revised since — the outdated badge, V6-T3) and `degradedScenes` (scenes the build shipped flagged
+ *  — the degraded badge). `failed` is `null` only when the enqueue itself never produced a job. */
 export type LessonVideoState =
   | { phase: "idle" }
   | { phase: "working"; status: VideoJobStatus }
@@ -28,6 +28,7 @@ export type LessonVideoState =
       posterUrl: string | null;
       captionsUrl: string | null;
       stale: boolean;
+      degradedScenes: DegradedScene[];
     }
   | { phase: "failed"; jobId: string | null; error?: string | null }
   | { phase: "keyless"; detail: string }
@@ -75,6 +76,7 @@ export function useLessonVideo(
               posterUrl: view.posterUrl,
               captionsUrl: view.captionsUrl,
               stale: view.stale ?? false,
+              degradedScenes: view.provenance?.degradedScenes ?? [],
             });
           } else {
             setState({ phase: "failed", jobId, error: view.job.error ?? null });

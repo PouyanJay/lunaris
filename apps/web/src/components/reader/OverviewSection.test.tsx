@@ -120,6 +120,32 @@ describe("OverviewSection", () => {
     expect(screen.queryByText("What this topic is and why it matters")).toBeNull();
   });
 
+  it("flags a course video whose build shipped scenes degraded", async () => {
+    // Arrange — the trailer resolves READY but its provenance carries a degraded scene.
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      return Promise.resolve(
+        jsonResponse(200, {
+          ...readyView("sum-1"),
+          provenance: {
+            degradedScenes: [
+              { sceneId: "S1_hook", issues: ["narration not fully in sync (beat b2)"] },
+            ],
+          },
+        }),
+      );
+    });
+
+    // Act
+    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+
+    // Assert — the trailer plays with the degraded badge and the issue available on hover.
+    await screen.findByRole("button", { name: /play the course trailer/i });
+    const badge = screen.getByText(/1 scene degraded/i).closest("[title]");
+    expect(badge?.getAttribute("title")).toContain("narration not fully in sync (beat b2)");
+  });
+
   it("shows an honest message for a degraded video instead of a broken player", async () => {
     // Arrange — the overview render failed; the summary is fine.
     const videos: CourseVideos = {

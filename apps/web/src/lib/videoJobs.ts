@@ -1,4 +1,4 @@
-import type { VideoArtifact } from "../types/course";
+import type { VideoArtifact, VideoProvenance } from "../types/course";
 import { authedFetch } from "./apiClient";
 
 /** The job id to resolve a video artifact by: prefer the provenance jobId (the worker populates it
@@ -59,14 +59,16 @@ export interface VideoJobWire {
 }
 
 /** The wire shape of `GET /api/videos/{id}` / the enqueue response: the job row plus signed
- *  playback URLs once it is ready, and whether the lesson it was built from has since been revised
- *  (`stale` — the reader's outdated badge, V6-T3). `captionsUrl` is present only for a narrated
- *  video. */
+ *  playback URLs once it is ready, the grounding provenance once ready (the API sends it on a READY
+ *  job — it carries the degraded-scene flags the reader surfaces), and whether the lesson it was
+ *  built from has since been revised (`stale` — the reader's outdated badge, V6-T3). `captionsUrl`
+ *  is present only for a narrated video. */
 export interface VideoJobView {
   job: VideoJobWire;
   videoUrl: string | null;
   posterUrl: string | null;
   captionsUrl: string | null;
+  provenance?: VideoProvenance | null;
   stale?: boolean;
 }
 
