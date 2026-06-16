@@ -1,13 +1,17 @@
-"""Video V4-T1: finalize awaits the build's enqueued lesson videos and stitches each finished
-artifact into its lesson — blocking-but-overlapped, degrade-on-failure (plan §V4-T1).
+"""Video V4-T1 (with the cloud-worker ordering fix): finalize PERSISTS the course, then enqueues a
+lesson-video job for every lesson, awaits them, and stitches each finished artifact into its lesson
+— blocking, degrade-on-failure (plan §V4-T1).
 
-The author→verify→revise loop enqueues a lesson-video job (V4-T0); a worker drains it concurrently;
-``finalize_course`` then awaits the jobs and folds each ``VideoArtifact`` into ``Lesson.video``. A
-job that fails never blocks publication — its lesson publishes with a FAILED (retry-state) video.
-Driven keyless end to end: real coordinator + real worker (stub pipeline) + real finalize.
+Persist-before-enqueue is the fix for the prod "course not found" race: the cloud worker renders a
+lesson video by loading the course from the store, so the course must already be saved when the job
+is enqueued (the V4 in-process worker shared memory and never hit this; the V7 cloud worker reads
+the DB). A failed job never blocks publication — its lesson publishes with a FAILED (retry-state)
+video. Driven keyless end to end: real coordinator + real worker (stub pipeline) + real finalize,
+with the worker draining in the background so it picks up whatever finalize enqueues.
 """
 
 import asyncio
+import contextlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -75,7 +79,7 @@ def _unused_revise(module: Module, cut: Sequence[str], attempt: int) -> LessonDr
     return _grounded_author(module)
 
 
-def _draft_with_graph(coordinator: QueueVideoBuildCoordinator) -> CourseDraft:
+def _draft_with_graph(coordinator: object) -> CourseDraft:
     draft = CourseDraft(topic="t", course_id="c1", run_id="r1")
     draft.modules = [Module(id="m0", title="Routing", kcs=["c"], difficulty_index=0.5)]
     draft.graph = PrerequisiteGraph(
@@ -93,41 +97,107 @@ def _draft_with_graph(coordinator: QueueVideoBuildCoordinator) -> CourseDraft:
         is_acyclic=True,
         topo_order=["c"],
     )
-    draft.video_coordinator = coordinator
+    draft.video_coordinator = coordinator  # type: ignore[assignment]
     return draft
 
 
-async def _author_and_enqueue(draft: CourseDraft) -> None:
+async def _author(draft: CourseDraft) -> None:
+    """Run the authoring loop. It authors the lessons but — since the cloud-worker ordering fix —
+    enqueues NO video jobs (that moved to finalize, after the persist)."""
     subgraph = build_authoring_subgraph(
         StubLessonReviser(_grounded_author, _unused_revise), _marker_verifier(), draft
     )
     await subgraph.ainvoke({"messages": [HumanMessage(content="author")]})
 
 
-async def test_finalize_awaits_and_stitches_a_ready_video_into_its_lesson(tmp_path: Path) -> None:
-    # Arrange — author + enqueue, then start a worker draining concurrently (the job is NOT done yet
-    # when finalize is called, so this proves finalize BLOCKS on it).
+async def _finalize_draining(
+    draft: CourseDraft,
+    store: CourseStore,
+    *,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    pipeline: object,
+) -> dict[str, object]:
+    """Run finalize with a worker draining in the background. The worker runs forever (not run_once)
+    because the jobs don't exist until finalize enqueues them — a run_once before finalize would
+    claim nothing, leaving finalize's collect to poll forever."""
+    worker = VideoWorker(
+        queue=queue,
+        pipeline=pipeline,  # type: ignore[arg-type]
+        storage=storage,
+        events=events,
+        worker_id="w",
+    )
+    task = asyncio.create_task(worker.run_forever(poll_interval_seconds=0.01))
+    finalize = make_finalize_course_tool(MinimalCritic(), store, draft, StubCoverageCritic())
+    try:
+        async with asyncio.timeout(15):
+            return await finalize.ainvoke({})
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+async def test_finalize_persists_course_before_enqueuing_lesson_videos(tmp_path: Path) -> None:
+    # The fix: the cloud worker renders a lesson video by loading the course from the store, so
+    # finalize must persist BEFORE it enqueues — otherwise the worker fails "course not found". A
+    # spy coordinator does what the worker's lesson provider does (load the course) at enqueue time;
+    # it must already be there.
+    store = CourseStore(tmp_path)
+    loaded_at_enqueue: list[str] = []
+
+    class _OrderingCoordinator:
+        async def enqueue_lesson(self, *, course_id: str, lesson_id: str, content_hash: str) -> str:
+            store.load(course_id)  # raises FileNotFoundError if finalize hasn't persisted yet
+            loaded_at_enqueue.append(course_id)
+            return f"job-{lesson_id}"
+
+        async def collect(self, jobs_by_lesson: object) -> dict[str, object]:
+            return {}
+
+        async def collect_course_videos(self, jobs: object) -> dict[object, object]:
+            return {}
+
+    draft = _draft_with_graph(_OrderingCoordinator())
+    await _author(draft)
+
+    # Act
+    finalize = make_finalize_course_tool(MinimalCritic(), store, draft, StubCoverageCritic())
+    await finalize.ainvoke({})
+
+    # Assert — a lesson video was enqueued, and the course was already loadable from the store at
+    # that moment (no FileNotFoundError) — the ordering that prevents "course not found".
+    assert loaded_at_enqueue == ["c1"]
+
+
+async def test_finalize_enqueues_then_stitches_a_ready_video_into_its_lesson(
+    tmp_path: Path,
+) -> None:
+    # Arrange — author (no enqueue), then finalize with a worker draining concurrently. The job is
+    # created BY finalize, so finalize must block on it (the worker renders it during the await).
     queue, storage, events = (
         InMemoryVideoJobQueue(),
         InMemoryVideoStorage(),
         InMemoryRunEventStore(),
     )
-    # poll_s tiny so finalize enters its poll loop and re-polls — observing the job go QUEUED →
-    # READY as the worker drains during the sleep (proving it BLOCKS, not reads a done one).
     coordinator = QueueVideoBuildCoordinator(
         queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
     )
     draft = _draft_with_graph(coordinator)
-    await _author_and_enqueue(draft)
-    worker = VideoWorker(
-        queue=queue, pipeline=StubVideoPipeline(), storage=storage, events=events, worker_id="w"
-    )
-    finalize = make_finalize_course_tool(
-        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
-    )
+    await _author(draft)
+    assert draft.enqueued_video_jobs == {}  # authoring enqueued nothing — finalize will
 
-    # Act — finalize and a single worker drain race; finalize's await must wait for the job.
-    await asyncio.gather(finalize.ainvoke({}), worker.run_once())
+    # Act
+    await _finalize_draining(
+        draft,
+        CourseStore(tmp_path),
+        queue=queue,
+        storage=storage,
+        events=events,
+        pipeline=StubVideoPipeline(),
+    )
 
     # Assert — the lesson carries a READY video whose structural provenance traces the job it came
     # from (provenance is populated, not just an MP4 reference).
@@ -146,19 +216,21 @@ async def test_finalize_publishes_anyway_when_a_video_fails(tmp_path: Path) -> N
         InMemoryVideoStorage(),
         InMemoryRunEventStore(),
     )
-    coordinator = QueueVideoBuildCoordinator(queue=queue, storage=storage, owner_id=_OWNER)
+    coordinator = QueueVideoBuildCoordinator(
+        queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
+    )
     draft = _draft_with_graph(coordinator)
-    await _author_and_enqueue(draft)
-    worker = VideoWorker(
-        queue=queue, pipeline=_FailingPipeline(), storage=storage, events=events, worker_id="w"
-    )
-    await worker.run_once()  # settles the job FAILED before finalize awaits it
-    finalize = make_finalize_course_tool(
-        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
-    )
+    await _author(draft)
 
     # Act — the failed video must NOT block the course.
-    result = await finalize.ainvoke({})
+    result = await _finalize_draining(
+        draft,
+        CourseStore(tmp_path),
+        queue=queue,
+        storage=storage,
+        events=events,
+        pipeline=_FailingPipeline(),
+    )
 
     # Assert — the course still finalized; the lesson carries a FAILED (retry-state) video that, as
     # a video that never planned a contract, carries no provenance.
@@ -186,17 +258,17 @@ async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(
     cursor = StageCursor()
     draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
     draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
-    await _author_and_enqueue(draft)
-    worker = VideoWorker(
-        queue=queue, pipeline=StubVideoPipeline(), storage=storage, events=events, worker_id="w"
-    )
-    await worker.run_once()
-    finalize = make_finalize_course_tool(
-        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
-    )
+    await _author(draft)
 
     # Act
-    await finalize.ainvoke({})
+    await _finalize_draining(
+        draft,
+        CourseStore(tmp_path),
+        queue=queue,
+        storage=storage,
+        events=events,
+        pipeline=StubVideoPipeline(),
+    )
 
     # Assert — one LESSON_VIDEOS progress beat carrying the tally + summary (none degraded here)…
     videos = [e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
@@ -226,17 +298,17 @@ async def test_finalize_videos_phase_reports_a_degraded_count(
     cursor = StageCursor()
     draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
     draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
-    await _author_and_enqueue(draft)
-    worker = VideoWorker(
-        queue=queue, pipeline=_FailingPipeline(), storage=storage, events=events, worker_id="w"
-    )
-    await worker.run_once()
-    finalize = make_finalize_course_tool(
-        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
-    )
+    await _author(draft)
 
     # Act
-    await finalize.ainvoke({})
+    await _finalize_draining(
+        draft,
+        CourseStore(tmp_path),
+        queue=queue,
+        storage=storage,
+        events=events,
+        pipeline=_FailingPipeline(),
+    )
 
     # Assert — the Videos phase reports the degrade in both the tally and the summary (web → amber)…
     videos = next(e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS)
@@ -249,10 +321,11 @@ async def test_finalize_videos_phase_reports_a_degraded_count(
     assert "could not be generated" in video_beats[0].text
 
 
-async def test_finalize_emits_no_videos_phase_when_nothing_was_enqueued(
+async def test_finalize_emits_no_videos_phase_when_there_are_no_lessons(
     tmp_path: Path, progress_sink
 ) -> None:
-    # Arrange — a coordinator is wired but no module ever enqueued a video (nothing authored).
+    # Arrange — a coordinator is wired but nothing was authored (the course has no lessons), so
+    # finalize enqueues no lesson videos.
     coordinator = QueueVideoBuildCoordinator(
         queue=InMemoryVideoJobQueue(), storage=InMemoryVideoStorage(), owner_id=_OWNER
     )
@@ -262,7 +335,7 @@ async def test_finalize_emits_no_videos_phase_when_nothing_was_enqueued(
         MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
     )
 
-    # Act — finalize with no enqueued videos.
+    # Act — finalize with no lessons to enqueue.
     await finalize.ainvoke({})
 
     # Assert — no Videos phase is opened (the canvas leaves it pending), no vacuous 0/0 tally.

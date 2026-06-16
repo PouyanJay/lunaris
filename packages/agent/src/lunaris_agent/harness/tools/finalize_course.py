@@ -28,6 +28,7 @@ from lunaris_runtime.schema import (
     VideoJobStatus,
     VideoKind,
 )
+from lunaris_runtime.video_build import lesson_content_fingerprint
 
 from ...coverage_critic import CoverageReport, ICoverageCritic
 from ...critic import ICritic
@@ -151,6 +152,40 @@ def _video_beat(outcome: _VideoOutcome) -> str:
         f"Explainer video for “{outcome.module_title}” could not be generated — "
         "retry it from the lesson."
     )
+
+
+async def _enqueue_lesson_videos(course: Course, draft: CourseDraft) -> None:
+    """Enqueue a lesson-video job per lesson, AFTER the course is persisted (the cloud-worker fix).
+
+    The cloud video worker (V7) renders a lesson video by loading the course from the store
+    (``course_store_lesson_provider``), so the course must already be saved or the worker fails the
+    job "course not found". Enqueuing here — not during authoring, where it used to overlap the
+    build — guarantees the worker can always load the course. Course-level videos snapshot their own
+    grounding at curriculum design and never load the course, so they still enqueue early. A no-op
+    when video is off (no coordinator), so the video-off path is unchanged; dedup on
+    ``enqueued_video_jobs`` keeps it idempotent.
+    """
+    coordinator = draft.video_coordinator
+    if coordinator is None:
+        return
+    for module in course.modules:
+        for lesson in module.lessons:
+            if lesson.id in draft.enqueued_video_jobs:
+                continue
+            job_id = await coordinator.enqueue_lesson(
+                course_id=course.id,
+                lesson_id=lesson.id,
+                content_hash=lesson_content_fingerprint(lesson),
+            )
+            if job_id is not None:
+                draft.enqueued_video_jobs[lesson.id] = job_id
+            else:
+                # The coordinator declined the job (gating / quota). Enqueuing is now the single
+                # moment a lesson gets a video, so leave a breadcrumb — otherwise the lesson ships
+                # video-less with no signal as to why.
+                logger.debug(
+                    "lesson_video_enqueue_skipped", run_id=draft.run_id, lesson_id=lesson.id
+                )
 
 
 async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
@@ -360,16 +395,24 @@ def make_finalize_course_tool(
         # it). None (the no-key path) ships the deterministic band unchanged.
         if scope_polisher is not None and course.scope is not None:
             course.scope = await scope_polisher.polish(course.scope, brief=draft.brief)
-        # Blocking finalize (V4-T1): await the build's enqueued lesson videos and fold each into its
-        # lesson before persisting. Placed last so the renders overlap the whole finalize tail
-        # (visuals, gates, scope polish); degrade-on-failure, so a video never blocks the publish.
-        await _stitch_lesson_videos(course, draft)
-        # The course-level videos (V5-T2): the SUMMARY trailer + OVERVIEW intro, awaited and folded
-        # into Course.videos the same blocking-but-overlapped, degrade-on-failure way.
-        await _stitch_course_videos(course, draft)
+        # Persist the authored course BEFORE enqueuing its lesson videos. The cloud video worker
+        # renders each lesson video by loading the course from the store, so the course must exist
+        # there first — otherwise the worker fails every lesson video "course not found" (the V4
+        # in-process worker shared memory and never hit this; the V7 cloud worker reads the DB).
         # The store's save is synchronous (file I/O for the file store, a blocking supabase-py call
         # for the Postgres store); off-load it so the agent's event loop isn't blocked on the write.
         await asyncio.to_thread(store.save, course)
+        # Lesson videos enqueue here (against the now-persisted course); course-level videos were
+        # enqueued at curriculum design (they snapshot their own grounding, so they need no
+        # persisted course). Both then collect + fold in, degrade-on-failure so a video never blocks
+        # the publish (plan §0).
+        await _enqueue_lesson_videos(course, draft)
+        await _stitch_lesson_videos(course, draft)
+        await _stitch_course_videos(course, draft)
+        # Re-persist with the stitched video refs (the save above predated them). Skipped when no
+        # videos were ever enqueued, to spare the video-off build a redundant no-op write.
+        if draft.enqueued_video_jobs or draft.enqueued_course_videos:
+            await asyncio.to_thread(store.save, course)
         draft.course = course
         logger.info(
             "agent_course_finalized",
