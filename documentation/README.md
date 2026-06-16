@@ -26,6 +26,8 @@ Start with the [project README](../README.md) for the one-paragraph overview and
 
 - **[Deployment](deployment.md)** — the production topology on Azure and Supabase, the
   multi-tenancy and bring-your-own-key model, and why the API runs on Container Apps.
+- **[Video observability](video-observability.md)** — the structured events behind explainer-video
+  generation: the failure taxonomy, the degraded-issue histogram, and the queries that read them.
 
 ---
 

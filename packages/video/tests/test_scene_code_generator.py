@@ -7,6 +7,17 @@ import pytest
 from _stubs import StubInvokeModel
 from lunaris_video.codegen import SceneCodeGenerator, validate_scene_source
 from lunaris_video.schemas import BeatTiming, QaDefect, SceneContract, SceneTiming
+from structlog.testing import capture_logs
+
+
+def _sanitized_events(
+    logs: list[dict[str, object]], fix: str | None = None
+) -> list[dict[str, object]]:
+    # The `codegen.sanitized` events, optionally filtered to one fix discriminator — their presence
+    # or absence is what proves a completion was recovered deterministically (not by an LLM turn).
+    return [
+        e for e in logs if e["event"] == "codegen.sanitized" and (fix is None or e["fix"] == fix)
+    ]
 
 
 def _timing_for(scene: SceneContract) -> SceneTiming:
@@ -602,6 +613,93 @@ def test_validator_normalizes_each_smart_codepoint(
     # Assert
     assert chr(codepoint) not in result
     assert f"a{replacement}b" in result
+
+
+def test_validator_logs_codegen_sanitized_when_smart_punctuation_fires(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a smart em-dash in a comment (parseable either way, so this isolates the audit
+    # event, not a parse side effect). The existing normalization rewrites it; B2 makes that
+    # deterministic recovery OBSERVABLE so we can measure it against LLM parse-repair (plan goal).
+    em = chr(0x2014)
+    smart = _VALID_SOURCE.replace("clear_scene(self)", f"clear_scene(self)  # done {em} ok")
+
+    # Act
+    with capture_logs() as logs:
+        validate_scene_source(smart, make_scene(1, "problem"))
+
+    # Assert — exactly one smart-punctuation event, naming the scene and the codepoint it fixed.
+    events = _sanitized_events(logs, fix="smart_punctuation")
+    assert len(events) == 1
+    assert events[0]["scene_id"] == "S1_problem"
+    assert "U+2014" in events[0]["codepoints"]
+
+
+def test_validator_does_not_log_codegen_sanitized_for_clean_ascii_source(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange / Act — clean ASCII source with LF endings needs no fix.
+    with capture_logs() as logs:
+        validate_scene_source(_VALID_SOURCE, make_scene(1, "problem"))
+
+    # Assert — silence: a clean completion emits no sanitization event (no over-logging).
+    assert _sanitized_events(logs) == []
+
+
+def test_validator_normalizes_crlf_line_endings_and_logs_it(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — a completion with CRLF endings. compile() tolerates CRLF, but normalizing to LF
+    # keeps the on-disk scene file consistent; it is the one new SAFE transform (it cannot change
+    # program meaning), and firing it is recorded like any other deterministic fix.
+    crlf = _VALID_SOURCE.replace("\n", "\r\n")
+
+    # Act
+    with capture_logs() as logs:
+        result = validate_scene_source(crlf, make_scene(1, "problem"))
+
+    # Assert — no carriage returns survive, and the fix is audited.
+    assert "\r" not in result
+    events = _sanitized_events(logs, fix="line_endings")
+    assert len(events) == 1
+    assert events[0]["scene_id"] == "S1_problem"
+
+
+def test_validator_sanitization_is_idempotent_on_its_own_output(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — validating the validator's OWN output must be a fixed point: no further fix fires
+    # and the source is unchanged. This guards a transform that keeps "correcting" clean source.
+    once = validate_scene_source(_VALID_SOURCE, make_scene(1, "problem"))
+
+    # Act
+    with capture_logs() as logs:
+        twice = validate_scene_source(once, make_scene(1, "problem"))
+
+    # Assert
+    assert twice == once
+    assert _sanitized_events(logs) == []
+
+
+def test_validator_logs_both_fixes_when_crlf_and_smart_punctuation_coexist(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — the two transforms are independent: a completion with BOTH CRLF endings and a smart
+    # dash must record both fixes (one per fix discriminator), not collapse into one or mask each
+    # other. Variant coverage for the sanitizer's composition.
+    em = chr(0x2014)
+    mixed = _VALID_SOURCE.replace("clear_scene(self)", f"clear_scene(self)  # a {em} b").replace(
+        "\n", "\r\n"
+    )
+
+    # Act
+    with capture_logs() as logs:
+        result = validate_scene_source(mixed, make_scene(1, "problem"))
+
+    # Assert — neither artifact survives, and each fix is audited exactly once.
+    assert "\r" not in result and em not in result
+    assert len(_sanitized_events(logs, "line_endings")) == 1
+    assert len(_sanitized_events(logs, "smart_punctuation")) == 1
 
 
 def test_validator_rejects_unparseable_source(make_scene: Callable[..., SceneContract]) -> None:
