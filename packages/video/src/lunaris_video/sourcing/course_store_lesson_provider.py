@@ -1,13 +1,21 @@
 import asyncio
 
 import structlog
-from lunaris_runtime.persistence import ICourseStore
-from lunaris_runtime.schema import Course, Lesson, Module, Segment, VideoJob
+from lunaris_runtime.persistence import (
+    ICourseStore,
+    IVideoStorage,
+    PersistenceError,
+    VideoArtifactPaths,
+)
+from lunaris_runtime.schema import Course, Lesson, Module, Segment, VideoJob, VideoJobStatus
+from pydantic import ValidationError
 
 from lunaris_video._merrill import SEGMENT_ORDER
 from lunaris_video.errors import VideoPipelineError
-from lunaris_video.models import LessonSource
+from lunaris_video.models import LessonSource, SiblingContractDigest
+from lunaris_video.planning import digest_of, project_video_dependencies
 from lunaris_video.protocols import IGroundingPacketBuilder
+from lunaris_video.schemas import SceneContracts
 
 _logger = structlog.get_logger(__name__)
 
@@ -22,9 +30,19 @@ class CourseStoreLessonSourceProvider:
     store (single-user dev) ignores it.
     """
 
-    def __init__(self, store: ICourseStore, *, packet_builder: IGroundingPacketBuilder) -> None:
+    def __init__(
+        self,
+        store: ICourseStore,
+        *,
+        packet_builder: IGroundingPacketBuilder,
+        video_storage: IVideoStorage | None = None,
+    ) -> None:
         self._store = store
         self._packet_builder = packet_builder
+        # When present, the planner is given digests of the upstream sibling videos this lesson
+        # depends on (its prerequisites in the course's video DAG). None on the no-fetch path —
+        # the source is then framing-only as before.
+        self._video_storage = video_storage
 
     async def load(self, job: VideoJob) -> LessonSource:
         if job.lesson_id is None:
@@ -35,11 +53,13 @@ class CourseStoreLessonSourceProvider:
         if not prose.strip():
             raise VideoPipelineError(f"lesson {job.lesson_id} has no prose to ground a video")
         packet = self._packet_builder.build_lesson_packet(course, lesson)
+        upstream = await self._upstream_digests(job, course)
         _logger.info(
             "lesson_provider.loaded",
             lesson_id=lesson.id,
             prose_chars=len(prose),
             grounded_claims=len(packet.claims),
+            upstream_siblings=len(upstream),
         )
         return LessonSource(
             course_topic=course.topic,
@@ -47,7 +67,58 @@ class CourseStoreLessonSourceProvider:
             audience=course.scope_note or f"learners studying {course.topic}",
             prose=prose,
             packet=packet,
+            upstream_siblings=upstream,
         )
+
+    async def _upstream_digests(
+        self, job: VideoJob, course: Course
+    ) -> tuple[SiblingContractDigest, ...]:
+        """Digest each upstream sibling video this lesson depends on — best-effort, in topo order.
+
+        The video DAG (projected from ``Course.graph``) names the upstream lessons; each one's built
+        contract is fetched from storage and digested. A skip (no store, not yet built, contract
+        gone, schema drift) drops just that one — never fails the load — so a lesson always plans.
+        """
+        if self._video_storage is None or job.lesson_id is None:
+            return ()
+        upstream_ids = project_video_dependencies(course).upstream_of(job.lesson_id)
+        digests: list[SiblingContractDigest] = []
+        for lesson_id in upstream_ids:
+            digest = await self._upstream_digest(job, course, lesson_id)
+            if digest is not None:
+                digests.append(digest)
+        return tuple(digests)
+
+    async def _upstream_digest(
+        self, job: VideoJob, course: Course, lesson_id: str
+    ) -> SiblingContractDigest | None:
+        assert self._video_storage is not None  # guarded by _upstream_digests
+        module, lesson = _find_lesson(course, lesson_id)
+        artifact = lesson.video
+        if (
+            artifact is None
+            or artifact.status is not VideoJobStatus.READY
+            or artifact.job_id is None
+        ):
+            return None  # the upstream has not been built yet — nothing to digest
+        path = VideoArtifactPaths.for_coordinates(
+            job.user_id, job.course_id, artifact.job_id
+        ).contracts
+        try:
+            data = await self._video_storage.download(path=path)
+        except PersistenceError:
+            _logger.warning(
+                "upstream_contract_unavailable", upstream_lesson_id=lesson_id, path=path
+            )
+            return None
+        try:
+            contract = SceneContracts.model_validate_json(data)
+        except ValidationError:
+            _logger.warning(
+                "upstream_contract_unparseable", upstream_lesson_id=lesson_id, path=path
+            )
+            return None
+        return digest_of(module.competency or module.title, contract)
 
     def _load_course(self, job: VideoJob) -> Course:
         try:
