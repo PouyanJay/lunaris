@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   enqueueLessonVideo,
+  fetchFreshPlaybackUrls,
   findActiveVideoJob,
   pollVideoJob,
   regenerateVideo,
@@ -47,6 +48,7 @@ export function useLessonVideo(
   state: LessonVideoState;
   generate: () => void;
   regenerate: (mode: RegenerateMode) => void;
+  refresh: () => Promise<void>;
 } {
   const [state, setState] = useState<LessonVideoState>({ phase: "idle" });
   const controllerRef = useRef<AbortController | null>(null);
@@ -175,5 +177,26 @@ export function useLessonVideo(
     [apiBaseUrl, generate, watch, stopPolling],
   );
 
-  return { state, generate, regenerate };
+  // Re-mint the ready job's short-lived signed URLs (they expire ~1h after the slot resolved). The
+  // player calls this when its <video> fails to load the expired URL; we re-fetch the same job and
+  // swap fresh URLs into the ready state, which remounts the player on the live URL — no reload.
+  const refresh = useCallback(async () => {
+    const jobId = jobIdRef.current;
+    if (!jobId) return;
+    const fresh = await fetchFreshPlaybackUrls(apiBaseUrl, jobId);
+    if (!fresh || jobIdRef.current !== jobId) return; // gone, not ready, or the lesson moved on
+    setState((prev) =>
+      prev.phase === "ready" && prev.jobId === jobId
+        ? {
+            ...prev,
+            videoUrl: fresh.videoUrl,
+            posterUrl: fresh.posterUrl,
+            captionsUrl: fresh.captionsUrl,
+            stale: fresh.stale ?? prev.stale,
+          }
+        : prev,
+    );
+  }, [apiBaseUrl]);
+
+  return { state, generate, regenerate, refresh };
 }

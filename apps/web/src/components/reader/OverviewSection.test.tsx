@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CourseVideos, VideoArtifact } from "../../types/course";
@@ -349,6 +349,34 @@ describe("OverviewSection", () => {
 
     // Assert — the actionable reason is shown.
     expect(await screen.findByText(/narration couldn.t be synced/i)).toBeInTheDocument();
+  });
+
+  it("re-mints an expired course-video URL on a playback error", async () => {
+    // Arrange — the ready trailer resolves a (soon-to-expire) URL; status reads re-mint a fresh one
+    // only after a load error. The token is keyed on an explicit flag set right before the error, so
+    // the test doesn't depend on how many status reads the hook makes.
+    let remintRequested = false;
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      const token = remintRequested ? "fresh" : "stale";
+      return Promise.resolve(
+        jsonResponse(200, {
+          ...readyView("sum-1"),
+          videoUrl: `https://signed.example/u/course-1/sum-1/final.mp4?token=${token}`,
+        }),
+      );
+    });
+    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+
+    // Act — play (mounts on the stale URL), then the expired URL fails to load.
+    fireEvent.click(await screen.findByRole("button", { name: /play the course trailer/i }));
+    await waitFor(() => expect(document.querySelector("video")?.src).toContain("token=stale"));
+    remintRequested = true;
+    fireEvent.error(document.querySelector("video") as HTMLVideoElement);
+
+    // Assert — a fresh signed URL is swapped in and the keyed <video> remounts on it.
+    await waitFor(() => expect(document.querySelector("video")?.src).toContain("token=fresh"));
   });
 
   it("renders nothing when neither course video was built", () => {

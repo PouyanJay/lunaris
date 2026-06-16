@@ -55,7 +55,7 @@ function CourseVideoSlot({
   title,
   playLabel,
 }: CourseVideoSlotProps) {
-  const { state, regenerate } = useCourseVideo(apiBaseUrl, artifact);
+  const { state, regenerate, refresh } = useCourseVideo(apiBaseUrl, artifact);
   if (state.phase === "absent") return null;
 
   return (
@@ -81,6 +81,7 @@ function CourseVideoSlot({
             posterUrl={state.posterUrl}
             captionsUrl={state.captionsUrl}
             label={playLabel}
+            refreshPlayback={refresh}
           />
           <div className={styles.regenerateRow}>
             {state.stale && <OutdatedBadge />}

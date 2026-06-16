@@ -32,7 +32,7 @@ export function LessonVideoHero({
   video,
   pollIntervalMs,
 }: LessonVideoHeroProps) {
-  const { state, generate, regenerate } = useLessonVideo(
+  const { state, generate, regenerate, refresh } = useLessonVideo(
     apiBaseUrl,
     courseId,
     lessonId,
@@ -70,6 +70,7 @@ export function LessonVideoHero({
             posterUrl={state.posterUrl}
             captionsUrl={state.captionsUrl}
             label="Play lesson video"
+            refreshPlayback={refresh}
           />
           <div className={styles.regenerateRow}>
             {state.stale && <OutdatedBadge />}
