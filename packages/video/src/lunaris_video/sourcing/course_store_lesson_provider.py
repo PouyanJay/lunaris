@@ -79,7 +79,7 @@ class CourseStoreLessonSourceProvider:
         contract is fetched from storage and digested. A skip (no store, not yet built, contract
         gone, schema drift) drops just that one — never fails the load — so a lesson always plans.
         """
-        if self._video_storage is None or job.lesson_id is None:
+        if self._video_storage is None or job.lesson_id is None or _reuses_prior_contract(job):
             return ()
         upstream_ids = project_video_dependencies(course).upstream_of(job.lesson_id)
         digests: list[SiblingContractDigest] = []
@@ -125,6 +125,14 @@ class CourseStoreLessonSourceProvider:
             return self._store.load(job.course_id, owner_id=job.user_id)
         except FileNotFoundError as exc:
             raise VideoPipelineError(f"course {job.course_id} not found for video job") from exc
+
+
+def _reuses_prior_contract(job: VideoJob) -> bool:
+    # A RETRY / ADD_NARRATION regenerate carries a prior contract path and re-renders it WITHOUT
+    # re-planning, so it needs no upstream context; FRESH / SIMPLER and ordinary builds carry none
+    # and do re-plan. Skipping the fetch for the reuse modes avoids downloads they'd never use.
+    regenerate = job.config.get("regenerate")
+    return isinstance(regenerate, dict) and bool(regenerate.get("contract_path"))
 
 
 def _find_lesson(course: Course, lesson_id: str) -> tuple[Module, Lesson]:

@@ -51,8 +51,9 @@ def build_video_pipeline(
     (flat) + OVERVIEW (chaptered) pipelines grounded on the per-job grounding snapshot — all sharing
     one model/codegen/render/QA toolchain (V4: sharing a pipeline's stateless tools across workers
     is safe; only each ContractHashCache is per-pipeline). The router dispatches each job by kind.
-    ``storage`` (the artifact store) wires the prior-contract reuse for the regenerate menu (V6-T2);
-    omitted, regenerate jobs simply re-plan.
+    ``storage`` (the artifact store) wires the prior-contract reuse for the regenerate menu (V6-T2)
+    and the upstream-sibling context the lesson planner builds on (the video dependency map);
+    omitted, regenerate jobs simply re-plan and a lesson plans without its prerequisites' context.
     """
     prior_contract_provider = StoragePriorContractProvider(storage) if storage is not None else None
     make = _pipeline_maker(
@@ -61,7 +62,9 @@ def build_video_pipeline(
         prior_contract_provider=prior_contract_provider,
     )
     packet_builder = CourseGroundingPacketBuilder()
-    lesson_source = CourseStoreLessonSourceProvider(store, packet_builder=packet_builder)
+    lesson_source = CourseStoreLessonSourceProvider(
+        store, packet_builder=packet_builder, video_storage=storage
+    )
     course_source = CourseVideoSourceProvider(packet_builder=packet_builder)
     return KindRoutingVideoPipeline(
         pipelines={

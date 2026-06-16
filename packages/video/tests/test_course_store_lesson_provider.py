@@ -368,3 +368,103 @@ async def test_a_root_lesson_has_no_upstream(
 
     # Assert
     assert source.upstream_siblings == ()
+
+
+async def test_a_reuse_mode_regenerate_skips_the_upstream_fetch(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a RETRY / ADD_NARRATION regenerate reuses the prior contract and never re-plans, so
+    # it needs no upstream context. Even with a store and a built upstream, the fetch is skipped.
+    course = _two_lesson_course(
+        l1_video=VideoArtifact(kind=VideoKind.LESSON, status=VideoJobStatus.READY, job_id="job-l1")
+    )
+    storage = _FakeVideoStorage(
+        {_upstream_contract_path(): make_lesson_contract().model_dump_json().encode()}
+    )
+    provider = _provider_with_storage(course, storage)
+    retry_job = VideoJob(
+        id="job-l2",
+        user_id=_OWNER,
+        course_id="course-1",
+        lesson_id="l2",
+        kind=VideoKind.LESSON,
+        input_hash="h",
+        config={"regenerate": {"mode": "retry", "contract_path": "prior/path"}},
+    )
+
+    # Act
+    source = await provider.load(retry_job)
+
+    # Assert
+    assert source.upstream_siblings == ()
+
+
+async def test_all_upstream_lessons_are_digested_in_topological_order(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a 3-lesson chain k1 -> k2 -> k3; l3 depends on BOTH l1 and l2, both built. The two
+    # digests must arrive in topological order (l1 before l2).
+    graph = PrerequisiteGraph(
+        nodes=[_kc("k1"), _kc("k2"), _kc("k3")],
+        edges=[Edge(from_="k1", to="k2", strength=1.0), Edge(from_="k2", to="k3", strength=1.0)],
+        topo_order=["k1", "k2", "k3"],
+        is_acyclic=True,
+    )
+
+    def _ready(job_id: str) -> VideoArtifact:
+        return VideoArtifact(kind=VideoKind.LESSON, status=VideoJobStatus.READY, job_id=job_id)
+
+    course = Course(
+        id="course-1",
+        topic="Neural networks",
+        scope_note="for newcomers",
+        modules=[
+            Module(
+                id="m1",
+                title="A",
+                competency="neurons",
+                kcs=["k1"],
+                lessons=[Lesson(id="l1", segments=_segments(), video=_ready("job-l1"))],
+            ),
+            Module(
+                id="m2",
+                title="B",
+                competency="layers",
+                kcs=["k2"],
+                lessons=[Lesson(id="l2", segments=_segments(), video=_ready("job-l2"))],
+            ),
+            Module(
+                id="m3",
+                title="C",
+                competency="learning",
+                kcs=["k3"],
+                lessons=[Lesson(id="l3", segments=_segments())],
+            ),
+        ],
+        graph=graph,
+    )
+    storage = _FakeVideoStorage(
+        {
+            f"{_OWNER}/course-1/job-l1/scene_contracts.json": make_lesson_contract(topic="Neurons")
+            .model_dump_json()
+            .encode(),
+            f"{_OWNER}/course-1/job-l2/scene_contracts.json": make_lesson_contract(topic="Layers")
+            .model_dump_json()
+            .encode(),
+        }
+    )
+    provider = _provider_with_storage(course, storage)
+    l3_job = VideoJob(
+        id="job-l3",
+        user_id=_OWNER,
+        course_id="course-1",
+        lesson_id="l3",
+        kind=VideoKind.LESSON,
+        input_hash="h",
+    )
+
+    # Act
+    source = await provider.load(l3_job)
+
+    # Assert — both upstream digests, l1 (topo-earlier) before l2.
+    assert [d.covers for d in source.upstream_siblings] == ["Neurons", "Layers"]
