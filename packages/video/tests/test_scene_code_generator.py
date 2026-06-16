@@ -433,6 +433,37 @@ async def test_both_repair_prompts_keep_the_beat_timing_windows(
             assert f"{beat.anim_s}" in prompt
 
 
+async def test_simplify_visual_prompt_tells_the_model_to_drop_elements_and_keep_timing(
+    make_scene: Callable[..., SceneContract],
+) -> None:
+    # Arrange — C2's last-resort simplify pass: when targeted repairs can't clear a scene, the
+    # prompt must steer the model to DROP secondary elements (reduce density), feed the surviving
+    # defects, and keep the beat timing exactly so the simpler scene still hits its windows.
+    stub = StubInvokeModel([_VALID_SOURCE])
+    codegen = SceneCodeGenerator(invoke=stub)
+    scene = make_scene(1, "problem")
+    timing = _timing_for(scene)
+
+    # Act
+    await codegen.simplify_visual(
+        scene,
+        source=_VALID_SOURCE,
+        defects=[QaDefect(issue="crowded frame", fix_hint="remove extras")],
+        timing=timing,
+    )
+
+    # Assert — the prompt is a SIMPLIFY prompt (not the targeted-repair one): it says to
+    # drop/reduce, carries the surviving defect, and keeps every beat window.
+    prompt = stub.prompts[0]
+    lowered = prompt.lower()
+    assert "simplif" in lowered
+    assert "drop" in lowered
+    assert "crowded frame" in prompt  # the surviving defect is fed in
+    for beat in timing.beats:
+        assert beat.id in prompt
+        assert f"{beat.anim_s}" in prompt
+
+
 async def test_repair_sync_prompt_carries_the_beat_reason_and_front_load_fix(
     make_scene: Callable[..., SceneContract],
 ) -> None:
