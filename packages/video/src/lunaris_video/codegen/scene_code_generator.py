@@ -183,6 +183,42 @@ _FORMAT_REPAIR_TEMPLATE = (
     + "\nRespond again with ONLY the corrected, complete Python source for the scene file."
 )
 
+# The parse-error classes codegen hits most on prod (substring-matched on the validator's
+# SyntaxError text), each mapped to a pointed fix the parse-repair turn appends AFTER the generic
+# restate, so a recurring failure gets targeted guidance instead of the same generic nudge. An error
+# class not listed here gets no hint (the generic restate stands). Codegen-domain knowledge lives
+# here, not in the generic parse-repair primitive — a JSON caller would want different hints.
+_CODEGEN_PARSE_HINTS: tuple[tuple[str, str], ...] = (
+    (
+        "unterminated string literal",
+        "TARGETED FIX (unterminated string): a string on the line the error names is not closed. "
+        "Close the string on the same line with a matching ASCII quote, or use \\n for an intended "
+        "line break; a quoted string never spans lines.",
+    ),
+    (
+        "invalid decimal literal",
+        "TARGETED FIX (invalid number): a numeric literal on the named line is malformed. Write "
+        "decimals with a digit on both sides of the point (0.5, 5.0), and put an operator "
+        "between a number and a name (2 * x, never 2x).",
+    ),
+    (
+        "invalid syntax",
+        "TARGETED FIX (invalid syntax): re-read the line the error names and correct the syntax: "
+        "commonly a missing bracket, parenthesis, comma, or a stray character.",
+    ),
+)
+
+
+def _targeted_codegen_hint(error: str) -> str | None:
+    # The pointed hint for a recognised parse-error class, or None for the generic fallback. Passed
+    # to invoke_with_parse_repair so the repair turn appends it; substring match on the error text.
+    lowered = error.lower()
+    for marker, hint in _CODEGEN_PARSE_HINTS:
+        if marker in lowered:
+            return hint
+    return None
+
+
 # The two stubborn Gate-B archetypes get targeted guidance — front-loaded into GENERATE so the first
 # render is already clean, and repeated at REPAIR as the safety net. Every other archetype carries
 # neither (the prompt stays focused on the scene's own contract).
@@ -331,6 +367,7 @@ class SceneCodeGenerator:
             prompt,
             parse,
             repair_instruction=_FORMAT_REPAIR_TEMPLATE,
+            targeted_hint=_targeted_codegen_hint,
         )
 
 

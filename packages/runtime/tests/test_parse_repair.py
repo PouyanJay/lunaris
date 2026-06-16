@@ -78,6 +78,61 @@ async def test_a_clean_first_response_makes_exactly_one_call() -> None:
     assert invoke.prompts == ["PROMPT"]
 
 
+async def test_the_default_budget_allows_a_fourth_attempt() -> None:
+    # Arrange — three failures then a pass: only a budget of >= 4 reaches the good reply. The
+    # default was bumped 3 -> 4 (quality-hardening B3) to give a codegen parse one more chance
+    # before a hard build failure; this pins the default behaviour without passing max_attempts.
+    invoke = _ScriptedInvoke(["broken", "broken", "broken", "ok"])
+
+    # Act
+    result = await invoke_with_parse_repair(
+        invoke, "PROMPT", _parse_ok_marker, repair_instruction=_REPAIR
+    )
+
+    # Assert — the fourth attempt returns the parsed value (a budget of 3 would have raised).
+    assert result == "ok"
+    assert len(invoke.prompts) == 4
+
+
+async def test_a_targeted_hint_is_appended_to_the_repair_prompt() -> None:
+    # Arrange — a caller-supplied hint maps a known error to extra, error-specific guidance. The
+    # primitive stays domain-agnostic: the caller decides what (if anything) a given error earns.
+    invoke = _ScriptedInvoke(["broken", "ok"])
+
+    # Act
+    result = await invoke_with_parse_repair(
+        invoke,
+        "PROMPT",
+        _parse_ok_marker,
+        repair_instruction=_REPAIR,
+        targeted_hint=lambda error: "TARGETED: close it" if "bad content" in error else None,
+    )
+
+    # Assert — the repair turn carries the generic instruction AND the targeted hint, after it.
+    assert result == "ok"
+    repair_prompt = invoke.prompts[1]
+    assert _REPAIR.format(error="bad content 'broken'") in repair_prompt
+    assert repair_prompt.endswith("TARGETED: close it")
+
+
+async def test_no_targeted_hint_when_the_hook_returns_none() -> None:
+    # Arrange — an error the hint doesn't recognise (returns None) leaves the repair prompt exactly
+    # as the generic fallback, so an unknown error class is never decorated with a wrong hint.
+    invoke = _ScriptedInvoke(["broken", "ok"])
+
+    # Act
+    await invoke_with_parse_repair(
+        invoke,
+        "PROMPT",
+        _parse_ok_marker,
+        repair_instruction=_REPAIR,
+        targeted_hint=lambda _error: None,
+    )
+
+    # Assert — identical to the no-hint path: prompt + the generic repair instruction, nothing more.
+    assert invoke.prompts[1] == "PROMPT" + _REPAIR.format(error="bad content 'broken'")
+
+
 async def test_a_non_parse_error_propagates_immediately_without_repair() -> None:
     # Arrange — the invoke itself fails (e.g. a network error), which is not a parse rejection.
     calls = 0
