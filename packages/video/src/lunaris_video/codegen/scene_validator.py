@@ -1,6 +1,10 @@
 import re
 
+import structlog
+
 from lunaris_video.schemas import SceneContract
+
+_logger = structlog.get_logger(__name__)
 
 # The no-LaTeX rule and the CE-only rule, enforced deterministically — a completion that
 # violates them is rejected BEFORE any subprocess runs, with the violation named so the repair
@@ -45,9 +49,7 @@ def validate_scene_source(completion: str, scene: SceneContract) -> str:
     if len(completion) > _MAX_SOURCE_CHARS:
         raise ValueError(f"scene source exceeds {_MAX_SOURCE_CHARS} chars")
     source = _CODE_FENCE.sub("", completion).strip() + "\n"
-    # Normalize typographic punctuation to ASCII before any check — a smart quote/dash is a parse
-    # error in code position, and this fixes it deterministically rather than via a repair turn.
-    source = source.translate(_SMART_PUNCTUATION)
+    source = _sanitize(source, scene)
     for pattern, label in _FORBIDDEN_PATTERNS:
         match = pattern.search(source)
         if match:
@@ -62,3 +64,30 @@ def validate_scene_source(completion: str, scene: SceneContract) -> str:
     except SyntaxError as exc:
         raise ValueError(f"source does not parse: {exc}") from exc
     return source
+
+
+def _sanitize(source: str, scene: SceneContract) -> str:
+    """Apply the deterministic, meaning-preserving fixes for known weak-model quirks BEFORE compile,
+    emitting a ``codegen.sanitized`` event per fix that fires.
+
+    Only transforms that cannot change the program's meaning live here: line-ending normalization
+    (CRLF/CR → LF) and smart-punctuation → ASCII (a curly quote/dash in code position is a parse
+    error the existing table repairs). The audit event is the point of B2 — it lets us measure how
+    often a completion is recovered deterministically (free, instant) versus by an LLM parse-repair
+    turn. NOT fixed here, by design: unterminated strings and ``2x``-style decimal literals — those
+    cannot be repaired without guessing at intent (``.5``/``5.`` are already valid Python), so they
+    stay with the bounded parse-repair turn (B3), never a deterministic rewrite that could corrupt
+    on-screen text.
+    """
+    normalized = source.replace("\r\n", "\n").replace("\r", "\n")
+    if normalized != source:
+        _logger.info("codegen.sanitized", scene_id=scene.id, fix="line_endings")
+    translated = normalized.translate(_SMART_PUNCTUATION)
+    if translated != normalized:
+        codepoints = sorted(
+            {f"U+{ord(ch):04X}" for ch in normalized if ord(ch) in _SMART_PUNCTUATION}
+        )
+        _logger.info(
+            "codegen.sanitized", scene_id=scene.id, fix="smart_punctuation", codepoints=codepoints
+        )
+    return translated
