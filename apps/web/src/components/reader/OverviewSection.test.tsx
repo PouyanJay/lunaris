@@ -262,7 +262,7 @@ describe("OverviewSection", () => {
     expect(JSON.parse(String((regen?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
   });
 
-  it("stops an in-flight course-video regenerate and shows the stopped state", async () => {
+  it("stops an in-flight course-video regenerate and reverts to the previous video", async () => {
     // Arrange — a ready summary; the regenerate's poll stays pending so the working (Stop-able)
     // state is observable. URL-routed so the on-mount probe doesn't perturb the sequence.
     const queued = { ...readyView("sum-2"), job: { ...readyView("sum-2").job, status: "queued" } };
@@ -293,15 +293,18 @@ describe("OverviewSection", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
     fireEvent.click(await screen.findByRole("button", { name: /stop/i }));
 
-    // Assert — the cancel POST targeted the regenerated job, and the stopped state offers a restart.
+    // Assert — the cancel POST targeted the regenerated job, and the slot snapped BACK to the
+    // previously-playing trailer (no "stopped" placeholder, no refresh).
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         `${API}/api/videos/sum-2/cancel`,
         expect.objectContaining({ method: "POST" }),
       ),
     );
-    expect(screen.getByText(/generation stopped/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /play the course trailer/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/generation stopped/i)).not.toBeInTheDocument();
   });
 
   it("shows the outdated badge when a ready course video reports stale", async () => {

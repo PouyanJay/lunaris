@@ -215,6 +215,52 @@ describe("LessonVideoHero", () => {
     expect(screen.getByRole("button", { name: /generate video/i })).toBeInTheDocument();
   });
 
+  it("reverts to the previous video when a regenerate is stopped (no refresh needed)", async () => {
+    // Arrange — a build-time ready lesson video; regenerate it, then stop mid-flight. The regen
+    // poll stays pending so the working (Stop-able) state is observable.
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    const queuedRegen = {
+      ...queuedView("regen-1"),
+      job: { ...queuedView("regen-1").job, status: "queued" },
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
+      if (url.includes("/regenerate")) return Promise.resolve(jsonResponse(202, queuedRegen));
+      if (url.endsWith("/cancel")) {
+        return Promise.resolve(
+          jsonResponse(200, { ...queuedRegen, job: { ...queuedRegen.job, status: "cancelled" } }),
+        );
+      }
+      if (url.includes("/videos/regen-1")) return new Promise<Response>(() => {}); // poll pending
+      return Promise.resolve(jsonResponse(200, readyView("built-1"))); // the built video resolves
+    });
+    render(<LessonVideoHero {...PROPS} video={built} />);
+    await screen.findByRole("button", { name: /play lesson video/i });
+
+    // Act — regenerate (Fresh take) → working, then stop the in-flight render.
+    fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /stop/i }));
+
+    // Assert — the cancel POST fired for the regenerated job, and the slot snapped BACK to the
+    // previously-playing video (the player), not a "Generation stopped" placeholder.
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${API}/api/videos/regen-1/cancel`,
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(await screen.findByRole("button", { name: /play lesson video/i })).toBeInTheDocument();
+    expect(screen.queryByText(/generation stopped/i)).not.toBeInTheDocument();
+  });
+
   it("surfaces a failed job and regenerates from the Try again menu", async () => {
     // Arrange — enqueue accepts, the poll reports failed; the menu's Fresh take re-runs end to end.
     fetchMock
