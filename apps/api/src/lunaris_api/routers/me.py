@@ -1,11 +1,17 @@
-from fastapi import APIRouter
+from typing import Annotated
 
-from ..dependencies import CurrentUserIdDep
+from fastapi import APIRouter, Depends
+
+from ..config import Settings, get_settings
+from ..dependencies import CurrentUserClaimsDep
 from ..schemas.me import MeResponse
 
 router = APIRouter(prefix="/api", tags=["auth"])
 
 
 @router.get("/me", response_model=MeResponse)
-async def get_me(user_id: CurrentUserIdDep) -> MeResponse:
-    return MeResponse(user_id=user_id)
+async def get_me(
+    claims: CurrentUserClaimsDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MeResponse:
+    return MeResponse(user_id=claims.user_id, is_admin=settings.is_admin(claims.email))

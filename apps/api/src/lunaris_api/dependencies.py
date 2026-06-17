@@ -65,6 +65,7 @@ from .auth import (
     IUserVerifier,
     JwksUserVerifier,
     JwtUserVerifier,
+    UserClaims,
 )
 from .config import Settings, get_settings
 from .config_store import ConfigStore
@@ -95,6 +96,12 @@ from .service import (
     CredentialResolver,
     PipelineFactory,
     VideoCoordinatorFactory,
+)
+from .signup_gate import (
+    InMemorySignupGateStore,
+    ISignupGateStore,
+    SignupGateService,
+    SupabaseSignupGateStore,
 )
 from .user_config import (
     InMemoryUserConfigStore,
@@ -433,6 +440,33 @@ def get_user_config_service(store: UserConfigStoreDep) -> UserConfigService:
 
 UserConfigServiceDep = Annotated[UserConfigService, Depends(get_user_config_service)]
 
+# The signup invite-gate stores (process-wide singletons, like the per-user config stores): the
+# Supabase store is shared so its lazy service-role client is built once; the in-memory store holds
+# the single gate value for the no-DB/dev path. The auth hook enforces the gate at signup; these
+# back the admin screen (read/rotate/toggle) and the public "is a code required?" status.
+_in_memory_signup_gate_store = InMemorySignupGateStore()
+_supabase_signup_gate_store = SupabaseSignupGateStore()
+
+
+def get_signup_gate_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ISignupGateStore:
+    """The signup-gate store: Supabase (durable, service-role) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_signup_gate_store
+    return _in_memory_signup_gate_store
+
+
+SignupGateStoreDep = Annotated[ISignupGateStore, Depends(get_signup_gate_store)]
+
+
+def get_signup_gate_service(store: SignupGateStoreDep) -> SignupGateService:
+    """The signup-gate surface behind the admin screen and the public status endpoint."""
+    return SignupGateService(store)
+
+
+SignupGateServiceDep = Annotated[SignupGateService, Depends(get_signup_gate_service)]
+
 
 def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:
     """A per-run resolver over the per-user config store: user_id → {env-var name: value} for the
@@ -638,11 +672,11 @@ JwtVerifierDep = Annotated[IUserVerifier | None, Depends(get_jwt_verifier)]
 _UNAUTHENTICATED_HEADERS = {"WWW-Authenticate": "Bearer"}
 
 
-def require_user_id(
+def require_user_claims(
     verifier: JwtVerifierDep,
     authorization: Annotated[str | None, Header()] = None,
-) -> str:
-    """Authenticate the caller from the ``Authorization: Bearer`` token and return their user id.
+) -> UserClaims:
+    """Authenticate the caller from the ``Authorization: Bearer`` token and return their claims.
 
     401 on a missing/malformed/invalid/expired token; 503 when no JWT secret is configured (a
     deployment error, not a client one). Binds ``user_id`` to the logging context so every
@@ -662,7 +696,7 @@ def require_user_id(
         )
     token = authorization.removeprefix("Bearer ").strip()
     try:
-        user_id = verifier.verify(token)
+        claims = verifier.verify(token)
     except AuthError as exc:
         logger.warning("auth_failed", reason="invalid_token")
         raise HTTPException(
@@ -670,11 +704,42 @@ def require_user_id(
             detail="Invalid or expired token",
             headers=_UNAUTHENTICATED_HEADERS,
         ) from exc
-    bind_contextvars(user_id=user_id)
-    return user_id
+    bind_contextvars(user_id=claims.user_id)
+    return claims
+
+
+CurrentUserClaimsDep = Annotated[UserClaims, Depends(require_user_claims)]
+
+
+def require_user_id(
+    verifier: JwtVerifierDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> str:
+    """The authenticated caller's user id — the common case, where only the subject matters."""
+    return require_user_claims(verifier, authorization).user_id
 
 
 CurrentUserIdDep = Annotated[str, Depends(require_user_id)]
+
+
+def require_admin(
+    claims: CurrentUserClaimsDep,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> str:
+    """Authenticate the caller and require their email to be on the admin allowlist; returns the
+    user id (to stamp on writes). 401 for a missing/invalid token (via ``require_user_claims``);
+    403 for a valid token whose email is not an admin — so a non-admin can never reach the admin
+    surface, and the failure mode is "not allowed", not "not found"."""
+    if not settings.is_admin(claims.email):
+        logger.warning("admin_denied", reason="not_in_allowlist")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return claims.user_id
+
+
+AdminUserDep = Annotated[str, Depends(require_admin)]
 
 
 def optional_user_id(

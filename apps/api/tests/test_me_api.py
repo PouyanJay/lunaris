@@ -14,11 +14,13 @@ from pathlib import Path
 import httpx
 import jwt
 import pytest
+from _auth import JWT_SECRET as _JWT_SECRET
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_runtime.logging import clear_correlation
 
-_JWT_SECRET = "test-jwt-secret-at-least-32-bytes-long-xxxx"
+# The local _mint_token keeps test-specific knobs (secret/exp/aud overrides for the negative-auth
+# cases) the shared _auth.mint_token doesn't carry; the secret literal itself comes from _auth.
 _TEST_USER_ID = "11111111-1111-1111-1111-111111111111"
 
 
@@ -28,19 +30,27 @@ def _mint_token(
     secret: str = _JWT_SECRET,
     exp_offset: int = 3600,
     aud: str = "authenticated",
+    email: str | None = None,
 ) -> str:
     now = int(time.time())
-    payload = {
+    payload: dict[str, object] = {
         "sub": sub,
         "aud": aud,
         "role": "authenticated",
         "iat": now,
         "exp": now + exp_offset,
     }
+    if email is not None:
+        payload["email"] = email
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
-def _build_client(jwt_secret: str | None, tmp_path: Path) -> httpx.AsyncClient:
+def _build_client(
+    jwt_secret: str | None,
+    tmp_path: Path,
+    *,
+    admin_emails: tuple[str, ...] = (),
+) -> httpx.AsyncClient:
     clear_correlation()
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: Settings(
@@ -49,6 +59,7 @@ def _build_client(jwt_secret: str | None, tmp_path: Path) -> httpx.AsyncClient:
         cors_origins=(),
         env_file=tmp_path / ".env",
         supabase_jwt_secret=jwt_secret,
+        admin_emails=admin_emails,
     )
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
@@ -64,9 +75,35 @@ async def test_get_me_valid_token_returns_user_id(client: httpx.AsyncClient) -> 
     # Act
     response = await client.get("/api/me", headers={"Authorization": f"Bearer {_mint_token()}"})
 
+    # Assert — no admin allowlist configured here, so the caller is not an admin.
+    assert response.status_code == 200
+    assert response.json() == {"userId": _TEST_USER_ID, "isAdmin": False}
+
+
+async def test_get_me_reports_admin_for_an_allowlisted_email(tmp_path: Path) -> None:
+    # Arrange — the caller's email is on the admin allowlist (case-insensitive).
+    async with _build_client(_JWT_SECRET, tmp_path, admin_emails=("owner@lunaris.test",)) as client:
+        token = _mint_token(email="Owner@Lunaris.TEST")
+
+        # Act
+        response = await client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+
     # Assert
     assert response.status_code == 200
-    assert response.json() == {"userId": _TEST_USER_ID}
+    assert response.json()["isAdmin"] is True
+
+
+async def test_get_me_reports_non_admin_for_an_unlisted_email(tmp_path: Path) -> None:
+    # Arrange — a valid user whose email is not on the allowlist.
+    async with _build_client(_JWT_SECRET, tmp_path, admin_emails=("owner@lunaris.test",)) as client:
+        token = _mint_token(email="someone-else@lunaris.test")
+
+        # Act
+        response = await client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+
+    # Assert
+    assert response.status_code == 200
+    assert response.json()["isAdmin"] is False
 
 
 async def test_get_me_missing_token_returns_401(client: httpx.AsyncClient) -> None:

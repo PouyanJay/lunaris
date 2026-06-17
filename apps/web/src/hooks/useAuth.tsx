@@ -17,7 +17,7 @@ interface AuthState {
   session: Session | null;
   user: User | null;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<SignUpResult>;
+  signUp: (email: string, password: string, inviteCode?: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
 }
 
@@ -60,16 +60,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       },
-      signUp: async (email, password) => {
+      signUp: async (email, password, inviteCode) => {
         if (!supabase) unconfigured();
         // Send the confirmation link back to THIS origin (prod / dev / localhost), not the
         // project's default Site URL. supabase-js (detectSessionInUrl) then parses the returned
         // #access_token and establishes the session. The origin must be in the project's redirect
         // allow-list (Auth → URL Configuration) or Supabase falls back to the Site URL.
+        //
+        // The invite code rides as user metadata: the Before-User-Created auth hook reads
+        // `user_metadata.invite_code` server-side and rejects the signup if it doesn't match the
+        // shared code. Sending it here is necessary but NOT the gate — the hook is (a form-only
+        // check would be bypassable against the public anon key).
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: {
+            emailRedirectTo: window.location.origin,
+            ...(inviteCode ? { data: { invite_code: inviteCode } } : {}),
+          },
         });
         if (error) throw error;
         return { needsConfirmation: data.session === null };

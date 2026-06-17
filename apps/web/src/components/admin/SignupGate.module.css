@@ -1,0 +1,117 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 520px;
+}
+
+.status {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.intro {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.codeRow {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.code {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.code:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  border-color: var(--focus-ring);
+}
+
+.code:disabled {
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.toggleText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.caption {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.statusRegion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.error {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  border-radius: var(--radius-md);
+  margin: 0;
+}
+
+.notice {
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-500) 30%, transparent);
+  border-radius: var(--radius-md);
+  margin: 0;
+}

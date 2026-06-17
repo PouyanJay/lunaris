@@ -8,8 +8,15 @@ import styles from "./AuthGate.module.css";
  *
  *  When auth is not configured (no Supabase client) the gate is transparent — local dev against the
  *  API still works without a login. When configured: a brief loading state while the session is
- *  restored, then the login screen until signed in. */
-export function AuthGate({ children }: { children: ReactNode }) {
+ *  restored, then the login screen until signed in. ``apiBaseUrl`` is forwarded to the login screen
+ *  so it can read the public signup-gate status (whether to collect an invitation code). */
+export function AuthGate({
+  children,
+  apiBaseUrl,
+}: {
+  children: ReactNode;
+  apiBaseUrl?: string | undefined;
+}) {
   const { enabled, loading, session } = useAuth();
 
   if (!enabled) return <>{children}</>;
@@ -20,6 +27,6 @@ export function AuthGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (!session) return <AuthScreen />;
+  if (!session) return <AuthScreen apiBaseUrl={apiBaseUrl} />;
   return <>{children}</>;
 }
