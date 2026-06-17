@@ -78,7 +78,14 @@ VideoCoordinatorFactory = Callable[[str, VideoConfig], IVideoBuildCoordinator]
 # A streamed item: a ("progress", ProgressEvent) stage, an ("agent", AgentEvent) transcript beat,
 # or the terminal ("course", Course). Internal to the service<->router contract; the kind string
 # maps directly to the SSE event name.
-_StreamItem = tuple[str, ProgressEvent | AgentEvent | Course]
+# A heartbeat carries no payload (None) — it keeps an idle SSE connection alive through a silent
+# build stretch (the router encodes it as an SSE comment the browser's EventSource ignores).
+_StreamItem = tuple[str, ProgressEvent | AgentEvent | Course | None]
+
+# How long the stream waits with no event before emitting a keepalive heartbeat. Comfortably under a
+# typical proxy / ingress idle timeout (Azure Container Apps ~4 min) so a quiet stretch — resource
+# curation, the coverage critic, the async video enqueue — never drops the live connection.
+_DEFAULT_HEARTBEAT_INTERVAL_S = 15.0
 
 
 @dataclass(frozen=True)
@@ -443,6 +450,7 @@ class CourseService:
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
         owner_id: str | None = None,
         admission: BuildAdmission | None = None,
+        heartbeat_interval_s: float = _DEFAULT_HEARTBEAT_INTERVAL_S,
     ) -> AsyncIterator[_StreamItem]:
         """Run the pipeline, yielding each progress/agent event as it happens, then the course.
 
@@ -520,17 +528,29 @@ class CourseService:
             run_task.add_done_callback(
                 lambda _: self._close_bridge(run_id, admission.device_bridge)
             )
-        next_event_task: asyncio.Task[StreamItem] | None = None
+        # One pending get, re-armed only after an event lands — so a heartbeat timeout (below) can
+        # re-wait on the SAME get without dropping a queued event.
+        next_event_task: asyncio.Task[StreamItem] | None = asyncio.create_task(queue.get())
         try:
             while True:
-                next_event_task = asyncio.create_task(queue.get())
                 done, _ = await asyncio.wait(
-                    {next_event_task, run_task}, return_when=asyncio.FIRST_COMPLETED
+                    {next_event_task, run_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                    timeout=heartbeat_interval_s,
                 )
+                if not done:
+                    # No event and the run is still going after the heartbeat interval — a silent
+                    # build stretch (resource curation, the coverage critic, the video enqueue).
+                    # Emit a keepalive so a proxy / ingress idle timeout doesn't drop the connection
+                    # (which would freeze the live timeline). The heartbeat is synthesised here, NOT
+                    # enqueued, so it never reaches the recorder; the transcript stays clean.
+                    yield ("heartbeat", None)
+                    continue
                 if next_event_task in done:
                     # The sinks already recorded this beat to the durable log when the pipeline
-                    # emitted it; the generator only forwards it to the connected client.
+                    # emitted it; the generator forwards it to the connected client, then re-arms.
                     yield next_event_task.result()  # already a (kind, payload) tuple
+                    next_event_task = asyncio.create_task(queue.get())
                     continue
                 # The run finished: cancel the pending get, forward any queued tail, stop.
                 next_event_task.cancel()

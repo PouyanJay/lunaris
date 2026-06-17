@@ -11,11 +11,12 @@ import httpx
 import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
+from lunaris_api.routers.courses import _sse_frame
 from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
-from lunaris_runtime.schema import RunStatus
+from lunaris_runtime.schema import ProgressEvent, ProgressStage, RunStatus
 
 
 @pytest.fixture
@@ -246,6 +247,19 @@ async def test_stream_yields_ordered_progress_then_final_course(client: httpx.As
     assert course["status"] == "published"
     assert course["graph"]["nodes"]
     assert course["graph"]["topoOrder"][-1] == course["goalConcept"]
+
+
+def test_sse_frame_encodes_a_heartbeat_as_an_ignored_comment() -> None:
+    # A heartbeat is an SSE comment line (": …") — it keeps an idle connection alive through a
+    # silent build stretch and is ignored by the browser's EventSource, so it reaches no handler.
+    assert _sse_frame("heartbeat", None) == ": keepalive\n\n"
+    # A real event still encodes as a named SSE event with camelCase JSON data (the wire contract).
+    frame = _sse_frame(
+        "progress", ProgressEvent(stage=ProgressStage.RUN_STARTED, label="Starting", run_id="r1")
+    )
+    assert frame.startswith("event: progress\ndata: {")
+    assert '"runId": "r1"' in frame or '"runId":"r1"' in frame
+    assert frame.endswith("\n\n")
 
 
 async def test_stream_blank_topic_is_rejected(client: httpx.AsyncClient) -> None:

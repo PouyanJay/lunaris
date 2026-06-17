@@ -54,9 +54,15 @@ def _parse_clarification(raw: str | None) -> Clarification | None:
         ) from exc
 
 
-def _sse_frame(kind: str, payload: ProgressEvent | AgentEvent | Course) -> str:
-    """Encode one stream item as an SSE frame (camelCase JSON, the web's wire contract)."""
-    return f"event: {kind}\ndata: {payload.model_dump_json(by_alias=True)}\n\n"
+def _sse_frame(kind: str, payload: ProgressEvent | AgentEvent | Course | None) -> str:
+    """Encode one stream item as an SSE frame (camelCase JSON, the web's wire contract).
+
+    A ``heartbeat`` (no payload) becomes an SSE comment line — it keeps an idle connection alive
+    through a silent build stretch and is ignored by the browser's EventSource (and our reader), so
+    it never reaches the event handlers."""
+    if kind == "heartbeat":
+        return ": keepalive\n\n"
+    return f"event: {kind}\ndata: {payload.model_dump_json(by_alias=True)}\n\n"  # type: ignore[union-attr]
 
 
 @router.post("", response_model=Course, status_code=status.HTTP_201_CREATED)

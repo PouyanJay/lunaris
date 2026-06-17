@@ -296,6 +296,45 @@ async def test_durable_log_records_every_beat_after_a_disconnect(
     assert seqs == list(range(len(seqs)))
 
 
+async def test_stream_emits_heartbeats_during_a_silent_build_stretch(
+    tmp_path: Path,
+    releasable_build: tuple[Callable[[object], object], asyncio.Event],
+) -> None:
+    """The build goes silent for minutes during the finalize tail (resource curation, the coverage
+    critic, the async video enqueue), so the SSE must emit keepalive heartbeats — otherwise a
+    proxy/ingress idle timeout drops the connection mid-build (the canvas freezes; the durable log
+    survives but the live tab stops advancing). Heartbeats are synthesised in the viewer, not
+    enqueued, so they are never recorded to the run-events log."""
+    clear_correlation()
+    factory, release = releasable_build
+    event_store = InMemoryRunEventStore()
+    service = CourseService(
+        CourseStore(tmp_path), factory, InMemoryRunStore(), RunRegistry(), event_store
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1", heartbeat_interval_s=0.05)
+
+    # The pipeline emits exactly ONE beat (RUN_STARTED) then parks on the release Event, so the
+    # queue is empty for the whole interval — the heartbeat is deterministic, not a timing race (the
+    # 0.05s
+    # is the control variable under test, not a "wait until something happens" sleep).
+    # Act — the first parked beat (RUN_STARTED), then a heartbeat while the build is parked silent.
+    kind1, _ = await stream.__anext__()
+    assert kind1 == "progress"
+    kind2, payload2 = await stream.__anext__()
+
+    # Assert — the silent stretch yielded a heartbeat (not an event), with no payload.
+    assert kind2 == "heartbeat"
+    assert payload2 is None
+
+    # Release + drain to completion; heartbeats must NOT pollute the durable transcript.
+    release.set()
+    async for _item in stream:
+        pass
+    recorded = await event_store.list_for_run(run_id="r1")
+    assert recorded  # the real beats were recorded…
+    assert all(event.kind in (RunEventKind.PROGRESS, RunEventKind.AGENT) for event in recorded)
+
+
 class _FailingPipeline:
     """A pipeline whose run blows up — drives the failed-build lifecycle."""
 
