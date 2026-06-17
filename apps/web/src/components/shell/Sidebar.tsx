@@ -15,6 +15,10 @@ interface SidebarProps extends ThemeProps {
   onNewCourse: () => void;
   onOpenSettings: () => void;
   settingsActive: boolean;
+  /** Show the admin "Invitations" nav (manage the signup invite-gate) — only for admins. */
+  showAdminInvites?: boolean;
+  onOpenInvites?: () => void;
+  invitesActive?: boolean;
   /** Whether the rail is collapsed to the mini icon rail (run history hidden, actions as icons). */
   collapsed: boolean;
   /** Collapse / expand the rail — the toggle lives in the brand row in both states. */
@@ -37,6 +41,9 @@ export function Sidebar({
   onNewCourse,
   onOpenSettings,
   settingsActive,
+  showAdminInvites,
+  onOpenInvites,
+  invitesActive,
   collapsed,
   onToggleCollapse,
   onSelectRun,
@@ -110,6 +117,32 @@ export function Sidebar({
       )}
 
       <div className={styles.footer}>
+        {showAdminInvites &&
+          onOpenInvites &&
+          (collapsed ? (
+            <button
+              type="button"
+              className={`${styles.railAction} ${invitesActive ? styles.railActionActive : ""}`.trim()}
+              onClick={onOpenInvites}
+              aria-current={invitesActive ? "page" : undefined}
+              aria-label="Invitations"
+              title="Invitations"
+            >
+              <KeyIcon />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`${styles.navItem} ${invitesActive ? styles.navItemActive : ""}`.trim()}
+              onClick={onOpenInvites}
+              aria-current={invitesActive ? "page" : undefined}
+            >
+              <span className={styles.navIcon} aria-hidden="true">
+                <KeyIcon />
+              </span>
+              Invitations
+            </button>
+          ))}
         {collapsed ? (
           <button
             type="button"
@@ -173,6 +206,20 @@ function PlusIcon() {
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function KeyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M9.5 2a4.5 4.5 0 0 0-4.3 5.83L2 11.03V14h2.97l.5-.5v-1.5h1.5v-1.5h1.5l.7-.7A4.5 4.5 0 1 0 9.5 2Zm1.25 3.25a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );

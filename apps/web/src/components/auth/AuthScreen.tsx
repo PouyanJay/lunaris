@@ -1,6 +1,7 @@
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 
 import { useAuth } from "../../hooks/useAuth";
+import { fetchSignupGateStatus } from "../../lib/signupGate";
 import { BrandMark } from "../shell/BrandMark";
 import { Button } from "../primitives/Button";
 import styles from "./AuthScreen.module.css";
@@ -19,25 +20,49 @@ function submitLabel(submitting: boolean, isSignup: boolean): string {
 
 /** The login / sign-up gate shown when auth is required and no one is signed in.
  *
- *  Email + password (Supabase Auth). Signing up may require an email confirmation (cloud default),
- *  in which case a notice is shown instead of entering the app. Full keyboard + screen-reader
- *  support: labelled fields, an aria-live error/notice region, and a visible focus ring. */
-export function AuthScreen() {
+ *  Email + password (Supabase Auth). When the deployment requires an invitation code (the gate is
+ *  enforced), the sign-up form also collects it and passes it to `signUp`, which forwards it as user
+ *  metadata for the server-side Before-User-Created hook to validate. Signing up may require an email
+ *  confirmation (cloud default), in which case a notice is shown instead of entering the app. Full
+ *  keyboard + screen-reader support: labelled fields, an aria-live error/notice region, a focus ring. */
+export function AuthScreen({ apiBaseUrl }: { apiBaseUrl?: string | undefined }) {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  // Whether this deployment requires an invitation code. Defaults to false (no field) until the
+  // public status says otherwise, so a slow/failed probe never blocks plain sign-in; the server-side
+  // hook is the real gate regardless of what the form shows.
+  const [gateEnforced, setGateEnforced] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const emailId = useId();
   const passwordId = useId();
+  const inviteId = useId();
   const statusId = useId();
   const isSignup = mode === "signup";
+  const showInvite = isSignup && gateEnforced;
+
+  useEffect(() => {
+    if (!apiBaseUrl) return;
+    const controller = new AbortController();
+    fetchSignupGateStatus(apiBaseUrl, controller.signal)
+      .then((status) => setGateEnforced(status.enforced))
+      .catch(() => {
+        // A transient failure shouldn't strand sign-in behind a code field; the hook still gates.
+      });
+    return () => controller.abort();
+  }, [apiBaseUrl]);
 
   async function submitSignUp() {
-    const { needsConfirmation } = await signUp(email, password);
+    const { needsConfirmation } = await signUp(
+      email,
+      password,
+      showInvite ? inviteCode : undefined,
+    );
     if (needsConfirmation) {
       setNotice(`Check ${email} for a confirmation link to finish creating your account.`);
     }
@@ -113,6 +138,26 @@ export function AuthScreen() {
               aria-invalid={error !== null}
             />
           </div>
+
+          {showInvite && (
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor={inviteId}>
+                Invitation code
+              </label>
+              <input
+                id={inviteId}
+                className={styles.input}
+                type="text"
+                autoComplete="off"
+                required
+                value={inviteCode}
+                onChange={(event) => setInviteCode(event.target.value)}
+                disabled={submitting}
+                aria-invalid={error !== null}
+                aria-describedby={statusId}
+              />
+            </div>
+          )}
 
           <div id={statusId} aria-live="polite">
             {error && (

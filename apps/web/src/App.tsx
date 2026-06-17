@@ -20,6 +20,7 @@ import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
+import { SignupGatePanel } from "./components/admin/SignupGatePanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
@@ -31,6 +32,7 @@ import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useBuildVideoProgress } from "./hooks/useBuildVideoProgress";
 import { useRuns } from "./hooks/useRuns";
 import { useCapabilities } from "./hooks/useCapabilities";
+import { useMe } from "./hooks/useMe";
 import { useKeylessReadiness } from "./hooks/useKeylessReadiness";
 import { KeylessProvisioningBanner } from "./components/KeylessProvisioningBanner";
 import { useSidebarLayout } from "./hooks/useSidebarLayout";
@@ -141,6 +143,10 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     if (!isMobile) setMobileNavOpen(false);
   }, [isMobile]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // The admin "Invitations" surface (manage the signup invite-gate), shown only to admins. Mutually
+  // exclusive with Settings — both are full-canvas nav views.
+  const [adminOpen, setAdminOpen] = useState(false);
+  const { isAdmin } = useMe(apiBaseUrl);
   // Per-capability live/fallback status drives the Draft-mode banner; refetch when Settings closes so
   // a key the user just added flips its capability back to live and the banner clears.
   const { capabilities, reload: reloadCapabilities } = useCapabilities(apiBaseUrl);
@@ -243,6 +249,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
     setSettingsOpen(false);
+    setAdminOpen(false);
     setMobileNavOpen(false);
     closeRun();
     reset();
@@ -250,6 +257,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const selectRun = useCallback(
     (run: CourseRun) => {
       setSettingsOpen(false);
+      setAdminOpen(false);
       setMobileNavOpen(false);
       openRun(run);
     },
@@ -257,6 +265,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   );
   const openSettings = useCallback(() => {
     setSettingsOpen(true);
+    setAdminOpen(false);
+    setMobileNavOpen(false);
+  }, []);
+  const openInvites = useCallback(() => {
+    setAdminOpen(true);
+    setSettingsOpen(false);
     setMobileNavOpen(false);
   }, []);
   // Drill from a Map concept into its lesson: switch to the reader and request that lesson's focus.
@@ -323,6 +337,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       onNewCourse={startNewCourse}
       onOpenSettings={openSettings}
       settingsActive={settingsOpen}
+      showAdminInvites={isAdmin}
+      onOpenInvites={openInvites}
+      invitesActive={adminOpen}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
       onToggleCollapse={sidebarLayout.toggleCollapsed}
       onSelectRun={selectRun}
@@ -346,6 +363,15 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         </Button>
       );
       return { title: "Settings", meta, body };
+    }
+    if (adminOpen) {
+      const body = <SignupGatePanel apiBaseUrl={apiBaseUrl} />;
+      const meta = (
+        <Button type="button" onClick={() => setAdminOpen(false)}>
+          Done
+        </Button>
+      );
+      return { title: "Invitations", meta, body };
     }
     if (opened.state.status === "loading") {
       return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
@@ -559,7 +585,7 @@ export default function App() {
   return (
     <AuthProvider>
       {apiBaseUrl ? (
-        <AuthGate>
+        <AuthGate apiBaseUrl={apiBaseUrl}>
           <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
         </AuthGate>
       ) : (
