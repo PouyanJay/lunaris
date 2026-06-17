@@ -50,6 +50,9 @@ param keylessEmbeddingsBaseUrl string = ''
 @description('Explainer-video generation operator kill-switch (V7). False (the default) keeps the API from enqueuing any video jobs, so the dedicated worker stays scaled to zero — prod stays dark until this flips. True (dev, and prod at the V7-T5 rollout) lets keyed+owned builds enqueue videos.')
 param videoGenerationEnabled bool = false
 
+@description('Comma-separated emails allowed to manage the signup invite-gate (LUNARIS_ADMIN_EMAILS). Empty (the default) means no admins, so the admin endpoints 403 everyone.')
+param adminEmails string = ''
+
 @description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')
 param minReplicas int = (env == 'prod') ? 1 : 0
 param maxReplicas int = 3
@@ -114,6 +117,7 @@ var baseEnv = [
   { name: 'LUNARIS_ENV', value: env }
   { name: 'LUNARIS_DRAFT_TIER_ENABLED', value: string(draftTierEnabled) }
   { name: 'VIDEO_GENERATION_ENABLED', value: string(videoGenerationEnabled) }
+  { name: 'LUNARIS_ADMIN_EMAILS', value: adminEmails }
   // The cloud API enqueues videos but NEVER drains the queue itself — the dedicated worker
   // (infra/video.bicep) renders them. Without this, the API's stub-pipeline workers (the lean API
   // image has no Manim) would race the real worker and settle jobs with placeholder media.

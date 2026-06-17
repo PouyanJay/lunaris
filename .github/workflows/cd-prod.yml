@@ -120,7 +120,8 @@ jobs:
               draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}" \
-              videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}"
+              videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}" \
+              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}"
 
       # The dedicated video-worker Container App (explainer-video V7) — the single prod rollout flips
       # vars.VIDEO_GENERATION_ENABLED on (V7-T5), which both lets the API enqueue and deploys this.
