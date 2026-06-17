@@ -169,6 +169,7 @@ async def client(
 
 
 _ENQUEUE = "/api/courses/course-1/lessons/lesson-1/video"
+_COORD_ACTIVE = "/api/courses/course-1/videos/active"
 
 
 # ── the operator kill-switch ──────────────────────────────────────────────────────
@@ -444,6 +445,334 @@ async def test_active_resolves_a_course_level_video_slot(
     body = response.json()["job"]
     assert body["id"] == "sum-1"
     assert body["lessonId"] is None
+
+
+# ── Gap 2: coordinate-keyed re-attach (derive at read) ────────────────────────────
+#
+# The build-async-persistence fix. Unlike `/videos/{job_id}/active` (keyed by a SOURCE job id the
+# reader holds), this probe keys on the slot's COORDINATES (course, lesson, kind), so it resolves a
+# slot whose payload pointer is null OR FAILED-with-a-job-that-has-since-gone-READY — the
+# async-after-delivery prod case that the source-job probe answers 204 for (its
+# `latest_ready.id != source.id` guard, when the source job itself flipped FAILED→READY).
+
+
+async def test_coordinate_active_resolves_a_failed_payload_slot_to_its_ready_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the prod bug: the slot's job is READY in the queue, but the course payload the
+    # reader holds still says FAILED (written at finalize before the render finished). The
+    # coordinate probe needs no source job id — it resolves the slot from (course, lesson, kind).
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=job_id, contract_hash="h")  # the render finished after delivery
+
+    # Act — the reader probes by coordinates (it does NOT pass the stale source job id).
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert — the READY job is surfaced, so the slot plays instead of showing "Couldn't generate".
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == job_id
+    assert body["status"] == "ready"
+    assert body["kind"] == "lesson"
+    assert body["lessonId"] == "lesson-1"
+
+
+async def test_coordinate_active_prefers_an_in_flight_job_over_a_ready_one(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a finished build job and a newer in-flight regenerate for the same slot. The reader
+    # should follow the live one (it will settle), not the older READY one.
+    ready_job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=ready_job_id, contract_hash="h")
+    inflight_job_id = (
+        await client.post(
+            f"/api/videos/{ready_job_id}/regenerate",
+            headers=auth_headers(USER_A),
+            json={"mode": "fresh"},
+        )
+    ).json()["job"]["id"]
+
+    # Act
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert — find_active (in flight) wins over find_latest_ready.
+    assert response.status_code == 200
+    assert response.json()["job"]["id"] == inflight_job_id
+    assert response.json()["job"]["status"] == "queued"
+
+
+async def test_coordinate_active_resolves_a_course_level_slot_without_a_lesson_id(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the Overview SUMMARY slot has no lesson_id; omit lessonId and the probe must use the
+    # null-lesson path (PostgREST `is null`, the in-memory `lesson_id is None`).
+    await queue.enqueue(
+        VideoJob(
+            id="sum-1",
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=None,
+            kind=VideoKind.SUMMARY,
+            input_hash="h",
+        )
+    )
+    await queue.complete(job_id="sum-1", contract_hash="h")
+
+    # Act
+    response = await client.get(
+        _COORD_ACTIVE, params={"kind": "summary"}, headers=auth_headers(USER_A)
+    )
+
+    # Assert — the course-level READY job is surfaced on the null-lesson path.
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == "sum-1"
+    assert body["lessonId"] is None
+    assert body["kind"] == "summary"
+
+
+async def test_coordinate_active_is_204_when_the_slot_has_no_job(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act / Assert — a slot with no enqueued video → 204, so the reader keeps whatever it shows.
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+    assert response.status_code == 204
+
+
+async def test_coordinate_active_does_not_leak_across_tenants(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — A's READY job for the slot.
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=job_id, contract_hash="h")
+
+    # Act — B probes the same coordinates.
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_B),
+    )
+
+    # Assert — owner-scoped: B sees nothing (204), never A's job.
+    assert response.status_code == 204
+
+
+async def test_coordinate_active_refuses_an_anonymous_caller(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act / Assert — like every other video route, anonymous callers are refused.
+    response = await client.get(_COORD_ACTIVE, params={"kind": "lesson", "lessonId": "lesson-1"})
+    assert response.status_code == 401
+
+
+async def test_coordinate_active_is_404_when_video_generation_is_off(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — the operator kill-switch is off: the surface does not exist.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    async with _build_client(tmp_path, queue, storage, events, video_enabled=False) as off_client:
+        # Act / Assert
+        response = await off_client.get(
+            _COORD_ACTIVE,
+            params={"kind": "lesson", "lessonId": "lesson-1"},
+            headers=auth_headers(USER_A),
+        )
+        assert response.status_code == 404
+
+
+# ── the course videos list (build-canvas N/M progress) ────────────────────────────
+#
+# GET /api/courses/{course_id}/videos returns the lean per-job status of EVERY video the course
+# enqueued, so the build canvas can show a polled "Videos N/M" phase after the build run completes
+# (the videos render async on the cloud worker, minutes after delivery).
+
+_COURSE_VIDEOS = "/api/courses/course-1/videos"
+
+
+async def _enqueue_course_video(
+    queue: InMemoryVideoJobQueue, job_id: str, *, kind: VideoKind, lesson_id: str | None
+) -> None:
+    await queue.enqueue(
+        VideoJob(
+            id=job_id,
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=lesson_id,
+            kind=kind,
+            input_hash="h",
+        )
+    )
+
+
+async def test_course_videos_lists_every_job_with_its_status(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a course mid-render: the summary is ready, one lesson ready, one failed, one still
+    # rendering. The failed job is the other terminal state the canvas's "settled" check folds in.
+    await _enqueue_course_video(queue, "sum-1", kind=VideoKind.SUMMARY, lesson_id=None)
+    await _enqueue_course_video(queue, "les-1", kind=VideoKind.LESSON, lesson_id="lesson-1")
+    await _enqueue_course_video(queue, "les-2", kind=VideoKind.LESSON, lesson_id="lesson-2")
+    await _enqueue_course_video(queue, "les-3", kind=VideoKind.LESSON, lesson_id="lesson-3")
+    await queue.complete(job_id="sum-1", contract_hash="h")
+    await queue.complete(job_id="les-1", contract_hash="h")
+    await queue.fail(job_id="les-3", error="render failed")  # les-2 stays queued
+
+    # Act
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+
+    # Assert — every job, lean (id, kind, lesson, status); enough to compute N/M ready + settled.
+    assert response.status_code == 200
+    body = response.json()
+    assert {row["jobId"] for row in body} == {"sum-1", "les-1", "les-2", "les-3"}
+    by_id = {row["jobId"]: row for row in body}
+    assert by_id["sum-1"]["status"] == "ready"
+    assert by_id["sum-1"]["kind"] == "summary"
+    assert by_id["sum-1"]["lessonId"] is None
+    assert by_id["les-2"]["status"] == "queued"
+    assert by_id["les-2"]["lessonId"] == "lesson-2"
+    assert by_id["les-3"]["status"] == "failed"  # the terminal-but-failed state serialises too
+    ready = sum(1 for row in body if row["status"] == "ready")
+    assert ready == 2  # 2 ready, 1 failed, 1 queued — the build canvas reads exactly this
+
+
+async def test_course_videos_is_empty_for_a_course_with_no_videos(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act / Assert — a video-off build enqueued nothing → an empty list (200, not 404), so the
+    # canvas shows no videos phase rather than an error.
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_course_videos_does_not_leak_across_tenants(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — A's jobs for the course.
+    await _enqueue_course_video(queue, "sum-1", kind=VideoKind.SUMMARY, lesson_id=None)
+
+    # Act — B lists the same course id.
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_B))
+
+    # Assert — owner-scoped: B sees an empty list, never A's jobs.
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_course_videos_refuses_an_anonymous_caller(client: httpx.AsyncClient) -> None:
+    # Act / Assert
+    assert (await client.get(_COURSE_VIDEOS)).status_code == 401
+
+
+async def test_course_videos_is_404_when_video_generation_is_off(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — the kill-switch is off: the surface does not exist.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    async with _build_client(tmp_path, queue, storage, events, video_enabled=False) as off_client:
+        # Act / Assert
+        response = await off_client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+        assert response.status_code == 404
+
+
+# ── variant coverage: every video kind + the correlation contract ─────────────────
+#
+# The two derive-at-read surfaces must resolve all THREE kinds — a LESSON (with a lesson_id) and
+# the two course-level kinds SUMMARY + OVERVIEW (null lesson_id). Earlier blocks covered lesson +
+# summary; these parametrize the full set so OVERVIEW (a null-lesson kind the build lost) holds too.
+
+_COURSE_LEVEL_COORDS: dict[VideoKind, tuple[str, str | None]] = {
+    VideoKind.LESSON: ("lesson", "lesson-1"),
+    VideoKind.SUMMARY: ("summary", None),
+    VideoKind.OVERVIEW: ("overview", None),
+}
+
+
+@pytest.mark.parametrize("kind", list(VideoKind))
+async def test_coordinate_active_resolves_every_kind_to_its_ready_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, kind: VideoKind
+) -> None:
+    # Arrange — a READY job of this kind at the slot's coordinates (lesson carries a lesson_id; the
+    # two course-level kinds carry none).
+    kind_value, lesson_id = _COURSE_LEVEL_COORDS[kind]
+    await _enqueue_course_video(queue, f"job-{kind_value}", kind=kind, lesson_id=lesson_id)
+    await queue.complete(job_id=f"job-{kind_value}", contract_hash="h")
+
+    # Act
+    params = {"kind": kind_value} | ({"lessonId": lesson_id} if lesson_id else {})
+    response = await client.get(_COORD_ACTIVE, params=params, headers=auth_headers(USER_A))
+
+    # Assert — every kind resolves on its own coordinates (overview included).
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == f"job-{kind_value}"
+    assert body["kind"] == kind_value
+    assert body["lessonId"] == lesson_id
+
+
+async def test_course_videos_lists_all_three_kinds(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — one job of each kind (the shape a build enqueues: summary + overview + lessons).
+    for kind, (kind_value, lesson_id) in _COURSE_LEVEL_COORDS.items():
+        await _enqueue_course_video(queue, f"job-{kind_value}", kind=kind, lesson_id=lesson_id)
+
+    # Act
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+
+    # Assert — all three kinds present with their correct kind strings (overview is not dropped).
+    assert response.status_code == 200
+    kinds = {row["kind"] for row in response.json()}
+    assert kinds == {"lesson", "summary", "overview"}
+
+
+async def test_video_reattach_routes_carry_a_request_id_header(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a READY lesson job so the coordinate probe has both a 200 (hit) and a 204 (miss).
+    await _enqueue_course_video(queue, "les-1", kind=VideoKind.LESSON, lesson_id="lesson-1")
+    await queue.complete(job_id="les-1", contract_hash="h")
+
+    # Act — the list, a coordinate-probe HIT (200), and a coordinate-probe MISS (204). The 204
+    # stamps X-Request-Id by hand, a separate path from the 200's response.headers write.
+    listed = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+    hit = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+    miss = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "no-such-lesson"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert — each response carries a correlation id (the 204 stamps it manually, a distinct path).
+    assert miss.status_code == 204
+    assert listed.headers["x-request-id"]
+    assert hit.headers["x-request-id"]
+    assert miss.headers["x-request-id"]
+    assert hit.headers["x-request-id"] != miss.headers["x-request-id"]
 
 
 # ── enqueue + status read ─────────────────────────────────────────────────────────

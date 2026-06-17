@@ -64,12 +64,18 @@ function noActive(): Response {
   return new Response(null, { status: 204 });
 }
 
+/** True for the coordinate re-attach probe URL (`/api/courses/{id}/videos/active?kind=…`). It keys
+ *  on coordinates, so it carries a `?kind=` query — a bare `endsWith("/active")` would miss it. */
+function isActiveProbe(url: string): boolean {
+  return url.split("?")[0]!.endsWith("/videos/active");
+}
+
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
-  // GET /api/videos/{jobId}/active → 204 (nothing in flight); GET /api/videos/{jobId} → its URLs.
+  // coordinate /videos/active probe → 204 (nothing in flight); GET /api/videos/{jobId} → its URLs.
   fetchMock.mockImplementation((input) => {
     const url = String(input);
-    if (url.endsWith("/active")) return Promise.resolve(noActive());
+    if (isActiveProbe(url)) return Promise.resolve(noActive());
     const jobId = url.split("/videos/")[1] ?? "job";
     return Promise.resolve(jsonResponse(200, readyView(jobId)));
   });
@@ -89,7 +95,7 @@ describe("OverviewSection", () => {
     };
 
     // Act
-    render(<OverviewSection videos={videos} apiBaseUrl={API} />);
+    render(<OverviewSection videos={videos} apiBaseUrl={API} courseId="course-1" />);
 
     // Assert — both play affordances resolve, and the trailer precedes the overview in reading order
     // (the course opens "what this course covers" → "what this topic is and why it matters").
@@ -101,7 +107,13 @@ describe("OverviewSection", () => {
 
   it("plays a course video's signed MP4 in place", async () => {
     // Arrange / Act
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
     fireEvent.click(await screen.findByRole("button", { name: /play the course trailer/i }));
 
     // Assert — a native <video> on the job's signed URL, no third party.
@@ -113,7 +125,13 @@ describe("OverviewSection", () => {
 
   it("renders only the slots that were built", async () => {
     // Arrange — a summary-only build (the overview was skipped, e.g. a briefless course).
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
 
     // Assert — the trailer slot only; no empty overview husk.
     await screen.findByRole("button", { name: /play the course trailer/i });
@@ -124,7 +142,7 @@ describe("OverviewSection", () => {
     // Arrange — the trailer resolves READY but its provenance carries a degraded scene.
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       return Promise.resolve(
         jsonResponse(200, {
           ...readyView("sum-1"),
@@ -138,7 +156,13 @@ describe("OverviewSection", () => {
     });
 
     // Act
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
 
     // Assert — the trailer plays with the degraded badge and the issue available on hover.
     await screen.findByRole("button", { name: /play the course trailer/i });
@@ -154,7 +178,7 @@ describe("OverviewSection", () => {
     };
 
     // Act — await the summary resolving so the failed overview is asserted against a settled tree.
-    render(<OverviewSection videos={videos} apiBaseUrl={API} />);
+    render(<OverviewSection videos={videos} apiBaseUrl={API} courseId="course-1" />);
     await screen.findByRole("button", { name: /play the course trailer/i });
 
     // Assert — the failed slot states it plainly and offers no broken play target; the course is
@@ -165,9 +189,11 @@ describe("OverviewSection", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/videos/ovr-1"))).toBe(false);
   });
 
-  it("shows the honest message when a ready artifact carries no resolvable jobId", () => {
+  it("shows the honest message when a ready artifact carries no resolvable jobId", async () => {
     // Arrange — a READY artifact with no provenance (e.g. a pre-provenance worker); it can't resolve
-    // a signed URL, so it degrades like a failure rather than rendering a broken player.
+    // a signed URL from the payload. The coordinate probe still fires (derive-at-read — the slot may
+    // be recoverable from the queue), but here it finds nothing (204), so the slot degrades to the
+    // honest message rather than rendering a broken player — never a status read it has no id for.
     const noJobId: VideoArtifact = {
       kind: "summary",
       status: "ready",
@@ -176,11 +202,12 @@ describe("OverviewSection", () => {
     };
 
     // Act
-    render(<OverviewSection videos={{ summary: noJobId }} apiBaseUrl={API} />);
+    render(<OverviewSection videos={{ summary: noJobId }} apiBaseUrl={API} courseId="course-1" />);
 
-    // Assert — the honest message, and no network call (there is no jobId to fetch).
-    expect(screen.getByText(/couldn.t be generated/i)).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    // Assert — the honest message; the only network call is the coordinate probe (no URL fetch).
+    expect(await screen.findByText(/couldn.t be generated/i)).toBeInTheDocument();
+    const probedOnly = fetchMock.mock.calls.every(([url]) => isActiveProbe(String(url)));
+    expect(probedOnly).toBe(true);
   });
 
   it("shows a loading skeleton while the signed URL resolves, then the player", async () => {
@@ -193,7 +220,13 @@ describe("OverviewSection", () => {
     );
 
     // Act
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
 
     // Assert — the skeleton announces itself while resolving…
     expect(
@@ -207,12 +240,20 @@ describe("OverviewSection", () => {
 
   it("offers a Regenerate menu on a ready course video and re-runs it", async () => {
     // Arrange — a ready summary; its menu's Fresh take re-runs the course video.
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
     await screen.findByRole("button", { name: /play the course trailer/i });
 
-    // Act — open the regenerate menu and pick Fresh take.
+    // Act — open the regenerate menu and pick Fresh take, then let the new job poll to a verdict
+    // (await the re-resolved player so the regenerate's state transition settles inside act()).
     fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+    await screen.findByRole("button", { name: /play the course trailer/i });
 
     // Assert — the POST targeted the source job with the chosen mode.
     const regen = fetchMock.mock.calls.find(([url]) =>
@@ -226,12 +267,18 @@ describe("OverviewSection", () => {
     // is routed to 204 so the badge is asserted on the ready-fetch path, not the re-attach probe.
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       const jobId = url.split("/videos/")[1] ?? "job";
       return Promise.resolve(jsonResponse(200, { ...readyView(jobId), stale: true }));
     });
 
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
 
     await screen.findByRole("button", { name: /play the course trailer/i });
     expect(screen.getByText("OUTDATED")).toBeInTheDocument();
@@ -252,11 +299,11 @@ describe("OverviewSection", () => {
     // /videos/{id} → its ready URLs — so the on-mount re-attach probe doesn't perturb the sequence.
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       if (url.includes("/regenerate")) return Promise.resolve(jsonResponse(202, queued));
       return Promise.resolve(jsonResponse(200, readyView("sum-2")));
     });
-    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} courseId="course-1" />);
 
     // Act — the failed slot resolves (the on-mount probe finds no newer take), states it plainly,
     // and offers a Try again menu; Fresh take re-runs it.
@@ -290,19 +337,21 @@ describe("OverviewSection", () => {
     };
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(jsonResponse(200, activeJob));
+      if (isActiveProbe(url)) return Promise.resolve(jsonResponse(200, activeJob));
       return Promise.resolve(jsonResponse(200, readyView("sum-regen")));
     });
 
     // Act — the on-mount probe discovers the live regenerate and watches it to a verdict.
-    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} courseId="course-1" />);
 
     // Assert — the slot recovers the running job and plays it; it does NOT strand on "couldn't
-    // generate" (the "nothing happening" bug). The probe was keyed by the source job we held.
+    // generate" (the "nothing happening" bug). The probe was keyed by the slot's coordinates.
     await screen.findByRole("button", { name: /play the course trailer/i });
     expect(screen.queryByText(/couldn.t be generated/i)).toBeNull();
     expect(
-      fetchMock.mock.calls.some(([url]) => String(url).endsWith("/videos/sum-fail/active")),
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes("/courses/course-1/videos/active?kind=summary"),
+      ),
     ).toBe(true);
   });
 
@@ -326,7 +375,7 @@ describe("OverviewSection", () => {
     fetchMock.mockImplementation(() => Promise.resolve(jsonResponse(200, rendering)));
 
     // Act
-    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} courseId="course-1" />);
 
     // Assert — a determinate, labelled progress bar with the plain-language stage caption.
     const bar = await screen.findByRole("progressbar", {
@@ -362,11 +411,11 @@ describe("OverviewSection", () => {
     };
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       if (url.includes("/regenerate")) return Promise.resolve(jsonResponse(202, queued));
       return Promise.resolve(jsonResponse(200, failedView));
     });
-    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} />);
+    render(<OverviewSection videos={{ summary: failed }} apiBaseUrl={API} courseId="course-1" />);
 
     // Act — Try again (shown once the on-mount probe settles) → Fresh take → the regenerate polls
     // to a failure carrying the reason.
@@ -384,7 +433,7 @@ describe("OverviewSection", () => {
     let remintRequested = false;
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       const token = remintRequested ? "fresh" : "stale";
       return Promise.resolve(
         jsonResponse(200, {
@@ -393,7 +442,13 @@ describe("OverviewSection", () => {
         }),
       );
     });
-    render(<OverviewSection videos={{ summary: artifact("summary", "sum-1") }} apiBaseUrl={API} />);
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
 
     // Act — play (mounts on the stale URL), then the expired URL fails to load.
     fireEvent.click(await screen.findByRole("button", { name: /play the course trailer/i }));
@@ -407,7 +462,9 @@ describe("OverviewSection", () => {
 
   it("renders nothing when neither course video was built", () => {
     // Arrange / Act — a video-on build where both course-level renders were absent.
-    const { container } = render(<OverviewSection videos={{}} apiBaseUrl={API} />);
+    const { container } = render(
+      <OverviewSection videos={{}} apiBaseUrl={API} courseId="course-1" />,
+    );
 
     // Assert — no Overview section husk.
     expect(container).toBeEmptyDOMElement();

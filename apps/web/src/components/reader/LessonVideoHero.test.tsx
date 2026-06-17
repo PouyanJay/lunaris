@@ -60,6 +60,12 @@ function noActive(): Response {
   return new Response(null, { status: 204 });
 }
 
+/** True for the coordinate re-attach probe URL (`/api/courses/{id}/videos/active?kind=…`). It keys
+ *  on coordinates, so it carries a `?kind=` query — a bare `endsWith("/active")` would miss it. */
+function isActiveProbe(url: string): boolean {
+  return url.split("?")[0]!.endsWith("/videos/active");
+}
+
 beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -262,7 +268,7 @@ describe("LessonVideoHero", () => {
     };
     fetchMock.mockImplementation((input) =>
       Promise.resolve(
-        String(input).endsWith("/active")
+        isActiveProbe(String(input))
           ? noActive()
           : jsonResponse(200, { ...readyView("built-1"), stale: true }),
       ),
@@ -293,14 +299,17 @@ describe("LessonVideoHero", () => {
     };
     fetchMock.mockImplementation((input) =>
       Promise.resolve(
-        String(input).endsWith("/active")
+        isActiveProbe(String(input))
           ? noActive()
           : jsonResponse(200, {
               ...readyView("built-1"),
               provenance: {
                 degradedScenes: [
                   { sceneId: "S1_hook", issues: ["title overflows the frame"] },
-                  { sceneId: "S2_mechanism", issues: ["states a figure no cited source verifies: 80"] },
+                  {
+                    sceneId: "S2_mechanism",
+                    issues: ["states a figure no cited source verifies: 80"],
+                  },
                 ],
               },
             }),
@@ -327,7 +336,7 @@ describe("LessonVideoHero", () => {
     };
     fetchMock.mockImplementation((input) =>
       Promise.resolve(
-        String(input).endsWith("/active") ? noActive() : jsonResponse(200, readyView("built-1")),
+        isActiveProbe(String(input)) ? noActive() : jsonResponse(200, readyView("built-1")),
       ),
     );
 
@@ -352,7 +361,7 @@ describe("LessonVideoHero", () => {
     // resolve → regenerate → poll-new sequence.
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       if (url.includes("/regenerate"))
         return Promise.resolve(jsonResponse(202, queuedView("job-2")));
       if (url.includes("/videos/built-1"))
@@ -382,7 +391,7 @@ describe("LessonVideoHero", () => {
     };
     fetchMock.mockImplementation((input) =>
       Promise.resolve(
-        String(input).endsWith("/active")
+        isActiveProbe(String(input))
           ? noActive()
           : jsonResponse(200, { ...readyView("built-1"), stale: false }),
       ),
@@ -413,7 +422,7 @@ describe("LessonVideoHero", () => {
     };
     fetchMock.mockImplementation((input) => {
       const url = String(input);
-      if (url.endsWith("/active")) return Promise.resolve(jsonResponse(200, queuedView("regen-1")));
+      if (isActiveProbe(url)) return Promise.resolve(jsonResponse(200, queuedView("regen-1")));
       return Promise.resolve(jsonResponse(200, renderingView));
     });
 
@@ -421,11 +430,13 @@ describe("LessonVideoHero", () => {
     render(<LessonVideoHero {...PROPS} video={built} />);
 
     // Assert — the slot recovers the running job and shows its progress bar (not the stale failed
-    // state), keyed by the source job id we held.
+    // state), keyed by the slot's coordinates (course, lesson, kind).
     const bar = await screen.findByRole("progressbar", { name: /generating the lesson video/i });
     expect(Number(bar.getAttribute("aria-valuenow"))).toBeGreaterThan(0);
     expect(
-      fetchMock.mock.calls.some(([url]) => String(url).endsWith("/videos/built-fail/active")),
+      fetchMock.mock.calls.some(([url]) =>
+        String(url).includes("/courses/course-1/videos/active?kind=lesson&lessonId=lesson-1"),
+      ),
     ).toBe(true);
   });
 
@@ -439,7 +450,7 @@ describe("LessonVideoHero", () => {
       if ((init as RequestInit | undefined)?.method === "POST") {
         return Promise.resolve(jsonResponse(202, queuedView())); // enqueue
       }
-      if (url.endsWith("/active")) return Promise.resolve(noActive());
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
       const token = remintRequested ? "fresh" : "stale"; // the live URL only after the load error
       return Promise.resolve(
         jsonResponse(200, {
@@ -453,9 +464,7 @@ describe("LessonVideoHero", () => {
     // Act — generate, then play; the player mounts on the (now stale) signed URL.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
     fireEvent.click(await screen.findByRole("button", { name: /play lesson video/i }));
-    await waitFor(() =>
-      expect(document.querySelector("video")?.src).toContain("token=stale"),
-    );
+    await waitFor(() => expect(document.querySelector("video")?.src).toContain("token=stale"));
 
     // Act — the expired URL fails to load; the slot re-mints itself instead of stranding silently.
     remintRequested = true;

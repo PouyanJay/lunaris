@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   enqueueLessonVideo,
   fetchFreshPlaybackUrls,
-  findActiveVideoJob,
+  findActiveVideoJobByCoordinates,
   pollVideoJob,
   regenerateVideo,
   resolveJobId,
@@ -108,24 +108,34 @@ export function useLessonVideo(
     return stopPolling;
   }, [apiBaseUrl, courseId, lessonId, builtStatus, builtJobId, watch, stopPolling]);
 
-  // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): ask
-  // the server for the slot's live job — keyed by the source job we DO hold — and watch it. Calling
-  // watch() aborts any poll the effect above started for the built artifact (shared controllerRef),
-  // so a live regenerate always takes precedence over the stale built state — surviving a refresh /
-  // navigate-away instead of the slot reverting to "couldn't generate".
+  // Derive-at-read re-attach: re-resolve a BUILT slot from the live queue by its COORDINATES (course,
+  // lesson, kind), needing no source job id. This recovers a slot whose payload pointer is
+  // FAILED-with-a-job-that-has-since-gone-READY — the async-after-delivery case the source-job probe
+  // missed (when the build job ITSELF flips FAILED→READY, that probe answers 204). It also catches an
+  // in-flight (re)generate or a completed regenerate. Gated on a built artifact (`builtStatus`): a
+  // lesson the build shipped a video for always carries one (READY or FAILED — the finalize fold is
+  // never null), so an idle slot with no built video stays a quiet generate affordance, unprobed.
+  // watch() aborts any poll the effect above started (shared controllerRef), so the live job always
+  // wins over the stale built state — surviving a refresh / navigate-away, not reverting to failed.
   useEffect(() => {
-    if (!builtJobId) return;
+    if (builtStatus === null) return;
     const controller = new AbortController();
-    void findActiveVideoJob(apiBaseUrl, builtJobId, controller.signal).then((view) => {
+    void findActiveVideoJobByCoordinates(
+      apiBaseUrl,
+      courseId,
+      "lesson",
+      lessonId,
+      controller.signal,
+    ).then((view) => {
       if (controller.signal.aborted) return;
       if (view && view.job.id !== jobIdRef.current) {
-        // A newer take the built artifact can't see — an in-flight job or a completed regenerate.
-        // Skip when it's the job the first effect is already watching (don't double-poll a slot).
+        // A live or newer take the built artifact can't see. Skip when it's the job the first effect
+        // is already watching (don't double-poll a slot).
         watch(view.job.id);
       } else if (!view && builtStatus === "failed") {
         // No live job and no successful take: the slot genuinely failed. Show it now — the resolving
         // state above only deferred the message until this probe settled.
-        setState({ phase: "failed", jobId: builtJobId, error: null });
+        setState({ phase: "failed", jobId: builtJobId ?? null, error: null });
       }
     });
     return () => controller.abort();

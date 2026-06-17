@@ -1,4 +1,4 @@
-import type { VideoArtifact, VideoProvenance } from "../types/course";
+import type { VideoArtifact, VideoKind, VideoProvenance } from "../types/course";
 import { authedFetch } from "./apiClient";
 
 /** The job id to resolve a video artifact by: prefer the provenance jobId (the worker populates it
@@ -158,22 +158,58 @@ export async function regenerateVideo(
   return { kind: "accepted", view: (await response.json()) as VideoJobView };
 }
 
-/** The slot's currently in-flight (re)generate job, or null when nothing is rendering (204) or it
- *  can't be read (gone, unauthorized, network). Keyed by the SOURCE job id the reader already holds
- *  (`resolveJobId` of the persisted artifact) so a regenerate whose new job_id the artifact doesn't
- *  know can still be re-attached after a refresh / navigate-away (the "nothing happening" bug). */
-export async function findActiveVideoJob(
+/** The slot's live video job keyed by its COORDINATES (course, lesson, kind) — NOT a source job id.
+ *  This is the derive-at-read probe: it resolves a slot whose course payload pointer is null OR
+ *  FAILED-with-a-job-that-has-since-gone-READY (the async-after-delivery case — the cloud worker
+ *  finishes a video minutes after the build delivered the course with a FAILED pointer, and nothing
+ *  rewrites it). Returns the slot's in-flight job (else its latest finished render), or null when the
+ *  slot has neither (204) / it can't be read. `lessonId` is omitted for course-level slots. */
+export async function findActiveVideoJobByCoordinates(
   apiBaseUrl: string,
-  sourceJobId: string,
+  courseId: string,
+  kind: VideoKind,
+  lessonId?: string | null,
   signal?: AbortSignal,
 ): Promise<VideoJobView | null> {
+  const params = new URLSearchParams({ kind });
+  if (lessonId) params.set("lessonId", lessonId);
   try {
     const response = await authedFetch(
-      `${apiBaseUrl}/api/videos/${encodeURIComponent(sourceJobId)}/active`,
+      `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/videos/active?${params}`,
       signal ? { signal } : undefined,
     );
     if (response.status === 204 || !response.ok) return null;
     return (await response.json()) as VideoJobView;
+  } catch {
+    return null;
+  }
+}
+
+/** One video job's lean status as the build canvas reads it (`GET /api/courses/{id}/videos`): the
+ *  slot coordinates + status, enough to compute "N of M ready" without the full job/config payload. */
+export interface CourseVideoStatusWire {
+  jobId: string;
+  kind: VideoKind;
+  lessonId: string | null;
+  status: VideoJobStatus;
+}
+
+/** The lean per-job status of EVERY video a course enqueued — drives the build canvas's "Videos N/M"
+ *  phase after the build run completes (the videos render async, minutes after delivery). An empty
+ *  array for a course that built no videos; null when it can't be read (network / unauthorized) so
+ *  the caller keeps its last reading and retries on the next poll. */
+export async function fetchCourseVideoStatuses(
+  apiBaseUrl: string,
+  courseId: string,
+  signal?: AbortSignal,
+): Promise<CourseVideoStatusWire[] | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/videos`,
+      signal ? { signal } : undefined,
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as CourseVideoStatusWire[];
   } catch {
     return null;
   }

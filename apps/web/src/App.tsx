@@ -14,6 +14,7 @@ import { Sidebar } from "./components/shell/Sidebar";
 import { BuildTimeline } from "./components/transcript/BuildTimeline";
 import { BuildReplay } from "./components/transcript/BuildReplay";
 import { LiveBuildReplay } from "./components/transcript/LiveBuildReplay";
+import { VideosGeneratingPanel } from "./components/transcript/VideosGeneratingPanel";
 import { ExplainProvider } from "./components/explain/ExplainContext";
 import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
@@ -27,6 +28,7 @@ import { useBeforeUnloadGuard } from "./hooks/useBeforeUnloadGuard";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useTheme, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
+import { useBuildVideoProgress } from "./hooks/useBuildVideoProgress";
 import { useRuns } from "./hooks/useRuns";
 import { useCapabilities } from "./hooks/useCapabilities";
 import { useKeylessReadiness } from "./hooks/useKeylessReadiness";
@@ -45,6 +47,14 @@ import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
+
+/** Whether a just-built course enqueued any explainer videos — true if it carries course-level
+ *  videos or any lesson video pointer. Gates the build canvas's async-videos phase: a video-off
+ *  build has none, so the canvas advances straight to the course (no spurious "generating" phase). */
+function courseHasVideos(course: Course): boolean {
+  if (course.videos?.summary || course.videos?.overview) return true;
+  return course.modules.some((module) => module.lessons.some((lesson) => lesson.video));
+}
 
 function statusTone(status: CourseStatus): { tone: StatusTone; live: boolean } {
   if (status === "published") return { tone: "success", live: false };
@@ -148,6 +158,29 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     state.status === "preparing-device" ||
       (state.status === "streaming" && state.servedByThisDevice),
   );
+  // After a fresh build completes, its lesson + course videos keep rendering async on the cloud
+  // worker (minutes, after the build SSE has already ended). Hold the build canvas on a "Videos N/M"
+  // phase — polling the course's video jobs — instead of flipping straight to the course with empty
+  // video slots (the "froze on Verify" complaint). The user can Open course early; the canvas
+  // advances on its own once every video settles. Only when the build actually made videos.
+  const liveReadyCourse = state.status === "ready" ? state.course : null;
+  const buildHasVideos = liveReadyCourse !== null && courseHasVideos(liveReadyCourse);
+  const [videosOpenedEarly, setVideosOpenedEarly] = useState(false);
+  // Reset the open-early choice per built course, so the next build's videos phase shows again.
+  // Adjusted during render (not in an effect) so the new course never flashes a frame with the
+  // previous course's choice — the React "store info from prior renders" pattern.
+  const [videosCourseId, setVideosCourseId] = useState<string | undefined>(undefined);
+  if (liveReadyCourse?.id !== videosCourseId) {
+    setVideosCourseId(liveReadyCourse?.id);
+    setVideosOpenedEarly(false);
+  }
+  const videoProgress = useBuildVideoProgress(
+    apiBaseUrl,
+    liveReadyCourse?.id,
+    buildHasVideos && !videosOpenedEarly,
+  );
+  const showVideosFinishing =
+    buildHasVideos && !videosOpenedEarly && !(videoProgress?.settled ?? false);
   // The per-lesson regenerate action only works on a pipeline that implements it (the single-shot
   // Orchestrator); the deep-agent builder 501s. Read the capability once and hide the action when
   // it's unsupported, rather than offering a button that always fails. Fail closed on any error.
@@ -434,6 +467,32 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
             message={message}
             onRetry={() => generate(topic, undefined, discoveryDepth)}
           />
+        ),
+      };
+    }
+    // A fresh build finished, but its videos are still rendering async: hold the build canvas on the
+    // videos phase (the completed timeline + a polled "N of M" panel) rather than flipping to the
+    // course with empty slots. "Open course" leaves early; the canvas advances once videos settle.
+    if (showVideosFinishing) {
+      return {
+        title: state.course.topic,
+        meta: <StatusDot label="finishing videos" tone="accent" live />,
+        body: (
+          <>
+            {state.runId && (
+              <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+                <BuildReplay
+                  apiBaseUrl={apiBaseUrl}
+                  runId={state.runId}
+                  topic={state.course.topic}
+                />
+              </ExplainProvider>
+            )}
+            <VideosGeneratingPanel
+              progress={videoProgress}
+              onOpenCourse={() => setVideosOpenedEarly(true)}
+            />
+          </>
         ),
       };
     }
