@@ -105,6 +105,38 @@ describe("useLessonVideo — coordinate-keyed derive-at-read", () => {
     expect(probe).toHaveBeenCalledWith(API, COURSE, "lesson", LESSON, expect.anything());
   });
 
+  it("does not double-poll when the probe echoes the job the first effect already watches", async () => {
+    // Arrange — a built-READY slot. The first effect watches its job; the coordinate probe returns
+    // that SAME job (no newer take). The dedup guard (view.job.id !== jobIdRef.current) must skip it,
+    // so the slot polls exactly once — not twice for one job.
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: {
+        jobId: "built-1",
+        courseId: COURSE,
+        lessonId: LESSON,
+        kind: "lesson",
+        model: "m",
+        contractHash: "h",
+        inputHash: "h",
+        claimIds: [],
+        generatedAt: "2026-01-01T00:00:00+00:00",
+      },
+      narrated: false,
+    };
+    probe.mockResolvedValue(readyView("built-1")); // the probe sees the same job
+
+    // Act
+    const { result } = renderHook(() => useLessonVideo(API, COURSE, LESSON, 10, built));
+
+    // Assert — settled ready, and the job was watched once (the probe's echo was skipped).
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(poll.mock.calls[0]?.[1]).toBe("built-1");
+  });
+
   it("settles FAILED when the probe finds no live job for a failed payload slot", async () => {
     // Arrange — genuinely failed: nothing in flight and no successful take.
     probe.mockResolvedValue(null);

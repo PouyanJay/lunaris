@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useBuildVideoProgress } from "./useBuildVideoProgress";
 
 vi.mock("../lib/videoJobs", () => ({ fetchCourseVideoStatuses: vi.fn() }));
-import { fetchCourseVideoStatuses } from "../lib/videoJobs";
+import { fetchCourseVideoStatuses, type VideoJobStatus } from "../lib/videoJobs";
 
 const fetchStatuses = vi.mocked(fetchCourseVideoStatuses);
 const API = "http://api.test";
 const COURSE = "course-1";
 
-function row(jobId: string, status: string) {
-  return { jobId, kind: "lesson" as const, lessonId: jobId, status: status as never };
+function row(jobId: string, status: VideoJobStatus) {
+  return { jobId, kind: "lesson" as const, lessonId: jobId, status };
 }
 
 // Flush the awaited poll + any rescheduled timer deterministically (no wall-clock waits).
@@ -89,5 +89,23 @@ describe("useBuildVideoProgress", () => {
 
     expect(result.current).toBeNull();
     expect(fetchStatuses).not.toHaveBeenCalled();
+  });
+
+  it("stops polling and clears its reading when active flips off", async () => {
+    fetchStatuses.mockResolvedValue([row("a", "ready"), row("b", "rendering")]);
+
+    const { result, rerender } = renderHook(
+      ({ active }) => useBuildVideoProgress(API, COURSE, active, 1000),
+      { initialProps: { active: true } },
+    );
+    await tick();
+    expect(result.current).not.toBeNull();
+    const callsBeforeFlip = fetchStatuses.mock.calls.length;
+
+    // The user opened the course early → the canvas stops watching.
+    rerender({ active: false });
+    await tick(5000);
+    expect(result.current).toBeNull(); // the stale reading is dropped, no spinner left behind
+    expect(fetchStatuses).toHaveBeenCalledTimes(callsBeforeFlip); // no further polls
   });
 });

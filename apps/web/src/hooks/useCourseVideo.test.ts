@@ -91,6 +91,27 @@ describe("useCourseVideo — coordinate-keyed derive-at-read", () => {
     expect(probe).toHaveBeenCalledWith(API, COURSE, "overview", undefined, expect.anything());
   });
 
+  it("recovers a FAILED artifact with NO jobId by coordinates (the probe needs no source id)", async () => {
+    // Arrange — a FAILED course-video artifact carrying no job id at all (a pre-provenance / lost
+    // pointer). The source-job probe could never run for this; the coordinate probe keys on
+    // (course, kind) instead, so the slot can still recover its now-READY render.
+    const failedNoJob: VideoArtifact = {
+      kind: "summary",
+      status: "failed",
+      jobId: null,
+      provenance: null,
+      narrated: false,
+    };
+    probe.mockResolvedValue(readyView("recovered"));
+
+    // Act
+    const { result } = renderHook(() => useCourseVideo(API, COURSE, failedNoJob));
+
+    // Assert — recovered to ready, keyed purely by coordinates (no source job id existed).
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    expect(probe).toHaveBeenCalledWith(API, COURSE, "summary", undefined, expect.anything());
+  });
+
   it("does not probe an absent slot (no artifact, no course video built)", async () => {
     // Act — an absent course-video slot renders nothing and needs no probe (no kind to key on).
     const { result } = renderHook(() => useCourseVideo(API, COURSE, null));

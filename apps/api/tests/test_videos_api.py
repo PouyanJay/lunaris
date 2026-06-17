@@ -695,6 +695,86 @@ async def test_course_videos_is_404_when_video_generation_is_off(
         assert response.status_code == 404
 
 
+# ── variant coverage: every video kind + the correlation contract ─────────────────
+#
+# The two derive-at-read surfaces must resolve all THREE kinds — a LESSON (with a lesson_id) and
+# the two course-level kinds SUMMARY + OVERVIEW (null lesson_id). Earlier blocks covered lesson +
+# summary; these parametrize the full set so OVERVIEW (a null-lesson kind the build lost) holds too.
+
+_COURSE_LEVEL_COORDS: dict[VideoKind, tuple[str, str | None]] = {
+    VideoKind.LESSON: ("lesson", "lesson-1"),
+    VideoKind.SUMMARY: ("summary", None),
+    VideoKind.OVERVIEW: ("overview", None),
+}
+
+
+@pytest.mark.parametrize("kind", list(VideoKind))
+async def test_coordinate_active_resolves_every_kind_to_its_ready_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, kind: VideoKind
+) -> None:
+    # Arrange — a READY job of this kind at the slot's coordinates (lesson carries a lesson_id; the
+    # two course-level kinds carry none).
+    kind_value, lesson_id = _COURSE_LEVEL_COORDS[kind]
+    await _enqueue_course_video(queue, f"job-{kind_value}", kind=kind, lesson_id=lesson_id)
+    await queue.complete(job_id=f"job-{kind_value}", contract_hash="h")
+
+    # Act
+    params = {"kind": kind_value} | ({"lessonId": lesson_id} if lesson_id else {})
+    response = await client.get(_COORD_ACTIVE, params=params, headers=auth_headers(USER_A))
+
+    # Assert — every kind resolves on its own coordinates (overview included).
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == f"job-{kind_value}"
+    assert body["kind"] == kind_value
+    assert body["lessonId"] == lesson_id
+
+
+async def test_course_videos_lists_all_three_kinds(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — one job of each kind (the shape a build enqueues: summary + overview + lessons).
+    for kind, (kind_value, lesson_id) in _COURSE_LEVEL_COORDS.items():
+        await _enqueue_course_video(queue, f"job-{kind_value}", kind=kind, lesson_id=lesson_id)
+
+    # Act
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+
+    # Assert — all three kinds present with their correct kind strings (overview is not dropped).
+    assert response.status_code == 200
+    kinds = {row["kind"] for row in response.json()}
+    assert kinds == {"lesson", "summary", "overview"}
+
+
+async def test_video_reattach_routes_carry_a_request_id_header(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a READY lesson job so the coordinate probe has both a 200 (hit) and a 204 (miss).
+    await _enqueue_course_video(queue, "les-1", kind=VideoKind.LESSON, lesson_id="lesson-1")
+    await queue.complete(job_id="les-1", contract_hash="h")
+
+    # Act — the list, a coordinate-probe HIT (200), and a coordinate-probe MISS (204). The 204
+    # stamps X-Request-Id by hand, a separate path from the 200's response.headers write.
+    listed = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+    hit = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+    miss = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "no-such-lesson"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert — each response carries a correlation id (the 204 stamps it manually, a distinct path).
+    assert miss.status_code == 204
+    assert listed.headers["x-request-id"]
+    assert hit.headers["x-request-id"]
+    assert miss.headers["x-request-id"]
+    assert hit.headers["x-request-id"] != miss.headers["x-request-id"]
+
+
 # ── enqueue + status read ─────────────────────────────────────────────────────────
 
 
