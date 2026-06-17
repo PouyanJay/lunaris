@@ -126,7 +126,8 @@ jobs:
               draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}" \
-              videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}"
+              videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}" \
+              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}"
 
       # The dedicated video-worker Container App (explainer-video V7) — drains video_jobs and renders
       # Manim. Deployed only where video is on; KEDA scales it 0→N on the pending-job count, so it
