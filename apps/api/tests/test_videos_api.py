@@ -596,6 +596,105 @@ async def test_coordinate_active_is_404_when_video_generation_is_off(
         assert response.status_code == 404
 
 
+# ── the course videos list (build-canvas N/M progress) ────────────────────────────
+#
+# GET /api/courses/{course_id}/videos returns the lean per-job status of EVERY video the course
+# enqueued, so the build canvas can show a polled "Videos N/M" phase after the build run completes
+# (the videos render async on the cloud worker, minutes after delivery).
+
+_COURSE_VIDEOS = "/api/courses/course-1/videos"
+
+
+async def _enqueue_course_video(
+    queue: InMemoryVideoJobQueue, job_id: str, *, kind: VideoKind, lesson_id: str | None
+) -> None:
+    await queue.enqueue(
+        VideoJob(
+            id=job_id,
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=lesson_id,
+            kind=kind,
+            input_hash="h",
+        )
+    )
+
+
+async def test_course_videos_lists_every_job_with_its_status(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a course mid-render: the summary is ready, one lesson ready, one failed, one still
+    # rendering. The failed job is the other terminal state the canvas's "settled" check folds in.
+    await _enqueue_course_video(queue, "sum-1", kind=VideoKind.SUMMARY, lesson_id=None)
+    await _enqueue_course_video(queue, "les-1", kind=VideoKind.LESSON, lesson_id="lesson-1")
+    await _enqueue_course_video(queue, "les-2", kind=VideoKind.LESSON, lesson_id="lesson-2")
+    await _enqueue_course_video(queue, "les-3", kind=VideoKind.LESSON, lesson_id="lesson-3")
+    await queue.complete(job_id="sum-1", contract_hash="h")
+    await queue.complete(job_id="les-1", contract_hash="h")
+    await queue.fail(job_id="les-3", error="render failed")  # les-2 stays queued
+
+    # Act
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+
+    # Assert — every job, lean (id, kind, lesson, status); enough to compute N/M ready + settled.
+    assert response.status_code == 200
+    body = response.json()
+    assert {row["jobId"] for row in body} == {"sum-1", "les-1", "les-2", "les-3"}
+    by_id = {row["jobId"]: row for row in body}
+    assert by_id["sum-1"]["status"] == "ready"
+    assert by_id["sum-1"]["kind"] == "summary"
+    assert by_id["sum-1"]["lessonId"] is None
+    assert by_id["les-2"]["status"] == "queued"
+    assert by_id["les-2"]["lessonId"] == "lesson-2"
+    assert by_id["les-3"]["status"] == "failed"  # the terminal-but-failed state serialises too
+    ready = sum(1 for row in body if row["status"] == "ready")
+    assert ready == 2  # 2 ready, 1 failed, 1 queued — the build canvas reads exactly this
+
+
+async def test_course_videos_is_empty_for_a_course_with_no_videos(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act / Assert — a video-off build enqueued nothing → an empty list (200, not 404), so the
+    # canvas shows no videos phase rather than an error.
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_course_videos_does_not_leak_across_tenants(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — A's jobs for the course.
+    await _enqueue_course_video(queue, "sum-1", kind=VideoKind.SUMMARY, lesson_id=None)
+
+    # Act — B lists the same course id.
+    response = await client.get(_COURSE_VIDEOS, headers=auth_headers(USER_B))
+
+    # Assert — owner-scoped: B sees an empty list, never A's jobs.
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_course_videos_refuses_an_anonymous_caller(client: httpx.AsyncClient) -> None:
+    # Act / Assert
+    assert (await client.get(_COURSE_VIDEOS)).status_code == 401
+
+
+async def test_course_videos_is_404_when_video_generation_is_off(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — the kill-switch is off: the surface does not exist.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    async with _build_client(tmp_path, queue, storage, events, video_enabled=False) as off_client:
+        # Act / Assert
+        response = await off_client.get(_COURSE_VIDEOS, headers=auth_headers(USER_A))
+        assert response.status_code == 404
+
+
 # ── enqueue + status read ─────────────────────────────────────────────────────────
 
 

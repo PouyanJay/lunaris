@@ -185,6 +185,36 @@ export async function findActiveVideoJobByCoordinates(
   }
 }
 
+/** One video job's lean status as the build canvas reads it (`GET /api/courses/{id}/videos`): the
+ *  slot coordinates + status, enough to compute "N of M ready" without the full job/config payload. */
+export interface CourseVideoStatusWire {
+  jobId: string;
+  kind: VideoKind;
+  lessonId: string | null;
+  status: VideoJobStatus;
+}
+
+/** The lean per-job status of EVERY video a course enqueued — drives the build canvas's "Videos N/M"
+ *  phase after the build run completes (the videos render async, minutes after delivery). An empty
+ *  array for a course that built no videos; null when it can't be read (network / unauthorized) so
+ *  the caller keeps its last reading and retries on the next poll. */
+export async function fetchCourseVideoStatuses(
+  apiBaseUrl: string,
+  courseId: string,
+  signal?: AbortSignal,
+): Promise<CourseVideoStatusWire[] | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/videos`,
+      signal ? { signal } : undefined,
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as CourseVideoStatusWire[];
+  } catch {
+    return null;
+  }
+}
+
 /** Re-mint a ready job's short-lived signed playback URLs — they expire ~1h after they resolve, so a
  *  reader who sits on the page then presses play loads a dead URL. Returns the fresh URL set while
  *  the job is still READY, or null when it can't be re-minted (gone / not playable) so the caller

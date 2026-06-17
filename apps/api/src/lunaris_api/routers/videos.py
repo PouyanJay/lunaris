@@ -77,6 +77,16 @@ class VideoJobView(CourseModel):
     stale: bool = False
 
 
+class CourseVideoStatus(CourseModel):
+    """One video job's lean status for the build canvas's "Videos N/M" progress: just the slot
+    coordinates + status, no config/grounding snapshots (which the full ``VideoJob`` carries)."""
+
+    job_id: str
+    kind: VideoKind
+    lesson_id: str | None = None
+    status: VideoJobStatus
+
+
 class RegenerateRequest(CourseModel):
     """Body of a regenerate request: which of the four menu modes to re-run (V6-T2)."""
 
@@ -339,6 +349,35 @@ async def _lesson_video_stale(
         job.course_id, lesson, target_seconds=video_config.target_seconds(VideoKind.LESSON)
     )
     return current != job.input_hash
+
+
+@router.get(
+    "/courses/{course_id}/videos",
+    response_model=list[CourseVideoStatus],
+    dependencies=[Depends(require_video_generation_enabled)],
+)
+async def list_course_video_jobs(
+    course_id: str,
+    owner_id: CurrentUserIdDep,
+    queue: VideoJobQueueDep,
+    response: Response,
+) -> list[CourseVideoStatus]:
+    """Every video job the course enqueued, lean (id, kind, lesson, status) — drives the build
+    canvas's "Videos N/M" phase after the build run completes (the videos render async on the cloud
+    worker, minutes after delivery, so the build SSE has already ended). An empty list when the
+    course built no videos (a video-off build) — 200, not 404, so the canvas just shows no phase.
+
+    Owner-scoped via ``list_for_course`` (another tenant's course reads as empty, never leaking
+    existence). NOT tier-gated, like the status poll: reading your own jobs' status consumes no
+    generation capacity. Behind the operator kill-switch (404 when video is off entirely)."""
+    request_id = uuid.uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
+    jobs = await queue.list_for_course(course_id=course_id, owner_id=owner_id)
+    return [
+        CourseVideoStatus(job_id=job.id, kind=job.kind, lesson_id=job.lesson_id, status=job.status)
+        for job in jobs
+    ]
 
 
 @router.get(
