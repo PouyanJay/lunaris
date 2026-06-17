@@ -20,10 +20,15 @@ from lunaris_runtime.video_build import QueueVideoBuildCoordinator, VideoConfig
 _OWNER = "user-a"
 
 
-def _video_config(*, voice: bool) -> VideoConfig:
+def _video_config(*, voice: bool, lessons_enabled: bool = True) -> VideoConfig:
     # Distinct length per kind, none equal to another, so a mis-keyed lookup can't pass by accident.
     return VideoConfig(
-        enabled=True, voice=voice, summary_seconds=60, overview_seconds=200, lesson_seconds=80
+        enabled=True,
+        voice=voice,
+        lessons_enabled=lessons_enabled,
+        summary_seconds=60,
+        overview_seconds=200,
+        lesson_seconds=80,
     )
 
 
@@ -51,6 +56,28 @@ async def _enqueue(coordinator: QueueVideoBuildCoordinator, kind: VideoKind) -> 
             return await coordinator.enqueue_overview(course_id="c1", brief=_brief())
         case _:
             raise ValueError(f"unhandled VideoKind: {kind}")
+
+
+@pytest.mark.parametrize("lessons_enabled", [True, False])
+async def test_lessons_toggle_gates_only_the_per_lesson_videos(lessons_enabled: bool) -> None:
+    # Variant coverage for the per-lesson sub-toggle: across both states the two course-level
+    # videos always enqueue; only the per-lesson job tracks the toggle (enqueued on, declined off).
+    queue = InMemoryVideoJobQueue()
+    coordinator = QueueVideoBuildCoordinator(
+        queue=queue,
+        storage=InMemoryVideoStorage(),
+        owner_id=_OWNER,
+        video_config=_video_config(voice=True, lessons_enabled=lessons_enabled),
+    )
+
+    lesson_job = await _enqueue(coordinator, VideoKind.LESSON)
+    summary_job = await _enqueue(coordinator, VideoKind.SUMMARY)
+    overview_job = await _enqueue(coordinator, VideoKind.OVERVIEW)
+
+    # The course-level videos are unconditional; the lesson job mirrors the toggle.
+    assert summary_job is not None
+    assert overview_job is not None
+    assert (lesson_job is not None) is lessons_enabled
 
 
 @pytest.mark.parametrize("voice", [True, False])

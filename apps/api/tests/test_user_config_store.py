@@ -52,6 +52,7 @@ async def test_service_settings_returns_defaults_when_unset() -> None:
         "modelStrong",
         "modelWorker",
         "videoEnabled",
+        "videoLessonsEnabled",
         "videoVoice",
         "videoSummarySeconds",
         "videoOverviewSeconds",

@@ -19,6 +19,7 @@ from lunaris_runtime.video_build import (
 from lunaris_runtime.video_build.video_config import (
     VIDEO_ENABLED_ENV,
     VIDEO_LESSON_SECONDS_ENV,
+    VIDEO_LESSONS_ENABLED_ENV,
     VIDEO_OVERVIEW_SECONDS_ENV,
     VIDEO_SUMMARY_SECONDS_ENV,
     VIDEO_VOICE_ENV,
@@ -26,12 +27,38 @@ from lunaris_runtime.video_build.video_config import (
 
 
 def test_an_empty_map_is_all_product_defaults() -> None:
-    # Unset everywhere → the product defaults: master ON, voice ON, per-kind default lengths.
+    # Unset everywhere → the product defaults: master ON, lesson videos ON, voice ON, per-kind
+    # default lengths.
     config = video_config_from_map(None)
     assert config.enabled is True
     assert config.voice is True
+    assert config.lessons_enabled is True
     for kind in VideoKind:
         assert config.target_seconds(kind) == target_seconds_for(kind)
+
+
+def test_lessons_toggle_off_is_read_from_the_map() -> None:
+    # The new per-lesson sub-toggle: off in the map, but the master + voice are untouched (a build
+    # with this off still makes the course-level videos).
+    config = video_config_from_map({VIDEO_LESSONS_ENABLED_ENV: "false"})
+    assert config.lessons_enabled is False
+    assert config.enabled is True
+    assert config.voice is True
+
+
+def test_lessons_toggle_is_independent_of_the_master_toggle() -> None:
+    # Master off but lessons on, and master on but lessons off — neither field bleeds into the
+    # other.
+    master_off = video_config_from_map(
+        {VIDEO_ENABLED_ENV: "false", VIDEO_LESSONS_ENABLED_ENV: "true"}
+    )
+    assert master_off.enabled is False
+    assert master_off.lessons_enabled is True
+    lessons_off = video_config_from_map(
+        {VIDEO_ENABLED_ENV: "true", VIDEO_LESSONS_ENABLED_ENV: "false"}
+    )
+    assert lessons_off.enabled is True
+    assert lessons_off.lessons_enabled is False
 
 
 def test_default_video_config_matches_an_empty_map() -> None:
@@ -93,8 +120,17 @@ def test_resolve_reads_the_run_config_scope() -> None:
     assert config.target_seconds(VideoKind.LESSON) == 60
 
 
+def test_resolve_reads_the_lessons_toggle_from_the_scope() -> None:
+    # The build path reads the per-lesson sub-toggle off the run-config scope, like every other key.
+    with run_config({VIDEO_LESSONS_ENABLED_ENV: "false"}):
+        config = resolve_video_config()
+    assert config.lessons_enabled is False
+    assert config.enabled is True  # master untouched
+
+
 def test_resolve_outside_a_scope_is_defaults() -> None:
     # No scope (and no env) → product defaults, never a refusal.
     config = resolve_video_config()
     assert config.enabled is True
     assert config.voice is True
+    assert config.lessons_enabled is True

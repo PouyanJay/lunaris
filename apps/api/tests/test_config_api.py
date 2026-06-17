@@ -57,6 +57,7 @@ async def test_get_returns_every_setting_with_its_default(client: httpx.AsyncCli
         "modelStrong",
         "modelWorker",
         "videoEnabled",
+        "videoLessonsEnabled",
         "videoVoice",
         "videoSummarySeconds",
         "videoOverviewSeconds",
@@ -83,6 +84,15 @@ async def test_get_returns_every_setting_with_its_default(client: httpx.AsyncCli
         "restartRequired": False,
     }
     assert settings["videoVoice"]["value"] == "true"
+    # The per-lesson sub-toggle: a toggle defaulting ON (so an unset value keeps every lesson's
+    # video), no restart needed — read per build like the master toggle.
+    assert settings["videoLessonsEnabled"] == {
+        "name": "videoLessonsEnabled",
+        "value": "true",
+        "default": "true",
+        "kind": "toggle",
+        "restartRequired": False,
+    }
     assert settings["videoLessonSeconds"]["kind"] == "number"
     # Lengths default to the per-kind product lengths (no drift if the defaults change).
     assert settings["videoLessonSeconds"]["value"] == str(target_seconds_for(VideoKind.LESSON))
@@ -146,6 +156,19 @@ async def test_video_master_toggle_persists(client: httpx.AsyncClient) -> None:
     assert off.json()["value"] == "false"
     body = (await client.get("/api/config")).json()
     assert next(s for s in body["settings"] if s["name"] == "videoEnabled")["value"] == "false"
+
+
+async def test_video_lessons_toggle_persists(client: httpx.AsyncClient) -> None:
+    # The per-lesson sub-toggle round-trips like the master toggle, and applies to the env the next
+    # build's run-config scope reads (so the gate sees it).
+    off = await client.put("/api/config/videoLessonsEnabled", json={"value": "false"})
+    assert off.status_code == 200
+    assert off.json()["value"] == "false"
+    assert os.environ["LUNARIS_VIDEO_LESSONS_ENABLED"] == "false"
+    body = (await client.get("/api/config")).json()
+    assert next(s for s in body["settings"] if s["name"] == "videoLessonsEnabled")["value"] == (
+        "false"
+    )
 
 
 async def test_unknown_key_is_404(client: httpx.AsyncClient) -> None:

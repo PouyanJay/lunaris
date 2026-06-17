@@ -28,10 +28,13 @@ from lunaris_runtime.video_build import (
 _OWNER = "user-a"
 
 
-def _video_config(*, voice: bool = True, lesson_seconds: int = 75) -> VideoConfig:
+def _video_config(
+    *, voice: bool = True, lessons_enabled: bool = True, lesson_seconds: int = 75
+) -> VideoConfig:
     return VideoConfig(
         enabled=True,
         voice=voice,
+        lessons_enabled=lessons_enabled,
         summary_seconds=75,
         overview_seconds=180,
         lesson_seconds=lesson_seconds,
@@ -124,6 +127,20 @@ async def test_enqueue_lesson_stamps_voice_off_when_the_tenant_disabled_narratio
     assert job is not None
     assert job.config["voice"] is False
     assert job.config["target_seconds"] == 75
+
+
+async def test_enqueue_lesson_is_gated_off_when_lessons_disabled() -> None:
+    # Arrange — the per-lesson sub-toggle is OFF (master still on: the coordinator exists so the
+    # course-level videos enqueue), so a lesson enqueue must be declined.
+    queue = InMemoryVideoJobQueue()
+    coordinator = _coordinator(queue, video_config=_video_config(lessons_enabled=False))
+
+    # Act
+    job_id = await coordinator.enqueue_lesson(course_id="c1", lesson_id="m0-l0")
+
+    # Assert — no job, and nothing claimable: the worker spends no capacity on a lesson video.
+    assert job_id is None
+    assert await queue.claim(worker_id="w") is None
 
 
 async def test_enqueue_lesson_is_idempotent_within_a_build() -> None:

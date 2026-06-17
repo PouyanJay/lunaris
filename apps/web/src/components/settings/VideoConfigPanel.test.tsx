@@ -14,6 +14,13 @@ function videoSettings(overrides: Record<string, string> = {}): ConfigSetting[] 
       kind: "toggle",
       restartRequired: false,
     },
+    {
+      name: "videoLessonsEnabled",
+      value: "true",
+      default: "true",
+      kind: "toggle",
+      restartRequired: false,
+    },
     { name: "videoVoice", value: "true", default: "true", kind: "toggle", restartRequired: false },
     {
       name: "videoSummarySeconds",
@@ -92,10 +99,34 @@ describe("VideoConfigPanel", () => {
       "aria-checked",
       "true",
     );
+    expect(screen.getByRole("switch", { name: "Generate lesson videos" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Narrate videos" })).toBeInTheDocument();
     expect(screen.getByLabelText("Course trailer length")).toBeInTheDocument();
     expect(screen.getByLabelText("Topic intro length")).toBeInTheDocument();
     expect(screen.getByLabelText("Lesson video length")).toBeInTheDocument();
+  });
+
+  it("saves the lesson-videos sub-toggle through PUT /api/config/videoLessonsEnabled", async () => {
+    const fetchMock = stubFetch(videoSettings({ videoLessonsEnabled: "true" }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <VideoConfigPanel
+        apiBaseUrl="http://test"
+        keyless={false}
+        byokEnabled={false}
+        secrets={[secret("elevenlabs", true)]}
+      />,
+    );
+    await expandVideo();
+
+    // Turn the sub-toggle OFF — the build then makes only the course-level videos.
+    fireEvent.click(await screen.findByRole("switch", { name: "Generate lesson videos" }));
+
+    await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
+    const put = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes("/api/config/videoLessonsEnabled"),
+    );
+    expect(JSON.parse(String((put?.[1] as RequestInit).body))).toEqual({ value: "false" });
   });
 
   it("saves the master toggle through PUT /api/config/videoEnabled", async () => {
@@ -137,6 +168,9 @@ describe("VideoConfigPanel", () => {
       "false",
     );
     // The sub-settings disclosure is collapsed.
+    expect(
+      screen.queryByRole("switch", { name: "Generate lesson videos" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "Narrate videos" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Lesson video length")).not.toBeInTheDocument();
   });
@@ -242,6 +276,9 @@ describe("VideoConfigPanel", () => {
     expect(await screen.findByRole("switch", { name: "Generate videos" })).toBeDisabled();
     expect(screen.getByRole("note")).toHaveTextContent(/needs an anthropic api key/i);
     // None of the sub-settings are offered on the keyless tier.
+    expect(
+      screen.queryByRole("switch", { name: "Generate lesson videos" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole("switch", { name: "Narrate videos" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Lesson video length")).not.toBeInTheDocument();
   });

@@ -37,7 +37,9 @@ class QueueVideoBuildCoordinator:
     failure policy). ``collect`` polls once by default (await timeout 0): finalize folds whatever is
     already terminal and a degrade placeholder for the rest, never blocking on the async render. The
     composition root builds this only when video is enabled (master toggle ON), keyed, and owned, so
-    its mere presence in run scope IS the gate.
+    its mere presence in run scope IS the gate. A second toggle on the same config
+    (``lessons_enabled``) gates ONLY :meth:`enqueue_lesson`, so a build can keep the course-level
+    videos (summary + overview) while skipping the per-lesson ones.
     """
 
     def __init__(
@@ -79,6 +81,12 @@ class QueueVideoBuildCoordinator:
     async def enqueue_lesson(
         self, *, course_id: str, lesson_id: str, content_hash: str = ""
     ) -> str | None:
+        if not self._video_config.lessons_enabled:
+            # The per-lesson sub-toggle is off: decline every lesson job (the course-level videos
+            # still enqueue via enqueue_summary / enqueue_overview). The on-demand reader path is
+            # separate — it enqueues directly and gates on the master toggle alone, so a user can
+            # still make a single lesson video by hand regardless of this setting.
+            return None
         existing = self._enqueued.get(lesson_id)
         if existing is not None:
             return existing  # one job per lesson per build (a re-verified clean module re-enters)
