@@ -2,15 +2,15 @@
 
 The headline promise (plan §V5 Acceptance): a fresh keyed build's course opens with a SUMMARY
 trailer and an OVERVIEW intro. Driven on the real seam: the curriculum-design hook enqueues both
-course videos, the authoring loop enqueues the lesson videos, two workers drain the shared queue,
-and ``finalize_course`` folds the course-level pair into ``Course.videos`` and each lesson video
-into its lesson — blocking-but-overlapped, degrade-on-failure. The narrow variants (chaptered → MP4,
-configurable lengths) are proven in ``test_lesson_video_pipeline``; the gate (video off ⇒ no course
-videos) in ``test_course_video_build``.
+course videos at the start, so they render during the build and are folded READY into
+``Course.videos`` at finalize (this test drains them explicitly before finalize to pin that). The
+lesson videos, enqueued at finalize, are delivered as generating placeholders the reader's
+derive-at-read probe recovers — finalize no longer blocks on any render. The narrow variants
+(chaptered → MP4, configurable lengths) are proven in ``test_lesson_video_pipeline``; the gate
+(video off ⇒ no course videos) in ``test_course_video_build``.
 """
 
 import asyncio
-import contextlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -45,6 +45,7 @@ from lunaris_video import StubVideoPipeline, VideoWorker
 
 _GROUNDED = "grounded"
 _OWNER = "user-a"
+_TERMINAL = (VideoJobStatus.READY, VideoJobStatus.FAILED)
 
 
 def _marker_verifier() -> Verifier:
@@ -120,7 +121,6 @@ async def test_a_fresh_build_opens_with_both_course_level_videos(tmp_path: Path)
         )
         for n in range(2)
     ]
-    worker_tasks = [asyncio.create_task(w.run_forever(poll_interval_seconds=0.01)) for w in workers]
     subgraph = build_authoring_subgraph(
         StubLessonReviser(_grounded_author, _revise_to_grounded), _marker_verifier(), draft
     )
@@ -128,24 +128,26 @@ async def test_a_fresh_build_opens_with_both_course_level_videos(tmp_path: Path)
         MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
     )
 
-    # Act — the curriculum-design hook enqueues the course videos; authoring enqueues the lesson
-    # videos; the workers drain everything; finalize awaits + stitches it all.
-    try:
-        async with asyncio.timeout(20):
-            await _enqueue_course_videos(draft)
-            await subgraph.ainvoke({"messages": [HumanMessage(content="author")]})
-            result = await finalize.ainvoke({})
-    except TimeoutError as exc:
-        raise AssertionError("the build did not complete — possible deadlock in finalize") from exc
-    finally:
-        for task in worker_tasks:
-            task.cancel()
-        for task in worker_tasks:
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+    # Act — the curriculum-design hook enqueues both course videos; author the lessons; DRAIN the
+    # two workers until the course videos finish (they render during the build, BEFORE finalize);
+    # finalize (non-blocking) folds the finished course videos into Course.videos and the
+    # just-enqueued lesson videos as generating placeholders.
+    async with asyncio.timeout(20):
+        await _enqueue_course_videos(draft)
+        await subgraph.ainvoke({"messages": [HumanMessage(content="author")]})
+        while True:
+            await asyncio.gather(*(worker.run_once() for worker in workers))
+            course_jobs = [
+                job
+                for job in await queue.list_for_course(course_id="c1", owner_id=_OWNER)
+                if job.lesson_id is None
+            ]
+            if len(course_jobs) == 2 and all(job.status in _TERMINAL for job in course_jobs):
+                break
+        result = await finalize.ainvoke({})
 
-    # Assert — the course PUBLISHED and OPENS with both course-level videos (exactly those two
-    # kinds enqueued), each READY with provenance tracing its job + kind (structural provenance).
+    # Assert — the course PUBLISHED and OPENS with both course-level videos (exactly those two kinds
+    # enqueued), folded READY because they finished before finalize (provenance traces job + kind).
     assert result["courseId"] == "c1"
     assert set(draft.enqueued_course_videos) == {VideoKind.SUMMARY, VideoKind.OVERVIEW}
     videos = draft.course.videos
@@ -157,10 +159,11 @@ async def test_a_fresh_build_opens_with_both_course_level_videos(tmp_path: Path)
     assert videos.overview.kind is VideoKind.OVERVIEW
     assert videos.overview.provenance.job_id == draft.enqueued_course_videos[VideoKind.OVERVIEW]
 
-    # …and the lesson videos rode the SAME build: each module's lesson carries a READY video, so the
-    # course-level pair and the per-lesson heroes coexist (the full V5 reader surface). Per-module
-    # so a degrade names the culprit, not an opaque all().
+    # …and the lesson videos, enqueued at finalize, are delivered as generating placeholders (FAILED
+    # + job_id, no provenance) the reader's derive-at-read probe recovers as each renders async — so
+    # the course-level pair and the per-lesson heroes coexist (the full V5 reader surface).
     for module in draft.course.modules:
         video = module.lessons[0].video
         assert video is not None, f"module {module.id} has no lesson video"
-        assert video.status is VideoJobStatus.READY, f"module {module.id} video not ready: {video}"
+        assert video.status is VideoJobStatus.FAILED and video.job_id, f"not a placeholder: {video}"
+        assert video.provenance is None

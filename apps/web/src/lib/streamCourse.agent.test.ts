@@ -59,6 +59,60 @@ describe("streamCourse — agent transcript frames", () => {
       globalThis.fetch = original;
     }
   });
+
+  it("ignores keepalive heartbeat comment frames and still resolves the course", async () => {
+    // The build emits `: keepalive` SSE comments during silent stretches to keep the connection
+    // alive; the reader must skip them (no handler, no broken parse) and still resolve the course.
+    const frames = [
+      'event: progress\ndata: {"stage":"run_started","label":"Starting"}\n\n',
+      ": keepalive\n\n",
+      ": keepalive\n\n",
+      'event: progress\ndata: {"stage":"run_completed","label":"Published"}\n\n',
+      `event: course\ndata: ${JSON.stringify(COURSE)}\n\n`,
+    ];
+    const original = globalThis.fetch;
+    globalThis.fetch = mockFetch(sseStream(frames));
+    const stages: string[] = [];
+    const agentEvents: AgentEvent[] = [];
+    try {
+      const course = await streamCourse("", "Binary search", {
+        onProgress: (e) => stages.push(e.stage),
+        onAgent: (e) => agentEvents.push(e),
+      });
+
+      // The heartbeats are invisible: only the two real progress stages dispatch, no agent beats,
+      // and the terminal course still resolves.
+      expect(stages).toEqual(["run_started", "run_completed"]);
+      expect(agentEvents).toHaveLength(0);
+      expect(course.status).toBe("published");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("tolerates a heartbeat comment split across two stream chunks", async () => {
+    // The keepalive can arrive split across TCP/stream chunks; the buffer-accumulating reader must
+    // reassemble the frame and still ignore it (and not mistake the partial for a frame boundary).
+    const chunks = [
+      'event: progress\ndata: {"stage":"run_started","label":"Starting"}\n\n',
+      ": keepa",
+      "live\n\n",
+      `event: course\ndata: ${JSON.stringify(COURSE)}\n\n`,
+    ];
+    const original = globalThis.fetch;
+    globalThis.fetch = mockFetch(sseStream(chunks));
+    const stages: string[] = [];
+    try {
+      const course = await streamCourse("", "Binary search", {
+        onProgress: (e) => stages.push(e.stage),
+      });
+
+      expect(stages).toEqual(["run_started"]);
+      expect(course.status).toBe("published");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
 
 describe("streamCourse — clarification query param (P7.5)", () => {

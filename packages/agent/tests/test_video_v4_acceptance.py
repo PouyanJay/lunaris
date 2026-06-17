@@ -1,24 +1,20 @@
 """Video V4 acceptance (T4): one end-to-end build that demonstrates the properties V4 promises —
-multi-worker drain and graceful degrade (plan §V4 Acceptance).
+multi-worker drain + graceful degrade (plan §V4 Acceptance), under the NON-BLOCKING finalize model.
 
-Three modules: A grounds on round 0, B and C need a revise round. Finalize persists the course, then
-enqueues all three lesson videos; two workers drain the shared queue; B's video is forced to FAIL.
-The build then publishes anyway — A and C carry a READY video, B a FAILED (retry-state) one — and
-the canvas Videos phase reports the single degrade (amber on the web).
+Three modules: A grounds on round 0, B and C need a revise round. Finalize persists the course,
+enqueues all three lesson videos, and delivers the course IMMEDIATELY with generating placeholders
+(no block on the render). Two workers then drain the shared queue async — B's video forced to FAIL —
+and the queue settles 2 READY + 1 FAILED: the graceful degrade the reader's derive-at-read probe
+surfaces (the V4 "videos in the payload" fold moved to the reader, PR #110). The build canvas shows
+"3 lesson videos generating" (no amber — a still-rendering video is not a failure).
 
-Note: lesson videos no longer overlap authoring. The cloud worker renders a lesson video by loading
-the course from the store, so it must be persisted first — which only happens at finalize, and so
-the enqueue lives there now (the "course not found" fix). The persist-before-enqueue contract is
-pinned in ``test_finalize_video_stitch``; here two workers exercise the multi-worker wiring in a
-full build and the build completes without serializing/deadlocking. Narrow variants are covered
-elsewhere and re-asserted here in aggregate: the video-off / keyless "zero jobs" gate
-(``test_authoring_video_enqueue`` + the apps/api ``test_video_build_gate``), the lesson hero's
-disabled / failed-retry states (``LessonVideoHero.test``), and the degrade tally
-(``test_finalize_video_stitch``).
+Note: lesson videos no longer overlap authoring (the cloud worker loads the persisted course, so the
+enqueue moved to finalize — the "course not found" fix, pinned in ``test_finalize_video_stitch``).
+Narrow variants live elsewhere: the video-off / keyless "zero jobs" gate (``test_authoring_video_
+enqueue`` + apps/api ``test_video_build_gate``), the lesson hero states (``LessonVideoHero.test``).
 """
 
 import asyncio
-import contextlib
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -55,6 +51,7 @@ _GROUNDED = "grounded"
 _UNGROUNDABLE = "unsupported"
 _OWNER = "user-a"
 _FAILING_LESSON_ID = "mb-l0"  # module B: its video render is forced to fail
+_TERMINAL = (VideoJobStatus.READY, VideoJobStatus.FAILED)
 
 
 def _marker_verifier() -> Verifier:
@@ -125,11 +122,11 @@ def _draft(coordinator: QueueVideoBuildCoordinator) -> CourseDraft:
     return draft
 
 
-async def test_v4_build_renders_videos_with_two_workers_and_degrades_gracefully(
+async def test_v4_build_enqueues_videos_then_two_workers_render_them_async(
     tmp_path: Path, progress_sink
 ) -> None:
-    # Arrange — the coordinator + two workers over one shared queue; B's render will fail. The
-    # workers drain in the background so they pick up the lesson videos finalize enqueues.
+    # Arrange — the coordinator over a shared queue; NO workers run during finalize (non-blocking:
+    # finalize must deliver without waiting on the render). B's render is forced to fail later.
     queue, storage, events = (
         InMemoryVideoJobQueue(),
         InMemoryVideoStorage(),
@@ -140,14 +137,6 @@ async def test_v4_build_renders_videos_with_two_workers_and_degrades_gracefully(
     )
     draft = _draft(coordinator)
     draft.progress = ProgressReporter("r1", progress_sink)
-    pipeline = _FailModuleBPipeline()
-    workers = [
-        VideoWorker(
-            queue=queue, pipeline=pipeline, storage=storage, events=events, worker_id=f"w{n}"
-        )
-        for n in range(2)
-    ]
-    worker_tasks = [asyncio.create_task(w.run_forever(poll_interval_seconds=0.01)) for w in workers]
     subgraph = build_authoring_subgraph(
         StubLessonReviser(_author_fn, _revise_fn), _marker_verifier(), draft
     )
@@ -155,38 +144,50 @@ async def test_v4_build_renders_videos_with_two_workers_and_degrades_gracefully(
         MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
     )
 
-    # Act — author (enqueues nothing now), then finalize persists + enqueues all three; two workers
-    # drain them concurrently.
-    try:
-        async with asyncio.timeout(20):
-            await subgraph.ainvoke({"messages": [HumanMessage(content="author")]})
-            assert draft.enqueued_video_jobs == {}  # authoring enqueued nothing
-            result = await finalize.ainvoke({})
-    except TimeoutError as exc:
-        raise AssertionError("the build did not complete — possible deadlock in finalize") from exc
-    finally:
-        for task in worker_tasks:
-            task.cancel()
-        for task in worker_tasks:
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+    # Act 1 — author (enqueues nothing now), then finalize persists + enqueues all three and
+    # delivers the course IMMEDIATELY. The tight timeout would trip if finalize blocked on a render.
+    async with asyncio.timeout(5):
+        await subgraph.ainvoke({"messages": [HumanMessage(content="author")]})
+        assert draft.enqueued_video_jobs == {}  # authoring enqueued nothing
+        result = await finalize.ainvoke({})
 
-    # Assert — finalize enqueued a video for every lesson.
+    # Assert finalize — published immediately; every lesson carries a GENERATING placeholder (FAILED
+    # + job_id, no provenance) the reader's derive-at-read probe recovers once the worker finishes.
     assert len(draft.enqueued_video_jobs) == 3
-
-    # GRACEFUL DEGRADE: the build published anyway despite B's failure.
     assert result["courseId"] == "c1"
     videos = {module.id: module.lessons[0].video for module in draft.course.modules}
-    assert videos["ma"] is not None and videos["ma"].status is VideoJobStatus.READY
-    assert videos["mc"] is not None and videos["mc"].status is VideoJobStatus.READY
-    # B's lesson carries a FAILED retry-state video (no provenance) — never a blocked publish.
-    assert videos["mb"] is not None and videos["mb"].status is VideoJobStatus.FAILED
-    assert videos["mb"].provenance is None
-    # A READY video carries its grounding provenance end to end (structural-provenance contract).
-    assert videos["ma"].provenance is not None and videos["ma"].provenance.job_id
-
-    # AMBER CANVAS: the Videos phase reports exactly one degrade out of three, tally + summary text.
+    for video in videos.values():
+        assert video is not None and video.status is VideoJobStatus.FAILED and video.job_id
+        assert video.provenance is None
+    # The Videos phase reads "generating" (rendering async), never "needs a retry" — no amber.
     phase = next(e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS)
     assert phase.videos_total == 3
-    assert phase.videos_degraded == 1
-    assert phase.label == "3 lesson videos · 2 ready · 1 needs a retry"
+    assert phase.videos_degraded == 0
+    assert phase.label == "3 lesson videos generating"
+
+    # Act 2 — two workers now drain the shared queue async (B's render forced to fail); render every
+    # job to a terminal state. The multi-worker drain that used to overlap the blocking await.
+    pipeline = _FailModuleBPipeline()
+    workers = [
+        VideoWorker(
+            queue=queue, pipeline=pipeline, storage=storage, events=events, worker_id=f"w{n}"
+        )
+        for n in range(2)
+    ]
+    async with asyncio.timeout(20):
+        while True:
+            await asyncio.gather(*(worker.run_once() for worker in workers))
+            jobs = await queue.list_for_course(course_id="c1", owner_id=_OWNER)
+            if jobs and all(job.status in _TERMINAL for job in jobs):
+                break
+
+    # Assert async outcome — GRACEFUL DEGRADE at the queue level (what derive-at-read surfaces): A
+    # and C render READY; B's forced failure settles FAILED. The build published; nothing got stuck.
+    final = {
+        job.lesson_id: job for job in await queue.list_for_course(course_id="c1", owner_id=_OWNER)
+    }
+    assert final["ma-l0"].status is VideoJobStatus.READY
+    assert final["mc-l0"].status is VideoJobStatus.READY
+    assert final["mb-l0"].status is VideoJobStatus.FAILED
+    # The placeholder's job_id IS the queue job the reader probes — the full derive-at-read chain.
+    assert videos["ma"].job_id == final["ma-l0"].id

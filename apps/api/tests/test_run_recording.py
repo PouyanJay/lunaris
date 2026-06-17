@@ -16,8 +16,19 @@ from lunaris_api.dependencies import get_course_service
 from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore, InMemoryRunStore, PersistenceError
-from lunaris_runtime.schema import CourseRun, RunStatus
+from lunaris_runtime.persistence import (
+    CourseStore,
+    InMemoryRunEventStore,
+    InMemoryRunStore,
+    PersistenceError,
+)
+from lunaris_runtime.schema import (
+    CourseRun,
+    ProgressEvent,
+    ProgressStage,
+    RunEventKind,
+    RunStatus,
+)
 
 
 def _client_for(service: CourseService) -> httpx.ASGITransport:
@@ -249,6 +260,191 @@ async def test_stream_records_completed_run_when_build_finishes_after_disconnect
     runs = await run_store.list_recent()
     assert runs[0].status is RunStatus.COMPLETED
     assert runs[0].module_count > 0
+
+
+async def test_durable_log_records_every_beat_after_a_disconnect(
+    tmp_path: Path,
+    releasable_build: tuple[Callable[[object], object], asyncio.Event],
+) -> None:
+    """Regression (the build canvas 'stuck on Verify' bug): the durable run-events transcript must
+    record every beat — including the stages the build emits AFTER the SSE viewer disconnects — so a
+    completed course's Build replay (and #105's live re-attach) shows the whole timeline, not a log
+    truncated at the disconnect point. Recording must follow the durable build task (the sinks), not
+    the viewer generator that dies on disconnect."""
+    # Arrange — a build parked after its first beat; start the stream and capture the durable task.
+    clear_correlation()
+    factory, release = releasable_build
+    event_store = InMemoryRunEventStore()
+    registry = RunRegistry()
+    service = CourseService(
+        CourseStore(tmp_path), factory, InMemoryRunStore(), registry, event_store
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1")
+    kind, _payload = await stream.__anext__()
+    assert kind == "progress"  # precondition: only RUN_STARTED emitted before the park
+    build_task = registry.task_for("r1")
+    assert build_task is not None  # precondition: the durable background task is registered
+
+    # Act — the client disconnects, then the WHOLE real build runs with no consumer attached.
+    await stream.aclose()
+    release.set()
+    await build_task
+
+    # Assert — the durable log captured the FULL transcript. run_completed is the proof the tail
+    # emitted after the disconnect survived (the old generator-bound recorder lost everything past
+    # run_started).
+    recorded = await event_store.list_for_run(run_id="r1")
+    stages = [e.payload.get("stage") for e in recorded if e.kind == RunEventKind.PROGRESS]
+    assert "run_started" in stages
+    assert "run_completed" in stages
+    # The recorded seqs are gap-free + ordered, so the log replays cleanly.
+    seqs = [e.seq for e in recorded]
+    assert seqs == list(range(len(seqs)))
+
+
+class _ReleasableFailingPipeline:
+    """Emits one beat, parks on a release Event, then FAILS — a build that dies after the client
+    has left."""
+
+    def __init__(self, store: object, release: asyncio.Event) -> None:
+        del store  # the factory protocol passes the store; this pipeline persists nothing
+        self._release = release
+
+    async def run(
+        self,
+        topic: str,
+        *,
+        course_id: str,
+        run_id: str,
+        progress: object | None = None,
+        agent: object | None = None,
+        clarification: object | None = None,
+        discovery_depth: object | None = None,
+    ) -> object:
+        if progress is not None:
+            await progress.emit(  # type: ignore[attr-defined]
+                ProgressEvent(stage=ProgressStage.RUN_STARTED, label="Starting", run_id=run_id)
+            )
+        await self._release.wait()  # the client disconnects while parked here
+        raise RuntimeError("render exploded after the client left")
+
+
+async def test_durable_log_survives_a_build_that_fails_after_a_disconnect(tmp_path: Path) -> None:
+    """T4 variant — the failure path of the decoupled recorder: a build that FAILS after the client
+    disconnected must still have its pre-failure beats in the durable log (the flush runs on the
+    except path too), so the Build replay shows the timeline up to where it died, never
+    run_completed."""
+    # Arrange — a build parked after its first beat, which fails on release.
+    clear_correlation()
+    release = asyncio.Event()
+    event_store = InMemoryRunEventStore()
+    registry = RunRegistry()
+    service = CourseService(
+        CourseStore(tmp_path),
+        lambda store: _ReleasableFailingPipeline(store, release),
+        InMemoryRunStore(),
+        registry,
+        event_store,
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1")
+    kind, _payload = await stream.__anext__()
+    assert kind == "progress"  # precondition: RUN_STARTED emitted before the park
+    build_task = registry.task_for("r1")
+    assert build_task is not None
+
+    # Act — disconnect, then the parked build fails with no consumer attached.
+    await stream.aclose()
+    release.set()
+    with pytest.raises(RuntimeError):
+        await build_task
+
+    # Assert — the pre-failure beat survived in the durable log; the build never reached completion.
+    recorded = await event_store.list_for_run(run_id="r1")
+    stages = [e.payload.get("stage") for e in recorded if e.kind == RunEventKind.PROGRESS]
+    assert "run_started" in stages
+    assert "run_completed" not in stages
+
+
+async def test_post_disconnect_durable_log_is_owner_scoped(tmp_path: Path) -> None:
+    """T4 variant (auth) — the durable transcript a post-disconnect build records is owner-scoped: a
+    different tenant reads an empty log, the owner reads the full one."""
+    # Arrange — an owned build parked after its first beat.
+    clear_correlation()
+    factory_release = asyncio.Event()
+
+    class _Parked:
+        def __init__(self, store: object) -> None:
+            self._inner = build_stub_orchestrator(store)
+
+        async def run(self, topic: str, **kwargs: object) -> object:
+            progress = kwargs.get("progress")
+            if progress is not None:
+                await progress.emit(  # type: ignore[attr-defined]
+                    ProgressEvent(stage=ProgressStage.RUN_STARTED, label="Starting", run_id="r1")
+                )
+            await factory_release.wait()
+            return await self._inner.run(topic, **kwargs)  # type: ignore[arg-type]
+
+    event_store = InMemoryRunEventStore()
+    registry = RunRegistry()
+    service = CourseService(
+        CourseStore(tmp_path), _Parked, InMemoryRunStore(), registry, event_store
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1", owner_id="user-a")
+    await stream.__anext__()  # RUN_STARTED
+    build_task = registry.task_for("r1")
+    assert build_task is not None
+
+    # Act — disconnect, release, let the owned build finish unattended.
+    await stream.aclose()
+    factory_release.set()
+    await build_task
+
+    # Assert — owner-scoped: the wrong tenant sees nothing; the owner sees the full transcript.
+    assert await event_store.list_for_run(run_id="r1", owner_id="user-b") == []
+    owned = await event_store.list_for_run(run_id="r1", owner_id="user-a")
+    stages = [e.payload.get("stage") for e in owned if e.kind == RunEventKind.PROGRESS]
+    assert "run_started" in stages
+    assert "run_completed" in stages
+
+
+async def test_stream_emits_heartbeats_during_a_silent_build_stretch(
+    tmp_path: Path,
+    releasable_build: tuple[Callable[[object], object], asyncio.Event],
+) -> None:
+    """The build goes silent for minutes during the finalize tail (resource curation, the coverage
+    critic, the async video enqueue), so the SSE must emit keepalive heartbeats — otherwise a
+    proxy/ingress idle timeout drops the connection mid-build (the canvas freezes; the durable log
+    survives but the live tab stops advancing). Heartbeats are synthesised in the viewer, not
+    enqueued, so they are never recorded to the run-events log."""
+    clear_correlation()
+    factory, release = releasable_build
+    event_store = InMemoryRunEventStore()
+    service = CourseService(
+        CourseStore(tmp_path), factory, InMemoryRunStore(), RunRegistry(), event_store
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1", heartbeat_interval_s=0.05)
+
+    # The pipeline emits exactly ONE beat (RUN_STARTED) then parks on the release Event, so the
+    # queue is empty for the whole interval — the heartbeat is deterministic, not a timing race (the
+    # 0.05s
+    # is the control variable under test, not a "wait until something happens" sleep).
+    # Act — the first parked beat (RUN_STARTED), then a heartbeat while the build is parked silent.
+    kind1, _ = await stream.__anext__()
+    assert kind1 == "progress"
+    kind2, payload2 = await stream.__anext__()
+
+    # Assert — the silent stretch yielded a heartbeat (not an event), with no payload.
+    assert kind2 == "heartbeat"
+    assert payload2 is None
+
+    # Release + drain to completion; heartbeats must NOT pollute the durable transcript.
+    release.set()
+    async for _item in stream:
+        pass
+    recorded = await event_store.list_for_run(run_id="r1")
+    assert recorded  # the real beats were recorded…
+    assert all(event.kind in (RunEventKind.PROGRESS, RunEventKind.AGENT) for event in recorded)
 
 
 class _FailingPipeline:

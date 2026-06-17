@@ -135,23 +135,24 @@ class _VideoOutcome(NamedTuple):
     is_ready: bool
 
 
-def _videos_label(total: int, ready: int, degraded: int) -> str:
-    # Mirrors the voice of the other stage summaries ("21 concepts", "Coverage verified").
+def _videos_label(total: int, ready: int, generating: int) -> str:
+    # Mirrors the voice of the other stage summaries ("21 concepts", "Coverage verified"). At
+    # finalize the videos are still rendering async (the cloud worker, minutes later), so the
+    # not-yet-done ones read "generating", never "failed" — the reader surfaces each as it lands.
     noun = "video" if total == 1 else "videos"
-    if degraded == 0:
+    if generating == 0:
         return f"{total} lesson {noun} ready"
-    verb = "needs" if degraded == 1 else "need"
-    return f"{total} lesson {noun} · {ready} ready · {degraded} {verb} a retry"
+    if ready == 0:
+        return f"{total} lesson {noun} generating"
+    return f"{total} lesson {noun} · {ready} ready · {generating} generating"
 
 
 def _video_beat(outcome: _VideoOutcome) -> str:
-    # The degraded line deliberately offers a learner-facing retry call-to-action.
+    # A still-rendering video reads "generating" (it finishes async, the reader recovers it), not a
+    # failure — only a genuinely-unrecoverable slot shows the retry call-to-action, in the reader.
     if outcome.is_ready:
         return f"Explainer video for “{outcome.module_title}” is ready."
-    return (
-        f"Explainer video for “{outcome.module_title}” could not be generated — "
-        "retry it from the lesson."
-    )
+    return f"Explainer video for “{outcome.module_title}” is generating in the background."
 
 
 async def _enqueue_lesson_videos(course: Course, draft: CourseDraft) -> None:
@@ -189,13 +190,14 @@ async def _enqueue_lesson_videos(course: Course, draft: CourseDraft) -> None:
 
 
 async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
-    """Await the build's enqueued lesson videos and fold each into its lesson (V4-T1).
+    """Fold a placeholder per enqueued lesson video — WITHOUT blocking on the render.
 
-    Blocking-but-overlapped (plan §0): the jobs were enqueued the moment their modules cleared, so
-    they have been rendering through the whole finalize tail; here the build blocks just long enough
-    to collect them, degrading on failure (a failed video → a FAILED retry-state artifact on the
-    lesson, never a blocked publish). A no-op when video is off (no coordinator) or nothing was
-    enqueued, so the offline / video-off path finalizes byte-for-byte as before.
+    The cloud worker renders each video minutes later (async, after delivery), so finalize does NOT
+    wait: ``collect`` polls once (the coordinator's await timeout is 0) and folds whatever is
+    already terminal — for a lesson, a FAILED-with-job_id PLACEHOLDER the reader's derive-at-read
+    probe recovers once the worker finishes. This collapses the ~15-min silent gap that used to
+    freeze the build canvas on the last stage while finalize blocked. A no-op when video is off (no
+    coordinator) or nothing was enqueued, so the offline / video-off path finalizes as before.
     """
     coordinator = draft.video_coordinator
     if coordinator is None or not draft.enqueued_video_jobs:
@@ -213,40 +215,46 @@ async def _stitch_lesson_videos(course: Course, draft: CourseDraft) -> None:
             artifact = artifacts.get(lesson.id)
             if artifact is None:
                 continue
+            # A lesson video is enqueued at finalize, so the poll-once never sees it terminal yet —
+            # it folds a FAILED-with-job_id placeholder the reader's derive-at-read probe recovers
+            # once the worker finishes. "generating", not "failed": a pending render, not dead.
+            # (The READY branch is defensive — a fast worker could finish one in time.)
             lesson.video = artifact
             outcomes.append(_VideoOutcome(module.title, artifact.status is VideoJobStatus.READY))
     if not outcomes:
         return
     ready = sum(1 for outcome in outcomes if outcome.is_ready)
-    degraded = len(outcomes) - ready
+    generating = len(outcomes) - ready
     logger.info(
-        "agent_course_videos_stitched",
+        "agent_lesson_videos_enqueued",
         run_id=draft.run_id,
         course_id=course.id,
         ready=ready,
-        degraded=degraded,
+        generating=generating,
     )
-    # The canvas Videos phase (V4-T2): a coarse stage with the tally (degraded > 0 → amber on the
-    # web), then one per-lesson beat so each video's outcome reads as its own line under the phase.
+    # The canvas Videos phase: finalize no longer blocks on the render (the videos finish async on
+    # the cloud worker, minutes later), so it folds a placeholder per lesson and reports
+    # "generating". videos_degraded=0 — a still-rendering video is not a failure; the reader's
+    # derive-at-read probe + the build canvas's videos phase show the real state as each lands.
     await draft.progress.emit(
         ProgressStage.LESSON_VIDEOS,
-        _videos_label(len(outcomes), ready, degraded),
+        _videos_label(len(outcomes), ready, generating),
         videos_total=len(outcomes),
-        videos_degraded=degraded,
+        videos_degraded=0,
     )
     for outcome in outcomes:
         await draft.agent.emit(AgentEventKind.REASONING, text=_video_beat(outcome))
 
 
 async def _stitch_course_videos(course: Course, draft: CourseDraft) -> None:
-    """Await the build's course-level videos and fold them into ``Course.videos`` (V5-T2).
+    """Fold the build's course-level videos into ``Course.videos`` — WITHOUT blocking on the render.
 
-    The SUMMARY trailer + OVERVIEW intro, enqueued the moment the curriculum was designed, have been
-    rendering through the build's tail; finalize blocks just long enough to collect them, degrading
-    on failure (a failed course video → a FAILED retry-state artifact in the Overview section, never
-    a blocked publish — plan §0). A no-op when video is off (no coordinator) or nothing enqueued,
-    so the offline / video-off path finalizes byte-for-byte as before. The reader's Overview section
-    resolves each artifact's signed URL via its ``provenance.job_id`` (V5-T3).
+    The SUMMARY trailer + OVERVIEW intro, enqueued the moment the curriculum was designed, render
+    through the build's tail, so many are already done by finalize; ``collect_course_videos`` polls
+    once (await timeout 0) and folds each — READY if finished, else a FAILED-with-job_id placeholder
+    the reader's derive-at-read probe recovers (never a blocked publish — plan §0). A no-op when
+    video is off (no coordinator) or nothing enqueued, so the offline / video-off path is unchanged.
+    The reader's Overview section resolves each artifact's signed URL via its job_id (V5-T3).
     """
     coordinator = draft.video_coordinator
     if coordinator is None or not draft.enqueued_course_videos:
