@@ -3,7 +3,7 @@ import uuid
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.persistence import (
     ICourseStore,
@@ -339,6 +339,59 @@ async def _lesson_video_stale(
         job.course_id, lesson, target_seconds=video_config.target_seconds(VideoKind.LESSON)
     )
     return current != job.input_hash
+
+
+@router.get(
+    "/courses/{course_id}/videos/active",
+    response_model=VideoJobView,
+    responses={204: {"description": "No job for the slot"}},
+    dependencies=[Depends(require_video_generation_enabled)],
+)
+async def get_active_video_job_by_coordinates(
+    course_id: str,
+    owner_id: CurrentUserIdDep,
+    queue: VideoJobQueueDep,
+    response: Response,
+    kind: Annotated[VideoKind, Query()],
+    lesson_id: Annotated[str | None, Query(alias="lessonId")] = None,
+) -> VideoJobView | Response:
+    """The slot's live video job keyed by its COORDINATES (course, lesson, kind), so the reader
+    resolves a slot it holds no job id for — a build whose course payload pointer is null, or
+    FAILED-with-a-job-that-has-since-gone-READY (the async-after-delivery case: the cloud worker
+    finishes a video minutes after finalize wrote the FAILED pointer, and nothing rewrites it).
+
+    Why this exists alongside ``/videos/{job_id}/active``: that sibling keys on a SOURCE job id and
+    only surfaces a *newer* take (``latest_ready.id != source.id``), so when the source job ITSELF
+    transitioned FAILED→READY it answers 204 and the reader stays stuck on "Couldn't generate". This
+    probe needs no source id — it returns the slot's in-flight job (``find_active``) or, failing
+    that, its latest finished render (``find_latest_ready``); **204** when the slot has neither.
+
+    Like the sibling probe this answers *which* job is the slot's current one — the bare job row,
+    no signed URLs. The reader exchanges that id for playback URLs via ``GET /videos/{job_id}`` (the
+    same follow-up it already does after the source-id probe), so URL minting stays in one place.
+
+    Owner-scoped via the queue queries (a slot with no jobs for the caller — another tenant's
+    course, or a video-off build — reads as 204, never leaking existence). NOT tier-gated, like the
+    status poll: re-attaching to your own slot consumes no generation capacity. ``active`` is a
+    fixed path segment; any future ``/courses/{course_id}/videos/{video_id}`` route must be declared
+    after this one so it never shadows the probe.
+    """
+    request_id = uuid.uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
+    # In flight beats finished: a live (re)generate will settle, so the reader should follow it
+    # rather than an older READY take. With nothing in flight, the latest finished render is it.
+    active = await queue.find_active(
+        course_id=course_id, lesson_id=lesson_id, kind=kind, owner_id=owner_id
+    )
+    if active is not None:
+        return VideoJobView(job=active)
+    latest_ready = await queue.find_latest_ready(
+        course_id=course_id, lesson_id=lesson_id, kind=kind, owner_id=owner_id
+    )
+    if latest_ready is not None:
+        return VideoJobView(job=latest_ready)
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"X-Request-Id": request_id})
 
 
 @router.get(

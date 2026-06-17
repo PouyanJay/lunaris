@@ -169,6 +169,7 @@ async def client(
 
 
 _ENQUEUE = "/api/courses/course-1/lessons/lesson-1/video"
+_COORD_ACTIVE = "/api/courses/course-1/videos/active"
 
 
 # ── the operator kill-switch ──────────────────────────────────────────────────────
@@ -444,6 +445,155 @@ async def test_active_resolves_a_course_level_video_slot(
     body = response.json()["job"]
     assert body["id"] == "sum-1"
     assert body["lessonId"] is None
+
+
+# ── Gap 2: coordinate-keyed re-attach (derive at read) ────────────────────────────
+#
+# The build-async-persistence fix. Unlike `/videos/{job_id}/active` (keyed by a SOURCE job id the
+# reader holds), this probe keys on the slot's COORDINATES (course, lesson, kind), so it resolves a
+# slot whose payload pointer is null OR FAILED-with-a-job-that-has-since-gone-READY — the
+# async-after-delivery prod case that the source-job probe answers 204 for (its
+# `latest_ready.id != source.id` guard, when the source job itself flipped FAILED→READY).
+
+
+async def test_coordinate_active_resolves_a_failed_payload_slot_to_its_ready_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the prod bug: the slot's job is READY in the queue, but the course payload the
+    # reader holds still says FAILED (written at finalize before the render finished). The
+    # coordinate probe needs no source job id — it resolves the slot from (course, lesson, kind).
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=job_id, contract_hash="h")  # the render finished after delivery
+
+    # Act — the reader probes by coordinates (it does NOT pass the stale source job id).
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert — the READY job is surfaced, so the slot plays instead of showing "Couldn't generate".
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == job_id
+    assert body["status"] == "ready"
+    assert body["kind"] == "lesson"
+    assert body["lessonId"] == "lesson-1"
+
+
+async def test_coordinate_active_prefers_an_in_flight_job_over_a_ready_one(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a finished build job and a newer in-flight regenerate for the same slot. The reader
+    # should follow the live one (it will settle), not the older READY one.
+    ready_job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=ready_job_id, contract_hash="h")
+    inflight_job_id = (
+        await client.post(
+            f"/api/videos/{ready_job_id}/regenerate",
+            headers=auth_headers(USER_A),
+            json={"mode": "fresh"},
+        )
+    ).json()["job"]["id"]
+
+    # Act
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert — find_active (in flight) wins over find_latest_ready.
+    assert response.status_code == 200
+    assert response.json()["job"]["id"] == inflight_job_id
+    assert response.json()["job"]["status"] == "queued"
+
+
+async def test_coordinate_active_resolves_a_course_level_slot_without_a_lesson_id(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — the Overview SUMMARY slot has no lesson_id; omit lessonId and the probe must use the
+    # null-lesson path (PostgREST `is null`, the in-memory `lesson_id is None`).
+    await queue.enqueue(
+        VideoJob(
+            id="sum-1",
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id=None,
+            kind=VideoKind.SUMMARY,
+            input_hash="h",
+        )
+    )
+    await queue.complete(job_id="sum-1", contract_hash="h")
+
+    # Act
+    response = await client.get(
+        _COORD_ACTIVE, params={"kind": "summary"}, headers=auth_headers(USER_A)
+    )
+
+    # Assert — the course-level READY job is surfaced on the null-lesson path.
+    assert response.status_code == 200
+    body = response.json()["job"]
+    assert body["id"] == "sum-1"
+    assert body["lessonId"] is None
+    assert body["kind"] == "summary"
+
+
+async def test_coordinate_active_is_204_when_the_slot_has_no_job(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act / Assert — a slot with no enqueued video → 204, so the reader keeps whatever it shows.
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_A),
+    )
+    assert response.status_code == 204
+
+
+async def test_coordinate_active_does_not_leak_across_tenants(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — A's READY job for the slot.
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.complete(job_id=job_id, contract_hash="h")
+
+    # Act — B probes the same coordinates.
+    response = await client.get(
+        _COORD_ACTIVE,
+        params={"kind": "lesson", "lessonId": "lesson-1"},
+        headers=auth_headers(USER_B),
+    )
+
+    # Assert — owner-scoped: B sees nothing (204), never A's job.
+    assert response.status_code == 204
+
+
+async def test_coordinate_active_refuses_an_anonymous_caller(
+    client: httpx.AsyncClient,
+) -> None:
+    # Act / Assert — like every other video route, anonymous callers are refused.
+    response = await client.get(_COORD_ACTIVE, params={"kind": "lesson", "lessonId": "lesson-1"})
+    assert response.status_code == 401
+
+
+async def test_coordinate_active_is_404_when_video_generation_is_off(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — the operator kill-switch is off: the surface does not exist.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    async with _build_client(tmp_path, queue, storage, events, video_enabled=False) as off_client:
+        # Act / Assert
+        response = await off_client.get(
+            _COORD_ACTIVE,
+            params={"kind": "lesson", "lessonId": "lesson-1"},
+            headers=auth_headers(USER_A),
+        )
+        assert response.status_code == 404
 
 
 # ── enqueue + status read ─────────────────────────────────────────────────────────
