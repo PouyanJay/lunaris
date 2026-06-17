@@ -12,6 +12,7 @@ from _stubs import StubInvokeModel
 from lunaris_runtime.resilience import DEFAULT_PARSE_REPAIR_ATTEMPTS
 from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
 from lunaris_video.planning import ScenePlanner
+from lunaris_video.planning.scene_planner import MAX_SCENE_OBJECTS
 from lunaris_video.schemas import FRAMING_ONLY_SENTINEL, ChapteredSceneContracts
 from lunaris_video.style import video_global_style
 
@@ -70,6 +71,31 @@ async def test_chaptered_prompt_carries_the_complexity_budget(
     prompt = stub.prompts[0].lower()
     assert "complexity budget" in prompt
     assert "incrementally" in prompt
+
+
+async def test_chaptered_planner_repairs_an_over_budget_scene(
+    make_chaptered_contract: Callable[..., ChapteredSceneContracts],
+) -> None:
+    # Arrange — the overview path enforces the same object budget as the flat plan: a crammed scene
+    # nested in a chapter earns a repair turn naming it, then a clean retry.
+    over_budget = _chaptered_draft_payload(make_chaptered_contract)
+    over_budget["chapters"][0]["scenes"][0]["objects"] = [  # type: ignore[index]
+        f"element {n}" for n in range(MAX_SCENE_OBJECTS + 3)
+    ]
+    stub = StubInvokeModel(
+        [json.dumps(over_budget), json.dumps(_chaptered_draft_payload(make_chaptered_contract))]
+    )
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    contract = await planner.plan_chaptered(_overview_source(), target_seconds=_OVERVIEW_SECONDS)
+
+    # Assert — a distinct repair turn names the offending scene AND the budget; the retry is clean.
+    assert len(stub.prompts) == 2
+    assert stub.prompts[0] != stub.prompts[1]
+    assert "S1_hook" in stub.prompts[1]
+    assert str(MAX_SCENE_OBJECTS) in stub.prompts[1]
+    assert all(len(scene.objects) <= MAX_SCENE_OBJECTS for scene in contract.scenes)
 
 
 async def test_chaptered_planner_builds_a_contract_with_injected_style(

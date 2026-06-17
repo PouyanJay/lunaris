@@ -93,3 +93,42 @@ Run any of these via `az rest --method post` against
 `https://api.loganalytics.io`). Use `contains`, not `has`, for substring matches on `Log_s` —
 `has` tokenizes and misses ids. Locally, the same events are stdout JSON: `... | jq 'select(.event ==
 "video_worker.job_failed")'`.
+
+## The C4 quality eval (proactive, not forensic)
+
+The events above tell you *why a video failed* after it happened. The **C4 quality eval** is the
+proactive counterpart: it drives the real pipeline over a fixed topic set and reports the same
+taxonomy as a single `QualityReport`, so a change to the planner or the QA gates (Workstream C —
+C1/C2/C3) is judged against a number instead of waiting for prod to degrade.
+
+It is a **key-gated** pytest eval (`pytestmark = pytest.mark.eval`,
+`packages/video/tests/test_video_quality_eval_live.py`) that self-skips without `ANTHROPIC_API_KEY`
+and the render extra — exactly like `test_video_pipeline_live`. The harness itself
+(`packages/video/tests/_quality_eval.py`) is covered hermetically by `test_quality_eval` so the
+aggregation stays green in CI without a model.
+
+**Run it (keyed nightly — it renders several full lessons, minutes per topic):**
+
+```bash
+uv run --env-file .env pytest -m eval packages/video/tests/test_video_quality_eval_live.py -s
+```
+
+**What it reports.** Per topic and aggregate:
+
+| Metric | Meaning |
+|---|---|
+| `produced` / `degraded` / `failed` | topics that shipped a video / shipped with ≥1 best-effort scene / the pipeline raised |
+| `degraded_scene_rate` | degraded scenes / total scenes — the headline "how clean do scenes come out" number |
+| `degraded_by_kind` | `{visual, sync, factual}` issue histogram — tells whether C2 (visual) or C3 (sync) owns the degradation. Read off the pipeline's `video_pipeline.produced` telemetry (above), the one source both this eval and Log Analytics share |
+| `failures_by_kind` | the same `failure_kind` taxonomy as `video_worker.job_failed`, via the shared `VideoFailureKind.classify` (`lunaris_video.worker.failure_taxonomy`) |
+
+**The regression ceiling.** `QualityReport.meets_ceiling(max_degraded_scene_rate=…, max_failures=…)`
+is the gate the live eval asserts. It starts permissive — `max_degraded_scene_rate=0.75` (the prod
+incident showed 50–75% of scenes degraded) and `max_failures=0` (the Phase-1 severity-tiered factual
+gate means one uncited figure should degrade, not hard-fail a whole video). **Calibrate down on the
+first real keyed run** and tighten as C1/C2/C3 land — a run that degrades *more* than the ceiling, or
+hard-fails a video, fails the eval.
+
+The topic set spans easy → hard and includes the cases that exposed the prod failures: binary search
+(the uncited-figure `S2_mechanism` incident), the neural-net "web of nodes" archetype, and a
+framing-only topic with no verified claims.

@@ -26,6 +26,12 @@ _logger = structlog.get_logger(__name__)
 # the skill's validated envelope); at least two, so "chaptered" always means more than one chapter.
 _SECONDS_PER_CHAPTER = 60
 
+# C1 complexity budget: the most distinct on-screen objects one scene's ``objects`` list may name. A
+# scene over this renders as a crammed tangle (the binary-search / neural-net "web of nodes"
+# failures). Enforced post-parse — an over-budget contract earns a repair turn so the model splits
+# the scene or reveals incrementally — the prompt's "~10 at once" guidance was not binding enough.
+MAX_SCENE_OBJECTS = 10
+
 _PROMPT_TEMPLATE = """\
 You are the PLAN stage of an explainer-video pipeline. Turn ONE lesson into scene contracts —
 the complete storyboard a coder who never saw the lesson could implement. This stage sets the
@@ -55,10 +61,12 @@ ENVELOPE
 - Scene ids match S<N>_<slug> (e.g. "S1_problem"); slugs are lowercase snake_case.
 - Assign each scene exactly one primary archetype from the reference below; compose at most two.
   Never invent a free-form visual when an archetype fits.
-- COMPLEXITY BUDGET: a scene shows at most ~10 distinct elements at once. Reveal a bigger structure
-  (a wide network, a long pipeline) incrementally across its beats — one layer or step per beat — or
-  summarize it; never plan a scene that draws everything at once (it renders as a crammed tangle).
-  Use the network/graph archetype for any "nodes wired together" visual (network or neural net).
+- COMPLEXITY BUDGET (enforced): each scene's "objects" list names at most {max_objects} distinct
+  on-screen objects — a downstream check REJECTS any scene over the limit and makes you re-plan it.
+  A scene with more than {max_objects} objects renders as a crammed tangle: SPLIT an over-budget
+  scene into two simpler scenes, and reveal a bigger structure (a wide network, a long pipeline)
+  incrementally across its beats — one layer or step per beat — never all at once. Use the
+  network/graph archetype for any "nodes wired together" visual (network or neural net).
 - Find the one inspired beat: one scene where the visual's FORM carries the argument. If every
   scene is a generic template fill, revise before answering.
 
@@ -135,10 +143,12 @@ ENVELOPE
 - Scene ids match S<N>_<slug> and are UNIQUE across the WHOLE video (not per chapter); slugs are
   lowercase snake_case. Chapter ids are "ch1", "ch2", ....
 - Assign each scene exactly one primary archetype from the reference below; compose at most two.
-- COMPLEXITY BUDGET: a scene shows at most ~10 distinct elements at once. Reveal a bigger structure
-  (a wide network, a long pipeline) incrementally across its beats — one layer or step per beat — or
-  summarize it; never plan a scene that draws everything at once (it renders as a crammed tangle).
-  Use the network/graph archetype for any "nodes wired together" visual (network or neural net).
+- COMPLEXITY BUDGET (enforced): each scene's "objects" list names at most {max_objects} distinct
+  on-screen objects — a downstream check REJECTS any scene over the limit and makes you re-plan it.
+  A scene with more than {max_objects} objects renders as a crammed tangle: SPLIT an over-budget
+  scene into two simpler scenes, and reveal a bigger structure (a wide network, a long pipeline)
+  incrementally across its beats — one layer or step per beat — never all at once. Use the
+  network/graph archetype for any "nodes wired together" visual (network or neural net).
 
 GROUNDING (this pipeline stage has no research access — the verified claims are the ONLY facts you
 may assert; a downstream gate diffs every on-screen number and comparison against them)
@@ -266,6 +276,7 @@ def _build_prompt(source: LessonSource, target_seconds: int, *, simplify: bool) 
         prose=source.prose,
         upstream_context=_upstream_block(source.upstream_siblings),
         target_seconds=target_seconds,
+        max_objects=MAX_SCENE_OBJECTS,
         grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK),
         framing_sentinel=FRAMING_ONLY_SENTINEL,
         regenerate_directive=_SIMPLER_DIRECTIVE if simplify else "",
@@ -303,6 +314,7 @@ def _build_chaptered_prompt(source: LessonSource, target_seconds: int, *, simpli
         prose=source.prose,
         target_seconds=target_seconds,
         chapter_count=_suggested_chapters(target_seconds),
+        max_objects=MAX_SCENE_OBJECTS,
         grounding_block=_grounding_block(source.packet, _NO_CLAIMS_BLOCK_CHAPTERED),
         framing_sentinel=FRAMING_ONLY_SENTINEL,
         regenerate_directive=_SIMPLER_DIRECTIVE if simplify else "",
@@ -327,14 +339,15 @@ def _grounding_block(packet: GroundingPacket, no_claims_block: str) -> str:
 def _parse_draft(text: str, valid_claim_ids: set[str]) -> ContractDraft:
     draft = ContractDraft.model_validate_json(_json_object(text))
     _validate_scene_sources(draft.scenes, valid_claim_ids)
+    _validate_scene_complexity(draft.scenes)
     return draft
 
 
 def _parse_chaptered_draft(text: str, valid_claim_ids: set[str]) -> ChapteredContractDraft:
     draft = ChapteredContractDraft.model_validate_json(_json_object(text))
-    _validate_scene_sources(
-        [scene for chapter in draft.chapters for scene in chapter.scenes], valid_claim_ids
-    )
+    scenes = [scene for chapter in draft.chapters for scene in chapter.scenes]
+    _validate_scene_sources(scenes, valid_claim_ids)
+    _validate_scene_complexity(scenes)
     return draft
 
 
@@ -345,6 +358,22 @@ def _json_object(text: str) -> str:
     if start < 0 or end <= start:
         raise ValueError("completion contains no JSON object")
     return text[start : end + 1]
+
+
+def _validate_scene_complexity(scenes: list[SceneContract]) -> None:
+    # C1 enforcement: a scene whose ``objects`` list exceeds ``MAX_SCENE_OBJECTS`` renders as a
+    # crammed tangle. Raise ValueError (not a quiet pass) precisely so ``invoke_with_parse_repair``
+    # feeds the offending scenes + the limit back for a repair turn — the model splits the scene or
+    # reveals incrementally rather than the job shipping an over-dense plan. Same self-correction
+    # path as ``_validate_scene_sources``; shared by the flat and chaptered parsers.
+    over_budget = [scene for scene in scenes if len(scene.objects) > MAX_SCENE_OBJECTS]
+    if over_budget:
+        detail = ", ".join(f"{scene.id} ({len(scene.objects)} objects)" for scene in over_budget)
+        raise ValueError(
+            f"these scenes exceed the complexity budget of {MAX_SCENE_OBJECTS} on-screen objects: "
+            f"{detail}. Split each into more, simpler scenes, or reveal a bigger structure "
+            f"incrementally across beats; cap each scene at {MAX_SCENE_OBJECTS} objects."
+        )
 
 
 def _validate_scene_sources(scenes: list[SceneContract], valid_claim_ids: set[str]) -> None:

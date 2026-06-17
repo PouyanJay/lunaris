@@ -43,16 +43,25 @@ class _FakeFrameExtractor:
 
 
 class _FakeVisualRepairCodegen:
-    """Fakes only the visual-repair arm of ISceneCodeGenerator — Gate B never calls generate."""
+    """Fakes the visual-repair and simplify arms of ISceneCodeGenerator — Gate B never calls
+    generate. ``visual_repairs`` records the targeted repairs; ``simplify_calls`` the final
+    drop-secondary-elements fallback (a distinct method, distinct source marker)."""
 
     def __init__(self) -> None:
         self.visual_repairs: list[list[QaDefect]] = []
+        self.simplify_calls: list[list[QaDefect]] = []
 
     async def repair_visual(
         self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
     ) -> str:
         self.visual_repairs.append(defects)
         return f"{source}# visual repair {len(self.visual_repairs)}\n"
+
+    async def simplify_visual(
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
+    ) -> str:
+        self.simplify_calls.append(defects)
+        return f"{source}# simplified {len(self.simplify_calls)}\n"
 
 
 class _FakeRenderer:
@@ -152,12 +161,14 @@ async def test_a_persistent_defect_degrades_to_best_effort(
         scene, rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
     )
 
-    # Assert — bounded at the per-scene cap (4 repairs / 5 inspections), then degrades: with every
-    # render equally defective (1 each), ties keep the EARLIEST renderable scene (the original),
-    # shipped with the unresolved defect recorded.
+    # Assert — bounded at the per-scene cap (4 repairs / 5 inspections), then ONE simplify-fallback
+    # pass (a 5th render + 6th inspection) that here also leaves 1 defect (no improvement), so the
+    # gate degrades: with every render equally defective (1 each), ties keep the EARLIEST renderable
+    # scene (the original), shipped with the unresolved defect recorded.
     assert len(codegen.visual_repairs) == 4
-    assert renderer.renders == 4
-    assert len(vision.inspected_frames) == 5
+    assert len(codegen.simplify_calls) == 1
+    assert renderer.renders == 5
+    assert len(vision.inspected_frames) == 6
     assert result.unresolved_defects == (_DEFECT,)
     assert result.scene.source == "# original\n"
 
@@ -196,7 +207,96 @@ async def test_a_repair_that_breaks_the_render_keeps_the_best_prior_render(
         make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
     )
 
-    # Assert — one (failed) repair-render attempt, then degrade to the original renderable scene.
-    assert renderer.renders == 1
+    # Assert — one (failed) repair-render, then the simplify-fallback render also fails (this
+    # renderer breaks everything), so the gate degrades to the original renderable scene.
+    assert renderer.renders == 2
+    assert result.scene.source == "# original\n"
+    assert result.unresolved_defects == (_DEFECT,)
+
+
+async def test_simplify_fallback_clears_a_stubborn_scene(
+    make_scene: Callable[..., SceneContract], tmp_path: Path
+) -> None:
+    # Arrange — targeted repairs never clear the defect (5 inspections all fail), but the final
+    # "simplify the scene" pass (drop secondary elements) renders a frame that passes QA.
+    fail = QaVerdict(passed=False, defects=[_DEFECT])
+    vision = _FakeVision([fail] * 5 + [QaVerdict(passed=True)])
+    codegen, renderer = _FakeVisualRepairCodegen(), _FakeRenderer()
+    gate = _gate(vision, codegen, renderer)
+
+    # Act
+    scene = make_scene(1, "problem")
+    result = await gate.inspect_scene(
+        scene, rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
+    )
+
+    # Assert — the 4 targeted repairs ran, then ONE simplify pass cleared it; the simplified scene
+    # ships clean (no unresolved defects), and it is the simplified source that shipped.
+    assert len(codegen.visual_repairs) == 4
+    assert len(codegen.simplify_calls) == 1
+    assert len(vision.inspected_frames) == 6
+    assert result.unresolved_defects == ()
+    assert result.scene.source.endswith("# simplified 1\n")
+
+
+async def test_simplify_fallback_ships_a_simpler_render_when_it_reduces_defects(
+    make_scene: Callable[..., SceneContract], tmp_path: Path
+) -> None:
+    # Arrange — targeted repairs leave 2 defects; the simplify pass renders a frame with only 1.
+    vision = _FakeVision([_verdict(2)] * 5 + [_verdict(1)])
+    codegen, renderer = _FakeVisualRepairCodegen(), _FakeRenderer()
+    gate = _gate(vision, codegen, renderer)
+
+    # Act
+    result = await gate.inspect_scene(
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
+    )
+
+    # Assert — a simpler-but-still-imperfect render beats a complex one: ship the simplified scene,
+    # recording its single (reduced) unresolved defect rather than the 2-defect best from the loop.
+    assert len(codegen.simplify_calls) == 1
+    assert result.scene.source.endswith("# simplified 1\n")
+    assert len(result.unresolved_defects) == 1
+
+
+async def test_simplify_fallback_that_does_not_help_degrades_to_the_loop_best(
+    make_scene: Callable[..., SceneContract], tmp_path: Path
+) -> None:
+    # Arrange — the loop's best render has 1 defect; the simplify pass renders a WORSE frame (2
+    # defects), so it is discarded and the gate degrades to the loop's best (repair #1).
+    vision = _FakeVision([_verdict(3), _verdict(1)] + [_verdict(2)] * 4)
+    codegen, renderer = _FakeVisualRepairCodegen(), _FakeRenderer()
+    gate = _gate(vision, codegen, renderer)
+
+    # Act
+    result = await gate.inspect_scene(
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
+    )
+
+    # Assert — simplify was tried but its render was no better, so the kept render is the loop's
+    # least-defective one (after repair #1), not the simplified source.
+    assert len(codegen.simplify_calls) == 1
+    assert result.scene.source.endswith("# visual repair 1\n")
+    assert "# simplified" not in result.scene.source
+    assert len(result.unresolved_defects) == 1
+
+
+async def test_simplify_fallback_that_breaks_the_render_degrades_to_best(
+    make_scene: Callable[..., SceneContract], tmp_path: Path
+) -> None:
+    # Arrange — targeted repairs render fine (4 ok), but the simplify pass breaks the render. The
+    # gate must keep the best renderable scene, never fail the video on a broken simplify attempt.
+    vision = _FakeVision([QaVerdict(passed=False, defects=[_DEFECT])])
+    codegen, renderer = _FakeVisualRepairCodegen(), _RendererFailingAfter(ok=4)
+    gate = _gate(vision, codegen, renderer)
+
+    # Act
+    result = await gate.inspect_scene(
+        make_scene(1, "problem"), rendered=_rendered(tmp_path), timing=_ANY_TIMING, workdir=tmp_path
+    )
+
+    # Assert — 4 loop renders + 1 (failed) simplify render; degraded to the original best.
+    assert len(codegen.simplify_calls) == 1
+    assert renderer.renders == 5
     assert result.scene.source == "# original\n"
     assert result.unresolved_defects == (_DEFECT,)

@@ -128,6 +128,38 @@ apply: CE only; no LaTeX; `from manim import *` and `from style_tokens import *`
 `class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
 end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
 
+_REPAIR_SIMPLIFY_TEMPLATE = """\
+You are SIMPLIFYING a Manim CE scene that targeted repairs could not make clean — its frames still
+have spatial defects after several edits. The scene is trying to show too much. REDUCE it to the
+essentials so it renders clean: fewer objects, more breathing room. Keep the narration and the beat
+timing EXACTLY; change only what is on screen.
+
+SCENE CONTRACT (JSON)
+{scene_json}
+
+CURRENT SOURCE (renders, but still visually defective after repairs)
+{source}
+
+DEFECTS THAT SURVIVED REPAIR (the scene is over-full — these are the symptoms)
+{defects}
+{archetype_hint}
+HOW TO SIMPLIFY (do as many as needed to clear the frame)
+- DROP secondary and decorative elements: keep only the objects the narration actually names. Remove
+  extra labels, side annotations, background ornaments, and anything not essential to the point.
+- If a structure is dense (a wide network, a long pipeline, a big grid), show FEWER units and
+  summarize the rest ("... and so on"), or reveal it one part at a time across the beats.
+- Give what remains room: larger sizes, more spacing, lower density — never let elements touch,
+  overlap, or crowd the frame edges.
+- Keep ONE clear focus per beat. Plainer and correct beats a rich scene that fails QA.
+
+BEAT TIMING (unchanged — each beat's animations + waits must still sum to EXACTLY its window):
+{timing}
+
+The HARD RULES still apply: CE only; no LaTeX (no MathTex/Tex/Title/BulletedList/include_numbers);
+`from manim import *` and `from style_tokens import *`; exactly one class
+`class {scene_class_name}(Scene):`; tokens/helpers from style_tokens; fade out everything at the
+end. Respond with ONLY the corrected, complete Python source — no prose, no code fences."""
+
 _REPAIR_SYNC_TEMPLATE = """\
 You are repairing a Manim CE scene whose narration and visuals are OUT OF SYNC. The sync gate
 extracted the frame at a narrated beat's MIDPOINT and the element the words describe was not on
@@ -340,6 +372,29 @@ class SceneCodeGenerator:
             chars=len(repaired),
         )
         return repaired
+
+    async def simplify_visual(
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
+    ) -> str:
+        """Gate B's last resort (C2): when targeted repairs can't clear a scene, regenerate it
+        SIMPLER — drop secondary elements, lower density — so it renders clean rather than shipping
+        a complex, still-defective best-effort. The surviving ``defects`` say what's crowded."""
+        prompt = _REPAIR_SIMPLIFY_TEMPLATE.format(
+            scene_json=scene.model_dump_json(indent=2),
+            source=source,
+            defects=_format_defects(defects),
+            archetype_hint=_archetype_hint(scene),
+            timing=_format_timing(timing),
+            scene_class_name=scene.scene_class_name,
+        )
+        simplified = await self._complete(prompt, scene)
+        _logger.info(
+            "scene_codegen.simplified",
+            scene_id=scene.id,
+            defect_count=len(defects),
+            chars=len(simplified),
+        )
+        return simplified
 
     async def repair_sync(
         self, scene: SceneContract, *, source: str, beat_id: str, reason: str, timing: SceneTiming

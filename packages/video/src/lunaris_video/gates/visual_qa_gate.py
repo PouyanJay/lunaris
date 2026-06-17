@@ -75,9 +75,18 @@ class VisualQaGate:
                 # rather than failing the whole video (degrade, not an infinite render loop).
                 _logger.warning("visual_qa_gate.repair_broke_render", scene_id=scene.id)
                 break
-        # No render passed within the budget: ship the best-effort scene with its defects recorded.
         # ``best_defects`` is set because the loop only reaches here after a failing verdict.
         assert best_defects is not None  # pragma: no cover - guarded by the loop above
+        # Targeted repairs could not clear the scene. Before degrading, try ONE simplify pass — drop
+        # secondary elements and re-render — because a simpler scene that passes (or has fewer
+        # defects) beats shipping a complex, still-defective one.
+        simplified = await self._simplify_fallback(
+            scene, best=best, best_defects=best_defects, timing=timing, workdir=workdir
+        )
+        if simplified is not None:
+            return simplified
+        # Nothing passed within the budget or the simplify pass: ship the best-effort scene with its
+        # defects recorded (the 'publish anyway' policy).
         _logger.warning(
             "visual_qa_gate.scene_degraded",
             scene_id=scene.id,
@@ -85,6 +94,41 @@ class VisualQaGate:
             inspections=_INSPECTIONS,
         )
         return SceneQaResult(scene=best, unresolved_defects=tuple(best_defects))
+
+    async def _simplify_fallback(
+        self,
+        scene: SceneContract,
+        *,
+        best: RenderedScene,
+        best_defects: list[QaDefect],
+        timing: SceneTiming,
+        workdir: Path,
+    ) -> SceneQaResult | None:
+        """The last attempt before degrading: regenerate the scene SIMPLER (drop secondary
+        elements), re-render and re-inspect. Returns a clean result if it passes, a less-defective
+        simpler result if it reduced the defect count, or ``None`` to degrade with ``best`` (the
+        simplify broke the render, or did not improve on the loop's best)."""
+        try:
+            simplified = await self._simplify_and_rerender(
+                scene, best, defects=best_defects, timing=timing, workdir=workdir
+            )
+        except SceneRenderError:
+            # A simplify that breaks the render: keep the best prior render rather than fail.
+            _logger.warning("visual_qa_gate.simplify_broke_render", scene_id=scene.id)
+            return None
+        verdict = await self._vision.inspect(await self._frames.extract(simplified.mp4_path), scene)
+        if verdict.passed:
+            _logger.info("visual_qa_gate.simplify_cleared", scene_id=scene.id)
+            return SceneQaResult(scene=simplified)
+        if len(verdict.defects) < len(best_defects):
+            _logger.info(
+                "visual_qa_gate.simplify_reduced_defects",
+                scene_id=scene.id,
+                before=len(best_defects),
+                after=len(verdict.defects),
+            )
+            return SceneQaResult(scene=simplified, unresolved_defects=tuple(verdict.defects))
+        return None  # no better than the loop's best — degrade with that
 
     async def _repair_and_rerender(
         self,
@@ -98,11 +142,30 @@ class VisualQaGate:
         source = await self._codegen.repair_visual(
             scene, source=current.source, defects=defects, timing=timing
         )
+        return await self._write_and_render(scene, source, workdir)
+
+    async def _simplify_and_rerender(
+        self,
+        scene: SceneContract,
+        current: RenderedScene,
+        *,
+        defects: list[QaDefect],
+        timing: SceneTiming,
+        workdir: Path,
+    ) -> RenderedScene:
+        source = await self._codegen.simplify_visual(
+            scene, source=current.source, defects=defects, timing=timing
+        )
+        return await self._write_and_render(scene, source, workdir)
+
+    async def _write_and_render(
+        self, scene: SceneContract, source: str, workdir: Path
+    ) -> RenderedScene:
         scene_file = workdir / f"{scene.id}.py"
         await asyncio.to_thread(scene_file.write_text, source, encoding="utf-8")
         result = await self._renderer.render(scene_file, scene.scene_class_name)
         if not result.succeeded or result.mp4_path is None:
-            # A visual fix that breaks the render: surfaced to the caller, which keeps the prior
-            # renderable scene (the degrade fallback) instead of looping or failing the video.
+            # A fix that breaks the render: surfaced to the caller, which keeps the prior renderable
+            # scene (the degrade fallback) instead of looping or failing the video.
             raise SceneRenderError(scene.id, attempts=1, error_tail=result.error_tail)
         return RenderedScene(scene_id=scene.id, mp4_path=result.mp4_path, source=source)

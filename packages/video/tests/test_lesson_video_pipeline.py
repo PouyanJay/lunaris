@@ -153,6 +153,11 @@ class _CodegenStub:
     ) -> str:
         return _SCENE_SOURCE
 
+    async def simplify_visual(
+        self, scene: SceneContract, *, source: str, defects, timing: SceneTiming
+    ) -> str:
+        return _SCENE_SOURCE
+
     async def repair_sync(
         self, scene: SceneContract, *, source: str, beat_id: str, reason: str, timing: SceneTiming
     ) -> str:

@@ -22,6 +22,10 @@ class ISceneCodeGenerator(Protocol):
         self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
     ) -> str: ...
 
+    async def simplify_visual(
+        self, scene: SceneContract, *, source: str, defects: list[QaDefect], timing: SceneTiming
+    ) -> str: ...
+
     async def repair_sync(
         self, scene: SceneContract, *, source: str, beat_id: str, reason: str, timing: SceneTiming
     ) -> str: ...
