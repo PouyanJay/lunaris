@@ -7,8 +7,10 @@ from lunaris_runtime.schema import VideoJob, VideoJobStatus, VideoKind
 from .lease_sweep_result import LeaseSweepResult
 from .persistence_error import PersistenceError
 
-# The non-terminal statuses a job passes through before READY/FAILED — "active" for dedup.
-_TERMINAL = (VideoJobStatus.READY, VideoJobStatus.FAILED)
+# The terminal statuses a job settles into — READY/FAILED, plus CANCELLED (the owner stopped it).
+# A terminal job is excluded from "active" (so a restart enqueues fresh, never the cancelled job),
+# is never resurrected by a stage write, and is skipped by the lease sweep.
+_TERMINAL = (VideoJobStatus.READY, VideoJobStatus.FAILED, VideoJobStatus.CANCELLED)
 
 
 class InMemoryVideoJobQueue:
@@ -73,6 +75,19 @@ class InMemoryVideoJobQueue:
 
     async def fail(self, *, job_id: str, error: str) -> None:
         await self._settle(job_id, VideoJobStatus.FAILED, error=error)
+
+    async def cancel(self, *, job_id: str, owner_id: str) -> bool:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            # Owner-scoped + live-only: a missing, not-owned, or already-terminal job is a no-op.
+            if job is None or job.user_id != owner_id or job.status in _TERMINAL:
+                return False
+            job.status = VideoJobStatus.CANCELLED
+            # Release the lease so the sweep ignores it (it is terminal regardless).
+            job.claimed_at = None
+            job.claimed_by = None
+            job.updated_at = self._clock()
+            return True
 
     async def get(self, *, job_id: str, owner_id: str | None = None) -> VideoJob | None:
         async with self._lock:
@@ -173,6 +188,10 @@ class InMemoryVideoJobQueue:
     ) -> None:
         async with self._lock:
             job = self._require(job_id, operation=f"settle {status.value}")
+            if job.status is VideoJobStatus.CANCELLED:
+                # The owner stopped this job; a worker finishing the final render second must not
+                # revive it. CANCELLED is sticky-terminal — complete/fail are a no-op.
+                return
             job.status = status
             job.error = error
             if contract_hash is not None:

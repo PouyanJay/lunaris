@@ -48,6 +48,7 @@ async def test_authed_get_returns_only_the_per_user_settings(tmp_path: Path) -> 
         "modelStrong",
         "modelWorker",
         "videoEnabled",
+        "videoLessonsEnabled",
         "videoVoice",
         "videoSummarySeconds",
         "videoOverviewSeconds",

@@ -31,10 +31,11 @@ from lunaris_runtime.video_build import (
 _OWNER = "user-a"
 
 
-def _video_config(*, voice: bool = True) -> VideoConfig:
+def _video_config(*, voice: bool = True, lessons_enabled: bool = True) -> VideoConfig:
     return VideoConfig(
         enabled=True,
         voice=voice,
+        lessons_enabled=lessons_enabled,
         summary_seconds=target_seconds_for(VideoKind.SUMMARY),
         overview_seconds=target_seconds_for(VideoKind.OVERVIEW),
         lesson_seconds=target_seconds_for(VideoKind.LESSON),
@@ -95,6 +96,25 @@ async def test_enqueue_summary_stamps_kind_length_and_curriculum_grounding() -> 
     assert job.input_hash == video_input_hash(
         "c1", "summary", target_seconds=target_seconds_for(VideoKind.SUMMARY)
     )
+
+
+async def test_lessons_disabled_does_not_block_the_course_videos() -> None:
+    # Arrange — the per-lesson sub-toggle is OFF, master still on. The course-level videos must
+    # enqueue exactly as before: turning off lesson videos leaves the summary + overview untouched.
+    queue = InMemoryVideoJobQueue()
+    coordinator = _coordinator(queue, video_config=_video_config(lessons_enabled=False))
+
+    # Act
+    summary = await coordinator.enqueue_summary(
+        course_id="c1", topic="Algorithms", modules=_modules()
+    )
+    overview = await coordinator.enqueue_overview(course_id="c1", brief=_brief())
+
+    # Assert — both course videos enqueued; the lessons toggle gates only the per-lesson jobs.
+    assert summary is not None
+    assert overview is not None
+    kinds = {(await queue.claim(worker_id="w")).kind for _ in range(2)}  # type: ignore[union-attr]
+    assert kinds == {VideoKind.SUMMARY, VideoKind.OVERVIEW}
 
 
 async def test_enqueue_overview_stamps_kind_length_and_brief_grounding() -> None:

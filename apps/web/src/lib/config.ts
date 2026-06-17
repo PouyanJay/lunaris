@@ -15,6 +15,8 @@ export interface ConfigSetting {
 // The explainer-video config keys (V6). The Video section owns these; the generic Runtime
 // configuration panel filters them out so they render once, in their own three-layer disclosure.
 export const VIDEO_MASTER_KEY = "videoEnabled";
+// A sub-toggle of the master: off ⇒ a build makes only the two course-level videos, no per-lesson ones.
+export const VIDEO_LESSONS_KEY = "videoLessonsEnabled";
 export const VIDEO_VOICE_KEY = "videoVoice";
 export const VIDEO_LENGTH_KEYS = [
   "videoSummarySeconds",
@@ -23,6 +25,7 @@ export const VIDEO_LENGTH_KEYS = [
 ] as const;
 export const VIDEO_CONFIG_KEYS: ReadonlySet<string> = new Set<string>([
   VIDEO_MASTER_KEY,
+  VIDEO_LESSONS_KEY,
   VIDEO_VOICE_KEY,
   ...VIDEO_LENGTH_KEYS,
 ]);

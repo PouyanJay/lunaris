@@ -12,6 +12,7 @@ PER_USER_CONFIG: dict[str, str] = {
     "modelStrong": KNOWN_CONFIG["modelStrong"],
     "modelWorker": KNOWN_CONFIG["modelWorker"],
     "videoEnabled": KNOWN_CONFIG["videoEnabled"],
+    "videoLessonsEnabled": KNOWN_CONFIG["videoLessonsEnabled"],
     "videoVoice": KNOWN_CONFIG["videoVoice"],
     "videoSummarySeconds": KNOWN_CONFIG["videoSummarySeconds"],
     "videoOverviewSeconds": KNOWN_CONFIG["videoOverviewSeconds"],

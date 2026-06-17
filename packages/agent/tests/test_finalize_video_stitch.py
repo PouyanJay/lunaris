@@ -47,7 +47,7 @@ from lunaris_runtime.schema import (
     VideoJob,
     VideoJobStatus,
 )
-from lunaris_runtime.video_build import QueueVideoBuildCoordinator
+from lunaris_runtime.video_build import QueueVideoBuildCoordinator, VideoConfig
 from lunaris_video import VideoWorker
 from lunaris_video.models.rendered_video import RenderedVideo
 
@@ -271,6 +271,47 @@ async def test_finalize_publishes_anyway_when_a_video_fails(tmp_path: Path) -> N
     assert lesson.video is not None
     assert lesson.video.status is VideoJobStatus.FAILED
     assert lesson.video.provenance is None
+
+
+async def test_finalize_skips_lesson_videos_when_the_lessons_toggle_is_off(
+    tmp_path: Path, progress_sink
+) -> None:
+    # The per-lesson sub-toggle OFF, master still on (the coordinator IS wired, so the course-level
+    # videos still enqueue — proven in test_course_video_build). The build authors a real lesson,
+    # but finalize must enqueue ZERO lesson videos: no worker capacity spent on per-lesson renders.
+    queue = InMemoryVideoJobQueue()
+    coordinator = QueueVideoBuildCoordinator(
+        queue=queue,
+        storage=InMemoryVideoStorage(),
+        owner_id=_OWNER,
+        video_config=VideoConfig(
+            enabled=True,
+            voice=True,
+            lessons_enabled=False,
+            summary_seconds=75,
+            overview_seconds=180,
+            lesson_seconds=75,
+        ),
+    )
+    draft = _draft_with_graph(coordinator)
+    draft.progress = ProgressReporter("r1", progress_sink, cursor=StageCursor())
+    await _author(draft)
+
+    # Act — finalize persists the course and would enqueue per-lesson videos; the gate declines.
+    finalize = make_finalize_course_tool(
+        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
+    )
+    result = await finalize.ainvoke({})
+
+    # Assert — published with a real authored lesson, but no lesson video: nothing tracked, nothing
+    # claimable, no placeholder folded, and no vacuous Videos phase opened.
+    assert result["status"] in ("published", "review")
+    lessons = draft.course.modules[0].lessons
+    assert lessons  # authoring genuinely populated the module (the gate must be the only reason)
+    assert draft.enqueued_video_jobs == {}
+    assert await queue.claim(worker_id="w") is None
+    assert lessons[0].video is None
+    assert not any(e.stage is ProgressStage.LESSON_VIDEOS for e in progress_sink.events)
 
 
 async def test_finalize_emits_no_videos_phase_when_there_are_no_lessons(

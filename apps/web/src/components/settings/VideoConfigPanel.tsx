@@ -5,6 +5,7 @@ import { useConfigSaver, type SaveFeedback } from "../../hooks/useConfigSaver";
 import { fetchCredentials } from "../../lib/credentials";
 import {
   VIDEO_LENGTH_KEYS,
+  VIDEO_LESSONS_KEY,
   VIDEO_MASTER_KEY,
   VIDEO_VOICE_KEY,
   boolToConfigValue,
@@ -29,6 +30,7 @@ interface VideoConfigPanelProps {
 
 const LABELS: Record<string, string> = {
   videoEnabled: "Generate videos",
+  videoLessonsEnabled: "Generate lesson videos",
   videoVoice: "Narrate videos",
   videoSummarySeconds: "Course trailer length",
   videoOverviewSeconds: "Topic intro length",
@@ -37,7 +39,9 @@ const LABELS: Record<string, string> = {
 
 const DESCRIPTIONS: Record<string, string> = {
   videoEnabled:
-    "Add an animated explainer to each lesson, plus a course trailer and topic intro.",
+    "Generate explainer videos for your courses — a trailer and topic intro, plus a video per lesson (controlled by the toggle below).",
+  videoLessonsEnabled:
+    "A video at the head of every lesson. Off keeps just the course trailer and topic intro — individual lessons are skipped. You can still add a single lesson's video by hand later.",
   videoVoice:
     "Narrate in one pass with ElevenLabs. Off renders silent and voice-ready — you can add narration later.",
 };
@@ -51,9 +55,10 @@ const LENGTH_PRESETS: Record<string, number[]> = {
 };
 
 /** The Video section of Settings (explainer-video V6): a three-layer disclosure — master toggle →
- *  (when on) the voice toggle + the three per-kind lengths. The voice toggle requires a validated
- *  ElevenLabs key. Keyless accounts see the whole section deactivated with a "needs a key"
- *  affordance, since video generation is a keyed-only capability. */
+ *  (when on) the lesson-videos sub-toggle, the voice toggle, and the three per-kind lengths. The
+ *  lesson toggle off keeps the two course-level videos and skips the per-lesson ones; the voice
+ *  toggle requires a validated ElevenLabs key. Keyless accounts see the whole section deactivated
+ *  with a "needs a key" affordance, since video generation is a keyed-only capability. */
 export function VideoConfigPanel({
   apiBaseUrl,
   keyless,
@@ -73,6 +78,7 @@ export function VideoConfigPanel({
   );
   const master = byName.get(VIDEO_MASTER_KEY);
   const masterOn = master?.value === "true";
+  const lessons = byName.get(VIDEO_LESSONS_KEY);
   const voice = byName.get(VIDEO_VOICE_KEY);
 
   return (
@@ -103,6 +109,14 @@ export function VideoConfigPanel({
               />
               {masterOn && (
                 <>
+                  {lessons && (
+                    <ToggleRow
+                      setting={lessons}
+                      busy={busy[VIDEO_LESSONS_KEY] ?? false}
+                      feedback={feedback[VIDEO_LESSONS_KEY]}
+                      onToggle={(on) => save(VIDEO_LESSONS_KEY, boolToConfigValue(on))}
+                    />
+                  )}
                   {voice && (
                     <VoiceRow
                       setting={voice}

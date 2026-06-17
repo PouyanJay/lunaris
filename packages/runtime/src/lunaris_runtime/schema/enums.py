@@ -409,9 +409,12 @@ class VideoJobStatus(StrEnum):
     """The video job's lifecycle — the queue's status machine, mirrored by the DB CHECK.
 
     ``QUEUED`` rows are claimable; a claim atomically flips to ``PLANNING`` (the first in-flight
-    stage) and stamps the lease. The in-flight stages mirror the pipeline (plan §1.2); ``READY``
-    and ``FAILED`` are terminal. The job row doubles as the status record the reader's hero slot
-    polls, so these values are wire-visible.
+    stage) and stamps the lease. The in-flight stages mirror the pipeline (plan §1.2); ``READY``,
+    ``FAILED``, and ``CANCELLED`` are terminal. ``CANCELLED`` is the owner stopping a job before it
+    finished: a queued job is never claimed once cancelled, and a worker aborts an in-flight render
+    (killing the render subprocess) when it sees the cancel — so no compute is spent on a stopped
+    video. The job row doubles as the status record the reader's hero slot polls, so these values
+    are wire-visible.
     """
 
     QUEUED = "queued"
@@ -423,6 +426,7 @@ class VideoJobStatus(StrEnum):
     ASSEMBLING = "assembling"
     READY = "ready"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class RegenerateMode(StrEnum):

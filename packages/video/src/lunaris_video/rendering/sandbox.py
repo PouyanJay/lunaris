@@ -157,6 +157,18 @@ async def run_sandboxed(argv: list[str], *, cwd: Path, timeout_s: float) -> Sand
             stderr_tail=f"timed out after {timeout_s}s (process group killed)",
             timed_out=True,
         )
+    except asyncio.CancelledError:
+        # The render was cancelled — the owner stopped the job and the worker's cancel-watcher
+        # cancelled the render task. Kill the WHOLE process group (manim + its ffmpeg children) the
+        # same way the timeout path does, so no compute keeps running for a stopped video, then let
+        # the cancellation propagate (this is a stop, not a render result). The reap is shielded so
+        # a second cancellation (a worker shutdown arriving mid-reap) can't interrupt it and leave
+        # the group misclassified — the original cancellation still re-raises after the reap.
+        _kill_process_group(process.pid)
+        with contextlib.suppress(ProcessLookupError, asyncio.CancelledError):
+            await asyncio.shield(process.wait())
+        _logger.info("sandbox.cancelled", argv0=argv[0])
+        raise
     return SandboxResult(
         returncode=process.returncode if process.returncode is not None else -1,
         stdout_tail=stdout.decode(errors="replace")[-_OUTPUT_TAIL_CHARS:],

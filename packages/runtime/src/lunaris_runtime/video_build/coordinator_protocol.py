@@ -23,8 +23,10 @@ class IVideoBuildCoordinator(Protocol):
         self, *, course_id: str, lesson_id: str, content_hash: str = ""
     ) -> str | None:
         """Enqueue a lesson-video job; return its job id, or ``None`` if it could not be enqueued
-        (enqueue is best-effort — a queue hiccup must never break the build). Idempotent within a
-        build: the same lesson returns the same job id rather than a duplicate. ``content_hash``
+        (enqueue is best-effort — a queue hiccup must never break the build) OR if the build has the
+        per-lesson sub-toggle off (course-level videos still enqueue; only the per-lesson ones are
+        skipped). Idempotent within a build: the same lesson returns the same job id rather than a
+        duplicate. ``content_hash``
         (the lesson's authored-content fingerprint) folds into the job's input hash so the staleness
         check (V6-T3) can later flag the video outdated once the lesson is revised."""
         ...

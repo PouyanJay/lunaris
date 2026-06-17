@@ -65,9 +65,18 @@ def _draft(coordinator: QueueVideoBuildCoordinator | None) -> CourseDraft:
 
 
 def _coordinator(
-    queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    *,
+    await_timeout_s: float = 0.0,
 ) -> QueueVideoBuildCoordinator:
-    return QueueVideoBuildCoordinator(queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01)
+    return QueueVideoBuildCoordinator(
+        queue=queue,
+        storage=storage,
+        owner_id=_OWNER,
+        poll_s=0.01,
+        await_timeout_s=await_timeout_s,
+    )
 
 
 # ── the enqueue hook (design_curriculum) ───────────────────────────────────────────────
@@ -123,7 +132,10 @@ async def test_finalize_stitches_both_course_videos_into_the_overview_section(
         InMemoryVideoStorage(),
         InMemoryRunEventStore(),
     )
-    draft = _draft(_coordinator(queue, storage))
+    # A positive await timeout makes finalize genuinely WAIT for the in-flight renders (polling), so
+    # the overlap is deterministic — not reliant on the gather's scheduling landing both renders
+    # before finalize's collect (which a poll-once timeout of 0 would race).
+    draft = _draft(_coordinator(queue, storage, await_timeout_s=5.0))
     await _enqueue_course_videos(draft)
     worker = VideoWorker(
         queue=queue, pipeline=StubVideoPipeline(), storage=storage, events=events, worker_id="w"

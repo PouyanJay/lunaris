@@ -242,6 +242,52 @@ async def regenerate_video(
     return VideoJobView(job=new_job)
 
 
+@router.post(
+    "/videos/{job_id}/cancel",
+    dependencies=[Depends(require_video_generation_enabled)],
+)
+async def cancel_video_job(
+    job_id: str,
+    owner_id: CurrentUserIdDep,
+    queue: VideoJobQueueDep,
+    response: Response,
+) -> VideoJobView:
+    """Stop a video the caller owns before it finishes — a queued job is then never claimed, and an
+    in-flight one is aborted by the worker's cancel-watcher (its render subprocess killed), so no
+    compute is spent on a stopped video.
+
+    Owner-scoped: the job must exist and be owned, else 404 (existence never leaks across tenants).
+    Deliberately NOT tier-gated and NOT per-user-master-toggle gated (unlike enqueue/regenerate):
+    stopping your own job consumes no generation capacity, so a user whose key was removed — or who
+    turned video off in Settings — mid-flight must still be able to stop an in-flight job. The
+    operator kill-switch still applies (404 when ``VIDEO_GENERATION_ENABLED`` is off, like every
+    video route — the surface is then absent, and nothing is rendering to stop). Idempotent:
+    cancelling an already-terminal job is a no-op that returns its current state. Returns the job so
+    the reader can show the stopped state and offer a restart."""
+    request_id = uuid.uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
+    job = await queue.get(job_id=job_id, owner_id=owner_id)
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Video job not found",
+            headers={"X-Request-Id": request_id},
+        )
+    transitioned = await queue.cancel(job_id=job_id, owner_id=owner_id)
+    # Re-read only when the cancel actually transitioned the row; an idempotent no-op (the job was
+    # already terminal) leaves the first read as the current truth. Either way the owner-scoped read
+    # is this caller's own row, never another tenant's.
+    if transitioned:
+        settled = await queue.get(job_id=job_id, owner_id=owner_id)
+        if settled is not None:
+            job = settled
+    logger.info(
+        "video_job_cancel", job_id=job_id, status=job.status.value, transitioned=transitioned
+    )
+    return VideoJobView(job=job)
+
+
 def _regenerate_job(
     source: VideoJob,
     mode: RegenerateMode,

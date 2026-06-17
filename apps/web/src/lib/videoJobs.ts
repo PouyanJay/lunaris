@@ -18,7 +18,8 @@ export type VideoJobStatus =
   | "voicing"
   | "assembling"
   | "ready"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 /** A determinate progress reading for a working video job: a percent (for the bar) and a plain-
  *  language stage label (for the caption). Mapped from the job status the worker advances through
@@ -45,6 +46,8 @@ export function videoProgress(status: VideoJobStatus): { percent: number; label:
       return { percent: 100, label: "Ready" };
     case "failed":
       return { percent: 100, label: "Couldn’t generate" };
+    case "cancelled":
+      return { percent: 100, label: "Stopped" };
   }
 }
 
@@ -256,7 +259,28 @@ export async function fetchVideoJob(
   }
 }
 
-const TERMINAL: ReadonlySet<VideoJobStatus> = new Set(["ready", "failed"]);
+const TERMINAL: ReadonlySet<VideoJobStatus> = new Set(["ready", "failed", "cancelled"]);
+
+/** Stop a video the caller owns (`POST /api/videos/{id}/cancel`) — a queued job is then never
+ *  claimed, and an in-flight one is aborted by the worker (its render subprocess killed). Owner-
+ *  scoped + idempotent on the server. Returns the job (now CANCELLED) so the reader can show the
+ *  stopped state, or null when it can't be read (gone / unauthorized / network) — the caller still
+ *  drops to its stopped state locally, since the stop request was sent. */
+export async function cancelVideoJob(
+  apiBaseUrl: string,
+  jobId: string,
+): Promise<VideoJobView | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/videos/${encodeURIComponent(jobId)}/cancel`,
+      { method: "POST" },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as VideoJobView;
+  } catch {
+    return null;
+  }
+}
 
 /** Poll a job until it settles (`ready`/`failed`) or `signal` aborts: `onWorking` fires for each
  *  in-flight status, `onSettled` once for the terminal view. A missed read (null) is retried — a

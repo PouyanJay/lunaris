@@ -275,6 +275,106 @@ async def test_enqueue_stamps_the_tenants_length_and_voice(
     assert stored.config["voice"] is False
 
 
+# ── per-video stop / cancel ───────────────────────────────────────────────────────
+
+
+async def test_cancel_stops_a_queued_job_and_keeps_it_from_being_claimed(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a queued lesson video the owner changes their mind about.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+
+    # Act
+    response = await client.post(f"/api/videos/{job_a}/cancel", headers=auth_headers(USER_A))
+
+    # Assert — 200 with the CANCELLED job, a correlation id, and no worker can ever claim it.
+    assert response.status_code == 200
+    assert response.json()["job"]["status"] == "cancelled"
+    assert response.headers["X-Request-Id"]
+    assert await queue.claim(worker_id="probe") is None
+
+
+async def test_cancel_is_404_for_another_users_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — USER_A's job; USER_B must not be able to stop it (existence never leaks).
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+
+    # Act
+    response = await client.post(f"/api/videos/{job_a}/cancel", headers=auth_headers(USER_B))
+
+    # Assert — 404 (carrying a correlation id), and the job is untouched (still claimable).
+    assert response.status_code == 404
+    assert response.headers["X-Request-Id"]
+    claimed = await queue.claim(worker_id="probe")
+    assert claimed is not None and claimed.id == job_a
+
+
+async def test_cancel_is_idempotent_when_already_cancelled(
+    client: httpx.AsyncClient,
+) -> None:
+    # Arrange — a queued job stopped once already.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    first = await client.post(f"/api/videos/{job_a}/cancel", headers=auth_headers(USER_A))
+    assert first.status_code == 200 and first.json()["job"]["status"] == "cancelled"
+
+    # Act — a double-submit (the user clicked Stop twice / a retry) must not 404.
+    second = await client.post(f"/api/videos/{job_a}/cancel", headers=auth_headers(USER_A))
+
+    # Assert — still 200, still cancelled (the no-op returns the current terminal state).
+    assert second.status_code == 200
+    assert second.json()["job"]["status"] == "cancelled"
+
+
+async def test_cancel_is_idempotent_on_a_terminal_job(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue
+) -> None:
+    # Arrange — a job that already finished READY.
+    job_a = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    await queue.claim(worker_id="w")
+    await queue.complete(job_id=job_a)
+
+    # Act — cancelling a finished job is a no-op, not an error.
+    response = await client.post(f"/api/videos/{job_a}/cancel", headers=auth_headers(USER_A))
+
+    # Assert — 200 with the unchanged terminal state (the stop did not revive or alter it).
+    assert response.status_code == 200
+    assert response.json()["job"]["status"] == "ready"
+
+
+async def test_cancel_is_not_blocked_by_the_master_toggle_being_off(
+    tmp_path: Path,
+    queue: InMemoryVideoJobQueue,
+    storage: InMemoryVideoStorage,
+    events: InMemoryRunEventStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — a job already in flight, and the owner has since turned video OFF in Settings. They
+    # must still be able to stop the in-flight job (stopping spends no capacity; it is not gated).
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    await queue.enqueue(
+        VideoJob(
+            id="j1",
+            user_id=USER_A,
+            course_id="course-1",
+            lesson_id="lesson-1",
+            kind=VideoKind.LESSON,
+            input_hash="h",
+        )
+    )
+    user_config = InMemoryUserConfigStore()
+    await user_config.set(user_id=USER_A, key="videoEnabled", value="false")
+    async with _build_client(
+        tmp_path, queue, storage, events, user_config_store=user_config
+    ) as client:
+        # Act
+        response = await client.post("/api/videos/j1/cancel", headers=auth_headers(USER_A))
+
+    # Assert — the stop succeeds regardless of the master toggle.
+    assert response.status_code == 200
+    assert response.json()["job"]["status"] == "cancelled"
+
+
 # ── Gap 1: re-attach to the slot's active job ─────────────────────────────────────
 
 

@@ -262,6 +262,48 @@ describe("OverviewSection", () => {
     expect(JSON.parse(String((regen?.[1] as RequestInit).body))).toEqual({ mode: "fresh" });
   });
 
+  it("stops an in-flight course-video regenerate and shows the stopped state", async () => {
+    // Arrange — a ready summary; the regenerate's poll stays pending so the working (Stop-able)
+    // state is observable. URL-routed so the on-mount probe doesn't perturb the sequence.
+    const queued = { ...readyView("sum-2"), job: { ...readyView("sum-2").job, status: "queued" } };
+    fetchMock.mockReset();
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
+      if (url.includes("/regenerate")) return Promise.resolve(jsonResponse(202, queued));
+      if (url.endsWith("/cancel")) {
+        return Promise.resolve(
+          jsonResponse(200, { ...queued, job: { ...queued.job, status: "cancelled" } }),
+        );
+      }
+      if (url.includes("/videos/sum-2")) return new Promise<Response>(() => {}); // poll stays pending
+      return Promise.resolve(jsonResponse(200, readyView("sum-1")));
+    });
+    render(
+      <OverviewSection
+        videos={{ summary: artifact("summary", "sum-1") }}
+        apiBaseUrl={API}
+        courseId="course-1"
+      />,
+    );
+    await screen.findByRole("button", { name: /play the course trailer/i });
+
+    // Act — regenerate (Fresh take) → working, then stop the in-flight render.
+    fireEvent.click(screen.getByRole("button", { name: /^regenerate$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /fresh take/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /stop/i }));
+
+    // Assert — the cancel POST targeted the regenerated job, and the stopped state offers a restart.
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${API}/api/videos/sum-2/cancel`,
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(screen.getByText(/generation stopped/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+
   it("shows the outdated badge when a ready course video reports stale", async () => {
     // The stale flag from the status read plumbs through useCourseVideo to the slot's badge. /active
     // is routed to 204 so the badge is asserted on the ready-fetch path, not the re-attach probe.

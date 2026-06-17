@@ -10,6 +10,10 @@ from .video_lengths import target_seconds_for
 # its logical ids (``videoEnabled`` …) to THESE names; a new key is a change in both places.
 VIDEO_ENABLED_ENV = "LUNARIS_VIDEO_ENABLED"
 VIDEO_VOICE_ENV = "LUNARIS_VIDEO_VOICE"
+# A sub-toggle under the master: when off, the build skips the per-lesson videos but still makes the
+# two course-level videos (summary trailer + topic overview). Defaults ON, so an unset value keeps
+# the historical behaviour (every lesson gets a video).
+VIDEO_LESSONS_ENABLED_ENV = "LUNARIS_VIDEO_LESSONS_ENABLED"
 VIDEO_SUMMARY_SECONDS_ENV = "LUNARIS_VIDEO_SUMMARY_SECONDS"
 VIDEO_OVERVIEW_SECONDS_ENV = "LUNARIS_VIDEO_OVERVIEW_SECONDS"
 VIDEO_LESSON_SECONDS_ENV = "LUNARIS_VIDEO_LESSON_SECONDS"
@@ -29,13 +33,20 @@ _SECONDS_ENV: dict[VideoKind, str] = {
 
 @dataclass(frozen=True)
 class VideoConfig:
-    """One build's resolved video settings: whether video is on at all, whether to narrate, and the
-    target length per kind. Read from the run-config scope (the build path) or a resolved env-var
-    map (the on-demand path); every field has a default, so an unset value never refuses — it falls
-    back to the product default (master ON, voice ON, the per-kind ``target_seconds_for``)."""
+    """One build's resolved video settings: whether video is on at all, whether to make the
+    per-lesson videos, whether to narrate, and the target length per kind. Read from the run-config
+    scope (the build path) or a resolved env-var map (the on-demand path); every field has a
+    default, so an unset value never refuses — it falls back to the product default (master ON,
+    lesson videos ON, voice ON, the per-kind ``target_seconds_for``).
+
+    ``lessons_enabled`` is a sub-toggle of ``enabled``: with the master on but this off, the build
+    still makes the two course-level videos (summary + overview) and only skips the per-lesson
+    ones. The on-demand reader path is unaffected — it gates on ``enabled`` alone, so a user can
+    still make a single lesson video by hand."""
 
     enabled: bool
     voice: bool
+    lessons_enabled: bool
     summary_seconds: int
     overview_seconds: int
     lesson_seconds: int
@@ -69,6 +80,7 @@ def _parse(get: Callable[[str], str | None]) -> VideoConfig:
     return VideoConfig(
         enabled=_as_bool(get(VIDEO_ENABLED_ENV), default=True),
         voice=_as_bool(get(VIDEO_VOICE_ENV), default=True),
+        lessons_enabled=_as_bool(get(VIDEO_LESSONS_ENABLED_ENV), default=True),
         summary_seconds=seconds[VideoKind.SUMMARY],
         overview_seconds=seconds[VideoKind.OVERVIEW],
         lesson_seconds=seconds[VideoKind.LESSON],
