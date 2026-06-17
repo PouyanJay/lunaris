@@ -33,7 +33,7 @@ export function LessonVideoHero({
   video,
   pollIntervalMs,
 }: LessonVideoHeroProps) {
-  const { state, generate, regenerate, refresh } = useLessonVideo(
+  const { state, generate, regenerate, stop, refresh } = useLessonVideo(
     apiBaseUrl,
     courseId,
     lessonId,
@@ -56,7 +56,22 @@ export function LessonVideoHero({
 
       {state.phase === "working" && (
         <div className={styles.stage}>
-          <VideoProgress status={state.status} label="Generating the lesson video" />
+          <VideoProgress
+            status={state.status}
+            label="Generating the lesson video"
+            onStop={stop}
+          />
+        </div>
+      )}
+
+      {state.phase === "stopped" && (
+        <div className={styles.stopped}>
+          <span className={styles.idleHint} role="status">
+            Generation stopped.
+          </span>
+          <Button variant="accent" onClick={generate}>
+            Generate video
+          </Button>
         </div>
       )}
 

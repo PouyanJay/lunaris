@@ -116,6 +116,114 @@ async def test_fail_records_the_error() -> None:
     assert job.error == "render exploded"
 
 
+async def test_cancel_a_queued_job_keeps_it_from_ever_being_claimed() -> None:
+    # Arrange — a job still waiting in the queue (the common case in an automatic build).
+    owner = "00000000-0000-0000-0000-000000000001"
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job(owner=owner))
+
+    # Act — the owner stops it before any worker picks it up.
+    cancelled = await queue.cancel(job_id="job-1", owner_id=owner)
+
+    # Assert — it transitioned, and a worker can never claim it: zero compute is ever spent.
+    assert cancelled is True
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.CANCELLED
+    assert await queue.claim(worker_id="worker-a") is None
+
+
+async def test_cancel_an_in_flight_job_releases_its_lease() -> None:
+    # Arrange — a claimed (in-flight) job a worker is rendering.
+    owner = "00000000-0000-0000-0000-000000000001"
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job(owner=owner))
+    await queue.claim(worker_id="worker-a")
+
+    # Act
+    cancelled = await queue.cancel(job_id="job-1", owner_id=owner)
+
+    # Assert — CANCELLED with the lease cleared, so the sweep ignores it (it's terminal regardless).
+    assert cancelled is True
+    job = await queue.get(job_id="job-1")
+    assert job is not None
+    assert job.status == VideoJobStatus.CANCELLED
+    assert job.claimed_at is None and job.claimed_by is None
+
+
+async def test_cancel_is_owner_scoped() -> None:
+    # Arrange
+    owner = "00000000-0000-0000-0000-000000000001"
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job(owner=owner))
+
+    # Act — another tenant must not be able to stop this job.
+    cancelled = await queue.cancel(job_id="job-1", owner_id="someone-else")
+
+    # Assert — no-op, still queued.
+    assert cancelled is False
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.QUEUED
+
+
+async def test_cancel_a_terminal_or_missing_job_is_a_noop() -> None:
+    # Arrange — one job that already finished, plus a non-existent id.
+    owner = "00000000-0000-0000-0000-000000000001"
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job(owner=owner))
+    await queue.claim(worker_id="worker-a")
+    await queue.complete(job_id="job-1")
+
+    # Act / Assert — idempotent: a finished job stays READY, a ghost is simply False.
+    assert await queue.cancel(job_id="job-1", owner_id=owner) is False
+    assert await queue.cancel(job_id="ghost", owner_id=owner) is False
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.READY
+
+
+async def test_complete_does_not_revive_a_cancelled_job() -> None:
+    # Arrange — the final-second race: the owner stops the job just as the render finishes.
+    owner = "00000000-0000-0000-0000-000000000001"
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(_job(owner=owner))
+    await queue.claim(worker_id="worker-a")
+    await queue.cancel(job_id="job-1", owner_id=owner)
+
+    # Act — a worker that finished rendering tries to settle it READY.
+    await queue.complete(job_id="job-1")
+
+    # Assert — CANCELLED is sticky-terminal: the owner's stop wins, the video is not published.
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.CANCELLED
+
+
+@pytest.mark.parametrize("kind", list(VideoKind))
+@pytest.mark.parametrize("claim_first", [False, True])
+async def test_cancel_stops_a_job_of_any_kind_in_any_live_state(
+    kind: VideoKind, claim_first: bool
+) -> None:
+    # Variant coverage: cancel works for every kind (lesson / summary / overview) and from either
+    # live state (queued, or claimed/in-flight) — a course-level kind carries no lesson_id.
+    owner = "00000000-0000-0000-0000-000000000001"
+    lesson_id = "l1" if kind is VideoKind.LESSON else None
+    queue = InMemoryVideoJobQueue()
+    await queue.enqueue(
+        VideoJob(
+            id="job-1",
+            user_id=owner,
+            course_id="course-1",
+            lesson_id=lesson_id,
+            kind=kind,
+            input_hash="h",
+        )
+    )
+    if claim_first:
+        await queue.claim(worker_id="worker-a")
+
+    assert await queue.cancel(job_id="job-1", owner_id=owner) is True
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.CANCELLED
+
+
 async def test_update_status_reflects_an_in_flight_stage() -> None:
     # Arrange — a claimed (in-flight) job; the worker reports its render stage.
     queue = InMemoryVideoJobQueue()
@@ -264,6 +372,26 @@ async def test_sweep_leaves_fresh_queued_and_terminal_jobs_untouched() -> None:
     assert in_flight is not None and in_flight.status == VideoJobStatus.PLANNING
 
 
+async def test_sweep_never_requeues_a_cancelled_in_flight_job() -> None:
+    # Arrange — a job claimed, then CANCELLED by its owner while still leased. Even past the lease
+    # cutoff the sweep must NOT requeue it: a stopped video must never come back to life.
+    owner = "00000000-0000-0000-0000-000000000001"
+    now = [datetime(2026, 6, 14, 10, 0, 0, tzinfo=UTC)]
+    queue = InMemoryVideoJobQueue(clock=lambda: now[0])
+    await queue.enqueue(_job(owner=owner))
+    await queue.claim(worker_id="worker-a")
+    await queue.cancel(job_id="job-1", owner_id=owner)
+    now[0] = datetime(2026, 6, 14, 10, 10, 0, tzinfo=UTC)  # well past a 300s lease
+
+    # Act
+    result = await queue.sweep_stale_leases(lease_seconds=300, max_attempts=3)
+
+    # Assert — untouched and still CANCELLED.
+    assert (result.requeued, result.dead_lettered) == (0, 0)
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == VideoJobStatus.CANCELLED
+
+
 async def test_list_and_delete_for_course_are_owner_and_course_scoped() -> None:
     # Arrange — two courses for one owner, plus another owner's job that must be untouched.
     owner = "00000000-0000-0000-0000-00000000000a"
@@ -375,6 +503,10 @@ class _FakeQuery:
 
     def eq(self, column: str, value: Any) -> "_FakeQuery":
         self._call["filters"][column] = value
+        return self
+
+    def neq(self, column: str, value: Any) -> "_FakeQuery":
+        self._call.setdefault("neq", {})[column] = value
         return self
 
     @property
@@ -542,7 +674,7 @@ async def test_update_status_patches_only_non_terminal_rows() -> None:
     assert call["patch"]["status"] == "rendering"
     assert "updated_at" in call["patch"]
     assert call["filters"] == {"id": "job-1"}
-    assert call["not_in"] == {"status": ["ready", "failed"]}
+    assert call["not_in"] == {"status": ["ready", "failed", "cancelled"]}
 
 
 async def test_update_status_on_a_vanished_or_settled_job_is_a_silent_noop() -> None:
@@ -567,6 +699,46 @@ async def test_fail_patches_status_and_error_by_id() -> None:
     assert call["patch"]["status"] == "failed"
     assert call["patch"]["error"] == "render exploded"
     assert call["filters"] == {"id": "job-1"}
+
+
+async def test_cancel_filters_owner_and_live_status_and_returns_whether_it_hit() -> None:
+    # Arrange — the update matches one live, owned row.
+    client = _FakeClient(update_count=1)
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act
+    cancelled = await queue.cancel(job_id="job-1", owner_id="owner-1")
+
+    # Assert — owner-scoped + live-only (NOT IN terminal, which now includes cancelled), sets
+    # CANCELLED, releases the lease, and reports the hit.
+    call = client.calls[0]
+    assert call["op"] == "update"
+    assert call["patch"]["status"] == "cancelled"
+    assert call["patch"]["claimed_at"] is None and call["patch"]["claimed_by"] is None
+    assert call["filters"] == {"id": "job-1", "user_id": "owner-1"}
+    assert call["not_in"] == {"status": ["ready", "failed", "cancelled"]}
+    assert cancelled is True
+
+
+async def test_cancel_returns_false_when_no_live_owned_row_matched() -> None:
+    # Arrange — zero rows (already terminal, missing, or owned by another tenant).
+    client = _FakeClient(update_count=0)
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act / Assert — an idempotent no-op, never an error.
+    assert await queue.cancel(job_id="job-1", owner_id="owner-1") is False
+
+
+async def test_complete_does_not_overwrite_a_cancelled_job() -> None:
+    # Arrange — the settle matches zero rows (the neq filter excluded the cancelled row), and a
+    # follow-up read shows the row IS cancelled — the owner stopped it.
+    cancelled_row = {**_ROW, "status": "cancelled"}
+    client = _FakeClient(data=[cancelled_row], update_count=0)
+    queue = SupabaseVideoJobQueue(client=client)
+
+    # Act / Assert — a benign no-op (the stop wins), NOT the PersistenceError a vanished job raises.
+    await queue.complete(job_id="job-1")
+    assert client.calls[0]["neq"] == {"status": "cancelled"}
 
 
 async def test_get_scopes_to_the_owner_filter() -> None:

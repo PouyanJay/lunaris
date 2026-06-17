@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { VideoProgress } from "./VideoProgress";
 
@@ -33,5 +33,17 @@ describe("VideoProgress", () => {
     });
     expect(Math.max(...percents)).toBeLessThan(100);
     expect(at("ready")).toBe(100);
+  });
+
+  it("offers a Stop control only when onStop is given, and invokes it on click", () => {
+    const onStop = vi.fn();
+    const { rerender } = render(<VideoProgress status="rendering" label="Generating the video" />);
+    // No onStop ⇒ no stop affordance.
+    expect(screen.queryByRole("button", { name: /stop/i })).not.toBeInTheDocument();
+
+    rerender(<VideoProgress status="rendering" label="Generating the video" onStop={onStop} />);
+    const stop = screen.getByRole("button", { name: /stop/i });
+    fireEvent.click(stop);
+    expect(onStop).toHaveBeenCalledTimes(1);
   });
 });

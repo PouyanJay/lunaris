@@ -45,6 +45,12 @@
   transition: width 600ms var(--ease);
 }
 
+.actions {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-1);
+}
+
 @keyframes videoProgressSpin {
   to {
     transform: rotate(360deg);

@@ -29,6 +29,22 @@ from lunaris_video.worker.failure_taxonomy import VideoFailureKind
 
 _logger = structlog.get_logger(__name__)
 
+
+class _VideoCancelledError(Exception):
+    """Internal signal: the owner stopped this job mid-render, so the worker aborted the render.
+
+    Raised by ``_produce`` ONLY when the cancel-watcher fired (the job row went CANCELLED, or
+    vanished) — distinct from a plain ``asyncio.CancelledError`` (a worker shutdown), which still
+    propagates so the supervisor can drain. ``_process`` catches it and stops without settling: the
+    row is already CANCELLED and the render subprocess has been killed, so no compute is spent and
+    nothing is published.
+    """
+
+    def __init__(self, job_id: str) -> None:
+        super().__init__(f"video job {job_id!r} cancelled by its owner")
+        self.job_id = job_id
+
+
 # The human-readable label each job status carries on its run_event — what the reader's progress bar
 # shows. Coarse on purpose, not per-scene. PLANNING/READY/FAILED are emitted by the worker itself
 # (claim + settle); VOICING/RENDERING/ASSEMBLING are reported by the pipeline via on_stage. A status
@@ -40,6 +56,7 @@ _STAGE_LABELS: dict[VideoJobStatus, str] = {
     VideoJobStatus.ASSEMBLING: "assembling the video",
     VideoJobStatus.READY: "video ready",
     VideoJobStatus.FAILED: "video generation failed",
+    VideoJobStatus.CANCELLED: "video generation stopped",
 }
 
 
@@ -75,6 +92,7 @@ class VideoWorker:
         worker_id: str,
         credential_resolver: CredentialResolver | None = None,
         heartbeat_interval_s: float = 60.0,
+        cancel_poll_interval_s: float = 5.0,
     ) -> None:
         self._queue = queue
         self._pipeline = pipeline
@@ -83,6 +101,9 @@ class VideoWorker:
         self._worker_id = worker_id
         self._credential_resolver = credential_resolver
         self._heartbeat_interval_s = heartbeat_interval_s
+        # Tighter than the heartbeat so a stopped render is aborted promptly — the cloud worker has
+        # no direct channel from the API; this DB poll IS the cancellation signal.
+        self._cancel_poll_interval_s = cancel_poll_interval_s
 
     async def run_forever(self, *, poll_interval_seconds: float = 2.0) -> None:
         """Drain the queue forever; idle-poll when empty. Cancellation is the stop signal."""
@@ -121,6 +142,13 @@ class VideoWorker:
             rendered = await self._produce(job, sequence)
             artifact = _build_artifact(job, rendered)
             await self._upload_artifacts(job, rendered, artifact)
+        except _VideoCancelledError:
+            # The owner stopped this job mid-render: the row is already CANCELLED and the render
+            # subprocess has been killed (no more compute). Do NOT settle (complete/fail would be a
+            # sticky no-op anyway) and do NOT upload — just record the stop on the transcript.
+            _logger.info("video_worker.job_cancelled", job_id=job.id)
+            await sequence.emit(VideoJobStatus.CANCELLED, _STAGE_LABELS[VideoJobStatus.CANCELLED])
+            return
         except Exception as exc:
             # Full detail to the logs; only an owner-safe reason to the job row (the reader shows
             # it) — an actionable user_detail when the failure has one, else just the class name.
@@ -144,27 +172,66 @@ class VideoWorker:
         _logger.info("video_worker.job_ready", job_id=job.id)
 
     async def _produce(self, job: VideoJob, sequence: "_EventSequence") -> RenderedVideo:
-        """Render the job inside its owner's credential scope (V7-T1), with a heartbeat (V7-T4).
+        """Render the job inside its owner's credential scope (V7-T1), with a heartbeat (V7-T4) and
+        a cancel-watcher (the stop feature).
 
-        Only the pipeline's provider calls (Claude / ElevenLabs) are scoped — infrastructure work
-        (queue, storage, events) reads the process env and must never enter a tenant-only scope, so
-        upload + settle stay outside it. A concurrent heartbeat extends the lease while the render
-        runs, so the lease-timeout sweep can tell a live worker from a dead one (the heartbeat is
-        outside the credential scope — it touches only the queue's own infra credentials).
+        The render runs as its own task so a concurrent watcher can cancel it the moment the owner
+        stops the job — cancelling propagates down through the pipeline to the sandbox, which kills
+        the render subprocess, so no compute is spent on a stopped video. The heartbeat extends the
+        lease while the render runs, so the lease-timeout sweep can tell a live worker from a dead
+        one. Both run outside the credential scope (they touch only the queue's own infra creds).
 
-        ``on_stage`` lets the pipeline report its render stages (voicing/rendering/assembling); the
-        worker reflects each on the job row + the run_events log for the reader's progress bar."""
+        A watcher-fired cancel is re-raised as ``_VideoCancelledError`` so ``_process`` aborts
+        without settling; an ``asyncio.CancelledError`` the watcher did NOT cause (a worker
+        shutdown) is left untouched so the supervisor can still drain."""
         heartbeat = asyncio.create_task(self._heartbeat(job.id))
+        render = asyncio.create_task(self._render(job, sequence))
+        # The watcher sets this BEFORE cancelling the render (synchronously, no await between), so
+        # by the time the render task's CancelledError reaches the except below the flag is already
+        # set — that is how an owner stop is told apart from a shutdown cancel.
+        cancelled = asyncio.Event()
+        watcher = asyncio.create_task(self._watch_for_cancel(job.id, render, cancelled))
         try:
-            credentials = await self._resolve_credentials(job)
-            with self._credential_scope(credentials):
-                return await self._pipeline.produce(
-                    job, on_stage=self._stage_reporter(job, sequence)
-                )
+            return await render
+        except asyncio.CancelledError:
+            if cancelled.is_set():
+                raise _VideoCancelledError(job.id) from None
+            raise  # a shutdown cancel, not an owner stop — let it propagate
         finally:
+            watcher.cancel()
             heartbeat.cancel()
             with suppress(asyncio.CancelledError):
+                await watcher
+            with suppress(asyncio.CancelledError):
                 await heartbeat
+
+    async def _render(self, job: VideoJob, sequence: "_EventSequence") -> RenderedVideo:
+        """The pipeline render itself, inside the owner's credential scope. Only the pipeline's
+        provider calls (Claude / ElevenLabs) are scoped — infrastructure work (queue, storage,
+        events) reads the process env and must never enter a tenant-only scope, so upload + settle
+        stay outside it. ``on_stage`` lets the pipeline report its render stages (voicing/rendering/
+        assembling) for the reader's progress bar."""
+        credentials = await self._resolve_credentials(job)
+        with self._credential_scope(credentials):
+            return await self._pipeline.produce(job, on_stage=self._stage_reporter(job, sequence))
+
+    async def _watch_for_cancel(
+        self, job_id: str, render: "asyncio.Task[RenderedVideo]", cancelled: asyncio.Event
+    ) -> None:
+        """Poll the job row; the moment the owner stops it (status CANCELLED) or it vanishes, cancel
+        the render task so no compute is wasted. Marks ``cancelled`` first so ``_produce`` can
+        tell an owner stop from a shutdown cancel. A transient read blip is retried next tick (the
+        heartbeat owns lease health); the watcher never fails the render itself."""
+        while True:
+            await asyncio.sleep(self._cancel_poll_interval_s)
+            try:
+                job = await self._queue.get(job_id=job_id)
+            except PersistenceError:
+                continue
+            if job is None or job.status is VideoJobStatus.CANCELLED:
+                cancelled.set()
+                render.cancel()
+                return
 
     def _stage_reporter(self, job: VideoJob, sequence: "_EventSequence") -> StageReporter:
         """A reporter the pipeline calls per render stage. It reflects the stage on the job row (the

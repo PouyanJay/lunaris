@@ -36,6 +36,12 @@
   color: var(--text-secondary);
 }
 
+/* Stopped: the user halted a generation. Visually the quiet single-row affordance again (a "try
+   again" prompt), but a distinct state — so the markup names it rather than reusing `.idle`. */
+.stopped {
+  composes: idle;
+}
+
 /* The 16:9 stage the working state uses (mirrors VideoFacade's frame); it centres the progress bar,
    so resolving to the player never shifts the layout. */
 .stage {

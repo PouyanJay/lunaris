@@ -42,6 +42,16 @@ class IVideoJobQueue(Protocol):
 
     async def fail(self, *, job_id: str, error: str) -> None: ...
 
+    async def cancel(self, *, job_id: str, owner_id: str) -> bool:
+        """Stop the owner's job before it finishes — set it CANCELLED, but only when it exists, is
+        owned, and is NON-terminal (queued or still in flight). Returns whether it actually
+        transitioned: an already-terminal, missing, or not-owned job is an idempotent no-op
+        returning ``False``. A cancelled QUEUED job is never claimed (``claim`` takes only queued
+        rows), and a cancelled in-flight job is aborted by the worker's cancel-watcher — so no
+        compute is spent on a stopped video. ``complete``/``fail`` never overwrite a CANCELLED job,
+        so the owner's stop wins even against a render finishing in the same instant."""
+        ...
+
     async def get(self, *, job_id: str, owner_id: str | None = None) -> VideoJob | None: ...
 
     async def find_active(

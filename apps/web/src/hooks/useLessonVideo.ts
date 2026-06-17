@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  cancelVideoJob,
   enqueueLessonVideo,
   fetchFreshPlaybackUrls,
   findActiveVideoJobByCoordinates,
@@ -31,6 +32,7 @@ export type LessonVideoState =
       degradedScenes: DegradedScene[];
     }
   | { phase: "failed"; jobId: string | null; error?: string | null }
+  | { phase: "stopped" }
   | { phase: "keyless"; detail: string }
   | { phase: "unavailable" };
 
@@ -49,6 +51,7 @@ export function useLessonVideo(
   state: LessonVideoState;
   generate: () => void;
   regenerate: (mode: RegenerateMode) => void;
+  stop: () => void;
   refresh: () => Promise<void>;
 } {
   const [state, setState] = useState<LessonVideoState>({ phase: "idle" });
@@ -78,6 +81,8 @@ export function useLessonVideo(
               stale: view.stale ?? false,
               degradedScenes: view.provenance?.degradedScenes ?? [],
             });
+          } else if (view.job.status === "cancelled") {
+            setState({ phase: "stopped" });
           } else {
             setState({ phase: "failed", jobId, error: view.job.error ?? null });
           }
@@ -189,6 +194,18 @@ export function useLessonVideo(
     [apiBaseUrl, generate, watch, stopPolling],
   );
 
+  // Stop the in-flight job: drop to the stopped state at once (so the UI responds instantly) and
+  // tell the server to cancel it — a queued job is then never claimed, an in-flight one is aborted
+  // by the worker (its render subprocess killed), so no compute is spent. Aborting the poll first
+  // keeps it from racing the stopped state back to working. A no-op when nothing is in flight.
+  const stop = useCallback(() => {
+    const jobId = jobIdRef.current;
+    if (!jobId) return;
+    stopPolling();
+    setState({ phase: "stopped" });
+    void cancelVideoJob(apiBaseUrl, jobId);
+  }, [apiBaseUrl, stopPolling]);
+
   // Re-mint the ready job's short-lived signed URLs (they expire ~1h after the slot resolved). The
   // player calls this when its <video> fails to load the expired URL; we re-fetch the same job and
   // swap fresh URLs into the ready state, which remounts the player on the live URL — no reload.
@@ -210,5 +227,5 @@ export function useLessonVideo(
     );
   }, [apiBaseUrl]);
 
-  return { state, generate, regenerate, refresh };
+  return { state, generate, regenerate, stop, refresh };
 }

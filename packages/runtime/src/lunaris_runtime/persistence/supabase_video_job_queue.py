@@ -13,8 +13,14 @@ _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "video_jobs"
 _CLAIM_RPC = "claim_video_job"
 _SWEEP_RPC = "requeue_stale_video_jobs"
-# The non-terminal statuses a job passes through before READY/FAILED — "active" for the dedup read.
-_TERMINAL_STATUSES = (VideoJobStatus.READY.value, VideoJobStatus.FAILED.value)
+# The terminal statuses a job settles into — READY/FAILED, plus CANCELLED (the owner stopped it). A
+# terminal job is excluded from the "active" dedup read, is never resurrected by a stage write, and
+# is skipped by the lease sweep.
+_TERMINAL_STATUSES = (
+    VideoJobStatus.READY.value,
+    VideoJobStatus.FAILED.value,
+    VideoJobStatus.CANCELLED.value,
+)
 
 
 class SupabaseVideoJobQueue:
@@ -118,11 +124,11 @@ class SupabaseVideoJobQueue:
         # the pipeline produced one; never clobber an existing value with null.
         if contract_hash is not None:
             patch["contract_hash"] = contract_hash
-        await self._patch(job_id, patch)
+        await self._settle(job_id, patch)
 
     @guard("video_jobs fail")
     async def fail(self, *, job_id: str, error: str) -> None:
-        await self._patch(
+        await self._settle(
             job_id,
             {
                 "status": VideoJobStatus.FAILED.value,
@@ -130,6 +136,31 @@ class SupabaseVideoJobQueue:
                 "updated_at": datetime.now(UTC).isoformat(),
             },
         )
+
+    @guard("video_jobs cancel")
+    async def cancel(self, *, job_id: str, owner_id: str) -> bool:
+        client = self._ensure_client()
+        patch = {
+            "status": VideoJobStatus.CANCELLED.value,
+            "claimed_at": None,  # release the lease so the sweep ignores it (it's terminal anyway)
+            "claimed_by": None,
+            "updated_at": datetime.now(UTC).isoformat(),
+        }
+
+        # Owner-scoped + live-only (NOT IN terminal); count="exact" reports whether a live, owned
+        # row transitioned — a missing / not-owned / already-terminal job is a no-op (False).
+        def _run() -> object:
+            return (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .update(patch, count="exact")
+                .eq("id", job_id)
+                .eq("user_id", owner_id)
+                .not_.in_("status", list(_TERMINAL_STATUSES))
+                .execute()
+            )
+
+        response = await asyncio.to_thread(_run)
+        return bool(getattr(response, "count", None) or 0)
 
     @guard("video_jobs get")
     async def get(self, *, job_id: str, owner_id: str | None = None) -> VideoJob | None:
@@ -263,3 +294,34 @@ class SupabaseVideoJobQueue:
         response = await asyncio.to_thread(_run)
         if not (getattr(response, "count", None) or 0):
             raise PersistenceError(f"video job {job_id!r} not found")
+
+    async def _settle(self, job_id: str, patch: dict[str, object]) -> None:
+        """A terminal settle (complete/fail) that never overwrites a CANCELLED job — the owner's
+        stop wins even if the render finished in the same instant. Zero rows ⇒ the job is gone OR
+        already cancelled: a cancelled row is a benign no-op (the stop is authoritative); a missing
+        row is the PersistenceError the protocol demands (job state never silently wrong)."""
+        client = self._ensure_client()
+
+        def _run() -> object:
+            return (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .update(patch, count="exact")
+                .eq("id", job_id)
+                .neq("status", VideoJobStatus.CANCELLED.value)
+                .execute()
+            )
+
+        response = await asyncio.to_thread(_run)
+        if getattr(response, "count", None) or 0:
+            return
+        # Zero rows: tell a benign cancelled job (no-op) apart from a genuinely missing one (error).
+        # A transient blip on the disambiguation read must not turn a settle into a spurious failure
+        # (which would loop the job through the lease sweep) — treat an unreadable row as benign,
+        # since the only reason the settle hit zero rows is the cancelled guard or a vanished row.
+        try:
+            existing = await self.get(job_id=job_id)
+        except PersistenceError:
+            return
+        if existing is not None and existing.status is VideoJobStatus.CANCELLED:
+            return
+        raise PersistenceError(f"video job {job_id!r} not found")

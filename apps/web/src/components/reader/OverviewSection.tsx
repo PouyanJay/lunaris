@@ -62,7 +62,7 @@ function CourseVideoSlot({
   title,
   playLabel,
 }: CourseVideoSlotProps) {
-  const { state, regenerate, refresh } = useCourseVideo(apiBaseUrl, courseId, artifact);
+  const { state, regenerate, stop, refresh } = useCourseVideo(apiBaseUrl, courseId, artifact);
   if (state.phase === "absent") return null;
 
   return (
@@ -78,8 +78,26 @@ function CourseVideoSlot({
       )}
       {state.phase === "working" && (
         <div className={styles.stage}>
-          <VideoProgress status={state.status} label={`Generating ${title}`} />
+          <VideoProgress status={state.status} label={`Generating ${title}`} onStop={stop} />
         </div>
+      )}
+      {state.phase === "stopped" && (
+        <>
+          <div className={styles.stage}>
+            <p className={styles.failedLabel} role="status">
+              Generation stopped.
+            </p>
+          </div>
+          {resolveJobId(artifact) && (
+            <div className={styles.regenerateRow}>
+              <RegenerateMenu
+                available={FAILED_REGEN_MODES}
+                onSelect={regenerate}
+                triggerLabel="Try again"
+              />
+            </div>
+          )}
+        </>
       )}
       {state.phase === "ready" && (
         <>

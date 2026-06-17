@@ -187,6 +187,34 @@ describe("LessonVideoHero", () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
+  it("stops an in-flight generation and shows the stopped state with a restart", async () => {
+    // Arrange — enqueue accepts; the status poll stays pending so the working (Stop-able) state is
+    // observable; any later read returns a cancelled job.
+    const cancelledView = {
+      ...queuedView(),
+      job: { ...queuedView().job, status: "cancelled" },
+    };
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(202, queuedView())) // enqueue
+      .mockImplementationOnce(() => new Promise<Response>(() => {})) // poll stays pending
+      .mockResolvedValue(jsonResponse(200, cancelledView)); // the cancel POST + any further reads
+    render(<LessonVideoHero {...PROPS} />);
+
+    // Act — generate, then stop the in-flight render.
+    fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /stop/i }));
+
+    // Assert — the cancel POST fired for the job, and the slot shows the stopped state + a restart.
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${API}/api/videos/job-1/cancel`,
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    expect(screen.getByText(/generation stopped/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /generate video/i })).toBeInTheDocument();
+  });
+
   it("surfaces a failed job and regenerates from the Try again menu", async () => {
     // Arrange — enqueue accepts, the poll reports failed; the menu's Fresh take re-runs end to end.
     fetchMock

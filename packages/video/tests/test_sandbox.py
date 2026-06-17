@@ -2,6 +2,8 @@
 wall-clock kill, minimal env, bounded output, bounded file writes — proven by running actual
 children, not by asserting on argv strings."""
 
+import asyncio
+import os
 import resource
 import sys
 from pathlib import Path
@@ -60,6 +62,36 @@ async def test_a_hanging_child_is_killed_at_the_wall_clock(tmp_path: Path) -> No
     # call returning at all proves the process-group kill fired; no wall-clock assertion needed.
     assert result.timed_out
     assert not result.succeeded
+
+
+async def test_a_cancelled_render_kills_the_child_process_group(tmp_path: Path) -> None:
+    # Arrange — a child that records its pid then sleeps far past the test. Cancelling the render
+    # (the owner stopped the job → the worker cancelled the render task) must kill the WHOLE process
+    # group, so no compute keeps running for a stopped video.
+    pidfile = tmp_path / "pid"
+    code = f"import os, time; open({str(pidfile)!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+    task = asyncio.create_task(run_sandboxed(_python(code), cwd=tmp_path, timeout_s=60))
+    async with asyncio.timeout(10):  # wait for the child to actually start (no sleep-as-sync)
+        # An asyncio.Event can't span a subprocess — polling the pid file IS the cross-process wait.
+        while not pidfile.exists():  # noqa: ASYNC110
+            await asyncio.sleep(0.01)
+    pid = int(pidfile.read_text())
+
+    # Act — cancel mid-render; run_sandboxed kills the group, then re-raises the cancellation.
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    # Assert — the child is gone (signal 0 → ProcessLookupError): the compute actually stopped. A
+    # bounded condition poll (not a timing delay): it returns the instant the OS reaps the pid, and
+    # the asyncio.timeout(10) fails fast if the kill never lands — no Event can watch a subprocess.
+    async with asyncio.timeout(10):
+        while True:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.02)
 
 
 async def test_parent_secrets_never_reach_the_child(
