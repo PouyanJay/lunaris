@@ -16,8 +16,13 @@ from lunaris_api.dependencies import get_course_service
 from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore, InMemoryRunStore, PersistenceError
-from lunaris_runtime.schema import CourseRun, RunStatus
+from lunaris_runtime.persistence import (
+    CourseStore,
+    InMemoryRunEventStore,
+    InMemoryRunStore,
+    PersistenceError,
+)
+from lunaris_runtime.schema import CourseRun, RunEventKind, RunStatus
 
 
 def _client_for(service: CourseService) -> httpx.ASGITransport:
@@ -249,6 +254,46 @@ async def test_stream_records_completed_run_when_build_finishes_after_disconnect
     runs = await run_store.list_recent()
     assert runs[0].status is RunStatus.COMPLETED
     assert runs[0].module_count > 0
+
+
+async def test_durable_log_records_every_beat_after_a_disconnect(
+    tmp_path: Path,
+    releasable_build: tuple[Callable[[object], object], asyncio.Event],
+) -> None:
+    """Regression (the build canvas 'stuck on Verify' bug): the durable run-events transcript must
+    record every beat — including the stages the build emits AFTER the SSE viewer disconnects — so a
+    completed course's Build replay (and #105's live re-attach) shows the whole timeline, not a log
+    truncated at the disconnect point. Recording must follow the durable build task (the sinks), not
+    the viewer generator that dies on disconnect."""
+    # Arrange — a build parked after its first beat; start the stream and capture the durable task.
+    clear_correlation()
+    factory, release = releasable_build
+    event_store = InMemoryRunEventStore()
+    registry = RunRegistry()
+    service = CourseService(
+        CourseStore(tmp_path), factory, InMemoryRunStore(), registry, event_store
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1")
+    kind, _payload = await stream.__anext__()
+    assert kind == "progress"  # precondition: only RUN_STARTED emitted before the park
+    build_task = registry.task_for("r1")
+    assert build_task is not None  # precondition: the durable background task is registered
+
+    # Act — the client disconnects, then the WHOLE real build runs with no consumer attached.
+    await stream.aclose()
+    release.set()
+    await build_task
+
+    # Assert — the durable log captured the FULL transcript. run_completed is the proof the tail
+    # emitted after the disconnect survived (the old generator-bound recorder lost everything past
+    # run_started).
+    recorded = await event_store.list_for_run(run_id="r1")
+    stages = [e.payload.get("stage") for e in recorded if e.kind == RunEventKind.PROGRESS]
+    assert "run_started" in stages
+    assert "run_completed" in stages
+    # The recorded seqs are gap-free + ordered, so the log replays cleanly.
+    seqs = [e.seq for e in recorded]
+    assert seqs == list(range(len(seqs)))
 
 
 class _FailingPipeline:
