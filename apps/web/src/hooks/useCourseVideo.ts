@@ -66,8 +66,28 @@ export function useCourseVideo(
   // The job whose URLs are currently on screen (the built ready job, or a re-attached/regenerated
   // one). Used to re-mint the signed URLs on playback error — they expire ~1h after they resolve.
   const shownJobIdRef = useRef<string | null>(null);
+  // The last successful video shown for this slot (state + its job). Stopping a regenerate (or
+  // seeing the job cancelled elsewhere) snaps back to it rather than a "stopped" placeholder — so a
+  // mid-regenerate stop returns you to what was already playing, no refresh needed.
+  const lastReadyRef = useRef<{
+    state: Extract<CourseVideoState, { phase: "ready" }>;
+    jobId: string;
+  } | null>(null);
 
   const stopPolling = useCallback(() => controllerRef.current?.abort(), []);
+
+  // Settle a stopped/cancelled job: revert to the last successful video if there is one (re-pointing
+  // the shown job so a refresh re-mints the restored URLs), else the stopped affordance (a slot with
+  // no prior success has nothing to fall back to).
+  const settleStopped = useCallback(() => {
+    const lastReady = lastReadyRef.current;
+    if (lastReady) {
+      shownJobIdRef.current = lastReady.jobId;
+      setState(lastReady.state);
+    } else {
+      setState({ phase: "stopped" });
+    }
+  }, []);
 
   // Watch one job to a verdict: working while it renders, ready/failed once it settles. Shared by
   // the regenerate path and the on-mount re-attach so both surface progress identically.
@@ -84,16 +104,24 @@ export function useCourseVideo(
         intervalMs: pollIntervalMs,
         onWorking: (workingStatus) => setState({ phase: "working", status: workingStatus }),
         onSettled: (view) =>
-          setState(
-            view.job.status === "cancelled" ? { phase: "stopped" } : toCourseVideoState(view),
-          ),
+          view.job.status === "cancelled"
+            ? settleStopped()
+            : setState(toCourseVideoState(view)),
       });
     },
-    [apiBaseUrl, pollIntervalMs, stopPolling],
+    [apiBaseUrl, pollIntervalMs, stopPolling, settleStopped],
   );
+
+  // Track the last successful video so a stop can restore it (kept in sync with refresh's re-mint).
+  useEffect(() => {
+    if (state.phase === "ready" && shownJobIdRef.current) {
+      lastReadyRef.current = { state, jobId: shownJobIdRef.current };
+    }
+  }, [state]);
 
   useEffect(() => {
     stopPolling();
+    lastReadyRef.current = null; // the slot changed — the prior video belonged to the old artifact
     if (status !== "ready" || !readyJobId || !apiBaseUrl) {
       setState(initialState(apiBaseUrl, status, jobId)); // absent / failed — resolve via the probe
       return;
@@ -162,9 +190,9 @@ export function useCourseVideo(
     const id = shownJobIdRef.current;
     if (!apiBaseUrl || !id) return;
     stopPolling();
-    setState({ phase: "stopped" });
     void cancelVideoJob(apiBaseUrl, id);
-  }, [apiBaseUrl, stopPolling]);
+    settleStopped(); // revert to the last good video if there is one, else show stopped
+  }, [apiBaseUrl, stopPolling, settleStopped]);
 
   // Re-mint the shown job's short-lived signed URLs (they expire ~1h after they resolve). The player
   // calls this when its <video> fails to load the expired URL; we re-fetch the same job and swap

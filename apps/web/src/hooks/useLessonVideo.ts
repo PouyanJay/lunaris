@@ -57,8 +57,25 @@ export function useLessonVideo(
   const [state, setState] = useState<LessonVideoState>({ phase: "idle" });
   const controllerRef = useRef<AbortController | null>(null);
   const jobIdRef = useRef<string | null>(null);
+  // The last successful video shown for this slot. Stopping a regenerate (or seeing the job
+  // cancelled elsewhere) snaps back to it rather than a "stopped" placeholder — so a mid-regenerate
+  // stop returns you to what was already playing, no refresh needed.
+  const lastReadyRef = useRef<Extract<LessonVideoState, { phase: "ready" }> | null>(null);
 
   const stopPolling = useCallback(() => controllerRef.current?.abort(), []);
+
+  // Settle a stopped/cancelled job: revert to the last successful video if there is one (re-pointing
+  // the source job so a later regenerate/refresh acts on the restored video), else the stopped
+  // affordance (a first-ever generate that was stopped has nothing to fall back to).
+  const settleStopped = useCallback(() => {
+    const lastReady = lastReadyRef.current;
+    if (lastReady) {
+      jobIdRef.current = lastReady.jobId;
+      setState(lastReady);
+    } else {
+      setState({ phase: "stopped" });
+    }
+  }, []);
 
   const watch = useCallback(
     (jobId: string) => {
@@ -82,15 +99,20 @@ export function useLessonVideo(
               degradedScenes: view.provenance?.degradedScenes ?? [],
             });
           } else if (view.job.status === "cancelled") {
-            setState({ phase: "stopped" });
+            settleStopped();
           } else {
             setState({ phase: "failed", jobId, error: view.job.error ?? null });
           }
         },
       });
     },
-    [apiBaseUrl, pollIntervalMs, stopPolling],
+    [apiBaseUrl, pollIntervalMs, stopPolling, settleStopped],
   );
+
+  // Track the last successful video so a stop can restore it (kept in sync with refresh's re-mint).
+  useEffect(() => {
+    if (state.phase === "ready") lastReadyRef.current = state;
+  }, [state]);
 
   // The slot belongs to the lesson on screen: cancel any in-flight poll and start from the
   // build-time video (resolve it / show its failed state) — or idle when the course shipped none.
@@ -99,6 +121,7 @@ export function useLessonVideo(
   const builtJobId = resolveJobId(video);
   useEffect(() => {
     jobIdRef.current = null;
+    lastReadyRef.current = null; // the slot changed — the prior video belonged to the old lesson
     if (builtStatus === "ready" && builtJobId) {
       watch(builtJobId); // watch() sets the working state itself, then polls to ready
     } else if (builtStatus === "failed" && builtJobId) {
@@ -202,9 +225,9 @@ export function useLessonVideo(
     const jobId = jobIdRef.current;
     if (!jobId) return;
     stopPolling();
-    setState({ phase: "stopped" });
     void cancelVideoJob(apiBaseUrl, jobId);
-  }, [apiBaseUrl, stopPolling]);
+    settleStopped(); // revert to the last good video if there is one, else show stopped
+  }, [apiBaseUrl, stopPolling, settleStopped]);
 
   // Re-mint the ready job's short-lived signed URLs (they expire ~1h after the slot resolved). The
   // player calls this when its <video> fails to load the expired URL; we re-fetch the same job and
