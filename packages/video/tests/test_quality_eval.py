@@ -75,8 +75,10 @@ async def test_eval_counts_scenes_in_a_chaptered_contract() -> None:
     async def produce(_: TopicSpec) -> RenderedVideo:
         return chaptered
 
+    # Act
     report = await VideoQualityEval().run([TopicSpec(id="ov", label="overview")], produce)
 
+    # Assert
     assert report.total_scenes == 3
     assert report.results[0].status is QualityStatus.PRODUCED_CLEAN
 
@@ -88,11 +90,12 @@ async def test_eval_records_a_pipeline_failure_with_its_taxonomy_kind() -> None:
             raise FactualGateError("S2_mechanism", unsupported=["7 comparisons"], detail="smuggled")
         return _video(["S1", "S2"])
 
+    # Act
     report = await VideoQualityEval().run(
         [TopicSpec(id="ok", label="fine"), TopicSpec(id="boom", label="uncited figure")], produce
     )
 
-    # A failure is NOT produced; it is bucketed by the SAME taxonomy the worker logs.
+    # Assert — a failure is NOT produced; it is bucketed by the SAME taxonomy the worker logs.
     assert report.produced == 1
     assert report.failed == 1
     assert report.failure_rate == pytest.approx(0.5)
@@ -113,8 +116,10 @@ async def test_eval_aggregates_the_per_gate_degrade_histogram_from_telemetry() -
         )
         return _video(["S1", "S2"], degraded=["S1"])
 
+    # Act
     report = await VideoQualityEval().run([TopicSpec(id="t", label="busy")], produce)
 
+    # Assert
     assert report.degraded_by_kind == {"visual": 2, "sync": 1, "factual": 0}
     assert report.results[0].degraded_by_kind == {"visual": 2, "sync": 1, "factual": 0}
 
@@ -133,8 +138,11 @@ async def test_meets_ceiling_gates_on_both_degrade_rate_and_failures() -> None:
         TopicSpec(id="degraded", label="b"),
         TopicSpec(id="fail", label="c"),
     ]
+
+    # Act
     report = await VideoQualityEval().run(topics, produce)
 
+    # Assert
     assert report.degraded_scene_rate == pytest.approx(1 / 7)
     # Within both budgets (rate under 0.2, one failure allowed).
     assert report.meets_ceiling(max_degraded_scene_rate=0.2, max_failures=1) is True

@@ -22,15 +22,22 @@ should no longer hard-fail a whole video on one uncited figure.
 
 import importlib.util
 import os
+from pathlib import Path
 
 import pytest
-from _quality_eval import QualityStatus, TopicSpec, VideoQualityEval
+from _quality_eval import Produce, QualityStatus, TopicSpec, VideoQualityEval
 from lunaris_runtime.schema import VideoJob, VideoKind
 from lunaris_video.assembly import VideoAssembler
 from lunaris_video.codegen import SceneCodeGenerator
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.gates import FactualGate, LengthGate, RenderGate, SyncGate, VisualQaGate
-from lunaris_video.models import GroundedClaim, GroundingPacket, LessonSource, PacketKind
+from lunaris_video.models import (
+    GroundedClaim,
+    GroundingPacket,
+    LessonSource,
+    PacketKind,
+    RenderedVideo,
+)
 from lunaris_video.pipeline import ContractHashCache, VideoPipeline
 from lunaris_video.pipeline.model_adapters import (
     build_text_invoke,
@@ -176,7 +183,7 @@ class _TopicLessonProvider:
 def _build_pipeline(
     model: str,
     lessons: dict[str, LessonSource],
-    tmp_path,
+    tmp_path: Path,
     *,
     voiced: bool = False,
     chaptered: bool = False,
@@ -220,12 +227,12 @@ def _build_pipeline(
     )
 
 
-def _drive(pipeline: VideoPipeline, *, kind: VideoKind, voiced: bool):
+def _drive(pipeline: VideoPipeline, *, kind: VideoKind, voiced: bool) -> Produce:
     """A produce thunk over ``pipeline``: build a job for the topic and render it, allowing the
     product's 'Fresh take' re-plans on a gate failure (a topic that fails every take is a real
     failure for the taxonomy)."""
 
-    async def produce(topic: TopicSpec):
+    async def produce(topic: TopicSpec) -> RenderedVideo:
         job = VideoJob(
             id=topic.id,
             user_id="00000000-0000-0000-0000-000000000001",
@@ -241,6 +248,7 @@ def _drive(pipeline: VideoPipeline, *, kind: VideoKind, voiced: bool):
                 return await pipeline.produce(job)
             except VideoPipelineError as exc:
                 last = exc
+        assert last is not None  # _FRESH_TAKE_ATTEMPTS is positive, so a failure was recorded
         raise last
 
     return produce

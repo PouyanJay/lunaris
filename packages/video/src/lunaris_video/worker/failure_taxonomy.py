@@ -1,4 +1,5 @@
 from enum import StrEnum
+from typing import Self
 
 from pydantic import ValidationError
 
@@ -22,7 +23,7 @@ class VideoFailureKind(StrEnum):
     INFRASTRUCTURE = "infrastructure"  # non-pipeline: queue / storage / unexpected
 
     @classmethod
-    def classify(cls, exc: Exception) -> "VideoFailureKind":
+    def classify(cls, exc: Exception) -> Self:
         """Bucket a job failure. Order matters: the specific ``VideoPipelineError`` subclasses are
         tested before the base.
 

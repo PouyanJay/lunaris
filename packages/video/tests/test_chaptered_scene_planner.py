@@ -90,9 +90,11 @@ async def test_chaptered_planner_repairs_an_over_budget_scene(
     # Act
     contract = await planner.plan_chaptered(_overview_source(), target_seconds=_OVERVIEW_SECONDS)
 
-    # Assert — the repair turn names the offending scene; the retry is within budget.
+    # Assert — a distinct repair turn names the offending scene AND the budget; the retry is clean.
     assert len(stub.prompts) == 2
+    assert stub.prompts[0] != stub.prompts[1]
     assert "S1_hook" in stub.prompts[1]
+    assert str(MAX_SCENE_OBJECTS) in stub.prompts[1]
     assert all(len(scene.objects) <= MAX_SCENE_OBJECTS for scene in contract.scenes)
 
 

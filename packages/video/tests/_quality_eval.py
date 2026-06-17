@@ -145,6 +145,9 @@ class VideoQualityEval:
     """Runs every topic through ``produce`` and folds the bundles into a ``QualityReport``."""
 
     async def run(self, topics: Sequence[TopicSpec], produce: Produce) -> QualityReport:
+        # Sequential on purpose: a live run drives one shared pipeline and saturates Claude's
+        # process rate limiter anyway, so fanning out buys little and would interleave the per-topic
+        # log capture (the `produced` telemetry read) across topics. A nightly eval is latency-OK.
         results = [await self._score(topic, produce) for topic in topics]
         return QualityReport(tuple(results))
 

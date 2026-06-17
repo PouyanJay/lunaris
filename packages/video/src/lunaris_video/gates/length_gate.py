@@ -73,7 +73,7 @@ class LengthGate:
     ) -> float:
         """Pad the short scene to ``expected`` and return the residual drift, or the unchanged drift
         if the pad did not fire (best-effort — a pad failure degrades, it never fails the job)."""
-        assert self._pad is not None  # guarded by the caller
+        assert self._pad is not None  # pragma: no cover - guarded by the caller
         if not await self._pad(mp4_path, missing):
             _logger.warning("length_gate.pad_failed", scene_id=scene_id)
             return round(-missing, 3)
