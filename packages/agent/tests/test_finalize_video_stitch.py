@@ -1,13 +1,12 @@
-"""Video V4-T1 (with the cloud-worker ordering fix): finalize PERSISTS the course, then enqueues a
-lesson-video job for every lesson, awaits them, and stitches each finished artifact into its lesson
-— blocking, degrade-on-failure (plan §V4-T1).
+"""Finalize's lesson-video handling: PERSIST the course, enqueue a lesson-video job for every
+lesson, then fold a placeholder per job — WITHOUT blocking on the render (the cloud worker finishes
+each minutes later; the reader's derive-at-read probe recovers them). Non-blocking, plan §0.
 
 Persist-before-enqueue is the fix for the prod "course not found" race: the cloud worker renders a
 lesson video by loading the course from the store, so the course must already be saved when the job
 is enqueued (the V4 in-process worker shared memory and never hit this; the V7 cloud worker reads
-the DB). A failed job never blocks publication — its lesson publishes with a FAILED (retry-state)
-video. Driven keyless end to end: real coordinator + real worker (stub pipeline) + real finalize,
-with the worker draining in the background so it picks up whatever finalize enqueues.
+the DB). A video never blocks publication. Driven keyless: real coordinator (await timeout 0) + real
+finalize; one surviving test still drains a background worker to settle a job before its collect.
 """
 
 import asyncio
@@ -25,6 +24,11 @@ from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.progress_reporter import ProgressReporter
 from lunaris_agent.harness.stage_cursor import StageCursor
 from lunaris_agent.harness.tools import make_finalize_course_tool
+from lunaris_agent.harness.tools.finalize_course import (
+    _video_beat,
+    _VideoOutcome,
+    _videos_label,
+)
 from lunaris_agent.subagents.module_author import LessonDraft, SegmentDraft
 from lunaris_grounding import Evidence, StubEvidenceRetriever, StubSupportAssessor, Verifier
 from lunaris_runtime.persistence import (
@@ -44,7 +48,7 @@ from lunaris_runtime.schema import (
     VideoJobStatus,
 )
 from lunaris_runtime.video_build import QueueVideoBuildCoordinator
-from lunaris_video import StubVideoPipeline, VideoWorker
+from lunaris_video import VideoWorker
 from lunaris_video.models.rendered_video import RenderedVideo
 
 _GROUNDED = "grounded"
@@ -172,41 +176,69 @@ async def test_finalize_persists_course_before_enqueuing_lesson_videos(tmp_path:
     assert loaded_at_enqueue == ["c1"]
 
 
-async def test_finalize_enqueues_then_stitches_a_ready_video_into_its_lesson(
-    tmp_path: Path,
+async def test_finalize_does_not_block_and_folds_a_generating_placeholder(
+    tmp_path: Path, progress_sink, agent_sink
 ) -> None:
-    # Arrange — author (no enqueue), then finalize with a worker draining concurrently. The job is
-    # created BY finalize, so finalize must block on it (the worker renders it during the await).
-    queue, storage, events = (
-        InMemoryVideoJobQueue(),
-        InMemoryVideoStorage(),
-        InMemoryRunEventStore(),
-    )
+    """Non-blocking finalize (the fix for the build-canvas 'stuck on Verify' silent gap): finalize
+    enqueues the lesson videos and delivers the course WITHOUT the 900s collect block — the cloud
+    worker renders each video minutes later and the reader's derive-at-read probe recovers it. Each
+    lesson is folded as a FAILED-with-job_id PLACEHOLDER carrying the job id the reader probes by;
+    the Videos phase reads 'generating' (rendering async), not 'needs a retry' (not failed).
+    """
+    # Arrange — a coordinator that does NOT wait (await_timeout_s=0, the new default) and NO worker:
+    # the enqueued lesson video stays QUEUED, exactly the cloud-worker reality at finalize time.
+    queue, storage = InMemoryVideoJobQueue(), InMemoryVideoStorage()
     coordinator = QueueVideoBuildCoordinator(
-        queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
+        queue=queue, storage=storage, owner_id=_OWNER, await_timeout_s=0.0, poll_s=0.01
     )
     draft = _draft_with_graph(coordinator)
+    cursor = StageCursor()
+    draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
+    draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
     await _author(draft)
-    assert draft.enqueued_video_jobs == {}  # authoring enqueued nothing — finalize will
 
-    # Act
-    await _finalize_draining(
-        draft,
-        CourseStore(tmp_path),
-        queue=queue,
-        storage=storage,
-        events=events,
-        pipeline=StubVideoPipeline(),
+    # Act — finalize with NO draining worker; it must return promptly (the timeout would trip at the
+    # 900s mark if finalize still blocked on the collect).
+    finalize = make_finalize_course_tool(
+        MinimalCritic(), CourseStore(tmp_path), draft, StubCoverageCritic()
     )
+    async with asyncio.timeout(5):
+        result = await finalize.ainvoke({})
 
-    # Assert — the lesson carries a READY video whose structural provenance traces the job it came
-    # from (provenance is populated, not just an MP4 reference).
+    # Assert — published, and the lesson carries a recoverable placeholder (FAILED + job_id, no
+    # provenance) the reader's coordinate probe resolves once the worker finishes.
+    assert result["status"] in ("published", "review")
     lesson = draft.course.modules[0].lessons[0]
     assert lesson.video is not None
-    assert lesson.video.status is VideoJobStatus.READY
-    assert lesson.video.provenance is not None
-    assert lesson.video.provenance.job_id == draft.enqueued_video_jobs[lesson.id]
-    assert lesson.video.provenance.course_id == "c1"
+    assert lesson.video.status is VideoJobStatus.FAILED
+    assert lesson.video.job_id == draft.enqueued_video_jobs[lesson.id]
+    assert lesson.video.provenance is None
+    # The Videos phase reads 'generating', not 'needs a retry' (rendering async, not failed).
+    videos = next(e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS)
+    assert videos.videos_total == 1
+    assert videos.videos_degraded == 0
+    assert "generating" in videos.label.lower()
+    beats = [e for e in agent_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
+    assert len(beats) == 1
+    assert "generating" in beats[0].text.lower()
+
+
+def test_videos_label_reads_generating_not_failed_for_unfinished_videos() -> None:
+    # The non-blocking phase summary: unfinished videos read "generating" (they render async), never
+    # "needs a retry"; an already-finished one reads "ready"; a mix shows both counts.
+    assert _videos_label(1, 0, 1) == "1 lesson video generating"
+    assert _videos_label(3, 0, 3) == "3 lesson videos generating"
+    assert _videos_label(2, 2, 0) == "2 lesson videos ready"
+    assert _videos_label(3, 1, 2) == "3 lesson videos · 1 ready · 2 generating"
+
+
+def test_video_beat_reads_generating_for_an_unfinished_video() -> None:
+    assert _video_beat(_VideoOutcome("Routing", is_ready=True)) == (
+        "Explainer video for “Routing” is ready."
+    )
+    assert _video_beat(_VideoOutcome("Routing", is_ready=False)) == (
+        "Explainer video for “Routing” is generating in the background."
+    )
 
 
 async def test_finalize_publishes_anyway_when_a_video_fails(tmp_path: Path) -> None:
@@ -239,86 +271,6 @@ async def test_finalize_publishes_anyway_when_a_video_fails(tmp_path: Path) -> N
     assert lesson.video is not None
     assert lesson.video.status is VideoJobStatus.FAILED
     assert lesson.video.provenance is None
-
-
-async def test_finalize_emits_a_videos_phase_with_per_lesson_beats(
-    tmp_path: Path, progress_sink, agent_sink
-) -> None:
-    # Arrange — a shared cursor across both reporters, exactly as the runner wires them, so beats
-    # bucket under the phase active when they fire (the canvas Videos phase, V4-T2).
-    queue, storage, events = (
-        InMemoryVideoJobQueue(),
-        InMemoryVideoStorage(),
-        InMemoryRunEventStore(),
-    )
-    coordinator = QueueVideoBuildCoordinator(
-        queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
-    )
-    draft = _draft_with_graph(coordinator)
-    cursor = StageCursor()
-    draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
-    draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
-    await _author(draft)
-
-    # Act
-    await _finalize_draining(
-        draft,
-        CourseStore(tmp_path),
-        queue=queue,
-        storage=storage,
-        events=events,
-        pipeline=StubVideoPipeline(),
-    )
-
-    # Assert — one LESSON_VIDEOS progress beat carrying the tally + summary (none degraded here)…
-    videos = [e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
-    assert len(videos) == 1
-    assert videos[0].videos_total == 1
-    assert videos[0].videos_degraded == 0
-    assert videos[0].label == "1 lesson video ready"
-    # …and exactly one per-lesson line, stamped INTO the Videos phase (the canvas buckets it there).
-    video_beats = [e for e in agent_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
-    assert len(video_beats) == 1
-    assert video_beats[0].text == "Explainer video for “Routing” is ready."
-
-
-async def test_finalize_videos_phase_reports_a_degraded_count(
-    tmp_path: Path, progress_sink, agent_sink
-) -> None:
-    # Arrange — a failing pipeline so the one lesson video degrades.
-    queue, storage, events = (
-        InMemoryVideoJobQueue(),
-        InMemoryVideoStorage(),
-        InMemoryRunEventStore(),
-    )
-    coordinator = QueueVideoBuildCoordinator(
-        queue=queue, storage=storage, owner_id=_OWNER, poll_s=0.01
-    )
-    draft = _draft_with_graph(coordinator)
-    cursor = StageCursor()
-    draft.progress = ProgressReporter("r1", progress_sink, cursor=cursor)
-    draft.agent = AgentReporter("r1", agent_sink, cursor=cursor)
-    await _author(draft)
-
-    # Act
-    await _finalize_draining(
-        draft,
-        CourseStore(tmp_path),
-        queue=queue,
-        storage=storage,
-        events=events,
-        pipeline=_FailingPipeline(),
-    )
-
-    # Assert — the Videos phase reports the degrade in both the tally and the summary (web → amber)…
-    videos = next(e for e in progress_sink.events if e.stage is ProgressStage.LESSON_VIDEOS)
-    assert videos.videos_total == 1
-    assert videos.videos_degraded == 1
-    assert videos.label == "1 lesson video · 0 ready · 1 needs a retry"
-    # …and the per-lesson line carries the retry call-to-action.
-    video_beats = [e for e in agent_sink.events if e.stage is ProgressStage.LESSON_VIDEOS]
-    assert len(video_beats) == 1
-    assert "could not be generated" in video_beats[0].text
 
 
 async def test_finalize_emits_no_videos_phase_when_there_are_no_lessons(

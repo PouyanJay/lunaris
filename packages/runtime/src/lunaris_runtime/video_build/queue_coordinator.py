@@ -15,16 +15,18 @@ logger = structlog.get_logger()
 # A job reaches one of these and stops; collect awaits the rest until then (or the timeout).
 _TERMINAL = (VideoJobStatus.READY, VideoJobStatus.FAILED)
 
-# How long finalize blocks on a single job before degrading it, and how often it re-polls. Generous
-# by default (real renders are minutes; the in-proc worker drains during the build's own tail) — a
-# safety bound, not the expected path; tests inject small values.
-_DEFAULT_AWAIT_TIMEOUT_S = 900.0
+# How long ``collect`` waits for a still-rendering job before folding a placeholder, and how often
+# it re-polls. ZERO by default: finalize no longer blocks on the render — the videos finish async on
+# the cloud worker (minutes, after delivery) and the reader's derive-at-read probe recovers each as
+# it lands. A poll-once folds whatever is already terminal (a course video that finished during the
+# build), placeholders the rest. Callers that genuinely want to wait pass an explicit timeout.
+_DEFAULT_AWAIT_TIMEOUT_S = 0.0
 _DEFAULT_POLL_S = 1.0
 
 
 class QueueVideoBuildCoordinator:
-    """Enqueues a build's lesson-video jobs onto the shared queue and awaits them at finalize — the
-    in-proc (local) / cloud (V7) worker drains them.
+    """Enqueues a build's lesson-video jobs onto the shared queue; the in-proc (local) / cloud (V7)
+    worker drains them. Finalize does NOT block on the render — see ``collect`` below.
 
     One instance per run, holding the build owner and the per-user video config (V6) — stamped on
     each job — and deduping within the build so a lesson enqueues exactly once even when its module
@@ -32,7 +34,8 @@ class QueueVideoBuildCoordinator:
     its kind and the voice toggle, so the worker's PLAN designs to the chosen length and narrates
     only when the user asked. Enqueue is **best-effort**: a queue failure is logged and returns
     ``None`` (that lesson simply gets no video) — a video must never break the course build (plan §0
-    failure policy). ``collect`` awaits the jobs with the same degrade-on-failure posture. The
+    failure policy). ``collect`` polls once by default (await timeout 0): finalize folds whatever is
+    already terminal and a degrade placeholder for the rest, never blocking on the async render. The
     composition root builds this only when video is enabled (master toggle ON), keyed, and owned, so
     its mere presence in run scope IS the gate.
     """
