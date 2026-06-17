@@ -89,6 +89,30 @@ describe("streamCourse — agent transcript frames", () => {
       globalThis.fetch = original;
     }
   });
+
+  it("tolerates a heartbeat comment split across two stream chunks", async () => {
+    // The keepalive can arrive split across TCP/stream chunks; the buffer-accumulating reader must
+    // reassemble the frame and still ignore it (and not mistake the partial for a frame boundary).
+    const chunks = [
+      'event: progress\ndata: {"stage":"run_started","label":"Starting"}\n\n',
+      ": keepa",
+      "live\n\n",
+      `event: course\ndata: ${JSON.stringify(COURSE)}\n\n`,
+    ];
+    const original = globalThis.fetch;
+    globalThis.fetch = mockFetch(sseStream(chunks));
+    const stages: string[] = [];
+    try {
+      const course = await streamCourse("", "Binary search", {
+        onProgress: (e) => stages.push(e.stage),
+      });
+
+      expect(stages).toEqual(["run_started"]);
+      expect(course.status).toBe("published");
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
 });
 
 describe("streamCourse — clarification query param (P7.5)", () => {

@@ -22,7 +22,13 @@ from lunaris_runtime.persistence import (
     InMemoryRunStore,
     PersistenceError,
 )
-from lunaris_runtime.schema import CourseRun, RunEventKind, RunStatus
+from lunaris_runtime.schema import (
+    CourseRun,
+    ProgressEvent,
+    ProgressStage,
+    RunEventKind,
+    RunStatus,
+)
 
 
 def _client_for(service: CourseService) -> httpx.ASGITransport:
@@ -294,6 +300,112 @@ async def test_durable_log_records_every_beat_after_a_disconnect(
     # The recorded seqs are gap-free + ordered, so the log replays cleanly.
     seqs = [e.seq for e in recorded]
     assert seqs == list(range(len(seqs)))
+
+
+class _ReleasableFailingPipeline:
+    """Emits one beat, parks on a release Event, then FAILS — a build that dies after the client
+    has left."""
+
+    def __init__(self, store: object, release: asyncio.Event) -> None:
+        del store  # the factory protocol passes the store; this pipeline persists nothing
+        self._release = release
+
+    async def run(
+        self,
+        topic: str,
+        *,
+        course_id: str,
+        run_id: str,
+        progress: object | None = None,
+        agent: object | None = None,
+        clarification: object | None = None,
+        discovery_depth: object | None = None,
+    ) -> object:
+        if progress is not None:
+            await progress.emit(  # type: ignore[attr-defined]
+                ProgressEvent(stage=ProgressStage.RUN_STARTED, label="Starting", run_id=run_id)
+            )
+        await self._release.wait()  # the client disconnects while parked here
+        raise RuntimeError("render exploded after the client left")
+
+
+async def test_durable_log_survives_a_build_that_fails_after_a_disconnect(tmp_path: Path) -> None:
+    """T4 variant — the failure path of the decoupled recorder: a build that FAILS after the client
+    disconnected must still have its pre-failure beats in the durable log (the flush runs on the
+    except path too), so the Build replay shows the timeline up to where it died, never
+    run_completed."""
+    # Arrange — a build parked after its first beat, which fails on release.
+    clear_correlation()
+    release = asyncio.Event()
+    event_store = InMemoryRunEventStore()
+    registry = RunRegistry()
+    service = CourseService(
+        CourseStore(tmp_path),
+        lambda store: _ReleasableFailingPipeline(store, release),
+        InMemoryRunStore(),
+        registry,
+        event_store,
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1")
+    kind, _payload = await stream.__anext__()
+    assert kind == "progress"  # precondition: RUN_STARTED emitted before the park
+    build_task = registry.task_for("r1")
+    assert build_task is not None
+
+    # Act — disconnect, then the parked build fails with no consumer attached.
+    await stream.aclose()
+    release.set()
+    with pytest.raises(RuntimeError):
+        await build_task
+
+    # Assert — the pre-failure beat survived in the durable log; the build never reached completion.
+    recorded = await event_store.list_for_run(run_id="r1")
+    stages = [e.payload.get("stage") for e in recorded if e.kind == RunEventKind.PROGRESS]
+    assert "run_started" in stages
+    assert "run_completed" not in stages
+
+
+async def test_post_disconnect_durable_log_is_owner_scoped(tmp_path: Path) -> None:
+    """T4 variant (auth) — the durable transcript a post-disconnect build records is owner-scoped: a
+    different tenant reads an empty log, the owner reads the full one."""
+    # Arrange — an owned build parked after its first beat.
+    clear_correlation()
+    factory_release = asyncio.Event()
+
+    class _Parked:
+        def __init__(self, store: object) -> None:
+            self._inner = build_stub_orchestrator(store)
+
+        async def run(self, topic: str, **kwargs: object) -> object:
+            progress = kwargs.get("progress")
+            if progress is not None:
+                await progress.emit(  # type: ignore[attr-defined]
+                    ProgressEvent(stage=ProgressStage.RUN_STARTED, label="Starting", run_id="r1")
+                )
+            await factory_release.wait()
+            return await self._inner.run(topic, **kwargs)  # type: ignore[arg-type]
+
+    event_store = InMemoryRunEventStore()
+    registry = RunRegistry()
+    service = CourseService(
+        CourseStore(tmp_path), _Parked, InMemoryRunStore(), registry, event_store
+    )
+    stream = service.stream("graphs", course_id="c1", run_id="r1", owner_id="user-a")
+    await stream.__anext__()  # RUN_STARTED
+    build_task = registry.task_for("r1")
+    assert build_task is not None
+
+    # Act — disconnect, release, let the owned build finish unattended.
+    await stream.aclose()
+    factory_release.set()
+    await build_task
+
+    # Assert — owner-scoped: the wrong tenant sees nothing; the owner sees the full transcript.
+    assert await event_store.list_for_run(run_id="r1", owner_id="user-b") == []
+    owned = await event_store.list_for_run(run_id="r1", owner_id="user-a")
+    stages = [e.payload.get("stage") for e in owned if e.kind == RunEventKind.PROGRESS]
+    assert "run_started" in stages
+    assert "run_completed" in stages
 
 
 async def test_stream_emits_heartbeats_during_a_silent_build_stretch(
