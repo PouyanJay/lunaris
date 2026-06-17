@@ -11,6 +11,8 @@ import styles from "./OverviewSection.module.css";
 interface OverviewSectionProps {
   videos: CourseVideos;
   apiBaseUrl: string;
+  /** The course the slots belong to — keys the derive-at-read coordinate probe (course, kind). */
+  courseId: string;
 }
 
 /** The course's Overview section (explainer-video V5): the course opens with video. The SUMMARY
@@ -18,13 +20,14 @@ interface OverviewSectionProps {
  *  this topic is and why it matters"). Each is a build-time artifact whose signed URL is resolved
  *  on view; an absent kind renders no slot, and a degraded one shows an honest "couldn't generate"
  *  rather than a broken player. With neither built, the whole section is absent. */
-export function OverviewSection({ videos, apiBaseUrl }: OverviewSectionProps) {
+export function OverviewSection({ videos, apiBaseUrl, courseId }: OverviewSectionProps) {
   if (!videos.summary && !videos.overview) return null;
 
   return (
     <section className={styles.overview} aria-label="Course overview videos">
       <CourseVideoSlot
         apiBaseUrl={apiBaseUrl}
+        courseId={courseId}
         artifact={videos.summary}
         eyebrow="Course trailer"
         title="What this course covers"
@@ -32,6 +35,7 @@ export function OverviewSection({ videos, apiBaseUrl }: OverviewSectionProps) {
       />
       <CourseVideoSlot
         apiBaseUrl={apiBaseUrl}
+        courseId={courseId}
         artifact={videos.overview}
         eyebrow="Topic overview"
         title="What this topic is and why it matters"
@@ -43,6 +47,7 @@ export function OverviewSection({ videos, apiBaseUrl }: OverviewSectionProps) {
 
 interface CourseVideoSlotProps {
   apiBaseUrl: string;
+  courseId: string;
   artifact: VideoArtifact | null | undefined;
   eyebrow: string;
   title: string;
@@ -51,12 +56,13 @@ interface CourseVideoSlotProps {
 
 function CourseVideoSlot({
   apiBaseUrl,
+  courseId,
   artifact,
   eyebrow,
   title,
   playLabel,
 }: CourseVideoSlotProps) {
-  const { state, regenerate, refresh } = useCourseVideo(apiBaseUrl, artifact);
+  const { state, regenerate, refresh } = useCourseVideo(apiBaseUrl, courseId, artifact);
   if (state.phase === "absent") return null;
 
   return (

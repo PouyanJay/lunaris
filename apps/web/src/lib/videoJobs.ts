@@ -1,4 +1,4 @@
-import type { VideoArtifact, VideoProvenance } from "../types/course";
+import type { VideoArtifact, VideoKind, VideoProvenance } from "../types/course";
 import { authedFetch } from "./apiClient";
 
 /** The job id to resolve a video artifact by: prefer the provenance jobId (the worker populates it
@@ -158,18 +158,24 @@ export async function regenerateVideo(
   return { kind: "accepted", view: (await response.json()) as VideoJobView };
 }
 
-/** The slot's currently in-flight (re)generate job, or null when nothing is rendering (204) or it
- *  can't be read (gone, unauthorized, network). Keyed by the SOURCE job id the reader already holds
- *  (`resolveJobId` of the persisted artifact) so a regenerate whose new job_id the artifact doesn't
- *  know can still be re-attached after a refresh / navigate-away (the "nothing happening" bug). */
-export async function findActiveVideoJob(
+/** The slot's live video job keyed by its COORDINATES (course, lesson, kind) — NOT a source job id.
+ *  This is the derive-at-read probe: it resolves a slot whose course payload pointer is null OR
+ *  FAILED-with-a-job-that-has-since-gone-READY (the async-after-delivery case — the cloud worker
+ *  finishes a video minutes after the build delivered the course with a FAILED pointer, and nothing
+ *  rewrites it). Returns the slot's in-flight job (else its latest finished render), or null when the
+ *  slot has neither (204) / it can't be read. `lessonId` is omitted for course-level slots. */
+export async function findActiveVideoJobByCoordinates(
   apiBaseUrl: string,
-  sourceJobId: string,
+  courseId: string,
+  kind: VideoKind,
+  lessonId?: string | null,
   signal?: AbortSignal,
 ): Promise<VideoJobView | null> {
+  const params = new URLSearchParams({ kind });
+  if (lessonId) params.set("lessonId", lessonId);
   try {
     const response = await authedFetch(
-      `${apiBaseUrl}/api/videos/${encodeURIComponent(sourceJobId)}/active`,
+      `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/videos/active?${params}`,
       signal ? { signal } : undefined,
     );
     if (response.status === 204 || !response.ok) return null;

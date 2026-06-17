@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchFreshPlaybackUrls,
   fetchVideoJob,
-  findActiveVideoJob,
+  findActiveVideoJobByCoordinates,
   pollVideoJob,
   regenerateVideo,
   resolveJobId,
@@ -41,6 +41,7 @@ export type CourseVideoState =
  *  so a failed course video gets a retry path the published payload can't otherwise offer. */
 export function useCourseVideo(
   apiBaseUrl: string | undefined,
+  courseId: string | undefined,
   artifact: VideoArtifact | null | undefined,
   pollIntervalMs: number = COURSE_VIDEO_POLL_INTERVAL_MS,
 ): {
@@ -48,9 +49,11 @@ export function useCourseVideo(
   regenerate: (mode: RegenerateMode) => void;
   refresh: () => Promise<void>;
 } {
-  // Depend on scalars (status + jobId), not the artifact object — Course is re-serialised on every
-  // poll, so a new object reference each render would re-fire the fetch even when nothing changed.
+  // Depend on scalars (status + jobId + kind), not the artifact object — Course is re-serialised on
+  // every poll, so a new object reference each render would re-fire the fetch even when nothing
+  // changed. `kind` keys the coordinate re-attach probe (summary vs overview).
   const status = artifact?.status ?? null;
+  const kind = artifact?.kind ?? null;
   const jobId = resolveJobId(artifact);
   const readyJobId = status === "ready" ? jobId : null;
   const [state, setState] = useState<CourseVideoState>(() =>
@@ -98,18 +101,26 @@ export function useCourseVideo(
     return () => controller.abort();
   }, [apiBaseUrl, readyJobId, jobId, status]);
 
-  // Re-attach to an in-flight (re)generate the persisted artifact doesn't know about (Gap 1): on
-  // mount, ask the server for the slot's live job — keyed by the source job we hold — and watch it.
-  // A live job wins over the stale built state, so a regenerate survives a refresh / navigate-away
-  // instead of the slot showing the old failed/empty state.
+  // Derive-at-read re-attach: resolve the slot from the live queue by its COORDINATES (course, kind)
+  // on the null-lesson path, needing no source job id. This recovers a course-video slot whose
+  // payload pointer is FAILED-with-a-job-that-has-since-gone-READY — the async-after-delivery case
+  // the source-job probe missed (when the build job ITSELF flips FAILED→READY it answers 204). It
+  // also catches an in-flight or completed regenerate. A live job wins over the stale built state, so
+  // a render survives a refresh / navigate-away instead of the slot showing the old failed state.
   useEffect(() => {
-    if (!apiBaseUrl || !jobId) return;
+    if (!apiBaseUrl || !courseId || !kind) return;
     const controller = new AbortController();
-    void findActiveVideoJob(apiBaseUrl, jobId, controller.signal).then((view) => {
+    void findActiveVideoJobByCoordinates(
+      apiBaseUrl,
+      courseId,
+      kind,
+      undefined,
+      controller.signal,
+    ).then((view) => {
       if (controller.signal.aborted) return;
       if (view && view.job.id !== readyJobId) {
-        // A newer take the built artifact can't see — an in-flight job or a completed regenerate.
-        // Skip when it's the READY job the effect above already fetched (don't double-poll a slot).
+        // A live or newer take the built artifact can't see. Skip when it's the READY job the
+        // effect above already fetched (don't double-poll a slot).
         watch(view.job.id);
       } else if (!view && status === "failed") {
         // No live job and no successful take: settle on the honest failed state (the loading state
@@ -118,7 +129,7 @@ export function useCourseVideo(
       }
     });
     return () => controller.abort();
-  }, [apiBaseUrl, jobId, readyJobId, status, watch]);
+  }, [apiBaseUrl, courseId, kind, readyJobId, status, watch]);
 
   const regenerate = useCallback(
     (mode: RegenerateMode) => {

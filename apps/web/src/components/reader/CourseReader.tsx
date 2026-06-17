@@ -115,7 +115,12 @@ interface CourseReaderProps {
  *  Selecting a rail entry highlights the place it refers to in the prose (its matched sentence, or
  *  its phase); a prose cross-link highlights the rail entry. On narrow screens the rail collapses
  *  behind a "Sources & checks" toggle that opens it as a drawer. */
-export function CourseReader({ course, focusRequest, onRegenerate, apiBaseUrl }: CourseReaderProps) {
+export function CourseReader({
+  course,
+  focusRequest,
+  onRegenerate,
+  apiBaseUrl,
+}: CourseReaderProps) {
   // A successful regenerate swaps in the updated course locally until a different course is opened.
   const [regeneratedCourse, setRegeneratedCourse] = useState<Course | null>(null);
   const active = regeneratedCourse ?? course;
@@ -307,7 +312,7 @@ export function CourseReader({ course, focusRequest, onRegenerate, apiBaseUrl }:
           {/* The course opens with video (explainer-video V5): the trailer + topic intro, pinned at
               the top of the course (entry only). Absent on a pre-V5 / video-off course. */}
           {safeIndex === 0 && apiBaseUrl && course.videos && (
-            <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} />
+            <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} courseId={course.id} />
           )}
           {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
           {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
