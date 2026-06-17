@@ -4,6 +4,7 @@ from jwt.exceptions import PyJWKClientError
 
 from ._supabase import AUDIENCE, JWKS_PATH
 from .auth_error import AuthError
+from .user_claims import UserClaims
 
 # Asymmetric algorithms Supabase signing keys use (newer cloud projects default to ES256).
 _ASYMMETRIC_ALGORITHMS = ["ES256", "RS256"]
@@ -25,7 +26,7 @@ class JwksUserVerifier:
             f"{supabase_url}{JWKS_PATH}", lifespan=_JWKS_CACHE_LIFESPAN_SECONDS
         )
 
-    def verify(self, token: str) -> str:
+    def verify(self, token: str) -> UserClaims:
         try:
             signing_key = self._client.get_signing_key_from_jwt(token)
             claims = jwt.decode(
@@ -40,4 +41,5 @@ class JwksUserVerifier:
         subject = claims.get("sub")
         if not subject:
             raise AuthError("token has no subject")
-        return str(subject)
+        email = claims.get("email")
+        return UserClaims(user_id=str(subject), email=str(email) if email else None)

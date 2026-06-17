@@ -14,8 +14,10 @@ USER_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 USER_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
 
-def mint_token(sub: str) -> str:
-    """An HS256 token for ``sub`` with the audience/role Supabase Auth sets, valid for an hour."""
+def mint_token(sub: str, *, email: str | None = None) -> str:
+    """An HS256 token for ``sub`` with the audience/role Supabase Auth sets, valid for an hour. An
+    ``email`` claim is added when given (Supabase sets it for email identities; the admin allowlist
+    keys off it)."""
     now = int(time.time())
     payload = {
         "sub": sub,
@@ -24,9 +26,11 @@ def mint_token(sub: str) -> str:
         "iat": now,
         "exp": now + 3600,
     }
+    if email is not None:
+        payload["email"] = email
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
-def auth_headers(sub: str) -> dict[str, str]:
-    """The ``Authorization: Bearer`` header for ``sub``."""
-    return {"Authorization": f"Bearer {mint_token(sub)}"}
+def auth_headers(sub: str, *, email: str | None = None) -> dict[str, str]:
+    """The ``Authorization: Bearer`` header for ``sub`` (optionally carrying an ``email`` claim)."""
+    return {"Authorization": f"Bearer {mint_token(sub, email=email)}"}

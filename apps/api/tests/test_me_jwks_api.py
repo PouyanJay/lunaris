@@ -104,9 +104,9 @@ async def test_get_me_accepts_es256_token_via_jwks(
     # Act
     response = await client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
 
-    # Assert
+    # Assert — no admin allowlist configured, so the ES256 caller is not an admin.
     assert response.status_code == 200
-    assert response.json() == {"userId": _TEST_USER_ID}
+    assert response.json() == {"userId": _TEST_USER_ID, "isAdmin": False}
 
 
 async def test_get_me_rejects_es256_token_signed_by_unknown_key(

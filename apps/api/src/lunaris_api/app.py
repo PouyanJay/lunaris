@@ -32,6 +32,7 @@ from .routers import (
     keyless,
     me,
     runs,
+    signup_gate,
     videos,
 )
 from .routers import settings as settings_router
@@ -88,6 +89,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 def _register_routers(app: FastAPI) -> None:
     app.include_router(health.router)
     app.include_router(me.router)
+    app.include_router(signup_gate.router)
     app.include_router(courses.router)
     app.include_router(briefs.router)
     app.include_router(runs.router)

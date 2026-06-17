@@ -1,6 +1,7 @@
 import jwt
 
 from .auth_error import AuthError
+from .user_claims import UserClaims
 from .user_verifier import IUserVerifier
 
 
@@ -20,7 +21,7 @@ class CompositeUserVerifier:
         self._hs256 = hs256
         self._asymmetric = asymmetric
 
-    def verify(self, token: str) -> str:
+    def verify(self, token: str) -> UserClaims:
         try:
             algorithm = jwt.get_unverified_header(token).get("alg")
         except jwt.PyJWTError as exc:

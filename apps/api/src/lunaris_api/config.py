@@ -77,6 +77,10 @@ class Settings:
     # (app.bicep) so it ENQUEUES only and the dedicated worker container renders — otherwise the
     # API's stub-pipeline workers (no Manim in the lean API image) would race the real worker.
     video_inproc_worker_enabled: bool = True
+    # Admin allowlist for the signup invite-gate screen: the lowercased emails permitted to manage
+    # the shared invite code (LUNARIS_ADMIN_EMAILS, comma-separated). Empty ⇒ no admins, so the
+    # admin endpoints 403 everyone — a deploy must set the owner's email to open the screen.
+    admin_emails: tuple[str, ...] = ()
 
     @property
     def has_supabase(self) -> bool:
@@ -99,6 +103,11 @@ class Settings:
         exists). When True, runtime config is per-user (DB); when False, it's the file store
         (single-user dev). Mirrors the verifier composition in ``_build_user_verifier``."""
         return bool(self.supabase_jwt_secret or self.supabase_url)
+
+    def is_admin(self, email: str | None) -> bool:
+        """Whether ``email`` is on the signup-gate admin allowlist (case-insensitive). A token with
+        no email claim, or an empty allowlist, is never an admin."""
+        return bool(email and email.strip().lower() in self.admin_emails)
 
 
 @lru_cache
@@ -132,6 +141,7 @@ def get_settings() -> Settings:
         video_worker_count=_env_int("LUNARIS_VIDEO_WORKER_COUNT", default=2),
         video_lease_seconds=_env_int("LUNARIS_VIDEO_LEASE_SECONDS", default=300),
         video_inproc_worker_enabled=_env_flag("LUNARIS_VIDEO_INPROC_WORKER", default=True),
+        admin_emails=_env_csv_lower("LUNARIS_ADMIN_EMAILS"),
     )
 
 
@@ -174,6 +184,14 @@ def _env_float(name: str, *, default: float) -> float:
     except (ValueError, OverflowError):
         return default
     return value if math.isfinite(value) and value > 0 else default
+
+
+def _env_csv_lower(name: str) -> tuple[str, ...]:
+    """Read a comma-separated env var into a tuple of lowercased, stripped, non-empty values —
+    the admin-email allowlist. Lowercasing here makes ``Settings.is_admin`` a plain membership test.
+    """
+    raw = os.getenv(name) or ""
+    return tuple(item.strip().lower() for item in raw.split(",") if item.strip())
 
 
 def _env_compute(name: str, *, default: ComputeKind) -> ComputeKind:
