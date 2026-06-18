@@ -59,6 +59,11 @@ from lunaris_video import (
 )
 from structlog.contextvars import bind_contextvars
 
+from .admin_users import (
+    InMemoryUserDirectory,
+    IUserDirectory,
+    SupabaseUserDirectory,
+)
 from .auth import (
     AuthError,
     CompositeUserVerifier,
@@ -466,6 +471,24 @@ def get_signup_gate_service(store: SignupGateStoreDep) -> SignupGateService:
 
 
 SignupGateServiceDep = Annotated[SignupGateService, Depends(get_signup_gate_service)]
+
+# The admin user directory (list/delete Supabase Auth accounts). Supabase service-role in
+# production; the in-memory fake is the no-DB/test path. Process-wide singletons like the other
+# Supabase clients so the lazy service-role client is built once.
+_in_memory_user_directory = InMemoryUserDirectory()
+_supabase_user_directory = SupabaseUserDirectory()
+
+
+def get_user_directory(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IUserDirectory:
+    """The admin user directory: Supabase Auth admin API when keyed, else the in-memory fake."""
+    if settings.has_supabase:
+        return _supabase_user_directory
+    return _in_memory_user_directory
+
+
+UserDirectoryDep = Annotated[IUserDirectory, Depends(get_user_directory)]
 
 
 def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:

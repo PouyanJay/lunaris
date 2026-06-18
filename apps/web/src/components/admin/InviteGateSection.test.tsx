@@ -10,28 +10,28 @@ vi.mock("../../lib/signupGate", () => ({
   updateSignupGate: updateSignupGateMock,
 }));
 
-import { SignupGatePanel } from "./SignupGatePanel";
+import { InviteGateSection } from "./InviteGateSection";
 
 const GATE = { inviteCode: "LUNARIS-BETA", enforced: true, updatedAt: null };
 
-describe("SignupGatePanel", () => {
+describe("InviteGateSection", () => {
   beforeEach(() => {
     fetchSignupGateMock.mockResolvedValue(GATE);
     updateSignupGateMock.mockReset();
   });
 
   it("shows the current invitation code once loaded", async () => {
-    render(<SignupGatePanel apiBaseUrl="http://api.test" />);
+    render(<InviteGateSection apiBaseUrl="http://api.test" />);
 
-    const field = (await screen.findByLabelText("Invitation code")) as HTMLInputElement;
+    const field = (await screen.findByLabelText("Shared code")) as HTMLInputElement;
     expect(field.value).toBe("LUNARIS-BETA");
   });
 
   it("rotates the code: edits the field, saves, and confirms the new value", async () => {
     updateSignupGateMock.mockResolvedValue({ ...GATE, inviteCode: "AUTUMN-2026" });
-    render(<SignupGatePanel apiBaseUrl="http://api.test" />);
+    render(<InviteGateSection apiBaseUrl="http://api.test" />);
 
-    const field = await screen.findByLabelText("Invitation code");
+    const field = await screen.findByLabelText("Shared code");
     fireEvent.change(field, { target: { value: "AUTUMN-2026" } });
     fireEvent.click(screen.getByRole("button", { name: "Save code" }));
 
@@ -45,35 +45,33 @@ describe("SignupGatePanel", () => {
     expect(screen.getByRole("button", { name: "Save code" })).toBeDisabled();
   });
 
-  it("surfaces a save error and keeps the panel open", async () => {
-    updateSignupGateMock.mockRejectedValueOnce(
-      new Error("The invitation code must not be empty."),
-    );
-    render(<SignupGatePanel apiBaseUrl="http://api.test" />);
+  it("surfaces a save error and keeps the section open", async () => {
+    updateSignupGateMock.mockRejectedValueOnce(new Error("The invitation code must not be empty."));
+    render(<InviteGateSection apiBaseUrl="http://api.test" />);
 
-    const field = await screen.findByLabelText("Invitation code");
+    const field = await screen.findByLabelText("Shared code");
     fireEvent.change(field, { target: { value: "NEW-CODE" } });
     fireEvent.click(screen.getByRole("button", { name: "Save code" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The invitation code must not be empty.",
     );
-    // The panel stays usable (the code field is still there), not replaced by the load-error view.
-    expect(screen.getByLabelText("Invitation code")).toBeInTheDocument();
+    // The section stays usable (the code field is still there), not replaced by the load-error view.
+    expect(screen.getByLabelText("Shared code")).toBeInTheDocument();
   });
 
   it("disables Save until the code actually changes", async () => {
-    render(<SignupGatePanel apiBaseUrl="http://api.test" />);
+    render(<InviteGateSection apiBaseUrl="http://api.test" />);
 
-    await screen.findByLabelText("Invitation code");
+    await screen.findByLabelText("Shared code");
     expect(screen.getByRole("button", { name: "Save code" })).toBeDisabled();
   });
 
   it("toggles enforcement off via the switch", async () => {
     updateSignupGateMock.mockResolvedValue({ ...GATE, enforced: false });
-    render(<SignupGatePanel apiBaseUrl="http://api.test" />);
+    render(<InviteGateSection apiBaseUrl="http://api.test" />);
 
-    await screen.findByLabelText("Invitation code");
+    await screen.findByLabelText("Shared code");
     fireEvent.click(screen.getByRole("switch", { name: "Require invitation code" }));
 
     await waitFor(() =>
@@ -83,7 +81,7 @@ describe("SignupGatePanel", () => {
 
   it("surfaces a load failure with a retry", async () => {
     fetchSignupGateMock.mockRejectedValueOnce(new Error("Admin access required"));
-    render(<SignupGatePanel apiBaseUrl="http://api.test" />);
+    render(<InviteGateSection apiBaseUrl="http://api.test" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Admin access required");
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();

@@ -20,7 +20,7 @@ import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
-import { SignupGatePanel } from "./components/admin/SignupGatePanel";
+import { AdminPortalPanel } from "./components/admin/AdminPortalPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
@@ -365,7 +365,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return { title: "Settings", meta, body };
     }
     if (adminOpen) {
-      const body = <SignupGatePanel apiBaseUrl={apiBaseUrl} />;
+      const body = <AdminPortalPanel apiBaseUrl={apiBaseUrl} />;
       const meta = (
         <Button type="button" onClick={() => setAdminOpen(false)}>
           Done
