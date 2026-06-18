@@ -19,6 +19,7 @@ from .dependencies import (
     get_video_storage,
 )
 from .routers import (
+    admin_users,
     app_config,
     authorities,
     bridge,
@@ -90,6 +91,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(health.router)
     app.include_router(me.router)
     app.include_router(signup_gate.router)
+    app.include_router(admin_users.router)
     app.include_router(courses.router)
     app.include_router(briefs.router)
     app.include_router(runs.router)
