@@ -371,7 +371,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           Done
         </Button>
       );
-      return { title: "Invitations", meta, body };
+      return { title: "Admin Portal", meta, body };
     }
     if (opened.state.status === "loading") {
       return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
