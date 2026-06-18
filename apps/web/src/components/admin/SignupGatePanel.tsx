@@ -73,21 +73,25 @@ export function SignupGatePanel({ apiBaseUrl }: { apiBaseUrl: string }) {
 
   if (state.status === "loading") {
     return (
-      <p className={styles.status} role="status" aria-live="polite">
-        Loading…
-      </p>
+      <div className={styles.center}>
+        <p className={styles.status} role="status" aria-live="polite">
+          Loading…
+        </p>
+      </div>
     );
   }
 
   if (state.status === "error") {
     return (
-      <div className={styles.panel}>
-        <p className={styles.error} role="alert">
-          {state.message}
-        </p>
-        <Button type="button" onClick={() => setReloadCount((n) => n + 1)}>
-          Retry
-        </Button>
+      <div className={styles.center}>
+        <div className={styles.panel}>
+          <p className={styles.error} role="alert">
+            {state.message}
+          </p>
+          <Button type="button" onClick={() => setReloadCount((n) => n + 1)}>
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
@@ -105,78 +109,80 @@ export function SignupGatePanel({ apiBaseUrl }: { apiBaseUrl: string }) {
   }
 
   return (
-    <div className={styles.panel}>
-      <p className={styles.intro}>
-        New accounts must enter this shared invitation code. Hand it to people you invite; rotate it
-        to cut off further sign-ups, or turn the requirement off to open registration.
-      </p>
+    <div className={styles.center}>
+      <div className={styles.panel}>
+        <p className={styles.intro}>
+          New accounts must enter this shared invitation code. Hand it to people you invite; rotate
+          it to cut off further sign-ups, or turn the requirement off to open registration.
+        </p>
 
-      <section className={styles.region}>
-        <label className={styles.label} htmlFor={codeId}>
-          Invitation code
-        </label>
-        <div className={styles.codeRow}>
-          <input
-            id={codeId}
-            className={styles.code}
-            type="text"
-            value={codeDraft}
-            spellCheck={false}
-            autoComplete="off"
-            disabled={busy}
-            onChange={(event) => {
-              setCodeDraft(event.target.value);
-              setNotice(null);
-              setCopied(false);
-            }}
-          />
-          <Button type="button" onClick={() => void copyCode()} disabled={busy}>
-            {copied ? "Copied" : "Copy"}
-          </Button>
-        </div>
-        <div className={styles.actions}>
-          <Button
-            type="button"
-            variant="accent"
-            disabled={!codeChanged || busy}
-            onClick={() => void save({ inviteCode: codeDraft }, "Invitation code updated.")}
-          >
-            {busy ? "Saving…" : "Save code"}
-          </Button>
-        </div>
-      </section>
-
-      <section className={styles.region}>
-        <div className={styles.toggleRow}>
-          <div className={styles.toggleText}>
-            <span className={styles.label} id={enforceLabelId}>
-              Require invitation code
-            </span>
-            <p className={styles.caption}>
-              When off, anyone can create an account without a code.
-            </p>
+        <section className={styles.region}>
+          <label className={styles.label} htmlFor={codeId}>
+            Invitation code
+          </label>
+          <div className={styles.codeRow}>
+            <input
+              id={codeId}
+              className={styles.code}
+              type="text"
+              value={codeDraft}
+              spellCheck={false}
+              autoComplete="off"
+              disabled={busy}
+              onChange={(event) => {
+                setCodeDraft(event.target.value);
+                setNotice(null);
+                setCopied(false);
+              }}
+            />
+            <Button type="button" onClick={() => void copyCode()} disabled={busy}>
+              {copied ? "Copied" : "Copy"}
+            </Button>
           </div>
-          <Switch
-            checked={gate.enforced}
-            disabled={busy}
-            aria-labelledby={enforceLabelId}
-            onChange={(next) =>
-              void save(
-                { enforced: next },
-                next ? "An invitation code is now required." : "Open registration is now on.",
-              )
-            }
-          />
-        </div>
-      </section>
+          <div className={styles.actions}>
+            <Button
+              type="button"
+              variant="accent"
+              disabled={!codeChanged || busy}
+              onClick={() => void save({ inviteCode: codeDraft }, "Invitation code updated.")}
+            >
+              {busy ? "Saving…" : "Save code"}
+            </Button>
+          </div>
+        </section>
 
-      <div id={statusId} className={styles.statusRegion} aria-live="polite">
-        {error && (
-          <p className={styles.error} role="alert">
-            {error}
-          </p>
-        )}
-        {notice && <p className={styles.notice}>{notice}</p>}
+        <section className={styles.region}>
+          <div className={styles.toggleRow}>
+            <div className={styles.toggleText}>
+              <span className={styles.label} id={enforceLabelId}>
+                Require invitation code
+              </span>
+              <p className={styles.caption}>
+                When off, anyone can create an account without a code.
+              </p>
+            </div>
+            <Switch
+              checked={gate.enforced}
+              disabled={busy}
+              aria-labelledby={enforceLabelId}
+              onChange={(next) =>
+                void save(
+                  { enforced: next },
+                  next ? "An invitation code is now required." : "Open registration is now on.",
+                )
+              }
+            />
+          </div>
+        </section>
+
+        <div id={statusId} className={styles.statusRegion} aria-live="polite">
+          {error && (
+            <p className={styles.error} role="alert">
+              {error}
+            </p>
+          )}
+          {notice && <p className={styles.notice}>{notice}</p>}
+        </div>
       </div>
     </div>
   );

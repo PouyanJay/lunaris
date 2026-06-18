@@ -1,8 +1,26 @@
+/* The canvas content region has no padding of its own (every panel adds its own gutter), so this
+   inset + centers the panel — matching the Settings panel so the two admin surfaces are siblings. */
+.center {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: var(--space-8);
+  overflow-y: auto;
+}
+
 .panel {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
   max-width: 520px;
+}
+
+@media (max-width: 768px) {
+  .center {
+    padding: var(--space-4);
+  }
 }
 
 .status {

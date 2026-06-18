@@ -15,7 +15,7 @@ interface SidebarProps extends ThemeProps {
   onNewCourse: () => void;
   onOpenSettings: () => void;
   settingsActive: boolean;
-  /** Show the admin "Invitations" nav (manage the signup invite-gate) — only for admins. */
+  /** Show the "Admin Portal" nav (manage the signup invite-gate) — only for admins. */
   showAdminInvites?: boolean;
   onOpenInvites?: () => void;
   invitesActive?: boolean;
@@ -125,10 +125,10 @@ export function Sidebar({
               className={`${styles.railAction} ${invitesActive ? styles.railActionActive : ""}`.trim()}
               onClick={onOpenInvites}
               aria-current={invitesActive ? "page" : undefined}
-              aria-label="Invitations"
-              title="Invitations"
+              aria-label="Admin Portal"
+              title="Admin Portal"
             >
-              <KeyIcon />
+              <AdminIcon />
             </button>
           ) : (
             <button
@@ -138,9 +138,9 @@ export function Sidebar({
               aria-current={invitesActive ? "page" : undefined}
             >
               <span className={styles.navIcon} aria-hidden="true">
-                <KeyIcon />
+                <AdminIcon />
               </span>
-              Invitations
+              Admin Portal
             </button>
           ))}
         {collapsed ? (
@@ -211,11 +211,18 @@ function PlusIcon() {
   );
 }
 
-function KeyIcon() {
+function AdminIcon() {
+  // A shield with a check — the admin / privileged-access mark.
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path
-        d="M9.5 2a4.5 4.5 0 0 0-4.3 5.83L2 11.03V14h2.97l.5-.5v-1.5h1.5v-1.5h1.5l.7-.7A4.5 4.5 0 1 0 9.5 2Zm1.25 3.25a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
+        d="M8 1.75 13 3.5v4.2c0 3.2-2.1 5.3-5 6.3-2.9-1-5-3.1-5-6.3V3.5L8 1.75Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M5.9 7.9 7.4 9.4 10.2 6.4"
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"
