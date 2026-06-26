@@ -1,15 +1,20 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { fetchProdOpsSummaryMock, fetchProdCostMock, fetchProdComputeMock } = vi.hoisted(() => ({
-  fetchProdOpsSummaryMock: vi.fn(),
-  fetchProdCostMock: vi.fn(),
-  fetchProdComputeMock: vi.fn(),
-}));
+const { fetchProdOpsSummaryMock, fetchProdCostMock, fetchProdComputeMock, fetchProdPowerMock } =
+  vi.hoisted(() => ({
+    fetchProdOpsSummaryMock: vi.fn(),
+    fetchProdCostMock: vi.fn(),
+    fetchProdComputeMock: vi.fn(),
+    fetchProdPowerMock: vi.fn(),
+  }));
 vi.mock("../../lib/prodOps", () => ({
   fetchProdOpsSummary: fetchProdOpsSummaryMock,
   fetchProdCost: fetchProdCostMock,
   fetchProdCompute: fetchProdComputeMock,
+  fetchProdPower: fetchProdPowerMock,
+  setProdPower: vi.fn(),
+  prodControlBaseUrl: (base: string) => base,
 }));
 
 import { ProdOpsSection } from "./ProdOpsSection";
@@ -49,6 +54,10 @@ describe("ProdOpsSection", () => {
     });
     fetchProdCostMock.mockResolvedValue(series(7));
     fetchProdComputeMock.mockResolvedValue(computeSeries(24));
+    fetchProdPowerMock.mockResolvedValue({
+      isOn: true,
+      apps: [{ name: "lunaris-prod-api", running: true }],
+    });
   });
 
   it("renders the overview plus cost and compute charts defaulting to 7 days", async () => {

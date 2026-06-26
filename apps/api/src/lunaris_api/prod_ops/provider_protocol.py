@@ -2,6 +2,7 @@ from typing import Protocol
 
 from .compute import ComputeSeries
 from .cost import CostSeries
+from .power import PowerState
 from .summary import ProdOpsSummary
 
 
@@ -25,4 +26,13 @@ class IProdOpsProvider(Protocol):
     async def get_compute_series(self, days: int) -> ComputeSeries:
         """Hourly prod compute over the last ``days`` days: usage (replicas + CPU + memory) plus the
         amortized hourly cost, for the dual-axis chart."""
+        ...
+
+    async def get_power_state(self) -> PowerState:
+        """Whether production is on, plus each governed app's run state."""
+        ...
+
+    async def set_power(self, *, on: bool) -> PowerState:
+        """Start (``on=True``) or stop (``on=False``) the prod apps, returning the new state.
+        Stopping zeroes the always-on cost; only the fixed registry floor remains."""
         ...

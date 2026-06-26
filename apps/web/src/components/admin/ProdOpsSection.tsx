@@ -4,6 +4,7 @@ import {
   fetchProdCompute,
   fetchProdCost,
   fetchProdOpsSummary,
+  prodControlBaseUrl,
   type ProdComputeSeries,
   type ProdCostSeries,
   type ProdOpsSummary,
@@ -11,6 +12,7 @@ import {
 import { Button } from "../primitives/Button";
 import { ComputeChart } from "./ComputeChart";
 import { CostChart } from "./CostChart";
+import { PowerSwitch } from "./PowerSwitch";
 import styles from "./AdminPortal.module.css";
 import prodOps from "./ProdOps.module.css";
 
@@ -177,6 +179,8 @@ export function ProdOpsSection({ apiBaseUrl }: { apiBaseUrl: string }) {
       ) : (
         <ComputeChart points={compute.series.points} currency={compute.series.currency} />
       )}
+
+      <PowerSwitch controlBaseUrl={prodControlBaseUrl(apiBaseUrl)} />
     </section>
   );
 }

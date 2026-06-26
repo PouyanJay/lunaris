@@ -43,3 +43,25 @@ class ComputeSeriesView(CamelModel):
 
     currency: str
     points: list[ComputePointView]
+
+
+class AppPowerView(CamelModel):
+    """One prod app's run state: its name and whether it is currently running (vs stopped)."""
+
+    name: str
+    running: bool
+
+
+class PowerStateView(CamelModel):
+    """Whether production is on, plus the run state of each app the on/off switch governs."""
+
+    is_on: bool
+    apps: list[AppPowerView]
+
+
+class PowerToggleRequest(CamelModel):
+    """Start (``on=True``) or stop (``on=False``) production. ``confirm`` MUST be true — stopping
+    prod is a self-inflicted outage, so the switch requires an explicit, deliberate confirmation."""
+
+    on: bool
+    confirm: bool

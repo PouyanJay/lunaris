@@ -140,3 +140,46 @@ async def test_compute_honours_the_days_window(client: httpx.AsyncClient) -> Non
 
 async def test_compute_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
     assert (await client.get("/api/admin/prod-ops/compute", headers=_member())).status_code == 403
+
+
+async def test_power_state_reports_on_and_each_governed_app(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/admin/prod-ops/power", headers=_admin())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["isOn"] is True
+    assert {app["name"] for app in body["apps"]} >= {"lunaris-prod-api"}
+    assert all(app["running"] for app in body["apps"])
+
+
+async def test_power_off_requires_confirmation(client: httpx.AsyncClient) -> None:
+    # Without confirm, the self-DoS toggle is refused and nothing changes.
+    response = await client.post(
+        "/api/admin/prod-ops/power", json={"on": False, "confirm": False}, headers=_admin()
+    )
+
+    assert response.status_code == 400
+    assert (await client.get("/api/admin/prod-ops/power", headers=_admin())).json()["isOn"] is True
+
+
+async def test_power_off_then_on_flips_the_state(client: httpx.AsyncClient) -> None:
+    off = await client.post(
+        "/api/admin/prod-ops/power", json={"on": False, "confirm": True}, headers=_admin()
+    )
+    assert off.status_code == 200
+    assert off.json()["isOn"] is False
+    assert all(not app["running"] for app in off.json()["apps"])
+    # The state persists for the next read, then comes back on.
+    assert (await client.get("/api/admin/prod-ops/power", headers=_admin())).json()["isOn"] is False
+    on = await client.post(
+        "/api/admin/prod-ops/power", json={"on": True, "confirm": True}, headers=_admin()
+    )
+    assert on.json()["isOn"] is True
+
+
+async def test_power_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/api/admin/prod-ops/power", headers=_member())).status_code == 403
+    toggle = await client.post(
+        "/api/admin/prod-ops/power", json={"on": False, "confirm": True}, headers=_member()
+    )
+    assert toggle.status_code == 403

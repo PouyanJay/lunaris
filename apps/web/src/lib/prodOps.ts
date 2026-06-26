@@ -36,6 +36,26 @@ export interface ProdComputeSeries {
   points: ProdComputePoint[];
 }
 
+/** One prod app's run state (mirrors AppPowerView). */
+export interface ProdAppPower {
+  name: string;
+  running: boolean;
+}
+
+/** Whether production is on + each governed app's run state (mirrors PowerStateView). */
+export interface ProdPowerState {
+  isOn: boolean;
+  apps: ProdAppPower[];
+}
+
+/** Where the power switch talks to. Production stops the main API itself (AD-3), so the start/stop
+ *  control is served by a separate always-on control app — `VITE_PROD_CONTROL_URL` points at it.
+ *  Falls back to the API base for local/dev where the same router serves the route. */
+export function prodControlBaseUrl(apiBaseUrl: string): string {
+  const configured = import.meta.env.VITE_PROD_CONTROL_URL as string | undefined;
+  return configured && configured.length > 0 ? configured : apiBaseUrl;
+}
+
 export class ProdOpsError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -109,4 +129,47 @@ export async function fetchProdCompute(
     );
   }
   return (await response.json()) as ProdComputeSeries;
+}
+
+/** Admin: whether production is on + each app's run state. 403 unless the caller is admin. */
+export async function fetchProdPower(
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<ProdPowerState> {
+  let response: Response;
+  try {
+    response = await authedFetch(
+      `${baseUrl}/api/admin/prod-ops/power`,
+      signal ? { signal } : undefined,
+    );
+  } catch (cause) {
+    throw new ProdOpsError("Could not reach the prod-operations service.", { cause });
+  }
+  if (!response.ok) {
+    throw new ProdOpsError(
+      (await detailOf(response)) ?? `Could not load prod power state (HTTP ${response.status}).`,
+    );
+  }
+  return (await response.json()) as ProdPowerState;
+}
+
+/** Admin: start (`on=true`) or stop (`on=false`) production. The caller has already confirmed in the
+ *  UI, so `confirm: true` is sent. Returns the new state. */
+export async function setProdPower(baseUrl: string, on: boolean): Promise<ProdPowerState> {
+  let response: Response;
+  try {
+    response = await authedFetch(`${baseUrl}/api/admin/prod-ops/power`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ on, confirm: true }),
+    });
+  } catch (cause) {
+    throw new ProdOpsError("Could not reach the prod-operations service.", { cause });
+  }
+  if (!response.ok) {
+    throw new ProdOpsError(
+      (await detailOf(response)) ?? `Could not change production power (HTTP ${response.status}).`,
+    );
+  }
+  return (await response.json()) as ProdPowerState;
 }

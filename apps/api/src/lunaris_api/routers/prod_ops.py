@@ -1,14 +1,18 @@
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..dependencies import AdminUserDep, ProdOpsProviderDep
+from ..prod_ops import PowerState
 from ..schemas.prod_ops import (
+    AppPowerView,
     ComputePointView,
     ComputeSeriesView,
     CostPointView,
     CostSeriesView,
+    PowerStateView,
+    PowerToggleRequest,
     ProdOpsSummaryView,
 )
 from ._correlation import bind_correlation
@@ -87,3 +91,47 @@ async def get_compute(
             for point in series.points
         ],
     )
+
+
+def _power_view(state: PowerState) -> PowerStateView:
+    return PowerStateView(
+        is_on=state.is_on,
+        apps=[AppPowerView(name=app.name, running=app.running) for app in state.apps],
+    )
+
+
+@router.get("/power", response_model=PowerStateView)
+async def get_power(
+    admin_id: AdminUserDep,
+    provider: ProdOpsProviderDep,
+    response: Response,
+) -> PowerStateView:
+    """Admin-only: whether production is on, plus each governed app's run state."""
+    bind_correlation(response)
+    return _power_view(await provider.get_power_state())
+
+
+@router.post("/power", response_model=PowerStateView)
+async def set_power(
+    body: PowerToggleRequest,
+    admin_id: AdminUserDep,
+    provider: ProdOpsProviderDep,
+    response: Response,
+) -> PowerStateView:
+    """Admin-only: start or stop production. Stopping is a self-inflicted outage, so ``confirm``
+    must be true (else 400). The privileged action is audit-logged (admin id + direction only)."""
+    request_id = bind_correlation(response)
+    if not body.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Confirmation required to change production power.",
+        )
+    logger.info(
+        "prod_power_set",
+        admin_id=admin_id,
+        target_on=body.on,
+        request_id=request_id,
+    )
+    state = await provider.set_power(on=body.on)
+    logger.info("prod_power_set_done", admin_id=admin_id, is_on=state.is_on, request_id=request_id)
+    return _power_view(state)

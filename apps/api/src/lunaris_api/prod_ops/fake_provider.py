@@ -2,7 +2,17 @@ from datetime import date, datetime, time, timedelta
 
 from .compute import ComputePoint, ComputeSeries
 from .cost import CostPoint, CostSeries
+from .power import AppPower, PowerState
 from .summary import ProdOpsSummary
+
+# The prod apps the on/off switch governs (the API plus the scale-to-zero workers). The fake reports
+# them all following the toggle; the real adapter reads/sets each app's run state on Azure.
+_GOVERNED_APPS = (
+    "lunaris-prod-api",
+    "lunaris-prod-video-worker",
+    "lunaris-prod-inference",
+    "lunaris-prod-embeddings",
+)
 
 # A fixed anchor so the fake's series is deterministic (tests assert on it; the no-Azure path shows
 # clearly synthetic data). The real adapter keys off the actual calendar.
@@ -18,8 +28,9 @@ class FakeProdOpsProvider:
     fixed anchor day (the most recent day flagged partial, as the real data lags).
     """
 
-    def __init__(self, summary: ProdOpsSummary | None = None) -> None:
+    def __init__(self, summary: ProdOpsSummary | None = None, *, on: bool = True) -> None:
         self._summary = summary or ProdOpsSummary(resource_group="rg-lunaris-prod", currency="CAD")
+        self._on = on
 
     async def get_summary(self) -> ProdOpsSummary:
         return self._summary
@@ -53,3 +64,14 @@ class FakeProdOpsProvider:
             for offset in range(hours - 1, -1, -1)
         )
         return ComputeSeries(points=points, currency=self._summary.currency)
+
+    async def get_power_state(self) -> PowerState:
+        return self._state()
+
+    async def set_power(self, *, on: bool) -> PowerState:
+        self._on = on
+        return self._state()
+
+    def _state(self) -> PowerState:
+        apps = tuple(AppPower(name=name, running=self._on) for name in _GOVERNED_APPS)
+        return PowerState(is_on=self._on, apps=apps)

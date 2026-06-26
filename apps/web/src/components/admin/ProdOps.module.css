@@ -153,3 +153,81 @@
   color: var(--text-muted);
   padding-block: var(--space-3);
 }
+
+/* Production power switch */
+.powerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block: var(--space-2);
+}
+
+.powerBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.powerOn {
+  color: var(--accent-600);
+  background: var(--accent-soft);
+  border-color: var(--accent-500);
+}
+
+.powerOff {
+  color: var(--text-muted);
+  background: var(--bg-muted);
+}
+
+.confirmPanel {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  padding: var(--space-3);
+  margin-block: var(--space-2);
+}
+
+.confirmWarning {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.confirmActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.appList {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.appItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  padding-block: var(--space-1);
+  border-top: 1px solid var(--border);
+}
+
+.appRunning {
+  color: var(--accent-600);
+  font-family: var(--font-mono);
+}
+
+.appStopped {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
