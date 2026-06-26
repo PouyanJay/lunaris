@@ -50,6 +50,13 @@
   background: var(--accent-soft);
 }
 
+.subheading {
+  margin: var(--space-4) 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
 .chartFigure {
   margin: 0;
 }
@@ -68,6 +75,40 @@
 .barPartial {
   fill: var(--accent-500);
   opacity: 0.4;
+}
+
+.costLine {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 0.4;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.legendBar {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 2px;
+  background: var(--accent-500);
+}
+
+.legendLine {
+  display: inline-block;
+  width: 0.9em;
+  height: 0;
+  margin-left: var(--space-2);
+  border-top: 2px solid var(--text);
 }
 
 .chartAxis {

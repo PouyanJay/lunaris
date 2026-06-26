@@ -115,3 +115,28 @@ async def test_cost_rejects_an_out_of_range_window(client: httpx.AsyncClient) ->
 
 async def test_cost_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
     assert (await client.get("/api/admin/prod-ops/cost", headers=_member())).status_code == 403
+
+
+async def test_compute_defaults_to_seven_days_hourly_with_usage_and_cost(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.get("/api/admin/prod-ops/compute", headers=_admin())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "CAD"
+    assert len(body["points"]) == 7 * 24  # hourly over the window
+    point = body["points"][0]
+    # Each hour carries every usage dimension plus the amortized cost (dual-axis source).
+    assert set(point) >= {"hour", "replicas", "cpuCores", "memoryGb", "cost"}
+
+
+async def test_compute_honours_the_days_window(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/admin/prod-ops/compute?days=2", headers=_admin())
+
+    assert response.status_code == 200
+    assert len(response.json()["points"]) == 2 * 24
+
+
+async def test_compute_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/api/admin/prod-ops/compute", headers=_member())).status_code == 403

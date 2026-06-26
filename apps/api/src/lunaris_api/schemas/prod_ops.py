@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from .base import CamelModel
 
@@ -25,3 +25,21 @@ class CostSeriesView(CamelModel):
 
     currency: str
     points: list[CostPointView]
+
+
+class ComputePointView(CamelModel):
+    """One hour of prod compute: usage (active replicas + CPU cores + memory GB) and that hour's
+    amortized cost — the dual-axis chart plots a usage metric against cost."""
+
+    hour: datetime
+    replicas: float
+    cpu_cores: float
+    memory_gb: float
+    cost: float
+
+
+class ComputeSeriesView(CamelModel):
+    """Hourly prod compute for the dual-axis chart: points oldest-first + the billing currency."""
+
+    currency: str
+    points: list[ComputePointView]

@@ -1,12 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import {
+  fetchProdCompute,
   fetchProdCost,
   fetchProdOpsSummary,
+  type ProdComputeSeries,
   type ProdCostSeries,
   type ProdOpsSummary,
 } from "../../lib/prodOps";
 import { Button } from "../primitives/Button";
+import { ComputeChart } from "./ComputeChart";
 import { CostChart } from "./CostChart";
 import styles from "./AdminPortal.module.css";
 import prodOps from "./ProdOps.module.css";
@@ -23,17 +26,40 @@ type CostState =
   | { status: "error"; message: string }
   | { status: "ready"; series: ProdCostSeries };
 
+type ComputeState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; series: ProdComputeSeries };
+
 function messageFor(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message ? cause.message : fallback;
 }
 
-/** Prod operations: cost + compute charts and the on/off switch for the production environment.
- *  A section of the Admin Portal — owns its own loading/error state inline. */
+function ErrorWithRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className={styles.statusRegion}>
+      <p className={styles.error} role="alert">
+        {message}
+      </p>
+      <div>
+        <Button type="button" onClick={onRetry}>
+          Retry
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Prod operations: cost + compute charts and (later) the on/off switch for production. A section of
+ *  the Admin Portal — owns its own loading/error state inline; a shared window drives both charts. */
 export function ProdOpsSection({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [summary, setSummary] = useState<SummaryState>({ status: "loading" });
   const [cost, setCost] = useState<CostState>({ status: "loading" });
+  const [compute, setCompute] = useState<ComputeState>({ status: "loading" });
   const [days, setDays] = useState<number>(RANGES[0]);
   const [reloadCount, setReloadCount] = useState(0);
+
+  const retry = () => setReloadCount((n) => n + 1);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -68,6 +94,21 @@ export function ProdOpsSection({ apiBaseUrl }: { apiBaseUrl: string }) {
     return () => controller.abort();
   }, [apiBaseUrl, days, reloadCount]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setCompute({ status: "loading" });
+    fetchProdCompute(apiBaseUrl, days, controller.signal)
+      .then((series) => {
+        if (controller.signal.aborted) return;
+        setCompute({ status: "ready", series });
+      })
+      .catch((cause) => {
+        if (controller.signal.aborted) return;
+        setCompute({ status: "error", message: messageFor(cause, "Could not load prod compute.") });
+      });
+    return () => controller.abort();
+  }, [apiBaseUrl, days, reloadCount]);
+
   let overview: ReactNode;
   if (summary.status === "loading") {
     overview = (
@@ -76,18 +117,7 @@ export function ProdOpsSection({ apiBaseUrl }: { apiBaseUrl: string }) {
       </p>
     );
   } else if (summary.status === "error") {
-    overview = (
-      <div className={styles.statusRegion}>
-        <p className={styles.error} role="alert">
-          {summary.message}
-        </p>
-        <div>
-          <Button type="button" onClick={() => setReloadCount((n) => n + 1)}>
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
+    overview = <ErrorWithRetry message={summary.message} onRetry={retry} />;
   } else {
     overview = (
       <p className={styles.intro}>
@@ -97,46 +127,16 @@ export function ProdOpsSection({ apiBaseUrl }: { apiBaseUrl: string }) {
     );
   }
 
-  let costBody: ReactNode;
-  if (cost.status === "loading") {
-    costBody = (
-      <p className={styles.status} role="status" aria-live="polite">
-        Loading cost…
-      </p>
-    );
-  } else if (cost.status === "error") {
-    costBody = (
-      <div className={styles.statusRegion}>
-        <p className={styles.error} role="alert">
-          {cost.message}
-        </p>
-        <div>
-          <Button type="button" onClick={() => setReloadCount((n) => n + 1)}>
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  } else {
-    costBody = (
-      <>
-        <CostChart points={cost.series.points} currency={cost.series.currency} />
-        <p className={prodOps.partialNote}>
-          The most recent day is partial — billing data lags ~8-24h.
-        </p>
-      </>
-    );
-  }
-
   return (
     <section className={styles.section}>
       <h2 className={styles.heading}>Prod operations</h2>
       {overview}
+
       <div className={prodOps.controls}>
-        <span className={prodOps.controlLabel} id="cost-range-label">
-          Cost per day
+        <span className={prodOps.controlLabel} id="window-label">
+          Window
         </span>
-        <div className={prodOps.rangeGroup} role="group" aria-labelledby="cost-range-label">
+        <div className={prodOps.rangeGroup} role="group" aria-labelledby="window-label">
           {RANGES.map((value) => (
             <button
               key={value}
@@ -150,7 +150,33 @@ export function ProdOpsSection({ apiBaseUrl }: { apiBaseUrl: string }) {
           ))}
         </div>
       </div>
-      {costBody}
+
+      <h3 className={prodOps.subheading}>Cost per day</h3>
+      {cost.status === "loading" ? (
+        <p className={styles.status} role="status" aria-live="polite">
+          Loading cost…
+        </p>
+      ) : cost.status === "error" ? (
+        <ErrorWithRetry message={cost.message} onRetry={retry} />
+      ) : (
+        <>
+          <CostChart points={cost.series.points} currency={cost.series.currency} />
+          <p className={prodOps.partialNote}>
+            The most recent day is partial — billing data lags ~8-24h.
+          </p>
+        </>
+      )}
+
+      <h3 className={prodOps.subheading}>Compute per hour</h3>
+      {compute.status === "loading" ? (
+        <p className={styles.status} role="status" aria-live="polite">
+          Loading compute…
+        </p>
+      ) : compute.status === "error" ? (
+        <ErrorWithRetry message={compute.message} onRetry={retry} />
+      ) : (
+        <ComputeChart points={compute.series.points} currency={compute.series.currency} />
+      )}
     </section>
   );
 }

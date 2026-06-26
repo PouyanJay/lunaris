@@ -21,6 +21,21 @@ export interface ProdCostSeries {
   points: ProdCostPoint[];
 }
 
+/** One hour of prod compute (mirrors the API's ComputePointView): usage + amortized cost. */
+export interface ProdComputePoint {
+  hour: string;
+  replicas: number;
+  cpuCores: number;
+  memoryGb: number;
+  cost: number;
+}
+
+/** Hourly prod compute for the dual-axis chart (mirrors ComputeSeriesView), oldest hour first. */
+export interface ProdComputeSeries {
+  currency: string;
+  points: ProdComputePoint[];
+}
+
 export class ProdOpsError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -71,4 +86,27 @@ export async function fetchProdCost(
     );
   }
   return (await response.json()) as ProdCostSeries;
+}
+
+/** Admin: hourly compute (usage + cost) over the last `days` days. 403 unless the caller is admin. */
+export async function fetchProdCompute(
+  apiBaseUrl: string,
+  days: number,
+  signal?: AbortSignal,
+): Promise<ProdComputeSeries> {
+  let response: Response;
+  try {
+    response = await authedFetch(
+      `${apiBaseUrl}/api/admin/prod-ops/compute?days=${days}`,
+      signal ? { signal } : undefined,
+    );
+  } catch (cause) {
+    throw new ProdOpsError("Could not reach the prod-operations service.", { cause });
+  }
+  if (!response.ok) {
+    throw new ProdOpsError(
+      (await detailOf(response)) ?? `Could not load prod compute (HTTP ${response.status}).`,
+    );
+  }
+  return (await response.json()) as ProdComputeSeries;
 }

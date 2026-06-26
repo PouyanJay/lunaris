@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from .compute import ComputeSeries
 from .cost import CostSeries
 from .summary import ProdOpsSummary
 
@@ -19,4 +20,9 @@ class IProdOpsProvider(Protocol):
     async def get_cost_daily(self, days: int) -> CostSeries:
         """Daily Azure spend for the covered resource group over the last ``days`` days (the most
         recent day flagged ``partial`` — cost data lags ~8-24h)."""
+        ...
+
+    async def get_compute_series(self, days: int) -> ComputeSeries:
+        """Hourly prod compute over the last ``days`` days: usage (replicas + CPU + memory) plus the
+        amortized hourly cost, for the dual-axis chart."""
         ...

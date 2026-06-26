@@ -1,5 +1,6 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
+from .compute import ComputePoint, ComputeSeries
 from .cost import CostPoint, CostSeries
 from .summary import ProdOpsSummary
 
@@ -35,3 +36,20 @@ class FakeProdOpsProvider:
             for offset in range(days - 1, -1, -1)
         )
         return CostSeries(points=points, currency=self._summary.currency)
+
+    async def get_compute_series(self, days: int) -> ComputeSeries:
+        # Hourly, oldest-first. A deterministic diurnal-ish wave so usage and cost have shape: the
+        # worker "wakes" for a few hours each day (more replicas/CPU → more cost).
+        anchor = datetime.combine(_ANCHOR, time(0))
+        hours = days * 24
+        points = tuple(
+            ComputePoint(
+                hour=anchor - timedelta(hours=offset),
+                replicas=float((offset % 8 == 0) + 1),
+                cpu_cores=round(0.5 + (offset % 8 == 0) * 1.5, 2),
+                memory_gb=round(1.0 + (offset % 8 == 0) * 3.0, 2),
+                cost=round(0.05 + (offset % 8 == 0) * 0.20, 3),
+            )
+            for offset in range(hours - 1, -1, -1)
+        )
+        return ComputeSeries(points=points, currency=self._summary.currency)

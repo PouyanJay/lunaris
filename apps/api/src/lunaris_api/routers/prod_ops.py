@@ -4,7 +4,13 @@ import structlog
 from fastapi import APIRouter, Query, Response
 
 from ..dependencies import AdminUserDep, ProdOpsProviderDep
-from ..schemas.prod_ops import CostPointView, CostSeriesView, ProdOpsSummaryView
+from ..schemas.prod_ops import (
+    ComputePointView,
+    ComputeSeriesView,
+    CostPointView,
+    CostSeriesView,
+    ProdOpsSummaryView,
+)
 from ._correlation import bind_correlation
 
 logger = structlog.get_logger()
@@ -51,6 +57,33 @@ async def get_cost(
         currency=series.currency,
         points=[
             CostPointView(day=point.day, amount=point.amount, is_partial=point.partial)
+            for point in series.points
+        ],
+    )
+
+
+@router.get("/compute", response_model=ComputeSeriesView)
+async def get_compute(
+    admin_id: AdminUserDep,
+    provider: ProdOpsProviderDep,
+    response: Response,
+    days: DaysQuery = _DEFAULT_DAYS,
+) -> ComputeSeriesView:
+    """Admin-only: hourly prod compute over the last ``days`` days (default 7) — usage (replicas +
+    CPU + memory) plus the amortized hourly cost, for the dual-axis chart."""
+    request_id = bind_correlation(response)
+    series = await provider.get_compute_series(days)
+    logger.info("prod_ops_compute_fetched", admin_id=admin_id, days=days, request_id=request_id)
+    return ComputeSeriesView(
+        currency=series.currency,
+        points=[
+            ComputePointView(
+                hour=point.hour,
+                replicas=point.replicas,
+                cpu_cores=point.cpu_cores,
+                memory_gb=point.memory_gb,
+                cost=point.cost,
+            )
             for point in series.points
         ],
     )
