@@ -1,0 +1,114 @@
+/* Prod-operations charts + controls. Tokens only — no literals (enterprise-ui). */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-3);
+}
+
+.controlLabel {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rangeGroup {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.rangeButton {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+
+.rangeButton:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.rangeButton:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.rangeButtonActive {
+  border-color: var(--accent-500);
+  color: var(--accent-600);
+  background: var(--accent-soft);
+}
+
+.chartFigure {
+  margin: 0;
+}
+
+.chart {
+  width: 100%;
+  height: 8rem;
+  display: block;
+  overflow: visible;
+}
+
+.bar {
+  fill: var(--accent-500);
+}
+
+.barPartial {
+  fill: var(--accent-500);
+  opacity: 0.4;
+}
+
+.chartAxis {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.axisPeak {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.meta {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.total {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.total strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.partialNote {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  padding-block: var(--space-3);
+}

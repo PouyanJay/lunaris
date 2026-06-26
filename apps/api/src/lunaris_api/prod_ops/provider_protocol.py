@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from .cost import CostSeries
 from .summary import ProdOpsSummary
 
 
@@ -13,4 +14,9 @@ class IProdOpsProvider(Protocol):
 
     async def get_summary(self) -> ProdOpsSummary:
         """The overview the dashboard opens on (covered resource group + billing currency)."""
+        ...
+
+    async def get_cost_daily(self, days: int) -> CostSeries:
+        """Daily Azure spend for the covered resource group over the last ``days`` days (the most
+        recent day flagged ``partial`` — cost data lags ~8-24h)."""
         ...

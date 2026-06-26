@@ -81,3 +81,37 @@ async def test_summary_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None
     response = await client.get("/api/admin/prod-ops/summary", headers=_member())
 
     assert response.status_code == 403
+
+
+async def test_cost_defaults_to_seven_days_with_a_partial_latest_day(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.get("/api/admin/prod-ops/cost", headers=_admin())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["currency"] == "CAD"
+    assert len(body["points"]) == 7
+    # Oldest-first; only the most recent day is partial (cost data lags ~8-24h).
+    assert [p["isPartial"] for p in body["points"]] == [False] * 6 + [True]
+    assert body["points"][0]["day"] < body["points"][-1]["day"]
+
+
+async def test_cost_honours_the_days_window(client: httpx.AsyncClient) -> None:
+    response = await client.get("/api/admin/prod-ops/cost?days=3", headers=_admin())
+
+    assert response.status_code == 200
+    assert len(response.json()["points"]) == 3
+
+
+async def test_cost_rejects_an_out_of_range_window(client: httpx.AsyncClient) -> None:
+    assert (
+        await client.get("/api/admin/prod-ops/cost?days=0", headers=_admin())
+    ).status_code == 422
+    assert (
+        await client.get("/api/admin/prod-ops/cost?days=91", headers=_admin())
+    ).status_code == 422
+
+
+async def test_cost_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/api/admin/prod-ops/cost", headers=_member())).status_code == 403

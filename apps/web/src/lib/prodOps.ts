@@ -7,6 +7,20 @@ export interface ProdOpsSummary {
   currency: string;
 }
 
+/** One day's Azure spend (mirrors the API's CostPointView). `isPartial` marks the most recent day,
+ *  whose figure is still settling (Cost Management lags ~8-24h). */
+export interface ProdCostPoint {
+  day: string;
+  amount: number;
+  isPartial: boolean;
+}
+
+/** Daily Azure spend for the cost chart (mirrors the API's CostSeriesView), oldest day first. */
+export interface ProdCostSeries {
+  currency: string;
+  points: ProdCostPoint[];
+}
+
 export class ProdOpsError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -34,4 +48,27 @@ export async function fetchProdOpsSummary(
     );
   }
   return (await response.json()) as ProdOpsSummary;
+}
+
+/** Admin: daily Azure spend over the last `days` days (default 7). 403 unless the caller is admin. */
+export async function fetchProdCost(
+  apiBaseUrl: string,
+  days: number,
+  signal?: AbortSignal,
+): Promise<ProdCostSeries> {
+  let response: Response;
+  try {
+    response = await authedFetch(
+      `${apiBaseUrl}/api/admin/prod-ops/cost?days=${days}`,
+      signal ? { signal } : undefined,
+    );
+  } catch (cause) {
+    throw new ProdOpsError("Could not reach the prod-operations service.", { cause });
+  }
+  if (!response.ok) {
+    throw new ProdOpsError(
+      (await detailOf(response)) ?? `Could not load prod cost (HTTP ${response.status}).`,
+    );
+  }
+  return (await response.json()) as ProdCostSeries;
 }
