@@ -80,6 +80,7 @@ from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, ExplainBinding
 from .explain_throttle import KeylessExplainThrottle
+from .prod_ops import FakeProdOpsProvider, IProdOpsProvider
 from .run_registry import RunRegistry
 from .secrets import (
     BYOK_PROVIDERS,
@@ -489,6 +490,20 @@ def get_user_directory(
 
 
 UserDirectoryDep = Annotated[IUserDirectory, Depends(get_user_directory)]
+
+# The prod-operations provider behind the admin dashboard (cost/compute/power over rg-lunaris-prod).
+# Process-wide singleton like the other admin providers. The in-memory fake is the no-Azure/test
+# path; the real ARM adapter (authed via the API's managed identity) is selected once it lands.
+_fake_prod_ops_provider = FakeProdOpsProvider()
+
+
+def get_prod_ops_provider() -> IProdOpsProvider:
+    """The prod-operations provider — always the in-memory fake until the Azure ARM adapter lands;
+    that adapter (authed via the API's managed identity) is selected here once it exists."""
+    return _fake_prod_ops_provider
+
+
+ProdOpsProviderDep = Annotated[IProdOpsProvider, Depends(get_prod_ops_provider)]
 
 
 def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:

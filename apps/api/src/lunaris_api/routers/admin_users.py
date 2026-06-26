@@ -9,18 +9,11 @@ from ..admin_users import AdminAccount
 from ..config import Settings, get_settings
 from ..dependencies import AdminUserDep, UserDirectoryDep
 from ..schemas.admin_users import AdminAccountView
+from ._correlation import bind_correlation
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
-
-
-def _bind(response: Response) -> None:
-    """Bind a fresh correlation id + surface it in X-Request-Id, so an admin action on an account
-    (a privileged change) is traceable across the logs."""
-    request_id = uuid4().hex
-    bind_request_id(request_id)
-    response.headers["X-Request-Id"] = request_id
 
 
 def _to_view(account: AdminAccount, *, settings: Settings, admin_id: str) -> AdminAccountView:
@@ -43,7 +36,7 @@ async def list_users(
     response: Response,
 ) -> list[AdminAccountView]:
     """Admin-only: every account, with its admin/self flags for the user-management list."""
-    _bind(response)
+    bind_correlation(response)
     accounts = await directory.list_accounts()
     return [_to_view(account, settings=settings, admin_id=admin_id) for account in accounts]
 
