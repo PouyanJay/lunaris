@@ -106,9 +106,11 @@ var baseEnv = concat(
 // it keeps a replica alive for the whole render (a fresh claim drops the queued count to 0, so a
 // queued-only metric would scale the busy worker down mid-render) AND it lets a job a dead worker
 // left in-flight keep/wake a replica, whose lease sweep (V7-T4) then requeues and re-claims it. The
-// count falls to 0 only when everything is ready/failed → scale to zero. targetQueryValue 1 → one
-// replica per outstanding job (up to maxReplicas); activationTargetQueryValue 0 → wake from zero as
-// soon as one appears. Read-only + cheap.
+// count falls to 0 only when everything is terminal → scale to zero. The three terminal statuses are
+// 'ready', 'failed' and 'cancelled' (the last added 2026-06-17) — all must be excluded here, or a
+// terminal-but-unexcluded status pins the worker at max scale forever (no claim_video_job ever drains
+// it). targetQueryValue 1 → one replica per outstanding job (up to maxReplicas); activationTargetQueryValue
+// 0 → wake from zero as soon as one appears. Read-only + cheap.
 var scaleRules = hasScaler
   ? [
       {
@@ -116,7 +118,7 @@ var scaleRules = hasScaler
         custom: {
           type: 'postgresql'
           metadata: {
-            query: 'SELECT count(*)::int FROM public.video_jobs WHERE status NOT IN (\'ready\', \'failed\')'
+            query: 'SELECT count(*)::int FROM public.video_jobs WHERE status NOT IN (\'ready\', \'failed\', \'cancelled\')'
             targetQueryValue: '1'
             activationTargetQueryValue: '0'
           }
