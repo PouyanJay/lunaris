@@ -157,3 +157,44 @@ async def test_set_power_uses_the_right_action(on: bool) -> None:
     await provider.set_power(on=on)
 
     assert actions == ["start" if on else "stop"]
+
+
+async def test_cost_daily_handles_an_empty_cost_response() -> None:
+    # A resource group with no spend yet (or before the first daily rollup) returns no rows; the
+    # adapter must still yield a full zero-filled window, not blow up.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "identity.local":
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(200, json={"properties": {"columns": [], "rows": []}})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    arm = ArmClient(
+        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
+    )
+    provider = AzureProdOpsProvider(
+        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+    )
+
+    series = await provider.get_cost_daily(3)
+
+    assert len(series.points) == 3
+    assert all(point.amount == 0.0 for point in series.points)
+
+
+async def test_arm_request_raises_on_an_error_response() -> None:
+    # A failed ARM call must surface (so the endpoint errors honestly), never be swallowed.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "identity.local":
+            return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        return httpx.Response(500, json={"error": "boom"})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    arm = ArmClient(
+        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
+    )
+    provider = AzureProdOpsProvider(
+        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await provider.get_cost_daily(7)

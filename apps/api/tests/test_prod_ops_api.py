@@ -183,3 +183,21 @@ async def test_power_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
         "/api/admin/prod-ops/power", json={"on": False, "confirm": True}, headers=_member()
     )
     assert toggle.status_code == 403
+
+
+@pytest.mark.parametrize(("endpoint", "days"), [("cost", 1), ("cost", 90), ("compute", 1)])
+async def test_window_boundaries_are_accepted(
+    client: httpx.AsyncClient, endpoint: str, days: int
+) -> None:
+    response = await client.get(f"/api/admin/prod-ops/{endpoint}?days={days}", headers=_admin())
+
+    assert response.status_code == 200
+    expected = days if endpoint == "cost" else days * 24
+    assert len(response.json()["points"]) == expected
+
+
+async def test_power_toggle_rejects_a_malformed_body(client: httpx.AsyncClient) -> None:
+    # `on`/`confirm` are required booleans — a missing field is a 422, not a 500.
+    response = await client.post("/api/admin/prod-ops/power", json={}, headers=_admin())
+
+    assert response.status_code == 422
