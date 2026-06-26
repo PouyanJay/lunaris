@@ -11,12 +11,6 @@ const METRICS: { key: Metric; label: string; unit: string }[] = [
   { key: "memoryGb", label: "Memory", unit: "GB" },
 ];
 
-const METRIC_META: Record<Metric, { label: string; unit: string }> = {
-  replicas: { label: "Replicas", unit: "" },
-  cpuCores: { label: "CPU", unit: "cores" },
-  memoryGb: { label: "Memory", unit: "GB" },
-};
-
 function money(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
@@ -49,7 +43,7 @@ export function ComputeChart({
     return <p className={styles.empty}>No compute data for this window yet.</p>;
   }
 
-  const active = METRIC_META[metric];
+  const active = METRICS.find((m) => m.key === metric) ?? METRICS[0]!;
   const width = 100;
   const height = 40;
   const usagePeak = Math.max(...points.map((p) => p[metric]), 0.01);

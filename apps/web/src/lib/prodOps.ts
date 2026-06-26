@@ -133,13 +133,13 @@ export async function fetchProdCompute(
 
 /** Admin: whether production is on + each app's run state. 403 unless the caller is admin. */
 export async function fetchProdPower(
-  baseUrl: string,
+  controlBaseUrl: string,
   signal?: AbortSignal,
 ): Promise<ProdPowerState> {
   let response: Response;
   try {
     response = await authedFetch(
-      `${baseUrl}/api/admin/prod-ops/power`,
+      `${controlBaseUrl}/api/admin/prod-ops/power`,
       signal ? { signal } : undefined,
     );
   } catch (cause) {
@@ -155,10 +155,10 @@ export async function fetchProdPower(
 
 /** Admin: start (`on=true`) or stop (`on=false`) production. The caller has already confirmed in the
  *  UI, so `confirm: true` is sent. Returns the new state. */
-export async function setProdPower(baseUrl: string, on: boolean): Promise<ProdPowerState> {
+export async function setProdPower(controlBaseUrl: string, on: boolean): Promise<ProdPowerState> {
   let response: Response;
   try {
-    response = await authedFetch(`${baseUrl}/api/admin/prod-ops/power`, {
+    response = await authedFetch(`${controlBaseUrl}/api/admin/prod-ops/power`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ on, confirm: true }),

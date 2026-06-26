@@ -1,5 +1,7 @@
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 from .arm_client import ArmClient
 from .compute import ComputePoint, ComputeSeries
@@ -92,24 +94,16 @@ class AzureProdOpsProvider:
         return CostSeries(points=points, currency=currency)
 
     async def get_compute_series(self, days: int) -> ComputeSeries:
+        # Issues N+1 ARM reads: one Azure Monitor metrics call per governed app (run concurrently)
+        # plus one Cost Management query (amortized into the hourly cost line).
         end = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
         start = end - timedelta(hours=days * 24 - 1)
         timespan = f"{start.isoformat()}/{end.isoformat()}"
         replicas: dict[datetime, float] = {}
         cores: dict[datetime, float] = {}
         memory: dict[datetime, float] = {}
-        for app in self._apps:
-            payload = await self._arm.request(
-                "GET",
-                f"{self._app_id(app)}/providers/microsoft.insights/metrics",
-                params={
-                    "api-version": _METRICS_API,
-                    "metricnames": "Replicas,UsageNanoCores,WorkingSetBytes",
-                    "timespan": timespan,
-                    "interval": "PT1H",
-                    "aggregation": "Average",
-                },
-            )
+        payloads = await asyncio.gather(*(self._fetch_metrics(app, timespan) for app in self._apps))
+        for payload in payloads:
             for metric in payload.get("value", []):
                 name = metric.get("name", {}).get("value")
                 series = metric.get("timeseries") or [{}]
@@ -135,6 +129,19 @@ class AzureProdOpsProvider:
             for hour in hours
         )
         return ComputeSeries(points=points, currency=self._currency)
+
+    async def _fetch_metrics(self, app: str, timespan: str) -> dict[str, Any]:
+        return await self._arm.request(
+            "GET",
+            f"{self._app_id(app)}/providers/microsoft.insights/metrics",
+            params={
+                "api-version": _METRICS_API,
+                "metricnames": "Replicas,UsageNanoCores,WorkingSetBytes",
+                "timespan": timespan,
+                "interval": "PT1H",
+                "aggregation": "Average",
+            },
+        )
 
     async def _hourly_cost(self, start: date, end: date) -> dict[datetime, float]:
         # Cost Management bills daily for ActualCost; amortize each day's spend evenly across its 24

@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/admin/prod-ops", tags=["admin-prod-ops"])
 # default view; 90 caps the Azure query (and the chart's density) at something sane.
 _DEFAULT_DAYS = 7
 _MAX_DAYS = 90
-DaysQuery = Annotated[int, Query(ge=1, le=_MAX_DAYS)]
+_DaysQuery = Annotated[int, Query(ge=1, le=_MAX_DAYS)]
 
 
 @router.get("/summary", response_model=ProdOpsSummaryView)
@@ -50,7 +50,7 @@ async def get_cost(
     admin_id: AdminUserDep,
     provider: ProdOpsProviderDep,
     response: Response,
-    days: DaysQuery = _DEFAULT_DAYS,
+    days: _DaysQuery = _DEFAULT_DAYS,
 ) -> CostSeriesView:
     """Admin-only: daily Azure spend for the prod resource group over the last ``days`` days
     (default 7). The most recent day is flagged partial — Cost Management lags ~8-24h."""
@@ -71,7 +71,7 @@ async def get_compute(
     admin_id: AdminUserDep,
     provider: ProdOpsProviderDep,
     response: Response,
-    days: DaysQuery = _DEFAULT_DAYS,
+    days: _DaysQuery = _DEFAULT_DAYS,
 ) -> ComputeSeriesView:
     """Admin-only: hourly prod compute over the last ``days`` days (default 7) — usage (replicas +
     CPU + memory) plus the amortized hourly cost, for the dual-axis chart."""
@@ -107,8 +107,12 @@ async def get_power(
     response: Response,
 ) -> PowerStateView:
     """Admin-only: whether production is on, plus each governed app's run state."""
-    bind_correlation(response)
-    return _power_view(await provider.get_power_state())
+    request_id = bind_correlation(response)
+    state = await provider.get_power_state()
+    logger.info(
+        "prod_ops_power_fetched", admin_id=admin_id, is_on=state.is_on, request_id=request_id
+    )
+    return _power_view(state)
 
 
 @router.post("/power", response_model=PowerStateView)

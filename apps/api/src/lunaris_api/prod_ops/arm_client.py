@@ -1,3 +1,4 @@
+import asyncio
 import time
 from typing import Any
 
@@ -31,8 +32,15 @@ class ArmClient:
         self._client_id = client_id
         self._token: str | None = None
         self._expires_at = 0.0
+        # Serialize refreshes so concurrent ARM calls (e.g. the parallel per-app metric reads) don't
+        # each stampede the MSI endpoint for a token.
+        self._token_lock = asyncio.Lock()
 
     async def _token_value(self) -> str:
+        async with self._token_lock:
+            return await self._refresh_token_if_needed()
+
+    async def _refresh_token_if_needed(self) -> str:
         now = time.time()
         if self._token is not None and now < self._expires_at - _TOKEN_SKEW_SECONDS:
             return self._token

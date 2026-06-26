@@ -31,10 +31,12 @@ function series(days: number) {
 }
 
 function computeSeries(hours: number) {
+  const base = new Date("2026-06-20T00:00:00Z").getTime();
   return {
     currency: "CAD",
     points: Array.from({ length: hours }, (_, i) => ({
-      hour: `2026-06-01T${String(i % 24).padStart(2, "0")}:00:00Z`,
+      // Monotonic timestamps — distinct keys even past 24h, matching what the API returns.
+      hour: new Date(base + i * 3_600_000).toISOString(),
       replicas: 1,
       cpuCores: 0.5,
       memoryGb: 1,

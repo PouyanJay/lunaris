@@ -5,6 +5,7 @@ so we verify the adapter issues the right requests (cost query, metrics, contain
 start/stop actions) and parses the responses. The live behaviour is validated at deploy.
 """
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -75,6 +76,54 @@ def _provider(governed: tuple[str, ...] = ("lunaris-prod-api",)) -> AzureProdOps
         api_app="lunaris-prod-api",
         governed_apps=governed,
     )
+
+
+async def test_cost_query_sends_an_actual_cost_daily_body() -> None:
+    captured: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/Microsoft.CostManagement/query"):
+            captured.append(json.loads(request.content))
+        return _arm_handler(request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    arm = ArmClient(
+        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
+    )
+    provider = AzureProdOpsProvider(
+        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+    )
+
+    await provider.get_cost_daily(2)
+
+    assert len(captured) == 1
+    body = captured[0]
+    assert body["type"] == "ActualCost"
+    assert body["dataset"]["granularity"] == "Daily"
+
+
+async def test_metrics_request_asks_for_the_usage_metrics_hourly() -> None:
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/microsoft.insights/metrics"):
+            captured.append(request.url)
+        return _arm_handler(request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    arm = ArmClient(
+        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
+    )
+    provider = AzureProdOpsProvider(
+        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+    )
+
+    await provider.get_compute_series(1)
+
+    assert len(captured) == 1
+    params = captured[0].params
+    assert params["metricnames"] == "Replicas,UsageNanoCores,WorkingSetBytes"
+    assert params["interval"] == "PT1H"
 
 
 async def test_cost_daily_parses_rows_and_flags_today_partial() -> None:

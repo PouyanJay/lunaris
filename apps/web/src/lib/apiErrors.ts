@@ -7,3 +7,9 @@ export async function detailOf(response: Response): Promise<string | undefined> 
     .then((body: { detail?: string }) => body?.detail)
     .catch(() => undefined);
 }
+
+/** The message from a thrown cause when it's an `Error` with text, else the given fallback. Shared by
+ *  the admin sections so a caught failure surfaces consistently. */
+export function messageFor(cause: unknown, fallback: string): string {
+  return cause instanceof Error && cause.message ? cause.message : fallback;
+}

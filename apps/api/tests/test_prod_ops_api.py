@@ -185,6 +185,23 @@ async def test_power_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None:
     assert toggle.status_code == 403
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("GET", "/api/admin/prod-ops/cost", None),
+        ("GET", "/api/admin/prod-ops/compute", None),
+        ("GET", "/api/admin/prod-ops/power", None),
+        ("POST", "/api/admin/prod-ops/power", {"on": True, "confirm": True}),
+    ],
+)
+async def test_every_endpoint_without_a_token_is_401(
+    client: httpx.AsyncClient, method: str, path: str, body: dict | None
+) -> None:
+    response = await client.request(method, path, json=body)
+
+    assert response.status_code == 401
+
+
 @pytest.mark.parametrize(("endpoint", "days"), [("cost", 1), ("cost", 90), ("compute", 1)])
 async def test_window_boundaries_are_accepted(
     client: httpx.AsyncClient, endpoint: str, days: int
@@ -194,6 +211,13 @@ async def test_window_boundaries_are_accepted(
     assert response.status_code == 200
     expected = days if endpoint == "cost" else days * 24
     assert len(response.json()["points"]) == expected
+
+
+@pytest.mark.parametrize("endpoint", ["cost", "compute"])
+async def test_window_above_the_cap_is_422(client: httpx.AsyncClient, endpoint: str) -> None:
+    response = await client.get(f"/api/admin/prod-ops/{endpoint}?days=91", headers=_admin())
+
+    assert response.status_code == 422
 
 
 async def test_power_toggle_rejects_a_malformed_body(client: httpx.AsyncClient) -> None:

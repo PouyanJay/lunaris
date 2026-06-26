@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import { messageFor } from "../../lib/apiErrors";
 import { fetchProdPower, setProdPower, type ProdPowerState } from "../../lib/prodOps";
 import { Button } from "../primitives/Button";
+import { ErrorWithRetry } from "./ErrorWithRetry";
 import styles from "./AdminPortal.module.css";
 import prodOps from "./ProdOps.module.css";
 
@@ -9,10 +11,6 @@ type State =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; power: ProdPowerState };
-
-function messageFor(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
-}
 
 /** The full production on/off switch. OFF stops the prod apps (saves the always-on cost; only the
  *  fixed registry floor remains); ON restores them. Stopping prod is a self-inflicted outage, so the
@@ -62,18 +60,7 @@ export function PowerSwitch({ controlBaseUrl }: { controlBaseUrl: string }) {
       </p>
     );
   } else if (state.status === "error") {
-    body = (
-      <div className={styles.statusRegion}>
-        <p className={styles.error} role="alert">
-          {state.message}
-        </p>
-        <div>
-          <Button type="button" onClick={() => setReloadCount((n) => n + 1)}>
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
+    body = <ErrorWithRetry message={state.message} onRetry={() => setReloadCount((n) => n + 1)} />;
   } else {
     const { isOn, apps } = state.power;
     const target = !isOn;

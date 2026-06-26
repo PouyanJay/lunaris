@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import { messageFor } from "../../lib/apiErrors";
 import {
   fetchProdCompute,
   fetchProdCost,
@@ -9,9 +10,9 @@ import {
   type ProdCostSeries,
   type ProdOpsSummary,
 } from "../../lib/prodOps";
-import { Button } from "../primitives/Button";
 import { ComputeChart } from "./ComputeChart";
 import { CostChart } from "./CostChart";
+import { ErrorWithRetry } from "./ErrorWithRetry";
 import { PowerSwitch } from "./PowerSwitch";
 import styles from "./AdminPortal.module.css";
 import prodOps from "./ProdOps.module.css";
@@ -32,25 +33,6 @@ type ComputeState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; series: ProdComputeSeries };
-
-function messageFor(cause: unknown, fallback: string): string {
-  return cause instanceof Error && cause.message ? cause.message : fallback;
-}
-
-function ErrorWithRetry({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div className={styles.statusRegion}>
-      <p className={styles.error} role="alert">
-        {message}
-      </p>
-      <div>
-        <Button type="button" onClick={onRetry}>
-          Retry
-        </Button>
-      </div>
-    </div>
-  );
-}
 
 /** Prod operations: cost + compute charts and (later) the on/off switch for production. A section of
  *  the Admin Portal — owns its own loading/error state inline; a shared window drives both charts. */
