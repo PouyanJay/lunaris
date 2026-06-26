@@ -7,6 +7,12 @@ requires-python = ">=3.12"
 [tool.uv]
 package = false
 
+# Security constraint on a transitive dependency (not a direct dep of any package).
+# langsmith <0.8.18 is vulnerable to GHSA-f4xh-w4cj-qxq8 (HIGH — TracingMiddleware
+# arbitrary server-side file read), which fails the image Trivy gate. Floor it here so
+# every workspace resolution picks a patched langsmith without making it a direct dep.
+constraint-dependencies = ["langsmith>=0.8.18"]
+
 [tool.uv.workspace]
 members = ["packages/*", "apps/api"]
 
