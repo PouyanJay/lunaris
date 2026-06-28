@@ -32,6 +32,7 @@ from .routers import (
     health,
     keyless,
     me,
+    prod_ops,
     runs,
     signup_gate,
     videos,
@@ -92,6 +93,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(me.router)
     app.include_router(signup_gate.router)
     app.include_router(admin_users.router)
+    app.include_router(prod_ops.router)
     app.include_router(courses.router)
     app.include_router(briefs.router)
     app.include_router(runs.router)

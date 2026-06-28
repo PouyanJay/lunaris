@@ -46,6 +46,23 @@ var acrPullRoleId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 )
+// Prod-operations admin dashboard (prod-ops-admin): the API identity reads cost + compute over the
+// resource group. Cost Management Reader covers the Cost Management *query* action (a POST, which
+// plain Reader's `*/read` does not); Monitoring Reader covers the metrics read; Reader covers the
+// container-apps run-state read behind the power switch. All read-only — the start/stop actions live
+// on the separate control-plane identity (infra/prod-ops-control.bicep), never the API.
+var costManagementReaderRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '72fafb9e-0641-4937-9268-a91bfd8191a3'
+)
+var monitoringReaderRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '43d0d8ad-25c7-4714-9337-8ba259a9fe05'
+)
+var readerRoleId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'acdd72a7-3385-48ef-bd42-f606fba81ae7'
+)
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logName
@@ -130,6 +147,34 @@ resource kvSecretsUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: kv
   properties: {
     roleDefinitionId: kvSecretsUserRoleId
+    principalId: mi.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Resource-group-scoped reads for the prod-operations dashboard (omit `scope` → the deployment's RG).
+resource costReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, mi.id, costManagementReaderRoleId)
+  properties: {
+    roleDefinitionId: costManagementReaderRoleId
+    principalId: mi.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource monitoringReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, mi.id, monitoringReaderRoleId)
+  properties: {
+    roleDefinitionId: monitoringReaderRoleId
+    principalId: mi.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource reader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(resourceGroup().id, mi.id, readerRoleId)
+  properties: {
+    roleDefinitionId: readerRoleId
     principalId: mi.properties.principalId
     principalType: 'ServicePrincipal'
   }

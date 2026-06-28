@@ -80,6 +80,7 @@ from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, ExplainBinding
 from .explain_throttle import KeylessExplainThrottle
+from .prod_ops import FakeProdOpsProvider, IProdOpsProvider
 from .run_registry import RunRegistry
 from .secrets import (
     BYOK_PROVIDERS,
@@ -489,6 +490,60 @@ def get_user_directory(
 
 
 UserDirectoryDep = Annotated[IUserDirectory, Depends(get_user_directory)]
+
+# The prod-operations provider behind the admin dashboard (cost/compute/power over rg-lunaris-prod).
+# Process-wide singleton like the other admin providers. The in-memory fake is the no-Azure/test
+# path; the real ARM adapter (authed via the API's managed identity) is selected in cloud.
+_fake_prod_ops_provider = FakeProdOpsProvider()
+
+# Default set of prod apps the on/off switch governs (the API + the scale-to-zero workers).
+_DEFAULT_GOVERNED_APPS = (
+    "lunaris-prod-api",
+    "lunaris-prod-video-worker",
+    "lunaris-prod-inference",
+    "lunaris-prod-embeddings",
+)
+
+
+@lru_cache
+def _build_prod_ops_provider() -> IProdOpsProvider:
+    """Select the prod-operations provider once. The Azure ARM adapter when the subscription and
+    the ACA-injected managed-identity env are present; else the in-memory fake (local/dev/tests)."""
+    subscription_id = os.environ.get("PROD_OPS_SUBSCRIPTION_ID")
+    identity_endpoint = os.environ.get("IDENTITY_ENDPOINT")
+    identity_header = os.environ.get("IDENTITY_HEADER")
+    client_id = os.environ.get("PROD_OPS_MI_CLIENT_ID") or os.environ.get("AZURE_CLIENT_ID")
+    if not (subscription_id and identity_endpoint and identity_header and client_id):
+        return _fake_prod_ops_provider
+
+    import httpx
+
+    from .prod_ops import ArmClient, AzureProdOpsProvider
+
+    arm = ArmClient(
+        httpx.AsyncClient(timeout=30.0),
+        identity_endpoint=identity_endpoint,
+        identity_header=identity_header,
+        client_id=client_id,
+    )
+    governed = os.environ.get("PROD_OPS_GOVERNED_APPS")
+    apps = tuple(governed.split(",")) if governed else _DEFAULT_GOVERNED_APPS
+    return AzureProdOpsProvider(
+        arm,
+        subscription_id=subscription_id,
+        resource_group=os.environ.get("PROD_OPS_RESOURCE_GROUP", "rg-lunaris-prod"),
+        api_app=os.environ.get("PROD_OPS_API_APP", "lunaris-prod-api"),
+        governed_apps=apps,
+        currency=os.environ.get("PROD_OPS_CURRENCY", "CAD"),
+    )
+
+
+def get_prod_ops_provider() -> IProdOpsProvider:
+    """The prod-operations provider: the Azure ARM adapter in cloud, else the in-memory fake."""
+    return _build_prod_ops_provider()
+
+
+ProdOpsProviderDep = Annotated[IProdOpsProvider, Depends(get_prod_ops_provider)]
 
 
 def _runtime_config_resolver(store: IUserConfigStore) -> ConfigResolver:

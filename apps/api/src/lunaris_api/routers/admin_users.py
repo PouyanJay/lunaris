@@ -1,26 +1,18 @@
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from lunaris_runtime.logging import bind_request_id
 
 from ..admin_users import AdminAccount
 from ..config import Settings, get_settings
 from ..dependencies import AdminUserDep, UserDirectoryDep
 from ..schemas.admin_users import AdminAccountView
+from ._correlation import bind_correlation
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/admin/users", tags=["admin-users"])
-
-
-def _bind(response: Response) -> None:
-    """Bind a fresh correlation id + surface it in X-Request-Id, so an admin action on an account
-    (a privileged change) is traceable across the logs."""
-    request_id = uuid4().hex
-    bind_request_id(request_id)
-    response.headers["X-Request-Id"] = request_id
 
 
 def _to_view(account: AdminAccount, *, settings: Settings, admin_id: str) -> AdminAccountView:
@@ -43,7 +35,7 @@ async def list_users(
     response: Response,
 ) -> list[AdminAccountView]:
     """Admin-only: every account, with its admin/self flags for the user-management list."""
-    _bind(response)
+    bind_correlation(response)
     accounts = await directory.list_accounts()
     return [_to_view(account, settings=settings, admin_id=admin_id) for account in accounts]
 
@@ -53,12 +45,13 @@ async def delete_user(
     user_id: UUID,
     admin_id: AdminUserDep,
     directory: UserDirectoryDep,
+    response: Response,
 ) -> Response:
     """Admin-only: delete an account. ``user_id`` is UUID-typed, so a malformed id is a 422, not a
     500. An admin can't delete their OWN account (a 400) — that would lock them out mid-session;
     otherwise idempotent (204 even if the id is already gone)."""
-    request_id = uuid4().hex
-    bind_request_id(request_id)
+    request_id = bind_correlation(response)
+    # The error + 204 responses replace `response`, so re-stamp the id onto them.
     headers = {"X-Request-Id": request_id}
     target = str(user_id)
     if target == admin_id:
@@ -69,5 +62,7 @@ async def delete_user(
         )
     await directory.delete_account(target)
     # Audit the privileged action — ids only, never the target's email (PII stays out of the logs).
-    logger.info("admin_user_deleted", target_user_id=target, admin_id=admin_id)
+    logger.info(
+        "admin_user_deleted", target_user_id=target, admin_id=admin_id, request_id=request_id
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers=headers)

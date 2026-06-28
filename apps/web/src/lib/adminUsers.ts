@@ -1,3 +1,4 @@
+import { detailOf } from "./apiErrors";
 import { authedFetch } from "./apiClient";
 
 /** One account on the admin user-management list (mirrors the API's AdminAccountView). */
@@ -16,13 +17,6 @@ export class AdminUsersError extends Error {
     super(message, options);
     this.name = "AdminUsersError";
   }
-}
-
-async function detailOf(response: Response): Promise<string | undefined> {
-  return response
-    .json()
-    .then((body: { detail?: string }) => body?.detail)
-    .catch(() => undefined);
 }
 
 /** Admin: list every account. 403 unless the caller is an admin. */
