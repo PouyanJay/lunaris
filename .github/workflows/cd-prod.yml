@@ -125,31 +125,6 @@ jobs:
               prodOpsSubscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
               prodOpsResourceGroup="${{ vars.RESOURCE_GROUP }}"
 
-      # Prod-operations control plane (prod-ops-admin, AD-3): the always-on app the on/off switch
-      # calls, since stopping prod stops the API itself. Own identity + a least-privilege start/stop
-      # role. Captures the FQDN so the SPA build below can point VITE_PROD_CONTROL_URL at it.
-      - name: Deploy prod-ops control plane (prod-ops-control.bicep, prod)
-        id: prodops_control
-        run: |
-          set -euo pipefail
-          FQDN=$(az deployment group create \
-            --resource-group "${{ vars.RESOURCE_GROUP }}" \
-            --name "lunaris-prod-control-${{ github.run_number }}" \
-            --template-file infra/prod-ops-control.bicep \
-            --parameters \
-              location="${{ vars.LOCATION }}" \
-              acaEnvId="${{ vars.ACA_ENV_ID }}" \
-              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
-              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
-              acrPullIdentityId="${{ vars.MI_RESOURCE_ID }}" \
-              subscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
-              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}" \
-              supabaseUrl="${{ vars.SUPABASE_URL }}" \
-              corsOrigins="${{ vars.CORS_ORIGINS }}" \
-            --query properties.outputs.controlFqdn.value -o tsv)
-          echo "url=https://$FQDN" >> "$GITHUB_OUTPUT"
-          echo "Prod-ops control plane at https://$FQDN"
-
       # The dedicated video-worker Container App (explainer-video V7) — the single prod rollout flips
       # vars.VIDEO_GENERATION_ENABLED on (V7-T5), which both lets the API enqueue and deploys this.
       # KEDA keeps it at zero replicas until a job is enqueued. Scaler conn = the IPv4 pooler (same as
@@ -276,6 +251,34 @@ jobs:
               exit 1
             fi
           done
+
+      # Prod-operations control plane (prod-ops-admin, AD-3): the always-on app the on/off switch
+      # calls, since stopping prod stops the API itself. Deployed LAST and non-fatally — it must never
+      # block the API promote or the custom-domain restore above (an earlier failure here once dropped
+      # the domain). Its identity's least-privilege start/stop role is applied ONCE, out-of-band, by an
+      # Owner (CI lacks roleAssignments write) — see documentation/prod-ops-admin.md. Idempotent.
+      - name: Deploy prod-ops control plane (prod-ops-control.bicep, prod)
+        id: prodops_control
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          FQDN=$(az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-prod-control-${{ github.run_number }}" \
+            --template-file infra/prod-ops-control.bicep \
+            --parameters \
+              location="${{ vars.LOCATION }}" \
+              acaEnvId="${{ vars.ACA_ENV_ID }}" \
+              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              acrPullIdentityId="${{ vars.MI_RESOURCE_ID }}" \
+              subscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}" \
+              supabaseUrl="${{ vars.SUPABASE_URL }}" \
+              corsOrigins="${{ vars.CORS_ORIGINS }}" \
+            --query properties.outputs.controlFqdn.value -o tsv)
+          echo "url=https://$FQDN" >> "$GITHUB_OUTPUT"
+          echo "Prod-ops control plane at https://$FQDN"
 
       - name: Deployment summary
         run: |
