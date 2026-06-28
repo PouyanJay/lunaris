@@ -25,27 +25,32 @@ the MSI env are present.
 
 ## Deploy / configuration
 
-1. **RBAC (in `infra/main.bicep`)** — the API identity gets, resource-group-scoped:
-   - **Cost Management Reader** (the cost *query* action),
-   - **Monitoring Reader** (metrics),
-   - **Reader** (container-apps run-state for the power read).
-   These ship with the platform deployment; no manual step.
+All of the below is wired through `cd-prod` — a prod promote deploys it. The control plane's URL is a
+one-time GitHub-var setup after the first deploy (see step 3).
 
-2. **API env (set on the prod API container app, via app.bicep / cd-prod):**
-   - `PROD_OPS_SUBSCRIPTION_ID` — the subscription holding `rg-lunaris-prod`.
-   - `PROD_OPS_RESOURCE_GROUP` — defaults to `rg-lunaris-prod`.
-   - (`IDENTITY_ENDPOINT`/`IDENTITY_HEADER` are auto-injected by ACA; `AZURE_CLIENT_ID` is the API MI.)
-   With these set, the cost/compute/power-state **reads** go live.
+1. **RBAC (`infra/main.bicep`)** — the API identity gets, resource-group-scoped: **Cost Management
+   Reader** (the cost *query* action), **Monitoring Reader** (metrics), **Reader** (container-apps
+   run-state for the power read). Ships with the platform deployment.
+
+2. **API env (`app.bicep`, passed by `cd-prod`)** — `cd-prod` passes `prodOpsSubscriptionId` (=
+   `secrets.AZURE_SUBSCRIPTION_ID`) and `prodOpsResourceGroup` (= `vars.RESOURCE_GROUP`); app.bicep
+   sets `PROD_OPS_SUBSCRIPTION_ID` / `PROD_OPS_RESOURCE_GROUP` / `PROD_OPS_MI_CLIENT_ID` (the API MI's
+   client id) on the API container. (`IDENTITY_ENDPOINT`/`IDENTITY_HEADER` are auto-injected by ACA.)
+   This makes the cost/compute/power-state **reads** go live immediately on promote.
 
 3. **Control plane (`infra/prod-ops-control.bicep`, AD-3)** — the on/off **toggle** stops the API
-   itself, so it cannot be served by the API. This module deploys a tiny scale-to-zero Container App
+   itself, so it can't be served by the API. `cd-prod` deploys a tiny scale-to-zero Container App
    (`lunaris-prod-control`, min 0 + ingress, ~$0 idle) running the same API image, with its **own**
    managed identity holding a **least-privilege custom role** (container-apps read + start + stop
-   only — never Contributor). Point the SPA at it with `VITE_PROD_CONTROL_URL`; it falls back to the
-   API base for dev where the same route is served in-process.
+   only). It verifies admin tokens via JWKS off `SUPABASE_URL` (same as the API in cloud) and allows
+   the SPA origin via `corsOrigins`. The promote job **prints the control URL** (and a `::notice::`).
+   **One-time:** set the GitHub var `VITE_PROD_CONTROL_URL` to that URL, then re-run the SPA build so
+   the switch targets the control plane. Until then, the switch falls back to the API base (reads
+   work; the toggle would 403 since the API identity has no start/stop) — so set the var before using
+   the switch.
 
-4. **Admin access** — add the operator's email (e.g. `pj.autech@gmail.com`) to `LUNARIS_ADMIN_EMAILS`
-   on both the API and the control app.
+4. **Admin access** — set the GitHub var `LUNARIS_ADMIN_EMAILS` to include the operator's email (e.g.
+   `pj.autech@gmail.com`); `cd-prod` passes it to both the API and the control app.
 
-The reads (1–2) and the toggle's control plane (3) validate at deploy against live Azure; everything
-below the Azure boundary is covered by unit/contract/integration tests.
+Everything below the Azure boundary is covered by tests; the real adapter, RBAC, and control plane
+validate at deploy against live Azure.

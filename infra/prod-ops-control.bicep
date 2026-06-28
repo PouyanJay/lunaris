@@ -33,12 +33,13 @@ param acrPullIdentityId string
 param subscriptionId string = subscription().subscriptionId
 
 @description('Comma-separated admin email allowlist (the toggle is admin-gated).')
-@secure()
-param adminEmails string
+param adminEmails string = ''
 
-@description('Supabase JWT secret / JWKS config the control app verifies admin tokens with.')
-@secure()
-param supabaseJwtSecret string
+@description('Supabase URL — the control app verifies admin tokens via JWKS off this, same as the API (cloud uses ES256/JWKS, not a shared secret).')
+param supabaseUrl string
+
+@description('Allowed CORS origin(s) — the admin SPA calls this app cross-origin for the toggle.')
+param corsOrigins string = ''
 
 var tags = {
   app: 'lunaris'
@@ -114,10 +115,6 @@ resource control 'Microsoft.App/containerApps@2024-03-01' = {
           identity: acrPullIdentityId
         }
       ]
-      secrets: [
-        { name: 'admin-emails', value: adminEmails }
-        { name: 'supabase-jwt-secret', value: supabaseJwtSecret }
-      ]
     }
     template: {
       containers: [
@@ -127,8 +124,13 @@ resource control 'Microsoft.App/containerApps@2024-03-01' = {
           resources: { cpu: json('0.25'), memory: '0.5Gi' }
           env: [
             { name: 'LUNARIS_ENV', value: 'prod' }
-            { name: 'LUNARIS_ADMIN_EMAILS', secretRef: 'admin-emails' }
-            { name: 'SUPABASE_JWT_SECRET', secretRef: 'supabase-jwt-secret' }
+            // Verify admin tokens exactly as the API does in cloud (ES256/JWKS off SUPABASE_URL).
+            { name: 'SUPABASE_URL', value: supabaseUrl }
+            { name: 'LUNARIS_ADMIN_EMAILS', value: adminEmails }
+            { name: 'LUNARIS_CORS_ORIGINS', value: corsOrigins }
+            // Lean startup — this app only serves the prod-ops power route, never builds courses.
+            { name: 'LUNARIS_PIPELINE', value: 'stub' }
+            { name: 'LUNARIS_VIDEO_INPROC_WORKER', value: 'false' }
             // Activates the real Azure adapter; the control MI's client id authenticates start/stop.
             { name: 'PROD_OPS_SUBSCRIPTION_ID', value: subscriptionId }
             { name: 'PROD_OPS_RESOURCE_GROUP', value: resourceGroup().name }

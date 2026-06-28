@@ -121,7 +121,34 @@ jobs:
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}" \
               videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}" \
-              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}"
+              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}" \
+              prodOpsSubscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+              prodOpsResourceGroup="${{ vars.RESOURCE_GROUP }}"
+
+      # Prod-operations control plane (prod-ops-admin, AD-3): the always-on app the on/off switch
+      # calls, since stopping prod stops the API itself. Own identity + a least-privilege start/stop
+      # role. Captures the FQDN so the SPA build below can point VITE_PROD_CONTROL_URL at it.
+      - name: Deploy prod-ops control plane (prod-ops-control.bicep, prod)
+        id: prodops_control
+        run: |
+          set -euo pipefail
+          FQDN=$(az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-prod-control-${{ github.run_number }}" \
+            --template-file infra/prod-ops-control.bicep \
+            --parameters \
+              location="${{ vars.LOCATION }}" \
+              acaEnvId="${{ vars.ACA_ENV_ID }}" \
+              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              acrPullIdentityId="${{ vars.MI_RESOURCE_ID }}" \
+              subscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
+              adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}" \
+              supabaseUrl="${{ vars.SUPABASE_URL }}" \
+              corsOrigins="${{ vars.CORS_ORIGINS }}" \
+            --query properties.outputs.controlFqdn.value -o tsv)
+          echo "url=https://$FQDN" >> "$GITHUB_OUTPUT"
+          echo "Prod-ops control plane at https://$FQDN"
 
       # The dedicated video-worker Container App (explainer-video V7) — the single prod rollout flips
       # vars.VIDEO_GENERATION_ENABLED on (V7-T5), which both lets the API enqueue and deploys this.
@@ -261,7 +288,9 @@ jobs:
             echo "|---|---|"
             echo "| Promoted SHA | \`${{ steps.sha.outputs.value }}\` |"
             echo "| URL | https://$FQDN |"
+            echo "| Prod-ops control plane | ${{ steps.prodops_control.outputs.url }} |"
           } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::Set the GitHub var VITE_PROD_CONTROL_URL to ${{ steps.prodops_control.outputs.url }} (then re-run the SPA build) so the prod-ops on/off switch targets the control plane."
 
   web:
     name: Build & deploy SPA (prod)
@@ -284,6 +313,10 @@ jobs:
           VITE_API_URL: ${{ vars.VITE_API_URL }}
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # The prod-ops on/off switch calls the always-on control plane (AD-3), not the API it
+          # stops. Set this var to the control app's URL (printed by the promote job's control-plane
+          # deploy step) after the first deploy; empty → the switch falls back to the API base.
+          VITE_PROD_CONTROL_URL: ${{ vars.VITE_PROD_CONTROL_URL }}
       - name: Deploy to Static Web Apps (prod)
         uses: Azure/static-web-apps-deploy@v1
         with:
