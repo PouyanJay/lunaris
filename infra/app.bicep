@@ -53,6 +53,12 @@ param videoGenerationEnabled bool = false
 @description('Comma-separated emails allowed to manage the signup invite-gate (LUNARIS_ADMIN_EMAILS). Empty (the default) means no admins, so the admin endpoints 403 everyone.')
 param adminEmails string = ''
 
+@description('Subscription id behind the prod-operations admin dashboard. Empty (the default) keeps the in-memory fake; setting it activates the real Azure cost/compute/power reads via this app identity.')
+param prodOpsSubscriptionId string = ''
+
+@description('Resource group the prod-operations dashboard reports on (defaults to this deployment RG).')
+param prodOpsResourceGroup string = ''
+
 @description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')
 param minReplicas int = (env == 'prod') ? 1 : 0
 param maxReplicas int = 3
@@ -135,6 +141,23 @@ var keylessEmbeddingsEnv = empty(keylessEmbeddingsBaseUrl)
   : [{ name: 'LUNARIS_FALLBACK_EMBEDDINGS_BASE_URL', value: keylessEmbeddingsBaseUrl }]
 var keylessEnv = concat(keylessLlmEnv, keylessEmbeddingsEnv)
 
+// Prod-operations dashboard: when a subscription id is supplied, point the real Azure adapter at the
+// resource group and authenticate it as THIS app's user-assigned identity (which main.bicep grants
+// Cost Management Reader + Monitoring Reader + Reader). Empty → the in-memory fake (dev default).
+resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+  name: last(split(managedIdentityResourceId, '/'))
+}
+var prodOpsEnv = empty(prodOpsSubscriptionId)
+  ? []
+  : [
+      { name: 'PROD_OPS_SUBSCRIPTION_ID', value: prodOpsSubscriptionId }
+      {
+        name: 'PROD_OPS_RESOURCE_GROUP'
+        value: empty(prodOpsResourceGroup) ? resourceGroup().name : prodOpsResourceGroup
+      }
+      { name: 'PROD_OPS_MI_CLIENT_ID', value: apiIdentity.properties.clientId }
+    ]
+
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: containerAppName
   location: location
@@ -174,7 +197,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json(cpu)
             memory: memory
           }
-          env: concat(baseEnv, providerEnv, byokEnv, keylessEnv)
+          env: concat(baseEnv, providerEnv, byokEnv, keylessEnv, prodOpsEnv)
         }
       ]
       scale: {
