@@ -22,6 +22,11 @@ def _parse_usage_date(raw: object) -> date:
     return date(int(text[0:4]), int(text[4:6]), int(text[6:8]))
 
 
+def _iso_z(value: datetime) -> str:
+    """A UTC datetime as ``...Z`` (never ``+00:00`` — the ``+`` becomes a space in a URL query)."""
+    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class AzureProdOpsProvider:
     """The real ``IProdOpsProvider`` — reads/controls prod via Azure ARM through the API's managed
     identity (``ArmClient``). Cost from Cost Management, compute from Azure Monitor metrics, power
@@ -98,7 +103,9 @@ class AzureProdOpsProvider:
         # plus one Cost Management query (amortized into the hourly cost line).
         end = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
         start = end - timedelta(hours=days * 24 - 1)
-        timespan = f"{start.isoformat()}/{end.isoformat()}"
+        # Use a trailing 'Z' for UTC, NOT isoformat()'s '+00:00': the '+' in a URL query string
+        # decodes to a space, so ARM reads an invalid ISO-8601 interval and 400s the whole query.
+        timespan = f"{_iso_z(start)}/{_iso_z(end)}"
         replicas: dict[datetime, float] = {}
         cores: dict[datetime, float] = {}
         memory: dict[datetime, float] = {}
