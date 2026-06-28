@@ -51,41 +51,16 @@ var tags = {
 var controlMiName = '${namePrefix}-control-mi'
 var controlAppName = '${namePrefix}-control'
 
-// LEAST-PRIVILEGE custom role: exactly the container-apps actions the on/off switch needs — read the
-// run state, start, and stop. No write/delete, no other resource types. Scoped to this RG only.
-resource startStopRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
-  name: guid(resourceGroup().id, 'prod-ops-start-stop')
-  properties: {
-    roleName: 'Lunaris Prod-Ops Start/Stop (${resourceGroup().name})'
-    description: 'Read container-apps run state and start/stop them — nothing else.'
-    type: 'CustomRole'
-    assignableScopes: [resourceGroup().id]
-    permissions: [
-      {
-        actions: [
-          'Microsoft.App/containerApps/read'
-          'Microsoft.App/containerApps/start/action'
-          'Microsoft.App/containerApps/stop/action'
-        ]
-        notActions: []
-      }
-    ]
-  }
-}
-
+// The control plane's own identity. It needs a LEAST-PRIVILEGE start/stop role on the resource group
+// (container-apps read + start/action + stop/action), but RBAC is NOT created here: the CI service
+// principal that runs cd-prod intentionally lacks roleDefinitions/roleAssignments write, so creating
+// roles in this CI-deployed template fails the whole deploy. The custom role + assignment are applied
+// ONCE, out-of-band, by an Owner (see documentation/prod-ops-admin.md) against this MI's principal id
+// (surfaced as an output).
 resource controlMi 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: controlMiName
   location: location
   tags: tags
-}
-
-resource startStopAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(resourceGroup().id, controlMi.id, startStopRole.id)
-  properties: {
-    roleDefinitionId: startStopRole.id
-    principalId: controlMi.properties.principalId
-    principalType: 'ServicePrincipal'
-  }
 }
 
 resource control 'Microsoft.App/containerApps@2024-03-01' = {
@@ -150,3 +125,4 @@ resource control 'Microsoft.App/containerApps@2024-03-01' = {
 
 output controlFqdn string = control.properties.configuration.ingress.fqdn
 output controlMiClientId string = controlMi.properties.clientId
+output controlMiPrincipalId string = controlMi.properties.principalId
