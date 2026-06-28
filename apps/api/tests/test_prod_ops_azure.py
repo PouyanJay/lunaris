@@ -124,6 +124,11 @@ async def test_metrics_request_asks_for_the_usage_metrics_hourly() -> None:
     params = captured[0].params
     assert params["metricnames"] == "Replicas,UsageNanoCores,WorkingSetBytes"
     assert params["interval"] == "PT1H"
+    # The timespan must use a 'Z' suffix, never '+00:00' — the '+' decodes to a space in a URL
+    # query string and ARM rejects the interval (the bug that 400'd every compute load).
+    timespan = params["timespan"]
+    assert "+" not in timespan
+    assert timespan.count("Z") == 2
 
 
 async def test_cost_daily_parses_rows_and_flags_today_partial() -> None:
