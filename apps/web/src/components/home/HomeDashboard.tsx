@@ -1,11 +1,12 @@
 import { Link } from "react-router";
 
+import { CourseCard } from "../course/CourseCard";
 import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
 import { displayNameFromEmail, greetingForHour } from "../../lib/greeting";
 import { ROUTES } from "../../lib/routes";
-import type { CourseRun } from "../../types/course";
+import type { CourseRun, CourseSummary } from "../../types/course";
 import styles from "./HomeDashboard.module.css";
 
 interface HomeDashboardProps {
@@ -18,7 +19,9 @@ interface HomeDashboardProps {
   onNewCourse: () => void;
 }
 
-const SKELETON_CARDS = 3;
+/** How many recent courses the Home grid shows (the design's three-up row). */
+const RECENT_LIMIT = 3;
+const SKELETON_CARDS = RECENT_LIMIT;
 
 /** A neutral, honest subline until the richer mastery figure lands (Task 4). */
 function subline(state: LibraryState): string {
@@ -74,12 +77,31 @@ function HomeBody({
     return <FirstRunHero onNewCourse={onNewCourse} />;
   }
 
+  return <RecentCourses courses={state.courses} />;
+}
+
+/** The recent grid: the three most-recently-opened courses (the library is already ordered
+ *  last-opened-first server-side) as cover cards, with a way through to the full library. */
+function RecentCourses({ courses }: { courses: CourseSummary[] }) {
+  const recent = courses.slice(0, RECENT_LIMIT);
   return (
-    <div className={styles.viewAllRow}>
-      <Link className={styles.viewAll} to={ROUTES.library}>
-        View all courses →
-      </Link>
-    </div>
+    <section aria-labelledby="home-recent">
+      <div className={styles.sectionHead}>
+        <h3 id="home-recent" className={styles.sectionTitle}>
+          Recent courses
+        </h3>
+        {courses.length > RECENT_LIMIT && (
+          <Link className={styles.viewAll} to={ROUTES.library}>
+            View all courses →
+          </Link>
+        )}
+      </div>
+      <ul className={styles.grid}>
+        {recent.map((course) => (
+          <CourseCard key={course.id} course={course} />
+        ))}
+      </ul>
+    </section>
   );
 }
 

@@ -76,8 +76,30 @@ describe("HomeDashboard", () => {
     expect(onNewCourse).toHaveBeenCalledOnce();
   });
 
-  it("links to the full library once courses exist", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json([makeCourseSummary()])));
+  it("renders the recent grid as linked cover cards, most-recent first", async () => {
+    const courses = [
+      makeCourseSummary({ id: "c-1", topic: "How HTTPS works" }),
+      makeCourseSummary({ id: "c-2", topic: "How binary search works" }),
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(courses)));
+
+    renderHome();
+
+    const first = await screen.findByRole("link", { name: /how https works/i });
+    expect(first).toHaveAttribute("href", "/courses/c-1");
+    expect(screen.getByRole("link", { name: /how binary search works/i })).toHaveAttribute(
+      "href",
+      "/courses/c-2",
+    );
+    // Three or fewer courses fit on Home — no need for a "view all" escape hatch yet.
+    expect(screen.queryByRole("link", { name: /view all courses/i })).not.toBeInTheDocument();
+  });
+
+  it("caps the recent grid at three and links to the full library when there are more", async () => {
+    const courses = Array.from({ length: 5 }, (_, i) =>
+      makeCourseSummary({ id: `c-${i}`, topic: `Course ${i}` }),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(courses)));
 
     renderHome();
 
@@ -87,5 +109,7 @@ describe("HomeDashboard", () => {
         "/courses",
       ),
     );
+    // Only the three most-recent cards show on Home (the library holds the rest).
+    expect(screen.getAllByRole("link", { name: /^course \d/i })).toHaveLength(3);
   });
 });

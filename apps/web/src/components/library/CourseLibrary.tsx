@@ -1,22 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router";
 
-import { Badge } from "../primitives/Badge";
-import { CourseCover } from "../primitives/CourseCover";
-import { ProgressBar } from "../primitives/ProgressBar";
-import { StatusDot, type StatusTone } from "../primitives/StatusDot";
+import { CourseCard } from "../course/CourseCard";
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
 import { useLibrary } from "../../hooks/useLibrary";
-import { coverSeed } from "../../lib/coverSeed";
+import { LEARNER_STATUS_META } from "../../lib/courseLabels";
 import { relativeTime } from "../../lib/relativeTime";
 import { coursePath } from "../../lib/routes";
-import type {
-  CourseLevel,
-  CourseRun,
-  CourseSummary,
-  LearnerCourseStatus,
-} from "../../types/course";
+import type { CourseRun, CourseSummary, LearnerCourseStatus } from "../../types/course";
 import styles from "./CourseLibrary.module.css";
 
 interface CourseLibraryProps {
@@ -29,13 +21,7 @@ interface CourseLibraryProps {
 
 type LibraryFilter = "all" | LearnerCourseStatus;
 
-const LEARNER_STATUS_META: Record<LearnerCourseStatus, { label: string; tone: StatusTone }> = {
-  in_progress: { label: "In progress", tone: "accent" },
-  completed: { label: "Completed", tone: "success" },
-  not_started: { label: "Not started", tone: "neutral" },
-};
-
-// One source of truth for the status wording: the pills reuse the card labels.
+// One source of truth for the status wording: the pills reuse the shared card labels.
 const FILTERS: { value: LibraryFilter; label: string }[] = [
   { value: "all", label: "All" },
   ...(Object.keys(LEARNER_STATUS_META) as LearnerCourseStatus[]).map((value) => ({
@@ -43,12 +29,6 @@ const FILTERS: { value: LibraryFilter; label: string }[] = [
     label: LEARNER_STATUS_META[value].label,
   })),
 ];
-
-const LEVEL_LABELS: Record<CourseLevel, string> = {
-  beginner: "Beginner",
-  intermediate: "Intermediate",
-  advanced: "Advanced",
-};
 
 /** What a filter with no matches should say — specific, never a silently blank grid (the pills
  *  themselves are the recovery path). */
@@ -70,40 +50,6 @@ function countsLine(courses: CourseSummary[]): string {
     `${counts.completed} completed`,
     `${counts.not_started} not started`,
   ].join(" · ");
-}
-
-function LibraryCard({ course }: { course: CourseSummary }) {
-  const status = LEARNER_STATUS_META[course.learnerStatus];
-  const meta = [
-    `${course.lessonTotal} ${course.lessonTotal === 1 ? "lesson" : "lessons"}`,
-    ...(course.level ? [LEVEL_LABELS[course.level]] : []),
-  ].join(" · ");
-  return (
-    <li>
-      <Link className={styles.card} to={coursePath(course.id)}>
-        <div className={styles.cover} aria-hidden="true">
-          <CourseCover seed={coverSeed(course.id)} />
-        </div>
-        <span className={styles.cardBody}>
-          <span className={styles.cardTitle}>{course.topic}</span>
-          <span className={styles.cardMeta}>
-            {meta}
-            {course.courseStatus === "review" && (
-              <Badge category="warning" className={styles.reviewBadge}>
-                REVIEW
-              </Badge>
-            )}
-          </span>
-          <ProgressBar
-            value={course.percent / 100}
-            label={`${course.topic} progress`}
-            tone={course.learnerStatus === "completed" ? "success" : "accent"}
-          />
-          <StatusDot label={status.label} tone={status.tone} />
-        </span>
-      </Link>
-    </li>
-  );
 }
 
 /** The learner-status pills + the sort note — the library's one piece of local view state. */
@@ -204,7 +150,7 @@ export function CourseLibrary({ apiBaseUrl, onNewCourse, runs = [] }: CourseLibr
       ) : (
         <ul className={styles.grid}>
           {visible.map((course) => (
-            <LibraryCard key={course.id} course={course} />
+            <CourseCard key={course.id} course={course} />
           ))}
         </ul>
       )}
