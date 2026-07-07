@@ -83,6 +83,22 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 
+  it("library header offers a New course action that opens the composer", async () => {
+    vi.stubGlobal("fetch", routedFetch());
+    window.history.pushState(null, "", "/courses");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "My courses" });
+
+    // Scoped to the header band — the sidebar carries its own New course button.
+    fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "New course" }));
+
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
   it("renders the course library at /courses, linking the fetched course into its canvas", async () => {
     vi.stubGlobal("fetch", routedFetch({ library: [makeCourseSummary()] }));
     window.history.pushState(null, "", "/courses");

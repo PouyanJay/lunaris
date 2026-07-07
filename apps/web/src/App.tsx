@@ -463,8 +463,18 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     if (route.kind === "library") {
       return {
         title: "My courses",
-        meta: null,
-        body: <CourseLibrary apiBaseUrl={apiBaseUrl} onNewCourse={startNewCourse} />,
+        meta: (
+          <Button variant="accent" onClick={startNewCourse}>
+            New course
+          </Button>
+        ),
+        body: (
+          <CourseLibrary
+            apiBaseUrl={apiBaseUrl}
+            onNewCourse={startNewCourse}
+            runs={runsState.status === "ready" ? runsState.runs : []}
+          />
+        ),
       };
     }
     if (route.kind === "settings") {

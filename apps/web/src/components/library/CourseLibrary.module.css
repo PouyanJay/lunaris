@@ -1,36 +1,178 @@
-/* My-courses library canvas: a cover-card grid over hairline-divided panels. */
+/* My-courses library canvas: counts subline, live-build banner, filter pills, cover-card grid. */
 .canvas {
+  /* Shared card geometry: the loading skeleton mirrors the real card from these two numbers
+     (cover height + the card body's box), so they can't drift apart independently. */
+  --library-cover-height: 142px;
+  --library-card-body-height: 138px;
   height: 100%;
   overflow-y: auto;
   padding: var(--space-6);
 }
 
+.subline {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Live-build banner: the one amber wash on this screen (a genuinely live state). ── */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-left: 3px solid var(--accent-500);
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.banner:hover {
+  border-color: var(--border-strong);
+}
+
+.banner:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.bannerPulse {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+  animation: pulse 1.6s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.bannerBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.bannerTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bannerMeta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.bannerCta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent-600);
+  white-space: nowrap;
+}
+
+/* ── Filter row ── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.filters {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.pill {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  border: var(--border-width) solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.pill:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.pill:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.pill[aria-pressed="true"] {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.sortNote {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.filterEmpty {
+  margin: var(--space-8) 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* ── Card grid ── */
 .grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-5);
 }
 
 .card {
   display: flex;
   flex-direction: column;
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--surface);
   overflow: hidden;
   text-decoration: none;
   color: var(--text);
   transition:
-    border-color var(--dur-fast) var(--ease),
-    background-color var(--dur-fast) var(--ease);
+    transform var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 
 .card:hover {
+  transform: translateY(-3px);
   border-color: var(--border-strong);
-  background: var(--bg-muted);
+  box-shadow: var(--shadow-md);
 }
 
 .card:focus-visible {
@@ -39,20 +181,24 @@
 }
 
 .cover {
-  aspect-ratio: 16 / 9;
+  height: var(--library-cover-height);
+  border-bottom: var(--border-width) solid var(--border);
 }
 
 .cardBody {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  padding: var(--space-3) var(--space-4) var(--space-4);
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
 }
 
 .cardTitle {
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
   font-weight: 600;
+  line-height: 1.35;
   color: var(--text);
+  min-height: 2.7em; /* two lines, so single-line titles keep the grid rows aligned */
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -60,16 +206,23 @@
 }
 
 .cardMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
+.reviewBadge {
+  flex: none;
+}
+
 /* Loading skeleton mirrors the card grid (no centered spinner, no layout shift). */
 .skeletonCard {
   border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  aspect-ratio: 16 / 12;
+  border-radius: var(--radius-xl);
+  height: calc(var(--library-cover-height) + var(--library-card-body-height));
   background: linear-gradient(
     100deg,
     var(--bg-subtle) 30%,
@@ -90,7 +243,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skeletonCard {
+  .skeletonCard,
+  .bannerPulse {
     animation: none;
+  }
+
+  .card,
+  .banner,
+  .pill {
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
   }
 }

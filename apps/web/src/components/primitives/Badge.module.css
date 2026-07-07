@@ -21,7 +21,8 @@
 .badge[data-category="create"] {
   --tone: var(--success);
 }
-.badge[data-category="update"] {
+.badge[data-category="update"],
+.badge[data-category="warning"] {
   --tone: var(--warning);
 }
 .badge[data-category="delete"] {
