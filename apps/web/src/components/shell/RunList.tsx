@@ -1,18 +1,10 @@
-import { StatusDot, type StatusTone } from "../primitives/StatusDot";
+import { StatusDot } from "../primitives/StatusDot";
 import { Button } from "../primitives/Button";
 import { relativeTime } from "../../lib/relativeTime";
+import { RUN_STATUS_TONE } from "../../lib/runStatus";
 import type { RunsState } from "../../hooks/useRuns";
-import type { CourseRun, RunStatus } from "../../types/course";
+import type { CourseRun } from "../../types/course";
 import styles from "./RunList.module.css";
-
-/** Run lifecycle → the house status convention (dot + uppercase-mono label). Only RUNNING is live. */
-const STATUS_TONE: Record<RunStatus, { tone: StatusTone; live: boolean }> = {
-  running: { tone: "accent", live: true },
-  completed: { tone: "success", live: false },
-  failed: { tone: "danger", live: false },
-  // A deliberate stop, not an error — neutral, so it doesn't read as a failure.
-  cancelled: { tone: "neutral", live: false },
-};
 
 const SKELETON_ROW_COUNT = 3;
 
@@ -97,7 +89,7 @@ interface RunItemProps {
 }
 
 function RunItem({ run, onSelect, onDelete, onCancel, cancelling, selected }: RunItemProps) {
-  const { tone, live } = STATUS_TONE[run.status];
+  const { tone, live } = RUN_STATUS_TONE[run.status];
   const itemClass = `${styles.item} ${selected ? styles.itemSelected : ""}`.trim();
   // Counts live in the canvas metric band when a course is open; the narrow rail shows status +
   // time (the count tooltip keeps them one hover away without truncating every row).

@@ -197,8 +197,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // The persistent sidebar: brand, the primary action, and the recorded run.
     expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
     expect(screen.getByText("Recent runs")).toBeInTheDocument();
-    expect(await screen.findByText("queues")).toBeInTheDocument();
-    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
+    // Scoped to the sidebar history — the composer's recent-builds table lists the same run.
+    const history = await screen.findByRole("navigation", { name: /run history/i });
+    expect(within(history).getByText("queues")).toBeInTheDocument();
+    expect(within(history).getByText("COMPLETED")).toBeInTheDocument();
   });
 
   it("collapses the sidebar to a mini icon rail and expands it again", async () => {
@@ -664,7 +666,9 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /cancel build: graphs/i }));
 
     // The cancel is POSTed by run_id and the refreshed history shows the terminal CANCELLED status.
-    expect(await screen.findByText("CANCELLED")).toBeInTheDocument();
+    // Scoped to the sidebar history — the composer's recent-builds table lists the same run.
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(await within(history).findByText("CANCELLED")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/runs/run-1/cancel"),
       expect.objectContaining({ method: "POST" }),
@@ -878,7 +882,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     // Dialog dismissed, run still listed — and no DELETE was issued (the mock would have thrown).
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByText("queues")).toBeInTheDocument();
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(within(history).getByText("queues")).toBeInTheDocument();
   });
 
   it("keeps the dialog open with the reason when the API rejects the delete (409)", async () => {
@@ -912,7 +917,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // The dialog stays open carrying the 409 reason; the run is not removed.
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/still building/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText("queues")).toBeInTheDocument();
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(within(history).getByText("queues")).toBeInTheDocument();
   });
 
   it("closes the open course's canvas when that run is deleted", async () => {
