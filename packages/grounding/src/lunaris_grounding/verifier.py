@@ -66,6 +66,7 @@ class Verifier:
         *,
         risk_tier: RiskTier = RiskTier.LOW,
         course_id: str | None = None,
+        official_only: bool = False,
     ) -> list[Citation]:
         # ``course_id`` scopes retrieval to the course being built (P6.1): claims ground only
         # against that course's own evidence. The thresholds + the independent assessor are
@@ -98,7 +99,7 @@ class Verifier:
             if (
                 support.score >= threshold
                 and chosen is not None
-                and self._within_trust_floor(chosen, agreement, risk_tier)
+                and self._within_trust_floor(chosen, agreement, risk_tier, official_only)
             ):
                 claim.supported_by = chosen.citation.id
                 claim.verifier_status = VerifierStatus.SUPPORTED
@@ -117,7 +118,9 @@ class Verifier:
         )
         return list(citations.values())
 
-    def _within_trust_floor(self, chosen: Evidence, agreement: bool, risk_tier: RiskTier) -> bool:
+    def _within_trust_floor(
+        self, chosen: Evidence, agreement: bool, risk_tier: RiskTier, official_only: bool
+    ) -> bool:
         """Whether the chosen evidence's authority clears the risk-tiered trust floor (P6.2 §4c).
 
         Orthogonal to the assessor-score threshold above: that gates how strongly the evidence
@@ -128,14 +131,23 @@ class Verifier:
         single low-trust source can't ground a high-stakes claim (the confirmation-bias trap)
         while real cross-source agreement still can. A cut claim flows through the authoring loop's
         existing triage to ``needs_review``.
+
+        ``official_only`` (P5, the composer's "Official sources only" switch) applies that same
+        curated-or-agreement gate at EVERY risk tier, not just HIGH — so an open-web-only claim is
+        refused even at LOW risk, while a curated source or genuine cross-source agreement still
+        clears it (the safeguard that keeps a tightened build from emptying the course).
         """
         citation = chosen.citation
         rank = _TIER_RANK.get(citation.trust_tier, _UNTIERED_RANK)
         credibility = citation.credibility if citation.credibility is not None else 0.0
-        passed = self._floor_ok(rank, credibility, agreement, risk_tier)
+        # The curated-or-agreement gate binds on every HIGH-risk claim, and on every claim once the
+        # build opts into official-only — collapsed to one flag so the floor rule is one branch.
+        strict = risk_tier is RiskTier.HIGH or official_only
+        passed = self._floor_ok(rank, credibility, agreement, strict)
         logger.debug(
             "trust_floor_evaluated",
             risk_tier=risk_tier.value,
+            official_only=official_only,
             tier=citation.trust_tier.value if citation.trust_tier is not None else None,
             credibility=citation.credibility,
             cross_source_agreement=agreement,
@@ -143,13 +155,12 @@ class Verifier:
         )
         return passed
 
-    def _floor_ok(
-        self, rank: int, credibility: float, agreement: bool, risk_tier: RiskTier
-    ) -> bool:
+    def _floor_ok(self, rank: int, credibility: float, agreement: bool, strict: bool) -> bool:
         if rank == _TIER_RANK[TrustTier.BLOCKED]:
             return False  # a blocked/denylisted source never supports a claim, at any risk
-        if risk_tier is not RiskTier.HIGH:
-            return True  # LOW: the open web is recorded, only blocked is refused
+        if not strict:
+            return True  # the open web is recorded, only blocked is refused
+        # Under the strict gate: demand curated-and-credible, or cross-source agreement.
         curated_and_credible = (
             rank >= _HIGH_TIER_FLOOR and credibility >= self._thresholds.high_credibility_floor
         )

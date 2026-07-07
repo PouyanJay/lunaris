@@ -118,10 +118,11 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
     fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
 
-    // The rail interprets the goal and offers the confirm questions (inferred level pre-picked).
+    // The rail interprets the goal and offers the confirm questions.
     expect(await screen.findByText(/reach CLB 10/i)).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /intermediate/i })).toBeChecked();
-    fireEvent.click(screen.getByRole("radio", { name: /advanced/i }));
+    // Set the target level via the composer's options bar (maps onto the clarification).
+    const level = screen.getByRole("radiogroup", { name: "Level" });
+    fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
 
     // Build from the confirmed brief → the stream resolves to the ready course.
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
@@ -196,8 +197,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // The persistent sidebar: brand, the primary action, and the recorded run.
     expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
     expect(screen.getByText("Recent runs")).toBeInTheDocument();
-    expect(await screen.findByText("queues")).toBeInTheDocument();
-    expect(screen.getByText("COMPLETED")).toBeInTheDocument();
+    // Scoped to the sidebar history — the composer's recent-builds table lists the same run.
+    const history = await screen.findByRole("navigation", { name: /run history/i });
+    expect(within(history).getByText("queues")).toBeInTheDocument();
+    expect(within(history).getByText("COMPLETED")).toBeInTheDocument();
   });
 
   it("collapses the sidebar to a mini icon rail and expands it again", async () => {
@@ -663,7 +666,9 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /cancel build: graphs/i }));
 
     // The cancel is POSTed by run_id and the refreshed history shows the terminal CANCELLED status.
-    expect(await screen.findByText("CANCELLED")).toBeInTheDocument();
+    // Scoped to the sidebar history — the composer's recent-builds table lists the same run.
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(await within(history).findByText("CANCELLED")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/runs/run-1/cancel"),
       expect.objectContaining({ method: "POST" }),
@@ -877,7 +882,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     // Dialog dismissed, run still listed — and no DELETE was issued (the mock would have thrown).
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByText("queues")).toBeInTheDocument();
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(within(history).getByText("queues")).toBeInTheDocument();
   });
 
   it("keeps the dialog open with the reason when the API rejects the delete (409)", async () => {
@@ -911,7 +917,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // The dialog stays open carrying the 409 reason; the run is not removed.
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(/still building/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText("queues")).toBeInTheDocument();
+    const history = screen.getByRole("navigation", { name: /run history/i });
+    expect(within(history).getByText("queues")).toBeInTheDocument();
   });
 
   it("closes the open course's canvas when that run is deleted", async () => {

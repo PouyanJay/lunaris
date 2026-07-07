@@ -13,8 +13,6 @@ function renderRail(overrides: Partial<React.ComponentProps<typeof ConfigRail>> 
     brief: { status: "blank" },
     onLoadBrief: vi.fn(),
     onAnswerChange: vi.fn(),
-    depth: "standard",
-    onDepthChange: vi.fn(),
     onOpenSettings: vi.fn(),
     ...overrides,
   };
@@ -32,7 +30,6 @@ describe("ConfigRail", () => {
     renderRail();
 
     expect(screen.getByRole("heading", { name: /for you/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /advanced/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /open settings/i })).toBeInTheDocument();
   });
 
@@ -96,30 +93,6 @@ describe("ConfigRail", () => {
 
     // A regression that drops the rail in the blank state would be caught here.
     expect(screen.getByRole("complementary", { name: /course setup/i })).toBeInTheDocument();
-  });
-
-  it("keeps the Advanced (build) section present once the brief is ready", () => {
-    // Regression: the search-depth control must survive the brief loading — a learner who
-    // personalizes their topic must not lose the Standard/Thorough choice.
-    renderRail({ brief: ready() });
-
-    const advanced = screen.getByRole("button", { name: /advanced/i });
-    expect(advanced).toBeInTheDocument();
-    fireEvent.click(advanced);
-    expect(screen.getByRole("radio", { name: /standard/i })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /thorough/i })).toBeInTheDocument();
-  });
-
-  it("exposes the search depth in the Advanced section and reports a change", () => {
-    const onDepthChange = vi.fn();
-    renderRail({ depth: "standard", onDepthChange });
-
-    // Build controls live behind the Advanced disclosure (collapsed by default).
-    fireEvent.click(screen.getByRole("button", { name: /advanced/i }));
-    expect(screen.getByRole("radio", { name: /standard/i })).toBeChecked();
-
-    fireEvent.click(screen.getByRole("radio", { name: /thorough/i }));
-    expect(onDepthChange).toHaveBeenCalledWith("thorough");
   });
 
   it("points operators to Settings instead of duplicating admin controls", () => {

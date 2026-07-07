@@ -149,6 +149,7 @@ async def create_course(
             run_id=run_id,
             clarification=payload.clarification,
             discovery_depth=payload.discovery_depth,
+            official_only=payload.official_only,
             owner_id=owner_id,
         )
     except DraftBuildRefusedError as exc:
@@ -166,6 +167,7 @@ async def stream_course(
     topic: str = Query(min_length=1, max_length=200),
     clarification: str | None = Query(default=None, max_length=_MAX_CLARIFICATION_CHARS),
     discovery_depth: Annotated[DiscoveryDepth, Query()] = DiscoveryDepth.STANDARD,
+    official_only: Annotated[bool, Query()] = False,
     compute: Annotated[ComputeChoice, Query()] = ComputeChoice.SERVER,
 ) -> StreamingResponse:
     """Run the pipeline for a topic and stream live build progress as Server-Sent Events.
@@ -200,6 +202,7 @@ async def stream_course(
             run_id=run_id,
             clarification=parsed_clarification,
             discovery_depth=discovery_depth,
+            official_only=official_only,
             owner_id=owner_id,
             admission=admission,
         ):

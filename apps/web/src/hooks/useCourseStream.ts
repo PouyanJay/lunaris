@@ -62,8 +62,14 @@ interface CourseStreamOptions {
 
 interface CourseStream {
   state: BuildState;
-  /** Start (or restart) a live build for `topic`, optionally with the learner's confirm answers. */
-  generate: (topic: string, clarification?: Clarification, discoveryDepth?: DiscoveryDepth) => void;
+  /** Start (or restart) a live build for `topic`, optionally with the learner's confirm answers,
+   *  chosen discovery depth, and the "Official sources only" switch. */
+  generate: (
+    topic: string,
+    clarification?: Clarification,
+    discoveryDepth?: DiscoveryDepth,
+    officialOnly?: boolean,
+  ) => void;
   /** Abort any in-flight build and return to the idle topic form. */
   reset: () => void;
 }
@@ -93,6 +99,8 @@ interface StreamBuildOptions {
   topic: string;
   clarification: Clarification | undefined;
   discoveryDepth: DiscoveryDepth | undefined;
+  /** The "Official sources only" switch (P5) — raises the grounding trust floor for this build. */
+  officialOnly: boolean | undefined;
   /** Non-null = a device build: stream with compute=device and serve the bridge from this tab. */
   engine: BuildDeviceEngine | null;
   controller: AbortController;
@@ -102,7 +110,8 @@ interface StreamBuildOptions {
 /** Run one build stream to its terminal state (ready/error), serving the bridge when `engine`
  *  is present. Module-level (not a closure in the hook) so every input is an explicit parameter. */
 function streamBuild(options: StreamBuildOptions): void {
-  const { apiBaseUrl, topic, clarification, discoveryDepth, engine, controller, setState } = options;
+  const { apiBaseUrl, topic, clarification, discoveryDepth, officialOnly, engine, controller, setState } =
+    options;
   // Captured from the response headers for the reconnect path: closures over local lets, since the
   // .catch needs them and they land before any frame (so they're set well before a drop).
   let runId: string | undefined;
@@ -121,6 +130,7 @@ function streamBuild(options: StreamBuildOptions): void {
   streamCourse(apiBaseUrl, topic, {
     ...(clarification ? { clarification } : {}),
     ...(discoveryDepth ? { discoveryDepth } : {}),
+    ...(officialOnly ? { officialOnly } : {}),
     ...(engine ? { compute: "device" as const } : {}),
     signal: controller.signal,
     onRunId: (id) => {
@@ -363,7 +373,12 @@ export function useCourseStream(
   }, []);
 
   const generate = useCallback(
-    (topic: string, clarification?: Clarification, discoveryDepth?: DiscoveryDepth) => {
+    (
+      topic: string,
+      clarification?: Clarification,
+      discoveryDepth?: DiscoveryDepth,
+      officialOnly?: boolean,
+    ) => {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -374,6 +389,7 @@ export function useCourseStream(
         topic,
         clarification,
         discoveryDepth,
+        officialOnly,
         engine,
         controller,
         setState,

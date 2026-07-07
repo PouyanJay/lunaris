@@ -20,6 +20,9 @@ interface StreamCourseOptions {
   clarification?: Clarification;
   /** How hard auto-discovery searches (P6.3); absent → the moderate `standard` default. */
   discoveryDepth?: DiscoveryDepth;
+  /** The composer's "Official sources only" switch (P5): raises the grounding trust floor to
+   *  curated-or-agreement at every risk tier. Absent/false → today's risk-tiered floor. */
+  officialOnly?: boolean;
   /** Where a keyless build's LLM runs (the compute dropdown): `device` serves completions
    *  from this browser over the run's bridge; absent → the API's server default. */
   compute?: ComputeSource;
@@ -45,6 +48,7 @@ export async function streamCourse(
     onCourseId,
     clarification,
     discoveryDepth,
+    officialOnly,
     compute,
     signal,
   }: StreamCourseOptions,
@@ -52,6 +56,7 @@ export async function streamCourse(
   const params = new URLSearchParams({ topic });
   if (clarification) params.set("clarification", JSON.stringify(clarification));
   if (discoveryDepth) params.set("discovery_depth", discoveryDepth);
+  if (officialOnly) params.set("official_only", "true");
   if (compute) params.set("compute", compute);
   const url = `${apiBaseUrl}/api/courses/stream?${params}`;
   let response: Response;

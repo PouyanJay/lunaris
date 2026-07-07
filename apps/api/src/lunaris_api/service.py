@@ -388,6 +388,7 @@ class CourseService:
         run_id: str,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
         owner_id: str | None = None,
     ) -> Course:
         # Admit the build first (resolves the owner's BYOK keys; for a keyless Draft build, reserves
@@ -417,6 +418,7 @@ class CourseService:
                     run_id=run_id,
                     clarification=clarification,
                     discovery_depth=discovery_depth,
+                    official_only=official_only,
                 )
             )
             self._registry.register(run_id, task, course_id, owner_id)
@@ -449,6 +451,7 @@ class CourseService:
         run_id: str,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
         owner_id: str | None = None,
         admission: BuildAdmission | None = None,
         heartbeat_interval_s: float = _DEFAULT_HEARTBEAT_INTERVAL_S,
@@ -509,6 +512,7 @@ class CourseService:
                         agent=QueueAgentSink(queue, recorder),
                         clarification=clarification,
                         discovery_depth=discovery_depth,
+                        official_only=official_only,
                     ),
                     course_id=course_id,
                     run_id=run_id,

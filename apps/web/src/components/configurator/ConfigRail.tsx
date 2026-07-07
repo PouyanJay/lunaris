@@ -1,18 +1,10 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import type { BriefLoadState } from "../../types/clarifier";
-import type { DiscoveryDepth } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { ClarifierQuestionField } from "../personalize/ClarifierQuestionField";
 import styles from "./ConfigRail.module.css";
-
-// Pre-authorized search depth (P6.3): how hard auto-discovery hunts for evidence before authoring.
-// Standard is the smart default; Thorough widens the budget at a higher search cost (the override).
-const DEPTHS: { value: DiscoveryDepth; label: string; hint: string }[] = [
-  { value: "standard", label: "Standard", hint: "Moderate search — the recommended default." },
-  { value: "thorough", label: "Thorough", hint: "Searches deeper for more sources." },
-];
 
 interface ConfigRailProps {
   /** The topic being configured (from the main column); empty until the learner names one. */
@@ -23,9 +15,6 @@ interface ConfigRailProps {
   onLoadBrief: () => void;
   /** A clarifier answer changed (question id → value). */
   onAnswerChange: (id: string, value: string) => void;
-  /** The chosen search depth (smart default + override). */
-  depth: DiscoveryDepth;
-  onDepthChange: (depth: DiscoveryDepth) => void;
   /** Operator/admin settings live in the Settings panel — this opens it. */
   onOpenSettings: () => void;
   /** Collapse the rail to give the main column full width (wide screens; shown via CSS). */
@@ -35,31 +24,24 @@ interface ConfigRailProps {
 }
 
 /**
- * The persistent course-setup rail: the editable projection of the brief + build settings, in three
- * progressively-disclosed tiers — (1) learner personalization, always visible, hosting the inferred
- * clarifier (reuses {@link ClarifierQuestionField}); (2) build controls behind an "Advanced"
- * disclosure (search depth); (3) an operator pointer to Settings (no duplicated admin controls). The
- * rail replaces the buried Personalize modal; its chrome (resize/collapse/drawer) is owned by the
- * parent via `useRailLayout`. All learner-tier states are handled: blank / loading / error / ready.
+ * The persistent course-setup rail: the editable projection of the brief, in two tiers — (1) learner
+ * personalization, always visible, hosting the inferred clarifier (reuses
+ * {@link ClarifierQuestionField}); (2) an operator pointer to Settings (no duplicated admin
+ * controls). The quick build knobs (search depth, target level, the trust switch) live in the
+ * composer's options bar (P5). The rail's chrome (resize/collapse/drawer) is owned by the parent via
+ * `useRailLayout`. All learner-tier states are handled: blank / loading / error / ready.
  */
 export function ConfigRail({
   topic,
   brief,
   onLoadBrief,
   onAnswerChange,
-  depth,
-  onDepthChange,
   onOpenSettings,
   onCollapse,
   onClose,
 }: ConfigRailProps) {
   const railRef = useRef<HTMLElement>(null);
   const learnerTitleId = useId();
-  const depthName = useId();
-  const buildBodyId = useId();
-  // Build controls are progressively disclosed — collapsed by default so the rail leads with
-  // personalization, not knobs.
-  const [buildOpen, setBuildOpen] = useState(false);
   // The rail's own thin, auto-hiding scrollbar (matches the reader rail).
   useAutoHideScroll(railRef);
 
@@ -155,48 +137,8 @@ export function ConfigRail({
         )}
       </section>
 
-      {/* Tier 2 — build controls behind a flush disclosure (matches the section rhythm, not a card).
-          Only knobs with a real backend effect ship. */}
-      <section className={styles.section}>
-        <h3 className={styles.disclosureHeading}>
-          <button
-            type="button"
-            className={styles.disclosure}
-            aria-expanded={buildOpen}
-            aria-controls={buildBodyId}
-            onClick={() => setBuildOpen((open) => !open)}
-          >
-            <span className={styles.sectionHead}>
-              <span className="eyebrow">Build</span>
-              <span className={styles.sectionTitle}>Advanced</span>
-            </span>
-            <span className={styles.chevron} data-open={buildOpen} aria-hidden="true" />
-          </button>
-        </h3>
-        <div id={buildBodyId} className={styles.sectionBody} hidden={!buildOpen}>
-          <fieldset className={styles.depth}>
-            <legend className={styles.depthLegend}>Search depth</legend>
-            <div className={styles.depthOptions}>
-              {DEPTHS.map(({ value, label, hint }) => (
-                <label key={value} className={styles.depthOption}>
-                  <input
-                    type="radio"
-                    name={depthName}
-                    className={styles.depthRadio}
-                    value={value}
-                    checked={depth === value}
-                    onChange={() => onDepthChange(value)}
-                  />
-                  <span className={styles.depthLabel}>{label}</span>
-                  <span className={styles.depthHint}>{hint}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        </div>
-      </section>
-
-      {/* Tier 3 — operator/admin lives in Settings; point there rather than duplicate it. */}
+      {/* Operator/admin lives in Settings; point there rather than duplicate it. Search depth,
+          target level, and the trust switch moved to the composer's options bar (P5). */}
       <section className={styles.section}>
         <div className={styles.sectionHead}>
           <p className="eyebrow">Operator</p>

@@ -51,6 +51,7 @@ class _RecordingPipeline:
         agent: object | None = None,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
     ) -> Course:
         # Read from the run's credential context — the value the live adapters would see.
         self._sink["anthropic"] = resolve_secret("ANTHROPIC_API_KEY")

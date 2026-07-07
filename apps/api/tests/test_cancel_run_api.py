@@ -39,6 +39,7 @@ class _BlockingPipeline:
         agent=None,
         clarification=None,
         discovery_depth=None,
+        official_only=None,
     ):
         self.started.set()
         await asyncio.Event().wait()  # blocks forever; cancellation raises CancelledError here

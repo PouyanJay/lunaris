@@ -182,6 +182,7 @@ class AgentCourseBuilder:
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
     ) -> Course:
         # ``run_id`` is bound for the whole run and cleared in ``finally`` so it never leaks
         # into a later run sharing the event loop (the API reuses it across requests).
@@ -198,6 +199,7 @@ class AgentCourseBuilder:
                 risk_tier=self._risk_tier,
                 clarification=clarification,
                 discovery_depth=discovery_depth,
+                official_only=official_only,
             )
             # Video V4: pick up the run-scope video coordinator (the composition root set it only
             # when video is enabled, keyed, and owned). The authoring loop enqueues a lesson video

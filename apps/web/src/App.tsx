@@ -715,6 +715,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
             apiBaseUrl={apiBaseUrl}
             onGenerate={generate}
             onOpenSettings={openSettings}
+            runs={runsState.status === "ready" ? runsState.runs : []}
           />
         ),
       };

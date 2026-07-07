@@ -1,0 +1,79 @@
+/* Composer recent-builds table: a compact, edge-to-edge, hairline-ruled table (not floating cards). */
+.section {
+  margin-top: var(--space-10);
+  width: 100%;
+  max-width: 720px;
+}
+
+.heading {
+  margin: 0 0 var(--space-3);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-bottom: var(--border-width) solid var(--border);
+  white-space: nowrap;
+}
+
+.table tbody td {
+  padding: var(--space-3);
+  border-top: var(--border-width) solid var(--border);
+  vertical-align: middle;
+}
+
+.table tbody tr:first-child td {
+  border-top: none;
+}
+
+.row:hover {
+  background: var(--bg-subtle);
+}
+
+.topic {
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.topic:hover {
+  text-decoration: underline;
+}
+
+.topic:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.structureCol,
+.whenCol {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  /* Drop the structure column on the narrowest screens; status + topic + when still tell the story. */
+  .structureCol {
+    display: none;
+  }
+}

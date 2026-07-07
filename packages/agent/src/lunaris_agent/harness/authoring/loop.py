@@ -145,7 +145,10 @@ def build_authoring_subgraph(
         # Course-scoped (P6.1): the build verifies claims against THIS course's grounding corpus
         # (its manually-vouched sources), never another topic's evidence.
         citations = await verifier.verify(
-            claims, risk_tier=draft.risk_tier, course_id=draft.course_id
+            claims,
+            risk_tier=draft.risk_tier,
+            course_id=draft.course_id,
+            official_only=draft.official_only,
         )
         draft.provenance = citations
         cut_by_module = _cut_texts_by_module(draft)

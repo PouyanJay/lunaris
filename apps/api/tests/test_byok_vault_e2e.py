@@ -53,6 +53,7 @@ class _RecordingPipeline:
         agent: object | None = None,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
     ) -> Course:
         self._sink["anthropic"] = resolve_secret("ANTHROPIC_API_KEY")
         return await self._inner.run(

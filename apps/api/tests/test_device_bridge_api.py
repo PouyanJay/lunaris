@@ -50,6 +50,7 @@ class BridgeProbePipeline:
         agent: object | None = None,
         clarification: object | None = None,
         discovery_depth: object | None = None,
+        official_only: object | None = None,
     ) -> Course:
         model = build_chat_model("claude-irrelevant")  # keyless + bridge scope → the device bridge
         reply = await model.ainvoke("ping")
