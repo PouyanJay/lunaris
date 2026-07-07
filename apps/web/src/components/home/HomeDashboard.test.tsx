@@ -48,6 +48,8 @@ describe("HomeDashboard", () => {
         name: /good (morning|afternoon|evening), ada lovelace/i,
       }),
     ).toBeInTheDocument();
+    // The subline reflects real library progress (6 completed lessons on the one completed course).
+    expect(await screen.findByText("6 lessons completed")).toBeInTheDocument();
   });
 
   it("falls back to a natural greeting when there is no signed-in email", async () => {

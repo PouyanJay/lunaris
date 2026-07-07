@@ -7,6 +7,7 @@ import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
 import { displayNameFromEmail, greetingForHour } from "../../lib/greeting";
+import { homeSubline } from "../../lib/homeSummary";
 import { ROUTES } from "../../lib/routes";
 import type { CourseRun, CourseSummary } from "../../types/course";
 import styles from "./HomeDashboard.module.css";
@@ -30,12 +31,9 @@ const RECENT_LIMIT = 3;
 const CONTINUE_LIMIT = 4; // hero + up to 3 compact rows
 const SKELETON_CARDS = RECENT_LIMIT;
 
-/** A neutral, honest subline until the richer mastery figure lands (Task 4). */
+/** The greeting subline — an honest library-derived figure once loaded; neutral while in flight. */
 function subline(state: LibraryState): string {
-  if (state.status !== "ready") return "Your learning workspace";
-  const count = state.courses.length;
-  if (count === 0) return "Your learning workspace";
-  return `${count} ${count === 1 ? "course" : "courses"} in your library`;
+  return state.status === "ready" ? homeSubline(state.courses) : "Your learning workspace";
 }
 
 /** The live-build banners: one amber strip per genuinely running build, each linking into the
