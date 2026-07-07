@@ -1,0 +1,36 @@
+/* A tinted, hairline-bordered monospace token chip. The category sets the tint via --tone; the
+   word itself always carries the meaning, so colour is reinforcement, never the sole signal. */
+.badge {
+  display: inline-block;
+  padding: 0.05em 0.4em;
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--tone, var(--text-secondary));
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--tone, var(--border-strong));
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+/* Per-category tone (semantic tokens only). */
+.badge[data-category="read"] {
+  --tone: var(--tier-1);
+}
+.badge[data-category="create"] {
+  --tone: var(--success);
+}
+.badge[data-category="update"] {
+  --tone: var(--warning);
+}
+.badge[data-category="delete"] {
+  --tone: var(--danger);
+}
+.badge[data-category="meta"] {
+  --tone: var(--text-muted);
+}
+.badge[data-category="symbol"],
+.badge[data-category="accent"] {
+  --tone: var(--accent-600);
+}
