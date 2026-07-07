@@ -94,10 +94,15 @@ def test_progress_insert_rejects_a_spoofed_owner(db: "psycopg.Cursor", as_user: 
     for user in (user_a, user_b):
         _seed_user(db, user)
 
-    # Act / Assert — the WITH CHECK clause rejects rows stamped with someone else's user_id.
+    # Act / Assert — the WITH CHECK clause rejects rows stamped with someone else's user_id,
+    # symmetrically on both tables.
     as_user(db, user_a)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         _insert_objective(db, user_b, uuid.uuid4().hex)
+    db.connection.rollback()
+    as_user(db, user_a)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        _insert_lesson(db, user_b, uuid.uuid4().hex)
 
 
 def test_progress_tables_are_closed_to_anon(db: "psycopg.Cursor") -> None:
@@ -111,3 +116,53 @@ def test_progress_tables_are_closed_to_anon(db: "psycopg.Cursor") -> None:
         # A rollback drops the role switch with the rest of the transaction state; re-enter anon
         # so the second table is probed under the same posture.
         db.execute("set local role anon")
+
+
+def test_owner_can_write_their_own_rows_directly(db: "psycopg.Cursor", as_user: _AsUser) -> None:
+    # The allowed path, exercised as the user (not the service role): the grants + policies must
+    # let an owner insert, update, and delete their own marks.
+    user_a = str(uuid.uuid4())
+    course = uuid.uuid4().hex
+    _seed_user(db, user_a)
+
+    as_user(db, user_a)
+    _insert_objective(db, user_a, course)
+    _insert_lesson(db, user_a, course)
+    db.execute("update public.lesson_progress set state = 'done' where course_id = %s", (course,))
+    assert db.rowcount == 1
+    db.execute("delete from public.objective_progress where course_id = %s", (course,))
+    assert db.rowcount == 1
+
+
+def test_owner_cannot_reassign_a_row_to_another_user(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
+    # Arrange — A owns a lesson mark; B exists.
+    user_a, user_b = str(uuid.uuid4()), str(uuid.uuid4())
+    course = uuid.uuid4().hex
+    for user in (user_a, user_b):
+        _seed_user(db, user)
+    _insert_lesson(db, user_a, course)
+
+    # Act / Assert — the UPDATE policy's WITH CHECK rejects handing the row to someone else.
+    as_user(db, user_a)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        db.execute(
+            "update public.lesson_progress set user_id = %s where course_id = %s",
+            (user_b, course),
+        )
+
+
+def test_progress_writes_are_closed_to_anon(db: "psycopg.Cursor") -> None:
+    # The blanket revoke denies anon every operation, not just reads.
+    statements = (
+        "insert into public.objective_progress (user_id, course_id, module_id, objective_index)"
+        " values (gen_random_uuid(), 'c', 'm', 0)",
+        "update public.lesson_progress set state = 'done'",
+        "delete from public.objective_progress",
+    )
+    for statement in statements:
+        db.execute("set local role anon")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            db.execute(statement)
+        db.connection.rollback()

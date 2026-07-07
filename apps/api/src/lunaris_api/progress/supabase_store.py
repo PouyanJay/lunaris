@@ -2,7 +2,8 @@ import asyncio
 import os
 from datetime import UTC, datetime
 
-from .store_protocol import LessonMark, LessonState, ObjectiveMark
+from .lesson_mark import LessonMark, LessonState
+from .objective_mark import ObjectiveMark
 
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
@@ -53,46 +54,59 @@ class SupabaseProgressStore:
             raise RuntimeError("progress requires an authenticated user when Supabase is active")
         return user_id
 
-    async def snapshot(
-        self, *, user_id: str | None, course_id: str
-    ) -> tuple[list[ObjectiveMark], list[LessonMark]]:
-        owner = self._require_user(user_id)
-        client = self._ensure_client()
-        objectives_response = await asyncio.to_thread(
+    async def _select(
+        self, client: object, table: str, columns: str, *, owner: str, course_id: str
+    ) -> list[dict]:
+        response = await asyncio.to_thread(
             lambda: (
-                client.table(_OBJECTIVES_TABLE)  # type: ignore[attr-defined]
-                .select("module_id, objective_index, understood_at")
+                client.table(table)  # type: ignore[attr-defined]
+                .select(columns)
                 .eq("user_id", owner)
                 .eq("course_id", course_id)
                 .execute()
             )
         )
-        lessons_response = await asyncio.to_thread(
-            lambda: (
-                client.table(_LESSONS_TABLE)  # type: ignore[attr-defined]
-                .select("lesson_id, state, updated_at")
-                .eq("user_id", owner)
-                .eq("course_id", course_id)
-                .execute()
-            )
+        return response.data or []
+
+    async def snapshot(
+        self, *, user_id: str | None, course_id: str
+    ) -> tuple[list[ObjectiveMark], list[LessonMark]]:
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+        # The two reads are independent — fan out rather than paying two sequential round-trips.
+        objective_rows, lesson_rows = await asyncio.gather(
+            self._select(
+                client,
+                _OBJECTIVES_TABLE,
+                "module_id, objective_index, understood_at",
+                owner=owner,
+                course_id=course_id,
+            ),
+            self._select(
+                client,
+                _LESSONS_TABLE,
+                "lesson_id, state, updated_at",
+                owner=owner,
+                course_id=course_id,
+            ),
         )
         objectives = [
             ObjectiveMark(
                 course_id=course_id,
                 module_id=row["module_id"],
                 objective_index=row["objective_index"],
-                understood_at=datetime.fromisoformat(row["understood_at"]),
+                understood_at=datetime.fromisoformat(row["understood_at"].replace("Z", "+00:00")),
             )
-            for row in objectives_response.data or []
+            for row in objective_rows
         ]
         lessons = [
             LessonMark(
                 course_id=course_id,
                 lesson_id=row["lesson_id"],
                 state=row["state"],
-                updated_at=datetime.fromisoformat(row["updated_at"]),
+                updated_at=datetime.fromisoformat(row["updated_at"].replace("Z", "+00:00")),
             )
-            for row in lessons_response.data or []
+            for row in lesson_rows
         ]
         return objectives, lessons
 
@@ -106,36 +120,36 @@ class SupabaseProgressStore:
         understood: bool,
     ) -> None:
         owner = self._require_user(user_id)
-        client = self._ensure_client()
+        key = {
+            "user_id": owner,
+            "course_id": course_id,
+            "module_id": module_id,
+            "objective_index": objective_index,
+        }
         if understood:
-            await asyncio.to_thread(
-                lambda: (
-                    client.table(_OBJECTIVES_TABLE)  # type: ignore[attr-defined]
-                    .upsert(
-                        {
-                            "user_id": owner,
-                            "course_id": course_id,
-                            "module_id": module_id,
-                            "objective_index": objective_index,
-                            "understood_at": datetime.now(UTC).isoformat(),
-                        },
-                        on_conflict="user_id,course_id,module_id,objective_index",
-                    )
-                    .execute()
-                )
-            )
+            await self._upsert_objective(key)
         else:
-            await asyncio.to_thread(
-                lambda: (
-                    client.table(_OBJECTIVES_TABLE)  # type: ignore[attr-defined]
-                    .delete()
-                    .eq("user_id", owner)
-                    .eq("course_id", course_id)
-                    .eq("module_id", module_id)
-                    .eq("objective_index", objective_index)
-                    .execute()
+            await self._delete_objective(key)
+
+    async def _upsert_objective(self, key: dict) -> None:
+        client = self._ensure_client()
+        await asyncio.to_thread(
+            lambda: (
+                client.table(_OBJECTIVES_TABLE)  # type: ignore[attr-defined]
+                .upsert(
+                    {**key, "understood_at": datetime.now(UTC).isoformat()},
+                    on_conflict="user_id,course_id,module_id,objective_index",
                 )
+                .execute()
             )
+        )
+
+    async def _delete_objective(self, key: dict) -> None:
+        client = self._ensure_client()
+        query = client.table(_OBJECTIVES_TABLE).delete()  # type: ignore[attr-defined]
+        for column, value in key.items():
+            query = query.eq(column, value)
+        await asyncio.to_thread(query.execute)
 
     async def set_lesson(
         self, *, user_id: str | None, course_id: str, lesson_id: str, state: LessonState

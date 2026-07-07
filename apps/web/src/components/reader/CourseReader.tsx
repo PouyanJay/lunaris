@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
+import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
@@ -14,7 +15,6 @@ import { LessonAssessment } from "./LessonAssessment";
 import { LessonVideoHero } from "./LessonVideoHero";
 import { OverviewSection } from "./OverviewSection";
 import { LessonObjectives } from "./LessonObjectives";
-import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";

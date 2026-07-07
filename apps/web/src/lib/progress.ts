@@ -48,26 +48,31 @@ export async function fetchCourseProgress(
   return (await response.json()) as CourseProgress;
 }
 
-export async function putObjectiveProgress(
+async function putProgress(
   apiBaseUrl: string,
   courseId: string,
-  mark: { moduleId: string; objectiveIndex: number; understood: boolean },
+  path: string,
+  mark: unknown,
 ): Promise<void> {
   const response = await authedFetch(
-    `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/progress/objective`,
+    `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/progress/${path}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mark) },
   );
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
 
-export async function putLessonProgress(
+export function putObjectiveProgress(
+  apiBaseUrl: string,
+  courseId: string,
+  mark: { moduleId: string; objectiveIndex: number; understood: boolean },
+): Promise<void> {
+  return putProgress(apiBaseUrl, courseId, "objective", mark);
+}
+
+export function putLessonProgress(
   apiBaseUrl: string,
   courseId: string,
   mark: { lessonId: string; state: LessonState },
 ): Promise<void> {
-  const response = await authedFetch(
-    `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/progress/lesson`,
-    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mark) },
-  );
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return putProgress(apiBaseUrl, courseId, "lesson", mark);
 }

@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { useCourseProgress } from "./useCourseProgress";
@@ -34,5 +34,50 @@ describe("useCourseProgress", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(result.current.progress).toBeNull();
+  });
+});
+
+describe("useCourseProgress — write reconciliation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("rolls back an optimistic objective mark by refetching when the PUT fails", async () => {
+    // Arrange — GET always serves an empty snapshot; the PUT rejects.
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "PUT") return Promise.reject(new Error("down"));
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ courseId: "c1", objectives: [], lessons: [] }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCourseProgress("http://test", "c1"));
+    await waitFor(() => expect(result.current.progress).not.toBeNull());
+
+    // Act — optimistic mark, then the failed PUT triggers the reconcile refetch.
+    act(() => result.current.markObjective("m-1", 0, true));
+    expect(result.current.progress?.objectives).toHaveLength(1);
+
+    // Assert — the refetched (server) truth wins: the optimistic mark is gone.
+    await waitFor(() => expect(result.current.progress?.objectives).toHaveLength(0));
+  });
+
+  it("rolls back an optimistic lesson mark by refetching when the PUT fails", async () => {
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "PUT") return Promise.reject(new Error("down"));
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ courseId: "c1", objectives: [], lessons: [] }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCourseProgress("http://test", "c1"));
+    await waitFor(() => expect(result.current.progress).not.toBeNull());
+
+    act(() => result.current.markLesson("m-1-l0", "done"));
+    expect(result.current.progress?.lessons).toHaveLength(1);
+
+    await waitFor(() => expect(result.current.progress?.lessons).toHaveLength(0));
   });
 });

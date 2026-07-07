@@ -4,7 +4,7 @@ from fastapi import APIRouter, Response, status
 from lunaris_runtime.logging import bind_request_id
 
 from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
-from ..progress import derive_rollups
+from ..progress import LessonMark, ObjectiveMark, ProgressSummary, derive_rollups
 from ..schemas import (
     LessonMarkRequest,
     LessonProgressView,
@@ -22,6 +22,30 @@ def _bind() -> str:
     request_id = uuid4().hex
     bind_request_id(request_id)
     return request_id
+
+
+def _objective_view(mark: ObjectiveMark) -> ObjectiveProgressView:
+    return ObjectiveProgressView(
+        module_id=mark.module_id,
+        objective_index=mark.objective_index,
+        understood_at=mark.understood_at,
+    )
+
+
+def _lesson_view(mark: LessonMark) -> LessonProgressView:
+    return LessonProgressView(
+        lesson_id=mark.lesson_id, state=mark.state, updated_at=mark.updated_at
+    )
+
+
+def _summary_view(summary: ProgressSummary) -> ProgressSummaryView:
+    return ProgressSummaryView(
+        understood_count=summary.understood_count,
+        objective_total=summary.objective_total,
+        lessons_done=summary.lessons_done,
+        lesson_total=summary.lesson_total,
+        percent=summary.percent,
+    )
 
 
 @router.get("", response_model=ProgressSnapshotView)
@@ -45,31 +69,11 @@ async def get_progress(
     kc_mastery: dict[str, bool] = {}
     if course is not None:
         summary, kc_mastery = derive_rollups(course, objectives, lessons)
-        summary_view = ProgressSummaryView(
-            understood_count=summary.understood_count,
-            objective_total=summary.objective_total,
-            lessons_done=summary.lessons_done,
-            lesson_total=summary.lesson_total,
-            percent=summary.percent,
-        )
+        summary_view = _summary_view(summary)
     return ProgressSnapshotView(
         course_id=course_id,
-        objectives=[
-            ObjectiveProgressView(
-                module_id=mark.module_id,
-                objective_index=mark.objective_index,
-                understood_at=mark.understood_at,
-            )
-            for mark in objectives
-        ],
-        lessons=[
-            LessonProgressView(
-                lesson_id=mark.lesson_id,
-                state=mark.state,
-                updated_at=mark.updated_at,
-            )
-            for mark in lessons
-        ],
+        objectives=[_objective_view(mark) for mark in objectives],
+        lessons=[_lesson_view(mark) for mark in lessons],
         summary=summary_view,
         kc_mastery=kc_mastery,
     )

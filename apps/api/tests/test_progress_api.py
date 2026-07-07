@@ -299,4 +299,42 @@ async def test_progress_works_unauthenticated_when_auth_is_off(tmp_path: Path) -
     # Assert
     assert put.status_code == 204
     assert snapshot.status_code == 200
-    assert snapshot.json()["lessons"][0]["lessonId"] == "m-1-l0"
+    lessons = snapshot.json()["lessons"]
+    assert len(lessons) == 1
+    assert lessons[0]["lessonId"] == "m-1-l0"
+
+
+async def test_rollups_survive_a_course_with_no_lessons(
+    client: httpx.AsyncClient, course_service: _StubCourseService
+) -> None:
+    # Arrange — a degenerate course: objectives but zero authored lessons (a legal state).
+    course_service.seed(
+        Course(
+            id="course-1",
+            topic="Lessonless",
+            modules=[
+                Module(
+                    id="m-1",
+                    title="Only objectives",
+                    objectives=[
+                        Objective(statement="Explain X.", bloom_level="understand", kc="kc-a")
+                    ],
+                    lessons=[],
+                )
+            ],
+        ),
+        owner_id=USER_A,
+    )
+
+    # Act
+    snapshot = await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_A))
+
+    # Assert — the zero-lesson guard yields 0%, not a division error.
+    assert snapshot.status_code == 200
+    assert snapshot.json()["summary"] == {
+        "understoodCount": 0,
+        "objectiveTotal": 1,
+        "lessonsDone": 0,
+        "lessonTotal": 0,
+        "percent": 0,
+    }

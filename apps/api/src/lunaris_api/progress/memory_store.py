@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
-from .store_protocol import LessonMark, LessonState, ObjectiveMark
+from .lesson_mark import LessonMark, LessonState
+from .objective_mark import ObjectiveMark
 
 
 class InMemoryProgressStore:
