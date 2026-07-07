@@ -6,10 +6,10 @@ import { ViewToggle } from "./ViewToggle";
 describe("ViewToggle", () => {
   it("marks the active view and leaves the other unchecked", () => {
     // Arrange / Act
-    render(<ViewToggle value="learn" onChange={() => {}} />);
+    render(<ViewToggle value="lessons" onChange={() => {}} />);
 
     // Assert
-    expect(screen.getByRole("radio", { name: /learn/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /lessons/i })).toBeChecked();
     expect(screen.getByRole("radio", { name: /map/i })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: /build/i })).not.toBeChecked();
   });
@@ -17,7 +17,7 @@ describe("ViewToggle", () => {
   it("selects a view when its option is clicked", () => {
     // Arrange
     const onChange = vi.fn();
-    render(<ViewToggle value="learn" onChange={onChange} />);
+    render(<ViewToggle value="lessons" onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole("radio", { name: /map/i }));
@@ -29,12 +29,12 @@ describe("ViewToggle", () => {
   it("advances with ArrowRight and moves focus to the new option", () => {
     // Arrange
     const onChange = vi.fn();
-    render(<ViewToggle value="learn" onChange={onChange} />);
-    const learn = screen.getByRole("radio", { name: /learn/i });
-    learn.focus();
+    render(<ViewToggle value="lessons" onChange={onChange} />);
+    const lessons = screen.getByRole("radio", { name: /lessons/i });
+    lessons.focus();
 
     // Act
-    fireEvent.keyDown(learn, { key: "ArrowRight" });
+    fireEvent.keyDown(lessons, { key: "ArrowRight" });
 
     // Assert — selection reported and focus followed.
     expect(onChange).toHaveBeenCalledWith("map");
@@ -52,25 +52,25 @@ describe("ViewToggle", () => {
     fireEvent.keyDown(map, { key: "ArrowLeft" });
 
     // Assert
-    expect(onChange).toHaveBeenCalledWith("learn");
-    expect(screen.getByRole("radio", { name: /learn/i })).toHaveFocus();
+    expect(onChange).toHaveBeenCalledWith("lessons");
+    expect(screen.getByRole("radio", { name: /lessons/i })).toHaveFocus();
   });
 
-  it("wraps backward from the first option to the last (Corpus)", () => {
+  it("wraps backward from the first option (Overview) to the last (Corpus)", () => {
     // Arrange
     const onChange = vi.fn();
-    render(<ViewToggle value="learn" onChange={onChange} />);
-    const learn = screen.getByRole("radio", { name: /learn/i });
-    learn.focus();
+    render(<ViewToggle value="overview" onChange={onChange} />);
+    const overview = screen.getByRole("radio", { name: /overview/i });
+    overview.focus();
 
     // Act
-    fireEvent.keyDown(learn, { key: "ArrowLeft" });
+    fireEvent.keyDown(overview, { key: "ArrowLeft" });
 
     // Assert
     expect(onChange).toHaveBeenCalledWith("corpus");
   });
 
-  it("wraps forward from the last option (Corpus) to the first (Learn)", () => {
+  it("wraps forward from the last option (Corpus) to the first (Overview)", () => {
     // Arrange
     const onChange = vi.fn();
     render(<ViewToggle value="corpus" onChange={onChange} />);
@@ -81,13 +81,13 @@ describe("ViewToggle", () => {
     fireEvent.keyDown(corpus, { key: "ArrowRight" });
 
     // Assert
-    expect(onChange).toHaveBeenCalledWith("learn");
+    expect(onChange).toHaveBeenCalledWith("overview");
   });
 
   it("registers the Build view as an option", () => {
     // Arrange
     const onChange = vi.fn();
-    render(<ViewToggle value="learn" onChange={onChange} />);
+    render(<ViewToggle value="lessons" onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole("radio", { name: /build/i }));
@@ -99,7 +99,7 @@ describe("ViewToggle", () => {
   it("registers the Corpus view as an option", () => {
     // Arrange
     const onChange = vi.fn();
-    render(<ViewToggle value="learn" onChange={onChange} />);
+    render(<ViewToggle value="lessons" onChange={onChange} />);
 
     // Act
     fireEvent.click(screen.getByRole("radio", { name: /corpus/i }));
@@ -114,6 +114,6 @@ describe("ViewToggle", () => {
 
     // Assert
     expect(screen.getByRole("radio", { name: /map/i })).toHaveAttribute("tabindex", "0");
-    expect(screen.getByRole("radio", { name: /learn/i })).toHaveAttribute("tabindex", "-1");
+    expect(screen.getByRole("radio", { name: /lessons/i })).toHaveAttribute("tabindex", "-1");
   });
 });

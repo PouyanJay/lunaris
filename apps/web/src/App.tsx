@@ -6,6 +6,7 @@ import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
+import { CourseOverview } from "./components/overview/CourseOverview";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
@@ -281,9 +282,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       });
     return () => controller.abort();
   }, [apiBaseUrl]);
-  // A ready course defaults to the lesson reader (Learn); the view is a URL segment.
-  const viewMode: CourseView = route.kind === "course" ? route.view : "learn";
-  // A Map → Learn drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
+  // A ready course lands on its Overview tab; the view is a URL segment.
+  const viewMode: CourseView = route.kind === "course" ? route.view : "overview";
+  // A Map → lesson drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
   // request for the same concept after the learner has navigated away.
   const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
   const focusSeq = useRef(0);
@@ -348,7 +349,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // sort. A bare touch; the reader view is excluded because CourseReader records the open itself
   // with better fidelity (it knows the lesson), so one open never fires two touches.
   // Fire-and-forget; a failed touch must never disturb the canvas.
-  const visitedCourseId = route.kind === "course" && route.view !== "learn" ? route.courseId : null;
+  const visitedCourseId =
+    route.kind === "course" && route.view !== "lessons" ? route.courseId : null;
   useEffect(() => {
     if (visitedCourseId) {
       putCourseOpened(apiBaseUrl, visitedCourseId).catch(() => {});
@@ -387,15 +389,54 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
   const termination = useTerminateBuild(apiBaseUrl, resetBuild, reloadRuns);
 
-  // A ready course's canvas: the Learn | Map | Build toggle + course metrics in the header, and the
-  // lesson reader (Learn, default), the prerequisite-graph explorer (Map), or the build-session
-  // replay (Build) in the body. `runId` (when known) lets Build replay this course's build log.
-  // The view lives in the URL; a Map → Learn drill-in navigates back to Learn with a focus request.
+  // A ready course's canvas: the Overview | Lessons | Map | Build | Corpus toggle + course
+  // metrics in the header; the Overview landing tab, the lesson reader, the prerequisite-graph
+  // explorer, the build-session replay, or the corpus in the body. `runId` (when known) lets
+  // Build replay this course's build log. The view lives in the URL; a Map → lesson drill-in
+  // navigates to the reader with a focus request.
   const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => {
     const openLessonForKc = (kc: string) => {
       focusSeq.current += 1;
       setFocusRequest({ kc, seq: focusSeq.current });
-      navigate(coursePath(course.id));
+      navigate(coursePath(course.id, "lessons"));
+    };
+    // Record over the CourseView union: adding a sixth view without a body is a type error,
+    // never a silent fall-through to Overview.
+    const bodies: Record<CourseView, () => ReactNode> = {
+      overview: () => (
+        <CourseOverview
+          course={course}
+          onContinue={() => navigate(coursePath(course.id, "lessons"))}
+          onViewMap={() => navigate(coursePath(course.id, "map"))}
+        />
+      ),
+      lessons: () => (
+        <ExplainProvider
+          apiBaseUrl={apiBaseUrl}
+          available={canReaderExplain}
+          llmKeyless={isLlmKeyless(capabilities)}
+        >
+          <CourseReader
+            course={course}
+            focusRequest={focusRequest}
+            onRegenerate={
+              canRegenerate
+                ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
+                : undefined
+            }
+            apiBaseUrl={apiBaseUrl}
+          />
+        </ExplainProvider>
+      ),
+      map: () => <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />,
+      build: () => (
+        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+          <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
+        </ExplainProvider>
+      ),
+      corpus: () => (
+        <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
+      ),
     };
     return {
       title: course.topic,
@@ -405,33 +446,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           <HeaderMeta course={course} />
         </>
       ),
-      body:
-        viewMode === "map" ? (
-          <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
-        ) : viewMode === "build" ? (
-          <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-            <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
-          </ExplainProvider>
-        ) : viewMode === "corpus" ? (
-          <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
-        ) : (
-          <ExplainProvider
-            apiBaseUrl={apiBaseUrl}
-            available={canReaderExplain}
-            llmKeyless={isLlmKeyless(capabilities)}
-          >
-            <CourseReader
-              course={course}
-              focusRequest={focusRequest}
-              onRegenerate={
-                canRegenerate
-                  ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
-                  : undefined
-              }
-              apiBaseUrl={apiBaseUrl}
-            />
-          </ExplainProvider>
-        ),
+      body: bodies[viewMode](),
     };
   };
 

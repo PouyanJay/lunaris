@@ -12,11 +12,16 @@ export const ROUTES = {
   admin: "/admin",
 } as const;
 
-const COURSE_VIEWS: CourseView[] = ["learn", "map", "build", "corpus"];
+const COURSE_VIEWS: CourseView[] = ["overview", "lessons", "map", "build", "corpus"];
+
+/** The reader segment was spelled "learn" before Overview became the landing tab — old
+ *  bookmarks and shared links keep resolving. */
+const LEGACY_READER_SEGMENT = "learn";
 
 /** The shell's navigation surfaces, resolved from the URL. A course canvas is keyed by courseId
- *  with an optional view segment (default Learn); anything unrecognized — including a bogus view
- *  segment — renders the designed not-found canvas, never a blank. */
+ *  with an optional view segment (default Overview — the course's landing tab); anything
+ *  unrecognized — including a bogus view segment — renders the designed not-found canvas,
+ *  never a blank. */
 export type ShellRoute =
   | { kind: "home" }
   | { kind: "settings" }
@@ -38,7 +43,8 @@ export function resolveRoute(pathname: string): ShellRoute {
   if (pathname === ROUTES.bookmarks) return { kind: "bookmarks" };
   const course = matchPath("/courses/:courseId/:view?", pathname);
   if (course?.params.courseId) {
-    const view = course.params.view ?? "learn";
+    const rawView = course.params.view ?? "overview";
+    const view = rawView === LEGACY_READER_SEGMENT ? "lessons" : rawView;
     if ((COURSE_VIEWS as string[]).includes(view)) {
       return { kind: "course", courseId: course.params.courseId, view: view as CourseView };
     }
@@ -46,7 +52,7 @@ export function resolveRoute(pathname: string): ShellRoute {
   return { kind: "not-found" };
 }
 
-/** The canonical URL for a course view — Learn is the bare course path, not a segment. */
-export function coursePath(courseId: string, view: CourseView = "learn"): string {
-  return view === "learn" ? `/courses/${courseId}` : `/courses/${courseId}/${view}`;
+/** The canonical URL for a course view — Overview is the bare course path, not a segment. */
+export function coursePath(courseId: string, view: CourseView = "overview"): string {
+  return view === "overview" ? `/courses/${courseId}` : `/courses/${courseId}/${view}`;
 }

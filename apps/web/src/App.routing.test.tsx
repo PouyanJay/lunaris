@@ -111,7 +111,7 @@ describe("App — URL routing (live studio)", () => {
     expect(card).toHaveAttribute("href", "/courses/course-lib");
   });
 
-  it("deep-links to a course at /courses/:courseId and defaults to the Learn view", async () => {
+  it("deep-links to a course at /courses/:courseId and lands on the Overview tab", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test");
 
@@ -120,7 +120,50 @@ describe("App — URL routing (live studio)", () => {
     expect(
       await screen.findByRole("heading", { name: "How binary search works" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Learn" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Overview" })).toBeChecked();
+  });
+
+  it("resolves the legacy learn URL to the Lessons view", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test/learn");
+
+    render(<App />);
+
+    expect(await screen.findByRole("radio", { name: "Lessons" })).toBeChecked();
+  });
+
+  it("Overview's CTAs navigate to the reader and the map", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /continue learning/i }));
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Overview" }));
+    fireEvent.click(await screen.findByRole("button", { name: /view the map/i }));
+    expect(window.location.pathname).toBe("/courses/course-test/map");
+  });
+
+  it("records the open touch on the bare course URL — the Overview landing is a course open", async () => {
+    // Pre-T4 the bare path was the reader (excluded from the App-level touch); now it's Overview,
+    // which must count toward last-opened like every non-reader view.
+    const fetchMock = routedFetch({ runs: [makeRun()], course: makeCourse() });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "How binary search works" });
+
+    await waitFor(() => {
+      const opened = fetchMock.mock.calls.find(
+        ([input, init]) =>
+          String(input).endsWith("/api/courses/course-test/progress/opened") &&
+          (init?.method ?? "GET").toUpperCase() === "PUT",
+      );
+      expect(opened).toBeTruthy();
+    });
   });
 
   it("records a bare course-open touch when a non-reader view is visited", async () => {
@@ -158,12 +201,15 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/courses/course-test");
 
     render(<App />);
-    await screen.findByRole("radio", { name: "Learn" });
+    await screen.findByRole("radio", { name: "Overview" });
+
+    fireEvent.click(screen.getByRole("radio", { name: "Lessons" }));
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
 
     fireEvent.click(screen.getByRole("radio", { name: "Map" }));
     expect(window.location.pathname).toBe("/courses/course-test/map");
 
-    fireEvent.click(screen.getByRole("radio", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Overview" }));
     expect(window.location.pathname).toBe("/courses/course-test");
   });
 

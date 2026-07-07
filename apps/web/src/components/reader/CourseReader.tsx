@@ -57,7 +57,7 @@ interface ReaderLesson {
 interface ReaderModel {
   lessons: ReaderLesson[];
   groups: OutlineGroup[];
-  /** Each module KC → the lesson index that opens its module, for Map → Learn drill-in. */
+  /** Each module KC → the lesson index that opens its module, for Map → lesson drill-in. */
   kcToLessonIndex: Map<string, number>;
 }
 
@@ -94,7 +94,7 @@ function buildReaderModel(course: Course): ReaderModel {
   return { lessons, groups, kcToLessonIndex };
 }
 
-/** A Map → Learn drill-in: focus the lesson covering `kc`. `seq` increments per request so the same
+/** A Map → lesson drill-in: focus the lesson covering `kc`. `seq` increments per request so the same
  *  concept can be re-requested after the learner has navigated away. */
 export interface LessonFocusRequest {
   kc: string;
@@ -112,7 +112,7 @@ interface CourseReaderProps {
   apiBaseUrl?: string | undefined;
 }
 
-/** The lesson reader (Learn view): a persistent course outline, a clean reading column, and a
+/** The lesson reader (Lessons view): a persistent course outline, a clean reading column, and a
  *  parallel "Sources & checks" rail that lifts the verifier's claims out of the prose (req 1). The
  *  reading column renders the focused lesson as its arc (P7.3) — competency, the "expects" bookend,
  *  the teaching phases, objectives, branded visuals, curated resources, and the closing self-check.

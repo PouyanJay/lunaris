@@ -90,7 +90,6 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.unstubAllGlobals();
   });
 
-
   it("opens on the topic form, not an auto-generated course", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [] }));
     render(<App />);
@@ -569,6 +568,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
     await screen.findByRole("heading", { name: "queues" });
+    // A course lands on Overview; the regenerate action lives in the reader.
+    fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
 
     // The capability fetch resolves to true, so the reader offers the per-lesson regenerate action.
     expect(await screen.findByRole("button", { name: /regenerate lesson/i })).toBeInTheDocument();
@@ -588,6 +589,9 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
     await screen.findByRole("heading", { name: "queues" });
+    // Enter the reader — asserting absence on the Overview tab would be vacuous.
+    fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
+    await screen.findByText(/find a word in a dictionary/i);
 
     // waitFor drains the capability-fetch microtask, so the absence reflects
     // supportsLessonRegeneration === false — not merely an unresolved fetch (canRegenerate
@@ -744,7 +748,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
-  it("defaults the ready canvas to the lesson reader (Learn), not the graph", async () => {
+  it("lands a ready course on its Overview tab, not the reader or the graph", async () => {
     // Arrange — a build that resolves straight to a ready course.
     vi.stubGlobal(
       "fetch",
@@ -759,18 +763,20 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // Assert — the reader is the default ready view: lesson prose renders, the graph is absent…
-    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+    // Assert — Overview is the landing tab: the Continue CTA renders, the reader prose and the
+    // graph stay absent until chosen…
+    expect(await screen.findByRole("button", { name: /continue learning/i })).toBeInTheDocument();
+    expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("application", { name: /prerequisite graph/i }),
     ).not.toBeInTheDocument();
-    // …and the Learn | Map toggle shows Learn selected.
-    expect(screen.getByRole("radio", { name: /learn/i })).toBeChecked();
-    expect(screen.getByRole("radio", { name: /map/i })).not.toBeChecked();
+    // …and the tab bar shows Overview selected.
+    expect(screen.getByRole("radio", { name: /overview/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /lessons/i })).not.toBeChecked();
   });
 
-  it("toggles the ready canvas between the reader (Learn) and the graph (Map)", async () => {
-    // Arrange — a ready course on the canvas.
+  it("toggles the ready canvas between the reader (Lessons) and the graph (Map)", async () => {
+    // Arrange — a ready course on the canvas, opened into the reader.
     vi.stubGlobal(
       "fetch",
       routedFetch({
@@ -781,6 +787,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: /lessons/i }));
     await screen.findByText(/find a word in a dictionary/i);
 
     // Act — switch to Map. Assert — the graph canvas shows, the prose is gone.
@@ -790,8 +797,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
 
-    // Act — switch back to Learn. Assert — the reader returns.
-    fireEvent.click(screen.getByRole("radio", { name: /learn/i }));
+    // Act — switch back to Lessons. Assert — the reader returns.
+    fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
     expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
   });
 

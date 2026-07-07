@@ -2,13 +2,14 @@ import { useRef, type KeyboardEvent } from "react";
 
 import styles from "./ViewToggle.module.css";
 
-/** The ready-course canvas views: the lesson reader (Learn), the prereq-graph explorer (Map), the
- *  replay of how the course was built (Build), and the grounding corpus the claims verify against
- *  (Corpus). */
-export type CourseView = "learn" | "map" | "build" | "corpus";
+/** The ready-course canvas views: the course's landing tab (Overview), the lesson reader
+ *  (Lessons), the prereq-graph explorer (Map), the replay of how the course was built (Build),
+ *  and the grounding corpus the claims verify against (Corpus). */
+export type CourseView = "overview" | "lessons" | "map" | "build" | "corpus";
 
 const OPTIONS: { value: CourseView; label: string }[] = [
-  { value: "learn", label: "Learn" },
+  { value: "overview", label: "Overview" },
+  { value: "lessons", label: "Lessons" },
   { value: "map", label: "Map" },
   { value: "build", label: "Build" },
   { value: "corpus", label: "Corpus" },
@@ -19,10 +20,10 @@ interface ViewToggleProps {
   onChange: (view: CourseView) => void;
 }
 
-/** Segmented Learn | Map | Build control for the canvas header. Switches a ready course between the
- *  lesson reader, the prerequisite-graph explorer, and the build-session replay. A radiogroup with
- *  the APG roving-tabindex + arrow-key pattern: only the active option is tabbable, and Left/Right
- *  (or Up/Down) move the selection. */
+/** Segmented Overview | Lessons | Map | Build | Corpus control for the canvas header (the
+ *  OPTIONS array above is the single source of truth for the destinations). A radiogroup with
+ *  the APG roving-tabindex + arrow-key pattern: only the active option is tabbable, and
+ *  Left/Right (or Up/Down) move the selection. */
 export function ViewToggle({ value, onChange }: ViewToggleProps) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 

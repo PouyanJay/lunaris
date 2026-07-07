@@ -1,0 +1,27 @@
+/* The course Overview canvas — the shell the designed hero + lesson rows build on. */
+.canvas {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.intro {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.counts {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
