@@ -11,7 +11,7 @@
 }
 
 .tier[data-tier="reputable"] {
-  color: var(--accent);
+  color: var(--accent-600);
 }
 
 .tier[data-tier="blocked"] {
@@ -20,7 +20,7 @@
 
 /* User-vouched (manual ingest): the signature accent — it's the learner's own source. */
 .tier[data-tier="vouched"] {
-  color: var(--accent);
+  color: var(--accent-600);
 }
 
 /* Credibility percentage: supplementary to the trust-tier word. The data text stays muted (so it

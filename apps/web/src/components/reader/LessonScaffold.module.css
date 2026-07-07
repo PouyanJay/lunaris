@@ -53,5 +53,5 @@
   width: var(--scaffold-bullet-size);
   height: var(--scaffold-bullet-size);
   border-radius: var(--radius-full);
-  background: var(--accent);
+  background: var(--accent-500);
 }

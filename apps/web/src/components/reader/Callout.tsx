@@ -1,50 +1,24 @@
 import type { ReactNode } from "react";
 
 import { ExplainAction, reactNodeToText } from "../explain/ExplainAction";
-import styles from "./Callout.module.css";
-
-/** The admonition variants the authoring model can emit (via `:::note` … or a "Note:" lead-in). */
-export type CalloutVariant = "note" | "tip" | "insight" | "warning" | "example" | "key-takeaway";
-
-interface CalloutMeta {
-  label: string;
-  glyph: string;
-}
-
-const META: Record<CalloutVariant, CalloutMeta> = {
-  note: { label: "Note", glyph: "›" },
-  tip: { label: "Tip", glyph: "✦" },
-  insight: { label: "Insight", glyph: "◆" },
-  warning: { label: "Warning", glyph: "▲" },
-  example: { label: "Example", glyph: "❯" },
-  "key-takeaway": { label: "Key takeaway", glyph: "★" },
-};
+import { Callout as CalloutPanel } from "../primitives/Callout";
+import { CALLOUT_META, resolveCalloutVariant } from "../primitives/calloutVariants";
 
 interface CalloutProps {
-  variant?: string;
+  variant?: string | undefined;
   children?: ReactNode;
 }
 
-function resolve(variant?: string): CalloutVariant {
-  return variant && variant in META ? (variant as CalloutVariant) : "note";
-}
-
-/** An admonition panel — hairline-bordered with a tinted spine, a glyph + text label (the meaning is
- *  carried by the word and glyph, never colour alone) and the prose body. Reused for every variant so
- *  the box style lives in one place. */
+/** The reader's admonition: the design-system Callout panel plus the inline Explain affordance,
+ *  wired with the callout's flattened prose and its variant as the model's context. */
 export function Callout({ variant, children }: CalloutProps) {
-  const kind = resolve(variant);
-  const meta = META[kind];
+  const { label } = CALLOUT_META[resolveCalloutVariant(variant)];
   return (
-    <aside className={styles.callout} data-variant={kind} aria-label={meta.label}>
-      <p className={styles.label}>
-        <span className={styles.glyph} aria-hidden="true">
-          {meta.glyph}
-        </span>
-        {meta.label}
-      </p>
-      <div className={styles.body}>{children}</div>
-      <ExplainAction content={reactNodeToText(children)} context={`${meta.label} callout`} />
-    </aside>
+    <CalloutPanel
+      variant={variant}
+      action={<ExplainAction content={reactNodeToText(children)} context={`${label} callout`} />}
+    >
+      {children}
+    </CalloutPanel>
   );
 }
