@@ -284,3 +284,19 @@ async def test_snapshot_without_a_stored_course_has_no_summary(
     body = snapshot.json()
     assert body["summary"] is None
     assert body["kcMastery"] == {}
+
+
+async def test_progress_works_unauthenticated_when_auth_is_off(tmp_path: Path) -> None:
+    # Arrange — no JWT secret: the single-user offline posture (progress lives in memory).
+    async with _build_client(None, tmp_path) as client:
+        # Act
+        put = await client.put(
+            "/api/courses/course-1/progress/lesson",
+            json={"lessonId": "m-1-l0", "state": "in_progress"},
+        )
+        snapshot = await client.get("/api/courses/course-1/progress")
+
+    # Assert
+    assert put.status_code == 204
+    assert snapshot.status_code == 200
+    assert snapshot.json()["lessons"][0]["lessonId"] == "m-1-l0"
