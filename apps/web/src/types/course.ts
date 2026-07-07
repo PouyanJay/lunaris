@@ -534,6 +534,14 @@ export interface CourseRun {
   updatedAt: string;
 }
 
+/** One My-courses library card (mirrors CourseSummaryView, serialised camelCase). `id` is the
+ *  course id the card opens; `topic` names the course, same word as `Course`/`CourseRun`. */
+export interface CourseSummary {
+  id: string;
+  topic: string;
+  lessonTotal: number;
+}
+
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */
 export type AgentEventKind =
   | "reasoning"

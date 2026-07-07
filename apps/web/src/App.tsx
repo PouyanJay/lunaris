@@ -5,6 +5,7 @@ import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
+import { CourseLibrary } from "./components/library/CourseLibrary";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
@@ -55,7 +56,7 @@ import styles from "./App.module.css";
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
 /** The designed full-canvas notices for navigation destinations that carry no data yet: the 404
- *  and the coming-soon placeholders later phases fill (library P3, activity P9, bookmarks P10). */
+ *  and the coming-soon placeholders later phases fill (activity P9, bookmarks P10). */
 function placeholderCanvas(
   route: ShellRoute,
   onGoHome: () => void,
@@ -70,21 +71,6 @@ function placeholderCanvas(
           title="Page not found"
           body="This page doesn't exist. It may have moved, or the link is wrong."
           actionLabel="Go home"
-          onAction={onGoHome}
-        />
-      ),
-    };
-  }
-  if (route.kind === "library") {
-    return {
-      title: "My courses",
-      meta: null,
-      body: (
-        <CanvasNotice
-          eyebrow="Coming soon"
-          title="The course library lands here"
-          body="Browse, filter, and resume all your courses from one place. Until then, your builds live under Recent runs in the sidebar."
-          actionLabel="New course"
           onAction={onGoHome}
         />
       ),
@@ -462,6 +448,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
     const placeholder = placeholderCanvas(route, () => navigate("/"));
     if (placeholder) return placeholder;
+    if (route.kind === "library") {
+      return {
+        title: "My courses",
+        meta: null,
+        body: <CourseLibrary apiBaseUrl={apiBaseUrl} onNewCourse={startNewCourse} />,
+      };
+    }
     if (route.kind === "settings") {
       const body = <SettingsPanel apiBaseUrl={apiBaseUrl} />;
       const meta = (

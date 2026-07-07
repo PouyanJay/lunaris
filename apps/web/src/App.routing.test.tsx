@@ -76,6 +76,21 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 
+  it("renders the course library at /courses, linking the fetched course into its canvas", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({ library: [{ id: "course-lib", topic: "How HTTPS works", lessonTotal: 4 }] }),
+    );
+    window.history.pushState(null, "", "/courses");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "My courses" })).toBeInTheDocument();
+    // The card is a real link (Cmd/middle-click must work) into the course canvas.
+    const card = await screen.findByRole("link", { name: /how https works/i });
+    expect(card).toHaveAttribute("href", "/courses/course-lib");
+  });
+
   it("deep-links to a course at /courses/:courseId and defaults to the Learn view", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test");
@@ -131,7 +146,7 @@ describe("App — URL routing (live studio)", () => {
     ).toBeInTheDocument();
   });
 
-  it("routes the primary nav to My courses, Activity, and Bookmarks placeholders", async () => {
+  it("routes the primary nav to My courses, Activity, and Bookmarks", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
 
@@ -140,7 +155,8 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "My courses" }));
     expect(window.location.pathname).toBe("/courses");
-    expect(await screen.findByText(/course library/i)).toBeInTheDocument();
+    // An account with no builds gets the library's designed empty state, not a blank grid.
+    expect(await screen.findByText(/no courses yet/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "My courses" })).toHaveAttribute(
       "aria-current",
       "page",

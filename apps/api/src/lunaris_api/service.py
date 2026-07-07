@@ -41,6 +41,7 @@ from lunaris_runtime.video_build import (
 
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
+from .library import LibraryEntry
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
@@ -762,6 +763,38 @@ class CourseService:
             # the failure is triangulatable across layers; the router maps it to a recoverable 503.
             logger.warning("run_history_list_failed", limit=bounded, exc_info=True)
             raise RunHistoryUnavailableError("Run history backend is unavailable") from exc
+
+    async def list_library_courses(self, *, owner_id: str | None = None) -> list[LibraryEntry]:
+        """The course library's raw material: each recent run paired with its persisted course.
+
+        Runs without a loadable payload (a first build still running, or one that died before
+        finalize) are skipped — the library shows courses, not operational rows; a rebuild's run
+        pairs with the existing payload, so the course stays visible while it rebuilds. Loads run
+        concurrently off-loop (the Supabase client is sync, one round trip per course). A
+        course-backend read failure is a real outage → ``RunHistoryUnavailableError`` (router →
+        503), never a silently thinner library.
+        """
+        runs = await self.list_runs(limit=RUNS_LIMIT_MAX, owner_id=owner_id)
+
+        async def _load(run: CourseRun) -> Course | None:
+            try:
+                return await asyncio.to_thread(self._store.load, run.id, owner_id=owner_id)
+            except FileNotFoundError:
+                return None
+            except PersistenceError as exc:
+                logger.warning("library_course_load_failed", course_id=run.id, exc_info=True)
+                raise RunHistoryUnavailableError("Course library backend is unavailable") from exc
+
+        courses = await asyncio.gather(*(_load(run) for run in runs))
+        entries = [
+            LibraryEntry(run=run, course=course)
+            for run, course in zip(runs, courses, strict=True)
+            if course is not None
+        ]
+        # The request_id bound by the router rides the contextvars, so a library read is
+        # triangulatable across layers like every other request.
+        logger.info("library_courses_listed", course_count=len(entries), run_count=len(runs))
+        return entries
 
     async def list_run_events(self, run_id: str, *, owner_id: str | None = None) -> list[RunEvent]:
         """Return a run's persisted build log in emission order (for timeline replay).

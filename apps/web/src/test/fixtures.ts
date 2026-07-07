@@ -397,6 +397,7 @@ export function routedFetch(
     brief?: unknown;
     me?: unknown;
     progress?: unknown;
+    library?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -432,6 +433,11 @@ export function routedFetch(
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);
+    }
+    // The bare collection GET (the My-courses library) — ≠ POST /api/courses (a build) and
+    // ≠ course-by-id (which has a path segment after /courses).
+    if (/\/api\/courses$/.test(url) && method === "GET") {
+      return Promise.resolve({ ok: true, json: async () => handlers.library ?? [] });
     }
     if (/\/api\/courses\/[^/?]+$/.test(url)) {
       // course-by-id: exactly one path segment after /courses/, no query (≠ the stream URL)

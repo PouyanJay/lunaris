@@ -9,6 +9,7 @@ from .course_request import CourseRequest
 from .credentials import CredentialStatusView, CredentialTestResult
 from .explain import ExplainRequest, ExplainResponse
 from .keyless_readiness import KeylessReadinessView
+from .library import CourseSummaryView
 from .progress import (
     LessonMarkRequest,
     LessonProgressView,
@@ -33,6 +34,7 @@ __all__ = [
     "CorpusSourceRequest",
     "CorpusSourceView",
     "CourseRequest",
+    "CourseSummaryView",
     "CredentialStatusView",
     "CredentialTestResult",
     "ExplainRequest",
