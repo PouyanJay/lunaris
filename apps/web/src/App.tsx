@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { BrowserRouter, useLocation, useNavigate } from "react-router";
 
 import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
@@ -22,6 +23,7 @@ import { ErrorState } from "./components/states/ErrorState";
 import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
 import { AdminPortalPanel } from "./components/admin/AdminPortalPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { CanvasNotice } from "./components/states/CanvasNotice";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
 import { useCourse } from "./hooks/useCourse";
@@ -49,6 +51,21 @@ import type { Course, CourseRun, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
+
+/** The shell's navigation surfaces, resolved from the URL. Course canvases arrive in a later
+ *  task; anything unrecognized renders the designed not-found canvas, never a blank. */
+type ShellRoute =
+  | { kind: "home" }
+  | { kind: "settings" }
+  | { kind: "admin" }
+  | { kind: "not-found" };
+
+function resolveRoute(pathname: string): ShellRoute {
+  if (pathname === "/") return { kind: "home" };
+  if (pathname === "/settings") return { kind: "settings" };
+  if (pathname === "/admin") return { kind: "admin" };
+  return { kind: "not-found" };
+}
 
 /** Whether a just-built course enqueued any explainer videos — true if it carries course-level
  *  videos or any lesson video pointer. Gates the build canvas's async-videos phase: a video-off
@@ -142,10 +159,17 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   useEffect(() => {
     if (!isMobile) setMobileNavOpen(false);
   }, [isMobile]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  // The admin "Invitations" surface (manage the signup invite-gate), shown only to admins. Mutually
-  // exclusive with Settings — both are full-canvas nav views.
-  const [adminOpen, setAdminOpen] = useState(false);
+  // Navigation is the URL: the route (not React state) decides which canvas shows. Settings and
+  // Admin are full-canvas nav views at /settings and /admin.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const route = resolveRoute(location.pathname);
+  const settingsOpen = route.kind === "settings";
+  // Leave a nav view toward wherever the user came from; a cold deep-link falls back to home.
+  const closeNavView = useCallback(() => {
+    if (location.key !== "default") navigate(-1);
+    else navigate("/");
+  }, [location.key, navigate]);
   const { isAdmin } = useMe(apiBaseUrl);
   // Per-capability live/fallback status drives the Draft-mode banner; refetch when Settings closes so
   // a key the user just added flips its capability back to live and the banner clears.
@@ -248,31 +272,27 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const { open: openRun, close: closeRun } = opened;
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
-    setSettingsOpen(false);
-    setAdminOpen(false);
     setMobileNavOpen(false);
     closeRun();
     reset();
-  }, [closeRun, reset]);
+    navigate("/");
+  }, [closeRun, reset, navigate]);
   const selectRun = useCallback(
     (run: CourseRun) => {
-      setSettingsOpen(false);
-      setAdminOpen(false);
       setMobileNavOpen(false);
       openRun(run);
+      navigate("/");
     },
-    [openRun],
+    [openRun, navigate],
   );
   const openSettings = useCallback(() => {
-    setSettingsOpen(true);
-    setAdminOpen(false);
     setMobileNavOpen(false);
-  }, []);
+    navigate("/settings");
+  }, [navigate]);
   const openInvites = useCallback(() => {
-    setAdminOpen(true);
-    setSettingsOpen(false);
     setMobileNavOpen(false);
-  }, []);
+    navigate("/admin");
+  }, [navigate]);
   // Drill from a Map concept into its lesson: switch to the reader and request that lesson's focus.
   const openLessonForKc = useCallback((kc: string) => {
     focusSeq.current += 1;
@@ -339,7 +359,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       settingsActive={settingsOpen}
       showAdminInvites={isAdmin}
       onOpenInvites={openInvites}
-      invitesActive={adminOpen}
+      invitesActive={route.kind === "admin"}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
       onToggleCollapse={sidebarLayout.toggleCollapsed}
       onSelectRun={selectRun}
@@ -352,22 +372,55 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     />
   );
 
-  // Resolve the single canvas surface; the shell + sidebar wrap it once. Priority:
-  // settings → an opened historical run → the live build (idle / streaming / error / ready).
+  // Resolve the single canvas surface; the shell + sidebar wrap it once. The URL decides the
+  // navigation surface (not-found / settings / admin); the home route then resolves an opened
+  // historical run or the live build (idle / streaming / error / ready).
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
-    if (settingsOpen) {
+    if (route.kind === "not-found") {
+      return {
+        title: "Not found",
+        meta: null,
+        body: (
+          <CanvasNotice
+            eyebrow="404"
+            title="Page not found"
+            body="This page doesn't exist. It may have moved, or the link is wrong."
+            actionLabel="Go home"
+            onAction={() => navigate("/")}
+          />
+        ),
+      };
+    }
+    if (route.kind === "settings") {
       const body = <SettingsPanel apiBaseUrl={apiBaseUrl} />;
       const meta = (
-        <Button type="button" onClick={() => setSettingsOpen(false)}>
+        <Button type="button" onClick={closeNavView}>
           Done
         </Button>
       );
       return { title: "Settings", meta, body };
     }
-    if (adminOpen) {
+    if (route.kind === "admin") {
+      // Fail closed: until /api/me confirms the admin claim, the portal stays behind the notice
+      // (the API enforces admin on every call regardless — this is presentation, not security).
+      if (!isAdmin) {
+        return {
+          title: "Admin Portal",
+          meta: null,
+          body: (
+            <CanvasNotice
+              eyebrow="Restricted"
+              title="Admin access required"
+              body="This page is only available to workspace administrators."
+              actionLabel="Go home"
+              onAction={() => navigate("/")}
+            />
+          ),
+        };
+      }
       const body = <AdminPortalPanel apiBaseUrl={apiBaseUrl} />;
       const meta = (
-        <Button type="button" onClick={() => setAdminOpen(false)}>
+        <Button type="button" onClick={closeNavView}>
           Done
         </Button>
       );
@@ -585,9 +638,13 @@ export default function App() {
   return (
     <AuthProvider>
       {apiBaseUrl ? (
-        <AuthGate apiBaseUrl={apiBaseUrl}>
-          <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
-        </AuthGate>
+        // Navigation state lives in the URL for the studio only; the offline seed surface is a
+        // single view and stays router-free.
+        <BrowserRouter>
+          <AuthGate apiBaseUrl={apiBaseUrl}>
+            <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
+          </AuthGate>
+        </BrowserRouter>
       ) : (
         <SeedApp theme={theme} onToggleTheme={toggle} />
       )}

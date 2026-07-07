@@ -55,3 +55,7 @@ Object.defineProperty(globalThis, "localStorage", {
 // test (e.g. the sidebar's collapse/width preference) must never leak into the next and flip its
 // initial state. (`afterEach` is a Vitest global; `globals: true` is set in vite.config.)
 afterEach(() => localStorage.clear());
+
+// Routing tests (and any router-driven interaction) mutate the jsdom URL, which persists across
+// tests in a file — reset it so every test starts from "/" regardless of what ran before.
+afterEach(() => window.history.replaceState(null, "", "/"));
