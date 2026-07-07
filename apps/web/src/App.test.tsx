@@ -258,7 +258,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
     // Exact match scopes to the sidebar's "Settings" — the idle rail also has an "Open Settings…".
-    expect(screen.getByRole("button", { name: /^settings$/i })).toBeInTheDocument();
+    // Navigation entries are real links (they route to /settings), not buttons.
+    expect(screen.getByRole("link", { name: /^settings$/i })).toBeInTheDocument();
 
     // Expand → the run history + splitter return.
     fireEvent.click(screen.getByRole("button", { name: /expand sidebar/i }));

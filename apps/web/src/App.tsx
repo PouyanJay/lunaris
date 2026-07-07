@@ -61,13 +61,21 @@ type ShellRoute =
   | { kind: "home" }
   | { kind: "settings" }
   | { kind: "admin" }
+  | { kind: "library" }
+  | { kind: "activity" }
+  | { kind: "bookmarks" }
   | { kind: "course"; courseId: string; view: CourseView }
   | { kind: "not-found" };
 
 function resolveRoute(pathname: string): ShellRoute {
   if (pathname === "/") return { kind: "home" };
+  // /new is an alias for the composer; an effect normalizes the URL to "/".
+  if (pathname === "/new") return { kind: "home" };
   if (pathname === "/settings") return { kind: "settings" };
   if (pathname === "/admin") return { kind: "admin" };
+  if (pathname === "/courses") return { kind: "library" };
+  if (pathname === "/activity") return { kind: "activity" };
+  if (pathname === "/bookmarks") return { kind: "bookmarks" };
   const course = matchPath("/courses/:courseId/:view?", pathname);
   if (course?.params.courseId) {
     const view = course.params.view ?? "learn";
@@ -325,6 +333,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     }
   }, [route.kind, streamCourseId, navigate]);
 
+  // /new is a spelling of the composer, not a place — normalize it so the Home nav state and
+  // shared links stay canonical.
+  useEffect(() => {
+    if (location.pathname === "/new") navigate("/", { replace: true });
+  }, [location.pathname, navigate]);
+
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
     setMobileNavOpen(false);
@@ -341,10 +355,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const openSettings = useCallback(() => {
     setMobileNavOpen(false);
     navigate("/settings");
-  }, [navigate]);
-  const openInvites = useCallback(() => {
-    setMobileNavOpen(false);
-    navigate("/admin");
   }, [navigate]);
   const selectedRunId = routedCourseId ?? undefined;
 
@@ -414,11 +424,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       runs={runsState}
       onReloadRuns={reloadRuns}
       onNewCourse={startNewCourse}
-      onOpenSettings={openSettings}
-      settingsActive={settingsOpen}
-      showAdminInvites={isAdmin}
-      onOpenInvites={openInvites}
-      invitesActive={route.kind === "admin"}
+      showAdmin={isAdmin}
+      onNavigate={closeMobileNav}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
       onToggleCollapse={sidebarLayout.toggleCollapsed}
       onSelectRun={selectRun}
@@ -444,6 +451,53 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
             eyebrow="404"
             title="Page not found"
             body="This page doesn't exist. It may have moved, or the link is wrong."
+            actionLabel="Go home"
+            onAction={() => navigate("/")}
+          />
+        ),
+      };
+    }
+    // Honest placeholders for the destinations later phases fill (library P3, activity P9,
+    // bookmarks P10) — designed empty states, never fake content.
+    if (route.kind === "library") {
+      return {
+        title: "My courses",
+        meta: null,
+        body: (
+          <CanvasNotice
+            eyebrow="Coming soon"
+            title="The course library lands here"
+            body="Browse, filter, and resume all your courses from one place. Until then, your builds live under Recent runs in the sidebar."
+            actionLabel="New course"
+            onAction={() => navigate("/")}
+          />
+        ),
+      };
+    }
+    if (route.kind === "activity") {
+      return {
+        title: "Activity",
+        meta: null,
+        body: (
+          <CanvasNotice
+            eyebrow="Coming soon"
+            title="Your learning activity lands here"
+            body="Streaks, study minutes, and concepts mastered — day by day. Keep learning; the history starts counting soon."
+            actionLabel="Go home"
+            onAction={() => navigate("/")}
+          />
+        ),
+      };
+    }
+    if (route.kind === "bookmarks") {
+      return {
+        title: "Bookmarks",
+        meta: null,
+        body: (
+          <CanvasNotice
+            eyebrow="Coming soon"
+            title="Saved lessons, concepts, and sources land here"
+            body="Bookmark anything worth returning to — lessons mid-read, tricky concepts, and the sources behind the claims."
             actionLabel="Go home"
             onAction={() => navigate("/")}
           />

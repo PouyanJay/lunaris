@@ -1,3 +1,6 @@
+import type { ReactNode } from "react";
+import { NavLink } from "react-router";
+
 import { Button } from "../primitives/Button";
 import { BrandMark } from "./BrandMark";
 import { RunList } from "./RunList";
@@ -13,16 +16,14 @@ interface SidebarProps extends ThemeProps {
   runs: RunsState;
   onReloadRuns: () => void;
   onNewCourse: () => void;
-  onOpenSettings: () => void;
-  settingsActive: boolean;
-  /** Show the "Admin Portal" nav (manage the signup invite-gate) — only for admins. */
-  showAdminInvites?: boolean;
-  onOpenInvites?: () => void;
-  invitesActive?: boolean;
+  /** Show the "Admin Portal" nav entry — only for admins. */
+  showAdmin?: boolean;
   /** Whether the rail is collapsed to the mini icon rail (run history hidden, actions as icons). */
   collapsed: boolean;
   /** Collapse / expand the rail — the toggle lives in the brand row in both states. */
   onToggleCollapse: () => void;
+  /** Fired on any nav-link navigation (e.g. so the phone drawer dismisses). */
+  onNavigate?: (() => void) | undefined;
   onSelectRun?: ((run: CourseRun) => void) | undefined;
   onDeleteRun?: ((run: CourseRun) => void) | undefined;
   onCancelRun?: ((run: CourseRun) => void) | undefined;
@@ -30,22 +31,19 @@ interface SidebarProps extends ThemeProps {
   selectedRunId?: string | undefined;
 }
 
-/** The instrument rail: brand, the primary "New course" action, the run-history feed, and the
- *  Settings nav — hairline-divided regions, not floating cards. Collapses to a mini icon rail: the
- *  brand mark and wordmark drop away, leaving the collapse toggle and the New course / Settings
- *  actions (as icons); the run history is hidden until expanded. The toggle stays mounted across the
- *  transition so keyboard focus persists. */
+/** The instrument rail: brand, the primary "New course" action, the app's primary nav (Home /
+ *  My courses / Activity / Bookmarks — real links, spine-marked when active), the run-history
+ *  feed, and the Settings/Admin nav — hairline-divided regions, not floating cards. Collapses to
+ *  a mini icon rail: labels drop away leaving the icons; the run history is hidden until
+ *  expanded. The toggle stays mounted across the transition so keyboard focus persists. */
 export function Sidebar({
   runs,
   onReloadRuns,
   onNewCourse,
-  onOpenSettings,
-  settingsActive,
-  showAdminInvites,
-  onOpenInvites,
-  invitesActive,
+  showAdmin,
   collapsed,
   onToggleCollapse,
+  onNavigate,
   onSelectRun,
   onDeleteRun,
   onCancelRun,
@@ -80,6 +78,28 @@ export function Sidebar({
           </Button>
         )}
       </div>
+
+      <nav className={styles.primaryNav} aria-label="Primary">
+        <NavItem to="/" end icon={<HomeIcon />} label="Home" {...{ collapsed, onNavigate }} />
+        <NavItem
+          to="/courses"
+          icon={<GridIcon />}
+          label="My courses"
+          {...{ collapsed, onNavigate }}
+        />
+        <NavItem
+          to="/activity"
+          icon={<ActivityIcon />}
+          label="Activity"
+          {...{ collapsed, onNavigate }}
+        />
+        <NavItem
+          to="/bookmarks"
+          icon={<BookmarkIcon />}
+          label="Bookmarks"
+          {...{ collapsed, onNavigate }}
+        />
+      </nav>
 
       {!collapsed && (
         <nav className={styles.history} aria-label="Run history">
@@ -117,56 +137,20 @@ export function Sidebar({
       )}
 
       <div className={styles.footer}>
-        {showAdminInvites &&
-          onOpenInvites &&
-          (collapsed ? (
-            <button
-              type="button"
-              className={`${styles.railAction} ${invitesActive ? styles.railActionActive : ""}`.trim()}
-              onClick={onOpenInvites}
-              aria-current={invitesActive ? "page" : undefined}
-              aria-label="Admin Portal"
-              title="Admin Portal"
-            >
-              <AdminIcon />
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={`${styles.navItem} ${invitesActive ? styles.navItemActive : ""}`.trim()}
-              onClick={onOpenInvites}
-              aria-current={invitesActive ? "page" : undefined}
-            >
-              <span className={styles.navIcon} aria-hidden="true">
-                <AdminIcon />
-              </span>
-              Admin Portal
-            </button>
-          ))}
-        {collapsed ? (
-          <button
-            type="button"
-            className={`${styles.railAction} ${settingsActive ? styles.railActionActive : ""}`.trim()}
-            onClick={onOpenSettings}
-            aria-current={settingsActive ? "page" : undefined}
-            aria-label="Settings"
-            title="Settings"
-          >
-            <GearIcon />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={`${styles.navItem} ${settingsActive ? styles.navItemActive : ""}`.trim()}
-            onClick={onOpenSettings}
-            aria-current={settingsActive ? "page" : undefined}
-          >
-            <span className={styles.navIcon} aria-hidden="true">
-              <GearIcon />
-            </span>
-            Settings
-          </button>
+        {showAdmin && (
+          <NavItem
+            to="/admin"
+            icon={<AdminIcon />}
+            label="Admin Portal"
+            {...{ collapsed, onNavigate }}
+          />
         )}
+        <NavItem
+          to="/settings"
+          icon={<GearIcon />}
+          label="Settings"
+          {...{ collapsed, onNavigate }}
+        />
         {user && collapsed && (
           <button
             type="button"
@@ -181,6 +165,110 @@ export function Sidebar({
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </div>
     </div>
+  );
+}
+
+/** One primary-nav destination: a real link (NavLink sets aria-current="page" when active), the
+ *  house 2px accent spine marking the active entry. Collapsed = icon-only with a tooltip name. */
+function NavItem({
+  to,
+  end,
+  icon,
+  label,
+  collapsed,
+  onNavigate,
+}: {
+  to: string;
+  end?: boolean;
+  icon: ReactNode;
+  label: string;
+  collapsed: boolean;
+  onNavigate?: (() => void) | undefined;
+}) {
+  if (collapsed) {
+    return (
+      <NavLink
+        to={to}
+        end={end ?? false}
+        onClick={onNavigate}
+        className={({ isActive }) =>
+          `${styles.railAction} ${isActive ? styles.railActionActive : ""}`.trim()
+        }
+        aria-label={label}
+        title={label}
+      >
+        {icon}
+      </NavLink>
+    );
+  }
+  return (
+    <NavLink
+      to={to}
+      end={end ?? false}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        `${styles.navItem} ${isActive ? styles.navItemActive : ""}`.trim()
+      }
+    >
+      <span className={styles.navIcon} aria-hidden="true">
+        {icon}
+      </span>
+      {label}
+    </NavLink>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3 10.5 12 3l9 7.5M5 9.5V20h14V9.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3.75 3.75h6.5v6.5h-6.5zM13.75 3.75h6.5v6.5h-6.5zM3.75 13.75h6.5v6.5h-6.5zM13.75 13.75h6.5v6.5h-6.5z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ActivityIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3 12h4l2 6 4-14 2 8h6"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function BookmarkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 3h12v18l-6-4-6 4z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

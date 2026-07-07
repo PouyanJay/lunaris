@@ -56,7 +56,7 @@ describe("App — URL routing (live studio)", () => {
     render(<App />);
     expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/settings");
 
@@ -132,6 +132,48 @@ describe("App — URL routing (live studio)", () => {
     expect(
       await screen.findByRole("heading", { name: /what do you want to learn/i }),
     ).toBeInTheDocument();
+  });
+
+  it("routes the primary nav to My courses, Activity, and Bookmarks placeholders", async () => {
+    vi.stubGlobal("fetch", studioFetch());
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+    await screen.findByText(/no runs yet/i);
+
+    fireEvent.click(screen.getByRole("link", { name: "My courses" }));
+    expect(window.location.pathname).toBe("/courses");
+    expect(await screen.findByText(/course library/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "My courses" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "Activity" }));
+    expect(window.location.pathname).toBe("/activity");
+    expect(await screen.findByText(/learning activity/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "Bookmarks" }));
+    expect(window.location.pathname).toBe("/bookmarks");
+    expect(await screen.findByText(/saved lessons/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "Home" }));
+    expect(window.location.pathname).toBe("/");
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("normalizes /new to the composer at /", async () => {
+    vi.stubGlobal("fetch", studioFetch());
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
   });
 
   it("a finished build hands the URL off to its course", async () => {
