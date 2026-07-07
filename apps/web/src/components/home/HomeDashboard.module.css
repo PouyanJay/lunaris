@@ -61,16 +61,12 @@
 }
 
 /* ── Recent grid ── */
-.sectionHead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+.recent {
+  margin-top: var(--space-2);
 }
 
 .sectionTitle {
-  margin: 0;
+  margin: 0 0 var(--space-4);
   font-size: var(--text-base);
   font-weight: 600;
   color: var(--text);
@@ -85,8 +81,13 @@
   gap: var(--space-5);
 }
 
+.viewAllRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}
+
 .viewAll {
-  flex: none;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--accent-600);
@@ -96,6 +97,10 @@
 
 .viewAll:hover {
   text-decoration: underline;
+}
+
+.recent + .viewAllRow {
+  margin-top: var(--space-4);
 }
 
 .viewAll:focus-visible {

@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 
+import { ContinueLearning } from "./ContinueLearning";
 import { CourseCard } from "../course/CourseCard";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { Button } from "../primitives/Button";
@@ -14,14 +15,19 @@ interface HomeDashboardProps {
   apiBaseUrl: string;
   /** The signed-in caller's email — the greeting name is derived from it (offline: null). */
   userEmail: string | null;
-  /** Run history from the shell's useRuns — RUNNING rows drive the live-build banner (Task 2). */
+  /** Run history from the shell's useRuns — RUNNING rows drive the live-build banner. */
   runs: CourseRun[];
   /** Open the composer (first-run recovery + the empty state's action). */
   onNewCourse: () => void;
+  /** Resume into a course's reader — at the resume lesson when known (the continue-hero). */
+  onResumeLesson: (courseId: string, lessonId?: string) => void;
+  /** Open a course's Overview tab. */
+  onViewCourse: (courseId: string) => void;
 }
 
-/** How many recent courses the Home grid shows (the design's three-up row). */
+/** Recent-grid cap and the number of in-progress rows the continue-hero shows beside it. */
 const RECENT_LIMIT = 3;
+const CONTINUE_LIMIT = 4; // hero + up to 3 compact rows
 const SKELETON_CARDS = RECENT_LIMIT;
 
 /** A neutral, honest subline until the richer mastery figure lands (Task 4). */
@@ -63,17 +69,27 @@ function FirstRunHero({ onNewCourse }: { onNewCourse: () => void }) {
   );
 }
 
-/** The data region below the greeting — loading skeleton, recoverable error, first-run empty, or
- *  (once courses exist) the recent grid + View-all. Grows across Tasks 1–3. */
-function HomeBody({
-  state,
-  reload,
-  onNewCourse,
-}: {
+interface HomeBodyProps {
+  apiBaseUrl: string;
   state: LibraryState;
   reload: () => void;
   onNewCourse: () => void;
-}) {
+  onResumeLesson: (courseId: string, lessonId?: string) => void;
+  onViewCourse: (courseId: string) => void;
+}
+
+/** The data region below the greeting: loading skeleton, recoverable error, first-run empty, or —
+ *  once courses exist — the continue-learning section (in-progress) over the recent grid
+ *  (everything else), with a "View all" escape hatch whenever the library holds more than Home
+ *  surfaces. */
+function HomeBody({
+  apiBaseUrl,
+  state,
+  reload,
+  onNewCourse,
+  onResumeLesson,
+  onViewCourse,
+}: HomeBodyProps) {
   if (state.status === "loading") {
     return (
       <ul className={styles.grid} aria-busy="true" aria-label="Loading your courses">
@@ -92,27 +108,44 @@ function HomeBody({
     return <FirstRunHero onNewCourse={onNewCourse} />;
   }
 
-  return <RecentCourses courses={state.courses} />;
-}
+  const inProgress = state.courses.filter((course) => course.learnerStatus === "in_progress");
+  const rest = state.courses.filter((course) => course.learnerStatus !== "in_progress");
+  const recent = rest.slice(0, RECENT_LIMIT);
+  const shown = Math.min(inProgress.length, CONTINUE_LIMIT) + recent.length;
+  const hasMore = state.courses.length > shown;
 
-/** The recent grid: the three most-recently-opened courses (the library is already ordered
- *  last-opened-first server-side) as cover cards, with a way through to the full library. */
-function RecentCourses({ courses }: { courses: CourseSummary[] }) {
-  const recent = courses.slice(0, RECENT_LIMIT);
   return (
-    <section aria-labelledby="home-recent">
-      <div className={styles.sectionHead}>
-        <h3 id="home-recent" className={styles.sectionTitle}>
-          Recent courses
-        </h3>
-        {courses.length > RECENT_LIMIT && (
+    <>
+      {inProgress.length > 0 && (
+        <ContinueLearning
+          apiBaseUrl={apiBaseUrl}
+          inProgress={inProgress}
+          onResume={onResumeLesson}
+          onViewCourse={onViewCourse}
+        />
+      )}
+      {recent.length > 0 && <RecentCourses courses={recent} />}
+      {hasMore && (
+        <div className={styles.viewAllRow}>
           <Link className={styles.viewAll} to={ROUTES.library}>
             View all courses →
           </Link>
-        )}
-      </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The recent grid: recently-opened courses that aren't already in the continue section, as cover
+ *  cards. Capped by the caller; the "View all" hatch lives below in HomeBody. */
+function RecentCourses({ courses }: { courses: CourseSummary[] }) {
+  return (
+    <section aria-labelledby="home-recent" className={styles.recent}>
+      <h3 id="home-recent" className={styles.sectionTitle}>
+        Recent courses
+      </h3>
       <ul className={styles.grid}>
-        {recent.map((course) => (
+        {courses.map((course) => (
           <CourseCard key={course.id} course={course} />
         ))}
       </ul>
@@ -123,7 +156,14 @@ function RecentCourses({ courses }: { courses: CourseSummary[] }) {
 /** The Home dashboard at `/`: a greeting header over the learner's live state — the recent grid,
  *  the continue-learning hero, and the live-build banner (built up across Tasks 1–3). Reads the
  *  Phase 3 courses API via useLibrary; the composer now lives at /new. */
-export function HomeDashboard({ apiBaseUrl, userEmail, runs, onNewCourse }: HomeDashboardProps) {
+export function HomeDashboard({
+  apiBaseUrl,
+  userEmail,
+  runs,
+  onNewCourse,
+  onResumeLesson,
+  onViewCourse,
+}: HomeDashboardProps) {
   const { state, reload } = useLibrary(apiBaseUrl);
   const name = displayNameFromEmail(userEmail);
   const greeting = greetingForHour(new Date().getHours());
@@ -137,7 +177,14 @@ export function HomeDashboard({ apiBaseUrl, userEmail, runs, onNewCourse }: Home
         <p className={styles.subline}>{subline(state)}</p>
       </header>
       <LiveBuilds runs={runs} />
-      <HomeBody state={state} reload={reload} onNewCourse={onNewCourse} />
+      <HomeBody
+        apiBaseUrl={apiBaseUrl}
+        state={state}
+        reload={reload}
+        onNewCourse={onNewCourse}
+        onResumeLesson={onResumeLesson}
+        onViewCourse={onViewCourse}
+      />
     </div>
   );
 }

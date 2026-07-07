@@ -99,6 +99,39 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/new");
   });
 
+  it("resumes an in-progress course from the Home hero straight into the reader", async () => {
+    const summary = makeCourseSummary({
+      id: "course-test",
+      topic: "How binary search works",
+      learnerStatus: "in_progress",
+    });
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        library: [summary],
+        runs: [makeRun()],
+        course: makeCourse(),
+        progress: {
+          courseId: "course-test",
+          objectives: [],
+          lessons: [],
+          lastLessonId: "m-binary_search-l0",
+        },
+      }),
+    );
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    // Wait for the hero to enrich (the resume lesson is known) before resuming — clicking earlier
+    // gracefully falls back to the Overview. Then Resume opens the reader at the resume lesson's URL.
+    await screen.findByText(/lesson 1 of 1/i);
+    fireEvent.click(screen.getByRole("button", { name: /resume lesson/i }));
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    expect(screen.getByRole("radio", { name: "Lessons" })).toBeChecked();
+  });
+
   it("renders the course library at /courses, linking the fetched course into its canvas", async () => {
     vi.stubGlobal("fetch", routedFetch({ library: [makeCourseSummary()] }));
     window.history.pushState(null, "", "/courses");

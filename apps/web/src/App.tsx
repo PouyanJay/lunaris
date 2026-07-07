@@ -372,6 +372,27 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     setMobileNavOpen(false);
     navigate("/settings");
   }, [navigate]);
+  // Home → reader: resume a course at a specific lesson. A focus request (persisted in App state)
+  // rides across the navigation; the reader consumes it once its target course has loaded — the
+  // same mechanism the Overview rows use, since lesson-in-URL deep links are a later phase.
+  const openCourseLesson = useCallback(
+    (courseId: string, lessonId?: string) => {
+      setMobileNavOpen(false);
+      if (lessonId) {
+        focusSeq.current += 1;
+        setFocusRequest({ lessonId, seq: focusSeq.current });
+      }
+      navigate(coursePath(courseId, "lessons"));
+    },
+    [navigate],
+  );
+  const openCourseOverview = useCallback(
+    (courseId: string) => {
+      setMobileNavOpen(false);
+      navigate(coursePath(courseId));
+    },
+    [navigate],
+  );
   const selectedRunId = routedCourseId ?? undefined;
 
   // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
@@ -676,6 +697,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
             userEmail={user?.email ?? null}
             runs={runsState.status === "ready" ? runsState.runs : []}
             onNewCourse={startNewCourse}
+            onResumeLesson={openCourseLesson}
+            onViewCourse={openCourseOverview}
           />
         ),
       };
