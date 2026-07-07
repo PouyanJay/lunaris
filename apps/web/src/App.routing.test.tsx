@@ -118,7 +118,7 @@ describe("App — URL routing (live studio)", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Overview" })).toBeChecked();
   });
@@ -130,6 +130,30 @@ describe("App — URL routing (live studio)", () => {
     render(<App />);
 
     expect(await screen.findByRole("radio", { name: "Lessons" })).toBeChecked();
+  });
+
+  it("an Overview lesson row deep-links into the reader at that lesson", async () => {
+    const first = makeCourse().modules[0]!;
+    const course = makeCourse({
+      modules: [
+        first,
+        {
+          ...first,
+          id: "m-two",
+          title: "Module two",
+          lessons: [{ ...first.lessons[0]!, id: "m-two-l0" }],
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course }));
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+    const rows = await screen.findAllByRole("button", { name: /lesson \d/i });
+    fireEvent.click(rows[1]!);
+
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    expect(await screen.findByText(/lesson 2 of 2/i)).toBeInTheDocument();
   });
 
   it("Overview's CTAs navigate to the reader and the map", async () => {
@@ -146,6 +170,17 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/courses/course-test/map");
   });
 
+  it("the reader's Overview exit returns to the landing tab end-to-end", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test/lessons");
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /back to overview/i }));
+
+    expect(window.location.pathname).toBe("/courses/course-test");
+    expect(await screen.findByRole("button", { name: /continue learning/i })).toBeInTheDocument();
+  });
+
   it("records the open touch on the bare course URL — the Overview landing is a course open", async () => {
     // Pre-T4 the bare path was the reader (excluded from the App-level touch); now it's Overview,
     // which must count toward last-opened like every non-reader view.
@@ -154,7 +189,7 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/courses/course-test");
 
     render(<App />);
-    await screen.findByRole("heading", { name: "How binary search works" });
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
 
     await waitFor(() => {
       const opened = fetchMock.mock.calls.find(
@@ -174,7 +209,7 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/courses/course-test/map");
 
     render(<App />);
-    await screen.findByRole("heading", { name: "How binary search works" });
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
 
     // The open-touch feeds the library's last-opened sort; it must fire for the visited course.
     await waitFor(() => {
@@ -222,7 +257,7 @@ describe("App — URL routing (live studio)", () => {
     fireEvent.click(within(history).getByText("How binary search works"));
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/courses/course-test");
 
@@ -328,7 +363,7 @@ describe("App — URL routing (live studio)", () => {
       target: { value: "binary search" },
     });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
-    await screen.findByRole("heading", { name: "How binary search works" });
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
     expect(window.location.pathname).toBe("/courses/course-test");
 
     // Regression: home must not re-host the finished build — it's the composer again.
@@ -356,7 +391,7 @@ describe("App — URL routing (live studio)", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/courses/course-test");
   });

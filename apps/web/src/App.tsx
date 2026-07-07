@@ -395,19 +395,28 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // Build replay this course's build log. The view lives in the URL; a Map → lesson drill-in
   // navigates to the reader with a focus request.
   const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => {
-    const openLessonForKc = (kc: string) => {
-      focusSeq.current += 1;
-      setFocusRequest({ kc, seq: focusSeq.current });
+    // Every way into the reader: optionally focus a target (a concept from the Map, a lesson
+    // from the Overview), then navigate to the Lessons view.
+    const requestLessonFocus = (target: Omit<LessonFocusRequest, "seq"> | null) => {
+      if (target) {
+        focusSeq.current += 1;
+        setFocusRequest({ ...target, seq: focusSeq.current });
+      }
       navigate(coursePath(course.id, "lessons"));
     };
+    const openLessonForKc = (kc: string) => requestLessonFocus({ kc });
+    const openLessonById = (lessonId?: string) =>
+      requestLessonFocus(lessonId ? { lessonId } : null);
     // Record over the CourseView union: adding a sixth view without a body is a type error,
     // never a silent fall-through to Overview.
     const bodies: Record<CourseView, () => ReactNode> = {
       overview: () => (
         <CourseOverview
           course={course}
-          onContinue={() => navigate(coursePath(course.id, "lessons"))}
+          apiBaseUrl={apiBaseUrl}
+          onContinue={openLessonById}
           onViewMap={() => navigate(coursePath(course.id, "map"))}
+          onOpenLesson={openLessonById}
         />
       ),
       lessons: () => (
@@ -425,6 +434,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
                 : undefined
             }
             apiBaseUrl={apiBaseUrl}
+            onExitToOverview={() => navigate(coursePath(course.id))}
           />
         </ExplainProvider>
       ),

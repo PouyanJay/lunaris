@@ -27,6 +27,8 @@
 
   /* Status — muted, reserved meanings (dot + uppercase-mono label, never a pill). */
   --success: #3f9d76;
+  /* Quiet success wash (the Overview's done-lesson chip) — the enterprise-ui contract value. */
+  --success-soft: #eaf4ef;
   --warning: #bb8a36;
   --danger: #cb4a40;
   /* Filled destructive button: a dark-enough red that white text clears WCAG AA (~6:1) on BOTH
@@ -140,6 +142,7 @@
   --accent-700: #c8860f;
   --accent-soft: #16140d;
   --success: #56a585;
+  --success-soft: #13241c;
   --warning: #c0974a;
   --danger: #d2726a;
   --primary: #eceef1;
