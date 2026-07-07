@@ -22,12 +22,26 @@ class LessonProgressView(CamelModel):
     updated_at: datetime
 
 
+class ProgressSummaryView(CamelModel):
+    """Derived course-level rollup — recomputed per read, never stored."""
+
+    understood_count: int
+    objective_total: int
+    lessons_done: int
+    lesson_total: int
+    percent: int
+
+
 class ProgressSnapshotView(CamelModel):
-    """The caller's progress on one course — the raw marks the reader and rollups derive from."""
+    """The caller's progress on one course: the raw marks plus rollups derived against the
+    course payload. ``summary`` is null (and ``kc_mastery`` empty) when the course itself isn't
+    loadable — progress rows are independent of the payload."""
 
     course_id: str
     objectives: list[ObjectiveProgressView]
     lessons: list[LessonProgressView]
+    summary: ProgressSummaryView | None = None
+    kc_mastery: dict[str, bool] = Field(default_factory=dict)
 
 
 class ObjectiveMarkRequest(CamelModel):

@@ -16,11 +16,23 @@ export interface LessonProgress {
   updatedAt: string;
 }
 
-/** The caller's progress on one course — the raw marks the reader derives its counters from. */
+/** Derived course-level rollup — recomputed by the API per read, never stored. */
+export interface ProgressSummary {
+  understoodCount: number;
+  objectiveTotal: number;
+  lessonsDone: number;
+  lessonTotal: number;
+  percent: number;
+}
+
+/** The caller's progress on one course — raw marks plus rollups derived against the course
+ *  payload (summary null / kcMastery empty when the course isn't loadable). */
 export interface CourseProgress {
   courseId: string;
   objectives: ObjectiveProgress[];
   lessons: LessonProgress[];
+  summary?: ProgressSummary | null;
+  kcMastery?: Record<string, boolean>;
 }
 
 export async function fetchCourseProgress(

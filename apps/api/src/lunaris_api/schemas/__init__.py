@@ -15,6 +15,7 @@ from .progress import (
     ObjectiveMarkRequest,
     ObjectiveProgressView,
     ProgressSnapshotView,
+    ProgressSummaryView,
 )
 from .settings import SecretStatusView, SecretValue, SettingsView
 from .signup_gate import SignupGateStatusView, SignupGateUpdate, SignupGateView
@@ -43,6 +44,7 @@ __all__ = [
     "ObjectiveMarkRequest",
     "ObjectiveProgressView",
     "ProgressSnapshotView",
+    "ProgressSummaryView",
     "SecretStatusView",
     "SecretValue",
     "SettingsView",

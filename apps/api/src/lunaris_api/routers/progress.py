@@ -3,13 +3,15 @@ from uuid import uuid4
 from fastapi import APIRouter, Response, status
 from lunaris_runtime.logging import bind_request_id
 
-from ..dependencies import OptionalUserIdDep, ProgressStoreDep
+from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
+from ..progress import derive_rollups
 from ..schemas import (
     LessonMarkRequest,
     LessonProgressView,
     ObjectiveMarkRequest,
     ObjectiveProgressView,
     ProgressSnapshotView,
+    ProgressSummaryView,
 )
 
 router = APIRouter(prefix="/api/courses/{course_id}/progress", tags=["progress"])
@@ -26,6 +28,7 @@ def _bind() -> str:
 async def get_progress(
     course_id: str,
     store: ProgressStoreDep,
+    courses: CourseServiceDep,
     owner_id: OptionalUserIdDep,
     response: Response,
 ) -> ProgressSnapshotView:
@@ -37,6 +40,18 @@ async def get_progress(
     """
     response.headers["X-Request-Id"] = _bind()
     objectives, lessons = await store.snapshot(user_id=owner_id, course_id=course_id)
+    course = courses.get(course_id, owner_id=owner_id)
+    summary_view: ProgressSummaryView | None = None
+    kc_mastery: dict[str, bool] = {}
+    if course is not None:
+        summary, kc_mastery = derive_rollups(course, objectives, lessons)
+        summary_view = ProgressSummaryView(
+            understood_count=summary.understood_count,
+            objective_total=summary.objective_total,
+            lessons_done=summary.lessons_done,
+            lesson_total=summary.lesson_total,
+            percent=summary.percent,
+        )
     return ProgressSnapshotView(
         course_id=course_id,
         objectives=[
@@ -55,6 +70,8 @@ async def get_progress(
             )
             for mark in lessons
         ],
+        summary=summary_view,
+        kc_mastery=kc_mastery,
     )
 
 
