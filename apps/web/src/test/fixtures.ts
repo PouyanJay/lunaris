@@ -127,6 +127,7 @@ export function makeCourseSummary(overrides: Partial<CourseSummary> = {}): Cours
     learnerStatus: "in_progress",
     courseStatus: "published",
     builtAt: "2026-07-01T00:00:00Z",
+    lastOpenedAt: "2026-07-06T00:00:00Z",
     ...overrides,
   };
 }
@@ -448,6 +449,14 @@ export function routedFetch(
     if (/\/api\/courses\/[^/]+\/progress$/.test(url)) {
       const progress = handlers.progress ?? { courseId: "", objectives: [], lessons: [] };
       return Promise.resolve({ ok: true, json: async () => progress });
+    }
+    // Progress writes (objective / lesson / opened) succeed silently — the app treats them as
+    // best-effort, and an unhandled URL here would loop the reader's reconcile-on-failure path.
+    if (
+      /\/api\/courses\/[^/]+\/progress\/(objective|lesson|opened)$/.test(url) &&
+      method === "PUT"
+    ) {
+      return Promise.resolve({ ok: true, status: 204 });
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);

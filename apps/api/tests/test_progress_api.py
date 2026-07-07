@@ -16,7 +16,7 @@ from _auth import JWT_SECRET, USER_A, USER_B, auth_headers
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_course_service, get_progress_store
-from lunaris_api.progress import InMemoryProgressStore
+from lunaris_api.progress import InMemoryProgressStore, ProgressStoreUnavailableError
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.schema import Course, Lesson, MerrillSegments, Module, Objective, Segment
 
@@ -24,13 +24,16 @@ _REQUEST_ID = re.compile(r"[0-9a-f]{32}")
 
 
 def _build_client(
-    jwt_secret: str | None, tmp_path: Path, course_service: "_StubCourseService | None" = None
+    jwt_secret: str | None,
+    tmp_path: Path,
+    course_service: "_StubCourseService | None" = None,
+    progress_store: InMemoryProgressStore | None = None,
 ) -> httpx.AsyncClient:
     clear_correlation()
     app = create_app()
     # A fresh store per test client: the process-wide in-memory singleton would otherwise leak
     # marks across tests.
-    store = InMemoryProgressStore()
+    store = progress_store if progress_store is not None else InMemoryProgressStore()
     app.dependency_overrides[get_progress_store] = lambda: store
     if course_service is not None:
         app.dependency_overrides[get_course_service] = lambda: course_service
@@ -171,8 +174,109 @@ async def test_progress_writes_require_auth(client: httpx.AsyncClient) -> None:
         "/api/courses/course-1/progress/lesson",
         json={"lessonId": "m-1-l0", "state": "done"},
     )
+    put_opened = await client.put("/api/courses/course-1/progress/opened", json={})
     assert put_objective.status_code == 401
     assert put_lesson.status_code == 401
+    assert put_opened.status_code == 401
+
+
+async def test_opening_a_course_records_state(client: httpx.AsyncClient) -> None:
+    # Act — a bare touch: the learner opened the course, at no particular lesson.
+    put = await client.put(
+        "/api/courses/course-1/progress/opened", json={}, headers=auth_headers(USER_A)
+    )
+    snapshot = await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_A))
+
+    # Assert
+    assert put.status_code == 204
+    body = snapshot.json()
+    assert body["lastOpenedAt"]
+    assert body["lastLessonId"] is None
+
+
+async def test_opening_at_a_lesson_records_the_position(client: httpx.AsyncClient) -> None:
+    # Act
+    await client.put(
+        "/api/courses/course-1/progress/opened",
+        json={"lastLessonId": "m-1-l0"},
+        headers=auth_headers(USER_A),
+    )
+    snapshot = await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_A))
+
+    # Assert
+    assert snapshot.json()["lastLessonId"] == "m-1-l0"
+
+
+async def test_bare_touch_preserves_the_reading_position(client: httpx.AsyncClient) -> None:
+    # Arrange — the learner read up to a lesson, then later opens the course at the Overview.
+    await client.put(
+        "/api/courses/course-1/progress/opened",
+        json={"lastLessonId": "m-1-l0"},
+        headers=auth_headers(USER_A),
+    )
+    first = (
+        await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_A))
+    ).json()
+
+    # Act — a bare touch (an Overview/Map open) must not erase the position.
+    await client.put("/api/courses/course-1/progress/opened", json={}, headers=auth_headers(USER_A))
+    second = (
+        await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_A))
+    ).json()
+
+    # Assert — position preserved; recency never regresses. (Strict advancement is proven at the
+    # SQL layer in tests/db/test_course_state_rls.py, where the timestamp is controlled.)
+    assert second["lastLessonId"] == "m-1-l0"
+    assert second["lastOpenedAt"] >= first["lastOpenedAt"]
+
+
+async def test_course_state_is_isolated_per_user(client: httpx.AsyncClient) -> None:
+    # Arrange
+    await client.put(
+        "/api/courses/course-1/progress/opened",
+        json={"lastLessonId": "m-1-l0"},
+        headers=auth_headers(USER_A),
+    )
+
+    # Act
+    snapshot = await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_B))
+
+    # Assert — nothing of A's state leaks to B.
+    body = snapshot.json()
+    assert body["lastOpenedAt"] is None
+    assert body["lastLessonId"] is None
+
+
+async def test_oversized_last_lesson_id_is_rejected(client: httpx.AsyncClient) -> None:
+    # Act — beyond the DB check constraint's 200-char bound.
+    response = await client.put(
+        "/api/courses/course-1/progress/opened",
+        json={"lastLessonId": "x" * 201},
+        headers=auth_headers(USER_A),
+    )
+
+    # Assert
+    assert response.status_code == 422
+
+
+class _UnavailableProgressStore(InMemoryProgressStore):
+    """Reads fail with the domain error — the branch the GET route must map to a 503."""
+
+    async def snapshot(self, *, user_id: str | None, course_id: str) -> tuple[list, list]:
+        raise ProgressStoreUnavailableError("progress backend unavailable")
+
+
+async def test_unavailable_progress_backend_returns_503(tmp_path: Path) -> None:
+    # Arrange — a progress store whose read fails (the Supabase store raises the same domain
+    # error on a real outage, so this proves the route's mapping is live, not dead code).
+    async with _build_client(
+        JWT_SECRET, tmp_path, progress_store=_UnavailableProgressStore()
+    ) as client:
+        # Act
+        response = await client.get("/api/courses/course-1/progress", headers=auth_headers(USER_A))
+
+    # Assert — a recoverable 503, never a raw 500 (which would lose its CORS headers).
+    assert response.status_code == 503
 
 
 async def test_invalid_lesson_state_is_rejected(client: httpx.AsyncClient) -> None:

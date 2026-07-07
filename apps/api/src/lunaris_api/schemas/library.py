@@ -10,7 +10,7 @@ class CourseSummaryView(CamelModel):
     """One My-courses library card on the wire (camelCase). ``id`` is the course id the card
     opens; ``topic`` names the course, same word as ``Course``/``CourseRun``. ``level`` is null
     for a graphless course (no invented pill); ``built_at`` is the run's finish time — the sort
-    fallback until last-opened lands."""
+    key when the course has never been opened (``last_opened_at`` null)."""
 
     id: str
     topic: str
@@ -22,3 +22,4 @@ class CourseSummaryView(CamelModel):
     learner_status: LearnerCourseStatus
     course_status: CourseStatus
     built_at: datetime
+    last_opened_at: datetime | None

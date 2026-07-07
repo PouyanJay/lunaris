@@ -2,8 +2,9 @@ from collections.abc import Sequence
 
 from lunaris_runtime.schema import KnowledgeComponent
 
-from ..progress import LessonMark, ObjectiveMark, derive_rollups
+from ..progress import derive_rollups
 from .course_level import CourseLevel
+from .course_marks import CourseMarks
 from .course_summary import CourseSummary
 from .learner_course_status import LearnerCourseStatus
 from .library_entry import LibraryEntry
@@ -35,16 +36,14 @@ def _derive_learner_status(
     return LearnerCourseStatus.NOT_STARTED
 
 
-def derive_course_summary(
-    entry: LibraryEntry, objectives: list[ObjectiveMark], lessons: list[LessonMark]
-) -> CourseSummary:
-    """Fold one library entry + the caller's progress marks into its card facts.
+def derive_course_summary(entry: LibraryEntry, marks: CourseMarks) -> CourseSummary:
+    """Fold one library entry + this course's slice of the learner's progress into card facts.
 
     Rollups reuse the P2 derivation (lesson-based percent, recomputed per read). ``completed``
     requires every lesson done on a course that HAS lessons — a zero-lesson course with marks
     reads ``in_progress``, never a vacuous 0/0 completion.
     """
-    summary, _ = derive_rollups(entry.course, objectives, lessons)
+    summary, _ = derive_rollups(entry.course, marks.objectives, marks.lessons)
     nodes = entry.course.graph.nodes
     return CourseSummary(
         course_id=entry.course.id,
@@ -57,8 +56,9 @@ def derive_course_summary(
         learner_status=_derive_learner_status(
             lessons_done=summary.lessons_done,
             lesson_total=summary.lesson_total,
-            has_marks=bool(objectives or lessons),
+            has_marks=bool(marks.objectives or marks.lessons),
         ),
         course_status=entry.course.status,
         built_at=entry.run.updated_at,
+        last_opened_at=marks.state.last_opened_at if marks.state else None,
     )

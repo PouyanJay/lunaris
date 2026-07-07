@@ -2,6 +2,7 @@ import asyncio
 import os
 from datetime import UTC, datetime
 
+from .course_state_mark import CourseStateMark
 from .lesson_mark import LessonMark, LessonState
 from .objective_mark import ObjectiveMark
 from .store_unavailable_error import ProgressStoreUnavailableError
@@ -10,6 +11,7 @@ _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _OBJECTIVES_TABLE = "objective_progress"
 _LESSONS_TABLE = "lesson_progress"
+_COURSE_STATE_TABLE = "learner_course_state"
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -31,6 +33,14 @@ def _lesson_from_row(row: dict, *, course_id: str) -> LessonMark:
         lesson_id=row["lesson_id"],
         state=row["state"],
         updated_at=_parse_timestamp(row["updated_at"]),
+    )
+
+
+def _course_state_from_row(row: dict) -> CourseStateMark:
+    return CourseStateMark(
+        course_id=row["course_id"],
+        last_opened_at=_parse_timestamp(row["last_opened_at"]),
+        last_lesson_id=row.get("last_lesson_id"),
     )
 
 
@@ -97,22 +107,27 @@ class SupabaseProgressStore:
         owner = self._require_user(user_id)
         client = self._ensure_client()
         # The two reads are independent — fan out rather than paying two sequential round-trips.
-        objective_rows, lesson_rows = await asyncio.gather(
-            self._select(
-                client,
-                _OBJECTIVES_TABLE,
-                "module_id, objective_index, understood_at",
-                owner=owner,
-                course_id=course_id,
-            ),
-            self._select(
-                client,
-                _LESSONS_TABLE,
-                "lesson_id, state, updated_at",
-                owner=owner,
-                course_id=course_id,
-            ),
-        )
+        # Failure maps to the domain error so the route's 503 guard is live for the REAL backend,
+        # not just the in-memory double.
+        try:
+            objective_rows, lesson_rows = await asyncio.gather(
+                self._select(
+                    client,
+                    _OBJECTIVES_TABLE,
+                    "module_id, objective_index, understood_at",
+                    owner=owner,
+                    course_id=course_id,
+                ),
+                self._select(
+                    client,
+                    _LESSONS_TABLE,
+                    "lesson_id, state, updated_at",
+                    owner=owner,
+                    course_id=course_id,
+                ),
+            )
+        except Exception as exc:
+            raise ProgressStoreUnavailableError("progress backend unavailable") from exc
         objectives = [_objective_from_row(row, course_id=course_id) for row in objective_rows]
         lessons = [_lesson_from_row(row, course_id=course_id) for row in lesson_rows]
         return objectives, lessons
@@ -212,3 +227,64 @@ class SupabaseProgressStore:
                 .execute()
             )
         )
+
+    async def touch_course(
+        self, *, user_id: str | None, course_id: str, last_lesson_id: str | None = None
+    ) -> None:
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+        row: dict[str, str] = {
+            "user_id": owner,
+            "course_id": course_id,
+            "last_opened_at": datetime.now(UTC).isoformat(),
+        }
+        # Omit the column on a bare touch: PostgREST's conflict-update only SETs payload columns,
+        # so a previously recorded reading position is preserved, never nulled.
+        if last_lesson_id is not None:
+            row["last_lesson_id"] = last_lesson_id
+
+        def _upsert() -> object:
+            return (
+                client.table(_COURSE_STATE_TABLE)  # type: ignore[attr-defined]
+                .upsert(row, on_conflict="user_id,course_id")
+                .execute()
+            )
+
+        # A failed write maps to the domain error so the route answers a recoverable 503 that
+        # keeps its CORS headers (the same posture the whole-account reads take).
+        try:
+            await asyncio.to_thread(_upsert)
+        except Exception as exc:
+            raise ProgressStoreUnavailableError("progress backend unavailable") from exc
+
+    async def course_state(self, *, user_id: str | None, course_id: str) -> CourseStateMark | None:
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+        try:
+            rows = await self._select(
+                client,
+                _COURSE_STATE_TABLE,
+                "course_id, last_opened_at, last_lesson_id",
+                owner=owner,
+                course_id=course_id,
+            )
+        except Exception as exc:
+            raise ProgressStoreUnavailableError("progress backend unavailable") from exc
+        return _course_state_from_row(rows[0]) if rows else None
+
+    async def course_states(self, *, user_id: str | None) -> list[CourseStateMark]:
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+        # Whole-account read for the library's last-opened sort; failure maps to the domain
+        # error so the route answers a recoverable 503 (same posture as snapshot_all).
+        try:
+            rows = await self._select(
+                client,
+                _COURSE_STATE_TABLE,
+                "course_id, last_opened_at, last_lesson_id",
+                owner=owner,
+                course_id=None,
+            )
+        except Exception as exc:
+            raise ProgressStoreUnavailableError("progress backend unavailable") from exc
+        return [_course_state_from_row(row) for row in rows]

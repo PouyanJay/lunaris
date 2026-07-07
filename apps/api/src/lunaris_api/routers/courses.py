@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
@@ -16,7 +17,7 @@ from pydantic import ValidationError
 
 from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
 from ..draft_throttle import DraftBuildRefusedError
-from ..library import CourseSummary, assemble_course_summaries
+from ..library import CourseSummary, LearnerSnapshot, assemble_course_summaries
 from ..progress import ProgressStoreUnavailableError
 from ..schemas import ComputeChoice, CourseRequest, CourseSummaryView
 from ..service import (
@@ -87,6 +88,7 @@ def _summary_view(summary: CourseSummary) -> CourseSummaryView:
         learner_status=summary.learner_status,
         course_status=summary.course_status,
         built_at=summary.built_at,
+        last_opened_at=summary.last_opened_at,
     )
 
 
@@ -97,7 +99,8 @@ async def list_courses(
     owner_id: OptionalUserIdDep,
     response: Response,
 ) -> list[CourseSummaryView]:
-    """The caller's course library — one summary per built course, newest first.
+    """The caller's course library — one summary per built course, most-recently-opened first
+    (a course never opened ranks by its build time).
 
     Assembled per read from the run index + the persisted course payloads + the caller's whole
     progress snapshot (nothing stored), so a card always reflects the course's current shape and
@@ -109,17 +112,18 @@ async def list_courses(
     try:
         entries = await service.list_library_courses(owner_id=owner_id)
         if not entries:
-            return []  # empty library: skip the progress read (fresh accounts are common)
-        objectives, lessons = await progress.snapshot_all(user_id=owner_id)
+            return []  # empty library: skip the progress reads (fresh accounts are common)
+        (objectives, lessons), states = await asyncio.gather(
+            progress.snapshot_all(user_id=owner_id),
+            progress.course_states(user_id=owner_id),
+        )
     except (RunHistoryUnavailableError, ProgressStoreUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The course library is temporarily unavailable",
         ) from exc
-    return [
-        _summary_view(summary)
-        for summary in assemble_course_summaries(entries, objectives, lessons)
-    ]
+    snapshot = LearnerSnapshot(objectives=objectives, lessons=lessons, states=states)
+    return [_summary_view(summary) for summary in assemble_course_summaries(entries, snapshot)]
 
 
 @router.post("", response_model=Course, status_code=status.HTTP_201_CREATED)

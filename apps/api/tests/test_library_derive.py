@@ -4,7 +4,7 @@ the integration suite can't pin precisely (the stub pipeline's difficulties are 
 from datetime import UTC, datetime
 
 import pytest
-from lunaris_api.library import LibraryEntry, derive_course_summary
+from lunaris_api.library import CourseMarks, LibraryEntry, derive_course_summary
 from lunaris_api.progress import ObjectiveMark
 from lunaris_runtime.schema import (
     Course,
@@ -63,7 +63,7 @@ def _entry(difficulties: list[float]) -> LibraryEntry:
 )
 def test_level_buckets_mean_kc_difficulty(difficulties: list[float], expected: str) -> None:
     # Act
-    summary = derive_course_summary(_entry(difficulties), [], [])
+    summary = derive_course_summary(_entry(difficulties), CourseMarks())
 
     # Assert
     assert summary.level == expected
@@ -72,7 +72,7 @@ def test_level_buckets_mean_kc_difficulty(difficulties: list[float], expected: s
 
 def test_level_is_none_without_mapped_concepts() -> None:
     # Act — a degenerate course whose graph never mapped (no invented level).
-    summary = derive_course_summary(_entry([]), [], [])
+    summary = derive_course_summary(_entry([]), CourseMarks())
 
     # Assert
     assert summary.level is None
@@ -87,7 +87,7 @@ def test_zero_lesson_course_with_marks_reads_in_progress_not_completed() -> None
     )
 
     # Act
-    summary = derive_course_summary(_entry([0.5]), [mark], [])
+    summary = derive_course_summary(_entry([0.5]), CourseMarks(objectives=[mark]))
 
     # Assert
     assert summary.learner_status == "in_progress"
@@ -96,7 +96,7 @@ def test_zero_lesson_course_with_marks_reads_in_progress_not_completed() -> None
 
 def test_zero_lesson_course_without_marks_reads_not_started() -> None:
     # Act
-    summary = derive_course_summary(_entry([0.5]), [], [])
+    summary = derive_course_summary(_entry([0.5]), CourseMarks())
 
     # Assert
     assert summary.learner_status == "not_started"

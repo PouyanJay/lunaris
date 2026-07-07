@@ -555,6 +555,7 @@ export interface CourseSummary {
   learnerStatus: LearnerCourseStatus;
   courseStatus: CourseStatus;
   builtAt: string;
+  lastOpenedAt: string | null;
 }
 
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */

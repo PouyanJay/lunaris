@@ -186,15 +186,45 @@ async def test_progress_on_one_course_does_not_leak_into_another(
 
 
 async def test_library_lists_newest_build_first(client: httpx.AsyncClient) -> None:
-    # Arrange — two builds, in order.
+    # Arrange — two builds, in order, neither ever opened.
     await client.post("/api/courses", json={"topic": "binary search"})
     await client.post("/api/courses", json={"topic": "merge sort"})
 
     # Act
     topics = [summary["topic"] for summary in (await client.get("/api/courses")).json()]
 
-    # Assert — newest first (the run index's ordering, until last-opened sort lands in T2).
+    # Assert — with no opens, recency falls back to build time: newest first.
     assert topics == ["merge sort", "binary search"]
+
+
+async def test_library_sorts_last_opened_course_first(client: httpx.AsyncClient) -> None:
+    # Arrange — build two courses (merge sort is newer), then OPEN the older one.
+    first = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    await client.post("/api/courses", json={"topic": "merge sort"})
+    await client.put(f"/api/courses/{first['id']}/progress/opened", json={})
+
+    # Act
+    summaries = (await client.get("/api/courses")).json()
+
+    # Assert — the opened course outranks the newer build; the wire says why (lastOpenedAt).
+    assert [summary["topic"] for summary in summaries] == ["binary search", "merge sort"]
+    assert summaries[0]["lastOpenedAt"]
+    assert summaries[1]["lastOpenedAt"] is None
+
+
+async def test_library_reranks_when_an_older_open_is_revisited(client: httpx.AsyncClient) -> None:
+    # Arrange — both courses opened, B (newer) after A, then A revisited last.
+    first = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    second = (await client.post("/api/courses", json={"topic": "merge sort"})).json()
+    await client.put(f"/api/courses/{first['id']}/progress/opened", json={})
+    await client.put(f"/api/courses/{second['id']}/progress/opened", json={})
+    await client.put(f"/api/courses/{first['id']}/progress/opened", json={})
+
+    # Act
+    topics = [summary["topic"] for summary in (await client.get("/api/courses")).json()]
+
+    # Assert — most-recently-opened wins between two opened courses, not just opened-vs-never.
+    assert topics == ["binary search", "merge sort"]
 
 
 class _UnavailableRunStore:

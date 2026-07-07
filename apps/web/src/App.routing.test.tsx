@@ -107,6 +107,27 @@ describe("App — URL routing (live studio)", () => {
     expect(screen.getByRole("radio", { name: "Learn" })).toBeChecked();
   });
 
+  it("records a bare course-open touch when a non-reader view is visited", async () => {
+    // The Map view has no lesson to record, so the App-level effect fires the bare touch
+    // (the reader view records its own positioned touch — proven in CourseReader tests).
+    const fetchMock = routedFetch({ runs: [makeRun()], course: makeCourse() });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState(null, "", "/courses/course-test/map");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "How binary search works" });
+
+    // The open-touch feeds the library's last-opened sort; it must fire for the visited course.
+    await waitFor(() => {
+      const opened = fetchMock.mock.calls.find(
+        ([input, init]) =>
+          String(input).endsWith("/api/courses/course-test/progress/opened") &&
+          (init?.method ?? "GET").toUpperCase() === "PUT",
+      );
+      expect(opened).toBeTruthy();
+    });
+  });
+
   it("deep-links to the Map view at /courses/:courseId/map", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test/map");

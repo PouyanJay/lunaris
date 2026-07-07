@@ -43,6 +43,7 @@ import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
+import { putCourseOpened } from "./lib/progress";
 import { isLlmKeyless } from "./lib/capabilities";
 import { coursePath, resolveRoute, type ShellRoute } from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
@@ -342,6 +343,17 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   useEffect(() => {
     if (location.pathname === "/new") navigate("/", { replace: true });
   }, [location.pathname, navigate]);
+
+  // Visiting a course's non-reader views refreshes its open-recency — the library's last-opened
+  // sort. A bare touch; the reader view is excluded because CourseReader records the open itself
+  // with better fidelity (it knows the lesson), so one open never fires two touches.
+  // Fire-and-forget; a failed touch must never disturb the canvas.
+  const visitedCourseId = route.kind === "course" && route.view !== "learn" ? route.courseId : null;
+  useEffect(() => {
+    if (visitedCourseId) {
+      putCourseOpened(apiBaseUrl, visitedCourseId).catch(() => {});
+    }
+  }, [apiBaseUrl, visitedCourseId]);
 
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {

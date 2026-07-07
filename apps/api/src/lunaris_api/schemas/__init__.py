@@ -11,6 +11,7 @@ from .explain import ExplainRequest, ExplainResponse
 from .keyless_readiness import KeylessReadinessView
 from .library import CourseSummaryView
 from .progress import (
+    CourseOpenedRequest,
     LessonMarkRequest,
     LessonProgressView,
     ObjectiveMarkRequest,
@@ -33,6 +34,7 @@ __all__ = [
     "ConfigView",
     "CorpusSourceRequest",
     "CorpusSourceView",
+    "CourseOpenedRequest",
     "CourseRequest",
     "CourseSummaryView",
     "CredentialStatusView",

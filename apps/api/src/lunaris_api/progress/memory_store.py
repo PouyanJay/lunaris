@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from .course_state_mark import CourseStateMark
 from .lesson_mark import LessonMark, LessonState
 from .objective_mark import ObjectiveMark
 
@@ -14,6 +15,7 @@ class InMemoryProgressStore:
     def __init__(self) -> None:
         self._objectives: dict[tuple[str | None, str, str, int], ObjectiveMark] = {}
         self._lessons: dict[tuple[str | None, str, str], LessonMark] = {}
+        self._course_states: dict[tuple[str | None, str], CourseStateMark] = {}
 
     async def snapshot(
         self, *, user_id: str | None, course_id: str
@@ -66,3 +68,24 @@ class InMemoryProgressStore:
             state=state,
             updated_at=datetime.now(UTC),
         )
+
+    async def touch_course(
+        self, *, user_id: str | None, course_id: str, last_lesson_id: str | None = None
+    ) -> None:
+        key = (user_id, course_id)
+        previous = self._course_states.get(key)
+        # A bare touch keeps the recorded reading position — only a lesson open moves it.
+        preserved = (
+            last_lesson_id
+            if last_lesson_id is not None
+            else (previous.last_lesson_id if previous else None)
+        )
+        self._course_states[key] = CourseStateMark(
+            course_id=course_id, last_opened_at=datetime.now(UTC), last_lesson_id=preserved
+        )
+
+    async def course_state(self, *, user_id: str | None, course_id: str) -> CourseStateMark | None:
+        return self._course_states.get((user_id, course_id))
+
+    async def course_states(self, *, user_id: str | None) -> list[CourseStateMark]:
+        return [mark for (owner, _), mark in self._course_states.items() if owner == user_id]

@@ -136,7 +136,10 @@ export function CourseReader({
   const [activeIndex, setActiveIndex] = useState(0);
   // The learner's marks on this course (best-effort; null offline / while loading). Offline
   // (no apiBaseUrl) skips the fetch entirely by keying on an empty origin.
-  const { progress, markObjective, markLesson } = useCourseProgress(apiBaseUrl ?? "", course.id);
+  const { progress, markObjective, markLesson, markOpened } = useCourseProgress(
+    apiBaseUrl ?? "",
+    course.id,
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -186,6 +189,13 @@ export function CourseReader({
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
     if (!known) markLesson(currentLessonId, "in_progress");
   }, [progress, currentLessonId, markLesson]);
+
+  // Every lesson view refreshes the course's open-recency + reading position (the library's
+  // last-opened sort, and where the Continue CTA resumes). Unlike the in_progress mark above,
+  // this fires on every visit — recency must move even on a re-read.
+  useEffect(() => {
+    if (currentLessonId) markOpened(currentLessonId);
+  }, [currentLessonId, markOpened]);
 
   const annotations = useMemo(
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),

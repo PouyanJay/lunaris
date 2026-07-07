@@ -22,3 +22,4 @@ class CourseSummary:
     learner_status: LearnerCourseStatus
     course_status: CourseStatus
     built_at: datetime
+    last_opened_at: datetime | None
