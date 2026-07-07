@@ -14,9 +14,10 @@ from lunaris_runtime.schema import (
 )
 from pydantic import ValidationError
 
-from ..dependencies import CourseServiceDep, OptionalUserIdDep
+from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
 from ..draft_throttle import DraftBuildRefusedError
-from ..library import CourseSummary, derive_course_summary
+from ..library import CourseSummary, assemble_course_summaries
+from ..progress import ProgressStoreUnavailableError
 from ..schemas import ComputeChoice, CourseRequest, CourseSummaryView
 from ..service import (
     CourseBuildCancelledError,
@@ -76,31 +77,49 @@ def _bind() -> str:
 
 def _summary_view(summary: CourseSummary) -> CourseSummaryView:
     return CourseSummaryView(
-        id=summary.course_id, topic=summary.topic, lesson_total=summary.lesson_total
+        id=summary.course_id,
+        topic=summary.topic,
+        lesson_total=summary.lesson_total,
+        lessons_done=summary.lessons_done,
+        percent=summary.percent,
+        concept_total=summary.concept_total,
+        level=summary.level,
+        learner_status=summary.learner_status,
+        course_status=summary.course_status,
+        built_at=summary.built_at,
     )
 
 
 @router.get("", response_model=list[CourseSummaryView])
 async def list_courses(
-    service: CourseServiceDep, owner_id: OptionalUserIdDep, response: Response
+    service: CourseServiceDep,
+    progress: ProgressStoreDep,
+    owner_id: OptionalUserIdDep,
+    response: Response,
 ) -> list[CourseSummaryView]:
     """The caller's course library — one summary per built course, newest first.
 
-    Assembled per read from the run index + the persisted course payloads (nothing stored), so a
-    card always reflects the course's current shape. 503 when either backend is unreachable —
-    raised as an ``HTTPException`` so the response keeps its CORS headers and the library shows
-    its recoverable error state. The bound ``request_id`` is returned in ``X-Request-Id`` for
-    cross-layer log triangulation.
+    Assembled per read from the run index + the persisted course payloads + the caller's whole
+    progress snapshot (nothing stored), so a card always reflects the course's current shape and
+    THIS user's progress. 503 when a backend is unreachable — raised as an ``HTTPException`` so
+    the response keeps its CORS headers and the library shows its recoverable error state. The
+    bound ``request_id`` is returned in ``X-Request-Id`` for cross-layer log triangulation.
     """
     response.headers["X-Request-Id"] = _bind()
     try:
         entries = await service.list_library_courses(owner_id=owner_id)
-    except RunHistoryUnavailableError as exc:
+        if not entries:
+            return []  # empty library: skip the progress read (fresh accounts are common)
+        objectives, lessons = await progress.snapshot_all(user_id=owner_id)
+    except (RunHistoryUnavailableError, ProgressStoreUnavailableError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The course library is temporarily unavailable",
         ) from exc
-    return [_summary_view(derive_course_summary(entry.course)) for entry in entries]
+    return [
+        _summary_view(summary)
+        for summary in assemble_course_summaries(entries, objectives, lessons)
+    ]
 
 
 @router.post("", response_model=Course, status_code=status.HTTP_201_CREATED)

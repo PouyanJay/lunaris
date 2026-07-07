@@ -3,11 +3,20 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CourseLibrary } from "./CourseLibrary";
+import { makeCourseSummary } from "../../test/fixtures";
 import type { CourseSummary } from "../../types/course";
 
 const TWO_COURSES: CourseSummary[] = [
-  { id: "c-https", topic: "How HTTPS works", lessonTotal: 6 },
-  { id: "c-search", topic: "How binary search works", lessonTotal: 1 },
+  makeCourseSummary({ id: "c-https", topic: "How HTTPS works", lessonTotal: 6 }),
+  makeCourseSummary({
+    id: "c-search",
+    topic: "How binary search works",
+    lessonTotal: 1,
+    lessonsDone: 1,
+    percent: 100,
+    learnerStatus: "completed",
+    level: "beginner",
+  }),
 ];
 
 function json(body: unknown) {

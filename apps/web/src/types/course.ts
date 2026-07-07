@@ -534,12 +534,27 @@ export interface CourseRun {
   updatedAt: string;
 }
 
+/** The library's level pill, bucketed server-side from the graph's mean KC difficulty. */
+export type CourseLevel = "beginner" | "intermediate" | "advanced";
+
+/** Where THIS user stands on a course — distinct from the operational RunStatus and the
+ *  pedagogical CourseStatus. */
+export type LearnerCourseStatus = "not_started" | "in_progress" | "completed";
+
 /** One My-courses library card (mirrors CourseSummaryView, serialised camelCase). `id` is the
- *  course id the card opens; `topic` names the course, same word as `Course`/`CourseRun`. */
+ *  course id the card opens; `topic` names the course, same word as `Course`/`CourseRun`.
+ *  `level` is null for a graphless course; `builtAt` is the run's finish time. */
 export interface CourseSummary {
   id: string;
   topic: string;
   lessonTotal: number;
+  lessonsDone: number;
+  percent: number;
+  conceptTotal: number;
+  level: CourseLevel | null;
+  learnerStatus: LearnerCourseStatus;
+  courseStatus: CourseStatus;
+  builtAt: string;
 }
 
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */

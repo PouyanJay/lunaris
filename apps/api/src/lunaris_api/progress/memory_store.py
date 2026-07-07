@@ -30,6 +30,13 @@ class InMemoryProgressStore:
         ]
         return objectives, lessons
 
+    async def snapshot_all(
+        self, *, user_id: str | None
+    ) -> tuple[list[ObjectiveMark], list[LessonMark]]:
+        objectives = [mark for (owner, *_), mark in self._objectives.items() if owner == user_id]
+        lessons = [mark for (owner, *_), mark in self._lessons.items() if owner == user_id]
+        return objectives, lessons
+
     async def set_objective(
         self,
         *,

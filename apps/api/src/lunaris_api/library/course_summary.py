@@ -1,4 +1,10 @@
 from dataclasses import dataclass
+from datetime import datetime
+
+from lunaris_runtime.schema import CourseStatus
+
+from .course_level import CourseLevel
+from .learner_course_status import LearnerCourseStatus
 
 
 @dataclass(frozen=True)
@@ -9,3 +15,10 @@ class CourseSummary:
     course_id: str
     topic: str
     lesson_total: int
+    lessons_done: int
+    percent: int
+    concept_total: int
+    level: CourseLevel | None
+    learner_status: LearnerCourseStatus
+    course_status: CourseStatus
+    built_at: datetime

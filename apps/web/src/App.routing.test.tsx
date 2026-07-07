@@ -2,7 +2,14 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { courseFrame, makeCourse, makeRun, routedFetch, sseStreamResponse } from "./test/fixtures";
+import {
+  courseFrame,
+  makeCourse,
+  makeCourseSummary,
+  makeRun,
+  routedFetch,
+  sseStreamResponse,
+} from "./test/fixtures";
 
 describe("App — URL routing (live studio)", () => {
   beforeEach(() => vi.stubEnv("VITE_API_URL", "http://test"));
@@ -77,10 +84,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("renders the course library at /courses, linking the fetched course into its canvas", async () => {
-    vi.stubGlobal(
-      "fetch",
-      routedFetch({ library: [{ id: "course-lib", topic: "How HTTPS works", lessonTotal: 4 }] }),
-    );
+    vi.stubGlobal("fetch", routedFetch({ library: [makeCourseSummary()] }));
     window.history.pushState(null, "", "/courses");
 
     render(<App />);

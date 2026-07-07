@@ -11,13 +11,19 @@ class IProgressStore(Protocol):
     when auth is unconfigured (offline dev — the in-memory backend). With auth on, the API always
     passes a real user id and the Supabase backend's rows are additionally owner-scoped by RLS.
 
-    Contract: ``snapshot`` returns only rows the user created; ``set_objective`` upserts on
-    ``understood=True`` and deletes on ``False`` (row presence = understood); ``set_lesson``
-    upserts one state per lesson (re-setting overwrites, idempotently).
+    Contract: ``snapshot`` returns only rows the user created; ``snapshot_all`` is the same read
+    across every course (marks carry ``course_id``, so the library groups them from one query
+    instead of one snapshot per course); ``set_objective`` upserts on ``understood=True`` and
+    deletes on ``False`` (row presence = understood); ``set_lesson`` upserts one state per lesson
+    (re-setting overwrites, idempotently).
     """
 
     async def snapshot(
         self, *, user_id: str | None, course_id: str
+    ) -> tuple[list[ObjectiveMark], list[LessonMark]]: ...
+
+    async def snapshot_all(
+        self, *, user_id: str | None
     ) -> tuple[list[ObjectiveMark], list[LessonMark]]: ...
 
     async def set_objective(

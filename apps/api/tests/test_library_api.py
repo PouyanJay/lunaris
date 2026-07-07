@@ -15,7 +15,12 @@ import httpx
 import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
-from lunaris_api.dependencies import get_run_store
+from lunaris_api.dependencies import get_progress_store, get_run_store
+from lunaris_api.progress import (
+    InMemoryProgressStore,
+    IProgressStore,
+    ProgressStoreUnavailableError,
+)
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import InMemoryRunStore, IRunStore, PersistenceError
 from lunaris_runtime.schema import CourseRun, RunStatus
@@ -24,7 +29,9 @@ _REQUEST_ID = re.compile(r"[0-9a-f]{32}")
 _DEV_ORIGIN = "http://localhost:5173"  # the Vite dev server, in the CORS allowlist
 
 
-def _build_client(tmp_path: Path, run_store: IRunStore) -> httpx.AsyncClient:
+def _build_client(
+    tmp_path: Path, run_store: IRunStore, progress_store: IProgressStore | None = None
+) -> httpx.AsyncClient:
     clear_correlation()
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: Settings(
@@ -34,6 +41,10 @@ def _build_client(tmp_path: Path, run_store: IRunStore) -> httpx.AsyncClient:
         env_file=tmp_path / ".env",
     )
     app.dependency_overrides[get_run_store] = lambda: run_store
+    # A fresh progress store per client — the process-wide in-memory singleton would leak
+    # marks across tests.
+    resolved_progress = progress_store if progress_store is not None else InMemoryProgressStore()
+    app.dependency_overrides[get_progress_store] = lambda: resolved_progress
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
@@ -95,6 +106,97 @@ async def test_run_without_a_persisted_course_is_omitted(
     assert [summary["topic"] for summary in response.json()] == ["binary search"]
 
 
+async def test_fresh_course_reads_not_started(client: httpx.AsyncClient) -> None:
+    # Arrange — a built course the learner never opened.
+    await client.post("/api/courses", json={"topic": "binary search"})
+
+    # Act
+    summary = (await client.get("/api/courses")).json()[0]
+
+    # Assert — untouched course: no progress, a real level from the graph's KC difficulty.
+    assert summary["learnerStatus"] == "not_started"
+    assert summary["lessonsDone"] == 0
+    assert summary["percent"] == 0
+    assert summary["conceptTotal"] >= 1
+    assert summary["level"] in {"beginner", "intermediate", "advanced"}
+    assert summary["courseStatus"] == "published"
+    assert summary["builtAt"]
+
+
+async def test_summary_rolls_up_learner_progress(client: httpx.AsyncClient) -> None:
+    # Arrange — build, then finish exactly one lesson through the progress API (real layers).
+    created = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    course_id = created["id"]
+    lesson_id = created["modules"][0]["lessons"][0]["id"]
+    await client.put(
+        f"/api/courses/{course_id}/progress/lesson",
+        json={"lessonId": lesson_id, "state": "done"},
+    )
+
+    # Act
+    summary = (await client.get("/api/courses")).json()[0]
+
+    # Assert — the card mirrors the progress snapshot (lesson-based percent, derived per read).
+    assert summary["learnerStatus"] == "in_progress"
+    assert summary["lessonsDone"] == 1
+    assert summary["percent"] == round(100 / summary["lessonTotal"])
+
+
+async def test_fully_finished_course_reads_completed(client: httpx.AsyncClient) -> None:
+    # Arrange — mark every lesson done.
+    created = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    course_id = created["id"]
+    for module in created["modules"]:
+        for lesson in module["lessons"]:
+            await client.put(
+                f"/api/courses/{course_id}/progress/lesson",
+                json={"lessonId": lesson["id"], "state": "done"},
+            )
+
+    # Act
+    summary = (await client.get("/api/courses")).json()[0]
+
+    # Assert
+    assert summary["learnerStatus"] == "completed"
+    assert summary["percent"] == 100
+
+
+async def test_progress_on_one_course_does_not_leak_into_another(
+    client: httpx.AsyncClient,
+) -> None:
+    # Arrange — two built courses; only the first gets a lesson marked done.
+    first = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    await client.post("/api/courses", json={"topic": "merge sort"})
+    lesson_id = first["modules"][0]["lessons"][0]["id"]
+    await client.put(
+        f"/api/courses/{first['id']}/progress/lesson",
+        json={"lessonId": lesson_id, "state": "done"},
+    )
+
+    # Act
+    summaries = {summary["id"]: summary for summary in (await client.get("/api/courses")).json()}
+
+    # Assert — the whole-account snapshot groups marks per course: only the touched course
+    # advances; the untouched one stays not_started.
+    assert summaries[first["id"]]["learnerStatus"] == "in_progress"
+    assert summaries[first["id"]]["lessonsDone"] == 1
+    untouched = next(s for s in summaries.values() if s["id"] != first["id"])
+    assert untouched["learnerStatus"] == "not_started"
+    assert untouched["lessonsDone"] == 0
+
+
+async def test_library_lists_newest_build_first(client: httpx.AsyncClient) -> None:
+    # Arrange — two builds, in order.
+    await client.post("/api/courses", json={"topic": "binary search"})
+    await client.post("/api/courses", json={"topic": "merge sort"})
+
+    # Act
+    topics = [summary["topic"] for summary in (await client.get("/api/courses")).json()]
+
+    # Assert — newest first (the run index's ordering, until last-opened sort lands in T2).
+    assert topics == ["merge sort", "binary search"]
+
+
 class _UnavailableRunStore:
     """A run store whose reads fail — models the history backend being unavailable. Writes are
     no-ops because recording is best-effort; only ``list_recent`` raises, which is what the
@@ -128,5 +230,30 @@ async def test_unavailable_backend_returns_503_with_cors_headers(tmp_path: Path)
     # Assert — a backend outage is a recoverable 503, NOT a 500: a 500 escapes the CORS
     # middleware, loses its Access-Control-Allow-Origin header, and reads as a network failure
     # instead of the library's designed Retry state.
+    assert response.status_code == 503
+    assert response.headers["access-control-allow-origin"] == _DEV_ORIGIN
+
+
+class _UnavailableProgressStore(InMemoryProgressStore):
+    """Writes work; only the whole-account read fails — the branch the library route must map."""
+
+    async def snapshot_all(self, *, user_id: str | None) -> tuple[list, list]:
+        raise ProgressStoreUnavailableError("progress backend unavailable")
+
+
+async def test_unavailable_progress_backend_returns_503_with_cors_headers(
+    tmp_path: Path,
+) -> None:
+    # Arrange — a real built course (so the route reaches the progress read) whose progress
+    # backend then fails.
+    async with _build_client(
+        tmp_path, InMemoryRunStore(), _UnavailableProgressStore()
+    ) as http_client:
+        await http_client.post("/api/courses", json={"topic": "binary search"})
+
+        # Act
+        response = await http_client.get("/api/courses", headers={"Origin": _DEV_ORIGIN})
+
+    # Assert — same recoverable 503 + CORS contract as a run-store outage.
     assert response.status_code == 503
     assert response.headers["access-control-allow-origin"] == _DEV_ORIGIN

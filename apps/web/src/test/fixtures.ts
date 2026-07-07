@@ -8,6 +8,7 @@ import type {
   Claim,
   Course,
   CourseRun,
+  CourseSummary,
   GagneFlags,
   Lesson,
   Module,
@@ -109,6 +110,23 @@ export function makeModule(overrides: Partial<Module> = {}): Module {
     lessons: [makeLesson()],
     assessment: { items: [] },
     difficultyIndex: 0.5,
+    ...overrides,
+  };
+}
+
+/** A library card summary for My-courses tests; mirrors the camelCase CourseSummaryView wire. */
+export function makeCourseSummary(overrides: Partial<CourseSummary> = {}): CourseSummary {
+  return {
+    id: "course-lib",
+    topic: "How HTTPS works",
+    lessonTotal: 6,
+    lessonsDone: 4,
+    percent: 67,
+    conceptTotal: 15,
+    level: "intermediate",
+    learnerStatus: "in_progress",
+    courseStatus: "published",
+    builtAt: "2026-07-01T00:00:00Z",
     ...overrides,
   };
 }
