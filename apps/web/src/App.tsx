@@ -734,7 +734,11 @@ export default function App() {
       {apiBaseUrl ? (
         // Navigation state lives in the URL for the studio only; the offline seed surface is a
         // single view and stays router-free.
-        <BrowserRouter>
+        // useTransitions={false}: the router's location updates must be urgent. Wrapped in
+        // startTransition (the default), a navigation that lands in the same flush as other
+        // state churn (e.g. a build stream's updates) can be dropped — window.history moves
+        // while useLocation never follows, stranding the canvas on the old route.
+        <BrowserRouter useTransitions={false}>
           <AuthGate apiBaseUrl={apiBaseUrl}>
             <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
           </AuthGate>

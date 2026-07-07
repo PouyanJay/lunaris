@@ -33,6 +33,7 @@ from .routers import (
     keyless,
     me,
     prod_ops,
+    progress,
     runs,
     signup_gate,
     videos,
@@ -102,6 +103,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(explain.router)
     app.include_router(corpus.router)
     app.include_router(authorities.router)
+    app.include_router(progress.router)
     app.include_router(app_config.router)
     app.include_router(credentials.router)
     app.include_router(capabilities.router)

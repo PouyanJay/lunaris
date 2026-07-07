@@ -81,6 +81,7 @@ from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, ExplainBinding
 from .explain_throttle import KeylessExplainThrottle
 from .prod_ops import FakeProdOpsProvider, IProdOpsProvider
+from .progress import InMemoryProgressStore, IProgressStore, SupabaseProgressStore
 from .run_registry import RunRegistry
 from .secrets import (
     BYOK_PROVIDERS,
@@ -839,6 +840,27 @@ def optional_user_id(
 
 
 OptionalUserIdDep = Annotated[str | None, Depends(optional_user_id)]
+
+
+# Progress stores follow the user-config posture: process-wide singletons, Supabase when keyed
+# (durable, owner-scoped RLS), in-memory otherwise (offline dev / hermetic tests).
+_in_memory_progress_store = InMemoryProgressStore()
+_supabase_progress_store = SupabaseProgressStore()
+
+
+def get_progress_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+    owner_id: Annotated[str | None, Depends(optional_user_id)],
+) -> IProgressStore:
+    """The learner-progress store: Supabase (durable, owner-scoped RLS) for an authenticated
+    caller when keyed; the in-memory fallback otherwise — including the auth-off single-user
+    posture, where there is no user_id to scope Supabase rows by (the app_config precedent)."""
+    if settings.has_supabase and owner_id is not None:
+        return _supabase_progress_store
+    return _in_memory_progress_store
+
+
+ProgressStoreDep = Annotated[IProgressStore, Depends(get_progress_store)]
 
 
 async def get_explain_binding(
