@@ -118,10 +118,11 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
     fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
 
-    // The rail interprets the goal and offers the confirm questions (inferred level pre-picked).
+    // The rail interprets the goal and offers the confirm questions.
     expect(await screen.findByText(/reach CLB 10/i)).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /intermediate/i })).toBeChecked();
-    fireEvent.click(screen.getByRole("radio", { name: /advanced/i }));
+    // Set the target level via the composer's options bar (maps onto the clarification).
+    const level = screen.getByRole("radiogroup", { name: "Level" });
+    fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
 
     // Build from the confirmed brief → the stream resolves to the ready course.
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));

@@ -1,0 +1,35 @@
+/* Composer options bar: search depth · target level · official-sources switch. A hairline-topped
+   band under the topic input, not a floating card. */
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5) var(--space-6);
+  padding: var(--space-4) 0 0;
+  border-top: var(--border-width) solid var(--border);
+  margin-top: var(--space-4);
+}
+
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  margin: 0;
+}
+
+/* The switch sits inline with its label rather than stacked — it reads as one control. */
+.switchOption {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+@media (max-width: 600px) {
+  .switchOption {
+    margin-left: 0;
+  }
+}

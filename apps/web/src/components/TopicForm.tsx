@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "./primitives/Button";
 import styles from "./TopicForm.module.css";
@@ -9,6 +9,8 @@ interface TopicFormProps {
   onChange: (value: string) => void;
   /** Build the course for the trimmed, non-empty topic. */
   onSubmit: (topic: string) => void;
+  /** The quick build controls (depth / level / trust) rendered inside the input panel. */
+  options?: ReactNode;
 }
 
 const EXAMPLES = ["How binary search works", "How merge sort works", "How HTTPS works"];
@@ -17,7 +19,7 @@ const EXAMPLES = ["How binary search works", "How merge sort works", "How HTTPS 
  *  (Enter submits), a labelled input, and example topics for a warm start. Personalization and build
  *  settings live in the always-visible course-setup rail beside this form, so the default path here
  *  is one click. */
-export function TopicForm({ value, onChange, onSubmit }: TopicFormProps) {
+export function TopicForm({ value, onChange, onSubmit, options }: TopicFormProps) {
   const inputId = useId();
   const hintId = useId();
   const errorId = useId();
@@ -101,6 +103,8 @@ export function TopicForm({ value, onChange, onSubmit }: TopicFormProps) {
             Enter a topic to build a course.
           </p>
         )}
+
+        {options}
 
         <div className={styles.examples}>
           <span className="eyebrow">Try</span>

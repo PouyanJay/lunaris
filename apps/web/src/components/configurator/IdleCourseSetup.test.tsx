@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeBriefResponse } from "../../test/fixtures";
@@ -29,34 +29,37 @@ describe("IdleCourseSetup", () => {
     expect(screen.getByRole("complementary", { name: /course setup/i })).toBeInTheDocument();
   });
 
-  it("builds in one click with no personalization and the default depth", () => {
+  it("builds in one click with no personalization and the default options", () => {
     const onGenerate = vi.fn();
     renderSetup({ onGenerate });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "standard");
+    // Default depth (standard), recommended level (no override → undefined), trust switch off.
+    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "standard", false);
   });
 
-  it("threads the confirmed clarifier into the build when the learner personalizes", async () => {
+  it("threads the brief plus the options-bar Level override into the build", async () => {
     stubFetch({ ok: true, json: async () => makeBriefResponse() });
     const onGenerate = vi.fn();
     renderSetup({ onGenerate });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
     fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    await screen.findByText(/reach CLB 10/i); // the brief (with its inferred goal_type) is ready
 
-    // Brief read → clarifier appears with the inference pre-picked; adjust the level, then build.
-    await screen.findByText(/reach CLB 10/i);
-    fireEvent.click(screen.getByRole("radio", { name: /advanced/i }));
+    // The quick Level control (options bar) maps onto the clarifier's target level.
+    const level = screen.getByRole("radiogroup", { name: "Level" });
+    fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     expect(onGenerate).toHaveBeenCalledWith(
       "english",
-      // Both the adjusted level and the inferred goal_type (R0) thread into the build.
+      // The options-bar level overrides the target level; the inferred goal_type (R0) still threads.
       expect.objectContaining({ targetLevel: "advanced", goalType: "credential" }),
       "standard",
+      false,
     );
   });
 
@@ -87,22 +90,22 @@ describe("IdleCourseSetup", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
-  it("keeps the Advanced search-depth control usable after the brief is personalized", async () => {
-    // Regression for the reported bug: personalizing the topic (loading the brief + clarifier)
-    // must not drop the Standard/Thorough control from the Advanced section.
+  it("keeps the depth control in the options bar available regardless of the brief", async () => {
+    // Regression for the reported bug (the depth control must never vanish): it now lives in the
+    // always-visible options bar, so loading the brief can't drop it.
     stubFetch({ ok: true, json: async () => makeBriefResponse() });
     renderSetup();
 
+    const depth = screen.getByRole("radiogroup", { name: "Depth" });
+    expect(within(depth).getByRole("radio", { name: "Standard" })).toBeInTheDocument();
+    expect(within(depth).getByRole("radio", { name: "Thorough" })).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
     fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
-    await screen.findByText(/reach CLB 10/i); // brief is now ready, clarifier rendered
+    await screen.findByText(/reach CLB 10/i);
 
-    // The Advanced section is still present and its depth options are reachable.
-    const advanced = screen.getByRole("button", { name: /advanced/i });
-    expect(advanced).toBeInTheDocument();
-    fireEvent.click(advanced);
-    expect(screen.getByRole("radio", { name: /standard/i })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /thorough/i })).toBeInTheDocument();
+    // Still present after the brief renders.
+    expect(within(depth).getByRole("radio", { name: "Thorough" })).toBeInTheDocument();
   });
 
   it("threads the chosen Thorough depth into the build", () => {
@@ -110,11 +113,22 @@ describe("IdleCourseSetup", () => {
     renderSetup({ onGenerate });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
-    fireEvent.click(screen.getByRole("button", { name: /advanced/i }));
-    fireEvent.click(screen.getByRole("radio", { name: /thorough/i }));
+    const depth = screen.getByRole("radiogroup", { name: "Depth" });
+    fireEvent.click(within(depth).getByRole("radio", { name: "Thorough" }));
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "thorough");
+    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "thorough", false);
+  });
+
+  it("threads the Official-sources-only switch into the build", () => {
+    const onGenerate = vi.fn();
+    renderSetup({ onGenerate });
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
+    fireEvent.click(screen.getByRole("switch", { name: /official sources only/i }));
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "standard", true);
   });
 
   it("opens Settings from the operator pointer", () => {
@@ -227,15 +241,16 @@ describe("IdleCourseSetup — variant coverage across goal types", () => {
       // option (goal_type), not the goal prose — this just waits for the ready brief to render.
       await screen.findByText(/reach CLB 10/i);
 
-      // Override the smart default depth, then build with the confirmed (inferred) goal type.
-      fireEvent.click(screen.getByRole("button", { name: /advanced/i }));
-      fireEvent.click(screen.getByRole("radio", { name: /thorough/i }));
+      // Override the smart default depth (options bar), then build with the confirmed goal type.
+      const depth = screen.getByRole("radiogroup", { name: "Depth" });
+      fireEvent.click(within(depth).getByRole("radio", { name: "Thorough" }));
       fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
       expect(onGenerate).toHaveBeenCalledWith(
         `topic-${goalType}`,
         expect.objectContaining({ goalType }),
         "thorough",
+        false,
       );
     },
   );
