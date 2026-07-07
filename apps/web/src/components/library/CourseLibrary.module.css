@@ -2,7 +2,7 @@
 .canvas {
   /* Shared card geometry: the loading skeleton mirrors the real card from these two numbers
      (cover height + the card body's box), so they can't drift apart independently. */
-  --library-cover-height: 142px;
+  --library-cover-height: var(--course-card-cover-height);
   --library-card-body-height: 138px;
   height: 100%;
   overflow-y: auto;

@@ -91,7 +91,7 @@ describe("HomeDashboard", () => {
     expect(onNewCourse).toHaveBeenCalledOnce();
   });
 
-  it("renders the recent grid of non-in-progress courses as linked cover cards", async () => {
+  it("shows only the recent grid when nothing is in progress (no continue section)", async () => {
     const courses = [
       completed({ id: "c-1", topic: "How HTTPS works" }),
       completed({ id: "c-2", topic: "How binary search works", learnerStatus: "not_started" }),
@@ -106,6 +106,8 @@ describe("HomeDashboard", () => {
       "href",
       "/courses/c-2",
     );
+    // No in-progress course → the continue section is absent, not an empty hero.
+    expect(screen.queryByRole("heading", { name: "Continue learning" })).not.toBeInTheDocument();
     // Two courses fit on Home — no need for a "view all" escape hatch.
     expect(screen.queryByRole("link", { name: /view all courses/i })).not.toBeInTheDocument();
   });
@@ -174,6 +176,38 @@ describe("HomeDashboard", () => {
       expect(await screen.findByText(/lesson 1 of 1/i)).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Continue learning" })).toBeInTheDocument();
 
+      fireEvent.click(screen.getByRole("button", { name: /resume lesson/i }));
+      expect(onResumeLesson).toHaveBeenCalledWith("course-test", lessonId);
+    });
+
+    it("still resumes at the right lesson when only the progress call fails", async () => {
+      const summary = makeCourseSummary({
+        id: "course-test",
+        topic: "How binary search works",
+        learnerStatus: "in_progress",
+      });
+      const lessonId = "m-binary_search-l0";
+      // Course loads (200); progress 500s — the resume point still resolves from the course itself.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Parameters<typeof fetch>[0]) => {
+          const url = input instanceof Request ? input.url : String(input);
+          if (/\/api\/courses$/.test(url)) {
+            return Promise.resolve({ ok: true, json: async () => [summary] });
+          }
+          if (/\/api\/courses\/[^/]+\/progress$/.test(url)) {
+            return Promise.resolve({ ok: false, status: 500, json: async () => ({}) });
+          }
+          if (/\/api\/courses\/[^/?]+$/.test(url)) {
+            return Promise.resolve({ ok: true, json: async () => makeCourse() });
+          }
+          return Promise.resolve({ ok: true, json: async () => ({}) });
+        }),
+      );
+
+      const { onResumeLesson } = renderHome();
+
+      expect(await screen.findByText(/lesson 1 of 1/i)).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: /resume lesson/i }));
       expect(onResumeLesson).toHaveBeenCalledWith("course-test", lessonId);
     });

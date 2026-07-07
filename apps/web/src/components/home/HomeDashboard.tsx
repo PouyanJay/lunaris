@@ -7,6 +7,7 @@ import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
 import { displayNameFromEmail, greetingForHour } from "../../lib/greeting";
+import { RECENT_LIMIT, splitHomeCourses } from "../../lib/homeCourses";
 import { homeSubline } from "../../lib/homeSummary";
 import { ROUTES } from "../../lib/routes";
 import type { CourseRun, CourseSummary } from "../../types/course";
@@ -26,9 +27,6 @@ interface HomeDashboardProps {
   onViewCourse: (courseId: string) => void;
 }
 
-/** Recent-grid cap and the number of in-progress rows the continue-hero shows beside it. */
-const RECENT_LIMIT = 3;
-const CONTINUE_LIMIT = 4; // hero + up to 3 compact rows
 const SKELETON_CARDS = RECENT_LIMIT;
 
 /** The greeting subline — an honest library-derived figure once loaded; neutral while in flight. */
@@ -106,11 +104,7 @@ function HomeBody({
     return <FirstRunHero onNewCourse={onNewCourse} />;
   }
 
-  const inProgress = state.courses.filter((course) => course.learnerStatus === "in_progress");
-  const rest = state.courses.filter((course) => course.learnerStatus !== "in_progress");
-  const recent = rest.slice(0, RECENT_LIMIT);
-  const shown = Math.min(inProgress.length, CONTINUE_LIMIT) + recent.length;
-  const hasMore = state.courses.length > shown;
+  const { inProgress, recent, hasMore } = splitHomeCourses(state.courses);
 
   return (
     <>

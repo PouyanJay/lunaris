@@ -19,6 +19,15 @@ describe("homeSubline", () => {
     ).toBe("1 lesson completed");
   });
 
+  it("shows only the in-progress count when no lessons are done yet", () => {
+    expect(
+      homeSubline([
+        makeCourseSummary({ id: "a", lessonsDone: 0, learnerStatus: "in_progress" }),
+        makeCourseSummary({ id: "b", lessonsDone: 0, learnerStatus: "not_started" }),
+      ]),
+    ).toBe("1 in progress");
+  });
+
   it("falls back to a library count when nothing has been touched", () => {
     expect(
       homeSubline([

@@ -1,7 +1,7 @@
 /* Home dashboard: greeting header over the learner's live state (recent grid, continue-hero,
    live-build banner). Shares the library's card geometry so covers read as one system. */
 .canvas {
-  --home-cover-height: 142px;
+  --home-cover-height: var(--course-card-cover-height);
   --home-card-body-height: 96px;
   height: 100%;
   overflow-y: auto;

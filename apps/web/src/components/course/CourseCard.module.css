@@ -1,5 +1,5 @@
-/* Shared course cover card (My-courses grid + Home recent grid). Fixed cover height is the card
-   geometry constant the grids' loading skeletons mirror (see each screen's --*-cover-height). */
+/* Shared course cover card (My-courses grid + Home recent grid). Cover height is the shared
+   --course-card-cover-height token, mirrored by each grid's loading skeleton. */
 .card {
   display: flex;
   flex-direction: column;
@@ -27,7 +27,7 @@
 }
 
 .cover {
-  height: 142px;
+  height: var(--course-card-cover-height);
   border-bottom: var(--border-width) solid var(--border);
 }
 

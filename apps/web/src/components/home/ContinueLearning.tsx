@@ -5,12 +5,10 @@ import { CourseCover } from "../primitives/CourseCover";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { useContinueLearning, type ContinueState } from "../../hooks/useContinueLearning";
 import { coverSeed } from "../../lib/coverSeed";
+import { CONTINUE_ROW_LIMIT } from "../../lib/homeCourses";
 import { coursePath } from "../../lib/routes";
 import type { CourseSummary } from "../../types/course";
 import styles from "./ContinueLearning.module.css";
-
-/** How many other in-progress courses appear as compact rows beneath the hero. */
-const ROW_LIMIT = 3;
 
 interface ContinueLearningProps {
   apiBaseUrl: string;
@@ -136,7 +134,7 @@ export function ContinueLearning({
   const state = useContinueLearning(apiBaseUrl, hero?.id ?? null);
   if (!hero) return null;
 
-  const rows = inProgress.slice(1, 1 + ROW_LIMIT);
+  const rows = inProgress.slice(1, 1 + CONTINUE_ROW_LIMIT);
   return (
     <section aria-labelledby="home-continue" className={styles.section}>
       <h2 id="home-continue" className={`eyebrow ${styles.sectionEyebrow}`}>
