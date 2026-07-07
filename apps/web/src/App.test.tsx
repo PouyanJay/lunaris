@@ -12,6 +12,7 @@ import {
   makeRun,
   makeRunEvent,
   progressFrame,
+  routedFetch,
   sseStreamResponse,
 } from "./test/fixtures";
 
@@ -89,51 +90,6 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.unstubAllGlobals();
   });
 
-  /** StudioApp fetches GET /api/runs (sidebar) + GET /api/settings (regenerate capability) on mount
-   *  AND streams the build, so the fetch mock routes by URL: run history + settings are JSON, the
-   *  build is an SSE stream. ``settings`` defaults to a regenerate-capable pipeline. */
-  function routedFetch(handlers: {
-    runs?: unknown;
-    events?: unknown;
-    build?: unknown;
-    course?: unknown;
-    settings?: unknown;
-    brief?: unknown;
-  }) {
-    return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : String(input);
-      const method = (init?.method ?? "GET").toUpperCase();
-      if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
-        return Promise.resolve({ ok: true, status: 202 });
-      }
-      if (url.includes("/api/briefs")) {
-        return Promise.resolve({ ok: true, json: async () => handlers.brief });
-      }
-      // A reattached running run polls its live event log — distinct from the run-history list.
-      if (/\/api\/runs\/[^/]+\/events$/.test(url)) {
-        return Promise.resolve({ ok: true, json: async () => handlers.events ?? [] });
-      }
-      if (url.includes("/api/runs")) {
-        return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
-      }
-      if (url.includes("/api/settings")) {
-        const settings = handlers.settings ?? {
-          secrets: [],
-          pipeline: "stub",
-          supportsLessonRegeneration: true,
-        };
-        return Promise.resolve({ ok: true, json: async () => settings });
-      }
-      if (url.includes("/api/courses/stream")) {
-        return Promise.resolve(handlers.build);
-      }
-      if (/\/api\/courses\/[^/?]+$/.test(url)) {
-        // course-by-id: exactly one path segment after /courses/, no query (≠ the stream URL)
-        return Promise.resolve({ ok: true, json: async () => handlers.course });
-      }
-      throw new Error(`routedFetch: unhandled URL ${url}`);
-    });
-  }
 
   it("opens on the topic form, not an auto-generated course", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [] }));

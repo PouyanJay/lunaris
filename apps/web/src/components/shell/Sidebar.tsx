@@ -9,6 +9,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { useAuth } from "../../hooks/useAuth";
 import type { RunsState } from "../../hooks/useRuns";
 import type { ThemeProps } from "../../hooks/useTheme";
+import { ROUTES } from "../../lib/routes";
 import type { CourseRun } from "../../types/course";
 import styles from "./Sidebar.module.css";
 
@@ -80,24 +81,34 @@ export function Sidebar({
       </div>
 
       <nav className={styles.primaryNav} aria-label="Primary">
-        <NavItem to="/" end icon={<HomeIcon />} label="Home" {...{ collapsed, onNavigate }} />
         <NavItem
-          to="/courses"
+          to={ROUTES.home}
+          end
+          icon={<HomeIcon />}
+          label="Home"
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
+        <NavItem
+          to={ROUTES.library}
           icon={<GridIcon />}
           label="My courses"
-          {...{ collapsed, onNavigate }}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
         />
         <NavItem
-          to="/activity"
+          to={ROUTES.activity}
           icon={<ActivityIcon />}
           label="Activity"
-          {...{ collapsed, onNavigate }}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
         />
         <NavItem
-          to="/bookmarks"
+          to={ROUTES.bookmarks}
           icon={<BookmarkIcon />}
           label="Bookmarks"
-          {...{ collapsed, onNavigate }}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
         />
       </nav>
 
@@ -139,17 +150,19 @@ export function Sidebar({
       <div className={styles.footer}>
         {showAdmin && (
           <NavItem
-            to="/admin"
+            to={ROUTES.admin}
             icon={<AdminIcon />}
             label="Admin Portal"
-            {...{ collapsed, onNavigate }}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
           />
         )}
         <NavItem
-          to="/settings"
+          to={ROUTES.settings}
           icon={<GearIcon />}
           label="Settings"
-          {...{ collapsed, onNavigate }}
+          collapsed={collapsed}
+          onNavigate={onNavigate}
         />
         {user && collapsed && (
           <button

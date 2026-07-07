@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BrowserRouter, matchPath, useLocation, useNavigate } from "react-router";
+import { BrowserRouter, useLocation, useNavigate } from "react-router";
 
 import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
@@ -43,7 +43,9 @@ import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { isLlmKeyless } from "./lib/capabilities";
+import { coursePath, resolveRoute, type ShellRoute } from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
+import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useDeleteRun } from "./hooks/useDeleteRun";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
@@ -52,43 +54,73 @@ import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
-const COURSE_VIEWS: CourseView[] = ["learn", "map", "build", "corpus"];
-
-/** The shell's navigation surfaces, resolved from the URL. A course canvas is keyed by courseId
- *  with an optional view segment (default Learn); anything unrecognized — including a bogus view
- *  segment — renders the designed not-found canvas, never a blank. */
-type ShellRoute =
-  | { kind: "home" }
-  | { kind: "settings" }
-  | { kind: "admin" }
-  | { kind: "library" }
-  | { kind: "activity" }
-  | { kind: "bookmarks" }
-  | { kind: "course"; courseId: string; view: CourseView }
-  | { kind: "not-found" };
-
-function resolveRoute(pathname: string): ShellRoute {
-  if (pathname === "/") return { kind: "home" };
-  // /new is an alias for the composer; an effect normalizes the URL to "/".
-  if (pathname === "/new") return { kind: "home" };
-  if (pathname === "/settings") return { kind: "settings" };
-  if (pathname === "/admin") return { kind: "admin" };
-  if (pathname === "/courses") return { kind: "library" };
-  if (pathname === "/activity") return { kind: "activity" };
-  if (pathname === "/bookmarks") return { kind: "bookmarks" };
-  const course = matchPath("/courses/:courseId/:view?", pathname);
-  if (course?.params.courseId) {
-    const view = course.params.view ?? "learn";
-    if ((COURSE_VIEWS as string[]).includes(view)) {
-      return { kind: "course", courseId: course.params.courseId, view: view as CourseView };
-    }
+/** The designed full-canvas notices for navigation destinations that carry no data yet: the 404
+ *  and the coming-soon placeholders later phases fill (library P3, activity P9, bookmarks P10). */
+function placeholderCanvas(
+  route: ShellRoute,
+  onGoHome: () => void,
+): { title: string; meta: ReactNode; body: ReactNode } | null {
+  if (route.kind === "not-found") {
+    return {
+      title: "Not found",
+      meta: null,
+      body: (
+        <CanvasNotice
+          eyebrow="404"
+          title="Page not found"
+          body="This page doesn't exist. It may have moved, or the link is wrong."
+          actionLabel="Go home"
+          onAction={onGoHome}
+        />
+      ),
+    };
   }
-  return { kind: "not-found" };
-}
-
-/** The canonical URL for a course view — Learn is the bare course path, not a segment. */
-function coursePath(courseId: string, view: CourseView = "learn"): string {
-  return view === "learn" ? `/courses/${courseId}` : `/courses/${courseId}/${view}`;
+  if (route.kind === "library") {
+    return {
+      title: "My courses",
+      meta: null,
+      body: (
+        <CanvasNotice
+          eyebrow="Coming soon"
+          title="The course library lands here"
+          body="Browse, filter, and resume all your courses from one place. Until then, your builds live under Recent runs in the sidebar."
+          actionLabel="New course"
+          onAction={onGoHome}
+        />
+      ),
+    };
+  }
+  if (route.kind === "activity") {
+    return {
+      title: "Activity",
+      meta: null,
+      body: (
+        <CanvasNotice
+          eyebrow="Coming soon"
+          title="Your learning activity lands here"
+          body="Streaks, study minutes, and concepts mastered — day by day. Keep learning; the history starts counting soon."
+          actionLabel="Go home"
+          onAction={onGoHome}
+        />
+      ),
+    };
+  }
+  if (route.kind === "bookmarks") {
+    return {
+      title: "Bookmarks",
+      meta: null,
+      body: (
+        <CanvasNotice
+          eyebrow="Coming soon"
+          title="Saved lessons, concepts, and sources land here"
+          body="Bookmark anything worth returning to — lessons mid-read, tricky concepts, and the sources behind the claims."
+          actionLabel="Go home"
+          onAction={onGoHome}
+        />
+      ),
+    };
+  }
+  return null;
 }
 
 /** Whether a just-built course enqueued any explainer videos — true if it carries course-level
@@ -278,7 +310,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       : state.status === "ready"
         ? state.course.id
         : undefined;
-  const liveMatchesRoute = route.kind === "course" && streamCourseId === route.courseId;
 
   // When a build finishes, the new run was recorded server-side — refresh the history so it shows.
   // Depend on the stable `reloadRuns` (not the hook's per-render object) so this fires once per
@@ -304,34 +335,21 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const buildActive = state.status === "streaming" || opened.state.status === "building";
   const keylessReadiness = useKeylessReadiness(apiBaseUrl, buildActive && llmIsFallback);
 
-  const { open: openRun, close: closeRun } = opened;
+  const { open: openRun } = opened;
 
-  // The URL is the source of truth for which course is open: sync the opened-run flow to the
-  // route. A run-history row supplies topic/status/runId when it has the course; a cold deep-link
-  // falls back to a fetch by id (a 404 lands on the opened-run error canvas). While the history
-  // is still loading, wait — the effect re-fires when it resolves.
-  const runs = runsState.status === "ready" ? runsState.runs : null;
-  const routedCourseId = route.kind === "course" ? route.courseId : null;
-  const openedState = opened.state;
-  useEffect(() => {
-    if (!routedCourseId || liveMatchesRoute) {
-      if (openedState.status !== "closed") closeRun();
-      return;
-    }
-    if (openedState.status !== "closed" && openedState.courseId === routedCourseId) return;
-    const row = runs?.find((run) => run.id === routedCourseId);
-    if (row) openRun(row);
-    else if (runs) openRun({ id: routedCourseId, topic: "Course", status: "completed" });
-  }, [routedCourseId, liveMatchesRoute, runs, openedState, openRun, closeRun]);
+  // URL ⇄ course-state wiring (opened-run sync + one-shot live handoff) lives in its own hook.
+  const { routedCourseId, liveMatchesRoute, handedOff, clearHandoff } = useCourseRouting({
+    route,
+    streamCourseId,
+    runs: runsState.status === "ready" ? runsState.runs : null,
+    opened,
+  });
 
-  // Once a build stream learns which course it's creating, hand the URL off to that course —
-  // replace (not push) so Back skips the transient composer state. The SSE canvas keeps rendering
-  // through the handoff (liveMatchesRoute); a refresh from here reattaches via the durable log.
-  useEffect(() => {
-    if (route.kind === "home" && streamCourseId) {
-      navigate(coursePath(streamCourseId), { replace: true });
-    }
-  }, [route.kind, streamCourseId, navigate]);
+  // Resetting the stream also forgets its handoff, so the next build hands off anew.
+  const resetBuild = useCallback(() => {
+    clearHandoff();
+    reset();
+  }, [clearHandoff, reset]);
 
   // /new is a spelling of the composer, not a place — normalize it so the Home nav state and
   // shared links stay canonical.
@@ -342,9 +360,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
     setMobileNavOpen(false);
-    reset();
+    resetBuild();
     navigate("/");
-  }, [reset, navigate]);
+  }, [resetBuild, navigate]);
   const selectRun = useCallback(
     (run: CourseRun) => {
       setMobileNavOpen(false);
@@ -362,14 +380,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // of it + refresh the history. The workflow lives in its own hook to keep StudioApp lean.
   // Deleting the course you're looking at also leaves its now-dead URL.
   const closeDeletedRun = useCallback(() => {
-    closeRun();
+    opened.close();
     navigate("/");
-  }, [closeRun, navigate]);
+  }, [opened, navigate]);
   const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeDeletedRun, reloadRuns);
   // Cancel an in-flight run (no confirm — it's recoverable): POST cancel → refresh (flips CANCELLED).
   const cancellation = useCancelRun(apiBaseUrl, reloadRuns);
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
-  const termination = useTerminateBuild(apiBaseUrl, reset, reloadRuns);
+  const termination = useTerminateBuild(apiBaseUrl, resetBuild, reloadRuns);
 
   // A ready course's canvas: the Learn | Map | Build toggle + course metrics in the header, and the
   // lesson reader (Learn, default), the prerequisite-graph explorer (Map), or the build-session
@@ -442,68 +460,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // navigation surface (not-found / settings / admin); the home route then resolves an opened
   // historical run or the live build (idle / streaming / error / ready).
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
-    if (route.kind === "not-found") {
-      return {
-        title: "Not found",
-        meta: null,
-        body: (
-          <CanvasNotice
-            eyebrow="404"
-            title="Page not found"
-            body="This page doesn't exist. It may have moved, or the link is wrong."
-            actionLabel="Go home"
-            onAction={() => navigate("/")}
-          />
-        ),
-      };
-    }
-    // Honest placeholders for the destinations later phases fill (library P3, activity P9,
-    // bookmarks P10) — designed empty states, never fake content.
-    if (route.kind === "library") {
-      return {
-        title: "My courses",
-        meta: null,
-        body: (
-          <CanvasNotice
-            eyebrow="Coming soon"
-            title="The course library lands here"
-            body="Browse, filter, and resume all your courses from one place. Until then, your builds live under Recent runs in the sidebar."
-            actionLabel="New course"
-            onAction={() => navigate("/")}
-          />
-        ),
-      };
-    }
-    if (route.kind === "activity") {
-      return {
-        title: "Activity",
-        meta: null,
-        body: (
-          <CanvasNotice
-            eyebrow="Coming soon"
-            title="Your learning activity lands here"
-            body="Streaks, study minutes, and concepts mastered — day by day. Keep learning; the history starts counting soon."
-            actionLabel="Go home"
-            onAction={() => navigate("/")}
-          />
-        ),
-      };
-    }
-    if (route.kind === "bookmarks") {
-      return {
-        title: "Bookmarks",
-        meta: null,
-        body: (
-          <CanvasNotice
-            eyebrow="Coming soon"
-            title="Saved lessons, concepts, and sources land here"
-            body="Bookmark anything worth returning to — lessons mid-read, tricky concepts, and the sources behind the claims."
-            actionLabel="Go home"
-            onAction={() => navigate("/")}
-          />
-        ),
-      };
-    }
+    const placeholder = placeholderCanvas(route, () => navigate("/"));
+    if (placeholder) return placeholder;
     if (route.kind === "settings") {
       const body = <SettingsPanel apiBaseUrl={apiBaseUrl} />;
       const meta = (
@@ -541,7 +499,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     }
     // This tab's live build canvases — rendered on the home route until the stream learns its
     // course id (the handoff effect then moves the URL), and on the routed course thereafter.
-    const streamingCanvas = (stream: Extract<typeof state, { status: "streaming" }>) => {
+    const buildStreamingCanvas = (stream: Extract<typeof state, { status: "streaming" }>) => {
       const { runId, reconnecting } = stream;
       return {
         title: stream.topic,
@@ -573,7 +531,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     // A fresh build finished, but its videos are still rendering async: hold the build canvas on the
     // videos phase (the completed timeline + a polled "N of M" panel) rather than flipping to the
     // course with empty slots. "Open course" leaves early; the canvas advances once videos settle.
-    const videosFinishingCanvas = () => {
+    const buildVideosFinishingCanvas = () => {
       // showVideosFinishing implies a ready stream; the status check re-proves it to the compiler.
       if (!showVideosFinishing || state.status !== "ready") return null;
       return {
@@ -602,10 +560,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     if (route.kind === "course") {
       // This tab's own stream owns the canvas while it's building/finishing the routed course.
       if (liveMatchesRoute) {
-        if (state.status === "streaming") return streamingCanvas(state);
-        const videos = videosFinishingCanvas();
+        if (state.status === "streaming") return buildStreamingCanvas(state);
+        const videos = buildVideosFinishingCanvas();
         if (videos) return videos;
-        if (state.status === "ready") return buildReadyCanvas(state.course, reset, state.runId);
+        if (state.status === "ready")
+          return buildReadyCanvas(state.course, resetBuild, state.runId);
       }
       if (opened.state.status === "loading") {
         return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
@@ -667,8 +626,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return { title: "Loading course…", meta: null, body: <GraphSkeleton /> };
     }
 
-    // Home: the composer, or this tab's build before its course id is known.
-    if (state.status === "idle") {
+    // Home: the composer, or this tab's build before its course id is known. Once the build
+    // handed its URL off, home is the composer again — the course lives at its own URL.
+    if (state.status === "idle" || handedOff) {
       return {
         title: "New course",
         meta: null,
@@ -687,7 +647,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         meta: (
           <>
             <StatusDot label="preparing" tone="accent" live />
-            <Button onClick={reset}>Cancel build</Button>
+            <Button onClick={resetBuild}>Cancel build</Button>
           </>
         ),
         body: <PreparingDeviceState topic={state.topic} progress={state.progress} />,
@@ -708,8 +668,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     }
     // Streaming pre-handoff (course id not yet known), or the one transient frame between the
     // stream finishing and the handoff effect moving the URL.
-    if (state.status === "streaming") return streamingCanvas(state);
-    return videosFinishingCanvas() ?? buildReadyCanvas(state.course, reset, state.runId);
+    if (state.status === "streaming") return buildStreamingCanvas(state);
+    return buildVideosFinishingCanvas() ?? buildReadyCanvas(state.course, resetBuild, state.runId);
   })();
 
   return (

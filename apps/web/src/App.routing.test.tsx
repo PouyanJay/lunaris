@@ -1,36 +1,8 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { courseFrame, makeCourse, makeRun, sseStreamResponse } from "./test/fixtures";
-
-/** Minimal URL-routed fetch stub for shell/routing tests: enough for StudioApp's mount-time
- *  fetches (run history, settings capability probe) plus course-by-id opens and a build stream.
- *  Unhandled URLs reject, which the app's hooks treat as fail-closed (e.g. /api/me → not admin). */
-function studioFetch(handlers: { runs?: unknown; course?: unknown; build?: unknown } = {}) {
-  return vi.fn((input: Parameters<typeof fetch>[0]) => {
-    const url = input instanceof Request ? input.url : String(input);
-    if (/\/api\/runs\/[^/]+\/events$/.test(url)) {
-      return Promise.resolve({ ok: true, json: async () => [] });
-    }
-    if (url.includes("/api/runs")) {
-      return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
-    }
-    if (url.includes("/api/settings")) {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: false }),
-      });
-    }
-    if (url.includes("/api/courses/stream")) {
-      return Promise.resolve(handlers.build);
-    }
-    if (/\/api\/courses\/[^/?]+$/.test(url)) {
-      return Promise.resolve({ ok: true, json: async () => handlers.course });
-    }
-    return Promise.reject(new Error(`studioFetch: unhandled URL ${url}`));
-  });
-}
+import { courseFrame, makeCourse, makeRun, routedFetch, sseStreamResponse } from "./test/fixtures";
 
 describe("App — URL routing (live studio)", () => {
   beforeEach(() => vi.stubEnv("VITE_API_URL", "http://test"));
@@ -40,7 +12,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("deep-links straight to the Settings canvas at /settings", async () => {
-    vi.stubGlobal("fetch", studioFetch());
+    vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/settings");
 
     render(<App />);
@@ -50,7 +22,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("rail Settings navigation updates the URL; Done returns to the composer", async () => {
-    vi.stubGlobal("fetch", studioFetch());
+    vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
 
     render(<App />);
@@ -67,8 +39,36 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/");
   });
 
+  it("Done from a cold /settings deep-link falls back to home", async () => {
+    vi.stubGlobal("fetch", routedFetch());
+    window.history.pushState(null, "", "/settings");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Settings" });
+
+    // No in-app history to return to — Done falls back to the composer.
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("renders the Admin Portal at /admin once /api/me confirms an admin", async () => {
+    vi.stubGlobal("fetch", routedFetch({ me: { isAdmin: true } }));
+    window.history.pushState(null, "", "/admin");
+
+    render(<App />);
+
+    // The fail-closed notice may flash while /api/me resolves; it must then yield to the portal.
+    await waitFor(() =>
+      expect(screen.queryByText(/admin access required/i)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("heading", { name: "Admin Portal" })).toBeInTheDocument();
+  });
+
   it("renders a designed not-found state for an unknown URL", async () => {
-    vi.stubGlobal("fetch", studioFetch());
+    vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/no-such-page");
 
     render(<App />);
@@ -77,7 +77,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("deep-links to a course at /courses/:courseId and defaults to the Learn view", async () => {
-    vi.stubGlobal("fetch", studioFetch({ runs: [makeRun()], course: makeCourse() }));
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test");
 
     render(<App />);
@@ -89,7 +89,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("deep-links to the Map view at /courses/:courseId/map", async () => {
-    vi.stubGlobal("fetch", studioFetch({ runs: [makeRun()], course: makeCourse() }));
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test/map");
 
     render(<App />);
@@ -98,7 +98,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("switching the course view writes it to the URL", async () => {
-    vi.stubGlobal("fetch", studioFetch({ runs: [makeRun()], course: makeCourse() }));
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test");
 
     render(<App />);
@@ -112,7 +112,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("opening a run from the rail navigates to its course URL; back returns home", async () => {
-    vi.stubGlobal("fetch", studioFetch({ runs: [makeRun()], course: makeCourse() }));
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/");
 
     render(<App />);
@@ -124,18 +124,15 @@ describe("App — URL routing (live studio)", () => {
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/courses/course-test");
 
-    await act(async () => {
-      window.history.back();
-      // jsdom dispatches popstate asynchronously; yield a tick so the router observes it.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    // jsdom dispatches popstate asynchronously; findByRole polls until the router re-renders.
+    act(() => window.history.back());
     expect(
       await screen.findByRole("heading", { name: /what do you want to learn/i }),
     ).toBeInTheDocument();
   });
 
   it("routes the primary nav to My courses, Activity, and Bookmarks placeholders", async () => {
-    vi.stubGlobal("fetch", studioFetch());
+    vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
 
     render(<App />);
@@ -165,7 +162,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("normalizes /new to the composer at /", async () => {
-    vi.stubGlobal("fetch", studioFetch());
+    vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/new");
 
     render(<App />);
@@ -184,7 +181,7 @@ describe("App — URL routing (live studio)", () => {
         if (/\/api\/courses\/[^/?]+$/.test(url)) {
           return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
         }
-        return studioFetch()(input);
+        return routedFetch()(input);
       }),
     );
     window.history.pushState(null, "", "/courses/no-such-course");
@@ -195,7 +192,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("treats an unknown course view segment as not found", async () => {
-    vi.stubGlobal("fetch", studioFetch({ runs: [makeRun()], course: makeCourse() }));
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test/bogus");
 
     render(<App />);
@@ -204,7 +201,7 @@ describe("App — URL routing (live studio)", () => {
   });
 
   it("keeps /admin behind the restricted notice for non-admins", async () => {
-    vi.stubGlobal("fetch", studioFetch());
+    vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/admin");
 
     render(<App />);
@@ -212,10 +209,37 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByText(/admin access required/i)).toBeInTheDocument();
   });
 
+  it("home shows the composer again after a build hands off to its course", async () => {
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [],
+        build: sseStreamResponse([courseFrame(makeCourse())]),
+        course: makeCourse(),
+      }),
+    );
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("Topic"), {
+      target: { value: "binary search" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    await screen.findByRole("heading", { name: "How binary search works" });
+    expect(window.location.pathname).toBe("/courses/course-test");
+
+    // Regression: home must not re-host the finished build — it's the composer again.
+    fireEvent.click(screen.getByRole("link", { name: "Home" }));
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
   it("a finished build hands the URL off to its course", async () => {
     vi.stubGlobal(
       "fetch",
-      studioFetch({
+      routedFetch({
         runs: [],
         build: sseStreamResponse([courseFrame(makeCourse())]),
       }),
