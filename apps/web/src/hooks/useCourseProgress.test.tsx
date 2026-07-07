@@ -42,8 +42,7 @@ describe("useCourseProgress — write reconciliation", () => {
 
   it("rolls back an optimistic objective mark by refetching when the PUT fails", async () => {
     // Arrange — GET always serves an empty snapshot; the PUT rejects.
-    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const method = (init?.method ?? "GET").toUpperCase();
+    const fetchMock = vi.fn((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {      const method = (init?.method ?? "GET").toUpperCase();
       if (method === "PUT") return Promise.reject(new Error("down"));
       return Promise.resolve({
         ok: true,
@@ -63,8 +62,7 @@ describe("useCourseProgress — write reconciliation", () => {
   });
 
   it("rolls back an optimistic lesson mark by refetching when the PUT fails", async () => {
-    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-      const method = (init?.method ?? "GET").toUpperCase();
+    const fetchMock = vi.fn((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {      const method = (init?.method ?? "GET").toUpperCase();
       if (method === "PUT") return Promise.reject(new Error("down"));
       return Promise.resolve({
         ok: true,
