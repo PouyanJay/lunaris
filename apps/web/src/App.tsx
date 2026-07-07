@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { BrowserRouter, useLocation, useNavigate } from "react-router";
+import { BrowserRouter, matchPath, useLocation, useNavigate } from "react-router";
 
 import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
@@ -52,19 +52,35 @@ import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
-/** The shell's navigation surfaces, resolved from the URL. Course canvases arrive in a later
- *  task; anything unrecognized renders the designed not-found canvas, never a blank. */
+const COURSE_VIEWS: CourseView[] = ["learn", "map", "build", "corpus"];
+
+/** The shell's navigation surfaces, resolved from the URL. A course canvas is keyed by courseId
+ *  with an optional view segment (default Learn); anything unrecognized — including a bogus view
+ *  segment — renders the designed not-found canvas, never a blank. */
 type ShellRoute =
   | { kind: "home" }
   | { kind: "settings" }
   | { kind: "admin" }
+  | { kind: "course"; courseId: string; view: CourseView }
   | { kind: "not-found" };
 
 function resolveRoute(pathname: string): ShellRoute {
   if (pathname === "/") return { kind: "home" };
   if (pathname === "/settings") return { kind: "settings" };
   if (pathname === "/admin") return { kind: "admin" };
+  const course = matchPath("/courses/:courseId/:view?", pathname);
+  if (course?.params.courseId) {
+    const view = course.params.view ?? "learn";
+    if ((COURSE_VIEWS as string[]).includes(view)) {
+      return { kind: "course", courseId: course.params.courseId, view: view as CourseView };
+    }
+  }
   return { kind: "not-found" };
+}
+
+/** The canonical URL for a course view — Learn is the bare course path, not a segment. */
+function coursePath(courseId: string, view: CourseView = "learn"): string {
+  return view === "learn" ? `/courses/${courseId}` : `/courses/${courseId}/${view}`;
 }
 
 /** Whether a just-built course enqueued any explainer videos — true if it carries course-level
@@ -238,12 +254,23 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       });
     return () => controller.abort();
   }, [apiBaseUrl]);
-  // A ready course defaults to the lesson reader (Learn); Map shows the prerequisite graph.
-  const [viewMode, setViewMode] = useState<CourseView>("learn");
+  // A ready course defaults to the lesson reader (Learn); the view is a URL segment.
+  const viewMode: CourseView = route.kind === "course" ? route.view : "learn";
   // A Map → Learn drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
   // request for the same concept after the learner has navigated away.
   const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
   const focusSeq = useRef(0);
+
+  // Whether THIS tab's build stream is the canvas for the routed course — streaming (once the
+  // X-Course-Id header lands) or just-finished. When it is, the opened-run flow stays out of the
+  // way: the SSE timeline is richer than the polled log it would otherwise fetch.
+  const streamCourseId =
+    state.status === "streaming"
+      ? state.courseId
+      : state.status === "ready"
+        ? state.course.id
+        : undefined;
+  const liveMatchesRoute = route.kind === "course" && streamCourseId === route.courseId;
 
   // When a build finishes, the new run was recorded server-side — refresh the history so it shows.
   // Depend on the stable `reloadRuns` (not the hook's per-render object) so this fires once per
@@ -270,20 +297,46 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const keylessReadiness = useKeylessReadiness(apiBaseUrl, buildActive && llmIsFallback);
 
   const { open: openRun, close: closeRun } = opened;
+
+  // The URL is the source of truth for which course is open: sync the opened-run flow to the
+  // route. A run-history row supplies topic/status/runId when it has the course; a cold deep-link
+  // falls back to a fetch by id (a 404 lands on the opened-run error canvas). While the history
+  // is still loading, wait — the effect re-fires when it resolves.
+  const runs = runsState.status === "ready" ? runsState.runs : null;
+  const routedCourseId = route.kind === "course" ? route.courseId : null;
+  const openedState = opened.state;
+  useEffect(() => {
+    if (!routedCourseId || liveMatchesRoute) {
+      if (openedState.status !== "closed") closeRun();
+      return;
+    }
+    if (openedState.status !== "closed" && openedState.courseId === routedCourseId) return;
+    const row = runs?.find((run) => run.id === routedCourseId);
+    if (row) openRun(row);
+    else if (runs) openRun({ id: routedCourseId, topic: "Course", status: "completed" });
+  }, [routedCourseId, liveMatchesRoute, runs, openedState, openRun, closeRun]);
+
+  // Once a build stream learns which course it's creating, hand the URL off to that course —
+  // replace (not push) so Back skips the transient composer state. The SSE canvas keeps rendering
+  // through the handoff (liveMatchesRoute); a refresh from here reattaches via the durable log.
+  useEffect(() => {
+    if (route.kind === "home" && streamCourseId) {
+      navigate(coursePath(streamCourseId), { replace: true });
+    }
+  }, [route.kind, streamCourseId, navigate]);
+
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
     setMobileNavOpen(false);
-    closeRun();
     reset();
     navigate("/");
-  }, [closeRun, reset, navigate]);
+  }, [reset, navigate]);
   const selectRun = useCallback(
     (run: CourseRun) => {
       setMobileNavOpen(false);
-      openRun(run);
-      navigate("/");
+      navigate(coursePath(run.id));
     },
-    [openRun, navigate],
+    [navigate],
   );
   const openSettings = useCallback(() => {
     setMobileNavOpen(false);
@@ -293,18 +346,16 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     setMobileNavOpen(false);
     navigate("/admin");
   }, [navigate]);
-  // Drill from a Map concept into its lesson: switch to the reader and request that lesson's focus.
-  const openLessonForKc = useCallback((kc: string) => {
-    focusSeq.current += 1;
-    setFocusRequest({ kc, seq: focusSeq.current });
-    setViewMode("learn");
-  }, []);
-
-  const selectedRunId = opened.state.status !== "closed" ? opened.state.courseId : undefined;
+  const selectedRunId = routedCourseId ?? undefined;
 
   // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
   // of it + refresh the history. The workflow lives in its own hook to keep StudioApp lean.
-  const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeRun, reloadRuns);
+  // Deleting the course you're looking at also leaves its now-dead URL.
+  const closeDeletedRun = useCallback(() => {
+    closeRun();
+    navigate("/");
+  }, [closeRun, navigate]);
+  const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeDeletedRun, reloadRuns);
   // Cancel an in-flight run (no confirm — it's recoverable): POST cancel → refresh (flips CANCELLED).
   const cancellation = useCancelRun(apiBaseUrl, reloadRuns);
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
@@ -313,42 +364,50 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // A ready course's canvas: the Learn | Map | Build toggle + course metrics in the header, and the
   // lesson reader (Learn, default), the prerequisite-graph explorer (Map), or the build-session
   // replay (Build) in the body. `runId` (when known) lets Build replay this course's build log.
-  const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => ({
-    title: course.topic,
-    meta: (
-      <>
-        <ViewToggle value={viewMode} onChange={setViewMode} />
-        <HeaderMeta course={course} />
-      </>
-    ),
-    body:
-      viewMode === "map" ? (
-        <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
-      ) : viewMode === "build" ? (
-        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-          <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
-        </ExplainProvider>
-      ) : viewMode === "corpus" ? (
-        <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
-      ) : (
-        <ExplainProvider
-          apiBaseUrl={apiBaseUrl}
-          available={canReaderExplain}
-          llmKeyless={isLlmKeyless(capabilities)}
-        >
-          <CourseReader
-            course={course}
-            focusRequest={focusRequest}
-            onRegenerate={
-              canRegenerate
-                ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
-                : undefined
-            }
-            apiBaseUrl={apiBaseUrl}
-          />
-        </ExplainProvider>
+  // The view lives in the URL; a Map → Learn drill-in navigates back to Learn with a focus request.
+  const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => {
+    const openLessonForKc = (kc: string) => {
+      focusSeq.current += 1;
+      setFocusRequest({ kc, seq: focusSeq.current });
+      navigate(coursePath(course.id));
+    };
+    return {
+      title: course.topic,
+      meta: (
+        <>
+          <ViewToggle value={viewMode} onChange={(view) => navigate(coursePath(course.id, view))} />
+          <HeaderMeta course={course} />
+        </>
       ),
-  });
+      body:
+        viewMode === "map" ? (
+          <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
+        ) : viewMode === "build" ? (
+          <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+            <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
+          </ExplainProvider>
+        ) : viewMode === "corpus" ? (
+          <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
+        ) : (
+          <ExplainProvider
+            apiBaseUrl={apiBaseUrl}
+            available={canReaderExplain}
+            llmKeyless={isLlmKeyless(capabilities)}
+          >
+            <CourseReader
+              course={course}
+              focusRequest={focusRequest}
+              onRegenerate={
+                canRegenerate
+                  ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
+                  : undefined
+              }
+              apiBaseUrl={apiBaseUrl}
+            />
+          </ExplainProvider>
+        ),
+    };
+  };
 
   const sidebar = (
     <Sidebar
@@ -426,62 +485,135 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       );
       return { title: "Admin Portal", meta, body };
     }
-    if (opened.state.status === "loading") {
-      return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
-    }
-    if (opened.state.status === "building") {
-      const { topic, runId } = opened.state;
-      const cancelling = cancellation.cancellingRunId === runId;
+    // This tab's live build canvases — rendered on the home route until the stream learns its
+    // course id (the handoff effect then moves the URL), and on the routed course thereafter.
+    const streamingCanvas = (stream: Extract<typeof state, { status: "streaming" }>) => {
+      const { runId, reconnecting } = stream;
       return {
-        title: topic,
+        title: stream.topic,
         meta: (
           <>
-            <StatusDot label="building" tone="accent" live />
-            {runId && (
-              <Button
-                variant="secondary"
-                onClick={() => cancellation.cancel(runId)}
-                disabled={cancelling}
-                aria-busy={cancelling}
-              >
-                {cancelling ? "Cancelling…" : "Cancel build"}
-              </Button>
-            )}
+            {/* Reconnecting = the live feed dropped but the build is still running server-side; the
+                timeline keeps advancing from the durable log, so the label stays "in progress". */}
+            <StatusDot label={reconnecting ? "reconnecting" : "building"} tone="accent" live />
+            <Button onClick={() => termination.request(runId)}>Terminate</Button>
           </>
         ),
-        // A running run is reattachable: poll its live event log into the build timeline rather than
-        // a static placeholder (the canvas auto-advances to the course when the run finishes — see
-        // useOpenedRun's recheck poll). Fall back to the placeholder only when the run carries no
-        // run_id (defensive — a running run always has one).
         body: (
           <>
-            <KeylessProvisioningBanner status={keylessReadiness} />
-            {runId ? (
-              <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-                <LiveBuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={topic} />
-              </ExplainProvider>
-            ) : (
-              <BuildingState
-                onRecheck={opened.recheck}
-                onCancel={() => cancellation.cancel(runId)}
-                cancelling={cancelling}
+            {/* The tab-open contract for a device build now rides the Draft banner's compact
+                compute select (its hint while "This device" is chosen) — no separate band. */}
+            {!stream.servedByThisDevice && <KeylessProvisioningBanner status={keylessReadiness} />}
+            <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+              <BuildTimeline
+                topic={stream.topic}
+                events={stream.events}
+                agentEvents={stream.agentEvents}
+                stageTimes={stream.stageTimes}
               />
-            )}
+            </ExplainProvider>
           </>
         ),
       };
+    };
+    // A fresh build finished, but its videos are still rendering async: hold the build canvas on the
+    // videos phase (the completed timeline + a polled "N of M" panel) rather than flipping to the
+    // course with empty slots. "Open course" leaves early; the canvas advances once videos settle.
+    const videosFinishingCanvas = () => {
+      // showVideosFinishing implies a ready stream; the status check re-proves it to the compiler.
+      if (!showVideosFinishing || state.status !== "ready") return null;
+      return {
+        title: state.course.topic,
+        meta: <StatusDot label="finishing videos" tone="accent" live />,
+        body: (
+          <>
+            {state.runId && (
+              <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+                <BuildReplay
+                  apiBaseUrl={apiBaseUrl}
+                  runId={state.runId}
+                  topic={state.course.topic}
+                />
+              </ExplainProvider>
+            )}
+            <VideosGeneratingPanel
+              progress={videoProgress}
+              onOpenCourse={() => setVideosOpenedEarly(true)}
+            />
+          </>
+        ),
+      };
+    };
+
+    if (route.kind === "course") {
+      // This tab's own stream owns the canvas while it's building/finishing the routed course.
+      if (liveMatchesRoute) {
+        if (state.status === "streaming") return streamingCanvas(state);
+        const videos = videosFinishingCanvas();
+        if (videos) return videos;
+        if (state.status === "ready") return buildReadyCanvas(state.course, reset, state.runId);
+      }
+      if (opened.state.status === "loading") {
+        return { title: opened.state.topic, meta: null, body: <GraphSkeleton /> };
+      }
+      if (opened.state.status === "building") {
+        const { topic, runId } = opened.state;
+        const cancelling = cancellation.cancellingRunId === runId;
+        return {
+          title: topic,
+          meta: (
+            <>
+              <StatusDot label="building" tone="accent" live />
+              {runId && (
+                <Button
+                  variant="secondary"
+                  onClick={() => cancellation.cancel(runId)}
+                  disabled={cancelling}
+                  aria-busy={cancelling}
+                >
+                  {cancelling ? "Cancelling…" : "Cancel build"}
+                </Button>
+              )}
+            </>
+          ),
+          // A running run is reattachable: poll its live event log into the build timeline rather
+          // than a static placeholder (the canvas auto-advances to the course when the run finishes
+          // — see useOpenedRun's recheck poll). Fall back to the placeholder only when the run
+          // carries no run_id (defensive — a running run always has one).
+          body: (
+            <>
+              <KeylessProvisioningBanner status={keylessReadiness} />
+              {runId ? (
+                <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+                  <LiveBuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={topic} />
+                </ExplainProvider>
+              ) : (
+                <BuildingState
+                  onRecheck={opened.recheck}
+                  onCancel={() => cancellation.cancel(runId)}
+                  cancelling={cancelling}
+                />
+              )}
+            </>
+          ),
+        };
+      }
+      if (opened.state.status === "error") {
+        const { courseId, topic, message } = opened.state;
+        const onRetry = () => openRun({ id: courseId, topic, status: "completed" });
+        const body = <ErrorState message={message} onRetry={onRetry} />;
+        return { title: topic, meta: null, body };
+      }
+      if (opened.state.status === "ready") {
+        const { course, runId } = opened.state;
+        const reopen = () => openRun({ id: course.id, topic: course.topic, status: "completed" });
+        return buildReadyCanvas(course, reopen, runId);
+      }
+      // Closed: the URL names a course the sync effect hasn't resolved yet (run history loading).
+      return { title: "Loading course…", meta: null, body: <GraphSkeleton /> };
     }
-    if (opened.state.status === "error") {
-      const { courseId, topic, message } = opened.state;
-      const onRetry = () => openRun({ id: courseId, topic, status: "completed" });
-      const body = <ErrorState message={message} onRetry={onRetry} />;
-      return { title: topic, meta: null, body };
-    }
-    if (opened.state.status === "ready") {
-      const { course, runId } = opened.state;
-      const reopen = () => openRun({ id: course.id, topic: course.topic, status: "completed" });
-      return buildReadyCanvas(course, reopen, runId);
-    }
+
+    // Home: the composer, or this tab's build before its course id is known.
     if (state.status === "idle") {
       return {
         title: "New course",
@@ -507,35 +639,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         body: <PreparingDeviceState topic={state.topic} progress={state.progress} />,
       };
     }
-    if (state.status === "streaming") {
-      const { runId, reconnecting } = state;
-      return {
-        title: state.topic,
-        meta: (
-          <>
-            {/* Reconnecting = the live feed dropped but the build is still running server-side; the
-                timeline keeps advancing from the durable log, so the label stays "in progress". */}
-            <StatusDot label={reconnecting ? "reconnecting" : "building"} tone="accent" live />
-            <Button onClick={() => termination.request(runId)}>Terminate</Button>
-          </>
-        ),
-        body: (
-          <>
-            {/* The tab-open contract for a device build now rides the Draft banner's compact
-                compute select (its hint while "This device" is chosen) — no separate band. */}
-            {!state.servedByThisDevice && <KeylessProvisioningBanner status={keylessReadiness} />}
-            <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-              <BuildTimeline
-                topic={state.topic}
-                events={state.events}
-                agentEvents={state.agentEvents}
-                stageTimes={state.stageTimes}
-              />
-            </ExplainProvider>
-          </>
-        ),
-      };
-    }
     if (state.status === "error") {
       const { topic, message, discoveryDepth } = state;
       return {
@@ -549,33 +652,10 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         ),
       };
     }
-    // A fresh build finished, but its videos are still rendering async: hold the build canvas on the
-    // videos phase (the completed timeline + a polled "N of M" panel) rather than flipping to the
-    // course with empty slots. "Open course" leaves early; the canvas advances once videos settle.
-    if (showVideosFinishing) {
-      return {
-        title: state.course.topic,
-        meta: <StatusDot label="finishing videos" tone="accent" live />,
-        body: (
-          <>
-            {state.runId && (
-              <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-                <BuildReplay
-                  apiBaseUrl={apiBaseUrl}
-                  runId={state.runId}
-                  topic={state.course.topic}
-                />
-              </ExplainProvider>
-            )}
-            <VideosGeneratingPanel
-              progress={videoProgress}
-              onOpenCourse={() => setVideosOpenedEarly(true)}
-            />
-          </>
-        ),
-      };
-    }
-    return buildReadyCanvas(state.course, reset, state.runId);
+    // Streaming pre-handoff (course id not yet known), or the one transient frame between the
+    // stream finishing and the handoff effect moving the URL.
+    if (state.status === "streaming") return streamingCanvas(state);
+    return videosFinishingCanvas() ?? buildReadyCanvas(state.course, reset, state.runId);
   })();
 
   return (
