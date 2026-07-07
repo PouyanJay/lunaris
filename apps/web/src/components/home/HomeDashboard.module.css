@@ -26,6 +26,14 @@
   color: var(--text-secondary);
 }
 
+/* ── Live-build banners (shared LiveBuildBanner; stacked with a gap) ── */
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
 /* ── First-run hero (no courses yet) ── */
 .firstRun {
   display: flex;

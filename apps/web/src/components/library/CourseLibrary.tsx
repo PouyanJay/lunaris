@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { Link } from "react-router";
 
 import { CourseCard } from "../course/CourseCard";
+import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
 import { useLibrary } from "../../hooks/useLibrary";
 import { LEARNER_STATUS_META } from "../../lib/courseLabels";
-import { relativeTime } from "../../lib/relativeTime";
-import { coursePath } from "../../lib/routes";
 import type { CourseRun, CourseSummary, LearnerCourseStatus } from "../../types/course";
 import styles from "./CourseLibrary.module.css";
 
@@ -80,22 +78,6 @@ function LibraryFilterToolbar({
   );
 }
 
-/** The amber live-build strip: one per RUNNING run, linking into the building course's canvas. */
-function LiveBuildBanner({ run }: { run: CourseRun }) {
-  return (
-    <Link className={styles.banner} to={coursePath(run.id)}>
-      <span className={styles.bannerPulse} aria-hidden="true" />
-      <span className={styles.bannerBody}>
-        <span className={styles.bannerTitle}>Building — {run.topic}</span>
-        <span className={styles.bannerMeta}>Started {relativeTime(run.createdAt)}</span>
-      </span>
-      <span className={styles.bannerCta} aria-hidden="true">
-        Open →
-      </span>
-    </Link>
-  );
-}
-
 /** The My-courses library: counts subline, learner-status filter pills, the live-build banner,
  *  and a cover-card grid (title, "N lessons · Level", progress bar, status) sorted server-side
  *  by last opened. Renders all data states — a card-shaped loading skeleton, designed empty and
@@ -141,9 +123,13 @@ export function CourseLibrary({ apiBaseUrl, onNewCourse, runs = [] }: CourseLibr
   return (
     <div className={styles.canvas}>
       <p className={styles.subline}>{countsLine(state.courses)}</p>
-      {runningRuns.map((run) => (
-        <LiveBuildBanner key={run.runId} run={run} />
-      ))}
+      {runningRuns.length > 0 && (
+        <div className={styles.banners}>
+          {runningRuns.map((run) => (
+            <LiveBuildBanner key={run.runId} run={run} />
+          ))}
+        </div>
+      )}
       <LibraryFilterToolbar filter={filter} onChange={setFilter} />
       {visible.length === 0 && filter !== "all" ? (
         <p className={styles.filterEmpty}>{FILTER_EMPTY[filter]}</p>

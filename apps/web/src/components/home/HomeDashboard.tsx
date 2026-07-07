@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 
 import { CourseCard } from "../course/CourseCard";
+import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
@@ -29,6 +30,20 @@ function subline(state: LibraryState): string {
   const count = state.courses.length;
   if (count === 0) return "Your learning workspace";
   return `${count} ${count === 1 ? "course" : "courses"} in your library`;
+}
+
+/** The live-build banners: one amber strip per genuinely running build, each linking into the
+ *  building course's canvas. Nothing renders when no build is in flight. */
+function LiveBuilds({ runs }: { runs: CourseRun[] }) {
+  const running = runs.filter((run) => run.status === "running");
+  if (running.length === 0) return null;
+  return (
+    <div className={styles.banners}>
+      {running.map((run) => (
+        <LiveBuildBanner key={run.runId} run={run} cta="Open build →" />
+      ))}
+    </div>
+  );
 }
 
 /** The first-run hero: no courses yet → name a topic. A real next step, never a blank canvas. */
@@ -108,7 +123,7 @@ function RecentCourses({ courses }: { courses: CourseSummary[] }) {
 /** The Home dashboard at `/`: a greeting header over the learner's live state — the recent grid,
  *  the continue-learning hero, and the live-build banner (built up across Tasks 1–3). Reads the
  *  Phase 3 courses API via useLibrary; the composer now lives at /new. */
-export function HomeDashboard({ apiBaseUrl, userEmail, onNewCourse }: HomeDashboardProps) {
+export function HomeDashboard({ apiBaseUrl, userEmail, runs, onNewCourse }: HomeDashboardProps) {
   const { state, reload } = useLibrary(apiBaseUrl);
   const name = displayNameFromEmail(userEmail);
   const greeting = greetingForHour(new Date().getHours());
@@ -121,6 +136,7 @@ export function HomeDashboard({ apiBaseUrl, userEmail, onNewCourse }: HomeDashbo
         </h2>
         <p className={styles.subline}>{subline(state)}</p>
       </header>
+      <LiveBuilds runs={runs} />
       <HomeBody state={state} reload={reload} onNewCourse={onNewCourse} />
     </div>
   );

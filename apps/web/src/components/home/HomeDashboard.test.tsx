@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HomeDashboard } from "./HomeDashboard";
-import { makeCourseSummary } from "../../test/fixtures";
+import { makeCourseSummary, makeRun } from "../../test/fixtures";
 
 function json(body: unknown) {
   return { ok: true, json: async () => body };
@@ -93,6 +93,26 @@ describe("HomeDashboard", () => {
     );
     // Three or fewer courses fit on Home — no need for a "view all" escape hatch yet.
     expect(screen.queryByRole("link", { name: /view all courses/i })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a live-build banner for a running run, linking into its canvas", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json([makeCourseSummary()])));
+
+    renderHome({
+      runs: [makeRun({ id: "course-live", status: "running", topic: "Quantum computing" })],
+    });
+
+    const banner = await screen.findByRole("link", { name: /building.*quantum computing/i });
+    expect(banner).toHaveAttribute("href", "/courses/course-live");
+  });
+
+  it("shows no live-build banner when every run is terminal", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json([makeCourseSummary()])));
+
+    renderHome({ runs: [makeRun({ status: "completed" }), makeRun({ status: "failed" })] });
+
+    await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i });
+    expect(screen.queryByRole("link", { name: /building/i })).not.toBeInTheDocument();
   });
 
   it("caps the recent grid at three and links to the full library when there are more", async () => {
