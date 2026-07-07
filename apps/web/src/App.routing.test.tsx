@@ -176,6 +176,42 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/");
   });
 
+  it("lands an unknown course id on the recoverable error canvas", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Parameters<typeof fetch>[0]) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (/\/api\/courses\/[^/?]+$/.test(url)) {
+          return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
+        }
+        return studioFetch()(input);
+      }),
+    );
+    window.history.pushState(null, "", "/courses/no-such-course");
+
+    render(<App />);
+
+    expect(await screen.findByText(/something went wrong/i)).toBeInTheDocument();
+  });
+
+  it("treats an unknown course view segment as not found", async () => {
+    vi.stubGlobal("fetch", studioFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test/bogus");
+
+    render(<App />);
+
+    expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
+  });
+
+  it("keeps /admin behind the restricted notice for non-admins", async () => {
+    vi.stubGlobal("fetch", studioFetch());
+    window.history.pushState(null, "", "/admin");
+
+    render(<App />);
+
+    expect(await screen.findByText(/admin access required/i)).toBeInTheDocument();
+  });
+
   it("a finished build hands the URL off to its course", async () => {
     vi.stubGlobal(
       "fetch",
