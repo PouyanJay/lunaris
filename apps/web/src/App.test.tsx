@@ -84,7 +84,12 @@ describe("App", () => {
 });
 
 describe("App — live studio (VITE_API_URL set)", () => {
-  beforeEach(() => vi.stubEnv("VITE_API_URL", "http://test"));
+  beforeEach(() => {
+    vi.stubEnv("VITE_API_URL", "http://test");
+    // The composer lives at /new; Home is the dashboard at /. These tests drive the composer and
+    // build flow, so they start on the composer route (a build streams there until URL handoff).
+    window.history.pushState(null, "", "/new");
+  });
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
@@ -926,6 +931,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
           runsReads === 1 ? [makeRun({ id: "c-1", topic: "queues", status: "completed" })] : [];
         return Promise.resolve({ ok: true, json: async () => runs });
       }
+      // Home (the post-delete destination) reads the courses library.
+      if (/\/api\/courses$/.test(url) && method === "GET") {
+        return Promise.resolve({ ok: true, json: async () => [] });
+      }
       if (/\/api\/courses\/c-1$/.test(url) && method === "DELETE") {
         return Promise.resolve({ ok: true, status: 204 });
       }
@@ -948,9 +957,9 @@ describe("App — live studio (VITE_API_URL set)", () => {
       within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }),
     );
 
-    // The canvas drops the deleted course and returns to the build surface.
+    // The canvas drops the deleted course and returns to Home (the dashboard at /).
     expect(
-      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "queues" })).not.toBeInTheDocument();
   });

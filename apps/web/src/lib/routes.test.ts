@@ -5,7 +5,7 @@ import { coursePath, resolveRoute } from "./routes";
 describe("resolveRoute", () => {
   it.each([
     ["/", "home"],
-    ["/new", "home"],
+    ["/new", "composer"],
     ["/settings", "settings"],
     ["/admin", "admin"],
     ["/courses", "library"],

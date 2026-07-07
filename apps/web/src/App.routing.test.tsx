@@ -28,7 +28,7 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/settings");
   });
 
-  it("rail Settings navigation updates the URL; Done returns to the composer", async () => {
+  it("rail Settings navigation updates the URL; Done returns Home", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
 
@@ -41,22 +41,22 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(
-      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
   });
 
-  it("Done from a cold /settings deep-link falls back to home", async () => {
+  it("Done from a cold /settings deep-link falls back to Home", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/settings");
 
     render(<App />);
     await screen.findByRole("heading", { name: "Settings" });
 
-    // No in-app history to return to — Done falls back to the composer.
+    // No in-app history to return to — Done falls back to Home (the dashboard at /).
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(
-      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
   });
@@ -83,7 +83,7 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 
-  it("library header offers a New course action that opens the composer", async () => {
+  it("library header offers a New course action that opens the composer at /new", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/courses");
 
@@ -96,7 +96,7 @@ describe("App — URL routing (live studio)", () => {
     expect(
       await screen.findByRole("heading", { name: /what do you want to learn/i }),
     ).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/new");
   });
 
   it("renders the course library at /courses, linking the fetched course into its canvas", async () => {
@@ -264,7 +264,7 @@ describe("App — URL routing (live studio)", () => {
     // jsdom dispatches popstate asynchronously; findByRole polls until the router re-renders.
     act(() => window.history.back());
     expect(
-      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
     ).toBeInTheDocument();
   });
 
@@ -295,11 +295,11 @@ describe("App — URL routing (live studio)", () => {
     fireEvent.click(screen.getByRole("link", { name: "Home" }));
     expect(window.location.pathname).toBe("/");
     expect(
-      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
     ).toBeInTheDocument();
   });
 
-  it("normalizes /new to the composer at /", async () => {
+  it("renders the composer at /new (its own place, no longer normalized to /)", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/new");
 
@@ -308,7 +308,37 @@ describe("App — URL routing (live studio)", () => {
     expect(
       await screen.findByRole("heading", { name: /what do you want to learn/i }),
     ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/new");
+  });
+
+  it("renders the Home dashboard at / — the greeting, not the composer", async () => {
+    vi.stubGlobal("fetch", routedFetch({ library: [makeCourseSummary()] }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /what do you want to learn/i }),
+    ).not.toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
+  });
+
+  it("shows the first-run hero on Home when the library is empty", async () => {
+    vi.stubGlobal("fetch", routedFetch({ library: [] }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    // No dead end: an empty Home funnels to the composer at /new.
+    expect(await screen.findByText(/build your first course/i)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("main")).getByRole("button", { name: /new course/i }));
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/new");
   });
 
   it("lands an unknown course id on the recoverable error canvas", async () => {
@@ -347,7 +377,7 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByText(/admin access required/i)).toBeInTheDocument();
   });
 
-  it("home shows the composer again after a build hands off to its course", async () => {
+  it("the composer at /new shows idle again after a build hands off to its course", async () => {
     vi.stubGlobal(
       "fetch",
       routedFetch({
@@ -356,7 +386,7 @@ describe("App — URL routing (live studio)", () => {
         course: makeCourse(),
       }),
     );
-    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/new");
 
     render(<App />);
     fireEvent.change(await screen.findByLabelText("Topic"), {
@@ -366,12 +396,13 @@ describe("App — URL routing (live studio)", () => {
     await screen.findByRole("heading", { name: "How binary search works", level: 1 });
     expect(window.location.pathname).toBe("/courses/course-test");
 
-    // Regression: home must not re-host the finished build — it's the composer again.
-    fireEvent.click(screen.getByRole("link", { name: "Home" }));
+    // Regression: the composer is usable again after a build — New course returns to an idle /new,
+    // never re-hosting the finished build.
+    fireEvent.click(screen.getByRole("button", { name: /new course/i }));
     expect(
       await screen.findByRole("heading", { name: /what do you want to learn/i }),
     ).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe("/new");
   });
 
   it("a finished build hands the URL off to its course", async () => {
@@ -382,7 +413,7 @@ describe("App — URL routing (live studio)", () => {
         build: sseStreamResponse([courseFrame(makeCourse())]),
       }),
     );
-    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/new");
 
     render(<App />);
     fireEvent.change(await screen.findByLabelText("Topic"), {

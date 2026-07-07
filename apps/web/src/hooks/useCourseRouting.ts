@@ -39,13 +39,14 @@ export function useCourseRouting({
   const routedCourseId = route.kind === "course" ? route.courseId : null;
   const liveMatchesRoute = routedCourseId !== null && streamCourseId === routedCourseId;
 
-  // Hand off once per built course: after that, revisiting home renders the composer rather than
-  // bouncing back or (worse) re-hosting the finished course on "/".
+  // Hand off once per built course: the build streams on the composer route (/new); once its
+  // course id is known, move the URL to the course so revisiting /new renders the idle composer
+  // rather than re-hosting the finished course.
   const [handedOffCourseId, setHandedOffCourseId] = useState<string | undefined>(undefined);
   const handedOff = streamCourseId !== undefined && handedOffCourseId === streamCourseId;
   const clearHandoff = useCallback(() => setHandedOffCourseId(undefined), []);
   useEffect(() => {
-    if (route.kind === "home" && streamCourseId && handedOffCourseId !== streamCourseId) {
+    if (route.kind === "composer" && streamCourseId && handedOffCourseId !== streamCourseId) {
       setHandedOffCourseId(streamCourseId);
       navigate(coursePath(streamCourseId), { replace: true });
     }

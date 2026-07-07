@@ -3,9 +3,10 @@ import { BrowserRouter, useLocation, useNavigate } from "react-router";
 
 import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
-import { AuthProvider } from "./hooks/useAuth";
+import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
+import { HomeDashboard } from "./components/home/HomeDashboard";
 import { CourseOverview } from "./components/overview/CourseOverview";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
@@ -46,7 +47,7 @@ import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { putCourseOpened } from "./lib/progress";
 import { isLlmKeyless } from "./lib/capabilities";
-import { coursePath, resolveRoute, type ShellRoute } from "./lib/routes";
+import { coursePath, resolveRoute, ROUTES, type ShellRoute } from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
@@ -215,6 +216,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     else navigate("/");
   }, [location.key, navigate]);
   const { isAdmin } = useMe(apiBaseUrl);
+  // The signed-in email seeds the Home greeting's display name (offline/unauthed → null).
+  const { user } = useAuth();
   // Per-capability live/fallback status drives the Draft-mode banner; refetch when Settings closes so
   // a key the user just added flips its capability back to live and the banner clears.
   const { capabilities, reload: reloadCapabilities } = useCapabilities(apiBaseUrl);
@@ -339,12 +342,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     reset();
   }, [clearHandoff, reset]);
 
-  // /new is a spelling of the composer, not a place — normalize it so the Home nav state and
-  // shared links stay canonical.
-  useEffect(() => {
-    if (location.pathname === "/new") navigate("/", { replace: true });
-  }, [location.pathname, navigate]);
-
   // Visiting a course's non-reader views refreshes its open-recency — the library's last-opened
   // sort. A bare touch; the reader view is excluded because CourseReader records the open itself
   // with better fidelity (it knows the lesson), so one open never fires two touches.
@@ -358,10 +355,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   }, [apiBaseUrl, visitedCourseId]);
 
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
+  // The composer lives at /new; Home (/) is the dashboard.
   const startNewCourse = useCallback(() => {
     setMobileNavOpen(false);
     resetBuild();
-    navigate("/");
+    navigate(ROUTES.composer);
   }, [resetBuild, navigate]);
   const selectRun = useCallback(
     (run: CourseRun) => {
@@ -666,8 +664,25 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return { title: "Loading course…", meta: null, body: <GraphSkeleton /> };
     }
 
-    // Home: the composer, or this tab's build before its course id is known. Once the build
-    // handed its URL off, home is the composer again — the course lives at its own URL.
+    // Home (/): the learner's dashboard. The composer moved to /new — a live build streams there
+    // until it hands its URL off to the built course.
+    if (route.kind === "home") {
+      return {
+        title: "Home",
+        meta: null,
+        body: (
+          <HomeDashboard
+            apiBaseUrl={apiBaseUrl}
+            userEmail={user?.email ?? null}
+            runs={runsState.status === "ready" ? runsState.runs : []}
+            onNewCourse={startNewCourse}
+          />
+        ),
+      };
+    }
+
+    // The composer (/new): the idle setup, or this tab's build before its course id is known. Once
+    // the build handed its URL off, the composer is idle again — the course lives at its own URL.
     if (state.status === "idle" || handedOff) {
       return {
         title: "New course",
