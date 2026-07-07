@@ -4,6 +4,7 @@ import {
   type CourseProgress,
   fetchCourseProgress,
   type LessonState,
+  putCourseOpened,
   putLessonProgress,
   putObjectiveProgress,
 } from "../lib/progress";
@@ -16,6 +17,8 @@ interface CourseProgressHandle {
   markObjective: (moduleId: string, objectiveIndex: number, understood: boolean) => void;
   /** Optimistically advance a lesson's state, then persist (reconciles on failure). */
   markLesson: (lessonId: string, state: LessonState) => void;
+  /** Record a course open (optionally at a lesson) — a fire-and-forget open-recency touch. */
+  markOpened: (lastLessonId?: string) => void;
 }
 
 /** Tracks the learner's progress on one course. Best-effort by design: reading must never block
@@ -78,5 +81,15 @@ export function useCourseProgress(apiBaseUrl: string, courseId: string): CourseP
     [apiBaseUrl, courseId, reload],
   );
 
-  return { progress, reload, markObjective, markLesson };
+  const markOpened = useCallback(
+    (lastLessonId?: string) => {
+      if (!apiBaseUrl) return;
+      putCourseOpened(apiBaseUrl, courseId, lastLessonId).catch(() => {
+        /* best-effort: an open-recency touch must never disturb reading */
+      });
+    },
+    [apiBaseUrl, courseId],
+  );
+
+  return { progress, reload, markObjective, markLesson, markOpened };
 }

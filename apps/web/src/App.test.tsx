@@ -34,7 +34,7 @@ describe("App", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     // Metric band + status.
     expect(screen.getByText("REVIEW")).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
@@ -89,7 +89,6 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
   });
-
 
   it("opens on the topic form, not an auto-generated course", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [] }));
@@ -122,7 +121,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // Build from the confirmed brief → the stream resolves to the ready course.
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
 
     // The confirmed clarification was threaded into the build stream URL (the core wiring contract).
@@ -244,7 +243,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     // The stream resolves and hands off to the ready course (reader by default).
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     // Map surfaces the generated prerequisite graph.
     fireEvent.click(screen.getByRole("radio", { name: /map/i }));
@@ -545,7 +544,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
 
     // The canvas opens that run's course on the reader; its title heading shows.
-    expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "queues", level: 1 })).toBeInTheDocument();
     // Map surfaces a graph node from the opened course.
     fireEvent.click(screen.getByRole("radio", { name: /map/i }));
     expect(await screen.findByText("Binary Search")).toBeInTheDocument();
@@ -568,7 +567,9 @@ describe("App — live studio (VITE_API_URL set)", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
-    await screen.findByRole("heading", { name: "queues" });
+    await screen.findByRole("heading", { name: "queues", level: 1 });
+    // A course lands on Overview; the regenerate action lives in the reader.
+    fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
 
     // The capability fetch resolves to true, so the reader offers the per-lesson regenerate action.
     expect(await screen.findByRole("button", { name: /regenerate lesson/i })).toBeInTheDocument();
@@ -587,7 +588,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
-    await screen.findByRole("heading", { name: "queues" });
+    await screen.findByRole("heading", { name: "queues", level: 1 });
+    // Enter the reader — asserting absence on the Overview tab would be vacuous.
+    fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
+    await screen.findByText(/find a word in a dictionary/i);
 
     // waitFor drains the capability-fetch microtask, so the absence reflects
     // supportsLessonRegeneration === false — not merely an unresolved fetch (canRegenerate
@@ -726,7 +730,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // Open a historical run mid-build — the opened run takes the canvas (priority over the build).
     fireEvent.click(screen.getByRole("button", { name: /^queues/i }));
 
-    expect(await screen.findByRole("heading", { name: "queues" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "queues", level: 1 })).toBeInTheDocument();
     expect(screen.queryByText("Mapping KCs…")).not.toBeInTheDocument();
   });
 
@@ -744,7 +748,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
-  it("defaults the ready canvas to the lesson reader (Learn), not the graph", async () => {
+  it("lands a ready course on its Overview tab, not the reader or the graph", async () => {
     // Arrange — a build that resolves straight to a ready course.
     vi.stubGlobal(
       "fetch",
@@ -759,18 +763,20 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // Assert — the reader is the default ready view: lesson prose renders, the graph is absent…
-    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+    // Assert — Overview is the landing tab: the Continue CTA renders, the reader prose and the
+    // graph stay absent until chosen…
+    expect(await screen.findByRole("button", { name: /continue learning/i })).toBeInTheDocument();
+    expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
     expect(
       screen.queryByRole("application", { name: /prerequisite graph/i }),
     ).not.toBeInTheDocument();
-    // …and the Learn | Map toggle shows Learn selected.
-    expect(screen.getByRole("radio", { name: /learn/i })).toBeChecked();
-    expect(screen.getByRole("radio", { name: /map/i })).not.toBeChecked();
+    // …and the tab bar shows Overview selected.
+    expect(screen.getByRole("radio", { name: /overview/i })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /lessons/i })).not.toBeChecked();
   });
 
-  it("toggles the ready canvas between the reader (Learn) and the graph (Map)", async () => {
-    // Arrange — a ready course on the canvas.
+  it("toggles the ready canvas between the reader (Lessons) and the graph (Map)", async () => {
+    // Arrange — a ready course on the canvas, opened into the reader.
     vi.stubGlobal(
       "fetch",
       routedFetch({
@@ -781,6 +787,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     render(<App />);
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+    fireEvent.click(await screen.findByRole("radio", { name: /lessons/i }));
     await screen.findByText(/find a word in a dictionary/i);
 
     // Act — switch to Map. Assert — the graph canvas shows, the prose is gone.
@@ -790,8 +797,8 @@ describe("App — live studio (VITE_API_URL set)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
 
-    // Act — switch back to Learn. Assert — the reader returns.
-    fireEvent.click(screen.getByRole("radio", { name: /learn/i }));
+    // Act — switch back to Lessons. Assert — the reader returns.
+    fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
     expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
   });
 
@@ -935,7 +942,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     // Open the run in the canvas, then delete it.
     fireEvent.click(await screen.findByRole("button", { name: /^queues/i }));
-    await screen.findByRole("heading", { name: "queues" });
+    await screen.findByRole("heading", { name: "queues", level: 1 });
     fireEvent.click(screen.getByRole("button", { name: /delete course: queues/i }));
     fireEvent.click(
       within(await screen.findByRole("dialog")).getByRole("button", { name: /^delete course$/i }),

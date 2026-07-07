@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -312,6 +313,80 @@ describe("CourseReader", () => {
     // Assert — the reader jumps to that module's lesson.
     expect(screen.getByText("Prose three.")).toBeInTheDocument();
     expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
+  });
+
+  it("focuses a lesson directly by id (Overview row drill-in)", () => {
+    // Arrange — same course shape; the Overview knows lesson ids, not concepts.
+    const course = makeCourse({
+      modules: [
+        makeModule({
+          id: "m1",
+          title: "Foundations",
+          lessons: [lessonWith("l1", "Prose one."), lessonWith("l2", "Prose two.")],
+        }),
+        makeModule({ id: "m2", title: "Search", lessons: [lessonWith("l3", "Prose three.")] }),
+      ],
+    });
+    const { rerender } = render(<CourseReader course={course} />);
+    expect(screen.getByText("Prose one.")).toBeInTheDocument();
+
+    // Act
+    rerender(<CourseReader course={course} focusRequest={{ lessonId: "l2", seq: 1 }} />);
+
+    // Assert
+    expect(screen.getByText("Prose two.")).toBeInTheDocument();
+    expect(screen.getByText(/lesson 2 of 3/i)).toBeInTheDocument();
+  });
+
+  it("honours a mount-time focus request under StrictMode's effect replay", () => {
+    // Regression guard for a bug live verification caught: StrictMode remounts replay effects,
+    // and an unguarded course-reset effect zeroed the index AFTER the (once-consumed) focus
+    // request had been applied — dev landed on lesson 1 while non-StrictMode tests passed.
+    const course = makeCourse({
+      modules: [
+        makeModule({
+          id: "m1",
+          title: "Foundations",
+          lessons: [lessonWith("l1", "Prose one."), lessonWith("l2", "Prose two.")],
+        }),
+      ],
+    });
+
+    render(
+      <StrictMode>
+        <CourseReader course={course} focusRequest={{ lessonId: "l2", seq: 1 }} />
+      </StrictMode>,
+    );
+
+    expect(screen.getByText("Prose two.")).toBeInTheDocument();
+    expect(screen.getByText(/lesson 2 of 2/i)).toBeInTheDocument();
+  });
+
+  it("offers an Overview exit instead of a dead Prev on the first lesson", () => {
+    // Arrange
+    const onExitToOverview = vi.fn();
+    render(<CourseReader course={multiLessonCourse()} onExitToOverview={onExitToOverview} />);
+
+    // Act — on lesson 1 the back affordance leads out to the Overview (the design's
+    // prev-label rule) rather than sitting disabled.
+    fireEvent.click(screen.getByRole("button", { name: /back to overview/i }));
+
+    // Assert
+    expect(onExitToOverview).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Prev as lesson navigation past the first lesson", () => {
+    // Arrange
+    const onExitToOverview = vi.fn();
+    render(<CourseReader course={multiLessonCourse()} onExitToOverview={onExitToOverview} />);
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /previous lesson/i }));
+
+    // Assert — back on lesson 1 without leaving the reader.
+    expect(onExitToOverview).not.toHaveBeenCalled();
+    expect(screen.getByText(/lesson 1 of/i)).toBeInTheDocument();
   });
 });
 

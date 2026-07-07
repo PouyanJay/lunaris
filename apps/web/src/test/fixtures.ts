@@ -8,6 +8,7 @@ import type {
   Claim,
   Course,
   CourseRun,
+  CourseSummary,
   GagneFlags,
   Lesson,
   Module,
@@ -109,6 +110,24 @@ export function makeModule(overrides: Partial<Module> = {}): Module {
     lessons: [makeLesson()],
     assessment: { items: [] },
     difficultyIndex: 0.5,
+    ...overrides,
+  };
+}
+
+/** A library card summary for My-courses tests; mirrors the camelCase CourseSummaryView wire. */
+export function makeCourseSummary(overrides: Partial<CourseSummary> = {}): CourseSummary {
+  return {
+    id: "course-lib",
+    topic: "How HTTPS works",
+    lessonTotal: 6,
+    lessonsDone: 4,
+    percent: 67,
+    conceptTotal: 15,
+    level: "intermediate",
+    learnerStatus: "in_progress",
+    courseStatus: "published",
+    builtAt: "2026-07-01T00:00:00Z",
+    lastOpenedAt: "2026-07-06T00:00:00Z",
     ...overrides,
   };
 }
@@ -397,6 +416,7 @@ export function routedFetch(
     brief?: unknown;
     me?: unknown;
     progress?: unknown;
+    library?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -430,8 +450,21 @@ export function routedFetch(
       const progress = handlers.progress ?? { courseId: "", objectives: [], lessons: [] };
       return Promise.resolve({ ok: true, json: async () => progress });
     }
+    // Progress writes (objective / lesson / opened) succeed silently — the app treats them as
+    // best-effort, and an unhandled URL here would loop the reader's reconcile-on-failure path.
+    if (
+      /\/api\/courses\/[^/]+\/progress\/(objective|lesson|opened)$/.test(url) &&
+      method === "PUT"
+    ) {
+      return Promise.resolve({ ok: true, status: 204 });
+    }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);
+    }
+    // The bare collection GET (the My-courses library) — ≠ POST /api/courses (a build) and
+    // ≠ course-by-id (which has a path segment after /courses).
+    if (/\/api\/courses$/.test(url) && method === "GET") {
+      return Promise.resolve({ ok: true, json: async () => handlers.library ?? [] });
     }
     if (/\/api\/courses\/[^/?]+$/.test(url)) {
       // course-by-id: exactly one path segment after /courses/, no query (≠ the stream URL)

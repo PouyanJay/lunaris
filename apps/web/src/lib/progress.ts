@@ -26,13 +26,16 @@ export interface ProgressSummary {
 }
 
 /** The caller's progress on one course — raw marks plus rollups derived against the course
- *  payload (summary null / kcMastery empty when the course isn't loadable). */
+ *  payload (summary null / kcMastery empty when the course isn't loadable). `lastOpenedAt` /
+ *  `lastLessonId` are null until the learner first opens the course. */
 export interface CourseProgress {
   courseId: string;
   objectives: ObjectiveProgress[];
   lessons: LessonProgress[];
   summary?: ProgressSummary | null;
   kcMastery?: Record<string, boolean>;
+  lastOpenedAt?: string | null;
+  lastLessonId?: string | null;
 }
 
 export async function fetchCourseProgress(
@@ -75,4 +78,14 @@ export function putLessonProgress(
   mark: { lessonId: string; state: LessonState },
 ): Promise<void> {
   return putProgress(apiBaseUrl, courseId, "lesson", mark);
+}
+
+/** Record that the learner opened this course — at a lesson when given, else a bare touch
+ *  (the server preserves any previously recorded position). */
+export function putCourseOpened(
+  apiBaseUrl: string,
+  courseId: string,
+  lastLessonId?: string,
+): Promise<void> {
+  return putProgress(apiBaseUrl, courseId, "opened", lastLessonId ? { lastLessonId } : {});
 }

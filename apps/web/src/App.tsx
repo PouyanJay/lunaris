@@ -5,6 +5,8 @@ import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
+import { CourseLibrary } from "./components/library/CourseLibrary";
+import { CourseOverview } from "./components/overview/CourseOverview";
 import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
@@ -42,6 +44,7 @@ import { DraftModeBanner } from "./components/DraftModeBanner";
 import { MOBILE_QUERY, useMediaQuery } from "./hooks/useMediaQuery";
 import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
+import { putCourseOpened } from "./lib/progress";
 import { isLlmKeyless } from "./lib/capabilities";
 import { coursePath, resolveRoute, type ShellRoute } from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
@@ -55,7 +58,7 @@ import styles from "./App.module.css";
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
 /** The designed full-canvas notices for navigation destinations that carry no data yet: the 404
- *  and the coming-soon placeholders later phases fill (library P3, activity P9, bookmarks P10). */
+ *  and the coming-soon placeholders later phases fill (activity P9, bookmarks P10). */
 function placeholderCanvas(
   route: ShellRoute,
   onGoHome: () => void,
@@ -70,21 +73,6 @@ function placeholderCanvas(
           title="Page not found"
           body="This page doesn't exist. It may have moved, or the link is wrong."
           actionLabel="Go home"
-          onAction={onGoHome}
-        />
-      ),
-    };
-  }
-  if (route.kind === "library") {
-    return {
-      title: "My courses",
-      meta: null,
-      body: (
-        <CanvasNotice
-          eyebrow="Coming soon"
-          title="The course library lands here"
-          body="Browse, filter, and resume all your courses from one place. Until then, your builds live under Recent runs in the sidebar."
-          actionLabel="New course"
           onAction={onGoHome}
         />
       ),
@@ -294,9 +282,9 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       });
     return () => controller.abort();
   }, [apiBaseUrl]);
-  // A ready course defaults to the lesson reader (Learn); the view is a URL segment.
-  const viewMode: CourseView = route.kind === "course" ? route.view : "learn";
-  // A Map → Learn drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
+  // A ready course lands on its Overview tab; the view is a URL segment.
+  const viewMode: CourseView = route.kind === "course" ? route.view : "overview";
+  // A Map → lesson drill-in: which concept's lesson to focus. The seq lets the reader honour a repeat
   // request for the same concept after the learner has navigated away.
   const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
   const focusSeq = useRef(0);
@@ -357,6 +345,18 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     if (location.pathname === "/new") navigate("/", { replace: true });
   }, [location.pathname, navigate]);
 
+  // Visiting a course's non-reader views refreshes its open-recency — the library's last-opened
+  // sort. A bare touch; the reader view is excluded because CourseReader records the open itself
+  // with better fidelity (it knows the lesson), so one open never fires two touches.
+  // Fire-and-forget; a failed touch must never disturb the canvas.
+  const visitedCourseId =
+    route.kind === "course" && route.view !== "lessons" ? route.courseId : null;
+  useEffect(() => {
+    if (visitedCourseId) {
+      putCourseOpened(apiBaseUrl, visitedCourseId).catch(() => {});
+    }
+  }, [apiBaseUrl, visitedCourseId]);
+
   // A nav action on a phone also dismisses the drawer so the chosen view isn't hidden behind it.
   const startNewCourse = useCallback(() => {
     setMobileNavOpen(false);
@@ -389,15 +389,64 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
   const termination = useTerminateBuild(apiBaseUrl, resetBuild, reloadRuns);
 
-  // A ready course's canvas: the Learn | Map | Build toggle + course metrics in the header, and the
-  // lesson reader (Learn, default), the prerequisite-graph explorer (Map), or the build-session
-  // replay (Build) in the body. `runId` (when known) lets Build replay this course's build log.
-  // The view lives in the URL; a Map → Learn drill-in navigates back to Learn with a focus request.
+  // A ready course's canvas: the Overview | Lessons | Map | Build | Corpus toggle + course
+  // metrics in the header; the Overview landing tab, the lesson reader, the prerequisite-graph
+  // explorer, the build-session replay, or the corpus in the body. `runId` (when known) lets
+  // Build replay this course's build log. The view lives in the URL; a Map → lesson drill-in
+  // navigates to the reader with a focus request.
   const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => {
-    const openLessonForKc = (kc: string) => {
-      focusSeq.current += 1;
-      setFocusRequest({ kc, seq: focusSeq.current });
-      navigate(coursePath(course.id));
+    // Every way into the reader: optionally focus a target (a concept from the Map, a lesson
+    // from the Overview), then navigate to the Lessons view.
+    const requestLessonFocus = (target: Omit<LessonFocusRequest, "seq"> | null) => {
+      if (target) {
+        focusSeq.current += 1;
+        setFocusRequest({ ...target, seq: focusSeq.current });
+      }
+      navigate(coursePath(course.id, "lessons"));
+    };
+    const openLessonForKc = (kc: string) => requestLessonFocus({ kc });
+    const openLessonById = (lessonId?: string) =>
+      requestLessonFocus(lessonId ? { lessonId } : null);
+    // Record over the CourseView union: adding a sixth view without a body is a type error,
+    // never a silent fall-through to Overview.
+    const bodies: Record<CourseView, () => ReactNode> = {
+      overview: () => (
+        <CourseOverview
+          course={course}
+          apiBaseUrl={apiBaseUrl}
+          onContinue={openLessonById}
+          onViewMap={() => navigate(coursePath(course.id, "map"))}
+          onOpenLesson={openLessonById}
+        />
+      ),
+      lessons: () => (
+        <ExplainProvider
+          apiBaseUrl={apiBaseUrl}
+          available={canReaderExplain}
+          llmKeyless={isLlmKeyless(capabilities)}
+        >
+          <CourseReader
+            course={course}
+            focusRequest={focusRequest}
+            onRegenerate={
+              canRegenerate
+                ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
+                : undefined
+            }
+            apiBaseUrl={apiBaseUrl}
+            onExitToOverview={() => navigate(coursePath(course.id))}
+          />
+        </ExplainProvider>
+      ),
+      map: () => <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />,
+      build: () => (
+        <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+          <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
+        </ExplainProvider>
+      ),
+      corpus: () => (
+        <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
+      ),
     };
     return {
       title: course.topic,
@@ -407,33 +456,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           <HeaderMeta course={course} />
         </>
       ),
-      body:
-        viewMode === "map" ? (
-          <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />
-        ) : viewMode === "build" ? (
-          <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-            <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
-          </ExplainProvider>
-        ) : viewMode === "corpus" ? (
-          <CorpusPanel apiBaseUrl={apiBaseUrl} courseId={course.id} onReground={onReload} />
-        ) : (
-          <ExplainProvider
-            apiBaseUrl={apiBaseUrl}
-            available={canReaderExplain}
-            llmKeyless={isLlmKeyless(capabilities)}
-          >
-            <CourseReader
-              course={course}
-              focusRequest={focusRequest}
-              onRegenerate={
-                canRegenerate
-                  ? (lessonId) => regenerateLesson(apiBaseUrl, course.id, lessonId)
-                  : undefined
-              }
-              apiBaseUrl={apiBaseUrl}
-            />
-          </ExplainProvider>
-        ),
+      body: bodies[viewMode](),
     };
   };
 
@@ -462,6 +485,23 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
     const placeholder = placeholderCanvas(route, () => navigate("/"));
     if (placeholder) return placeholder;
+    if (route.kind === "library") {
+      return {
+        title: "My courses",
+        meta: (
+          <Button variant="accent" onClick={startNewCourse}>
+            New course
+          </Button>
+        ),
+        body: (
+          <CourseLibrary
+            apiBaseUrl={apiBaseUrl}
+            onNewCourse={startNewCourse}
+            runs={runsState.status === "ready" ? runsState.runs : []}
+          />
+        ),
+      };
+    }
     if (route.kind === "settings") {
       const body = <SettingsPanel apiBaseUrl={apiBaseUrl} />;
       const meta = (

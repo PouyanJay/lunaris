@@ -75,9 +75,51 @@ describe("CourseReader — learner progress", () => {
 
     render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
 
-    // The snapshot must have loaded (counter visible) without any lesson PUT firing.
+    // The snapshot must have loaded (counter visible) without any LESSON-state PUT firing —
+    // the open-recency touch (…/progress/opened) is expected on every visit and asserted in
+    // its own tests below.
     expect(await screen.findByText(/of \d+ understood/)).toBeInTheDocument();
-    expect(puts).toEqual([]);
+    expect(puts.filter((put) => put.url.endsWith("/progress/lesson"))).toEqual([]);
+  });
+
+  it("records the reading position on every lesson view, even a revisited done lesson", async () => {
+    // Arrange — the lesson is already done; recency must still move on a re-read.
+    const { mock, puts } = progressFetch({
+      courseId: "course-test",
+      objectives: [],
+      lessons: [{ lessonId: "m-one-l0", state: "done", updatedAt: "2026-07-07T00:00:00Z" }],
+    });
+    vi.stubGlobal("fetch", mock);
+
+    // Act
+    render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
+
+    // Assert — the open-recency touch carries the viewed lesson's id.
+    await waitFor(() =>
+      expect(puts).toContainEqual({
+        url: "http://test/api/courses/course-test/progress/opened",
+        body: { lastLessonId: "m-one-l0" },
+      }),
+    );
+  });
+
+  it("moves the recorded position to the next lesson on navigation", async () => {
+    // Arrange
+    const { mock, puts } = progressFetch();
+    vi.stubGlobal("fetch", mock);
+    render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
+    await waitFor(() => expect(puts.length).toBeGreaterThan(0));
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: "Next lesson" }));
+
+    // Assert — the touch re-fires with the NEW lesson id (recency follows the reader).
+    await waitFor(() =>
+      expect(puts).toContainEqual({
+        url: "http://test/api/courses/course-test/progress/opened",
+        body: { lastLessonId: "m-two-l0" },
+      }),
+    );
   });
 
   it("advancing marks the lesson done and the next one in_progress", async () => {

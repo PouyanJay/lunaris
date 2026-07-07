@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated
 from uuid import uuid4
@@ -14,15 +15,18 @@ from lunaris_runtime.schema import (
 )
 from pydantic import ValidationError
 
-from ..dependencies import CourseServiceDep, OptionalUserIdDep
+from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
 from ..draft_throttle import DraftBuildRefusedError
-from ..schemas import ComputeChoice, CourseRequest
+from ..library import CourseSummary, LearnerSnapshot, assemble_course_summaries
+from ..progress import ProgressStoreUnavailableError
+from ..schemas import ComputeChoice, CourseRequest, CourseSummaryView
 from ..service import (
     CourseBuildCancelledError,
     CourseDeletionConflictError,
     CourseNotFoundError,
     InvalidCourseIdError,
     LessonRegenerationUnsupportedError,
+    RunHistoryUnavailableError,
 )
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
@@ -63,6 +67,63 @@ def _sse_frame(kind: str, payload: ProgressEvent | AgentEvent | Course | None) -
     if kind == "heartbeat":
         return ": keepalive\n\n"
     return f"event: {kind}\ndata: {payload.model_dump_json(by_alias=True)}\n\n"  # type: ignore[union-attr]
+
+
+def _bind() -> str:
+    """Bind a fresh correlation id for the request and return it (for the X-Request-Id header)."""
+    request_id = uuid4().hex
+    bind_request_id(request_id)
+    return request_id
+
+
+def _summary_view(summary: CourseSummary) -> CourseSummaryView:
+    return CourseSummaryView(
+        id=summary.course_id,
+        topic=summary.topic,
+        lesson_total=summary.lesson_total,
+        lessons_done=summary.lessons_done,
+        percent=summary.percent,
+        concept_total=summary.concept_total,
+        level=summary.level,
+        learner_status=summary.learner_status,
+        course_status=summary.course_status,
+        built_at=summary.built_at,
+        last_opened_at=summary.last_opened_at,
+    )
+
+
+@router.get("", response_model=list[CourseSummaryView])
+async def list_courses(
+    service: CourseServiceDep,
+    progress: ProgressStoreDep,
+    owner_id: OptionalUserIdDep,
+    response: Response,
+) -> list[CourseSummaryView]:
+    """The caller's course library — one summary per built course, most-recently-opened first
+    (a course never opened ranks by its build time).
+
+    Assembled per read from the run index + the persisted course payloads + the caller's whole
+    progress snapshot (nothing stored), so a card always reflects the course's current shape and
+    THIS user's progress. 503 when a backend is unreachable — raised as an ``HTTPException`` so
+    the response keeps its CORS headers and the library shows its recoverable error state. The
+    bound ``request_id`` is returned in ``X-Request-Id`` for cross-layer log triangulation.
+    """
+    response.headers["X-Request-Id"] = _bind()
+    try:
+        entries = await service.list_library_courses(owner_id=owner_id)
+        if not entries:
+            return []  # empty library: skip the progress reads (fresh accounts are common)
+        (objectives, lessons), states = await asyncio.gather(
+            progress.snapshot_all(user_id=owner_id),
+            progress.course_states(user_id=owner_id),
+        )
+    except (RunHistoryUnavailableError, ProgressStoreUnavailableError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The course library is temporarily unavailable",
+        ) from exc
+    snapshot = LearnerSnapshot(objectives=objectives, lessons=lessons, states=states)
+    return [_summary_view(summary) for summary in assemble_course_summaries(entries, snapshot)]
 
 
 @router.post("", response_model=Course, status_code=status.HTTP_201_CREATED)
@@ -208,9 +269,7 @@ async def delete_course(
     there's nothing to delete; 204 on success. A ``request_id`` is bound + returned in
     ``X-Request-Id`` so the deletion is traceable across the structured logs.
     """
-    request_id = uuid4().hex
-    bind_request_id(request_id)
-    headers = {"X-Request-Id": request_id}
+    headers = {"X-Request-Id": _bind()}
     try:
         await service.delete_course(course_id, owner_id=owner_id)
     except InvalidCourseIdError as exc:

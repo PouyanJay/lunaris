@@ -35,13 +35,17 @@ class ProgressSummaryView(CamelModel):
 class ProgressSnapshotView(CamelModel):
     """The caller's progress on one course: the raw marks plus rollups derived against the
     course payload. ``summary`` is null (and ``kc_mastery`` empty) when the course itself isn't
-    loadable — progress rows are independent of the payload."""
+    loadable — progress rows are independent of the payload. ``last_opened_at`` /
+    ``last_lesson_id`` are null until the learner first opens the course (the Continue CTA's
+    resume point)."""
 
     course_id: str
     objectives: list[ObjectiveProgressView]
     lessons: list[LessonProgressView]
     summary: ProgressSummaryView | None = None
     kc_mastery: dict[str, bool] = Field(default_factory=dict)
+    last_opened_at: datetime | None = None
+    last_lesson_id: str | None = None
 
 
 class ObjectiveMarkRequest(CamelModel):
@@ -57,3 +61,10 @@ class LessonMarkRequest(CamelModel):
 
     lesson_id: str = Field(min_length=1, max_length=200)
     state: LessonState
+
+
+class CourseOpenedRequest(CamelModel):
+    """The learner opened this course — optionally at a lesson (the reader's position). A bare
+    touch preserves any previously recorded position. Bounds mirror the DB check."""
+
+    last_lesson_id: str | None = Field(default=None, min_length=1, max_length=200)

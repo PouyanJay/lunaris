@@ -215,7 +215,7 @@ describe("CorpusPanel", () => {
       expect.stringMatching(/\/api\/courses\/course-1\/rebuild$/),
       expect.objectContaining({ method: "POST" }),
     );
-    expect(screen.getByText(/open Learn to see/i)).toBeInTheDocument();
+    expect(screen.getByText(/open Lessons to see/i)).toBeInTheDocument();
   });
 
   it("surfaces a delete failure and keeps the source", async () => {

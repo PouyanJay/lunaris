@@ -37,18 +37,76 @@ describe("useCourseProgress", () => {
   });
 });
 
+/** A fetch double that serves the empty snapshot on GET and routes every progress PUT through
+ *  `onPut` — resolve (default) for the happy paths, reject for the reconciliation paths. */
+function snapshotFetch(
+  onPut: () => Promise<unknown> = () => Promise.resolve({ ok: true, status: 204 }),
+) {
+  return vi.fn((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (method === "PUT") return onPut();
+    return Promise.resolve({
+      ok: true,
+      json: async () => ({ courseId: "c1", objectives: [], lessons: [] }),
+    });
+  });
+}
+
+describe("useCourseProgress — markOpened", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("records the course open with the lesson position", async () => {
+    // Arrange
+    const fetchMock = snapshotFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCourseProgress("http://test", "c1"));
+
+    // Act
+    act(() => result.current.markOpened("m1-l0"));
+
+    // Assert
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        ([, init]) => (init?.method ?? "GET").toUpperCase() === "PUT",
+      );
+      expect(put?.[0]).toBe("http://test/api/courses/c1/progress/opened");
+      expect(JSON.parse(String(put?.[1]?.body))).toEqual({ lastLessonId: "m1-l0" });
+    });
+  });
+
+  it("a bare touch sends no position, so the server preserves the recorded one", async () => {
+    const fetchMock = snapshotFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCourseProgress("http://test", "c1"));
+
+    act(() => result.current.markOpened());
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        ([, init]) => (init?.method ?? "GET").toUpperCase() === "PUT",
+      );
+      expect(JSON.parse(String(put?.[1]?.body))).toEqual({});
+    });
+  });
+
+  it("is disabled on the offline surface (empty apiBaseUrl)", () => {
+    const fetchMock = snapshotFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useCourseProgress("", "c1"));
+
+    act(() => result.current.markOpened("m1-l0"));
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("useCourseProgress — write reconciliation", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("rolls back an optimistic objective mark by refetching when the PUT fails", async () => {
     // Arrange — GET always serves an empty snapshot; the PUT rejects.
-    const fetchMock = vi.fn((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {      const method = (init?.method ?? "GET").toUpperCase();
-      if (method === "PUT") return Promise.reject(new Error("down"));
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ courseId: "c1", objectives: [], lessons: [] }),
-      });
-    });
+    const fetchMock = snapshotFetch(() => Promise.reject(new Error("down")));
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => useCourseProgress("http://test", "c1"));
     await waitFor(() => expect(result.current.progress).not.toBeNull());
@@ -62,13 +120,7 @@ describe("useCourseProgress — write reconciliation", () => {
   });
 
   it("rolls back an optimistic lesson mark by refetching when the PUT fails", async () => {
-    const fetchMock = vi.fn((_input: Parameters<typeof fetch>[0], init?: RequestInit) => {      const method = (init?.method ?? "GET").toUpperCase();
-      if (method === "PUT") return Promise.reject(new Error("down"));
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ courseId: "c1", objectives: [], lessons: [] }),
-      });
-    });
+    const fetchMock = snapshotFetch(() => Promise.reject(new Error("down")));
     vi.stubGlobal("fetch", fetchMock);
     const { result } = renderHook(() => useCourseProgress("http://test", "c1"));
     await waitFor(() => expect(result.current.progress).not.toBeNull());

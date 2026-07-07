@@ -2,7 +2,14 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
-import { courseFrame, makeCourse, makeRun, routedFetch, sseStreamResponse } from "./test/fixtures";
+import {
+  courseFrame,
+  makeCourse,
+  makeCourseSummary,
+  makeRun,
+  routedFetch,
+  sseStreamResponse,
+} from "./test/fixtures";
 
 describe("App — URL routing (live studio)", () => {
   beforeEach(() => vi.stubEnv("VITE_API_URL", "http://test"));
@@ -76,16 +83,143 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByText(/page not found/i)).toBeInTheDocument();
   });
 
-  it("deep-links to a course at /courses/:courseId and defaults to the Learn view", async () => {
+  it("library header offers a New course action that opens the composer", async () => {
+    vi.stubGlobal("fetch", routedFetch());
+    window.history.pushState(null, "", "/courses");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "My courses" });
+
+    // Scoped to the header band — the sidebar carries its own New course button.
+    fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: "New course" }));
+
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("renders the course library at /courses, linking the fetched course into its canvas", async () => {
+    vi.stubGlobal("fetch", routedFetch({ library: [makeCourseSummary()] }));
+    window.history.pushState(null, "", "/courses");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "My courses" })).toBeInTheDocument();
+    // The card is a real link (Cmd/middle-click must work) into the course canvas.
+    const card = await screen.findByRole("link", { name: /how https works/i });
+    expect(card).toHaveAttribute("href", "/courses/course-lib");
+  });
+
+  it("deep-links to a course at /courses/:courseId and lands on the Overview tab", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test");
 
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Learn" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Overview" })).toBeChecked();
+  });
+
+  it("resolves the legacy learn URL to the Lessons view", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test/learn");
+
+    render(<App />);
+
+    expect(await screen.findByRole("radio", { name: "Lessons" })).toBeChecked();
+  });
+
+  it("an Overview lesson row deep-links into the reader at that lesson", async () => {
+    const first = makeCourse().modules[0]!;
+    const course = makeCourse({
+      modules: [
+        first,
+        {
+          ...first,
+          id: "m-two",
+          title: "Module two",
+          lessons: [{ ...first.lessons[0]!, id: "m-two-l0" }],
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course }));
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+    const rows = await screen.findAllByRole("button", { name: /lesson \d/i });
+    fireEvent.click(rows[1]!);
+
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    expect(await screen.findByText(/lesson 2 of 2/i)).toBeInTheDocument();
+  });
+
+  it("Overview's CTAs navigate to the reader and the map", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /continue learning/i }));
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Overview" }));
+    fireEvent.click(await screen.findByRole("button", { name: /view the map/i }));
+    expect(window.location.pathname).toBe("/courses/course-test/map");
+  });
+
+  it("the reader's Overview exit returns to the landing tab end-to-end", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test/lessons");
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /back to overview/i }));
+
+    expect(window.location.pathname).toBe("/courses/course-test");
+    expect(await screen.findByRole("button", { name: /continue learning/i })).toBeInTheDocument();
+  });
+
+  it("records the open touch on the bare course URL — the Overview landing is a course open", async () => {
+    // Pre-T4 the bare path was the reader (excluded from the App-level touch); now it's Overview,
+    // which must count toward last-opened like every non-reader view.
+    const fetchMock = routedFetch({ runs: [makeRun()], course: makeCourse() });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
+
+    await waitFor(() => {
+      const opened = fetchMock.mock.calls.find(
+        ([input, init]) =>
+          String(input).endsWith("/api/courses/course-test/progress/opened") &&
+          (init?.method ?? "GET").toUpperCase() === "PUT",
+      );
+      expect(opened).toBeTruthy();
+    });
+  });
+
+  it("records a bare course-open touch when a non-reader view is visited", async () => {
+    // The Map view has no lesson to record, so the App-level effect fires the bare touch
+    // (the reader view records its own positioned touch — proven in CourseReader tests).
+    const fetchMock = routedFetch({ runs: [makeRun()], course: makeCourse() });
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.pushState(null, "", "/courses/course-test/map");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
+
+    // The open-touch feeds the library's last-opened sort; it must fire for the visited course.
+    await waitFor(() => {
+      const opened = fetchMock.mock.calls.find(
+        ([input, init]) =>
+          String(input).endsWith("/api/courses/course-test/progress/opened") &&
+          (init?.method ?? "GET").toUpperCase() === "PUT",
+      );
+      expect(opened).toBeTruthy();
+    });
   });
 
   it("deep-links to the Map view at /courses/:courseId/map", async () => {
@@ -102,12 +236,15 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/courses/course-test");
 
     render(<App />);
-    await screen.findByRole("radio", { name: "Learn" });
+    await screen.findByRole("radio", { name: "Overview" });
+
+    fireEvent.click(screen.getByRole("radio", { name: "Lessons" }));
+    expect(window.location.pathname).toBe("/courses/course-test/lessons");
 
     fireEvent.click(screen.getByRole("radio", { name: "Map" }));
     expect(window.location.pathname).toBe("/courses/course-test/map");
 
-    fireEvent.click(screen.getByRole("radio", { name: "Learn" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Overview" }));
     expect(window.location.pathname).toBe("/courses/course-test");
   });
 
@@ -120,7 +257,7 @@ describe("App — URL routing (live studio)", () => {
     fireEvent.click(within(history).getByText("How binary search works"));
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/courses/course-test");
 
@@ -131,7 +268,7 @@ describe("App — URL routing (live studio)", () => {
     ).toBeInTheDocument();
   });
 
-  it("routes the primary nav to My courses, Activity, and Bookmarks placeholders", async () => {
+  it("routes the primary nav to My courses, Activity, and Bookmarks", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
 
@@ -140,7 +277,8 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "My courses" }));
     expect(window.location.pathname).toBe("/courses");
-    expect(await screen.findByText(/course library/i)).toBeInTheDocument();
+    // An account with no builds gets the library's designed empty state, not a blank grid.
+    expect(await screen.findByText(/no courses yet/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "My courses" })).toHaveAttribute(
       "aria-current",
       "page",
@@ -225,7 +363,7 @@ describe("App — URL routing (live studio)", () => {
       target: { value: "binary search" },
     });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
-    await screen.findByRole("heading", { name: "How binary search works" });
+    await screen.findByRole("heading", { name: "How binary search works", level: 1 });
     expect(window.location.pathname).toBe("/courses/course-test");
 
     // Regression: home must not re-host the finished build — it's the composer again.
@@ -253,7 +391,7 @@ describe("App — URL routing (live studio)", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     expect(
-      await screen.findByRole("heading", { name: "How binary search works" }),
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/courses/course-test");
   });

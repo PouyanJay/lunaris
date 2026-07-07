@@ -26,7 +26,7 @@ const MODES: { value: AddMode; label: string }[] = [
 interface CorpusPanelProps {
   apiBaseUrl: string;
   courseId: string;
-  /** Reload the opened course after a re-ground, so updated (green) citations show in Learn. */
+  /** Reload the opened course after a re-ground, so updated (green) citations show in the reader. */
   onReground?: () => void;
 }
 
@@ -85,7 +85,7 @@ export function CorpusPanel({ apiBaseUrl, courseId, onReground }: CorpusPanelPro
           </Button>
           {regrounded && (
             <span className={styles.feedbackOk} role="status">
-              Re-grounded — open Learn to see the updated citations.
+              Re-grounded — open Lessons to see the updated citations.
             </span>
           )}
           {regroundError && (

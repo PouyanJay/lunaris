@@ -21,6 +21,7 @@ import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
+import { flattenLessons } from "../../lib/flattenLessons";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
@@ -57,48 +58,59 @@ interface ReaderLesson {
 interface ReaderModel {
   lessons: ReaderLesson[];
   groups: OutlineGroup[];
-  /** Each module KC → the lesson index that opens its module, for Map → Learn drill-in. */
+  /** Each module KC → the lesson index that opens its module, for Map → lesson drill-in. */
   kcToLessonIndex: Map<string, number>;
 }
 
-/** Flatten the course into an ordered lesson list, outline groups, and a KC→lesson index in one
- *  pass. Modules with no authored lessons are skipped — they have nothing to read. */
+/** Build the reader's model over the shared course-order flattening: the ordered lesson list,
+ *  outline groups, and a KC→lesson index. Modules with no authored lessons never appear — they
+ *  have nothing to read. */
 function buildReaderModel(course: Course): ReaderModel {
   const lessons: ReaderLesson[] = [];
   const groups: OutlineGroup[] = [];
   const kcToLessonIndex = new Map<string, number>();
-  for (const module of course.modules) {
-    if (module.lessons.length === 0) continue;
-    const items: OutlineGroup["items"] = [];
-    const last = module.lessons.length - 1;
-    const moduleStartIndex = lessons.length;
-    module.lessons.forEach((lesson, lessonIndex) => {
-      const index = lessons.length;
-      const label = `Lesson ${index + 1}`;
-      lessons.push({
-        lesson,
-        moduleId: module.id,
-        moduleTitle: module.title,
-        competency: module.competency,
-        label,
-        objectives: lessonIndex === 0 ? module.objectives : [],
-        assessment: lessonIndex === last ? module.assessment.items : [],
-      });
-      items.push({ index, label });
+  for (const flat of flattenLessons(course)) {
+    const label = `Lesson ${flat.index + 1}`;
+    lessons.push({
+      lesson: flat.lesson,
+      moduleId: flat.module.id,
+      moduleTitle: flat.module.title,
+      competency: flat.module.competency,
+      label,
+      objectives: flat.isFirstInModule ? flat.module.objectives : [],
+      assessment: flat.isLastInModule ? flat.module.assessment.items : [],
     });
-    for (const kc of module.kcs) {
-      if (!kcToLessonIndex.has(kc)) kcToLessonIndex.set(kc, moduleStartIndex);
+    if (flat.isFirstInModule) {
+      for (const kc of flat.module.kcs) {
+        if (!kcToLessonIndex.has(kc)) kcToLessonIndex.set(kc, flat.index);
+      }
+      groups.push({ moduleId: flat.module.id, moduleTitle: flat.module.title, items: [] });
     }
-    groups.push({ moduleId: module.id, moduleTitle: module.title, items });
+    groups[groups.length - 1]!.items.push({ index: flat.index, label });
   }
   return { lessons, groups, kcToLessonIndex };
 }
 
-/** A Map → Learn drill-in: focus the lesson covering `kc`. `seq` increments per request so the same
- *  concept can be re-requested after the learner has navigated away. */
+/** A drill-in into the reader: focus the lesson covering `kc` (Map) or the lesson with
+ *  `lessonId` (Overview rows / Continue). `seq` increments per request so the same target can be
+ *  re-requested after the learner has navigated away. */
 export interface LessonFocusRequest {
-  kc: string;
+  kc?: string;
+  lessonId?: string;
   seq: number;
+}
+
+/** The lesson index a focus request targets — -1 when the target isn't in this course. */
+function resolveFocusIndex(
+  request: LessonFocusRequest,
+  lessons: ReaderLesson[],
+  kcToLessonIndex: Map<string, number>,
+): number {
+  if (request.lessonId !== undefined) {
+    return lessons.findIndex(({ lesson }) => lesson.id === request.lessonId);
+  }
+  if (request.kc !== undefined) return kcToLessonIndex.get(request.kc) ?? -1;
+  return -1;
 }
 
 interface CourseReaderProps {
@@ -110,9 +122,12 @@ interface CourseReaderProps {
   /** The API origin for per-lesson video generation. Absent (offline sample course) => the
    *  video hero slot is not rendered. */
   apiBaseUrl?: string | undefined;
+  /** Leave the reader for the course's Overview tab — on the first lesson the back affordance
+   *  leads out rather than sitting disabled. Absent (offline sample) hides it. */
+  onExitToOverview?: (() => void) | undefined;
 }
 
-/** The lesson reader (Learn view): a persistent course outline, a clean reading column, and a
+/** The lesson reader (Lessons view): a persistent course outline, a clean reading column, and a
  *  parallel "Sources & checks" rail that lifts the verifier's claims out of the prose (req 1). The
  *  reading column renders the focused lesson as its arc (P7.3) — competency, the "expects" bookend,
  *  the teaching phases, objectives, branded visuals, curated resources, and the closing self-check.
@@ -124,6 +139,7 @@ export function CourseReader({
   focusRequest,
   onRegenerate,
   apiBaseUrl,
+  onExitToOverview,
 }: CourseReaderProps) {
   // A successful regenerate swaps in the updated course locally until a different course is opened.
   const [regeneratedCourse, setRegeneratedCourse] = useState<Course | null>(null);
@@ -136,7 +152,10 @@ export function CourseReader({
   const [activeIndex, setActiveIndex] = useState(0);
   // The learner's marks on this course (best-effort; null offline / while loading). Offline
   // (no apiBaseUrl) skips the fetch entirely by keying on an empty origin.
-  const { progress, markObjective, markLesson } = useCourseProgress(apiBaseUrl ?? "", course.id);
+  const { progress, markObjective, markLesson, markOpened } = useCourseProgress(
+    apiBaseUrl ?? "",
+    course.id,
+  );
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -150,8 +169,14 @@ export function CourseReader({
   const handledFocusSeq = useRef(0);
   const reduceMotion = usePrefersReducedMotion();
 
-  // Reset to the first lesson and drop any regenerate override when a different course is opened.
+  // Reset to the first lesson and drop any regenerate override when a DIFFERENT course is
+  // opened. Guarded by a previous-course ref: StrictMode replays effects on mount, and an
+  // unguarded reset would zero the index after the focus effect already consumed a drill-in
+  // request (Continue/row clicks landed on lesson 1 in dev, but not in tests).
+  const lastCourse = useRef(course);
   useEffect(() => {
+    if (lastCourse.current === course) return;
+    lastCourse.current = course;
     setActiveIndex(0);
     setRegeneratedCourse(null);
   }, [course]);
@@ -163,14 +188,15 @@ export function CourseReader({
     setActiveClaimId(null);
   }, [activeIndex]);
 
-  // Honour a Map drill-in once per request: jump to the lesson covering the requested concept. The
-  // seq ref gates re-firing, so a course switch (which changes kcToLessonIndex) won't re-focus.
+  // Honour a drill-in once per request: jump to the requested lesson (Overview rows / Continue)
+  // or to the lesson covering the requested concept (Map). The seq ref gates re-firing, so a
+  // course switch (which changes the lookup structures) won't re-focus.
   useEffect(() => {
     if (!focusRequest || focusRequest.seq === handledFocusSeq.current) return;
     handledFocusSeq.current = focusRequest.seq;
-    const index = kcToLessonIndex.get(focusRequest.kc);
-    if (index !== undefined) setActiveIndex(index);
-  }, [focusRequest, kcToLessonIndex]);
+    const index = resolveFocusIndex(focusRequest, lessons, kcToLessonIndex);
+    if (index >= 0) setActiveIndex(index);
+  }, [focusRequest, lessons, kcToLessonIndex]);
 
   const total = lessons.length;
   // Defensive clamp for the single render between switching to a shorter course and the
@@ -186,6 +212,13 @@ export function CourseReader({
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
     if (!known) markLesson(currentLessonId, "in_progress");
   }, [progress, currentLessonId, markLesson]);
+
+  // Every lesson view refreshes the course's open-recency + reading position (the library's
+  // last-opened sort, and where the Continue CTA resumes). Unlike the in_progress mark above,
+  // this fires on every visit — recency must move even on a re-read.
+  useEffect(() => {
+    if (currentLessonId) markOpened(currentLessonId);
+  }, [currentLessonId, markOpened]);
 
   const annotations = useMemo(
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
@@ -481,13 +514,21 @@ export function CourseReader({
               <span />
             )}
             <div className={styles.navButtons}>
-              <Button
-                aria-label="Previous lesson"
-                disabled={safeIndex === 0}
-                onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
-              >
-                Prev
-              </Button>
+              {safeIndex === 0 && onExitToOverview ? (
+                // The design's prev-label rule: from lesson 1 the way back is the Overview, not
+                // a dead disabled button.
+                <Button aria-label="Back to overview" onClick={onExitToOverview}>
+                  Overview
+                </Button>
+              ) : (
+                <Button
+                  aria-label="Previous lesson"
+                  disabled={safeIndex === 0}
+                  onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
+                >
+                  Prev
+                </Button>
+              )}
               {safeIndex >= total - 1 ? (
                 <Button
                   aria-label="Finish course"

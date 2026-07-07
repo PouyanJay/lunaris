@@ -1,11 +1,19 @@
+import asyncio
 from uuid import uuid4
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, HTTPException, Response, status
 from lunaris_runtime.logging import bind_request_id
 
 from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
-from ..progress import LessonMark, ObjectiveMark, ProgressSummary, derive_rollups
+from ..progress import (
+    LessonMark,
+    ObjectiveMark,
+    ProgressStoreUnavailableError,
+    ProgressSummary,
+    derive_rollups,
+)
 from ..schemas import (
+    CourseOpenedRequest,
     LessonMarkRequest,
     LessonProgressView,
     ObjectiveMarkRequest,
@@ -48,6 +56,9 @@ def _summary_view(summary: ProgressSummary) -> ProgressSummaryView:
     )
 
 
+_UNAVAILABLE = "Progress is temporarily unavailable"
+
+
 @router.get("", response_model=ProgressSnapshotView)
 async def get_progress(
     course_id: str,
@@ -56,14 +67,24 @@ async def get_progress(
     owner_id: OptionalUserIdDep,
     response: Response,
 ) -> ProgressSnapshotView:
-    """The caller's progress on a course: understood objectives + lesson states.
+    """The caller's progress on a course: understood objectives + lesson states + when/where the
+    course was last opened.
 
     A course the user never touched returns an empty snapshot (no 404 — progress rows are
     independent of the course payload). With auth on this is the caller's OWN progress; with auth
-    off it's the single-user offline bucket.
+    off it's the single-user offline bucket. A progress-backend outage is a recoverable 503 (kept
+    inside the CORS middleware), never a raw 500.
     """
     response.headers["X-Request-Id"] = _bind()
-    objectives, lessons = await store.snapshot(user_id=owner_id, course_id=course_id)
+    try:
+        (objectives, lessons), state = await asyncio.gather(
+            store.snapshot(user_id=owner_id, course_id=course_id),
+            store.course_state(user_id=owner_id, course_id=course_id),
+        )
+    except ProgressStoreUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_UNAVAILABLE
+        ) from exc
     course = courses.get(course_id, owner_id=owner_id)
     summary_view: ProgressSummaryView | None = None
     kc_mastery: dict[str, bool] = {}
@@ -76,6 +97,8 @@ async def get_progress(
         lessons=[_lesson_view(mark) for mark in lessons],
         summary=summary_view,
         kc_mastery=kc_mastery,
+        last_opened_at=state.last_opened_at if state else None,
+        last_lesson_id=state.last_lesson_id if state else None,
     )
 
 
@@ -114,3 +137,25 @@ async def put_lesson(
         lesson_id=payload.lesson_id,
         state=payload.state,
     )
+
+
+@router.put("/opened", status_code=status.HTTP_204_NO_CONTENT)
+async def put_opened(
+    course_id: str,
+    payload: CourseOpenedRequest,
+    store: ProgressStoreDep,
+    owner_id: OptionalUserIdDep,
+    response: Response,
+) -> None:
+    """Record that the learner opened this course — optionally at a lesson (the reader's
+    position). Idempotent upsert; a bare touch preserves any previously recorded position. A
+    progress-backend outage is a recoverable 503 (kept inside the CORS middleware)."""
+    response.headers["X-Request-Id"] = _bind()
+    try:
+        await store.touch_course(
+            user_id=owner_id, course_id=course_id, last_lesson_id=payload.last_lesson_id
+        )
+    except ProgressStoreUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_UNAVAILABLE
+        ) from exc

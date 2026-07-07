@@ -3,8 +3,17 @@ import type { ComponentProps } from "react";
 import styles from "./Badge.module.css";
 
 /** The tint families a badge can carry. Operation hues (read/create/update/delete) suit tool and
- *  API activity; `meta` is the quiet default; `symbol`/`accent` mark notation and brand emphasis. */
-export type BadgeCategory = "read" | "create" | "update" | "delete" | "meta" | "symbol" | "accent";
+ *  API activity; `meta` is the quiet default; `symbol`/`accent` mark notation and brand emphasis;
+ *  `warning` flags a needs-attention state (e.g. a review-gated course). */
+export type BadgeCategory =
+  | "read"
+  | "create"
+  | "update"
+  | "delete"
+  | "meta"
+  | "symbol"
+  | "accent"
+  | "warning";
 
 type BadgeProps = ComponentProps<"span"> & {
   category?: BadgeCategory;

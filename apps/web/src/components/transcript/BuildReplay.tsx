@@ -43,7 +43,7 @@ export function BuildReplay({ apiBaseUrl, runId, topic }: BuildReplayProps) {
           <h2 className={states.title}>No build record</h2>
           <p className={states.body}>
             This course was built before build sessions were recorded, so there&rsquo;s no timeline
-            to replay. New builds are captured automatically — use Learn or Map to explore this
+            to replay. New builds are captured automatically — use Lessons or Map to explore this
             course.
           </p>
         </div>
