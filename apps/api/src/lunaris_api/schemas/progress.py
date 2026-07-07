@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from pydantic import Field
+
 from ..progress import LessonState
 from .base import CamelModel
 
@@ -26,3 +28,18 @@ class ProgressSnapshotView(CamelModel):
     course_id: str
     objectives: list[ObjectiveProgressView]
     lessons: list[LessonProgressView]
+
+
+class ObjectiveMarkRequest(CamelModel):
+    """Mark (or un-mark) one module objective as understood. Bounds mirror the DB checks."""
+
+    module_id: str = Field(min_length=1, max_length=200)
+    objective_index: int = Field(ge=0, le=999)
+    understood: bool
+
+
+class LessonMarkRequest(CamelModel):
+    """Advance a lesson's learner state (idempotent upsert)."""
+
+    lesson_id: str = Field(min_length=1, max_length=200)
+    state: LessonState

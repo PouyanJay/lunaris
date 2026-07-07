@@ -136,7 +136,7 @@ export function CourseReader({
   const [activeIndex, setActiveIndex] = useState(0);
   // The learner's marks on this course (best-effort; null offline / while loading). Offline
   // (no apiBaseUrl) skips the fetch entirely by keying on an empty origin.
-  const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
+  const { progress, markObjective, markLesson } = useCourseProgress(apiBaseUrl ?? "", course.id);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -177,6 +177,15 @@ export function CourseReader({
   // reset-on-course effect firing — keeps the focused index in range so `current` stays defined.
   const safeIndex = Math.min(activeIndex, Math.max(0, total - 1));
   const current = lessons[safeIndex];
+
+  // First open of a lesson marks it in_progress — but never regresses a lesson already marked
+  // (a revisited done lesson stays done). Waits for the snapshot so reloads don't re-mark.
+  const currentLessonId = current?.lesson.id;
+  useEffect(() => {
+    if (!progress || !currentLessonId) return;
+    const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
+    if (!known) markLesson(currentLessonId, "in_progress");
+  }, [progress, currentLessonId, markLesson]);
 
   const annotations = useMemo(
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
@@ -399,6 +408,11 @@ export function CourseReader({
                     )
                   : undefined
               }
+              onToggleObjective={
+                progress
+                  ? (index, understood) => markObjective(current.moduleId, index, understood)
+                  : undefined
+              }
             />
           )}
 
@@ -474,13 +488,28 @@ export function CourseReader({
               >
                 Prev
               </Button>
-              <Button
-                aria-label="Next lesson"
-                disabled={safeIndex >= total - 1}
-                onClick={() => setActiveIndex((index) => Math.min(total - 1, index + 1))}
-              >
-                Next
-              </Button>
+              {safeIndex >= total - 1 ? (
+                <Button
+                  aria-label="Finish course"
+                  disabled={!progress}
+                  onClick={() => {
+                    if (currentLessonId) markLesson(currentLessonId, "done");
+                  }}
+                >
+                  Finish course
+                </Button>
+              ) : (
+                <Button
+                  aria-label="Next lesson"
+                  onClick={() => {
+                    // Advancing is the lesson's completion signal (plan Open Decision 2).
+                    if (progress && currentLessonId) markLesson(currentLessonId, "done");
+                    setActiveIndex((index) => Math.min(total - 1, index + 1));
+                  }}
+                >
+                  Next
+                </Button>
+              )}
             </div>
           </footer>
           {error && (

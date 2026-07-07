@@ -1,10 +1,16 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, status
 from lunaris_runtime.logging import bind_request_id
 
 from ..dependencies import OptionalUserIdDep, ProgressStoreDep
-from ..schemas import LessonProgressView, ObjectiveProgressView, ProgressSnapshotView
+from ..schemas import (
+    LessonMarkRequest,
+    LessonProgressView,
+    ObjectiveMarkRequest,
+    ObjectiveProgressView,
+    ProgressSnapshotView,
+)
 
 router = APIRouter(prefix="/api/courses/{course_id}/progress", tags=["progress"])
 
@@ -49,4 +55,41 @@ async def get_progress(
             )
             for mark in lessons
         ],
+    )
+
+
+@router.put("/objective", status_code=status.HTTP_204_NO_CONTENT)
+async def put_objective(
+    course_id: str,
+    payload: ObjectiveMarkRequest,
+    store: ProgressStoreDep,
+    owner_id: OptionalUserIdDep,
+    response: Response,
+) -> None:
+    """Mark or un-mark one module objective as understood (idempotent either way)."""
+    response.headers["X-Request-Id"] = _bind()
+    await store.set_objective(
+        user_id=owner_id,
+        course_id=course_id,
+        module_id=payload.module_id,
+        objective_index=payload.objective_index,
+        understood=payload.understood,
+    )
+
+
+@router.put("/lesson", status_code=status.HTTP_204_NO_CONTENT)
+async def put_lesson(
+    course_id: str,
+    payload: LessonMarkRequest,
+    store: ProgressStoreDep,
+    owner_id: OptionalUserIdDep,
+    response: Response,
+) -> None:
+    """Advance a lesson's learner state — in_progress on first open, done on completion."""
+    response.headers["X-Request-Id"] = _bind()
+    await store.set_lesson(
+        user_id=owner_id,
+        course_id=course_id,
+        lesson_id=payload.lesson_id,
+        state=payload.state,
     )

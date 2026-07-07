@@ -35,3 +35,27 @@ export async function fetchCourseProgress(
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return (await response.json()) as CourseProgress;
 }
+
+export async function putObjectiveProgress(
+  apiBaseUrl: string,
+  courseId: string,
+  mark: { moduleId: string; objectiveIndex: number; understood: boolean },
+): Promise<void> {
+  const response = await authedFetch(
+    `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/progress/objective`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mark) },
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+}
+
+export async function putLessonProgress(
+  apiBaseUrl: string,
+  courseId: string,
+  mark: { lessonId: string; state: LessonState },
+): Promise<void> {
+  const response = await authedFetch(
+    `${apiBaseUrl}/api/courses/${encodeURIComponent(courseId)}/progress/lesson`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mark) },
+  );
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+}
