@@ -13,6 +13,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from _auth import JWT_SECRET, USER_A, USER_B, auth_headers
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_progress_store, get_run_store
@@ -225,6 +226,51 @@ async def test_library_reranks_when_an_older_open_is_revisited(client: httpx.Asy
 
     # Assert — most-recently-opened wins between two opened courses, not just opened-vs-never.
     assert topics == ["binary search", "merge sort"]
+
+
+async def test_library_is_isolated_per_user(tmp_path: Path) -> None:
+    # Arrange — auth on: user A builds a course; user B has none.
+    clear_correlation()
+    app = create_app()
+    run_store = InMemoryRunStore()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(_DEV_ORIGIN,),
+        env_file=tmp_path / ".env",
+        supabase_jwt_secret=JWT_SECRET,
+    )
+    app.dependency_overrides[get_run_store] = lambda: run_store
+    progress_store = InMemoryProgressStore()
+    app.dependency_overrides[get_progress_store] = lambda: progress_store
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post(
+            "/api/courses", json={"topic": "binary search"}, headers=auth_headers(USER_A)
+        )
+
+        # Act
+        a_library = (await client.get("/api/courses", headers=auth_headers(USER_A))).json()
+        b_library = (await client.get("/api/courses", headers=auth_headers(USER_B))).json()
+
+    # Assert — nothing of A's leaks into B's library.
+    assert [summary["topic"] for summary in a_library] == ["binary search"]
+    assert b_library == []
+
+
+async def test_rebuilding_course_stays_listed_while_its_run_is_running(
+    client: httpx.AsyncClient, run_store: InMemoryRunStore
+) -> None:
+    # Arrange — a built course whose REBUILD is now in flight: the run index flips to RUNNING,
+    # but the existing payload still loads (AD1 — the course stays visible while it rebuilds).
+    created = (await client.post("/api/courses", json={"topic": "binary search"})).json()
+    await run_store.start(run_id="run-rebuild", course_id=created["id"], topic="binary search")
+
+    # Act
+    summaries = (await client.get("/api/courses")).json()
+
+    # Assert
+    assert [summary["id"] for summary in summaries] == [created["id"]]
 
 
 class _UnavailableRunStore:
