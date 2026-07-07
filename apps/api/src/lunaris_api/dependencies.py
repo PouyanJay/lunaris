@@ -81,6 +81,7 @@ from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, ExplainBinding
 from .explain_throttle import KeylessExplainThrottle
 from .prod_ops import FakeProdOpsProvider, IProdOpsProvider
+from .progress import InMemoryProgressStore, IProgressStore, SupabaseProgressStore
 from .run_registry import RunRegistry
 from .secrets import (
     BYOK_PROVIDERS,
@@ -437,6 +438,24 @@ def get_user_config_store(
 
 
 UserConfigStoreDep = Annotated[IUserConfigStore, Depends(get_user_config_store)]
+
+
+# Progress stores follow the user-config posture: process-wide singletons, Supabase when keyed
+# (durable, owner-scoped RLS), in-memory otherwise (offline dev / hermetic tests).
+_in_memory_progress_store = InMemoryProgressStore()
+_supabase_progress_store = SupabaseProgressStore()
+
+
+def get_progress_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IProgressStore:
+    """The learner-progress store: Supabase (durable, owner-scoped RLS) when keyed, else memory."""
+    if settings.has_supabase:
+        return _supabase_progress_store
+    return _in_memory_progress_store
+
+
+ProgressStoreDep = Annotated[IProgressStore, Depends(get_progress_store)]
 
 
 def get_user_config_service(store: UserConfigStoreDep) -> UserConfigService:

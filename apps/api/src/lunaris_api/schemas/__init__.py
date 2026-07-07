@@ -9,6 +9,7 @@ from .course_request import CourseRequest
 from .credentials import CredentialStatusView, CredentialTestResult
 from .explain import ExplainRequest, ExplainResponse
 from .keyless_readiness import KeylessReadinessView
+from .progress import LessonProgressView, ObjectiveProgressView, ProgressSnapshotView
 from .settings import SecretStatusView, SecretValue, SettingsView
 from .signup_gate import SignupGateStatusView, SignupGateUpdate, SignupGateView
 
@@ -31,6 +32,9 @@ __all__ = [
     "ExplainResponse",
     "IngestResultView",
     "KeylessReadinessView",
+    "LessonProgressView",
+    "ObjectiveProgressView",
+    "ProgressSnapshotView",
     "SecretStatusView",
     "SecretValue",
     "SettingsView",

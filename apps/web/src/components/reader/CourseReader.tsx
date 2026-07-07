@@ -14,6 +14,7 @@ import { LessonAssessment } from "./LessonAssessment";
 import { LessonVideoHero } from "./LessonVideoHero";
 import { OverviewSection } from "./OverviewSection";
 import { LessonObjectives } from "./LessonObjectives";
+import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
@@ -42,6 +43,8 @@ const PHASES: (PhaseRef & { cue: string })[] = [
  *  assessment are attached to the module's first / last lesson respectively, so each shows once. */
 interface ReaderLesson {
   lesson: Lesson;
+  /** The owning module's id — the key objective progress is stored under. */
+  moduleId: string;
   moduleTitle: string;
   /** The researched competency the owning module builds toward (P7.3), shown so the learner sees
    *  what the lesson earns; null on the no-research path. */
@@ -74,6 +77,7 @@ function buildReaderModel(course: Course): ReaderModel {
       const label = `Lesson ${index + 1}`;
       lessons.push({
         lesson,
+        moduleId: module.id,
         moduleTitle: module.title,
         competency: module.competency,
         label,
@@ -130,6 +134,9 @@ export function CourseReader({
     [active.provenance],
   );
   const [activeIndex, setActiveIndex] = useState(0);
+  // The learner's marks on this course (best-effort; null offline / while loading). Offline
+  // (no apiBaseUrl) skips the fetch entirely by keying on an empty origin.
+  const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -380,7 +387,20 @@ export function CourseReader({
             />
           )}
 
-          {current.objectives.length > 0 && <LessonObjectives objectives={current.objectives} />}
+          {current.objectives.length > 0 && (
+            <LessonObjectives
+              objectives={current.objectives}
+              understoodIndexes={
+                progress
+                  ? new Set(
+                      progress.objectives
+                        .filter((mark) => mark.moduleId === current.moduleId)
+                        .map((mark) => mark.objectiveIndex),
+                    )
+                  : undefined
+              }
+            />
+          )}
 
           {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
               omitted for courses built before P7.3 (empty expects). */}

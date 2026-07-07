@@ -396,6 +396,7 @@ export function routedFetch(
     settings?: unknown;
     brief?: unknown;
     me?: unknown;
+    progress?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -424,6 +425,10 @@ export function routedFetch(
         supportsLessonRegeneration: true,
       };
       return Promise.resolve({ ok: true, json: async () => settings });
+    }
+    if (/\/api\/courses\/[^/]+\/progress$/.test(url)) {
+      const progress = handlers.progress ?? { courseId: "", objectives: [], lessons: [] };
+      return Promise.resolve({ ok: true, json: async () => progress });
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);

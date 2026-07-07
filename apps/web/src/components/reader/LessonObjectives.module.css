@@ -47,3 +47,17 @@
   border-radius: var(--radius-full);
   padding: 2px var(--space-2);
 }
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* The understanding counter — accent-toned data, the design's "N of M understood" motif. */
+.counter {
+  font-size: var(--text-xs);
+  color: var(--accent-600);
+  white-space: nowrap;
+}
