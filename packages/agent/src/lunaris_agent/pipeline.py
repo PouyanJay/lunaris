@@ -34,4 +34,5 @@ class CoursePipeline(Protocol):
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
     ) -> Course: ...

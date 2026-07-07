@@ -8,12 +8,15 @@ class CourseRequest(BaseModel):
     ``clarification`` (P7.5) is the optional calibrated answers from the interpret clarifier; absent
     (the default one-click build) the pipeline uses the interpreter's inference verbatim.
     ``discovery_depth`` (P6.3) pre-authorizes how hard auto-discovery searches; STANDARD is the
-    moderate one-click default, THOROUGH widens the grounding budget.
+    moderate one-click default, THOROUGH widens the grounding budget. ``official_only`` (P5, the
+    composer's "Official sources only" switch) raises the grounding trust floor to curated-or-
+    agreement at every risk tier; default false leaves today's risk-tiered floor untouched.
     """
 
     topic: str = Field(min_length=1, max_length=200)
     clarification: Clarification | None = None
     discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD
+    official_only: bool = False
 
     @field_validator("topic")
     @classmethod

@@ -178,6 +178,7 @@ async def test_regenerate_with_an_unsupported_pipeline_is_501(tmp_path: Path) ->
             agent=None,
             clarification=None,
             discovery_depth=None,
+            official_only=None,
         ):  # type: ignore[no-untyped-def]
             return Course(id=course_id, topic=topic, status=CourseStatus.PUBLISHED)
 
@@ -352,6 +353,7 @@ class _AgentEventPipeline:
         agent=None,
         clarification=None,
         discovery_depth=None,
+        official_only=None,
     ):
         from lunaris_agent.harness.agent_reporter import AgentReporter
         from lunaris_agent.harness.progress_reporter import ProgressReporter
@@ -392,12 +394,14 @@ class _ClarificationSpyPipeline:
         agent=None,
         clarification=None,
         discovery_depth=None,
+        official_only=None,
     ):
         from lunaris_agent.harness.progress_reporter import ProgressReporter
         from lunaris_runtime.schema import Course, CourseStatus, ProgressStage
 
         _ClarificationSpyPipeline.captured["clarification"] = clarification
         _ClarificationSpyPipeline.captured["discovery_depth"] = discovery_depth
+        _ClarificationSpyPipeline.captured["official_only"] = official_only
         await ProgressReporter(run_id, progress).emit(ProgressStage.RUN_STARTED, "start")
         await ProgressReporter(run_id, progress).emit(
             ProgressStage.RUN_COMPLETED, "done", status=CourseStatus.PUBLISHED
@@ -478,6 +482,26 @@ async def test_stream_defaults_discovery_depth_to_standard(tmp_path: Path) -> No
     # Assert — the pipeline runs at the moderate STANDARD depth.
     assert response.status_code == 200
     assert _ClarificationSpyPipeline.captured["discovery_depth"] is DiscoveryDepth.STANDARD
+
+
+async def test_stream_forwards_official_only_to_the_pipeline(tmp_path: Path) -> None:
+    # Act — the composer's "Official sources only" switch (P5) is on for this build.
+    response = await _send_stream_request(
+        tmp_path, {"topic": "binary search", "official_only": "true"}
+    )
+
+    # Assert — the flag is parsed to a bool and threaded to the pipeline (→ Draft → verifier floor).
+    assert response.status_code == 200
+    assert _ClarificationSpyPipeline.captured["official_only"] is True
+
+
+async def test_stream_defaults_official_only_to_false(tmp_path: Path) -> None:
+    # Act — no official_only query param (today's build, unchanged trust floor).
+    response = await _send_stream_request(tmp_path, {"topic": "binary search"})
+
+    # Assert — the pipeline runs with the switch off.
+    assert response.status_code == 200
+    assert _ClarificationSpyPipeline.captured["official_only"] is False
 
 
 async def test_stream_rejects_an_invalid_discovery_depth(tmp_path: Path) -> None:

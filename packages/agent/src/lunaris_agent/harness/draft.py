@@ -55,6 +55,10 @@ class CourseDraft:
     # How hard auto-discovery (P6.3) searches, chosen up front by the learner. STANDARD = the
     # moderate default; THOROUGH widens the discovery budget. Read by the discovery stage only.
     discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD
+    # The composer's "Official sources only" switch (P5): when true, the grounding verifier applies
+    # its curated-or-agreement trust floor at EVERY risk tier, not just HIGH. Read by the authoring
+    # loop when it calls verify(). Default false = today's risk-tiered floor exactly.
+    official_only: bool = False
     # The pages the research stage (P7.2) already fetched + extracted, carried forward so the
     # seed_grounding stage (P6.4) ingests them into the corpus without re-fetching. Populated by
     # research_standard; empty on the no-key / unavailable path. Harness-only; never on the wire.

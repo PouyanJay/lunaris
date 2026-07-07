@@ -320,6 +320,7 @@ class _ReleasableFailingPipeline:
         agent: object | None = None,
         clarification: object | None = None,
         discovery_depth: object | None = None,
+        official_only: object | None = None,
     ) -> object:
         if progress is not None:
             await progress.emit(  # type: ignore[attr-defined]
@@ -463,6 +464,7 @@ class _FailingPipeline:
         agent: object | None = None,
         clarification: object | None = None,
         discovery_depth: object | None = None,
+        official_only: object | None = None,
     ) -> object:
         raise RuntimeError("pipeline boom")
 

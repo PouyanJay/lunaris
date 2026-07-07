@@ -78,6 +78,22 @@ describe("streamCourse", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("compute=");
   });
 
+  it("passes the Official-sources-only switch through as a query param", async () => {
+    const fetchMock = stubStream([courseFrame()]);
+
+    await streamCourse("http://api", "x", { officialOnly: true });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("official_only=true");
+  });
+
+  it("omits the official_only param when the switch is off", async () => {
+    const fetchMock = stubStream([courseFrame()]);
+
+    await streamCourse("http://api", "x", { officialOnly: false });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain("official_only");
+  });
+
   it("reports the course id from the X-Course-Id header before any frame arrives", async () => {
     // The reconnect path needs the course id as soon as the response starts — a stream that drops
     // before the terminal frame re-attaches by polling this id for the finished course.

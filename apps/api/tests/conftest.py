@@ -40,6 +40,7 @@ class ReleasablePipeline:
         agent: object | None = None,
         clarification: object | None = None,
         discovery_depth: object | None = None,
+        official_only: object | None = None,
     ) -> Course:
         if progress is not None:
             await progress.emit(

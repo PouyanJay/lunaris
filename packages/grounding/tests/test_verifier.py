@@ -159,6 +159,79 @@ async def test_high_risk_floor_cuts_an_official_source_with_no_credibility_score
     assert claim.verifier_status is VerifierStatus.CUT
 
 
+# --- P5: official_only — a per-build trust floor that applies the curated-or-agreement gate at
+# EVERY risk tier, not just HIGH (the "Official sources only" composer switch). --------------------
+
+
+def _open_single_source() -> StubEvidenceRetriever:
+    # One OPEN-tier source, credible enough for the assessor, no corroboration.
+    return StubEvidenceRetriever(
+        lambda _c: [
+            _tiered("c1", tier=TrustTier.OPEN, credibility=0.6, url="https://blog.example/x")
+        ]
+    )
+
+
+async def test_open_web_single_source_is_supported_at_low_risk_by_default() -> None:
+    # Baseline (official_only off): at LOW risk the open web is recorded, not refused — this is the
+    # claim the switch must be shown to cut, so pin the default first.
+    verifier = Verifier(_open_single_source(), StubSupportAssessor())
+    claim = Claim(text="a low-stakes claim")
+
+    await verifier.verify([claim], risk_tier=RiskTier.LOW)
+
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+
+
+async def test_official_only_cuts_an_open_web_single_source_at_low_risk() -> None:
+    # The switch raises the floor: the same LOW-risk claim backed only by a single open-web source
+    # is now CUT — curated-or-agreement is demanded at every tier, not just HIGH.
+    verifier = Verifier(_open_single_source(), StubSupportAssessor())
+    claim = Claim(text="a low-stakes claim")
+
+    await verifier.verify([claim], risk_tier=RiskTier.LOW, official_only=True)
+
+    assert claim.verifier_status is VerifierStatus.CUT
+
+
+async def test_official_only_accepts_a_curated_credible_source_at_low_risk() -> None:
+    # A curated (reputable), credible source clears the raised floor at LOW — trusted content stays.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered(
+                "c1", tier=TrustTier.REPUTABLE, credibility=0.75, url="https://en.wikipedia.org/x"
+            )
+        ]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a low-stakes claim")
+
+    await verifier.verify([claim], risk_tier=RiskTier.LOW, official_only=True)
+
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+
+
+async def test_official_only_keeps_a_claim_corroborated_across_independent_domains() -> None:
+    # The safeguard against emptying the course: two independent open-web domains agreeing clears
+    # the raised floor even without a curated source, so cross-source agreement survives the switch.
+    retriever = StubEvidenceRetriever(
+        lambda _c: [
+            _tiered(
+                "c1", tier=TrustTier.OPEN, credibility=0.6, url="https://a.example/x", score=0.95
+            ),
+            _tiered(
+                "c2", tier=TrustTier.OPEN, credibility=0.6, url="https://b.example/y", score=0.9
+            ),
+        ]
+    )
+    verifier = Verifier(retriever, StubSupportAssessor())
+    claim = Claim(text="a low-stakes claim")
+
+    await verifier.verify([claim], risk_tier=RiskTier.LOW, official_only=True)
+
+    assert claim.verifier_status is VerifierStatus.SUPPORTED
+
+
 async def test_high_risk_floor_accepts_open_evidence_with_cross_source_agreement() -> None:
     # Arrange — two INDEPENDENT domains corroborate the claim. Authority emerges from agreement
     # (plan §4a): cross-source agreement clears the HIGH floor even for an open-web chosen source.

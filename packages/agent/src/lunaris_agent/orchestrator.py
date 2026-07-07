@@ -72,10 +72,12 @@ class Orchestrator:
         agent: IAgentSink | None = None,
         clarification: Clarification | None = None,
         discovery_depth: DiscoveryDepth = DiscoveryDepth.STANDARD,
+        official_only: bool = False,
     ) -> Course:
-        # All three are part of the CoursePipeline contract but unused here: the legacy single-shot
-        # orchestrator emits only coarse stages, has no brief to calibrate, and does no discovery.
-        _ = agent, clarification, discovery_depth
+        # All part of the CoursePipeline contract but unused here: the legacy single-shot
+        # orchestrator emits only coarse stages, has no brief to calibrate, does no discovery, and
+        # runs no grounding verifier (so the official-only trust floor has nothing to raise).
+        _ = agent, clarification, discovery_depth, official_only
         bind_run_id(run_id)
         logger.info("course_run_started", topic=topic, course_id=course_id)
 
