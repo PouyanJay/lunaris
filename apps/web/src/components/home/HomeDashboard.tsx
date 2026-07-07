@@ -55,7 +55,7 @@ function FirstRunHero({ onNewCourse }: { onNewCourse: () => void }) {
   return (
     <section className={styles.firstRun}>
       <p className="eyebrow">Get started</p>
-      <h3 className={styles.firstRunTitle}>Build your first course</h3>
+      <h2 className={styles.firstRunTitle}>Build your first course</h2>
       <p className={styles.firstRunBody}>
         Name a topic and the agent researches, plans, and writes a grounded course — it will land
         here, ready to learn.
@@ -139,9 +139,9 @@ function HomeBody({
 function RecentCourses({ courses }: { courses: CourseSummary[] }) {
   return (
     <section aria-labelledby="home-recent" className={styles.recent}>
-      <h3 id="home-recent" className={styles.sectionTitle}>
+      <h2 id="home-recent" className={styles.sectionTitle}>
         Recent courses
-      </h3>
+      </h2>
       <ul className={styles.grid}>
         {courses.map((course) => (
           <CourseCard key={course.id} course={course} />

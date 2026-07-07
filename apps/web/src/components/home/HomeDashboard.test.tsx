@@ -191,6 +191,61 @@ describe("HomeDashboard", () => {
       expect(onViewCourse).toHaveBeenCalledWith("course-test");
     });
 
+    it("degrades to a summary-only hero when the course can't be loaded", async () => {
+      const summary = makeCourseSummary({
+        id: "course-test",
+        topic: "How binary search works",
+        learnerStatus: "in_progress",
+      });
+      // Library loads; the hero's deep course fetch 500s → resume falls back to the Overview.
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Parameters<typeof fetch>[0]) => {
+          const url = input instanceof Request ? input.url : String(input);
+          if (/\/api\/courses$/.test(url)) {
+            return Promise.resolve({ ok: true, json: async () => [summary] });
+          }
+          if (/\/api\/courses\/[^/?]+$/.test(url)) {
+            return Promise.resolve({ ok: false, status: 500, json: async () => ({}) });
+          }
+          if (/\/api\/courses\/[^/]+\/progress$/.test(url)) {
+            return Promise.resolve({ ok: true, json: async () => ({ lessons: [] }) });
+          }
+          return Promise.resolve({ ok: true, json: async () => ({}) });
+        }),
+      );
+
+      const { onResumeLesson, onViewCourse } = renderHome();
+
+      // The hero still renders from the summary; Resume routes to Overview (no lesson known).
+      fireEvent.click(await screen.findByRole("button", { name: /resume lesson/i }));
+      expect(onViewCourse).toHaveBeenCalledWith("course-test");
+      expect(onResumeLesson).not.toHaveBeenCalled();
+    });
+
+    it("shows the continue section and the recent grid together", async () => {
+      const courses = [
+        makeCourseSummary({ id: "c-hero", topic: "In-progress course", learnerStatus: "in_progress" }),
+        completed({ id: "c-done", topic: "Finished course" }),
+      ];
+      vi.stubGlobal(
+        "fetch",
+        routedFetch({ library: courses, course: makeCourse(), progress: undefined }),
+      );
+
+      renderHome();
+
+      expect(
+        await screen.findByRole("heading", { name: "Continue learning" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Recent courses" })).toBeInTheDocument();
+      // The completed course sits in the recent grid, not the continue section.
+      expect(screen.getByRole("link", { name: /finished course/i })).toHaveAttribute(
+        "href",
+        "/courses/c-done",
+      );
+    });
+
     it("renders compact rows for the other in-progress courses, linking to each Overview", async () => {
       const courses = [
         makeCourseSummary({ id: "c-hero", topic: "Hero course", learnerStatus: "in_progress" }),
