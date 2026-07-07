@@ -20,7 +20,7 @@ export type OpenedRunState =
  *  rather than entering the building branch). */
 type OpenableRun = Pick<CourseRun, "id" | "topic" | "status"> & { runId?: string };
 
-interface OpenedRun {
+export interface OpenedRun {
   state: OpenedRunState;
   /** Open a run from the sidebar: a completed/failed run is fetched by course_id; a running run
    *  shows the building state directly (its course isn't persisted until the run finishes). */

@@ -1,3 +1,5 @@
+import { vi } from "vitest";
+
 import { type BriefResponse, QUESTION_IDS } from "../types/clarifier";
 import type {
   AgentEvent,
@@ -378,4 +380,58 @@ export function makeRunEvent(
 ): RunEvent {
   const kind: RunEvent["kind"] = "kind" in payload ? "agent" : "progress";
   return { runId: "run-test", courseId: "course-test", seq, kind, payload, ...extra };
+}
+
+/** URL-routed fetch stub for App-level integration tests. StudioApp fetches GET /api/runs
+ *  (sidebar) + GET /api/settings (capability probes) on mount AND streams builds, so the mock
+ *  routes by URL: history/settings/briefs/me are JSON, the build is an SSE stream, course-by-id
+ *  serves opens. Unhandled URLs throw — surfaced as a rejected fetch, which the app's hooks
+ *  treat as fail-closed (e.g. no `me` handler → not admin). */
+export function routedFetch(
+  handlers: {
+    runs?: unknown;
+    events?: unknown;
+    build?: unknown;
+    course?: unknown;
+    settings?: unknown;
+    brief?: unknown;
+    me?: unknown;
+  } = {},
+) {
+  return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
+      return Promise.resolve({ ok: true, status: 202 });
+    }
+    if (url.includes("/api/briefs")) {
+      return Promise.resolve({ ok: true, json: async () => handlers.brief });
+    }
+    // A reattached running run polls its live event log — distinct from the run-history list.
+    if (/\/api\/runs\/[^/]+\/events$/.test(url)) {
+      return Promise.resolve({ ok: true, json: async () => handlers.events ?? [] });
+    }
+    if (url.includes("/api/runs")) {
+      return Promise.resolve({ ok: true, json: async () => handlers.runs ?? [] });
+    }
+    if (url.includes("/api/me") && handlers.me !== undefined) {
+      return Promise.resolve({ ok: true, json: async () => handlers.me });
+    }
+    if (url.includes("/api/settings")) {
+      const settings = handlers.settings ?? {
+        secrets: [],
+        pipeline: "stub",
+        supportsLessonRegeneration: true,
+      };
+      return Promise.resolve({ ok: true, json: async () => settings });
+    }
+    if (url.includes("/api/courses/stream")) {
+      return Promise.resolve(handlers.build);
+    }
+    if (/\/api\/courses\/[^/?]+$/.test(url)) {
+      // course-by-id: exactly one path segment after /courses/, no query (≠ the stream URL)
+      return Promise.resolve({ ok: true, json: async () => handlers.course });
+    }
+    throw new Error(`routedFetch: unhandled URL ${url}`);
+  });
 }

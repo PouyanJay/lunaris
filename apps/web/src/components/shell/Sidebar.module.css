@@ -209,3 +209,23 @@
 .railActionActive::before {
   left: -8px;
 }
+
+/* ─── Primary nav — the app's destinations, between the CTA and the run history. ── */
+.primaryNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  padding: var(--space-3) var(--space-2);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+/* Nav entries render as real links; keep the shared navItem look on anchors. */
+a.navItem,
+a.railAction {
+  text-decoration: none;
+}
+
+.sidebar[data-collapsed] .primaryNav {
+  align-items: center;
+}
