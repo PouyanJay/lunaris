@@ -140,7 +140,10 @@ class Verifier:
         citation = chosen.citation
         rank = _TIER_RANK.get(citation.trust_tier, _UNTIERED_RANK)
         credibility = citation.credibility if citation.credibility is not None else 0.0
-        passed = self._floor_ok(rank, credibility, agreement, risk_tier, official_only)
+        # The curated-or-agreement gate binds on every HIGH-risk claim, and on every claim once the
+        # build opts into official-only — collapsed to one flag so the floor rule is one branch.
+        strict = risk_tier is RiskTier.HIGH or official_only
+        passed = self._floor_ok(rank, credibility, agreement, strict)
         logger.debug(
             "trust_floor_evaluated",
             risk_tier=risk_tier.value,
@@ -152,20 +155,12 @@ class Verifier:
         )
         return passed
 
-    def _floor_ok(
-        self,
-        rank: int,
-        credibility: float,
-        agreement: bool,
-        risk_tier: RiskTier,
-        official_only: bool,
-    ) -> bool:
+    def _floor_ok(self, rank: int, credibility: float, agreement: bool, strict: bool) -> bool:
         if rank == _TIER_RANK[TrustTier.BLOCKED]:
             return False  # a blocked/denylisted source never supports a claim, at any risk
-        if risk_tier is not RiskTier.HIGH and not official_only:
-            return True  # LOW: the open web is recorded, only blocked is refused
-        # HIGH risk, or an official-only build: demand curated-and-credible, or cross-source
-        # agreement.
+        if not strict:
+            return True  # the open web is recorded, only blocked is refused
+        # Under the strict gate: demand curated-and-credible, or cross-source agreement.
         curated_and_credible = (
             rank >= _HIGH_TIER_FLOOR and credibility >= self._thresholds.high_credibility_floor
         )

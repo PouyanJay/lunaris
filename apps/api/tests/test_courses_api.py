@@ -606,6 +606,30 @@ async def test_create_forwards_the_discovery_depth_from_the_post_body(tmp_path: 
     assert _ClarificationSpyPipeline.captured["discovery_depth"] is DiscoveryDepth.THOROUGH
 
 
+async def test_create_forwards_official_only_from_the_post_body(tmp_path: Path) -> None:
+    # Arrange — the await-full POST path carries the "Official sources only" switch (P5), matching
+    # the GET /stream coverage so both build entry points are proven, not just one.
+    from lunaris_api.dependencies import get_course_service
+    from lunaris_api.service import CourseService
+    from lunaris_runtime.persistence import CourseStore
+
+    _ClarificationSpyPipeline.captured = {}
+    clear_correlation()
+    app = create_app()
+    service = CourseService(CourseStore(tmp_path), _ClarificationSpyPipeline)
+    app.dependency_overrides[get_course_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
+        # Act
+        response = await http.post(
+            "/api/courses", json={"topic": "binary search", "official_only": True}
+        )
+
+    # Assert — parsed off the body and threaded to the pipeline (→ Draft → verifier floor).
+    assert response.status_code == 201
+    assert _ClarificationSpyPipeline.captured["official_only"] is True
+
+
 async def test_stream_carries_agent_transcript_frames(tmp_path: Path) -> None:
     # Arrange — the API wired to a pipeline that emits a progress stage AND an agent beat.
     from lunaris_api.dependencies import get_course_service

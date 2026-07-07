@@ -68,8 +68,15 @@ def _marker_verifier() -> Verifier:
     return Verifier(retriever, StubSupportAssessor())
 
 
-def _draft(*modules: Module, risk_tier: RiskTier = RiskTier.LOW, goal: str = "c") -> CourseDraft:
-    draft = CourseDraft(topic="t", course_id="c1", run_id="r1", risk_tier=risk_tier)
+def _draft(
+    *modules: Module,
+    risk_tier: RiskTier = RiskTier.LOW,
+    goal: str = "c",
+    official_only: bool = False,
+) -> CourseDraft:
+    draft = CourseDraft(
+        topic="t", course_id="c1", run_id="r1", risk_tier=risk_tier, official_only=official_only
+    )
     draft.goal_concept = goal
     draft.modules = list(modules)
     return draft
@@ -142,6 +149,34 @@ async def test_loop_surfaces_per_module_authoring_and_verify_beats() -> None:
     assert authored.stage is ProgressStage.MODULE_AUTHORED
     verified = next(e for e in sink.events if "supported" in (e.text or ""))
     assert verified.stage is ProgressStage.CLAIMS_VERIFIED
+
+
+async def test_official_only_raises_the_trust_floor_through_the_authoring_loop() -> None:
+    # The seam the API spy and the isolated verifier tests both skip: CourseDraft → authoring loop
+    # → Verifier.verify(). A claim that grounds by default (a single open-web source, via the marker
+    # verifier's untiered citation) must be CUT once the draft opts into official-only — proving the
+    # flag actually reaches the floor from the draft, not just by code inspection.
+    def author_fn(module: Module) -> LessonDraft:
+        return _lesson_with_claim(f"{_GROUNDED} fact about {module.title}")
+
+    def revise_fn(module: Module, cut: Sequence[str], attempt: int) -> LessonDraft:
+        return _lesson_with_claim(f"{_GROUNDED} fact about {module.title}")
+
+    # Baseline: the same claim grounds when official-only is off (the default build).
+    open_draft = _draft(Module(id="m0", title="C", kcs=["c"], difficulty_index=0.5))
+    await build_authoring_subgraph(
+        StubLessonReviser(author_fn, revise_fn), _marker_verifier(), open_draft
+    ).ainvoke({"messages": [HumanMessage(content="author")]})
+    assert all(c.verifier_status is VerifierStatus.SUPPORTED for c in _all_claims(open_draft))
+
+    # Delta: with official-only on, the untiered single source no longer clears the floor.
+    strict_draft = _draft(
+        Module(id="m0", title="C", kcs=["c"], difficulty_index=0.5), official_only=True
+    )
+    await build_authoring_subgraph(
+        StubLessonReviser(author_fn, revise_fn), _marker_verifier(), strict_draft
+    ).ainvoke({"messages": [HumanMessage(content="author")]})
+    assert all(c.verifier_status is VerifierStatus.CUT for c in _all_claims(strict_draft))
 
 
 async def test_loop_stops_early_when_a_round_stops_shrinking_the_cut_set() -> None:
