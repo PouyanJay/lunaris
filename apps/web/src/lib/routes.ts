@@ -5,6 +5,7 @@ import type { CourseView } from "../components/reader/ViewToggle";
 /** The app's fixed destinations — one source of truth for path literals (sidebar + router). */
 export const ROUTES = {
   home: "/",
+  composer: "/new",
   library: "/courses",
   activity: "/activity",
   bookmarks: "/bookmarks",
@@ -24,6 +25,7 @@ const LEGACY_READER_SEGMENT = "learn";
  *  never a blank. */
 export type ShellRoute =
   | { kind: "home" }
+  | { kind: "composer" }
   | { kind: "settings" }
   | { kind: "admin" }
   | { kind: "library" }
@@ -34,8 +36,8 @@ export type ShellRoute =
 
 export function resolveRoute(pathname: string): ShellRoute {
   if (pathname === ROUTES.home) return { kind: "home" };
-  // /new is an alias for the composer; an effect normalizes the URL to "/".
-  if (pathname === "/new") return { kind: "home" };
+  // The composer is its own place at /new; Home is the dashboard at /.
+  if (pathname === ROUTES.composer) return { kind: "composer" };
   if (pathname === ROUTES.settings) return { kind: "settings" };
   if (pathname === ROUTES.admin) return { kind: "admin" };
   if (pathname === ROUTES.library) return { kind: "library" };

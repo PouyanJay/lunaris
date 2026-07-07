@@ -1,0 +1,174 @@
+/* Home continue-learning: the most-recent in-progress course as a hero + compact rows for the
+   other in-progress courses. */
+.section {
+  margin-bottom: var(--space-8);
+}
+
+.sectionEyebrow {
+  margin: 0 0 var(--space-3);
+}
+
+/* ── Hero ── */
+.hero {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.cover {
+  border-right: var(--border-width) solid var(--border);
+}
+
+.heroBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.position {
+  margin: 0;
+  min-height: 1.5em; /* reserved so the enriched line never shifts the hero */
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.positionMuted {
+  color: var(--text-muted);
+}
+
+.progressRow {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.progressTrack {
+  width: 100%;
+}
+
+.progressLabel {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* ── Compact in-progress rows ── */
+.rows {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--text);
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.row:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.rowCover {
+  flex: none;
+  width: 56px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: var(--border-width) solid var(--border);
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.rowTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowMeta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rowTrack {
+  flex: none;
+  width: 120px;
+}
+
+.chevron {
+  flex: none;
+  font-size: var(--text-lg);
+  color: var(--text-muted);
+}
+
+@media (max-width: 720px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .cover {
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--border);
+    height: 148px;
+  }
+
+  .rowTrack {
+    display: none; /* the mono "N of M · %" already carries progress on narrow rows */
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row {
+    transition: none;
+  }
+}

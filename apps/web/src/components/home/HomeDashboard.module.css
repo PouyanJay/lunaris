@@ -1,0 +1,139 @@
+/* Home dashboard: greeting header over the learner's live state (recent grid, continue-hero,
+   live-build banner). Shares the library's card geometry so covers read as one system. */
+.canvas {
+  --home-cover-height: var(--course-card-cover-height);
+  --home-card-body-height: 96px;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.greeting {
+  margin-bottom: var(--space-6);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-2xl);
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.subline {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Live-build banners (shared LiveBuildBanner; stacked with a gap) ── */
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+/* ── First-run hero (no courses yet) ── */
+.firstRun {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 520px;
+  padding: var(--space-8);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-subtle);
+}
+
+.firstRunTitle {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.firstRunBody {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Recent grid ── */
+.recent {
+  margin-top: var(--space-2);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-5);
+}
+
+.viewAllRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}
+
+.viewAll {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--accent-600);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.viewAll:hover {
+  text-decoration: underline;
+}
+
+.recent + .viewAllRow {
+  margin-top: var(--space-4);
+}
+
+.viewAll:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* Loading skeleton mirrors the recent-grid cards (no centered spinner, no layout shift). */
+.skeletonCard {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xl);
+  height: calc(var(--home-cover-height) + var(--home-card-body-height));
+  background: linear-gradient(
+    100deg,
+    var(--bg-subtle) 30%,
+    var(--bg-muted) 50%,
+    var(--bg-subtle) 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease) infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonCard {
+    animation: none;
+  }
+}

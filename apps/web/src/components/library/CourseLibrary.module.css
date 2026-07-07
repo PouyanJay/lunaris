@@ -2,7 +2,7 @@
 .canvas {
   /* Shared card geometry: the loading skeleton mirrors the real card from these two numbers
      (cover height + the card body's box), so they can't drift apart independently. */
-  --library-cover-height: 142px;
+  --library-cover-height: var(--course-card-cover-height);
   --library-card-body-height: 138px;
   height: 100%;
   overflow-y: auto;
@@ -15,73 +15,12 @@
   color: var(--text-secondary);
 }
 
-/* ── Live-build banner: the one amber wash on this screen (a genuinely live state). ── */
-.banner {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
-  border: var(--border-width) solid var(--border);
-  border-left: 3px solid var(--accent-500);
-  border-radius: var(--radius-lg);
-  background: var(--accent-soft);
-  text-decoration: none;
-  transition: border-color var(--dur-fast) var(--ease);
-}
-
-.banner:hover {
-  border-color: var(--border-strong);
-}
-
-.banner:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.bannerPulse {
-  flex: none;
-  width: 9px;
-  height: 9px;
-  border-radius: var(--radius-full);
-  background: var(--accent-500);
-  animation: pulse 1.6s var(--ease) infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.bannerBody {
-  flex: 1;
-  min-width: 0;
+/* ── Live-build banners (shared LiveBuildBanner; stacked with a gap) ── */
+.banners {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-}
-
-.bannerTitle {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bannerMeta {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
-.bannerCta {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--accent-600);
-  white-space: nowrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
 }
 
 /* ── Filter row ── */
@@ -154,70 +93,6 @@
   gap: var(--space-5);
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
-  overflow: hidden;
-  text-decoration: none;
-  color: var(--text);
-  transition:
-    transform var(--dur) var(--ease),
-    border-color var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease);
-}
-
-.card:hover {
-  transform: translateY(-3px);
-  border-color: var(--border-strong);
-  box-shadow: var(--shadow-md);
-}
-
-.card:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.cover {
-  height: var(--library-cover-height);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-.cardBody {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-}
-
-.cardTitle {
-  font-size: var(--text-base);
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--text);
-  min-height: 2.7em; /* two lines, so single-line titles keep the grid rows aligned */
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.cardMeta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.reviewBadge {
-  flex: none;
-}
-
 /* Loading skeleton mirrors the card grid (no centered spinner, no layout shift). */
 .skeletonCard {
   border: var(--border-width) solid var(--border);
@@ -248,13 +123,8 @@
     animation: none;
   }
 
-  .card,
   .banner,
   .pill {
     transition: none;
-  }
-
-  .card:hover {
-    transform: none;
   }
 }
