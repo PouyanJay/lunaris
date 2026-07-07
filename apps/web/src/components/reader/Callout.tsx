@@ -5,7 +5,7 @@ import { Callout as CalloutPanel } from "../primitives/Callout";
 import { CALLOUT_META, resolveCalloutVariant } from "../primitives/calloutVariants";
 
 interface CalloutProps {
-  variant?: string;
+  variant?: string | undefined;
   children?: ReactNode;
 }
 

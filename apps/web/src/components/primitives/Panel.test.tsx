@@ -25,8 +25,8 @@ describe("Panel", () => {
   });
 
   it("applies the requested variant", () => {
-    render(<Panel variant="raised" heading="Grounding" />);
-    expect(screen.getByText("Grounding").closest("section")).toHaveAttribute(
+    render(<Panel variant="raised" heading="Grounding" aria-label="Grounding" />);
+    expect(screen.getByRole("region", { name: "Grounding" })).toHaveAttribute(
       "data-variant",
       "raised",
     );

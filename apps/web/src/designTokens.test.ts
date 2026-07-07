@@ -2,12 +2,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-/** Token integrity: every CSS custom property referenced anywhere in src/ must be defined
- *  somewhere (index.css tokens, a component-scoped property in a module.css, or an inline
- *  style / setProperty in TSX). A `var(--x, fallback)` reference is exempt — the fallback
- *  makes it self-sufficient. Guards against silently-dead styles: an undefined token makes
- *  the declaration invalid at computed-value time, which the browser hides and jsdom never
- *  sees. */
+/** Token integrity: every CSS custom property referenced anywhere in src/ — stylesheet or
+ *  inline TSX style — must be defined somewhere (index.css tokens, a component-scoped
+ *  property in a module.css, or an inline style / setProperty in TSX). A `var(--x, fallback)`
+ *  reference is exempt — the fallback makes it self-sufficient. Guards against silently-dead
+ *  styles: an undefined token makes the declaration invalid at computed-value time, which the
+ *  browser hides and jsdom never sees. */
 
 const SRC_ROOT = join(__dirname);
 
@@ -43,6 +43,11 @@ function collect(): { defined: Set<string>; required: Map<string, Set<string>> }
       // Inline style objects ({ "--x": … }) and element.style.setProperty("--x", …).
       for (const [, name] of source.matchAll(/["'](--[a-z0-9-]+)["']\s*[:,]/g))
         defined.add(name ?? "");
+      // Static var(--x) references inside inline styles / style strings. Dynamic names
+      // (`var(--tier-${n})`) don't match the pattern and are out of scope.
+      for (const [, name, close] of source.matchAll(/var\(\s*(--[a-z0-9-]+)\s*([,)])/g)) {
+        if (name && close === ")") requireToken(name, file);
+      }
     }
   }
   return { defined, required };

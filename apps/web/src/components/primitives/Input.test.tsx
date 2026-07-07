@@ -40,4 +40,10 @@ describe("Input", () => {
     render(<Input id="topic-input" aria-label="Topic" />);
     expect(screen.getByLabelText("Topic")).toHaveAttribute("id", "topic-input");
   });
+
+  it("forwards its ref to the underlying input", () => {
+    const ref = { current: null as HTMLInputElement | null };
+    render(<Input ref={ref} label="Topic" />);
+    expect(ref.current).toBe(screen.getByLabelText("Topic"));
+  });
 });
