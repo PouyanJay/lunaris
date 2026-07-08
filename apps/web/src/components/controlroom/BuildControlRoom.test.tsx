@@ -55,10 +55,42 @@ describe("BuildControlRoom", () => {
     const build = midBuild();
     render(<BuildControlRoom {...build} />);
 
-    const console = screen.getByRole("region", { name: /agent console/i });
-    expect(within(console).getByText("Planning the build…")).toBeInTheDocument();
-    expect(within(console).getByText("extract_concepts")).toBeInTheDocument();
-    expect(within(console).getByText("21 concepts")).toBeInTheDocument();
+    const consolePanel = screen.getByRole("region", { name: /agent console/i });
+    expect(within(consolePanel).getByText("Planning the build…")).toBeInTheDocument();
+    expect(within(consolePanel).getByText("extract_concepts")).toBeInTheDocument();
+    expect(within(consolePanel).getByText("21 concepts")).toBeInTheDocument();
+  });
+
+  it("glyphs the honesty states: pending tool ●, rejected source ✕", () => {
+    const build = midBuild();
+    build.agentEvents.push(
+      // An unpaired call — still running.
+      makeAgentEvent("tool_call", 3, {
+        stage: "graph_built",
+        tool: "build_prerequisite_graph",
+        toolArgs: {},
+      }),
+      // A vetted-and-rejected discovery source.
+      makeAgentEvent("source_evaluated", 4, {
+        stage: "grounding_discovered",
+        source: {
+          kcId: "kc-1",
+          domain: "content-farm.example",
+          trustTier: "open",
+          credibility: 0.2,
+          sourceType: "web",
+          accepted: false,
+          reason: "low credibility",
+        },
+      }),
+    );
+    render(<BuildControlRoom {...build} />);
+
+    const consolePanel = screen.getByRole("region", { name: /agent console/i });
+    expect(within(consolePanel).getByText("●")).toBeInTheDocument();
+    expect(within(consolePanel).getByText("running")).toBeInTheDocument(); // sr-only state text
+    expect(within(consolePanel).getByText("✕")).toBeInTheDocument();
+    expect(within(consolePanel).getByText(/rejected · open/)).toBeInTheDocument();
   });
 
   it("keeps the full transcript one toggle away and returns", () => {
@@ -122,8 +154,33 @@ describe("BuildControlRoom", () => {
     expect(
       document.querySelector('[aria-label*="Binary Search."][aria-label*="Mapping."]'),
     ).not.toBeNull();
+    // The goal node keeps its GOAL badge whatever its assembly state.
+    expect(
+      document.querySelector('[aria-label*="Binary Search."][aria-label*="Course goal."]'),
+    ).not.toBeNull();
     expect(screen.getByText("2 / 3 mapped")).toBeInTheDocument();
     expect(screen.queryByText(/appears here as concepts are mapped/i)).not.toBeInTheDocument();
+  });
+
+  it("holds unreached concepts queued before authoring starts", async () => {
+    const build = midBuild();
+    build.events.push(
+      makeProgressEvent("graph_built", 3, {
+        graph: makeCourse().graph,
+        goalConcept: "binary_search",
+      }),
+      makeProgressEvent("curriculum_designed", 4, {
+        modules: [{ id: "m-one", title: "Foundations", kcs: ["comparison"] }],
+      }),
+    );
+    render(<BuildControlRoom {...build} />);
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[aria-label*="Comparison."][aria-label*="Queued."]'),
+      ).not.toBeNull(),
+    );
+    expect(screen.getByText("0 / 3 mapped")).toBeInTheDocument();
   });
 
   it("reads the grounding ledger and the honest scorecard off the rail", () => {
@@ -169,11 +226,15 @@ describe("BuildControlRoom", () => {
     const build = midBuild();
     render(<BuildControlRoom {...build} />);
 
-    // No structured graph payload on these events — the canvas says so instead of faking nodes.
+    // No structured graph payload on these events — the canvas says so instead of faking nodes,
+    // and the scorecard region doesn't exist until a gauge has a real reading.
     expect(
       within(screen.getByRole("region", { name: /blueprint/i })).getByText(
         /assembling the prerequisite graph/i,
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: /readiness scorecard/i }),
+    ).not.toBeInTheDocument();
   });
 });

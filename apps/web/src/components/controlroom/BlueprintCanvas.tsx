@@ -1,15 +1,8 @@
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  MarkerType,
-  ReactFlow,
-  type NodeTypes,
-} from "@xyflow/react";
+import { Background, BackgroundVariant, Controls, ReactFlow, type NodeTypes } from "@xyflow/react";
 import { useMemo } from "react";
 
 import type { BlueprintState } from "../../lib/blueprint";
-import { buildGraphLayout } from "../../lib/graphLayout";
+import { buildGraphLayout, edgeAppearance } from "../../lib/graphLayout";
 import { BlueprintNode, type BlueprintFlowNode } from "./BlueprintNode";
 import styles from "./BlueprintCanvas.module.css";
 
@@ -39,22 +32,10 @@ export function BlueprintCanvas({ blueprint }: BlueprintCanvasProps) {
         }),
       ),
       // Assembly lighting, not learner mastery: an edge glows once both endpoints landed.
-      edges: layout.edges.map((edge) => {
-        const lit = isMapped(edge.source) && isMapped(edge.target);
-        return {
-          ...edge,
-          className: lit ? "edge-lit" : "edge-dim",
-          style: lit
-            ? { stroke: "var(--accent-500)", strokeOpacity: 0.4, strokeWidth: 1.4 }
-            : { stroke: "var(--border-strong)", strokeOpacity: 0.5, strokeWidth: 1.2 },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            width: 14,
-            height: 14,
-            color: lit ? "var(--accent-500)" : "var(--border-strong)",
-          },
-        };
-      }),
+      edges: layout.edges.map((edge) => ({
+        ...edge,
+        ...edgeAppearance(isMapped(edge.source) && isMapped(edge.target)),
+      })),
     };
   }, [blueprint]);
 

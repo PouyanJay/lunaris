@@ -46,7 +46,7 @@
   height: 7px;
   border-radius: var(--radius-full);
   background: var(--accent-500);
-  animation: pipeline-pulse 1.6s var(--ease) infinite;
+  animation: pulse-opacity 1.6s var(--ease) infinite;
 }
 
 .label {
@@ -81,16 +81,6 @@
   flex: none;
   font-size: var(--text-xs);
   color: var(--text-muted);
-}
-
-@keyframes pipeline-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

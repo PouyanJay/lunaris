@@ -58,7 +58,7 @@ describe("BuildReplay", () => {
     await waitFor(() =>
       expect(screen.getByRole("region", { name: /building how https works/i })).toBeInTheDocument(),
     );
-    expect(screen.queryByText("live")).not.toBeInTheDocument();
+    expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
     const pipeline = screen.getByRole("region", { name: /pipeline/i });
     expect(pipeline.querySelector('[data-status="active"]')).toBeNull();
 

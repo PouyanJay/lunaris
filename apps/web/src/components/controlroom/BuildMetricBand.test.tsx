@@ -31,6 +31,17 @@ describe("BuildMetricBand", () => {
     expect(band).toHaveTextContent("yes");
   });
 
+  it("states a cyclic graph plainly — the moat's failure is never dressed up", () => {
+    const graph = { ...makeCourse().graph, isAcyclic: false };
+    render(
+      <BuildMetricBand
+        events={[makeProgressEvent("graph_built", 1, { kcCount: 3, edgeCount: 2, graph })]}
+      />,
+    );
+
+    expect(screen.getByLabelText("Graph metrics")).toHaveTextContent("no");
+  });
+
   it("answers ACYCLIC with an em dash when the stream predates the structured payload", () => {
     render(
       <BuildMetricBand events={[makeProgressEvent("graph_built", 1, { kcCount: 3, edgeCount: 2 })]} />,

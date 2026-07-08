@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import type { TimelineEntry } from "../../lib/buildTimeline";
+import { StatusDot } from "../primitives/StatusDot";
 import styles from "./ConsoleTicker.module.css";
 
 /** Auto-follow threshold: keep following new rows while the reader sits near the foot. */
@@ -36,12 +37,7 @@ export function ConsoleTicker({ entries, live }: ConsoleTickerProps) {
     <section className={styles.console} aria-label="Agent console">
       <header className={styles.head}>
         <span className="eyebrow">Agent console</span>
-        {live && (
-          <span className={`${styles.live} mono`}>
-            <span className={styles.liveDot} aria-hidden="true" />
-            live
-          </span>
-        )}
+        {live && <StatusDot label="live" tone="accent" live />}
         <span className={`${styles.hint} mono`}>every capability runs as a tool</span>
       </header>
       <div ref={bodyRef} className={`${styles.body} scroller`} onScroll={onScroll}>

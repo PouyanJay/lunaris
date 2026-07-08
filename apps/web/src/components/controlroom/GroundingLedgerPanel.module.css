@@ -15,8 +15,12 @@
 
 .tally {
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: var(--space-1);
+}
+
+.tally dd {
+  margin: 0;
 }
 
 .figure {

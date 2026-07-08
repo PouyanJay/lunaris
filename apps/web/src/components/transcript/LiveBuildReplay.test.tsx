@@ -55,7 +55,7 @@ describe("LiveBuildReplay", () => {
     await waitFor(() =>
       expect(screen.getByRole("region", { name: /agent console/i })).toBeInTheDocument(),
     );
-    expect(screen.getByText("live")).toBeInTheDocument();
+    expect(screen.getByText("LIVE")).toBeInTheDocument();
     const pipeline = screen.getByRole("region", { name: /pipeline/i });
     expect(pipeline.querySelector('[data-status="active"]')).not.toBeNull();
   });

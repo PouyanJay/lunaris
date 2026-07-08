@@ -21,22 +21,23 @@ export function GroundingLedgerPanel({ ledger }: GroundingLedgerPanelProps) {
   return (
     <section className={styles.panel} aria-label="Grounding ledger">
       <p className={`eyebrow ${styles.title}`}>Grounding ledger</p>
+      {/* Source order dt→dd for screen readers; the big-number-first look is CSS (column-reverse). */}
       <dl className={styles.tallies}>
         <div className={styles.tally}>
+          <dt className={`${styles.figureLabel} mono`}>Supported</dt>
           <dd className={`${styles.figure} mono`} data-tone="success">
             {ledger.supported}
           </dd>
-          <dt className={`${styles.figureLabel} mono`}>Supported</dt>
         </div>
         <div className={styles.tally}>
+          <dt className={`${styles.figureLabel} mono`}>Cut</dt>
           <dd className={`${styles.figure} mono`} data-tone={ledger.cut > 0 ? "danger" : undefined}>
             {ledger.cut}
           </dd>
-          <dt className={`${styles.figureLabel} mono`}>Cut</dt>
         </div>
         <div className={styles.tally}>
-          <dd className={`${styles.figure} mono`}>{ledger.sources}</dd>
           <dt className={`${styles.figureLabel} mono`}>Sources</dt>
+          <dd className={`${styles.figure} mono`}>{ledger.sources}</dd>
         </div>
       </dl>
       {ledger.trustMix.length > 0 && (

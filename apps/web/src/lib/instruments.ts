@@ -16,12 +16,16 @@ function acceptedSources(agentEvents: AgentEvent[]): SourceEvaluation[] {
     .map((event) => event.source as SourceEvaluation);
 }
 
+function claimVerdicts(events: ProgressEvent[]): ProgressEvent[] {
+  return events.filter((event) => event.stage === "claims_verified");
+}
+
 /** Null until any grounding signal exists — an instrument with no reading shows nothing. */
 export function groundingLedger(
   events: ProgressEvent[],
   agentEvents: AgentEvent[],
 ): GroundingLedger | null {
-  const verdicts = events.filter((event) => event.stage === "claims_verified");
+  const verdicts = claimVerdicts(events);
   const accepted = acceptedSources(agentEvents);
   if (verdicts.length === 0 && accepted.length === 0) return null;
 
@@ -31,11 +35,7 @@ export function groundingLedger(
   }
   const trustMix = [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .map(([tier, count]) => ({
-      tier,
-      count,
-      pct: Math.round((count / accepted.length) * 100),
-    }));
+    .map(([tier, count]) => ({ tier, count, pct: Math.round((count / accepted.length) * 100) }));
 
   return {
     supported: verdicts.reduce((sum, event) => sum + (event.claimsSupported ?? 0), 0),
@@ -57,72 +57,77 @@ export interface ScorecardGauge {
   pct: number | null;
 }
 
-/** The readiness scorecard (P8): each gauge appears only once its source event has arrived —
- *  grounding from claim verdicts, coverage from the gap count, structure from the streamed
- *  graph, trust from accepted sources' mean credibility. */
+function groundingGauge(events: ProgressEvent[]): ScorecardGauge | null {
+  const verdicts = claimVerdicts(events);
+  if (verdicts.length === 0) return null;
+  const total = verdicts.reduce((sum, event) => sum + (event.claimsTotal ?? 0), 0);
+  const supported = verdicts.reduce((sum, event) => sum + (event.claimsSupported ?? 0), 0);
+  const cut = verdicts.reduce((sum, event) => sum + (event.claimsCut ?? 0), 0);
+  const pct = total > 0 ? Math.round((supported / total) * 100) : null;
+  return {
+    key: "grounding",
+    label: "Grounding",
+    value: pct !== null ? `${pct}%` : "—",
+    detail: `${supported} of ${total} claims supported`,
+    tone: cut > 0 ? "warning" : "success",
+    pct,
+  };
+}
+
+function coverageGauge(events: ProgressEvent[]): ScorecardGauge | null {
+  const coverage = [...events].reverse().find((event) => event.stage === "coverage_verified");
+  if (!coverage || coverage.gapCount == null) return null;
+  return {
+    key: "coverage",
+    label: "Coverage",
+    value: coverage.gapCount === 0 ? "no gaps" : `${coverage.gapCount} gaps`,
+    detail: "promised competencies built",
+    tone: coverage.gapCount === 0 ? "success" : "warning",
+    pct: null,
+  };
+}
+
+function structureGauge(events: ProgressEvent[]): ScorecardGauge | null {
+  const graphEvent = [...events]
+    .reverse()
+    .find((event) => event.stage === "graph_built" && event.graph);
+  if (!graphEvent?.graph) return null;
+  return {
+    key: "structure",
+    label: "Structure",
+    value: graphEvent.graph.isAcyclic ? "acyclic" : "cyclic",
+    detail: `${graphEvent.graph.nodes.length} concepts · ${graphEvent.graph.edges.length} edges`,
+    tone: graphEvent.graph.isAcyclic ? "success" : "warning",
+    pct: null,
+  };
+}
+
+function trustGauge(agentEvents: AgentEvent[]): ScorecardGauge | null {
+  const accepted = acceptedSources(agentEvents);
+  const credible = accepted.filter((source) => source.credibility != null);
+  if (credible.length === 0) return null;
+  const mean =
+    credible.reduce((sum, source) => sum + (source.credibility as number), 0) / credible.length;
+  const pct = Math.round(mean * 100);
+  return {
+    key: "trust",
+    label: "Trust",
+    value: `${pct}%`,
+    detail: `mean credibility · ${accepted.length} sources`,
+    tone: "neutral",
+    pct,
+  };
+}
+
+/** The readiness scorecard (P8): each gauge appears only once its source event has arrived. */
 export function readinessScorecard(
   events: ProgressEvent[],
   agentEvents: AgentEvent[],
 ): ScorecardGauge[] {
-  const gauges: ScorecardGauge[] = [];
-
-  const verdicts = events.filter((event) => event.stage === "claims_verified");
-  if (verdicts.length > 0) {
-    const total = verdicts.reduce((sum, event) => sum + (event.claimsTotal ?? 0), 0);
-    const supported = verdicts.reduce((sum, event) => sum + (event.claimsSupported ?? 0), 0);
-    const cut = verdicts.reduce((sum, event) => sum + (event.claimsCut ?? 0), 0);
-    const pct = total > 0 ? Math.round((supported / total) * 100) : null;
-    gauges.push({
-      key: "grounding",
-      label: "Grounding",
-      value: pct !== null ? `${pct}%` : "—",
-      detail: `${supported} of ${total} claims supported`,
-      tone: cut > 0 ? "warning" : "success",
-      pct,
-    });
-  }
-
-  const coverage = [...events].reverse().find((event) => event.stage === "coverage_verified");
-  if (coverage && coverage.gapCount != null) {
-    gauges.push({
-      key: "coverage",
-      label: "Coverage",
-      value: coverage.gapCount === 0 ? "no gaps" : `${coverage.gapCount} gaps`,
-      detail: "promised competencies built",
-      tone: coverage.gapCount === 0 ? "success" : "warning",
-      pct: null,
-    });
-  }
-
-  const graphEvent = [...events]
-    .reverse()
-    .find((event) => event.stage === "graph_built" && event.graph);
-  if (graphEvent?.graph) {
-    gauges.push({
-      key: "structure",
-      label: "Structure",
-      value: graphEvent.graph.isAcyclic ? "acyclic" : "cyclic",
-      detail: `${graphEvent.graph.nodes.length} concepts · ${graphEvent.graph.edges.length} edges`,
-      tone: graphEvent.graph.isAcyclic ? "success" : "warning",
-      pct: null,
-    });
-  }
-
-  const accepted = acceptedSources(agentEvents);
-  const credible = accepted.filter((source) => source.credibility != null);
-  if (credible.length > 0) {
-    const mean =
-      credible.reduce((sum, source) => sum + (source.credibility as number), 0) / credible.length;
-    const pct = Math.round(mean * 100);
-    gauges.push({
-      key: "trust",
-      label: "Trust",
-      value: `${pct}%`,
-      detail: `mean credibility · ${accepted.length} sources`,
-      tone: "neutral",
-      pct,
-    });
-  }
-
-  return gauges;
+  return [
+    groundingGauge(events),
+    coverageGauge(events),
+    structureGauge(events),
+    trustGauge(agentEvents),
+  ].filter((gauge): gauge is ScorecardGauge => gauge !== null);
 }

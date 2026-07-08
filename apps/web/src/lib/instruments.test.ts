@@ -49,6 +49,20 @@ describe("groundingLedger", () => {
 });
 
 describe("readinessScorecard", () => {
+  it("is empty before any source event exists — an instrument with no reading shows nothing", () => {
+    expect(readinessScorecard([], [])).toEqual([]);
+    expect(readinessScorecard([makeProgressEvent("run_started", 0)], [])).toEqual([]);
+  });
+
+  it("reads grounding as a clean success when nothing was cut", () => {
+    const gauges = readinessScorecard(
+      [makeProgressEvent("claims_verified", 0, { claimsTotal: 5, claimsSupported: 5, claimsCut: 0 })],
+      [],
+    );
+
+    expect(gauges[0]).toMatchObject({ key: "grounding", value: "100%", tone: "success" });
+  });
+
   it("renders only the gauges whose source events have arrived — no fake gauges", () => {
     const gauges = readinessScorecard(
       [
