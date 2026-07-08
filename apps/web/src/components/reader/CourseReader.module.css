@@ -103,14 +103,18 @@
   flex: none;
 }
 
+/* "Builds toward" — the header band's promise line (P6): readable secondary text with the
+   competency itself carrying the ink. */
 .competency {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 520px;
 }
 
 .competencyName {
-  color: var(--text-secondary);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .phase {

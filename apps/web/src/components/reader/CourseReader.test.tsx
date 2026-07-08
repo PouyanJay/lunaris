@@ -89,6 +89,22 @@ describe("CourseReader", () => {
     expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
   });
 
+  it("renders the design's footer: worded labels with the advance as the accent CTA", () => {
+    // The advancing action is the reader's one amber CTA (P6); Previous stays neutral.
+    render(<CourseReader course={multiLessonCourse()} />);
+
+    const next = screen.getByRole("button", { name: /next lesson/i });
+    expect(next).toHaveTextContent("Next lesson");
+    expect(next.className).toMatch(/accent/);
+    expect(screen.getByRole("button", { name: /previous lesson/i })).toHaveTextContent("Previous");
+
+    // On the last lesson the advance becomes Finish course — still the accent CTA.
+    fireEvent.click(next);
+    fireEvent.click(next);
+    const finish = screen.getByRole("button", { name: /finish course/i });
+    expect(finish.className).toMatch(/accent/);
+  });
+
   it("steps forward with Next and disables it on the last lesson", () => {
     // Arrange
     render(<CourseReader course={multiLessonCourse()} />);

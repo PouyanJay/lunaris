@@ -571,6 +571,7 @@ export function CourseReader({
                 // The design's prev-label rule: from lesson 1 the way back is the Overview, not
                 // a dead disabled button.
                 <Button aria-label="Back to overview" onClick={onExitToOverview}>
+                  <ChevronLeftIcon />
                   Overview
                 </Button>
               ) : (
@@ -579,11 +580,13 @@ export function CourseReader({
                   disabled={safeIndex === 0}
                   onClick={() => goToLesson(Math.max(0, safeIndex - 1))}
                 >
-                  Prev
+                  <ChevronLeftIcon />
+                  Previous
                 </Button>
               )}
               {safeIndex >= total - 1 ? (
                 <Button
+                  variant="accent"
                   aria-label="Finish course"
                   disabled={!progress}
                   onClick={() => {
@@ -594,6 +597,7 @@ export function CourseReader({
                 </Button>
               ) : (
                 <Button
+                  variant="accent"
                   aria-label="Next lesson"
                   onClick={() => {
                     // Advancing is the lesson's completion signal (plan Open Decision 2).
@@ -601,7 +605,7 @@ export function CourseReader({
                     goToLesson(Math.min(total - 1, safeIndex + 1));
                   }}
                 >
-                  Next
+                  Next lesson
                 </Button>
               )}
             </div>
@@ -678,6 +682,20 @@ export function CourseReader({
         />
       )}
     </div>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M15 18l-6-6 6-6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
