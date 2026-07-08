@@ -41,6 +41,31 @@ describe("BuildReplay", () => {
     }
   });
 
+  it("renders the control room with the transcript one toggle away, never claiming live", async () => {
+    // Replay parity (P8): the same lens as the live build — but a still log has no live dot,
+    // and the completed run reads every phase done.
+    stubFetch({
+      ok: true,
+      json: async () => [
+        makeRunEvent(0, makeProgressEvent("run_started", 0)),
+        makeRunEvent(1, makeProgressEvent("claims_verified", 1)),
+        makeRunEvent(2, makeProgressEvent("run_completed", 2)),
+      ],
+    });
+
+    renderReplay("run-1");
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: /building how https works/i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("LIVE")).not.toBeInTheDocument();
+    const pipeline = screen.getByRole("region", { name: /pipeline/i });
+    expect(pipeline.querySelector('[data-status="active"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Transcript" }));
+    expect(screen.getByRole("radio", { name: "Transcript" })).toBeChecked();
+  });
+
   it("shows a loading skeleton while the log is in flight", () => {
     // A never-resolving fetch keeps the hook in its loading state.
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));

@@ -48,8 +48,21 @@ async def test_pipeline_emits_ordered_progress_events(tmp_path: Path) -> None:
     assert graph.kc_count == len(course.graph.nodes)
     assert graph.edge_count == len(course.graph.edges)
 
+    # P8 control room: GRAPH_BUILT streams the validated structure itself (not just counts), so
+    # the client can render the blueprint as the build assembles.
+    assert graph.graph is not None
+    assert [n.id for n in graph.graph.nodes] == [n.id for n in course.graph.nodes]
+    assert graph.graph.is_acyclic is True
+    assert graph.goal_concept == course.goal_concept
+
     curriculum = next(e for e in sink.events if e.stage is ProgressStage.CURRICULUM_DESIGNED)
     assert curriculum.module_count == len(course.modules)
+
+    # P8 control room: CURRICULUM_DESIGNED streams the module → KC mapping, so MODULE_AUTHORED
+    # events can light the mapped nodes.
+    assert curriculum.modules is not None
+    assert [m.id for m in curriculum.modules] == [m.id for m in course.modules]
+    assert [m.kcs for m in curriculum.modules] == [list(m.kcs) for m in course.modules]
 
     authored_ids = [e.module_id for e in sink.events if e.stage is ProgressStage.MODULE_AUTHORED]
     assert authored_ids == [m.id for m in course.modules]

@@ -40,6 +40,26 @@ describe("LiveBuildReplay", () => {
     expect(screen.getByText("Concepts")).toBeInTheDocument();
   });
 
+  it("claims liveness while the reattached run is still incomplete", async () => {
+    // The control-room lens on a reattached run: the console pulses live until run_completed.
+    stubFetch({
+      ok: true,
+      json: async () => [
+        makeRunEvent(0, makeProgressEvent("run_started", 0)),
+        makeRunEvent(1, makeProgressEvent("module_authored", 1, { moduleId: "m-one" })),
+      ],
+    });
+
+    renderLive("run-1");
+
+    await waitFor(() =>
+      expect(screen.getByRole("region", { name: /agent console/i })).toBeInTheDocument(),
+    );
+    expect(screen.getByText("LIVE")).toBeInTheDocument();
+    const pipeline = screen.getByRole("region", { name: /pipeline/i });
+    expect(pipeline.querySelector('[data-status="active"]')).not.toBeNull();
+  });
+
   it("shows the pending spine while the run has emitted nothing yet", async () => {
     stubFetch({ ok: true, json: async () => [] });
 

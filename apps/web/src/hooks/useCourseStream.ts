@@ -53,8 +53,18 @@ export type BuildState =
       // persisted event log + finished course. The build never stopped; only the live feed did.
       reconnecting: boolean;
     }
-  // runId is carried from the streaming state so the ready course's Build tab can replay this run.
-  | { status: "ready"; course: Course; runId: string | undefined }
+  // runId is carried from the streaming state so the ready course's Build tab can replay this
+  // run; the accumulated transcript (events/agentEvents/stageTimes) rides along so the control
+  // room can stay mounted with every phase done while videos finish — the live lens must never
+  // unmount mid-run and freeze on its last-seen phase (the Verify-freeze fix, P8).
+  | {
+      status: "ready";
+      course: Course;
+      runId: string | undefined;
+      events: ProgressEvent[];
+      agentEvents: AgentEvent[];
+      stageTimes: StageTimes;
+    }
   // The full request is carried so a retry re-runs the identical build (same depth/level/trust),
   // not a defaulted one.
   | { status: "error"; message: string; request: BuildRequest };
@@ -164,11 +174,15 @@ function streamBuild(options: StreamBuildOptions): void {
   })
     .then((course) => {
       if (controller.signal.aborted) return;
-      // Carry the run_id captured during streaming into ready, so the Build tab can replay it.
+      // Carry the run_id + accumulated transcript from streaming into ready, so the Build tab
+      // can replay it and the control room can render the finished run without a refetch.
       setState((prev) => ({
         status: "ready",
         course,
         runId: prev.status === "streaming" ? prev.runId : undefined,
+        events: prev.status === "streaming" ? prev.events : [],
+        agentEvents: prev.status === "streaming" ? prev.agentEvents : [],
+        stageTimes: prev.status === "streaming" ? prev.stageTimes : {},
       }));
     })
     .catch((error: unknown) => {
@@ -243,7 +257,14 @@ async function reconnectBuild(options: ReconnectOptions): Promise<void> {
     try {
       const course = await fetchCourseById(apiBaseUrl, courseId, signal);
       if (signal.aborted) return;
-      setState({ status: "ready", course, runId });
+      setState((prev) => ({
+        status: "ready",
+        course,
+        runId,
+        events: prev.status === "streaming" ? prev.events : [],
+        agentEvents: prev.status === "streaming" ? prev.agentEvents : [],
+        stageTimes: prev.status === "streaming" ? prev.stageTimes : {},
+      }));
       return;
     } catch (error) {
       if (signal.aborted) return;

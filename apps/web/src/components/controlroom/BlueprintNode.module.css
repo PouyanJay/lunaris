@@ -1,0 +1,95 @@
+.node {
+  position: relative;
+  width: 160px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: opacity var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.node[data-state="queued"] {
+  border-style: dashed;
+  opacity: 0.55;
+}
+
+.node[data-state="mapping"] {
+  border-color: var(--accent-500);
+}
+
+.node[data-goal] {
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 1px var(--accent-500);
+}
+
+/* The tier spine — same difficulty language as the Map. */
+.spine {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--node-tier);
+}
+
+/* The in-flight beacon: its module is being authored right now. */
+.pulse {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+  animation: pulse-opacity 1.6s var(--ease) infinite;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.order {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.badge {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
+  border: var(--border-width) solid var(--border-strong);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.badge[data-tone="mapping"],
+.badge[data-tone="goal"] {
+  color: var(--accent-600);
+  border-color: var(--accent-500);
+  background: var(--accent-soft);
+}
+
+.badge[data-tone="mapped"] {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+  }
+}

@@ -1,5 +1,26 @@
+from collections.abc import Sequence
+
 from .base import CourseModel
 from .enums import CourseStatus, ProgressStage
+from .instruction import Module
+from .knowledge import PrerequisiteGraph
+
+
+class CurriculumModuleMap(CourseModel):
+    """One module's KC mapping, streamed on CURRICULUM_DESIGNED (P8 control room).
+
+    Pairs with the per-module MODULE_AUTHORED events so the client can light each mapped
+    knowledge component on the live blueprint as its module lands.
+    """
+
+    id: str
+    title: str
+    kcs: list[str]
+
+    @classmethod
+    def from_modules(cls, modules: Sequence[Module]) -> list["CurriculumModuleMap"]:
+        """One row per course module — the single conversion point both pipelines share."""
+        return [cls(id=module.id, title=module.title, kcs=list(module.kcs)) for module in modules]
 
 
 class ProgressEvent(CourseModel):
@@ -21,6 +42,8 @@ class ProgressEvent(CourseModel):
     label: str
     run_id: str
     sequence: int = 0
+    # Intentionally redundant with ``graph`` below: clients rendering pre-P8 run logs (no
+    # structured payload) still need the counts for the pipeline fallback.
     kc_count: int | None = None
     edge_count: int | None = None
     module_count: int | None = None
@@ -37,3 +60,10 @@ class ProgressEvent(CourseModel):
     videos_total: int | None = None
     videos_degraded: int | None = None
     status: CourseStatus | None = None
+    # P8 control room: GRAPH_BUILT carries the validated structure itself (with the goal), and
+    # CURRICULUM_DESIGNED the module → KC mapping — the client renders the live blueprint from
+    # these instead of re-deriving structure from truncated tool results. None on every other
+    # stage; absent entirely in pre-P8 run logs (clients must treat them as optional).
+    graph: PrerequisiteGraph | None = None
+    goal_concept: str | None = None
+    modules: list[CurriculumModuleMap] | None = None

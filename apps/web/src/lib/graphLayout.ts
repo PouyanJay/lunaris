@@ -102,27 +102,32 @@ export function buildGraphLayout(
   const nodeIds = new Set(graph.nodes.map((kc) => kc.id));
   const edges: Edge[] = graph.edges
     .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
-    .map((edge) => {
-      const lit = isLit(edge.from) && isLit(edge.to);
-      return {
-        id: `${edge.from}->${edge.to}`,
-        source: edge.from,
-        target: edge.to,
-        // Flexible bezier connector; the arrowhead points prerequisite → dependent.
-        type: "default",
-        className: lit ? "edge-lit" : "edge-dim",
-        style: lit
-          ? { stroke: "var(--accent-500)", strokeOpacity: 0.4, strokeWidth: 1.4 }
-          : { stroke: "var(--border-strong)", strokeOpacity: 0.6, strokeWidth: 1.2 },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          width: 14,
-          height: 14,
-          color: lit ? "var(--accent-500)" : "var(--border-strong)",
-        },
-        data: { strength: edge.strength },
-      };
-    });
+    .map((edge) => ({
+      id: `${edge.from}->${edge.to}`,
+      source: edge.from,
+      target: edge.to,
+      // Flexible bezier connector; the arrowhead points prerequisite → dependent.
+      type: "default",
+      ...edgeAppearance(isLit(edge.from) && isLit(edge.to)),
+      data: { strength: edge.strength },
+    }));
 
   return { nodes, edges };
+}
+
+/** The one source of truth for what a lit/dim graph edge looks like — shared by the Map's
+ *  mastery lighting and the blueprint's assembly lighting so the treatments never drift. */
+export function edgeAppearance(lit: boolean): Pick<Edge, "className" | "style" | "markerEnd"> {
+  return {
+    className: lit ? "edge-lit" : "edge-dim",
+    style: lit
+      ? { stroke: "var(--accent-500)", strokeOpacity: 0.4, strokeWidth: 1.4 }
+      : { stroke: "var(--border-strong)", strokeOpacity: 0.6, strokeWidth: 1.2 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 14,
+      height: 14,
+      color: lit ? "var(--accent-500)" : "var(--border-strong)",
+    },
+  };
 }

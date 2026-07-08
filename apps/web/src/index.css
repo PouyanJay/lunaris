@@ -310,6 +310,19 @@ p {
   border: 0;
 }
 
+/* The shared "working" pulse — a global keyframe (CSS Modules scope local @keyframes, so the
+   control room's beacons all reference this one) . Consumers pair it with a
+   prefers-reduced-motion disable. */
+@keyframes pulse-opacity {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .skip-link {
   position: absolute;
   left: var(--space-3);

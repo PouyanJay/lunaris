@@ -5,12 +5,14 @@ import json
 from collections.abc import Callable, Sequence
 
 import pytest
+from conftest import RecordingProgressSink
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from lunaris_agent.harness import build_course_agent
 from lunaris_agent.harness.draft import CourseDraft
+from lunaris_agent.harness.progress_reporter import ProgressReporter
 from lunaris_agent.harness.tools import make_prerequisite_graph_tool
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
-from lunaris_runtime.schema import BloomLevel, KnowledgeComponent
+from lunaris_runtime.schema import BloomLevel, KnowledgeComponent, ProgressStage
 
 # Two prerequisites of "c"; "a" and "b" are independent roots.
 _EDGES = [("a", "c"), ("b", "c")]
@@ -99,6 +101,27 @@ async def test_graph_tool_reads_concepts_from_the_draft() -> None:
     assert graph["topoOrder"].index("a") < graph["topoOrder"].index("c")
     assert draft.graph is not None
     assert len(draft.graph.nodes) == len(_CONCEPTS)
+
+
+async def test_graph_tool_emission_carries_the_structure_for_the_blueprint(
+    progress_sink: RecordingProgressSink,
+) -> None:
+    # Arrange — a recording sink on the draft's reporter: the P8 control room renders the
+    # blueprint from the GRAPH_BUILT event itself, so the event must carry the validated graph
+    # and the goal, not just counts.
+    draft = _draft_with_concepts()
+    draft.progress = ProgressReporter(draft.run_id, progress_sink)
+    tool = make_prerequisite_graph_tool(PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)), draft)
+
+    # Act
+    await tool.ainvoke({})
+
+    # Assert
+    event = next(e for e in progress_sink.events if e.stage is ProgressStage.GRAPH_BUILT)
+    assert event.graph is not None
+    assert {n.id for n in event.graph.nodes} == {"a", "b", "c"}
+    assert event.graph.is_acyclic is True
+    assert event.goal_concept == "c"
 
 
 async def test_graph_tool_ignores_an_empty_model_concepts_arg_when_a_draft_is_present() -> None:
