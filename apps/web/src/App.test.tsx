@@ -758,6 +758,30 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
+  it("re-runs the identical failed build (incl. Official-sources-only) on Try again", async () => {
+    // Arrange — every build fails; the composer has the trust switch turned on.
+    const fetchMock = routedFetch({ runs: [], build: { ok: false, status: 500, body: null } });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("switch", { name: /official sources only/i }));
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "x" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // Act — the build errors; retry it.
+    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
+
+    // Assert — the retry re-issued the build stream carrying official_only=true (retry parity end
+    // to end), not a defaulted rebuild that silently dropped the trust switch.
+    await waitFor(() => {
+      const streamCalls = fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes("/api/courses/stream"),
+      );
+      expect(streamCalls.length).toBeGreaterThanOrEqual(2);
+      expect(String(streamCalls.at(-1)?.[0])).toContain("official_only=true");
+    });
+  });
+
   it("lands a ready course on its Overview tab, not the reader or the graph", async () => {
     // Arrange — a build that resolves straight to a ready course.
     vi.stubGlobal(
