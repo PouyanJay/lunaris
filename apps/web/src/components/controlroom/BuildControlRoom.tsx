@@ -29,6 +29,9 @@ interface BuildControlRoomProps {
   /** The run has finished (terminal course frame or run_completed in the log) — every phase
    *  renders done even when tail progress events were coalesced (the Verify-freeze fix). */
   complete?: boolean;
+  /** Whether the feed is live (pulses the console dot). Defaults to `!complete`; a static
+   *  replay of a past run passes false — a still log must not claim liveness. */
+  live?: boolean;
   /** Extra instrument for the rail (the videos-finishing meter after publish). */
   videosPanel?: ReactNode;
 }
@@ -43,6 +46,7 @@ export function BuildControlRoom({
   agentEvents,
   stageTimes,
   complete = false,
+  live = !complete,
   videosPanel,
 }: BuildControlRoomProps) {
   const [view, setView] = useState<BuildView>("room");
@@ -102,7 +106,7 @@ export function BuildControlRoom({
                 )}
               </div>
             </section>
-            <ConsoleTicker entries={ticker} live={!complete} />
+            <ConsoleTicker entries={ticker} live={live && !complete} />
           </div>
           <aside className={styles.rail}>
             <PipelineRail phases={phases} />

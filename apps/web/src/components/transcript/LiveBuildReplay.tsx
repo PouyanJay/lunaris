@@ -1,5 +1,5 @@
+import { BuildControlRoom } from "../controlroom/BuildControlRoom";
 import { Button } from "../primitives/Button";
-import { BuildTimeline } from "./BuildTimeline";
 import { useLiveRunTrace } from "../../hooks/useLiveRunTrace";
 import states from "../states/DataStates.module.css";
 import styles from "./BuildReplay.module.css";
@@ -15,8 +15,8 @@ interface LiveBuildReplayProps {
 }
 
 /**
- * Reattaches a still-running build to its live timeline: polls the run's persisted event log and
- * renders it into the same {@link BuildTimeline} the live SSE streams into — so returning to an
+ * Reattaches a still-running build to its live view: polls the run's persisted event log and
+ * renders it into the same control room the live SSE streams into — so returning to an
  * in-progress run (reload / navigate / a dropped stream) shows live progress, not a static "still
  * building" placeholder. The parent advances the canvas to the finished course once the run
  * completes (see `useOpenedRun`'s auto re-check), at which point this view is replaced.
@@ -54,7 +54,14 @@ export function LiveBuildReplay({ apiBaseUrl, runId, topic }: LiveBuildReplayPro
     );
   }
 
-  // An empty log just means the run hasn't emitted yet — BuildTimeline renders the pending spine,
-  // which fills in as polls land, so there's no separate "nothing yet" state to show.
-  return <BuildTimeline topic={topic} events={state.events} agentEvents={state.agentEvents} />;
+  // An empty log just means the run hasn't emitted yet — the control room renders the pending
+  // pipeline, which fills in as polls land, so there's no separate "nothing yet" state to show.
+  return (
+    <BuildControlRoom
+      topic={topic}
+      events={state.events}
+      agentEvents={state.agentEvents}
+      complete={state.events.some((event) => event.stage === "run_completed")}
+    />
+  );
 }

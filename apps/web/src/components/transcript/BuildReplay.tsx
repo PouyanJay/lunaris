@@ -1,5 +1,5 @@
+import { BuildControlRoom } from "../controlroom/BuildControlRoom";
 import { Button } from "../primitives/Button";
-import { BuildTimeline } from "./BuildTimeline";
 import { useRunTrace } from "../../hooks/useRunTrace";
 import states from "../states/DataStates.module.css";
 import styles from "./BuildReplay.module.css";
@@ -15,7 +15,7 @@ interface BuildReplayProps {
 }
 
 /**
- * The Build tab: replays a past run's persisted event log into the same `BuildTimeline` the live
+ * The Build tab: replays a past run's persisted event log into the same control room the live
  * build streams into, but static — no SSE. Covers every data state (loading / empty / error /
  * loaded); a course built before build sessions were recorded shows a calm "no build record" state.
  */
@@ -68,5 +68,15 @@ export function BuildReplay({ apiBaseUrl, runId, topic }: BuildReplayProps) {
     );
   }
 
-  return <BuildTimeline topic={topic} events={state.events} agentEvents={state.agentEvents} />;
+  // The same control-room lens the live build renders (P8) — static: a still log never claims
+  // liveness, and a log without run_completed keeps its honest last phase.
+  return (
+    <BuildControlRoom
+      topic={topic}
+      events={state.events}
+      agentEvents={state.agentEvents}
+      complete={state.events.some((event) => event.stage === "run_completed")}
+      live={false}
+    />
+  );
 }
