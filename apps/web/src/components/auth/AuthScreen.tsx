@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { fetchSignupGateStatus } from "../../lib/signupGate";
 import { BrandMark } from "../shell/BrandMark";
 import { Button } from "../primitives/Button";
+import { Input } from "../primitives/Input";
 import styles from "./AuthScreen.module.css";
 
 type Mode = "signin" | "signup";
@@ -39,9 +40,6 @@ export function AuthScreen({ apiBaseUrl }: { apiBaseUrl?: string | undefined }) 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const emailId = useId();
-  const passwordId = useId();
-  const inviteId = useId();
   const statusId = useId();
   const isSignup = mode === "signup";
   const showInvite = isSignup && gateEnforced;
@@ -103,60 +101,42 @@ export function AuthScreen({ apiBaseUrl }: { apiBaseUrl?: string | undefined }) 
         </p>
 
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor={emailId}>
-              Email
-            </label>
-            <input
-              id={emailId}
-              className={styles.input}
-              type="email"
-              autoComplete="email"
-              autoFocus
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              disabled={submitting}
-              aria-invalid={error !== null}
-            />
-          </div>
+          <Input
+            label="Email"
+            type="email"
+            autoComplete="email"
+            autoFocus
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            disabled={submitting}
+            aria-invalid={error !== null}
+          />
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor={passwordId}>
-              Password
-            </label>
-            <input
-              id={passwordId}
-              className={styles.input}
-              type="password"
-              autoComplete={isSignup ? "new-password" : "current-password"}
-              required
-              minLength={6}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={submitting}
-              aria-invalid={error !== null}
-            />
-          </div>
+          <Input
+            label="Password"
+            type="password"
+            autoComplete={isSignup ? "new-password" : "current-password"}
+            required
+            minLength={6}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            disabled={submitting}
+            aria-invalid={error !== null}
+          />
 
           {showInvite && (
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor={inviteId}>
-                Invitation code
-              </label>
-              <input
-                id={inviteId}
-                className={styles.input}
-                type="text"
-                autoComplete="off"
-                required
-                value={inviteCode}
-                onChange={(event) => setInviteCode(event.target.value)}
-                disabled={submitting}
-                aria-invalid={error !== null}
-                aria-describedby={statusId}
-              />
-            </div>
+            <Input
+              label="Invitation code"
+              type="text"
+              autoComplete="off"
+              required
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value)}
+              disabled={submitting}
+              aria-invalid={error !== null}
+              aria-describedby={statusId}
+            />
           )}
 
           <div id={statusId} aria-live="polite">
