@@ -101,6 +101,36 @@ async def test_graph_tool_reads_concepts_from_the_draft() -> None:
     assert len(draft.graph.nodes) == len(_CONCEPTS)
 
 
+async def test_graph_tool_emission_carries_the_structure_for_the_blueprint() -> None:
+    # Arrange — a recording sink on the draft's reporter: the P8 control room renders the
+    # blueprint from the GRAPH_BUILT event itself, so the event must carry the validated graph
+    # and the goal, not just counts.
+    from lunaris_agent.harness.progress_reporter import ProgressReporter
+    from lunaris_runtime.schema import ProgressEvent, ProgressStage
+
+    class _RecordingSink:
+        def __init__(self) -> None:
+            self.events: list[ProgressEvent] = []
+
+        async def emit(self, event: ProgressEvent) -> None:
+            self.events.append(event)
+
+    draft = _draft_with_concepts()
+    sink = _RecordingSink()
+    draft.progress = ProgressReporter(draft.run_id, sink)
+    tool = make_prerequisite_graph_tool(PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)), draft)
+
+    # Act
+    await tool.ainvoke({})
+
+    # Assert
+    event = next(e for e in sink.events if e.stage is ProgressStage.GRAPH_BUILT)
+    assert event.graph is not None
+    assert {n.id for n in event.graph.nodes} == {"a", "b", "c"}
+    assert event.graph.is_acyclic is True
+    assert event.goal_concept == "c"
+
+
 async def test_graph_tool_ignores_an_empty_model_concepts_arg_when_a_draft_is_present() -> None:
     # Arrange — even if the model passes an empty concepts list (the live failure), the draft wins.
     draft = _draft_with_concepts()

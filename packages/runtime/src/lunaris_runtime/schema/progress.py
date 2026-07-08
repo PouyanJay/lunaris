@@ -1,5 +1,18 @@
 from .base import CourseModel
 from .enums import CourseStatus, ProgressStage
+from .knowledge import PrerequisiteGraph
+
+
+class CurriculumModuleMap(CourseModel):
+    """One module's KC mapping, streamed on CURRICULUM_DESIGNED (P8 control room).
+
+    Pairs with the per-module MODULE_AUTHORED events so the client can light each mapped
+    knowledge component on the live blueprint as its module lands.
+    """
+
+    id: str
+    title: str
+    kcs: list[str]
 
 
 class ProgressEvent(CourseModel):
@@ -37,3 +50,10 @@ class ProgressEvent(CourseModel):
     videos_total: int | None = None
     videos_degraded: int | None = None
     status: CourseStatus | None = None
+    # P8 control room: GRAPH_BUILT carries the validated structure itself (with the goal), and
+    # CURRICULUM_DESIGNED the module → KC mapping — the client renders the live blueprint from
+    # these instead of re-deriving structure from truncated tool results. None on every other
+    # stage; absent entirely in pre-P8 run logs (clients must treat them as optional).
+    graph: PrerequisiteGraph | None = None
+    goal_concept: str | None = None
+    modules: list[CurriculumModuleMap] | None = None

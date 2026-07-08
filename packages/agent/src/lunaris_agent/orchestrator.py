@@ -10,6 +10,7 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseStatus,
+    CurriculumModuleMap,
     DiscoveryDepth,
     Lesson,
     Module,
@@ -119,6 +120,8 @@ class Orchestrator:
             f"{len(course.graph.edges)} edges",
             kc_count=len(course.graph.nodes),
             edge_count=len(course.graph.edges),
+            graph=course.graph,
+            goal_concept=course.goal_concept,
         )
 
         plan = await self._architect.design(course.graph)
@@ -127,6 +130,10 @@ class Orchestrator:
             ProgressStage.CURRICULUM_DESIGNED,
             f"Designed curriculum: {len(course.modules)} modules",
             module_count=len(course.modules),
+            modules=[
+                CurriculumModuleMap(id=module.id, title=module.title, kcs=list(module.kcs))
+                for module in course.modules
+            ],
         )
 
         course.status = CourseStatus.AUTHORING

@@ -9,7 +9,7 @@ draft, and returns a compact summary for the agent to reason over before authori
 
 import structlog
 from langchain_core.tools import BaseTool, tool
-from lunaris_runtime.schema import ProgressStage, VideoKind
+from lunaris_runtime.schema import CurriculumModuleMap, ProgressStage, VideoKind
 
 from ...coverage import framework_coverage
 from ...subagents.curriculum_architect import CurriculumAssembler, ICurriculumArchitect
@@ -94,6 +94,11 @@ def make_design_curriculum_tool(
             ProgressStage.CURRICULUM_DESIGNED,
             f"Designed curriculum: {len(modules)} modules",
             module_count=len(modules),
+            # Module → KC mapping for the P8 blueprint: MODULE_AUTHORED events light these nodes.
+            modules=[
+                CurriculumModuleMap(id=module.id, title=module.title, kcs=list(module.kcs))
+                for module in modules
+            ],
         )
         # Enqueue the course-level videos now (V5-T2): this is the first point where BOTH the
         # researched brief (research_standard ran before curriculum) and the curriculum are final —

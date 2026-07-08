@@ -59,6 +59,10 @@ def make_prerequisite_graph_tool(
             f"Built prerequisite graph: {len(graph.nodes)} concepts, {len(graph.edges)} edges",
             kc_count=len(graph.nodes),
             edge_count=len(graph.edges),
+            # The structure itself rides the event (P8 blueprint) — the tool RESULT below is
+            # compacted for the model and can truncate, so the client never relies on it.
+            graph=graph,
+            goal_concept=draft.goal_concept or goal or None,
         )
         return graph.model_dump(by_alias=True)
 

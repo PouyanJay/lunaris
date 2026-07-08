@@ -493,6 +493,14 @@ export type ProgressStage =
   | "lesson_videos"
   | "run_completed";
 
+/** One module's KC mapping on CURRICULUM_DESIGNED (mirrors CurriculumModuleMap) — pairs with
+ *  MODULE_AUTHORED events so the P8 blueprint can light each mapped node as its module lands. */
+export interface CurriculumModuleMap {
+  id: string;
+  title: string;
+  kcs: string[];
+}
+
 /** One streamed build update (mirrors the ProgressEvent schema, serialised camelCase). */
 export interface ProgressEvent {
   stage: ProgressStage;
@@ -513,6 +521,12 @@ export interface ProgressEvent {
   videosTotal: number | null;
   videosDegraded: number | null;
   status: CourseStatus | null;
+  /** P8 control room: the validated structure + goal on GRAPH_BUILT, and the module → KC
+   *  mapping on CURRICULUM_DESIGNED. Absent/null on other stages AND in pre-P8 run logs —
+   *  the blueprint renders only when they exist (strapline honesty). */
+  graph?: PrerequisiteGraph | null;
+  goalConcept?: string | null;
+  modules?: CurriculumModuleMap[] | null;
 }
 
 /** The operational lifecycle of a build run for the sidebar history (mirrors RunStatus). */

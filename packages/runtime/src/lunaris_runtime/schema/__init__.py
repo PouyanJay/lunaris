@@ -61,7 +61,7 @@ from .instruction import (
 )
 from .knowledge import Citation, Edge, KnowledgeComponent, PrerequisiteGraph
 from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Probe
-from .progress import ProgressEvent
+from .progress import CurriculumModuleMap, ProgressEvent
 from .resource import Resource
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
@@ -120,6 +120,7 @@ __all__ = [
     "CourseSettings",
     "CourseStatus",
     "CourseVideos",
+    "CurriculumModuleMap",
     "DegradedScene",
     "DeliverableShape",
     "DetailDepth",
