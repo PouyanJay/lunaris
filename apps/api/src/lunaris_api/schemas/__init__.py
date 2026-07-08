@@ -7,6 +7,7 @@ from .activity import (
 )
 from .app_config import ConfigSettingView, ConfigValue, ConfigView
 from .authorities import SourceAuthorityRequest, SourceAuthorityView
+from .bookmarks import BookmarkRequest, BookmarkView
 from .bridge import BridgeMessageView, BridgeRequestView, BridgeResultRequest
 from .brief_response import BriefResponse
 from .capabilities import CapabilityStatusView
@@ -33,6 +34,8 @@ __all__ = [
     "ActivityFeedItemView",
     "ActivityStatsView",
     "ActivityView",
+    "BookmarkRequest",
+    "BookmarkView",
     "BridgeMessageView",
     "BridgeRequestView",
     "BridgeResultRequest",

@@ -65,6 +65,7 @@ from .activity import (
     LearningEventEmitter,
     SupabaseActivityStore,
 )
+from .bookmarks import IBookmarkStore, InMemoryBookmarkStore, SupabaseBookmarkStore
 from .admin_users import (
     InMemoryUserDirectory,
     IUserDirectory,
@@ -888,6 +889,27 @@ def get_activity_store(
 
 
 ActivityStoreDep = Annotated[IActivityStore, Depends(get_activity_store)]
+
+
+# Bookmark stores follow the progress-store posture: process-wide singletons, Supabase when keyed
+# (durable, owner-scoped RLS), in-memory otherwise (offline dev / hermetic tests).
+_in_memory_bookmark_store = InMemoryBookmarkStore()
+_supabase_bookmark_store = SupabaseBookmarkStore()
+
+
+def get_bookmark_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+    owner_id: Annotated[str | None, Depends(optional_user_id)],
+) -> IBookmarkStore:
+    """The bookmark store: Supabase (durable, owner-scoped RLS) for an authenticated caller when
+    keyed; the in-memory fallback otherwise — including the auth-off single-user posture, where
+    there is no user_id to scope Supabase rows by (the progress-store precedent)."""
+    if settings.has_supabase and owner_id is not None:
+        return _supabase_bookmark_store
+    return _in_memory_bookmark_store
+
+
+BookmarkStoreDep = Annotated[IBookmarkStore, Depends(get_bookmark_store)]
 
 
 def get_learning_event_emitter(store: ActivityStoreDep) -> LearningEventEmitter:

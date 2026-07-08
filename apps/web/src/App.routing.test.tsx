@@ -466,7 +466,8 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Bookmarks" }));
     expect(window.location.pathname).toBe("/bookmarks");
-    expect(await screen.findByText(/saved lessons/i)).toBeInTheDocument();
+    // A user with no saves gets the Bookmarks screen's designed empty state.
+    expect(await screen.findByText(/no bookmarks yet/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Home" }));
     expect(window.location.pathname).toBe("/");

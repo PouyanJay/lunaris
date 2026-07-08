@@ -1,0 +1,62 @@
+/* Bookmarks: the learner's saved lessons/concepts/sources — filter pills over hairline-divided
+   sections. Accent is the saved-glyph only. */
+.canvas {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.inner {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.subline {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Loading skeleton (pills row + list rows) ── */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeletonPills {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeletonPill {
+  width: 84px;
+  height: 30px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+.skeletonRow {
+  height: 64px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+}
+
+/* ── Walking-skeleton list (the designed rows/chips/cards land with the screen task) ── */
+.plainList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.plainRow {
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
