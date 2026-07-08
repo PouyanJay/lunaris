@@ -1,0 +1,65 @@
+.group {
+  padding: var(--space-3) 0 var(--space-1);
+}
+
+.day {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.group:last-child .list .row:last-child {
+  border-bottom: none;
+}
+
+.dot {
+  margin-top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex: none;
+}
+
+.dotNeutral {
+  background: var(--text-muted);
+}
+
+.dotSuccess {
+  background: var(--success);
+}
+
+.dotAccent {
+  background: var(--accent-500);
+}
+
+.text {
+  flex: 1;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

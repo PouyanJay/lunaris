@@ -65,28 +65,37 @@
   }
 }
 
-/* ── Feed (walking-skeleton form; the typed day-grouped feed lands with the screen task) ── */
-.feedList {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.feedRow {
+/* ── The loaded instrument: tiles row → two chart panels → the feed ── */
+.instrument {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) 0;
-  border-bottom: var(--border-width) solid var(--border);
+  flex-direction: column;
+  gap: var(--space-6);
 }
 
-.feedRow:last-child {
-  border-bottom: none;
+.charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
 }
 
-.feedText {
-  flex: 1;
+.recentLabel {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: 400;
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.quietFeed {
+  margin: 0;
   font-size: var(--text-sm);
-  color: var(--text);
-  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 720px) {
+  .charts {
+    grid-template-columns: 1fr;
+  }
 }

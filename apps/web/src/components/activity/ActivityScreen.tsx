@@ -2,7 +2,11 @@ import { Panel } from "../primitives/Panel";
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
 import { useActivity } from "../../hooks/useActivity";
-import type { ActivityFeedItem, ActivityView } from "../../lib/activity";
+import type { ActivityView } from "../../lib/activity";
+import { ActivityFeed } from "./ActivityFeed";
+import { ActivityHeat } from "./ActivityHeat";
+import { ActivityStatTiles } from "./ActivityStatTiles";
+import { ActivityWeekBars } from "./ActivityWeekBars";
 import styles from "./ActivityScreen.module.css";
 
 interface ActivityScreenProps {
@@ -26,13 +30,8 @@ function isEmptyView(view: ActivityView): boolean {
   );
 }
 
-function feedLine(item: ActivityFeedItem): string {
-  const subject = item.lessonTitle ?? item.courseTitle ?? item.courseId;
-  return `${item.eventType} · ${subject}`;
-}
-
 /** The Activity canvas: streaks, study minutes, and the recent-events feed, derived from real
- *  telemetry rows only. Walking-skeleton form — the designed tiles/heat/bars land next. */
+ *  telemetry rows only. */
 export function ActivityScreen({ apiBaseUrl, onBrowseCourses }: ActivityScreenProps) {
   const { state, reload } = useActivity(apiBaseUrl);
 
@@ -67,16 +66,32 @@ export function ActivityScreen({ apiBaseUrl, onBrowseCourses }: ActivityScreenPr
         />
       );
     }
+    const { view } = state;
     return (
-      <Panel heading="Recent">
-        <ul className={styles.feedList}>
-          {state.view.feed.map((item, index) => (
-            <li key={index} className={styles.feedRow}>
-              <span className={styles.feedText}>{feedLine(item)}</span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
+      <div className={styles.instrument}>
+        <ActivityStatTiles stats={view.stats} />
+        <div className={styles.charts}>
+          <Panel heading="Last 14 days" variant="plain">
+            <ActivityHeat heat={view.heat} />
+          </Panel>
+          <Panel heading="Study minutes · this week" variant="plain">
+            <ActivityWeekBars week={view.week} />
+          </Panel>
+        </div>
+        <section aria-label="Recent activity">
+          <h2 className={styles.recentLabel}>Recent</h2>
+          <Panel variant="plain">
+            {view.feed.length > 0 ? (
+              <ActivityFeed feed={view.feed} />
+            ) : (
+              <p className={styles.quietFeed}>
+                Nothing in the feed yet — finish a lesson or mark a concept understood and it
+                lands here.
+              </p>
+            )}
+          </Panel>
+        </section>
+      </div>
     );
   })();
 

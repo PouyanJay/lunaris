@@ -77,5 +77,16 @@ export async function fetchActivity(apiBaseUrl: string, signal?: AbortSignal): P
   if (!response.ok) {
     throw new ActivityError(`Couldn't load your activity (HTTP ${response.status}).`);
   }
-  return response.json() as Promise<ActivityView>;
+  const body = (await response.json()) as ActivityView | null;
+  // Trust-boundary check: consumers read stats/heat/week/feed unguarded, so an alien payload
+  // must become a recoverable error here, never a downstream crash.
+  if (
+    typeof body?.stats?.currentStreak !== "number" ||
+    !Array.isArray(body.heat) ||
+    !Array.isArray(body.week) ||
+    !Array.isArray(body.feed)
+  ) {
+    throw new ActivityError("Couldn't read your activity (unexpected response).");
+  }
+  return body;
 }

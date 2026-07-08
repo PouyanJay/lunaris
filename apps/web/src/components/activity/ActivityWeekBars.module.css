@@ -1,0 +1,42 @@
+.chart {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-2);
+  align-items: end;
+}
+
+.column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.barArea {
+  width: 100%;
+  height: 96px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+/* Past days wear the deep amber so today's accent bar stays the one highlight. */
+.bar {
+  width: 26px;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--accent-700);
+}
+
+.bar[data-today] {
+  background: var(--accent-500);
+}
+
+.bar[data-empty] {
+  background: var(--bg-muted);
+}
+
+.day {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}

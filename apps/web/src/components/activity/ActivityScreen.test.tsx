@@ -81,7 +81,8 @@ describe("ActivityScreen", () => {
           lessonId: "m-1-l0",
           lessonTitle: "Certificates and authentication",
           kcId: null,
-          occurredAt: "2026-07-08T12:00:00Z",
+          kcLabel: null,
+          occurredAt: new Date().toISOString(),
         },
       ],
     };
@@ -95,6 +96,77 @@ describe("ActivityScreen", () => {
 
     // Assert — the walking-skeleton path: a stored row reaches the rendered feed.
     expect(await screen.findByText(/certificates and authentication/i)).toBeInTheDocument();
+  });
+
+  it("renders the full instrument: stat tiles, heat, week bars, and the grouped feed", async () => {
+    // Arrange — a lived-in snapshot: 3-day streak, minutes on the last three days, one mastered
+    // concept today and a started lesson yesterday.
+    const today = new Date();
+    const iso = (daysAgo: number) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() - daysAgo);
+      return d.toISOString().slice(0, 10);
+    };
+    const view: ActivityView = {
+      stats: { currentStreak: 3, longestStreak: 11, minutesThisWeek: 142, conceptsThisWeek: 7 },
+      heat: Array.from({ length: 14 }, (_, i) => ({
+        date: iso(13 - i),
+        minutes: i >= 11 ? 20 : 0,
+        active: i >= 11,
+      })),
+      week: Array.from({ length: 7 }, (_, i) => ({ date: iso(6 - i), minutes: i === 6 ? 33 : 0 })),
+      feed: [
+        {
+          eventType: "mastered",
+          courseId: "course-1",
+          courseTitle: "How HTTPS works",
+          lessonId: null,
+          lessonTitle: null,
+          kcId: "kc-a",
+          kcLabel: "TLS fundamentals",
+          occurredAt: today.toISOString(),
+        },
+        {
+          eventType: "started",
+          courseId: "course-1",
+          courseTitle: "How HTTPS works",
+          lessonId: "m-1-l1",
+          lessonTitle: "Lesson 2 · Fundamentals",
+          kcId: null,
+          kcLabel: null,
+          // Yesterday NOON local — a fixed hours-ago offset would cross two local days when
+          // the suite runs shortly after midnight.
+          occurredAt: new Date(new Date(today).setHours(-12, 0, 0, 0)).toISOString(),
+        },
+      ],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => okResponse(view)),
+    );
+
+    // Act
+    render(<ActivityScreen apiBaseUrl="http://test" onBrowseCourses={() => {}} />);
+
+    // Assert — the four tiles, with their figures.
+    expect(await screen.findByText("Current streak")).toBeInTheDocument();
+    expect(screen.getByText("3")).toBeInTheDocument();
+    expect(screen.getByText("Longest streak")).toBeInTheDocument();
+    expect(screen.getByText("11")).toBeInTheDocument();
+    expect(screen.getByText("142")).toBeInTheDocument();
+    expect(screen.getByText("Concepts this week")).toBeInTheDocument();
+    // Heat: honest studied-days caption + an accessible chart reading.
+    expect(screen.getByText(/studied 3 of the last 14 days/i)).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /last 14 days/i })).toBeInTheDocument();
+    // Week bars: an accessible chart with a data table fallback.
+    expect(screen.getByRole("img", { name: /study minutes/i })).toBeInTheDocument();
+    // Feed: grouped by day with worded, typed rows.
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    expect(screen.getByText("Yesterday")).toBeInTheDocument();
+    expect(screen.getByText("Mastered TLS fundamentals in How HTTPS works")).toBeInTheDocument();
+    expect(
+      screen.getByText("Started Lesson 2 · Fundamentals in How HTTPS works"),
+    ).toBeInTheDocument();
   });
 
   it("sends the viewer's IANA timezone with the snapshot request", async () => {

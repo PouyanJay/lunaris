@@ -5,6 +5,7 @@ import { CourseCard } from "../course/CourseCard";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
+import { useActivity, type ActivityState } from "../../hooks/useActivity";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
 import { displayNameFromEmail, greetingForHour } from "../../lib/greeting";
 import { RECENT_LIMIT, splitHomeCourses } from "../../lib/homeCourses";
@@ -29,9 +30,12 @@ interface HomeDashboardProps {
 
 const SKELETON_CARDS = RECENT_LIMIT;
 
-/** The greeting subline — an honest library-derived figure once loaded; neutral while in flight. */
-function subline(state: LibraryState): string {
-  return state.status === "ready" ? homeSubline(state.courses) : "Your learning workspace";
+/** The greeting subline — honest figures once loaded (the live streak leads when alight);
+ *  neutral while in flight, and unchanged when the activity backend is unreachable. */
+function subline(state: LibraryState, activity: ActivityState): string {
+  if (state.status !== "ready") return "Your learning workspace";
+  const streak = activity.status === "ready" ? activity.view.stats.currentStreak : 0;
+  return homeSubline(state.courses, streak);
 }
 
 /** The live-build banners: one amber strip per genuinely running build, each linking into the
@@ -157,6 +161,8 @@ export function HomeDashboard({
   onViewCourse,
 }: HomeDashboardProps) {
   const { state, reload } = useLibrary(apiBaseUrl);
+  // Best-effort: the streak decorates the subline when it loads; a failure changes nothing.
+  const { state: activityState } = useActivity(apiBaseUrl);
   const name = displayNameFromEmail(userEmail);
   const greeting = greetingForHour(new Date().getHours());
 
@@ -166,7 +172,7 @@ export function HomeDashboard({
         <h2 className={styles.title}>
           Good {greeting}, {name}
         </h2>
-        <p className={styles.subline}>{subline(state)}</p>
+        <p className={styles.subline}>{subline(state, activityState)}</p>
       </header>
       <LiveBuilds runs={runs} />
       <HomeBody
