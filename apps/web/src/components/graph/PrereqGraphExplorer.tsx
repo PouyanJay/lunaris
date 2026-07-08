@@ -10,7 +10,7 @@ import {
   type Node,
   type NodeTypes,
 } from "@xyflow/react";
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { MOBILE_QUERY, useMediaQuery } from "../../hooks/useMediaQuery";
 import { buildGraphLayout, type KcNodeData } from "../../lib/graphLayout";
@@ -26,32 +26,47 @@ const FIT_VIEW_OPTIONS = { padding: 0.18, maxZoom: 1.1 };
 
 interface PrereqGraphExplorerProps {
   course: Course;
+  /** The learner's live per-KC mastery (P2 snapshot); null while loading / offline — the map
+   *  then claims only what the build-time frontier knows (see kcStates). */
+  kcMastery?: Record<string, boolean> | null | undefined;
   /** Drill from the selected concept into the lesson that teaches it (switches to the reader). */
   onOpenLesson?: ((kcId: string) => void) | undefined;
 }
 
 /** The interactive prerequisite-graph canvas: a dagre-laid DAG of knowledge components with
- *  flexible bezier prerequisite edges, a difficulty legend, and a docked concept inspector. */
-export function PrereqGraphExplorer({ course, onOpenLesson }: PrereqGraphExplorerProps) {
+ *  learning-state badges lit by live mastery, amber frontier edges, a difficulty legend, and a
+ *  docked concept inspector. */
+export function PrereqGraphExplorer({ course, kcMastery, onOpenLesson }: PrereqGraphExplorerProps) {
   const layout = useMemo(
-    () => buildGraphLayout(course.graph, course.goalConcept),
-    [course.graph, course.goalConcept],
+    () => buildGraphLayout(course.graph, course.goalConcept, kcMastery ?? null),
+    [course.graph, course.goalConcept, kcMastery],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layout.nodes);
-  const [edges, , onEdgesChange] = useEdgesState(layout.edges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(layout.edges);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Render-time mirror so the reseed below can re-apply the selection flag without keying the
+  // effect on selectedId (which would re-run it on every click).
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   // On phones the minimap is noise on a tiny canvas and the legend would collide with the bottom-left
   // zoom controls — drop the minimap and lift the legend to the top-left instead.
   const isMobile = useMediaQuery(MOBILE_QUERY);
 
-  // Re-seed when the course changes (e.g. after a reload). Clearing selectedId here is what
-  // keeps the selection-reflection effect below from re-applying a stale selection: by the
-  // time it runs after a layout change, selectedId is already null.
+  // Re-seed when the layout changes. A COURSE change (reload) also drops the selection — the
+  // selected id may not exist in the new graph; a mastery snapshot landing on the same course
+  // only recomputes badges/edge lighting and must NOT close an inspector the learner opened.
+  const lastGraph = useRef(course.graph);
   useEffect(() => {
-    setNodes(layout.nodes);
-    setSelectedId(null);
-  }, [layout, setNodes]);
+    const courseChanged = lastGraph.current !== course.graph;
+    lastGraph.current = course.graph;
+    if (courseChanged) selectedIdRef.current = null;
+    setNodes(
+      layout.nodes.map((node) => ({ ...node, selected: node.id === selectedIdRef.current })),
+    );
+    setEdges(layout.edges);
+    if (courseChanged) setSelectedId(null);
+  }, [layout, course.graph, setNodes, setEdges]);
 
   // Reflect the selection onto React Flow's nodes so the selected node styles itself.
   useEffect(() => {

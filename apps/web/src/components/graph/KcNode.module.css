@@ -42,20 +42,31 @@
   letter-spacing: 0.04em;
 }
 
-.goalTag,
-.knownTag {
+/* The learning-state badge (P7): uppercase mono, state-toned — GOAL and UP NEXT carry the
+   accent, MASTERED the success wash, LOCKED stays muted. */
+.badge {
   margin-left: auto;
-  font-family: var(--font-mono);
   font-size: 9px;
-  letter-spacing: 0.12em;
-  padding: 2px 5px;
-  border-radius: var(--radius-sm);
+  letter-spacing: 0.08em;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-md);
   border: var(--border-width) solid var(--border-strong);
-  color: var(--text-secondary);
+  color: var(--text-muted);
+  background: transparent;
+  white-space: nowrap;
 }
-.goalTag {
-  color: var(--accent-500);
+
+.badge[data-tone="goal"],
+.badge[data-tone="up_next"] {
+  color: var(--accent-600);
   border-color: var(--accent-500);
+  background: var(--accent-soft);
+}
+
+.badge[data-tone="mastered"] {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-soft);
 }
 
 .label {
@@ -106,18 +117,10 @@
     0 0 0 1px var(--accent-500);
 }
 
-/* Known: foundations the learner already has — de-emphasised. */
-.known {
-  opacity: 0.6;
-}
-
 /* Selected: stronger accent border (interaction increases contrast). */
 .selected {
   border-color: var(--accent-500);
   box-shadow:
     var(--shadow-md),
     0 0 0 2px var(--accent-500);
-}
-.known.selected {
-  opacity: 1;
 }

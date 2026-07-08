@@ -1,6 +1,7 @@
 import dagre from "@dagrejs/dagre";
 import { MarkerType, type Edge, type Node } from "@xyflow/react";
 
+import { kcStates, type KcState } from "./kcStates";
 import type { KnowledgeComponent, PrerequisiteGraph } from "../types/course";
 
 /** Data carried by each KC node. Indexed signature satisfies React Flow v12's node-data
@@ -13,8 +14,8 @@ export interface KcNodeData extends Record<string, unknown> {
   order: number;
   /** The course goal KC — the destination of the path. */
   isGoal: boolean;
-  /** Already on the learner's frontier (known); de-emphasised. */
-  isKnown: boolean;
+  /** Learning state from the frontier + live mastery; null when unknowable (see kcStates). */
+  state: KcState | null;
 }
 
 export type KcNode = Node<KcNodeData, "kc">;
@@ -51,6 +52,7 @@ export function orderInPath(topoOrder: string[], kcId: string): number {
 export function buildGraphLayout(
   graph: PrerequisiteGraph,
   goalConcept: string,
+  kcMastery: Record<string, boolean> | null = null,
 ): { nodes: KcNode[]; edges: Edge[] } {
   const dag = new dagre.graphlib.Graph();
   dag.setDefaultEdgeLabel(() => ({}));
@@ -72,7 +74,7 @@ export function buildGraphLayout(
   }
   dagre.layout(dag);
 
-  const frontier = new Set(graph.frontier);
+  const states = kcStates(graph, kcMastery);
 
   const nodes: KcNode[] = graph.nodes.map((kc) => {
     const point = dag.node(kc.id);
@@ -85,28 +87,42 @@ export function buildGraphLayout(
         tier: difficultyTier(kc.difficulty),
         order: orderInPath(graph.topoOrder, kc.id),
         isGoal: kc.id === goalConcept,
-        isKnown: frontier.has(kc.id),
+        state: states.get(kc.id) ?? null,
       },
     };
   });
 
+  // An edge lights amber when both endpoints are on the learner's active path (mastered or up
+  // next) — the design's lit-frontier treatment; everything else stays a dim hairline.
+  const isLit = (kcId: string): boolean => {
+    const state = states.get(kcId);
+    return state === "mastered" || state === "up_next";
+  };
+
   const nodeIds = new Set(graph.nodes.map((kc) => kc.id));
   const edges: Edge[] = graph.edges
     .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
-    .map((edge) => ({
-      id: `${edge.from}->${edge.to}`,
-      source: edge.from,
-      target: edge.to,
-      // Flexible bezier connector; the arrowhead points prerequisite → dependent.
-      type: "default",
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        width: 14,
-        height: 14,
-        color: "var(--border-strong)",
-      },
-      data: { strength: edge.strength },
-    }));
+    .map((edge) => {
+      const lit = isLit(edge.from) && isLit(edge.to);
+      return {
+        id: `${edge.from}->${edge.to}`,
+        source: edge.from,
+        target: edge.to,
+        // Flexible bezier connector; the arrowhead points prerequisite → dependent.
+        type: "default",
+        className: lit ? "edge-lit" : "edge-dim",
+        style: lit
+          ? { stroke: "var(--accent-500)", strokeOpacity: 0.4, strokeWidth: 1.4 }
+          : { stroke: "var(--border-strong)", strokeOpacity: 0.6, strokeWidth: 1.2 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 14,
+          height: 14,
+          color: lit ? "var(--accent-500)" : "var(--border-strong)",
+        },
+        data: { strength: edge.strength },
+      };
+    });
 
   return { nodes, edges };
 }

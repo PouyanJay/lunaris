@@ -56,14 +56,30 @@ describe("buildGraphLayout", () => {
     expect(root.data.order).toBe(1);
   });
 
-  it("marks frontier concepts as known", () => {
+  it("carries each node's learning state (frontier mastered; others unknowable offline)", () => {
     const course = makeCourse();
     course.graph.frontier = ["comparison"];
 
     const { nodes } = buildGraphLayout(course.graph, course.goalConcept);
 
-    expect(nodes.find((n) => n.id === "comparison")!.data.isKnown).toBe(true);
-    expect(nodes.find((n) => n.id === "binary_search")!.data.isKnown).toBe(false);
+    expect(nodes.find((n) => n.id === "comparison")!.data.state).toBe("mastered");
+    // No mastery snapshot passed — unmastered nodes carry no state claim (kcStates honesty).
+    expect(nodes.find((n) => n.id === "binary_search")!.data.state).toBeNull();
+  });
+
+  it("lights only the edges whose both endpoints are mastered or up next", () => {
+    const course = makeCourse();
+
+    const { edges } = buildGraphLayout(course.graph, course.goalConcept, { comparison: true });
+
+    // comparison (mastered) → sorted_order (up next): lit amber.
+    const lit = edges.find((e) => e.id === "comparison->sorted_order")!;
+    expect(lit.className).toBe("edge-lit");
+    expect(lit.style?.stroke).toBe("var(--accent-500)");
+    // sorted_order (up next) → binary_search (locked): stays dim.
+    const dim = edges.find((e) => e.id === "sorted_order->binary_search")!;
+    expect(dim.className).toBe("edge-dim");
+    expect(dim.style?.stroke).toBe("var(--border-strong)");
   });
 
   it("maps each prerequisite edge to a directed React Flow edge with an arrowhead", () => {

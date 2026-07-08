@@ -366,6 +366,36 @@ describe("App — URL routing (live studio)", () => {
     expect(await screen.findByRole("radio", { name: "Map" })).toBeChecked();
   });
 
+  it("lights the Map with the learner's live mastery from the progress snapshot", async () => {
+    // The P2 kcMastery field reaches the map end-to-end (P7): comparison mastered → its
+    // dependent sorted_order is up next; binary_search (the goal) stays behind it.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [makeRun()],
+        course: makeCourse(),
+        progress: {
+          courseId: "course-test",
+          objectives: [],
+          lessons: [],
+          kcMastery: { comparison: true },
+        },
+      }),
+    );
+    window.history.pushState(null, "", "/courses/course-test/map");
+
+    render(<App />);
+
+    // The node cards announce their states in their labels. Asserted on the aria-label
+    // attribute: React Flow keeps nodes visibility:hidden until measured (never, under jsdom's
+    // stubbed ResizeObserver), which blanks accessible-name computation for role queries.
+    const nodeLabelled = (fragments: string[]) =>
+      document.querySelector(fragments.map((f) => `[aria-label*="${f}"]`).join(""));
+    await waitFor(() => expect(nodeLabelled(["Comparison.", "Mastered."])).not.toBeNull());
+    expect(nodeLabelled(["Sorted Order.", "Up next."])).not.toBeNull();
+    expect(nodeLabelled(["Binary Search.", "Course goal.", "Locked"])).not.toBeNull();
+  });
+
   it("switching the course view writes it to the URL", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test");
