@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Claim, Lesson, Visual } from "../../types/course";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH } from "../../hooks/useRailLayout";
@@ -331,29 +331,6 @@ describe("CourseReader", () => {
     expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
   });
 
-  it("focuses a lesson directly by id (Overview row drill-in)", () => {
-    // Arrange — same course shape; the Overview knows lesson ids, not concepts.
-    const course = makeCourse({
-      modules: [
-        makeModule({
-          id: "m1",
-          title: "Foundations",
-          lessons: [lessonWith("l1", "Prose one."), lessonWith("l2", "Prose two.")],
-        }),
-        makeModule({ id: "m2", title: "Search", lessons: [lessonWith("l3", "Prose three.")] }),
-      ],
-    });
-    const { rerender } = render(<CourseReader course={course} />);
-    expect(screen.getByText("Prose one.")).toBeInTheDocument();
-
-    // Act
-    rerender(<CourseReader course={course} focusRequest={{ lessonId: "l2", seq: 1 }} />);
-
-    // Assert
-    expect(screen.getByText("Prose two.")).toBeInTheDocument();
-    expect(screen.getByText(/lesson 2 of 3/i)).toBeInTheDocument();
-  });
-
   it("honours a mount-time focus request under StrictMode's effect replay", () => {
     // Regression guard for a bug live verification caught: StrictMode remounts replay effects,
     // and an unguarded course-reset effect zeroed the index AFTER the (once-consumed) focus
@@ -363,14 +340,20 @@ describe("CourseReader", () => {
         makeModule({
           id: "m1",
           title: "Foundations",
-          lessons: [lessonWith("l1", "Prose one."), lessonWith("l2", "Prose two.")],
+          lessons: [lessonWith("l1", "Prose one.")],
+        }),
+        makeModule({
+          id: "m2",
+          title: "Search",
+          kcs: ["binary_search"],
+          lessons: [lessonWith("l2", "Prose two.")],
         }),
       ],
     });
 
     render(
       <StrictMode>
-        <CourseReader course={course} focusRequest={{ lessonId: "l2", seq: 1 }} />
+        <CourseReader course={course} focusRequest={{ kc: "binary_search", seq: 1 }} />
       </StrictMode>,
     );
 
@@ -758,14 +741,17 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     expect(container.querySelector('[data-rail-collapsed="true"]')).toBeNull();
   });
 
+  // The narrow-breakpoint test below stubs matchMedia; scoped cleanup so a failing assertion
+  // can't leak the stub into later tests (FIRST: Independent).
+  afterEach(() => vi.unstubAllGlobals());
+
   it("toggles the annotation drawer and closes it on Escape below the rail breakpoint", () => {
     // Arrange — simulate the narrow layout, where the rail is an off-canvas drawer.
-    const listeners = new Set<() => void>();
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: query.includes("1100px"),
       media: query,
-      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
-      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+      addEventListener: () => {},
+      removeEventListener: () => {},
     }));
     render(<CourseReader course={makeCourse()} />);
     const toggle = screen.getByRole("button", { name: /sources & checks/i });
@@ -779,7 +765,6 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(document.activeElement).toBe(toggle);
-    vi.unstubAllGlobals();
   });
 
   it("collapses the rail on wide screens and offers a reveal control", () => {

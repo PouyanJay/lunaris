@@ -27,13 +27,13 @@ import { lessonStateFor } from "../../lib/lessonState";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
-/** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
- *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
- *  example → practice → transfer — bracketed by the "expects" and "self-check" bookends. */
 /** Below this the annotation rail renders as an off-canvas drawer — must match the
  *  `@media (max-width: 1100px)` block in CourseReader.module.css. */
 const RAIL_DRAWER_QUERY = "(max-width: 1100px)";
 
+/** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
+ *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
+ *  example → practice → transfer — bracketed by the "expects" and "self-check" bookends. */
 const PHASES: (PhaseRef & { cue: string })[] = [
   { key: "activate", label: "Warm-up", cue: "Reconnect with what you already know" },
   {
@@ -97,26 +97,13 @@ function buildReaderModel(course: Course): ReaderModel {
   return { lessons, groups, kcToLessonIndex };
 }
 
-/** A drill-in into the reader: focus the lesson covering `kc` (Map) or the lesson with
- *  `lessonId` (Overview rows / Continue). `seq` increments per request so the same target can be
- *  re-requested after the learner has navigated away. */
+/** A drill-in into the reader: focus the lesson covering a concept (the Map's KC → lesson
+ *  resolution — the one target a URL can't name directly). `seq` increments per request so the
+ *  same concept can be re-requested after the learner has navigated away. Lesson-id deep links
+ *  are URLs (P6). */
 export interface LessonFocusRequest {
-  kc?: string;
-  lessonId?: string;
+  kc: string;
   seq: number;
-}
-
-/** The lesson index a focus request targets — -1 when the target isn't in this course. */
-function resolveFocusIndex(
-  request: LessonFocusRequest,
-  lessons: ReaderLesson[],
-  kcToLessonIndex: Map<string, number>,
-): number {
-  if (request.lessonId !== undefined) {
-    return lessons.findIndex(({ lesson }) => lesson.id === request.lessonId);
-  }
-  if (request.kc !== undefined) return kcToLessonIndex.get(request.kc) ?? -1;
-  return -1;
 }
 
 interface CourseReaderProps {
@@ -221,15 +208,15 @@ export function CourseReader({
     setRegeneratedCourse(null);
     pendingLessonNav.current = null;
   }, [course]);
-  // Honour a drill-in once per request: jump to the requested lesson (Overview rows / Continue)
-  // or to the lesson covering the requested concept (Map). The seq ref gates re-firing, so a
-  // course switch (which changes the lookup structures) won't re-focus.
+  // Honour a drill-in once per request: jump to the lesson covering the requested concept (Map).
+  // The seq ref gates re-firing, so a course switch (which changes the lookup structures) won't
+  // re-focus. -1 (concept not in this course) leaves the position alone.
   useEffect(() => {
     if (!focusRequest || focusRequest.seq === handledFocusSeq.current) return;
     handledFocusSeq.current = focusRequest.seq;
-    const index = resolveFocusIndex(focusRequest, lessons, kcToLessonIndex);
+    const index = kcToLessonIndex.get(focusRequest.kc) ?? -1;
     if (index >= 0) goToLesson(index);
-  }, [focusRequest, lessons, kcToLessonIndex, goToLesson]);
+  }, [focusRequest, kcToLessonIndex, goToLesson]);
 
   const total = lessons.length;
   // Routed (onNavigateLesson present): the URL names the reading position — derive the focused

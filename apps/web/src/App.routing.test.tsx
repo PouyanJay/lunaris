@@ -267,6 +267,32 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0");
   });
 
+  it("the reader's Next/Previous walk the lesson URL", async () => {
+    const first = makeCourse().modules[0]!;
+    const course = makeCourse({
+      modules: [
+        first,
+        {
+          ...first,
+          id: "m-two",
+          title: "Module two",
+          lessons: [{ ...first.lessons[0]!, id: "m-two-l0" }],
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course }));
+    window.history.pushState(null, "", "/courses/course-test/lessons/m-binary_search-l0");
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: /next lesson/i }));
+    expect(await screen.findByText(/lesson 2 of 2/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test/lessons/m-two-l0");
+
+    fireEvent.click(screen.getByRole("button", { name: /previous lesson/i }));
+    expect(await screen.findByText(/lesson 1 of 2/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0");
+  });
+
   it("a stale lesson URL falls back to the first lesson and canonicalises", async () => {
     vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
     window.history.pushState(null, "", "/courses/course-test/lessons/gone-lesson");
