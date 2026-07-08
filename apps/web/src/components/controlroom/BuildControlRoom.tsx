@@ -2,12 +2,15 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import { blueprintFromEvents } from "../../lib/blueprint";
 import { buildTimeline, consoleEntries, type StageTimes } from "../../lib/buildTimeline";
+import { groundingLedger, readinessScorecard } from "../../lib/instruments";
 import type { AgentEvent, ProgressEvent } from "../../types/course";
 import { SegmentedControl } from "../primitives/SegmentedControl";
 import { BuildTimeline } from "../transcript/BuildTimeline";
 import { BlueprintCanvas } from "./BlueprintCanvas";
 import { ConsoleTicker } from "./ConsoleTicker";
+import { GroundingLedgerPanel } from "./GroundingLedgerPanel";
 import { PipelineRail } from "./PipelineRail";
+import { ReadinessScorecard } from "./ReadinessScorecard";
 import styles from "./BuildControlRoom.module.css";
 
 type BuildView = "room" | "transcript";
@@ -49,6 +52,8 @@ export function BuildControlRoom({
   );
   const ticker = useMemo(() => consoleEntries(agentEvents), [agentEvents]);
   const blueprint = useMemo(() => blueprintFromEvents(events, complete), [events, complete]);
+  const ledger = useMemo(() => groundingLedger(events, agentEvents), [events, agentEvents]);
+  const gauges = useMemo(() => readinessScorecard(events, agentEvents), [events, agentEvents]);
 
   return (
     <div
@@ -101,6 +106,8 @@ export function BuildControlRoom({
           </div>
           <aside className={styles.rail}>
             <PipelineRail phases={phases} />
+            {gauges.length > 0 && <ReadinessScorecard gauges={gauges} />}
+            {ledger && <GroundingLedgerPanel ledger={ledger} />}
             {videosPanel}
           </aside>
         </div>

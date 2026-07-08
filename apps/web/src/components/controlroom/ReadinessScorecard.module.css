@@ -1,0 +1,86 @@
+.panel {
+  padding: var(--space-5);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.title {
+  margin-bottom: var(--space-3);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.tile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-subtle);
+}
+
+.ring {
+  flex: none;
+  transform: rotate(-90deg);
+}
+
+.ringTrack {
+  fill: none;
+  stroke: var(--bg-muted);
+  stroke-width: 3.5;
+}
+
+.ringValue {
+  fill: none;
+  stroke: var(--text-muted);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+
+.tile[data-tone="success"] .ringValue {
+  stroke: var(--success);
+}
+
+.tile[data-tone="warning"] .ringValue {
+  stroke: var(--warning);
+}
+
+.tileBody {
+  min-width: 0;
+}
+
+.tileHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.value {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.tile[data-tone="success"] .value {
+  color: var(--success);
+}
+
+.tile[data-tone="warning"] .value {
+  color: var(--warning);
+}
+
+.detail {
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}

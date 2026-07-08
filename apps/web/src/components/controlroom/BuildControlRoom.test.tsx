@@ -126,6 +126,45 @@ describe("BuildControlRoom", () => {
     expect(screen.queryByText(/appears here as concepts are mapped/i)).not.toBeInTheDocument();
   });
 
+  it("reads the grounding ledger and the honest scorecard off the rail", () => {
+    const build = midBuild();
+    build.events.push(
+      makeProgressEvent("claims_verified", 3, {
+        claimsTotal: 10,
+        claimsSupported: 8,
+        claimsCut: 2,
+      }),
+      makeProgressEvent("coverage_verified", 4, { gapCount: 0 }),
+    );
+    build.agentEvents.push(
+      makeAgentEvent("source_evaluated", 3, {
+        stage: "grounding_discovered",
+        source: {
+          kcId: "kc-1",
+          domain: "rfc-editor.org",
+          trustTier: "official",
+          credibility: 0.94,
+          sourceType: "reference",
+          accepted: true,
+          reason: "",
+        },
+      }),
+    );
+    render(<BuildControlRoom {...build} />);
+
+    const ledger = screen.getByRole("region", { name: /grounding ledger/i });
+    expect(within(ledger).getByText("8")).toBeInTheDocument();
+    expect(within(ledger).getByText("2")).toBeInTheDocument();
+    expect(within(ledger).getByText(/official 100%/i)).toBeInTheDocument();
+
+    const scorecard = screen.getByRole("region", { name: /readiness scorecard/i });
+    expect(within(scorecard).getByText("Grounding")).toBeInTheDocument();
+    expect(within(scorecard).getByText("80%")).toBeInTheDocument();
+    expect(within(scorecard).getByText("no gaps")).toBeInTheDocument();
+    // Structure/Trust-less fixtures: no graph payload, so no Structure gauge — no fake gauges.
+    expect(within(scorecard).queryByText("Structure")).not.toBeInTheDocument();
+  });
+
   it("shows the blueprint fallback before any graph structure exists", () => {
     const build = midBuild();
     render(<BuildControlRoom {...build} />);
