@@ -5,9 +5,9 @@
 .day {
   margin: 0 0 var(--space-1);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: var(--eyebrow-size);
   font-weight: 400;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--eyebrow-tracking);
   text-transform: uppercase;
   color: var(--text-muted);
 }

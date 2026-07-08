@@ -5,6 +5,12 @@ export interface FeedGroup {
   items: ActivityFeedItem[];
 }
 
+/** Parse the API's bare `YYYY-MM-DD` as a LOCAL date — `new Date("YYYY-MM-DD")` alone parses as
+ *  UTC midnight, which shifts a day west of Greenwich. One home for the idiom (heat + bars). */
+export function parseLocalDate(date: string): Date {
+  return new Date(`${date}T00:00:00`);
+}
+
 const dateLabel = new Intl.DateTimeFormat(undefined, {
   weekday: "long",
   month: "long",

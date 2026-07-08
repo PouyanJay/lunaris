@@ -1,4 +1,5 @@
 import type { WeekDay } from "../../lib/activity";
+import { parseLocalDate } from "../../lib/activityFeed";
 import styles from "./ActivityWeekBars.module.css";
 
 interface ActivityWeekBarsProps {
@@ -12,8 +13,7 @@ const weekdayLetter = new Intl.DateTimeFormat(undefined, { weekday: "narrow" });
 const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" });
 
 function isToday(date: string): boolean {
-  const now = new Date();
-  return new Date(`${date}T00:00:00`).toDateString() === now.toDateString();
+  return parseLocalDate(date).toDateString() === new Date().toDateString();
 }
 
 /** The current week's study minutes, Monday-first — today's bar is the accent, past days the
@@ -22,7 +22,7 @@ function isToday(date: string): boolean {
 export function ActivityWeekBars({ week }: ActivityWeekBarsProps) {
   const max = Math.max(...week.map((day) => day.minutes), 1);
   const reading = (day: WeekDay) =>
-    `${dayLabel.format(new Date(`${day.date}T00:00:00`))}: ${day.minutes} min`;
+    `${dayLabel.format(parseLocalDate(day.date))}: ${day.minutes} min`;
   return (
     <div
       className={styles.chart}
@@ -42,7 +42,7 @@ export function ActivityWeekBars({ week }: ActivityWeekBarsProps) {
             />
           </div>
           <span className={styles.day} aria-hidden="true">
-            {weekdayLetter.format(new Date(`${day.date}T00:00:00`))}
+            {weekdayLetter.format(parseLocalDate(day.date))}
           </span>
         </div>
       ))}

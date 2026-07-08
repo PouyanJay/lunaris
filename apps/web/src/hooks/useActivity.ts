@@ -8,7 +8,7 @@ export type ActivityState =
   | { status: "ready"; view: ActivityView }
   | { status: "error"; message: string };
 
-interface ActivityFeed {
+interface UseActivityResult {
   state: ActivityState;
   /** Re-fetch the snapshot (aborts any in-flight load first). */
   reload: () => void;
@@ -20,7 +20,7 @@ interface ActivityFeed {
  * after the component is gone or a newer load started. Stale-while-revalidate: a reload keeps the
  * loaded snapshot visible instead of blanking to the skeleton.
  */
-export function useActivity(apiBaseUrl: string): ActivityFeed {
+export function useActivity(apiBaseUrl: string): UseActivityResult {
   const [state, setState] = useState<ActivityState>({ status: "loading" });
   const controllerRef = useRef<AbortController | null>(null);
 

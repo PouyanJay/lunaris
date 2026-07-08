@@ -1,4 +1,5 @@
 import type { HeatDay } from "../../lib/activity";
+import { parseLocalDate } from "../../lib/activityFeed";
 import styles from "./ActivityHeat.module.css";
 
 interface ActivityHeatProps {
@@ -7,13 +8,19 @@ interface ActivityHeatProps {
 
 const dayLabel = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 
-/** Amber intensity for a day's minutes, scaled to the window's max (the design's 18–80% alpha
- *  ramp). An active day with no recorded minutes (marks only) gets the lowest visible step —
- *  studied is studied. */
+// The design's amber alpha ramp: the quietest studied day stays visible, the busiest never
+// reaches full accent.
+const MIN_INTENSITY_PERCENT = 18;
+const MAX_INTENSITY_PERCENT = 80;
+
+/** Amber intensity for a day's minutes, scaled to the window's max. An active day with no
+ *  recorded minutes (marks only) gets the lowest visible step — studied is studied. */
 function squareBackground(day: HeatDay, maxMinutes: number): string | undefined {
   if (!day.active) return undefined;
   const intensity = maxMinutes > 0 ? day.minutes / maxMinutes : 0;
-  const percent = Math.round(18 + intensity * 62);
+  const percent = Math.round(
+    MIN_INTENSITY_PERCENT + intensity * (MAX_INTENSITY_PERCENT - MIN_INTENSITY_PERCENT),
+  );
   return `color-mix(in srgb, var(--accent-500) ${percent}%, transparent)`;
 }
 
@@ -24,7 +31,7 @@ export function ActivityHeat({ heat }: ActivityHeatProps) {
   const studied = heat.filter((day) => day.active).length;
   const maxMinutes = Math.max(...heat.map((day) => day.minutes), 0);
   const reading = (day: HeatDay) =>
-    `${dayLabel.format(new Date(`${day.date}T00:00:00`))}: ${
+    `${dayLabel.format(parseLocalDate(day.date))}: ${
       day.active ? `${day.minutes} min` : "no study"
     }`;
   return (

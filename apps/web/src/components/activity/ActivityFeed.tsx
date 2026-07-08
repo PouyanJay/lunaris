@@ -26,8 +26,11 @@ export function ActivityFeed({ feed }: ActivityFeedProps) {
         <section key={group.label} className={styles.group} aria-label={group.label}>
           <h3 className={styles.day}>{group.label}</h3>
           <ul className={styles.list}>
-            {group.items.map((item, index) => (
-              <li key={index} className={styles.row}>
+            {group.items.map((item) => (
+              <li
+                key={`${item.occurredAt}-${item.eventType}-${item.lessonId ?? item.kcId ?? item.courseId}`}
+                className={styles.row}
+              >
                 <span className={`${styles.dot} ${DOT_TONE[item.eventType]}`} aria-hidden="true" />
                 <span className={styles.text}>{feedLine(item)}</span>
                 <time className={styles.time} dateTime={item.occurredAt}>

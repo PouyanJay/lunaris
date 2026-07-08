@@ -17,7 +17,7 @@
 .value {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 27px;
+  font-size: var(--text-2xl);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -37,8 +37,8 @@
 .label {
   margin-top: var(--space-2);
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.12em;
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
   text-transform: uppercase;
   color: var(--text-muted);
 }

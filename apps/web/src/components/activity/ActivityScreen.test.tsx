@@ -103,9 +103,10 @@ describe("ActivityScreen", () => {
     // concept today and a started lesson yesterday.
     const today = new Date();
     const iso = (daysAgo: number) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() - daysAgo);
-      return d.toISOString().slice(0, 10);
+      // Local calendar parts, never toISOString (UTC) — near midnight the two disagree by a day.
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo);
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     };
     const view: ActivityView = {
       stats: { currentStreak: 3, longestStreak: 11, minutesThisWeek: 142, conceptsThisWeek: 7 },
@@ -167,6 +168,20 @@ describe("ActivityScreen", () => {
     expect(
       screen.getByText("Started Lesson 2 · Fundamentals in How HTTPS works"),
     ).toBeInTheDocument();
+  });
+
+  it("treats a malformed snapshot as a recoverable error, never a crash", async () => {
+    // Arrange — the trust boundary: an ok response whose body isn't an activity snapshot.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ nonsense: true }) })),
+    );
+
+    // Act
+    render(<ActivityScreen apiBaseUrl="http://test" onBrowseCourses={() => {}} />);
+
+    // Assert — the alien payload is rejected at fetchActivity and surfaces as the error state.
+    expect(await screen.findByRole("alert")).toHaveTextContent(/unexpected response/i);
   });
 
   it("sends the viewer's IANA timezone with the snapshot request", async () => {

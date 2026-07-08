@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { ActivityFeedItem } from "./activity";
 import { feedLine, groupFeedByDay } from "./activityFeed";
 
-const NOW = new Date("2026-07-08T15:00:00Z");
+// Local-calendar fixtures, never absolute-UTC literals: grouping derives the LOCAL day, so a
+// fixed "...T12:00:00Z" flips groups when the suite runs in Tokyo or Auckland.
+const NOW = new Date(2026, 6, 8, 15, 0, 0);
+const atDaysAgo = (days: number, hour = 12) =>
+  new Date(2026, 6, 8 - days, hour).toISOString();
 
 function item(overrides: Partial<ActivityFeedItem> = {}): ActivityFeedItem {
   return {
@@ -14,7 +18,7 @@ function item(overrides: Partial<ActivityFeedItem> = {}): ActivityFeedItem {
     lessonTitle: "Lesson 1 · Fundamentals",
     kcId: null,
     kcLabel: null,
-    occurredAt: "2026-07-08T12:00:00Z",
+    occurredAt: atDaysAgo(0),
     ...overrides,
   };
 }
@@ -23,28 +27,30 @@ describe("groupFeedByDay", () => {
   it("labels groups Today / Yesterday / a formatted date, preserving order", () => {
     // Arrange — newest-first, spanning three local days.
     const feed = [
-      item({ occurredAt: "2026-07-08T12:00:00Z" }),
-      item({ occurredAt: "2026-07-07T18:00:00Z", lessonId: "a" }),
-      item({ occurredAt: "2026-07-03T09:00:00Z", lessonId: "b" }),
+      item({ occurredAt: atDaysAgo(0) }),
+      item({ occurredAt: atDaysAgo(1, 18), lessonId: "a" }),
+      item({ occurredAt: atDaysAgo(5, 9), lessonId: "b" }),
     ];
 
     // Act
     const groups = groupFeedByDay(feed, NOW);
 
-    // Assert
-    expect(groups.map((group) => group.label)).toEqual([
-      "Today",
-      "Yesterday",
-      expect.stringMatching(/july 3/i),
-    ]);
+    // Assert — the dated label follows the RUNTIME locale (product behavior), so the expectation
+    // is formatted the same way rather than hardcoding an English month name.
+    const datedLabel = new Intl.DateTimeFormat(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    }).format(new Date(2026, 6, 3, 12));
+    expect(groups.map((group) => group.label)).toEqual(["Today", "Yesterday", datedLabel]);
     expect(groups.map((group) => group.items.length)).toEqual([1, 1, 1]);
   });
 
   it("keeps multiple same-day items in one group", () => {
     // Arrange
     const feed = [
-      item({ occurredAt: "2026-07-08T12:00:00Z" }),
-      item({ occurredAt: "2026-07-08T09:00:00Z", lessonId: "a" }),
+      item({ occurredAt: atDaysAgo(0, 12) }),
+      item({ occurredAt: atDaysAgo(0, 9), lessonId: "a" }),
     ];
 
     // Act

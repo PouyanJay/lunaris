@@ -147,6 +147,37 @@ def test_days_are_user_local_not_utc() -> None:
     assert snapshot.current_streak == 1
 
 
+def test_streak_is_zero_once_activity_goes_stale() -> None:
+    # Arrange — the last activity was three days ago: neither today nor yesterday anchors a run.
+    minutes = [_minute(3), _minute(4)]
+
+    # Act
+    snapshot = derive_activity([], minutes, tz=UTC, now=NOW)
+
+    # Assert
+    assert snapshot.current_streak == 0
+    assert snapshot.longest_streak == 2
+
+
+def test_day_boundaries_survive_a_dst_transition() -> None:
+    # Arrange — New York springs forward on 2026-03-08; study minutes land on the transition day
+    # and the next. Day math must ride astimezone(tz).date(), never wall-clock offset arithmetic.
+    new_york = ZoneInfo("America/New_York")
+    now = datetime(2026, 3, 9, 15, 0, tzinfo=UTC)
+    buckets = [
+        datetime(2026, 3, 8, 12, 0, tzinfo=UTC),  # 07:00 EDT on the transition day
+        datetime(2026, 3, 9, 12, 0, tzinfo=UTC),
+    ]
+
+    # Act
+    snapshot = derive_activity([], buckets, tz=new_york, now=now)
+
+    # Assert — two consecutive local days: an unbroken 2-day streak across the transition.
+    assert snapshot.current_streak == 2
+    active = [day.date.isoformat() for day in snapshot.heat if day.active]
+    assert active == ["2026-03-08", "2026-03-09"]
+
+
 def test_concepts_this_week_counts_distinct_kcs() -> None:
     # Arrange — the same KC mastered twice this week (toggle-flap), another once, and one
     # mastered last week.
