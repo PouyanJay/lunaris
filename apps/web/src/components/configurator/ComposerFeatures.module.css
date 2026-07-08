@@ -1,0 +1,47 @@
+/* Three informational cards under the composer. Hairline panels, restrained — an instrument note,
+   not a marketing hero. */
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 720px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+
+/* Neutral, not accent — the amber stays a scalpel (the "learn" word, Generate, the live state). */
+.icon {
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.eyebrow {
+  margin: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
+import type { BuildRequest } from "../../hooks/useCourseStream";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import { answersToClarification, recommendedAnswers } from "../../lib/clarification";
 import { applyComposerLevel, type ComposerLevel } from "../../lib/composerLevel";
 import { fetchBrief } from "../../lib/fetchBrief";
 import { CourseLoadError } from "../../lib/loadCourse";
-import type { BuildRequest } from "../../hooks/useCourseStream";
 import type { BriefLoadState } from "../../types/clarifier";
 import type { CourseRun, DiscoveryDepth } from "../../types/course";
 import { TopicForm } from "../TopicForm";
