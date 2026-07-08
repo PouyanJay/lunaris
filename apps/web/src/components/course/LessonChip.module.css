@@ -1,0 +1,33 @@
+.chip {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.sm {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+}
+
+.chip[data-state="done"] {
+  border-color: var(--success);
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.chip[data-state="in_progress"] {
+  border-color: var(--accent-500);
+  color: var(--accent-600);
+  background: var(--accent-soft);
+}

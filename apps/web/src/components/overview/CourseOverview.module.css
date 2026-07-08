@@ -139,33 +139,6 @@
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-.chip {
-  flex: none;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-lg);
-  border: var(--border-width) solid var(--border-strong);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--text-muted);
-  background: transparent;
-}
-
-.chip[data-state="done"] {
-  border-color: var(--success);
-  color: var(--success);
-  background: var(--success-soft);
-}
-
-.chip[data-state="in_progress"] {
-  border-color: var(--accent-500);
-  color: var(--accent-600);
-  background: var(--accent-soft);
-}
-
 .rowBody {
   flex: 1;
   min-width: 0;

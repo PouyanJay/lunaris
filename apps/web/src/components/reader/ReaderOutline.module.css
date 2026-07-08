@@ -29,7 +29,9 @@
 }
 
 .item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   width: 100%;
   text-align: left;
   appearance: none;
@@ -44,6 +46,12 @@
   transition:
     background-color var(--dur) var(--ease),
     color var(--dur) var(--ease);
+}
+
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
 }
 
 .item:hover {

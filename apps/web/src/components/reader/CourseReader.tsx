@@ -22,6 +22,7 @@ import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
+import { lessonStateFor } from "../../lib/lessonState";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
@@ -86,7 +87,7 @@ function buildReaderModel(course: Course): ReaderModel {
       }
       groups.push({ moduleId: flat.module.id, moduleTitle: flat.module.title, items: [] });
     }
-    groups[groups.length - 1]!.items.push({ index: flat.index, label });
+    groups[groups.length - 1]!.items.push({ index: flat.index, lessonId: flat.lesson.id, label });
   }
   return { lessons, groups, kcToLessonIndex };
 }
@@ -379,6 +380,7 @@ export function CourseReader({
         groups={groups}
         activeIndex={safeIndex}
         onSelect={selectLesson}
+        stateFor={progress ? (lessonId) => lessonStateFor(progress, lessonId) : undefined}
         className={`${styles.outlineDrawer} ${outlineOpen ? styles.outlineDrawerOpen : ""}`.trim()}
       />
       <div

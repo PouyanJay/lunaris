@@ -2,8 +2,10 @@ import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { bucketLevel } from "../../lib/courseLevel";
 import { coverSeed } from "../../lib/coverSeed";
 import { flattenLessons } from "../../lib/flattenLessons";
+import { lessonStateFor, type LessonState } from "../../lib/lessonState";
 import type { CourseProgress, ProgressSummary } from "../../lib/progress";
 import type { Course, CourseLevel, Lesson } from "../../types/course";
+import { LessonChip } from "../course/LessonChip";
 import { Button } from "../primitives/Button";
 import { CourseCover } from "../primitives/CourseCover";
 import { ProgressBar } from "../primitives/ProgressBar";
@@ -41,9 +43,7 @@ function buildRows(course: Course): OverviewRow[] {
   }));
 }
 
-type RowState = "done" | "in_progress" | "up_next";
-
-const ROW_STATE_META: Record<RowState, { label: string; tone: StatusTone }> = {
+const ROW_STATE_META: Record<LessonState, { label: string; tone: StatusTone }> = {
   done: { label: "Done", tone: "success" },
   in_progress: { label: "In progress", tone: "accent" },
   up_next: { label: "Up next", tone: "neutral" },
@@ -54,7 +54,7 @@ const ROW_STATE_META: Record<RowState, { label: string; tone: StatusTone }> = {
 function resolveResumeLessonId(
   rows: OverviewRow[],
   progress: CourseProgress | null,
-  stateFor: (lessonId: string) => RowState,
+  stateFor: (lessonId: string) => LessonState,
 ): string | undefined {
   const recordedPosition =
     progress?.lastLessonId && rows.some((row) => row.lesson.id === progress.lastLessonId)
@@ -68,7 +68,7 @@ function resolveResumeLessonId(
 
 interface LessonRowProps {
   row: OverviewRow;
-  state: RowState;
+  state: LessonState;
   onOpen: () => void;
 }
 
@@ -81,9 +81,7 @@ function LessonRow({ row, state, onOpen }: LessonRowProps) {
   return (
     <li>
       <button type="button" className={styles.row} onClick={onOpen}>
-        <span className={styles.chip} data-state={state} aria-hidden="true">
-          {state === "done" ? "✓" : row.number}
-        </span>
+        <LessonChip number={row.number} state={state} />
         <span className={styles.rowBody}>
           <span className={styles.rowTitle}>{row.moduleTitle}</span>
           <span className={styles.rowMeta}>
@@ -172,12 +170,7 @@ export function CourseOverview({
   const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
   const rows = buildRows(course);
 
-  const stateFor = (lessonId: string): RowState => {
-    const mark = progress?.lessons.find((lesson) => lesson.lessonId === lessonId);
-    if (mark?.state === "done") return "done";
-    if (mark?.state === "in_progress") return "in_progress";
-    return "up_next";
-  };
+  const stateFor = (lessonId: string): LessonState => lessonStateFor(progress, lessonId);
 
   return (
     <div className={styles.canvas}>
