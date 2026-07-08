@@ -261,6 +261,78 @@ describe("LessonVideoHero", () => {
     expect(screen.queryByText(/generation stopped/i)).not.toBeInTheDocument();
   });
 
+  it("captions a clean ready video with its duration and the scene-QA line", async () => {
+    // Arrange — the built artifact is what's playing (matching jobId) and shipped no degraded
+    // scenes; the meta row may honestly say every scene passed QA and show the built duration.
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+      durationS: 108,
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
+      return Promise.resolve(jsonResponse(200, readyView("built-1")));
+    });
+
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(screen.getByText("Lesson video · 1:48")).toBeInTheDocument();
+    expect(screen.getByText(/all scenes verified/i)).toBeInTheDocument();
+  });
+
+  it("withholds the scene-QA line when scenes shipped degraded", async () => {
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
+      return Promise.resolve(
+        jsonResponse(200, {
+          ...readyView("built-1"),
+          provenance: { degradedScenes: [{ sceneId: "scene-2", issues: ["element overlap"] }] },
+        }),
+      );
+    });
+
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(screen.queryByText(/all scenes verified/i)).not.toBeInTheDocument();
+  });
+
+  it("withholds the scene-QA line and the built duration on a stale video", async () => {
+    const built: VideoArtifact = {
+      kind: "lesson",
+      status: "ready",
+      jobId: "built-1",
+      provenance: null,
+      narrated: false,
+      durationS: 108,
+    };
+    fetchMock.mockImplementation((input) => {
+      const url = String(input);
+      if (isActiveProbe(url)) return Promise.resolve(noActive());
+      return Promise.resolve(jsonResponse(200, { ...readyView("built-1"), stale: true }));
+    });
+
+    render(<LessonVideoHero {...PROPS} video={built} />);
+
+    await screen.findByRole("button", { name: /play lesson video/i });
+    expect(screen.queryByText(/all scenes verified/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/1:48/)).not.toBeInTheDocument();
+    expect(screen.getByText(/outdated/i)).toBeInTheDocument();
+  });
+
   it("surfaces a failed job and regenerates from the Try again menu", async () => {
     // Arrange — enqueue accepts, the poll reports failed; the menu's Fresh take re-runs end to end.
     fetchMock

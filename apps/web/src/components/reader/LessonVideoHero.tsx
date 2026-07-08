@@ -1,4 +1,5 @@
 import { useLessonVideo } from "../../hooks/useLessonVideo";
+import { formatMediaDuration } from "../../lib/mediaDuration";
 import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
 import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
@@ -16,6 +17,8 @@ interface LessonVideoHeroProps {
   /** The build-time lesson video, if the course shipped one. Resolved + shown with an outdated
    *  badge once the lesson is revised; absent ⇒ the on-demand generate affordance. */
   video?: VideoArtifact | null;
+  /** A title for the poster overlay (the owning module) — absent, the poster stays bare. */
+  title?: string | undefined;
   /** Poll cadence override for tests; defaults to the hook's production interval. */
   pollIntervalMs?: number;
 }
@@ -31,6 +34,7 @@ export function LessonVideoHero({
   courseId,
   lessonId,
   video,
+  title,
   pollIntervalMs,
 }: LessonVideoHeroProps) {
   const { state, generate, regenerate, stop, refresh } = useLessonVideo(
@@ -87,11 +91,33 @@ export function LessonVideoHero({
             captionsUrl={state.captionsUrl}
             label="Play lesson video"
             refreshPlayback={refresh}
+            overlayTitle={title}
           />
-          <div className={styles.regenerateRow}>
-            {state.stale && <OutdatedBadge />}
-            <DegradedBadge scenes={state.degradedScenes} />
-            <RegenerateMenu available={readyRegenModes(state.captionsUrl)} onSelect={regenerate} />
+          <div className={styles.metaRow}>
+            <span className={`mono ${styles.metaCaption}`}>
+              Lesson video
+              {/* The built duration is only honest while the built artifact is what's playing. */}
+              {video?.durationS != null &&
+                state.jobId === video.jobId &&
+                !state.stale &&
+                ` · ${formatMediaDuration(video.durationS)}`}
+            </span>
+            <div className={styles.metaEnd}>
+              {/* Honesty-gated (AD-3): every scene passed visual QA and the lesson hasn't been
+                  revised since — otherwise the badges tell the real story. */}
+              {!state.stale && state.degradedScenes.length === 0 && (
+                <span className={`mono ${styles.verified}`}>
+                  <span className={styles.verifiedDot} aria-hidden="true" />
+                  All scenes verified
+                </span>
+              )}
+              {state.stale && <OutdatedBadge />}
+              <DegradedBadge scenes={state.degradedScenes} />
+              <RegenerateMenu
+                available={readyRegenModes(state.captionsUrl)}
+                onSelect={regenerate}
+              />
+            </div>
           </div>
         </>
       )}

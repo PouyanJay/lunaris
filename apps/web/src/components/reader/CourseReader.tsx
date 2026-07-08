@@ -479,6 +479,7 @@ export function CourseReader({
               courseId={active.id}
               lessonId={current.lesson.id}
               video={current.lesson.video ?? null}
+              title={current.moduleTitle}
             />
           )}
 
