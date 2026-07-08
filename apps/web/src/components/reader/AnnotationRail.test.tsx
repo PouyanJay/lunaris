@@ -90,6 +90,39 @@ describe("AnnotationRail", () => {
     render(<AnnotationRail annotations={[]} activeClaimId={null} onSelect={() => {}} />);
 
     expect(screen.getByText(/no claims to verify/i)).toBeInTheDocument();
+    expect(screen.queryByText(/verified against/i)).not.toBeInTheDocument();
+  });
+
+  it("banners full verification with the distinct source count when every claim is supported", () => {
+    // Two supported claims over the same source — the banner counts sources, not claims.
+    const annotations = [
+      annotation(),
+      annotation({ id: "activate-0", phaseKey: "activate", phaseLabel: "Warm-up" }),
+    ];
+    render(<AnnotationRail annotations={annotations} activeClaimId={null} onSelect={() => {}} />);
+
+    expect(
+      screen.getByText(/every factual claim in this lesson is verified against/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/1 source\b/i)).toBeInTheDocument();
+  });
+
+  it("banners the honest partial count when any claim is not supported", () => {
+    const annotations = [
+      annotation(),
+      annotation({
+        id: "apply-0",
+        phaseKey: "apply",
+        phaseLabel: "Practice",
+        claim: { text: "An ungrounded assertion.", supportedBy: null, verifierStatus: "cut" },
+        citation: undefined,
+        matchedSentence: null,
+      }),
+    ];
+    render(<AnnotationRail annotations={annotations} activeClaimId={null} onSelect={() => {}} />);
+
+    expect(screen.getByText(/1 of 2 claims verified/i)).toBeInTheDocument();
+    expect(screen.queryByText(/every factual claim/i)).not.toBeInTheDocument();
   });
 
   it("surfaces the source's trust tier and credibility from the resolved citation", () => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
@@ -22,8 +23,13 @@ import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
+import { lessonStateFor } from "../../lib/lessonState";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
+
+/** Below this the annotation rail renders as an off-canvas drawer — must match the
+ *  `@media (max-width: 1100px)` block in CourseReader.module.css. */
+const RAIL_DRAWER_QUERY = "(max-width: 1100px)";
 
 /** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
  *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
@@ -86,35 +92,30 @@ function buildReaderModel(course: Course): ReaderModel {
       }
       groups.push({ moduleId: flat.module.id, moduleTitle: flat.module.title, items: [] });
     }
-    groups[groups.length - 1]!.items.push({ index: flat.index, label });
+    groups[groups.length - 1]!.items.push({ index: flat.index, lessonId: flat.lesson.id, label });
   }
   return { lessons, groups, kcToLessonIndex };
 }
 
-/** A drill-in into the reader: focus the lesson covering `kc` (Map) or the lesson with
- *  `lessonId` (Overview rows / Continue). `seq` increments per request so the same target can be
- *  re-requested after the learner has navigated away. */
+/** A drill-in into the reader: focus the lesson covering a concept (the Map's KC → lesson
+ *  resolution — the one target a URL can't name directly). `seq` increments per request so the
+ *  same concept can be re-requested after the learner has navigated away. Lesson-id deep links
+ *  are URLs (P6). */
 export interface LessonFocusRequest {
-  kc?: string;
-  lessonId?: string;
+  kc: string;
   seq: number;
-}
-
-/** The lesson index a focus request targets — -1 when the target isn't in this course. */
-function resolveFocusIndex(
-  request: LessonFocusRequest,
-  lessons: ReaderLesson[],
-  kcToLessonIndex: Map<string, number>,
-): number {
-  if (request.lessonId !== undefined) {
-    return lessons.findIndex(({ lesson }) => lesson.id === request.lessonId);
-  }
-  if (request.kc !== undefined) return kcToLessonIndex.get(request.kc) ?? -1;
-  return -1;
 }
 
 interface CourseReaderProps {
   course: Course;
+  /** The lesson the URL addresses (P6 lesson-in-URL). With `onNavigateLesson` present the URL is
+   *  the source of truth for the reading position; the reader derives its focused lesson from it
+   *  and canonicalises a bare or stale reader URL to the focused lesson (replace). */
+  activeLessonId?: string | undefined;
+  /** Navigate to a lesson's URL — every lesson change (rail, prev/next, drill-in) goes through
+   *  this so the URL always names the reading position. Absent (offline sample / standalone)
+   *  the reader keeps the position as internal state. */
+  onNavigateLesson?: ((lessonId: string, options?: { replace?: boolean }) => void) | undefined;
   focusRequest?: LessonFocusRequest | null;
   /** Re-author the focused lesson with the agent, returning the updated course. Absent => the
    *  regenerate action is hidden (e.g. offline). */
@@ -136,6 +137,8 @@ interface CourseReaderProps {
  *  behind a "Sources & checks" toggle that opens it as a drawer. */
 export function CourseReader({
   course,
+  activeLessonId,
+  onNavigateLesson,
   focusRequest,
   onRegenerate,
   apiBaseUrl,
@@ -150,6 +153,25 @@ export function CourseReader({
     [active.provenance],
   );
   const [activeIndex, setActiveIndex] = useState(0);
+  // A lesson navigation we've requested but whose URL hasn't come back around yet. The
+  // canonicalise effect must stand down while one is in flight — its replace would otherwise
+  // overwrite the requested navigation (both fire in the same commit, before the URL updates).
+  const pendingLessonNav = useRef<string | null>(null);
+  // Every lesson change goes through one door: a routed reader navigates (the URL is the source
+  // of truth for the reading position), a standalone reader sets internal state.
+  const goToLesson = useCallback(
+    (index: number) => {
+      const target = lessons[index];
+      if (!target) return;
+      if (onNavigateLesson) {
+        pendingLessonNav.current = target.lesson.id;
+        onNavigateLesson(target.lesson.id);
+      } else {
+        setActiveIndex(index);
+      }
+    },
+    [lessons, onNavigateLesson],
+  );
   // The learner's marks on this course (best-effort; null offline / while loading). Offline
   // (no apiBaseUrl) skips the fetch entirely by keying on an empty origin.
   const { progress, markObjective, markLesson, markOpened } = useCourseProgress(
@@ -163,6 +185,11 @@ export function CourseReader({
   // The course outline is a static left column on desktop; on phones it opens as a left drawer.
   const [outlineOpen, setOutlineOpen] = useState(false);
   const rail = useRailLayout();
+  // One labelled Sources & checks control drives the rail everywhere (P6): below the rail
+  // breakpoint it opens the drawer; on wide screens it collapses/restores the column.
+  const railDrawer = useMediaQuery(RAIL_DRAWER_QUERY);
+  const railVisible = railDrawer ? railOpen : !rail.collapsed;
+  const toggleRail = railDrawer ? () => setRailOpen((open) => !open) : rail.toggleCollapsed;
   const paneRef = useRef<HTMLDivElement>(null);
   const railToggleRef = useRef<HTMLButtonElement>(null);
   const outlineToggleRef = useRef<HTMLButtonElement>(null);
@@ -179,30 +206,38 @@ export function CourseReader({
     lastCourse.current = course;
     setActiveIndex(0);
     setRegeneratedCourse(null);
+    pendingLessonNav.current = null;
   }, [course]);
+  // Honour a drill-in once per request: jump to the lesson covering the requested concept (Map).
+  // The seq ref gates re-firing, so a course switch (which changes the lookup structures) won't
+  // re-focus. -1 (concept not in this course) leaves the position alone.
+  useEffect(() => {
+    if (!focusRequest || focusRequest.seq === handledFocusSeq.current) return;
+    handledFocusSeq.current = focusRequest.seq;
+    const index = kcToLessonIndex.get(focusRequest.kc) ?? -1;
+    if (index >= 0) goToLesson(index);
+  }, [focusRequest, kcToLessonIndex, goToLesson]);
+
+  const total = lessons.length;
+  // Routed (onNavigateLesson present): the URL names the reading position — derive the focused
+  // lesson from it; an absent or unknown segment falls back to the first lesson and the
+  // canonicalise effect below repairs the URL. Standalone: internal state, with a defensive clamp
+  // for the single render between switching to a shorter course and the reset-on-course effect.
+  const routedIndex = activeLessonId
+    ? lessons.findIndex(({ lesson }) => lesson.id === activeLessonId)
+    : -1;
+  const safeIndex = onNavigateLesson
+    ? Math.max(0, routedIndex)
+    : Math.min(activeIndex, Math.max(0, total - 1));
+  const current = lessons[safeIndex];
+
   // On a lesson change: return to the top of the reading pane (scrollTo is optional-chained — jsdom
   // doesn't implement it), clear any stale regenerate error, and drop the cross-highlight selection.
   useEffect(() => {
     paneRef.current?.scrollTo?.({ top: 0 });
     setError(null);
     setActiveClaimId(null);
-  }, [activeIndex]);
-
-  // Honour a drill-in once per request: jump to the requested lesson (Overview rows / Continue)
-  // or to the lesson covering the requested concept (Map). The seq ref gates re-firing, so a
-  // course switch (which changes the lookup structures) won't re-focus.
-  useEffect(() => {
-    if (!focusRequest || focusRequest.seq === handledFocusSeq.current) return;
-    handledFocusSeq.current = focusRequest.seq;
-    const index = resolveFocusIndex(focusRequest, lessons, kcToLessonIndex);
-    if (index >= 0) setActiveIndex(index);
-  }, [focusRequest, lessons, kcToLessonIndex]);
-
-  const total = lessons.length;
-  // Defensive clamp for the single render between switching to a shorter course and the
-  // reset-on-course effect firing — keeps the focused index in range so `current` stays defined.
-  const safeIndex = Math.min(activeIndex, Math.max(0, total - 1));
-  const current = lessons[safeIndex];
+  }, [safeIndex]);
 
   // First open of a lesson marks it in_progress — but never regresses a lesson already marked
   // (a revisited done lesson stays done). Waits for the snapshot so reloads don't re-mark.
@@ -212,6 +247,17 @@ export function CourseReader({
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
     if (!known) markLesson(currentLessonId, "in_progress");
   }, [progress, currentLessonId, markLesson]);
+
+  // Canonicalise the reader URL (routed only): a bare /lessons or a stale lesson segment is
+  // replaced with the focused lesson's URL, so every reading position is addressable and
+  // back/forward walk lessons. Replace, not push — repairing the URL is not a navigation step.
+  useEffect(() => {
+    if (!onNavigateLesson || !currentLessonId) return;
+    // A requested navigation has landed once the URL names its target — resume canonicalising.
+    if (pendingLessonNav.current === activeLessonId) pendingLessonNav.current = null;
+    if (pendingLessonNav.current !== null) return;
+    if (activeLessonId !== currentLessonId) onNavigateLesson(currentLessonId, { replace: true });
+  }, [onNavigateLesson, activeLessonId, currentLessonId]);
 
   // Every lesson view refreshes the course's open-recency + reading position (the library's
   // last-opened sort, and where the Continue CTA resumes). Unlike the in_progress mark above,
@@ -241,12 +287,20 @@ export function CourseReader({
   const activeAnnotation =
     annotations.find((annotation) => annotation.id === activeClaimId) ?? null;
 
-  // Selecting a claim opens the rail (so a prose marker reveals its entry on narrow screens) and
-  // highlights it; stable so it doesn't churn the memoised prose.
-  const selectClaim = useCallback((id: string) => {
-    setActiveClaimId(id);
-    setRailOpen(true);
-  }, []);
+  // Selecting a claim reveals the rail wherever it's hidden — the drawer on narrow screens, the
+  // collapsed column on wide — and highlights the entry. The breakpoint rides a ref so this stays
+  // stable and doesn't churn the memoised prose.
+  const railDrawerRef = useRef(railDrawer);
+  railDrawerRef.current = railDrawer;
+  const expandRail = rail.expand;
+  const selectClaim = useCallback(
+    (id: string) => {
+      setActiveClaimId(id);
+      if (railDrawerRef.current) setRailOpen(true);
+      else expandRail();
+    },
+    [expandRail],
+  );
 
   // Selecting a claim (from the rail or a prose cross-link) brings the place it refers to into view:
   // its matched sentence when there is one, else its whole phase (the best-effort fallback).
@@ -275,10 +329,13 @@ export function CourseReader({
     outlineToggleRef.current?.focus();
   }, []);
   useEscapeKey(outlineOpen, closeOutline);
-  const selectLesson = useCallback((index: number) => {
-    setActiveIndex(index);
-    setOutlineOpen(false);
-  }, []);
+  const selectLesson = useCallback(
+    (index: number) => {
+      goToLesson(index);
+      setOutlineOpen(false);
+    },
+    [goToLesson],
+  );
   // Lock body scroll while the outline drawer is open (phones), so the lesson behind the scrim
   // doesn't scroll under it — mirrors the shell's nav-drawer behavior.
   useEffect(() => {
@@ -328,6 +385,7 @@ export function CourseReader({
         groups={groups}
         activeIndex={safeIndex}
         onSelect={selectLesson}
+        stateFor={progress ? (lessonId) => lessonStateFor(progress, lessonId) : undefined}
         className={`${styles.outlineDrawer} ${outlineOpen ? styles.outlineDrawerOpen : ""}`.trim()}
       />
       <div
@@ -390,10 +448,11 @@ export function CourseReader({
                   ref={railToggleRef}
                   type="button"
                   className={styles.railToggle}
-                  aria-expanded={railOpen}
+                  aria-expanded={railVisible}
+                  data-open={railVisible || undefined}
                   aria-controls="annotation-rail"
                   aria-label={`Sources & checks, ${annotations.length}`}
-                  onClick={() => setRailOpen((open) => !open)}
+                  onClick={toggleRail}
                 >
                   {/* On phones the words collapse to this verification glyph (see CSS); the count
                       stays as the at-a-glance signal. */}
@@ -426,6 +485,7 @@ export function CourseReader({
               courseId={active.id}
               lessonId={current.lesson.id}
               video={current.lesson.video ?? null}
+              title={current.moduleTitle}
             />
           )}
 
@@ -518,19 +578,22 @@ export function CourseReader({
                 // The design's prev-label rule: from lesson 1 the way back is the Overview, not
                 // a dead disabled button.
                 <Button aria-label="Back to overview" onClick={onExitToOverview}>
+                  <ChevronLeftIcon />
                   Overview
                 </Button>
               ) : (
                 <Button
                   aria-label="Previous lesson"
                   disabled={safeIndex === 0}
-                  onClick={() => setActiveIndex((index) => Math.max(0, index - 1))}
+                  onClick={() => goToLesson(Math.max(0, safeIndex - 1))}
                 >
-                  Prev
+                  <ChevronLeftIcon />
+                  Previous
                 </Button>
               )}
               {safeIndex >= total - 1 ? (
                 <Button
+                  variant="accent"
                   aria-label="Finish course"
                   disabled={!progress}
                   onClick={() => {
@@ -541,14 +604,15 @@ export function CourseReader({
                 </Button>
               ) : (
                 <Button
+                  variant="accent"
                   aria-label="Next lesson"
                   onClick={() => {
                     // Advancing is the lesson's completion signal (plan Open Decision 2).
                     if (progress && currentLessonId) markLesson(currentLessonId, "done");
-                    setActiveIndex((index) => Math.min(total - 1, index + 1));
+                    goToLesson(Math.min(total - 1, safeIndex + 1));
                   }}
                 >
-                  Next
+                  Next lesson
                 </Button>
               )}
             </div>
@@ -625,6 +689,20 @@ export function CourseReader({
         />
       )}
     </div>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M15 18l-6-6 6-6"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

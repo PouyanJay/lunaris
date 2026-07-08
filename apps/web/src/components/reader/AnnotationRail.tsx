@@ -41,6 +41,17 @@ export function AnnotationRail({
   }, [activeClaimId, reduceMotion]);
 
   const groups = groupByPhase(annotations);
+  // The verification banner tells the truth about this lesson's grounding: full verification
+  // only when every claim held up, the honest fraction otherwise. Sources are counted distinct —
+  // several claims often ground on one citation.
+  const supportedCount = annotations.filter(
+    (entry) => entry.claim.verifierStatus === "supported",
+  ).length;
+  const sourceCount = new Set(
+    annotations.map((entry) => entry.citation?.id).filter((id) => id !== undefined),
+  ).size;
+  const allSupported = supportedCount === annotations.length;
+  const sourcesLabel = `${sourceCount} ${sourceCount === 1 ? "source" : "sources"}`;
 
   return (
     <aside ref={railRef} className={`${styles.rail} scroller`} aria-label="Sources and checks">
@@ -71,6 +82,38 @@ export function AnnotationRail({
           </button>
         )}
       </header>
+
+      {annotations.length > 0 && (
+        <p className={`${styles.banner} ${allSupported ? "" : styles.bannerPartial}`.trim()}>
+          <svg
+            className={styles.bannerIcon}
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            {allSupported ? <path d="M20 6 9 17l-5-5" /> : <path d="M12 6v7m0 4v.5" />}
+          </svg>
+          <span>
+            {allSupported ? (
+              <>
+                Every factual claim in this lesson is verified against{" "}
+                <strong className={styles.bannerCount}>{sourcesLabel}</strong>.
+              </>
+            ) : (
+              <>
+                {supportedCount} of {annotations.length} claims verified against{" "}
+                <strong className={styles.bannerCount}>{sourcesLabel}</strong>.
+              </>
+            )}
+          </span>
+        </p>
+      )}
 
       {annotations.length === 0 ? (
         <p className={styles.empty}>No claims to verify in this lesson.</p>

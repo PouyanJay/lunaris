@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { coursePath, resolveRoute } from "./routes";
+import { coursePath, lessonPath, resolveRoute } from "./routes";
 
 describe("resolveRoute", () => {
   it.each([
@@ -41,6 +41,25 @@ describe("resolveRoute", () => {
     });
   });
 
+  it("resolves a lesson deep-link under the Lessons view only", () => {
+    // The selected lesson is a URL segment (P6) — but only the reader has one; a trailing
+    // segment under any other view stays not-found.
+    expect(resolveRoute("/courses/c1/lessons/l2")).toEqual({
+      kind: "course",
+      courseId: "c1",
+      view: "lessons",
+      lessonId: "l2",
+    });
+    expect(resolveRoute("/courses/c1/learn/l2")).toEqual({
+      kind: "course",
+      courseId: "c1",
+      view: "lessons",
+      lessonId: "l2",
+    });
+    expect(resolveRoute("/courses/c1/map/l2").kind).toBe("not-found");
+    expect(resolveRoute("/courses/c1/overview/l2").kind).toBe("not-found");
+  });
+
   it("keeps the legacy learn spelling resolving to the Lessons view", () => {
     // Pre-P3 bookmarks and shared links spelled the reader segment "learn".
     expect(resolveRoute("/courses/c1/learn")).toEqual({
@@ -57,5 +76,11 @@ describe("coursePath", () => {
     expect(coursePath("c1", "overview")).toBe("/courses/c1");
     expect(coursePath("c1", "lessons")).toBe("/courses/c1/lessons");
     expect(coursePath("c1", "corpus")).toBe("/courses/c1/corpus");
+  });
+});
+
+describe("lessonPath", () => {
+  it("addresses a lesson inside the reader", () => {
+    expect(lessonPath("c1", "l2")).toBe("/courses/c1/lessons/l2");
   });
 });

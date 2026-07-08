@@ -65,9 +65,10 @@
   white-space: nowrap;
 }
 
-/* The drawer toggle — hidden while the rail is a static column (wide), shown on narrow. */
+/* The Sources & checks control — one labelled toggle at every width (P6): it collapses the
+   column on wide screens and opens the drawer on narrow. Accent while the rail is visible. */
 .railToggle {
-  display: none;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-xs);
@@ -92,6 +93,16 @@
     0 0 0 4px var(--focus-ring);
 }
 
+.railToggle[data-open] {
+  border-color: var(--accent-500);
+  background: var(--accent-soft);
+  color: var(--accent-600);
+}
+
+.railToggle[data-open] .railCount {
+  color: var(--accent-600);
+}
+
 .railCount {
   font-size: var(--text-xs);
   color: var(--text-muted);
@@ -103,14 +114,18 @@
   flex: none;
 }
 
+/* "Builds toward" — the header band's promise line (P6): readable secondary text with the
+   competency itself carrying the ink. */
 .competency {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+  max-width: 520px;
 }
 
 .competencyName {
-  color: var(--text-secondary);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 500;
 }
 
 .phase {
@@ -317,10 +332,6 @@
   .splitter,
   .railReveal {
     display: none;
-  }
-
-  .railToggle {
-    display: inline-flex;
   }
 
   .railWrap {

@@ -1,12 +1,15 @@
 import { useRef } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
+import type { LessonState } from "../../lib/lessonState";
+import { LessonChip } from "../course/LessonChip";
 import styles from "./ReaderOutline.module.css";
 
 /** One lesson entry in the outline; `index` is its position in the flattened course-wide lesson
- *  order (the value the reader focuses on). */
+ *  order (the value the reader focuses on), `lessonId` keys its progress state. */
 export interface OutlineItem {
   index: number;
+  lessonId: string;
   label: string;
 }
 
@@ -17,17 +20,32 @@ export interface OutlineGroup {
   items: OutlineItem[];
 }
 
+const STATE_TEXT: Record<Exclude<LessonState, "up_next">, string> = {
+  done: "Done",
+  in_progress: "In progress",
+};
+
 interface ReaderOutlineProps {
   groups: OutlineGroup[];
   activeIndex: number;
   onSelect: (index: number) => void;
+  /** A lesson's progress state for its chip; absent (offline) every chip is the plain number. */
+  stateFor?: ((lessonId: string) => LessonState) | undefined;
   /** Extra classes for the outline root — the reader uses this to turn it into a drawer on phones. */
   className?: string | undefined;
 }
 
-/** The course outline (TOC): lessons grouped under their module titles. The active lesson is marked
- *  `aria-current`; each entry is a button so the outline is fully keyboard-operable. */
-export function ReaderOutline({ groups, activeIndex, onSelect, className }: ReaderOutlineProps) {
+/** The course outline (TOC): lessons grouped under their module titles, each with the shared
+ *  numbered progress chip (✓ done / amber in-progress). The active lesson is marked `aria-current`
+ *  and carries the accent spine; each entry is a button so the outline is fully keyboard-operable.
+ *  Progress state is also written into the entry's text (visually hidden) — never color alone. */
+export function ReaderOutline({
+  groups,
+  activeIndex,
+  onSelect,
+  stateFor,
+  className,
+}: ReaderOutlineProps) {
   const outlineRef = useRef<HTMLElement>(null);
   useAutoHideScroll(outlineRef);
   return (
@@ -43,6 +61,7 @@ export function ReaderOutline({ groups, activeIndex, onSelect, className }: Read
           <ul className={styles.items}>
             {group.items.map((item) => {
               const active = item.index === activeIndex;
+              const state = stateFor ? stateFor(item.lessonId) : "up_next";
               return (
                 <li key={item.index}>
                   <button
@@ -51,7 +70,9 @@ export function ReaderOutline({ groups, activeIndex, onSelect, className }: Read
                     aria-current={active ? "page" : undefined}
                     onClick={() => onSelect(item.index)}
                   >
-                    {item.label}
+                    <LessonChip number={item.index + 1} state={state} size="sm" />
+                    <span className={styles.itemLabel}>{item.label}</span>
+                    {state !== "up_next" && <span className="sr-only">{STATE_TEXT[state]}</span>}
                   </button>
                 </li>
               );

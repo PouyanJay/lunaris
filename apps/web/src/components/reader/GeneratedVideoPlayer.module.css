@@ -44,6 +44,33 @@
   color: var(--text-muted);
 }
 
+/* The design's title-over-poster treatment: centred near the top with an amber gradient rule.
+   The scrim shadow keeps it legible over any poster art (posters are dark 3b1b-style frames). */
+.overlayTitle {
+  position: absolute;
+  top: var(--space-6);
+  left: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  /* Fixed ink-on-dark like the poster art itself — the stage is media, not themed surface. */
+  color: var(--gray-0);
+  text-shadow: 0 2px 12px var(--scrim);
+  pointer-events: none;
+}
+
+.overlayRule {
+  height: 2px;
+  width: min(280px, 60%);
+  background: linear-gradient(90deg, transparent, var(--accent-500), transparent);
+}
+
 .play {
   position: absolute;
   top: 50%;

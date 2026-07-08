@@ -47,6 +47,24 @@ describe("GeneratedVideoPlayer", () => {
     expect(video?.hasAttribute("crossorigin")).toBe(false);
   });
 
+  it("overlays the title on the poster and drops it once playing", () => {
+    // Arrange / Act — the design's title-over-poster treatment (P6). Decorative: the play
+    // button's label stays the accessible name.
+    render(
+      <GeneratedVideoPlayer
+        {...URLS}
+        captionsUrl={null}
+        label="Play lesson video"
+        overlayTitle="The TLS handshake"
+      />,
+    );
+    expect(screen.getByText("The TLS handshake")).toBeInTheDocument();
+
+    // Once playing, the native player owns the stage — no overlay over the controls.
+    fireEvent.click(screen.getByRole("button", { name: "Play lesson video" }));
+    expect(screen.queryByText("The TLS handshake")).not.toBeInTheDocument();
+  });
+
   it("falls back to a VIDEO glyph when there is no poster image", () => {
     // Arrange / Act — a video whose poster failed to render (posterUrl null).
     render(

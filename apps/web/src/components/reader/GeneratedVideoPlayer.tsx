@@ -12,6 +12,9 @@ interface GeneratedVideoPlayerProps {
    *  Should re-fetch the job and update `videoUrl` so the player remounts on a live URL. Omit where
    *  there is nothing to re-mint (the standalone unit tests). */
   refreshPlayback?: () => void | Promise<void>;
+  /** A title drawn over the poster (the design's title-over-poster treatment) — decorative, gone
+   *  once the native player owns the stage. The play `label` stays the accessible name. */
+  overlayTitle?: string | undefined;
 }
 
 /** The shared facade for a Lunaris-generated MP4: a 16:9 stage showing the poster until clicked,
@@ -25,6 +28,7 @@ export function GeneratedVideoPlayer({
   captionsUrl,
   label,
   refreshPlayback,
+  overlayTitle,
 }: GeneratedVideoPlayerProps) {
   const [playing, setPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -82,6 +86,12 @@ export function GeneratedVideoPlayer({
           ) : (
             <span className={`mono ${styles.posterGlyph}`} aria-hidden="true">
               VIDEO
+            </span>
+          )}
+          {overlayTitle && (
+            <span className={styles.overlayTitle} aria-hidden="true">
+              {overlayTitle}
+              <span className={styles.overlayRule} />
             </span>
           )}
           <span className={styles.play} aria-hidden="true">

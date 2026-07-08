@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CourseReader } from "./CourseReader";
@@ -50,6 +50,29 @@ function progressFetch(
 
 describe("CourseReader — learner progress", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("renders the outline's numbered chips with each lesson's progress state", async () => {
+    // The rail mirrors the Overview's chip language (P6): ✓ on a done lesson, the lesson
+    // number otherwise, with the state also in the entry's accessible name — never color alone.
+    const { mock } = progressFetch({
+      courseId: "course-test",
+      objectives: [],
+      lessons: [{ lessonId: "m-one-l0", state: "done", updatedAt: "2026-07-07T00:00:00Z" }],
+    });
+    vi.stubGlobal("fetch", mock);
+
+    render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
+
+    const outline = await screen.findByRole("navigation", { name: /course outline/i });
+    await waitFor(() =>
+      expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toBeInTheDocument(),
+    );
+    expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toHaveTextContent(
+      "✓",
+    );
+    // The second lesson has no mark — its chip stays the plain number.
+    expect(within(outline).getByRole("button", { name: /^lesson 2/i })).toHaveTextContent("2");
+  });
 
   it("marks the opened lesson in_progress once its progress loads", async () => {
     const { mock, puts } = progressFetch();
