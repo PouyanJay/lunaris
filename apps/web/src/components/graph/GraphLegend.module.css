@@ -56,8 +56,18 @@
   border-color: var(--accent-500);
   box-shadow: 0 0 0 1px var(--accent-500);
 }
-.known {
-  opacity: 0.5;
+
+/* State dots — the same tones the node badges carry. */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+.mastered {
+  background: var(--success);
+}
+.upNext {
+  background: var(--accent-500);
 }
 
 .markerLabel {

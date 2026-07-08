@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeCourse } from "../../test/fixtures";
@@ -43,5 +43,64 @@ describe("PrereqGraphExplorer responsive chrome", () => {
 
     await waitFor(() => expect(legendPanel(container)?.classList.contains("top")).toBe(true));
     expect(container.querySelector(".react-flow__minimap")).not.toBeInTheDocument();
+  });
+});
+
+describe("PrereqGraphExplorer mastery overlay", () => {
+  it("keeps the open inspector when the mastery snapshot lands", async () => {
+    // A learner can select a concept before the progress fetch resolves — the snapshot landing
+    // recomputes badges/edges but must not close the inspector under them.
+    setViewport(false);
+    const course = makeCourse();
+    const { container, rerender } = render(
+      <PrereqGraphExplorer course={course} kcMastery={null} />,
+    );
+
+    fireEvent.click(container.querySelector('[data-id="sorted_order"]')!);
+    expect(await screen.findByRole("heading", { name: "Sorted Order" })).toBeInTheDocument();
+
+    rerender(<PrereqGraphExplorer course={course} kcMastery={{ comparison: true }} />);
+
+    // The inspector survives, and the node under it now announces the fresh state.
+    expect(screen.getByRole("heading", { name: "Sorted Order" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(container.querySelector('[aria-label*="Up next."]')).not.toBeNull(),
+    );
+  });
+
+  it("GOAL keeps the badge face on a goal node the learner has mastered (AD-3)", async () => {
+    // The destination outranks its state on the card; mastery still reaches the label sentence.
+    setViewport(false);
+    const { container } = render(
+      <PrereqGraphExplorer
+        course={makeCourse()}
+        kcMastery={{ comparison: true, sorted_order: true, binary_search: true }}
+      />,
+    );
+
+    const goal = await waitFor(() => {
+      const node = container.querySelector('[data-id="binary_search"]');
+      expect(node?.querySelector('[aria-label*="Course goal."][aria-label*="Mastered."]')).not
+        .toBeNull();
+      return node!;
+    });
+    const badge = goal.querySelector('[class*="badge"]')!;
+    expect(badge).toHaveTextContent("GOAL");
+    expect(badge).not.toHaveTextContent("MASTERED");
+  });
+
+  it("re-seeding on a course change still drops the selection", async () => {
+    setViewport(false);
+    const { container, rerender } = render(
+      <PrereqGraphExplorer course={makeCourse()} kcMastery={null} />,
+    );
+    fireEvent.click(container.querySelector('[data-id="sorted_order"]')!);
+    await screen.findByRole("heading", { name: "Sorted Order" });
+
+    rerender(<PrereqGraphExplorer course={makeCourse()} kcMastery={null} />);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Sorted Order" })).not.toBeInTheDocument(),
+    );
   });
 });

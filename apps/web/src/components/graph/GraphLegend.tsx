@@ -2,7 +2,8 @@ import styles from "./GraphLegend.module.css";
 
 const TIERS = [1, 2, 3, 4, 5];
 
-/** Reads the difficulty ramp and the goal/known markers used across the canvas. */
+/** Reads the difficulty ramp and the learning-state key used across the canvas: the mastered /
+ *  up-next dots mirror the node badges, the goal ring mirrors the goal node's accent ring. */
 export function GraphLegend() {
   return (
     <div className={styles.legend} aria-label="Legend">
@@ -21,12 +22,16 @@ export function GraphLegend() {
       </div>
       <div className={styles.markers}>
         <span className={styles.marker}>
-          <span className={`${styles.box} ${styles.goal}`} aria-hidden="true" />
-          <span className={`${styles.markerLabel} mono`}>GOAL</span>
+          <span className={`${styles.dot} ${styles.mastered}`} aria-hidden="true" />
+          <span className={`${styles.markerLabel} mono`}>mastered</span>
         </span>
         <span className={styles.marker}>
-          <span className={`${styles.box} ${styles.known}`} aria-hidden="true" />
-          <span className={`${styles.markerLabel} mono`}>KNOWN</span>
+          <span className={`${styles.dot} ${styles.upNext}`} aria-hidden="true" />
+          <span className={`${styles.markerLabel} mono`}>up next</span>
+        </span>
+        <span className={styles.marker}>
+          <span className={`${styles.box} ${styles.goal}`} aria-hidden="true" />
+          <span className={`${styles.markerLabel} mono`}>goal</span>
         </span>
       </div>
     </div>

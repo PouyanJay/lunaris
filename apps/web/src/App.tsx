@@ -30,6 +30,7 @@ import { CanvasNotice } from "./components/states/CanvasNotice";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
 import { useCourse } from "./hooks/useCourse";
+import { useCourseProgress } from "./hooks/useCourseProgress";
 import { useBeforeUnloadGuard } from "./hooks/useBeforeUnloadGuard";
 import { useCourseStream } from "./hooks/useCourseStream";
 import { useTheme, type ThemeProps } from "./hooks/useTheme";
@@ -154,15 +155,24 @@ function Metric({ label, value }: { label: string; value: string }) {
 /** A loaded course's graph, or its empty state when no concepts were mapped. */
 function CourseBody({
   course,
+  apiBaseUrl,
   onReload,
   onOpenLesson,
 }: {
   course: Course;
+  /** Origin for the learner's progress snapshot (P7 mastery badges); absent = offline, the map
+   *  claims only what the build-time frontier knows. */
+  apiBaseUrl?: string | undefined;
   onReload: () => void;
   onOpenLesson?: ((kcId: string) => void) | undefined;
 }) {
+  const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
   return course.graph.nodes.length > 0 ? (
-    <PrereqGraphExplorer course={course} onOpenLesson={onOpenLesson} />
+    <PrereqGraphExplorer
+      course={course}
+      kcMastery={progress?.kcMastery ?? null}
+      onOpenLesson={onOpenLesson}
+    />
   ) : (
     <EmptyState onReload={onReload} />
   );
@@ -454,7 +464,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           />
         </ExplainProvider>
       ),
-      map: () => <CourseBody course={course} onReload={onReload} onOpenLesson={openLessonForKc} />,
+      map: () => (
+        <CourseBody
+          course={course}
+          apiBaseUrl={apiBaseUrl}
+          onReload={onReload}
+          onOpenLesson={openLessonForKc}
+        />
+      ),
       build: () => (
         <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
           <BuildReplay apiBaseUrl={apiBaseUrl} runId={runId} topic={course.topic} />
