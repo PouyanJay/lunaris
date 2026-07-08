@@ -1,5 +1,8 @@
+from collections.abc import Sequence
+
 from .base import CourseModel
 from .enums import CourseStatus, ProgressStage
+from .instruction import Module
 from .knowledge import PrerequisiteGraph
 
 
@@ -13,6 +16,11 @@ class CurriculumModuleMap(CourseModel):
     id: str
     title: str
     kcs: list[str]
+
+    @classmethod
+    def from_modules(cls, modules: Sequence[Module]) -> list["CurriculumModuleMap"]:
+        """One row per course module — the single conversion point both pipelines share."""
+        return [cls(id=module.id, title=module.title, kcs=list(module.kcs)) for module in modules]
 
 
 class ProgressEvent(CourseModel):
@@ -34,6 +42,8 @@ class ProgressEvent(CourseModel):
     label: str
     run_id: str
     sequence: int = 0
+    # Intentionally redundant with ``graph`` below: clients rendering pre-P8 run logs (no
+    # structured payload) still need the counts for the pipeline fallback.
     kc_count: int | None = None
     edge_count: int | None = None
     module_count: int | None = None

@@ -8,9 +8,12 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from lunaris_agent.harness import build_course_agent
 from lunaris_agent.harness.draft import CourseDraft
+from lunaris_agent.harness.progress_reporter import ProgressReporter
 from lunaris_agent.harness.tools import make_prerequisite_graph_tool
 from lunaris_graph import PrerequisiteGraphBuilder, StubPrereqJudge
-from lunaris_runtime.schema import BloomLevel, KnowledgeComponent
+from lunaris_runtime.schema import BloomLevel, KnowledgeComponent, ProgressStage
+
+from conftest import RecordingProgressSink
 
 # Two prerequisites of "c"; "a" and "b" are independent roots.
 _EDGES = [("a", "c"), ("b", "c")]
@@ -105,18 +108,8 @@ async def test_graph_tool_emission_carries_the_structure_for_the_blueprint() -> 
     # Arrange — a recording sink on the draft's reporter: the P8 control room renders the
     # blueprint from the GRAPH_BUILT event itself, so the event must carry the validated graph
     # and the goal, not just counts.
-    from lunaris_agent.harness.progress_reporter import ProgressReporter
-    from lunaris_runtime.schema import ProgressEvent, ProgressStage
-
-    class _RecordingSink:
-        def __init__(self) -> None:
-            self.events: list[ProgressEvent] = []
-
-        async def emit(self, event: ProgressEvent) -> None:
-            self.events.append(event)
-
     draft = _draft_with_concepts()
-    sink = _RecordingSink()
+    sink = RecordingProgressSink()
     draft.progress = ProgressReporter(draft.run_id, sink)
     tool = make_prerequisite_graph_tool(PrerequisiteGraphBuilder(StubPrereqJudge(_EDGES)), draft)
 

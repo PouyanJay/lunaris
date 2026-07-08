@@ -130,10 +130,7 @@ class Orchestrator:
             ProgressStage.CURRICULUM_DESIGNED,
             f"Designed curriculum: {len(course.modules)} modules",
             module_count=len(course.modules),
-            modules=[
-                CurriculumModuleMap(id=module.id, title=module.title, kcs=list(module.kcs))
-                for module in course.modules
-            ],
+            modules=CurriculumModuleMap.from_modules(course.modules),
         )
 
         course.status = CourseStatus.AUTHORING

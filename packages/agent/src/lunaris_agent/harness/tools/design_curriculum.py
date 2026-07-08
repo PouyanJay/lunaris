@@ -95,10 +95,7 @@ def make_design_curriculum_tool(
             f"Designed curriculum: {len(modules)} modules",
             module_count=len(modules),
             # Module → KC mapping for the P8 blueprint: MODULE_AUTHORED events light these nodes.
-            modules=[
-                CurriculumModuleMap(id=module.id, title=module.title, kcs=list(module.kcs))
-                for module in modules
-            ],
+            modules=CurriculumModuleMap.from_modules(modules),
         )
         # Enqueue the course-level videos now (V5-T2): this is the first point where BOTH the
         # researched brief (research_standard ran before curriculum) and the curriculum are final —
