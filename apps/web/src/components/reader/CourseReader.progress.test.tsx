@@ -203,4 +203,25 @@ describe("CourseReader — learner progress", () => {
       }),
     );
   });
+
+  it("beats the study-minutes heartbeat while mounted", async () => {
+    // An open reader is a study session: the mount must fire the first heartbeat (the per-minute
+    // cadence + visibility pause are proven in useStudyHeartbeat.test.ts).
+    const beats: string[] = [];
+    const { mock } = progressFetch();
+    const withHeartbeat = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.includes("/api/activity/heartbeat") && init?.method === "PUT") {
+        beats.push(url);
+        return Promise.resolve({ ok: true, status: 204 });
+      }
+      return mock(input, init);
+    });
+    vi.stubGlobal("fetch", withHeartbeat);
+
+    render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
+
+    await waitFor(() => expect(beats).toHaveLength(1));
+    expect(beats[0]).toBe("http://test/api/activity/heartbeat");
+  });
 });

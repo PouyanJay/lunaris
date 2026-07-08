@@ -30,6 +30,7 @@ export interface ActivityFeedItem {
   lessonId?: string | null;
   lessonTitle?: string | null;
   kcId?: string | null;
+  kcLabel?: string | null;
   occurredAt: string;
 }
 
@@ -50,6 +51,17 @@ export class ActivityError extends Error {
 /** The viewer's IANA timezone — day/streak math is user-local, so the API needs it. */
 function viewerTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+/** The reader's study-minutes heartbeat — fire-and-forget telemetry. No payload (the server
+ *  stamps the minute bucket) and no rejection: losing a beat is acceptable, breaking the
+ *  reader is not. */
+export async function putHeartbeat(apiBaseUrl: string): Promise<void> {
+  try {
+    await authedFetch(`${apiBaseUrl}/api/activity/heartbeat`, { method: "PUT" });
+  } catch {
+    // Best-effort by contract; the next beat retries naturally.
+  }
 }
 
 /** Fetch the caller's activity snapshot (streaks, study minutes, feed). Rejects with

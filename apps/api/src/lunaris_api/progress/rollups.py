@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from lunaris_runtime.schema import Course
 
@@ -48,6 +49,33 @@ def _lesson_rollup(course: Course, done_lessons: set[str]) -> tuple[int, int]:
             if lesson.id in done_lessons:
                 done += 1
     return total, done
+
+
+def newly_mastered_kcs(
+    course: Course,
+    objectives_before: list[ObjectiveMark],
+    module_id: str,
+    objective_index: int,
+) -> list[str]:
+    """KC ids that flip to mastered when (module_id, objective_index) is marked understood —
+    the mastery diff the activity feed's ``mastered`` events are emitted from. An already-present
+    mark diffs to nothing, so idempotent re-marks never re-emit. Lives here (not with the
+    emitter) so how mastery is computed stays owned by the rollup engine."""
+    is_already_marked = any(
+        mark.module_id == module_id and mark.objective_index == objective_index
+        for mark in objectives_before
+    )
+    if is_already_marked:
+        return []
+    _, before = derive_rollups(course, objectives_before, [])
+    new_mark = ObjectiveMark(
+        course_id=course.id,
+        module_id=module_id,
+        objective_index=objective_index,
+        understood_at=datetime.now(UTC),
+    )
+    _, after = derive_rollups(course, [*objectives_before, new_mark], [])
+    return [kc for kc, mastered in after.items() if mastered and not before.get(kc, False)]
 
 
 def derive_rollups(

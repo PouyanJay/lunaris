@@ -22,8 +22,11 @@ class InMemoryActivityStore:
         self._minutes.setdefault(user_id, {})[bucket_start] = None
 
     async def events(self, *, user_id: str | None) -> list[LearningEvent]:
-        history = self._events.get(user_id, [])
-        return sorted(history, key=lambda event: event.occurred_at, reverse=True)
+        # Newest-first, with insertion order breaking timestamp ties — wall-clock alone can tie
+        # at coarse clock resolution and silently flip the feed order.
+        indexed = list(enumerate(self._events.get(user_id, [])))
+        indexed.sort(key=lambda pair: (pair[1].occurred_at, pair[0]), reverse=True)
+        return [event for _, event in indexed]
 
     async def minutes(self, *, user_id: str | None) -> list[datetime]:
         return list(self._minutes.get(user_id, {}))

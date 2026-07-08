@@ -61,13 +61,16 @@ class InMemoryProgressStore:
 
     async def set_lesson(
         self, *, user_id: str | None, course_id: str, lesson_id: str, state: LessonState
-    ) -> None:
-        self._lessons[(user_id, course_id, lesson_id)] = LessonMark(
+    ) -> LessonState | None:
+        key = (user_id, course_id, lesson_id)
+        previous = self._lessons.get(key)
+        self._lessons[key] = LessonMark(
             course_id=course_id,
             lesson_id=lesson_id,
             state=state,
             updated_at=datetime.now(UTC),
         )
+        return previous.state if previous else None
 
     async def touch_course(
         self, *, user_id: str | None, course_id: str, last_lesson_id: str | None = None

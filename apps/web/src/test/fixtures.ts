@@ -459,6 +459,10 @@ export function routedFetch(
     ) {
       return Promise.resolve({ ok: true, status: 204 });
     }
+    // The reader's study-minutes heartbeat succeeds silently — fire-and-forget telemetry.
+    if (url.includes("/api/activity/heartbeat") && method === "PUT") {
+      return Promise.resolve({ ok: true, status: 204 });
+    }
     // The activity snapshot (streaks / heat / feed) — carries a ?tz= query.
     if (/\/api\/activity(\?|$)/.test(url) && method === "GET") {
       const activity = handlers.activity ?? {

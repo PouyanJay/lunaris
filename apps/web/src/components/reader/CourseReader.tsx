@@ -5,6 +5,7 @@ import { useEscapeKey } from "../../hooks/useEscapeKey";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
+import { useStudyHeartbeat } from "../../hooks/useStudyHeartbeat";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
@@ -178,6 +179,8 @@ export function CourseReader({
     apiBaseUrl ?? "",
     course.id,
   );
+  // Study-minutes heartbeat: an open, visible reader is "studying" (paused while backgrounded).
+  useStudyHeartbeat(apiBaseUrl ?? "", true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);

@@ -68,3 +68,70 @@ async def test_touch_failure_maps_to_the_domain_error() -> None:
     # Act / Assert
     with pytest.raises(ProgressStoreUnavailableError):
         await store.touch_course(user_id="user-a", course_id="c-1")
+
+
+class _FakeLessonQuery:
+    """Answers the select-then-upsert pair set_lesson issues; records the upsert row."""
+
+    def __init__(self, sink: list[dict], prior_rows: list[dict]) -> None:
+        self._sink = sink
+        self._prior_rows = prior_rows
+        self._selecting = False
+
+    def select(self, _columns: str) -> "_FakeLessonQuery":
+        self._selecting = True
+        return self
+
+    def eq(self, _column: str, _value: object) -> "_FakeLessonQuery":
+        return self
+
+    def upsert(self, row: dict, *, on_conflict: str) -> "_FakeLessonQuery":
+        self._sink.append({"row": row, "on_conflict": on_conflict})
+        return self
+
+    def execute(self) -> object:
+        data = self._prior_rows if self._selecting else []
+        return type("Response", (), {"data": data})()
+
+
+async def test_set_lesson_returns_the_previous_state() -> None:
+    # Arrange — the lesson is already in_progress server-side.
+    upserts: list[dict] = []
+
+    class _Client:
+        def table(self, _name: str) -> _FakeLessonQuery:
+            return _FakeLessonQuery(upserts, [{"state": "in_progress"}])
+
+    store = SupabaseProgressStore(client=_Client())
+
+    # Act
+    previous = await store.set_lesson(
+        user_id="user-a", course_id="c-1", lesson_id="m-1-l0", state="done"
+    )
+
+    # Assert — the caller gets the prior state (telemetry fires only on real transitions) and
+    # the new state is still upserted on the lesson PK.
+    assert previous == "in_progress"
+    (upsert,) = upserts
+    assert upsert["row"]["state"] == "done"
+    assert upsert["on_conflict"] == "user_id,course_id,lesson_id"
+
+
+async def test_set_lesson_first_touch_has_no_previous_state() -> None:
+    # Arrange — no prior row.
+    upserts: list[dict] = []
+
+    class _Client:
+        def table(self, _name: str) -> _FakeLessonQuery:
+            return _FakeLessonQuery(upserts, [])
+
+    store = SupabaseProgressStore(client=_Client())
+
+    # Act
+    previous = await store.set_lesson(
+        user_id="user-a", course_id="c-1", lesson_id="m-1-l0", state="in_progress"
+    )
+
+    # Assert
+    assert previous is None
+    assert len(upserts) == 1

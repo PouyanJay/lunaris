@@ -69,7 +69,10 @@ def _event(**overrides: object) -> LearningEvent:
         "lesson_title": "Certificates and authentication",
         "kc_id": None,
         "kc_label": None,
-        "occurred_at": datetime(2026, 7, 8, 12, 0, tzinfo=UTC),
+        # Stamped now, not a fixed date: the feed window and "this week" are clock-relative,
+        # and a frozen date would rot out of both. Window/streak math itself is pinned with an
+        # injected clock in test_activity_aggregation.py.
+        "occurred_at": datetime.now(UTC),
     }
     return LearningEvent(**{**defaults, **overrides})
 
@@ -87,11 +90,50 @@ async def test_activity_starts_empty_for_a_fresh_user(client: httpx.AsyncClient)
         "minutesThisWeek": 0,
         "conceptsThisWeek": 0,
     }
-    assert body["heat"] == []
-    assert body["week"] == []
+    # The calendar shapes are real even with no history: 14 heat squares, a 7-day week.
+    assert len(body["heat"]) == 14
+    assert all(day["minutes"] == 0 and day["active"] is False for day in body["heat"])
+    assert len(body["week"]) == 7
+    assert all(day["minutes"] == 0 for day in body["week"])
     assert body["feed"] == []
     # Correlation: every activity request carries a request id for log triangulation.
     assert _REQUEST_ID.fullmatch(response.headers["X-Request-Id"])
+
+
+async def test_stats_derive_from_recorded_rows(
+    client: httpx.AsyncClient, store: InMemoryActivityStore
+) -> None:
+    # Arrange — a studied minute now (today, this week) and a mastered concept now.
+    bucket = datetime.now(UTC).replace(second=0, microsecond=0)
+    await store.record_minute(user_id=USER_A, bucket_start=bucket)
+    await store.record_event(
+        user_id=USER_A, event=_event(event_type="mastered", kc_id="kc-a", kc_label="TLS")
+    )
+
+    # Act
+    response = await client.get("/api/activity", headers=auth_headers(USER_A))
+
+    # Assert — the tiles reflect the rows: an active today (streak 1), one studied minute this
+    # week, one concept this week.
+    stats = response.json()["stats"]
+    assert stats["currentStreak"] == 1
+    assert stats["longestStreak"] == 1
+    assert stats["minutesThisWeek"] == 1
+    assert stats["conceptsThisWeek"] == 1
+    heat = response.json()["heat"]
+    assert heat[-1]["active"] is True
+    assert heat[-1]["minutes"] == 1
+
+
+async def test_unknown_timezone_is_the_callers_error(client: httpx.AsyncClient) -> None:
+    # Act
+    response = await client.get(
+        "/api/activity", params={"tz": "Mars/Olympus"}, headers=auth_headers(USER_A)
+    )
+
+    # Assert — 422 with the offending name, never a raw 500.
+    assert response.status_code == 422
+    assert "Mars/Olympus" in response.json()["detail"]
 
 
 async def test_activity_requires_auth_when_configured(client: httpx.AsyncClient) -> None:
@@ -139,6 +181,60 @@ async def test_activity_is_scoped_per_user(
     assert response.json()["feed"] == []
 
 
+async def test_heartbeat_records_a_minute_bucket(
+    client: httpx.AsyncClient, store: InMemoryActivityStore
+) -> None:
+    # Act — the reader's session heartbeat carries no payload; the server stamps the bucket.
+    response = await client.put("/api/activity/heartbeat", headers=auth_headers(USER_A))
+
+    # Assert — one minute-aligned bucket, correlated for triangulation.
+    assert response.status_code == 204
+    assert _REQUEST_ID.fullmatch(response.headers["X-Request-Id"])
+    buckets = await store.minutes(user_id=USER_A)
+    assert len(buckets) == 1
+    assert buckets[0].second == 0
+    assert buckets[0].microsecond == 0
+
+
+async def test_heartbeats_within_one_minute_collapse_to_one_bucket(
+    client: httpx.AsyncClient, store: InMemoryActivityStore
+) -> None:
+    # Act — the reader beats every ~60s but re-mounts can double-fire within a minute.
+    first = await client.put("/api/activity/heartbeat", headers=auth_headers(USER_A))
+    second = await client.put("/api/activity/heartbeat", headers=auth_headers(USER_A))
+
+    # Assert — idempotent upsert: still one studied minute (unless the clock rolled over).
+    assert first.status_code == 204
+    assert second.status_code == 204
+    buckets = await store.minutes(user_id=USER_A)
+    assert len(buckets) in (1, 2)  # 2 only if the minute boundary crossed mid-test
+    assert len({bucket.replace(second=0, microsecond=0) for bucket in buckets}) == len(buckets)
+
+
+async def test_heartbeat_requires_auth_when_configured(client: httpx.AsyncClient) -> None:
+    # Act
+    response = await client.put("/api/activity/heartbeat")
+
+    # Assert
+    assert response.status_code == 401
+
+
+async def test_heartbeat_outage_is_a_recoverable_503(tmp_path: Path) -> None:
+    # Arrange — a store whose writes fail the way the Supabase store fails.
+    class _DownStore:
+        async def record_minute(self, *, user_id: str | None, bucket_start: datetime) -> None:
+            raise ActivityStoreUnavailableError("activity backend unavailable")
+
+    async with _build_client(JWT_SECRET, tmp_path, _DownStore()) as client:
+        # Act
+        response = await client.put("/api/activity/heartbeat", headers=auth_headers(USER_A))
+
+    # Assert — correlated even on failure: the error path is where triangulation matters most.
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Activity is temporarily unavailable"
+    assert _REQUEST_ID.fullmatch(response.headers["X-Request-Id"])
+
+
 async def test_activity_unavailable_backend_is_a_recoverable_503(tmp_path: Path) -> None:
     # Arrange — a store whose reads fail the way the Supabase store fails.
     class _DownStore:
@@ -152,6 +248,8 @@ async def test_activity_unavailable_backend_is_a_recoverable_503(tmp_path: Path)
         # Act
         response = await client.get("/api/activity", headers=auth_headers(USER_A))
 
-    # Assert — a recoverable 503 (kept inside the CORS middleware), never a raw 500.
+    # Assert — a recoverable 503 (kept inside the CORS middleware), never a raw 500 — and still
+    # correlated: the error path is where triangulation matters most.
     assert response.status_code == 503
     assert response.json()["detail"] == "Activity is temporarily unavailable"
+    assert _REQUEST_ID.fullmatch(response.headers["X-Request-Id"])

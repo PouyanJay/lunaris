@@ -208,11 +208,24 @@ class SupabaseProgressStore:
 
     async def set_lesson(
         self, *, user_id: str | None, course_id: str, lesson_id: str, state: LessonState
-    ) -> None:
+    ) -> LessonState | None:
         owner = self._require_user(user_id)
         client = self._ensure_client()
-        await asyncio.to_thread(
-            lambda: (
+
+        # Read the prior state first — the caller emits telemetry only on real transitions, and
+        # PostgREST's upsert can't report what it replaced.
+        def _select_previous() -> object:
+            return (
+                client.table(_LESSONS_TABLE)  # type: ignore[attr-defined]
+                .select("state")
+                .eq("user_id", owner)
+                .eq("course_id", course_id)
+                .eq("lesson_id", lesson_id)
+                .execute()
+            )
+
+        def _upsert() -> object:
+            return (
                 client.table(_LESSONS_TABLE)  # type: ignore[attr-defined]
                 .upsert(
                     {
@@ -226,7 +239,17 @@ class SupabaseProgressStore:
                 )
                 .execute()
             )
-        )
+
+        # Failure maps to the domain error so the route answers a recoverable 503 — the added
+        # previous-state read doubled this method's network surface, so the guard matters more.
+        try:
+            response = await asyncio.to_thread(_select_previous)
+            rows = response.data or []  # type: ignore[attr-defined]
+            previous: LessonState | None = rows[0]["state"] if rows else None
+            await asyncio.to_thread(_upsert)
+        except Exception as exc:
+            raise ProgressStoreUnavailableError("progress backend unavailable") from exc
+        return previous
 
     async def touch_course(
         self, *, user_id: str | None, course_id: str, last_lesson_id: str | None = None

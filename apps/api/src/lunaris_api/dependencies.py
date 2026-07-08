@@ -59,7 +59,12 @@ from lunaris_video import (
 )
 from structlog.contextvars import bind_contextvars
 
-from .activity import IActivityStore, InMemoryActivityStore, SupabaseActivityStore
+from .activity import (
+    IActivityStore,
+    InMemoryActivityStore,
+    LearningEventEmitter,
+    SupabaseActivityStore,
+)
 from .admin_users import (
     InMemoryUserDirectory,
     IUserDirectory,
@@ -883,6 +888,15 @@ def get_activity_store(
 
 
 ActivityStoreDep = Annotated[IActivityStore, Depends(get_activity_store)]
+
+
+def get_learning_event_emitter(store: ActivityStoreDep) -> LearningEventEmitter:
+    """The telemetry emitter the progress writes ride on — stateless over the activity store,
+    so a fresh per-request instance is free."""
+    return LearningEventEmitter(store)
+
+
+LearningEventEmitterDep = Annotated[LearningEventEmitter, Depends(get_learning_event_emitter)]
 
 
 async def get_explain_binding(

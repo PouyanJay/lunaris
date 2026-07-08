@@ -16,9 +16,10 @@ class IProgressStore(Protocol):
     across every course (marks carry ``course_id``, so the library groups them from one query
     instead of one snapshot per course); ``set_objective`` upserts on ``understood=True`` and
     deletes on ``False`` (row presence = understood); ``set_lesson`` upserts one state per lesson
-    (re-setting overwrites, idempotently); ``touch_course`` upserts the (user, course) state row —
-    stamping now() and, when given, the lesson position; a bare touch (no ``last_lesson_id``)
-    must PRESERVE a previously recorded position, never erase it.
+    (re-setting overwrites, idempotently) and returns the lesson's PREVIOUS state (``None`` on
+    first touch) so callers can emit telemetry only on real transitions; ``touch_course`` upserts
+    the (user, course) state row — stamping now() and, when given, the lesson position; a bare
+    touch (no ``last_lesson_id``) must PRESERVE a previously recorded position, never erase it.
     """
 
     async def snapshot(
@@ -51,4 +52,4 @@ class IProgressStore(Protocol):
 
     async def set_lesson(
         self, *, user_id: str | None, course_id: str, lesson_id: str, state: LessonState
-    ) -> None: ...
+    ) -> LessonState | None: ...
