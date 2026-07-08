@@ -88,7 +88,7 @@
 .toggle[data-understood] {
   color: var(--success);
   border-color: var(--success);
-  background: color-mix(in srgb, var(--success) 8%, transparent);
+  background: var(--success-soft);
 }
 
 @media (max-width: 768px) {
