@@ -1,7 +1,7 @@
 import { useId, useRef } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
-import type { BriefLoadState } from "../../types/clarifier";
+import { QUESTION_IDS, type BriefLoadState } from "../../types/clarifier";
 import { Button } from "../primitives/Button";
 import { ClarifierQuestionField } from "../personalize/ClarifierQuestionField";
 import styles from "./ConfigRail.module.css";
@@ -124,14 +124,19 @@ export function ConfigRail({
               <strong>{brief.data.brief.goal || brief.data.brief.subject}</strong>.
             </p>
             <div className={styles.questions}>
-              {brief.data.clarifier.questions.map((question) => (
-                <ClarifierQuestionField
-                  key={question.id}
-                  question={question}
-                  value={brief.answers[question.id] ?? ""}
-                  onChange={(value) => onAnswerChange(question.id, value)}
-                />
-              ))}
+              {/* The target level is owned by the composer's options-bar Level control (P5), so it's
+                  hidden here to avoid two level pickers. Its inferred answer stays in the brief and
+                  still threads when the options-bar Level is "Recommended" (no override). */}
+              {brief.data.clarifier.questions
+                .filter((question) => question.id !== QUESTION_IDS.LEVEL)
+                .map((question) => (
+                  <ClarifierQuestionField
+                    key={question.id}
+                    question={question}
+                    value={brief.answers[question.id] ?? ""}
+                    onChange={(value) => onAnswerChange(question.id, value)}
+                  />
+                ))}
             </div>
           </div>
         )}

@@ -65,16 +65,16 @@ describe("ConfigRail", () => {
     expect(onLoadBrief).toHaveBeenCalledOnce();
   });
 
-  it("renders the clarifier fields once the brief is ready and reports edits", () => {
-    const onAnswerChange = vi.fn();
-    renderRail({ brief: ready(), onAnswerChange });
+  it("renders the clarifier fields once ready, minus the level (owned by the options bar)", () => {
+    renderRail({ brief: ready() });
 
-    // The inferred goal summary + a clarifier choice (level), with the inference pre-picked.
+    // The inferred goal summary renders…
     expect(screen.getByText(/reach CLB 10/i)).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /intermediate/i })).toBeChecked();
-
-    fireEvent.click(screen.getByRole("radio", { name: /advanced/i }));
-    expect(onAnswerChange).toHaveBeenCalledWith("level", "advanced");
+    // …the goal-type clarifier field is present (pre-picked to the inference)…
+    expect(screen.getByRole("radio", { name: /pass a credential/i })).toBeChecked();
+    // …but the target-level question is hidden here: the composer's options-bar Level owns it, so
+    // there is no second level picker (map, don't duplicate).
+    expect(screen.queryByRole("radio", { name: /intermediate/i })).not.toBeInTheDocument();
   });
 
   it("renders the goal-type clarifier first, pre-picking the inferred outcome (R0)", () => {
