@@ -1,0 +1,45 @@
+.band {
+  display: flex;
+  align-items: stretch;
+  margin: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1) var(--space-4);
+}
+
+.cell + .cell {
+  border-left: var(--border-width) solid var(--border);
+}
+
+.label {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.value {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.value[data-tone="success"] {
+  color: var(--success);
+}
+
+/* The band is secondary chrome — give phones the room back. */
+@media (max-width: 768px) {
+  .band {
+    display: none;
+  }
+}

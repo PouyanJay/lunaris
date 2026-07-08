@@ -16,6 +16,7 @@ import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
 import { BuildControlRoom } from "./components/controlroom/BuildControlRoom";
+import { BuildMetricBand } from "./components/controlroom/BuildMetricBand";
 import { BuildReplay } from "./components/transcript/BuildReplay";
 import { LiveBuildReplay } from "./components/transcript/LiveBuildReplay";
 import { VideosGeneratingPanel } from "./components/transcript/VideosGeneratingPanel";
@@ -578,6 +579,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         title: stream.topic,
         meta: (
           <>
+            <BuildMetricBand events={stream.events} />
             {/* Reconnecting = the live feed dropped but the build is still running server-side; the
                 timeline keeps advancing from the durable log, so the label stays "in progress". */}
             <StatusDot label={reconnecting ? "reconnecting" : "building"} tone="accent" live />
@@ -609,23 +611,31 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       if (!showVideosFinishing || state.status !== "ready") return null;
       return {
         title: state.course.topic,
-        meta: <StatusDot label="finishing videos" tone="accent" live />,
-        body: (
+        meta: (
           <>
-            {state.runId && (
-              <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-                <BuildReplay
-                  apiBaseUrl={apiBaseUrl}
-                  runId={state.runId}
-                  topic={state.course.topic}
-                />
-              </ExplainProvider>
-            )}
-            <VideosGeneratingPanel
-              progress={videoProgress}
-              onOpenCourse={() => setVideosOpenedEarly(true)}
-            />
+            <BuildMetricBand events={state.events} />
+            <StatusDot label="finishing videos" tone="accent" live />
           </>
+        ),
+        // The control room stays mounted over the run it just watched — every phase done
+        // (complete), the videos meter docked in the rail. No swap to a refetched replay, no
+        // frozen mid-pipeline phase (the Verify-freeze fix).
+        body: (
+          <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
+            <BuildControlRoom
+              topic={state.course.topic}
+              events={state.events}
+              agentEvents={state.agentEvents}
+              stageTimes={state.stageTimes}
+              complete
+              videosPanel={
+                <VideosGeneratingPanel
+                  progress={videoProgress}
+                  onOpenCourse={() => setVideosOpenedEarly(true)}
+                />
+              }
+            />
+          </ExplainProvider>
         ),
       };
     };

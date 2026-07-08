@@ -422,6 +422,73 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(within(conceptsPhase as HTMLElement).getByText("TLS handshake")).toBeInTheDocument();
   });
 
+  it("holds the control room open, all phases done, while videos finish (Verify-freeze fix)", async () => {
+    // The stream's last progress event is claims_verified — the tail events coalesced with the
+    // terminal course frame, the exact shape that used to freeze Verify as active forever. The
+    // course carries a lesson video still rendering, so the canvas holds on "finishing videos".
+    const course = makeCourse();
+    course.modules[0]!.lessons[0]!.video = {
+      kind: "lesson",
+      status: "queued",
+      jobId: "v1",
+      provenance: null,
+      narrated: false,
+    };
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url.includes("/api/settings")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ secrets: [], pipeline: "agent", supportsLessonRegeneration: false }),
+        });
+      }
+      if (url.includes("/api/courses/stream")) {
+        return Promise.resolve(
+          sseStreamResponse([
+            progressFrame("run_started", 0),
+            progressFrame("claims_verified", 1, {
+              claimsTotal: 4,
+              claimsSupported: 4,
+              claimsCut: 0,
+            }),
+            courseFrame(course),
+          ]),
+        );
+      }
+      if (url.endsWith("/videos")) {
+        // One video, still rendering — the meter stays unsettled.
+        return Promise.resolve({
+          ok: true,
+          json: async () => [{ jobId: "v1", kind: "lesson", lessonId: "l1", status: "running" }],
+        });
+      }
+      if (url.includes("/api/runs")) return Promise.resolve({ ok: true, json: async () => [] });
+      throw new Error(`unhandled ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    // The control room stays mounted (titled by the finished course) with the videos meter
+    // docked in its rail…
+    expect(
+      await screen.findByRole("region", { name: /building how binary search works/i }),
+    ).toBeInTheDocument();
+    expect(await screen.findByLabelText("Video generation progress")).toBeInTheDocument();
+
+    // …and every pipeline phase reads done, even though the last streamed stage was Verify.
+    const pipeline = screen.getByRole("region", { name: /pipeline/i });
+    for (const label of ["Verify", "Resources", "Coverage", "Videos", "Publish"]) {
+      expect(within(pipeline).getByText(label).closest("[data-status]")).toHaveAttribute(
+        "data-status",
+        "done",
+      );
+    }
+  });
+
   it("surfaces a newly started build in the sidebar history without a manual refresh", async () => {
     // The run is recorded RUNNING server-side before the first event is emitted, so the run_id on
     // that first event is the cue to refetch the history. /api/runs is empty until the build starts,
