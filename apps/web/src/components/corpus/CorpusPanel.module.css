@@ -44,49 +44,6 @@
   border-radius: var(--radius-md);
 }
 
-/* Segmented mode toggle (mirrors ViewToggle). */
-.modes {
-  display: inline-flex;
-  align-self: flex-start;
-  gap: 2px;
-  padding: 2px;
-  background: var(--bg-muted);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.mode {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  height: 26px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition:
-    background-color var(--dur) var(--ease),
-    color var(--dur) var(--ease);
-}
-
-.mode:hover {
-  color: var(--text);
-}
-
-.mode:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.modeActive {
-  background: var(--surface-raised);
-  color: var(--text);
-  box-shadow: var(--shadow-sm);
-}
-
 .form {
   display: flex;
   flex-direction: column;
@@ -276,13 +233,6 @@ a.itemTitle:focus-visible {
     padding: var(--space-4);
   }
   .input {
-    height: 44px;
-  }
-  .modes {
-    align-self: stretch;
-  }
-  .mode {
-    flex: 1;
     height: 44px;
   }
 }

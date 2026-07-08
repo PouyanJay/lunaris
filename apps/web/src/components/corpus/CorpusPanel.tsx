@@ -11,13 +11,14 @@ import {
 import { ACQUISITION_MODE_LABEL, type IngestResult } from "../../types/course";
 import { type CorpusState, useCorpus } from "../../hooks/useCorpus";
 import { Button } from "../primitives/Button";
+import { SegmentedControl, type Segment } from "../primitives/SegmentedControl";
 import { SourceTrust } from "../primitives/SourceTrust";
 import states from "../states/DataStates.module.css";
 import styles from "./CorpusPanel.module.css";
 
 type AddMode = "text" | "url" | "file";
 
-const MODES: { value: AddMode; label: string }[] = [
+const MODES: Segment<AddMode>[] = [
   { value: "text", label: "Paste" },
   { value: "url", label: "URL" },
   { value: "file", label: "File" },
@@ -172,26 +173,16 @@ function AddSource({
 
   return (
     <section className={styles.add} aria-label="Add a source">
-      <div className={styles.modes} role="group" aria-label="Source type">
-        {MODES.map((option) => {
-          const active = option.value === mode;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={active}
-              className={`${styles.mode} ${active ? styles.modeActive : ""}`}
-              onClick={() => {
-                setMode(option.value);
-                setError(null);
-                setResult(null);
-              }}
-            >
-              {option.label}
-            </button>
-          );
-        })}
-      </div>
+      <SegmentedControl
+        segments={MODES}
+        value={mode}
+        onChange={(next) => {
+          setMode(next);
+          setError(null);
+          setResult(null);
+        }}
+        label="Source type"
+      />
 
       <form
         className={styles.form}
