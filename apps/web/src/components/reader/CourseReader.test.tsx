@@ -740,8 +740,33 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     );
   });
 
-  it("toggles the annotation drawer and closes it on Escape", () => {
-    // Arrange
+  it("the header Sources toggle collapses and restores the rail on wide screens", () => {
+    // Arrange — jsdom's matchMedia reports wide, where the rail is a visible column.
+    const { container } = render(<CourseReader course={makeCourse()} />);
+    const toggle = screen.getByRole("button", { name: /sources & checks/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveAttribute("data-open", "true");
+
+    // Act / Assert — one labelled control drives the rail everywhere (P6): here it collapses…
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(container.querySelector('[data-rail-collapsed="true"]')).not.toBeNull();
+
+    // …and restores.
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(container.querySelector('[data-rail-collapsed="true"]')).toBeNull();
+  });
+
+  it("toggles the annotation drawer and closes it on Escape below the rail breakpoint", () => {
+    // Arrange — simulate the narrow layout, where the rail is an off-canvas drawer.
+    const listeners = new Set<() => void>();
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("1100px"),
+      media: query,
+      addEventListener: (_: string, cb: () => void) => listeners.add(cb),
+      removeEventListener: (_: string, cb: () => void) => listeners.delete(cb),
+    }));
     render(<CourseReader course={makeCourse()} />);
     const toggle = screen.getByRole("button", { name: /sources & checks/i });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -754,6 +779,7 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(document.activeElement).toBe(toggle);
+    vi.unstubAllGlobals();
   });
 
   it("collapses the rail on wide screens and offers a reveal control", () => {

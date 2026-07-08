@@ -28,6 +28,8 @@ export interface RailLayout {
    *  so the rail tracks the cursor 1:1 instead of easing behind it. */
   resizing: boolean;
   toggleCollapsed: () => void;
+  /** Expand the rail if collapsed (a prose cross-link revealing its claim) — a no-op otherwise. */
+  expand: () => void;
   /** Begin a pointer-drag resize from the splitter (the rail sits on the right, so dragging left
    *  widens it). */
   startResize: (event: PointerEvent) => void;
@@ -87,6 +89,7 @@ export function useRailLayout(storageKey: string = DEFAULT_STORAGE_KEY): RailLay
   }, [storageKey, collapsed, width]);
 
   const toggleCollapsed = useCallback(() => setCollapsed((prev) => !prev), []);
+  const expand = useCallback(() => setCollapsed(false), []);
 
   const startResize = useCallback((event: PointerEvent) => {
     event.preventDefault();
@@ -128,5 +131,5 @@ export function useRailLayout(storageKey: string = DEFAULT_STORAGE_KEY): RailLay
     }
   }, []);
 
-  return { collapsed, width, resizing, toggleCollapsed, startResize, nudgeWidth };
+  return { collapsed, width, resizing, toggleCollapsed, expand, startResize, nudgeWidth };
 }

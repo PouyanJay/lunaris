@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
@@ -29,6 +30,10 @@ import styles from "./CourseReader.module.css";
 /** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
  *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
  *  example → practice → transfer — bracketed by the "expects" and "self-check" bookends. */
+/** Below this the annotation rail renders as an off-canvas drawer — must match the
+ *  `@media (max-width: 1100px)` block in CourseReader.module.css. */
+const RAIL_DRAWER_QUERY = "(max-width: 1100px)";
+
 const PHASES: (PhaseRef & { cue: string })[] = [
   { key: "activate", label: "Warm-up", cue: "Reconnect with what you already know" },
   {
@@ -193,6 +198,11 @@ export function CourseReader({
   // The course outline is a static left column on desktop; on phones it opens as a left drawer.
   const [outlineOpen, setOutlineOpen] = useState(false);
   const rail = useRailLayout();
+  // One labelled Sources & checks control drives the rail everywhere (P6): below the rail
+  // breakpoint it opens the drawer; on wide screens it collapses/restores the column.
+  const railDrawer = useMediaQuery(RAIL_DRAWER_QUERY);
+  const railVisible = railDrawer ? railOpen : !rail.collapsed;
+  const toggleRail = railDrawer ? () => setRailOpen((open) => !open) : rail.toggleCollapsed;
   const paneRef = useRef<HTMLDivElement>(null);
   const railToggleRef = useRef<HTMLButtonElement>(null);
   const outlineToggleRef = useRef<HTMLButtonElement>(null);
@@ -290,12 +300,20 @@ export function CourseReader({
   const activeAnnotation =
     annotations.find((annotation) => annotation.id === activeClaimId) ?? null;
 
-  // Selecting a claim opens the rail (so a prose marker reveals its entry on narrow screens) and
-  // highlights it; stable so it doesn't churn the memoised prose.
-  const selectClaim = useCallback((id: string) => {
-    setActiveClaimId(id);
-    setRailOpen(true);
-  }, []);
+  // Selecting a claim reveals the rail wherever it's hidden — the drawer on narrow screens, the
+  // collapsed column on wide — and highlights the entry. The breakpoint rides a ref so this stays
+  // stable and doesn't churn the memoised prose.
+  const railDrawerRef = useRef(railDrawer);
+  railDrawerRef.current = railDrawer;
+  const expandRail = rail.expand;
+  const selectClaim = useCallback(
+    (id: string) => {
+      setActiveClaimId(id);
+      if (railDrawerRef.current) setRailOpen(true);
+      else expandRail();
+    },
+    [expandRail],
+  );
 
   // Selecting a claim (from the rail or a prose cross-link) brings the place it refers to into view:
   // its matched sentence when there is one, else its whole phase (the best-effort fallback).
@@ -443,10 +461,11 @@ export function CourseReader({
                   ref={railToggleRef}
                   type="button"
                   className={styles.railToggle}
-                  aria-expanded={railOpen}
+                  aria-expanded={railVisible}
+                  data-open={railVisible || undefined}
                   aria-controls="annotation-rail"
                   aria-label={`Sources & checks, ${annotations.length}`}
-                  onClick={() => setRailOpen((open) => !open)}
+                  onClick={toggleRail}
                 >
                   {/* On phones the words collapse to this verification glyph (see CSS); the count
                       stays as the at-a-glance signal. */}

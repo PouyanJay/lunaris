@@ -65,9 +65,10 @@
   white-space: nowrap;
 }
 
-/* The drawer toggle — hidden while the rail is a static column (wide), shown on narrow. */
+/* The Sources & checks control — one labelled toggle at every width (P6): it collapses the
+   column on wide screens and opens the drawer on narrow. Accent while the rail is visible. */
 .railToggle {
-  display: none;
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-xs);
@@ -90,6 +91,16 @@
   box-shadow:
     0 0 0 2px var(--bg-subtle),
     0 0 0 4px var(--focus-ring);
+}
+
+.railToggle[data-open] {
+  border-color: var(--accent-500);
+  background: var(--accent-soft);
+  color: var(--accent-600);
+}
+
+.railToggle[data-open] .railCount {
+  color: var(--accent-600);
 }
 
 .railCount {
@@ -321,10 +332,6 @@
   .splitter,
   .railReveal {
     display: none;
-  }
-
-  .railToggle {
-    display: inline-flex;
   }
 
   .railWrap {
