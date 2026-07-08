@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { makeAgentEvent, makeProgressEvent } from "../../test/fixtures";
+import { makeAgentEvent, makeCourse, makeProgressEvent } from "../../test/fixtures";
 import { BuildControlRoom } from "./BuildControlRoom";
 
 /** A mid-build stream: concepts done, graph in flight, with reasoning + a paired tool call. */
@@ -92,6 +92,38 @@ describe("BuildControlRoom", () => {
 
     expect(screen.queryByText(/"nodes":/)).not.toBeInTheDocument();
     expect(screen.getByText("build_prerequisite_graph")).toBeInTheDocument();
+  });
+
+  it("assembles the live blueprint from the structured graph event", async () => {
+    // The T1 payloads: graph structure + module mapping + one authored module → the canvas
+    // shows real nodes with their assembly states and the honest mapped counter.
+    const build = midBuild();
+    build.events.push(
+      makeProgressEvent("graph_built", 3, {
+        graph: makeCourse().graph,
+        goalConcept: "binary_search",
+      }),
+      makeProgressEvent("curriculum_designed", 4, {
+        modules: [
+          { id: "m-one", title: "Foundations", kcs: ["comparison", "sorted_order"] },
+          { id: "m-two", title: "Search", kcs: ["binary_search"] },
+        ],
+      }),
+      makeProgressEvent("module_authored", 5, { moduleId: "m-one" }),
+    );
+    render(<BuildControlRoom {...build} />);
+
+    // React Flow keeps nodes visibility:hidden in jsdom — assert the aria-label attributes.
+    await waitFor(() =>
+      expect(
+        document.querySelector('[aria-label*="Comparison."][aria-label*="Mapped."]'),
+      ).not.toBeNull(),
+    );
+    expect(
+      document.querySelector('[aria-label*="Binary Search."][aria-label*="Mapping."]'),
+    ).not.toBeNull();
+    expect(screen.getByText("2 / 3 mapped")).toBeInTheDocument();
+    expect(screen.queryByText(/appears here as concepts are mapped/i)).not.toBeInTheDocument();
   });
 
   it("shows the blueprint fallback before any graph structure exists", () => {

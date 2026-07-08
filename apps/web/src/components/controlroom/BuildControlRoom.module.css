@@ -55,11 +55,20 @@
 }
 
 .strapline {
+  flex: 1;
+  min-width: 0;
   font-size: var(--text-sm);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.mapped {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--accent-500);
+  white-space: nowrap;
 }
 
 .blueprintBody {

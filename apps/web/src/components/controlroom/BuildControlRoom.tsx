@@ -1,9 +1,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 
+import { blueprintFromEvents } from "../../lib/blueprint";
 import { buildTimeline, consoleEntries, type StageTimes } from "../../lib/buildTimeline";
 import type { AgentEvent, ProgressEvent } from "../../types/course";
 import { SegmentedControl } from "../primitives/SegmentedControl";
 import { BuildTimeline } from "../transcript/BuildTimeline";
+import { BlueprintCanvas } from "./BlueprintCanvas";
 import { ConsoleTicker } from "./ConsoleTicker";
 import { PipelineRail } from "./PipelineRail";
 import styles from "./BuildControlRoom.module.css";
@@ -46,6 +48,7 @@ export function BuildControlRoom({
     [events, agentEvents, stageTimes, complete],
   );
   const ticker = useMemo(() => consoleEntries(agentEvents), [agentEvents]);
+  const blueprint = useMemo(() => blueprintFromEvents(events, complete), [events, complete]);
 
   return (
     <div
@@ -76,13 +79,22 @@ export function BuildControlRoom({
                 <span className={styles.strapline}>
                   Assembling the prerequisite graph — nothing is placed before what it depends on.
                 </span>
+                {blueprint?.mappedCount != null && (
+                  <span className={`${styles.mapped} mono`}>
+                    {blueprint.mappedCount} / {blueprint.totalCount} mapped
+                  </span>
+                )}
               </header>
               <div className={styles.blueprintBody}>
-                {/* The structured graph payload lands in T2; until then (and for runs recorded
-                    before it existed) the canvas states what's happening rather than faking nodes. */}
-                <p className={styles.blueprintFallback}>
-                  The prerequisite graph appears here as concepts are mapped.
-                </p>
+                {blueprint ? (
+                  <BlueprintCanvas blueprint={blueprint} />
+                ) : (
+                  /* No structured graph yet (early phases / pre-P8 run logs): say what's
+                     happening rather than faking nodes. */
+                  <p className={styles.blueprintFallback}>
+                    The prerequisite graph appears here as concepts are mapped.
+                  </p>
+                )}
               </div>
             </section>
             <ConsoleTicker entries={ticker} live={!complete} />
