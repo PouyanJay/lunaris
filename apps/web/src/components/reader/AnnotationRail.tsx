@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
+import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { StatusDot } from "../primitives/StatusDot";
 import { type Annotation, groupByPhase, verifierStatusTone } from "./annotations";
 import { ClaimProvenance } from "./ClaimProvenance";
@@ -16,6 +17,9 @@ interface AnnotationRailProps {
   /** Collapse the rail to give the reading column full width (wide screens only, shown via CSS). */
   onCollapse?: () => void;
   reduceMotion?: boolean;
+  /** Where these claims live — lets a cited claim be bookmarked as a source (keyed on its
+   *  citation; claims carry no server id). Absent = no save affordance (e.g. offline). */
+  sourceContext?: { courseId: string; courseTitle: string; lessonId: string | null };
 }
 
 /** The verifier annotations as a parallel layer beside the reading column (req 1): each claim's
@@ -29,6 +33,7 @@ export function AnnotationRail({
   onClose,
   onCollapse,
   reduceMotion = false,
+  sourceContext,
 }: AnnotationRailProps) {
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
   const railRef = useRef<HTMLElement>(null);
@@ -152,7 +157,26 @@ export function AnnotationRail({
                       </p>
                     )}
                     {annotation.citation ? (
-                      <ClaimProvenance citation={annotation.citation} />
+                      <div className={styles.provenanceRow}>
+                        <ClaimProvenance citation={annotation.citation} />
+                        {sourceContext && (
+                          <BookmarkToggle
+                            subject={annotation.citation.title ?? "this source"}
+                            draft={{
+                              kind: "source",
+                              courseId: sourceContext.courseId,
+                              targetId: annotation.citation.id,
+                              courseTitle: sourceContext.courseTitle,
+                              title: annotation.citation.title,
+                              lessonId: sourceContext.lessonId,
+                              // The claim this source grounds — what the bookmarks card quotes.
+                              snippet: annotation.claim.text.slice(0, 2000),
+                              trustTier: annotation.citation.trustTier ?? null,
+                              credibility: annotation.citation.credibility ?? null,
+                            }}
+                          />
+                        )}
+                      </div>
                     ) : (
                       <p className={styles.uncited}>No source on record</p>
                     )}

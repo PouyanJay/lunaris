@@ -2,7 +2,16 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Bookmark } from "../../lib/bookmarks";
+import { BookmarksProvider } from "./BookmarksContext";
 import { BookmarksScreen } from "./BookmarksScreen";
+
+function renderScreen(onBrowseCourses: () => void = () => {}) {
+  return render(
+    <BookmarksProvider apiBaseUrl="http://test">
+      <BookmarksScreen onBrowseCourses={onBrowseCourses} />
+    </BookmarksProvider>,
+  );
+}
 
 function okResponse(bookmarks: Bookmark[]) {
   return Promise.resolve({ ok: true, json: async () => bookmarks });
@@ -32,7 +41,7 @@ describe("BookmarksScreen", () => {
       vi.fn(() => new Promise(() => {})),
     );
 
-    render(<BookmarksScreen apiBaseUrl="http://test" onBrowseCourses={() => {}} />);
+    renderScreen();
 
     expect(screen.getByLabelText(/loading bookmarks/i)).toBeInTheDocument();
   });
@@ -44,7 +53,7 @@ describe("BookmarksScreen", () => {
     );
     const onBrowseCourses = vi.fn();
 
-    render(<BookmarksScreen apiBaseUrl="http://test" onBrowseCourses={onBrowseCourses} />);
+    renderScreen(onBrowseCourses);
 
     expect(await screen.findByText(/no bookmarks yet/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /browse my courses/i }));
@@ -58,7 +67,7 @@ describe("BookmarksScreen", () => {
       .mockImplementation(() => okResponse([]) as Promise<Response>);
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<BookmarksScreen apiBaseUrl="http://test" onBrowseCourses={() => {}} />);
+    renderScreen();
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /try again/i }));
@@ -72,7 +81,7 @@ describe("BookmarksScreen", () => {
       vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ nonsense: true }) })),
     );
 
-    render(<BookmarksScreen apiBaseUrl="http://test" onBrowseCourses={() => {}} />);
+    renderScreen();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/unexpected response/i);
   });
@@ -83,7 +92,7 @@ describe("BookmarksScreen", () => {
       vi.fn(() => okResponse([lessonBookmark()])),
     );
 
-    render(<BookmarksScreen apiBaseUrl="http://test" onBrowseCourses={() => {}} />);
+    renderScreen();
 
     expect(
       await screen.findByText(/lesson 1 · fundamentals — how https works/i),

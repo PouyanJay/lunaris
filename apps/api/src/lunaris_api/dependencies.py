@@ -65,7 +65,6 @@ from .activity import (
     LearningEventEmitter,
     SupabaseActivityStore,
 )
-from .bookmarks import IBookmarkStore, InMemoryBookmarkStore, SupabaseBookmarkStore
 from .admin_users import (
     InMemoryUserDirectory,
     IUserDirectory,
@@ -79,6 +78,7 @@ from .auth import (
     JwtUserVerifier,
     UserClaims,
 )
+from .bookmarks import IBookmarkStore, InMemoryBookmarkStore, SupabaseBookmarkStore
 from .config import Settings, get_settings
 from .config_store import ConfigStore
 from .corpus_service import CorpusService

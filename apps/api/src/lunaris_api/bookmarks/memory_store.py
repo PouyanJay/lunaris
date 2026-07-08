@@ -24,6 +24,9 @@ class InMemoryBookmarkStore:
 
     async def save(self, *, user_id: str | None, bookmark: Bookmark) -> None:
         key = (user_id, bookmark.kind, bookmark.course_id, bookmark.target_id)
+        # Pop first so a re-save moves to the END of insertion order — dict assignment alone
+        # keeps the ORIGINAL slot, and list()'s tie-break would then misorder a refreshed save.
+        self._bookmarks.pop(key, None)
         self._bookmarks[key] = bookmark
 
     async def remove(

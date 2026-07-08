@@ -1,11 +1,10 @@
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
-import { useBookmarks } from "../../hooks/useBookmarks";
+import { useBookmarksApi } from "./BookmarksContext";
 import type { Bookmark } from "../../lib/bookmarks";
 import styles from "./BookmarksScreen.module.css";
 
 interface BookmarksScreenProps {
-  apiBaseUrl: string;
   /** The empty state's next step — a fresh account has nothing saved but somewhere to go. */
   onBrowseCourses: () => void;
 }
@@ -15,10 +14,11 @@ function rowLine(bookmark: Bookmark): string {
   return bookmark.courseTitle ? `${label} — ${bookmark.courseTitle}` : label;
 }
 
-/** The Bookmarks canvas: everything the learner saved to return to, from real rows only.
- *  Walking-skeleton form — the designed pills/rows/chips/cards land next. */
-export function BookmarksScreen({ apiBaseUrl, onBrowseCourses }: BookmarksScreenProps) {
-  const { state, reload } = useBookmarks(apiBaseUrl);
+/** The Bookmarks canvas: everything the learner saved to return to, from real rows only —
+ *  reading the SAME provider instance the save affordances write, so a save made in the reader
+ *  is already here. Walking-skeleton form — the designed pills/rows/chips/cards land next. */
+export function BookmarksScreen({ onBrowseCourses }: BookmarksScreenProps) {
+  const { state, reload } = useBookmarksApi();
 
   const body = (() => {
     if (state.status === "loading") {

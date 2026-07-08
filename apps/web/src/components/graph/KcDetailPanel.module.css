@@ -18,6 +18,13 @@
   gap: var(--space-3);
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
 .openLesson {
   margin-top: var(--space-3);
   align-self: flex-start;

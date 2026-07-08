@@ -10,6 +10,7 @@ import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRa
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { AnnotationRail } from "./AnnotationRail";
+import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
@@ -446,6 +447,17 @@ export function CourseReader({
               <p className={`${styles.progress} mono`}>
                 Lesson {safeIndex + 1} of {total}
               </p>
+              <BookmarkToggle
+                subject={`${current.label} · ${current.moduleTitle}`}
+                draft={{
+                  kind: "lesson",
+                  courseId: course.id,
+                  targetId: current.lesson.id,
+                  courseTitle: course.topic,
+                  title: `${current.label} · ${current.moduleTitle}`,
+                  lessonId: current.lesson.id,
+                }}
+              />
               {annotations.length > 0 && (
                 <button
                   ref={railToggleRef}
@@ -658,6 +670,11 @@ export function CourseReader({
           onClose={() => setRailOpen(false)}
           onCollapse={rail.toggleCollapsed}
           reduceMotion={reduceMotion}
+          sourceContext={{
+            courseId: course.id,
+            courseTitle: course.topic,
+            lessonId: currentLessonId ?? null,
+          }}
         />
       </div>
 

@@ -3,6 +3,7 @@ import { BrowserRouter, useLocation, useNavigate } from "react-router";
 
 import { ActivityScreen } from "./components/activity/ActivityScreen";
 import { AppFrame } from "./components/AppFrame";
+import { BookmarksProvider } from "./components/bookmarks/BookmarksContext";
 import { BookmarksScreen } from "./components/bookmarks/BookmarksScreen";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
@@ -494,12 +495,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return {
         title: "Bookmarks",
         meta: null,
-        body: (
-          <BookmarksScreen
-            apiBaseUrl={apiBaseUrl}
-            onBrowseCourses={() => navigate(ROUTES.library)}
-          />
-        ),
+        body: <BookmarksScreen onBrowseCourses={() => navigate(ROUTES.library)} />,
       };
     }
     if (route.kind === "activity") {
@@ -767,7 +763,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   })();
 
   return (
-    <>
+    <BookmarksProvider apiBaseUrl={apiBaseUrl}>
       <AgentShell
         sidebar={sidebar}
         title={canvas.title}
@@ -813,7 +809,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         onConfirm={termination.confirm}
         onCancel={termination.dismiss}
       />
-    </>
+    </BookmarksProvider>
   );
 }
 
