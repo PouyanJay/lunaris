@@ -47,7 +47,7 @@ import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { putCourseOpened } from "./lib/progress";
 import { isLlmKeyless } from "./lib/capabilities";
-import { coursePath, resolveRoute, ROUTES, type ShellRoute } from "./lib/routes";
+import { coursePath, lessonPath, resolveRoute, ROUTES, type ShellRoute } from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
@@ -372,17 +372,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     setMobileNavOpen(false);
     navigate("/settings");
   }, [navigate]);
-  // Home → reader: resume a course at a specific lesson. A focus request (persisted in App state)
-  // rides across the navigation; the reader consumes it once its target course has loaded — the
-  // same mechanism the Overview rows use, since lesson-in-URL deep links are a later phase.
+  // Home → reader: resume a course at a specific lesson. The lesson is a URL segment (P6) — the
+  // reader opens straight at it, refresh- and share-safe. Without a known lesson the bare reader
+  // URL canonicalises to the focused lesson once the course loads.
   const openCourseLesson = useCallback(
     (courseId: string, lessonId?: string) => {
       setMobileNavOpen(false);
-      if (lessonId) {
-        focusSeq.current += 1;
-        setFocusRequest({ lessonId, seq: focusSeq.current });
-      }
-      navigate(coursePath(courseId, "lessons"));
+      navigate(lessonId ? lessonPath(courseId, lessonId) : coursePath(courseId, "lessons"));
     },
     [navigate],
   );
@@ -414,18 +410,15 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // Build replay this course's build log. The view lives in the URL; a Map → lesson drill-in
   // navigates to the reader with a focus request.
   const buildReadyCanvas = (course: Course, onReload: () => void, runId: string | undefined) => {
-    // Every way into the reader: optionally focus a target (a concept from the Map, a lesson
-    // from the Overview), then navigate to the Lessons view.
-    const requestLessonFocus = (target: Omit<LessonFocusRequest, "seq"> | null) => {
-      if (target) {
-        focusSeq.current += 1;
-        setFocusRequest({ ...target, seq: focusSeq.current });
-      }
+    // Every way into the reader: a known lesson is a URL (P6); a concept from the Map rides a
+    // focus request — the reader resolves which lesson covers it, then canonicalises the URL.
+    const openLessonForKc = (kc: string) => {
+      focusSeq.current += 1;
+      setFocusRequest({ kc, seq: focusSeq.current });
       navigate(coursePath(course.id, "lessons"));
     };
-    const openLessonForKc = (kc: string) => requestLessonFocus({ kc });
     const openLessonById = (lessonId?: string) =>
-      requestLessonFocus(lessonId ? { lessonId } : null);
+      navigate(lessonId ? lessonPath(course.id, lessonId) : coursePath(course.id, "lessons"));
     // Record over the CourseView union: adding a sixth view without a body is a type error,
     // never a silent fall-through to Overview.
     const bodies: Record<CourseView, () => ReactNode> = {
@@ -446,6 +439,10 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         >
           <CourseReader
             course={course}
+            activeLessonId={route.kind === "course" ? route.lessonId : undefined}
+            onNavigateLesson={(lessonId, options) =>
+              navigate(lessonPath(course.id, lessonId), options)
+            }
             focusRequest={focusRequest}
             onRegenerate={
               canRegenerate

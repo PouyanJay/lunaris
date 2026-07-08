@@ -128,7 +128,10 @@ describe("App — URL routing (live studio)", () => {
     await screen.findByText(/lesson 1 of 1/i);
     fireEvent.click(screen.getByRole("button", { name: /resume lesson/i }));
     await screen.findByRole("heading", { name: "How binary search works", level: 1 });
-    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    // The URL settles on the resume lesson itself — reading positions are addressable (P6).
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),
+    );
     expect(screen.getByRole("radio", { name: "Lessons" })).toBeChecked();
   });
 
@@ -185,8 +188,11 @@ describe("App — URL routing (live studio)", () => {
     const rows = await screen.findAllByRole("button", { name: /lesson \d/i });
     fireEvent.click(rows[1]!);
 
-    expect(window.location.pathname).toBe("/courses/course-test/lessons");
     expect(await screen.findByText(/lesson 2 of 2/i)).toBeInTheDocument();
+    // The row's target lesson lands in the URL — the deep link is shareable (P6).
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-two-l0"),
+    );
   });
 
   it("Overview's CTAs navigate to the reader and the map", async () => {
@@ -195,12 +201,82 @@ describe("App — URL routing (live studio)", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /continue learning/i }));
-    expect(window.location.pathname).toBe("/courses/course-test/lessons");
     expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+    // Continue lands on the reader; the URL canonicalises to the focused lesson (P6).
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),
+    );
 
     fireEvent.click(screen.getByRole("radio", { name: "Overview" }));
     fireEvent.click(await screen.findByRole("button", { name: /view the map/i }));
     expect(window.location.pathname).toBe("/courses/course-test/map");
+  });
+
+  it("deep-links to a specific lesson at /courses/:courseId/lessons/:lessonId", async () => {
+    const first = makeCourse().modules[0]!;
+    const course = makeCourse({
+      modules: [
+        first,
+        {
+          ...first,
+          id: "m-two",
+          title: "Module two",
+          lessons: [{ ...first.lessons[0]!, id: "m-two-l0" }],
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course }));
+    window.history.pushState(null, "", "/courses/course-test/lessons/m-two-l0");
+
+    render(<App />);
+
+    expect(await screen.findByText(/lesson 2 of 2/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test/lessons/m-two-l0");
+  });
+
+  it("selecting a lesson in the outline writes it to the URL; back returns", async () => {
+    const first = makeCourse().modules[0]!;
+    const course = makeCourse({
+      modules: [
+        first,
+        {
+          ...first,
+          id: "m-two",
+          title: "Module two",
+          lessons: [{ ...first.lessons[0]!, id: "m-two-l0" }],
+        },
+      ],
+    });
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course }));
+    window.history.pushState(null, "", "/courses/course-test/lessons");
+
+    render(<App />);
+    const outline = await screen.findByRole("navigation", { name: /course outline/i });
+    // The bare reader URL canonicalises (replace) to the focused lesson so every reading
+    // position is addressable and back/forward walk lessons.
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),
+    );
+
+    fireEvent.click(within(outline).getByRole("button", { name: /lesson 2/i }));
+    expect(await screen.findByText(/lesson 2 of 2/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test/lessons/m-two-l0");
+
+    act(() => window.history.back());
+    expect(await screen.findByText(/lesson 1 of 2/i)).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0");
+  });
+
+  it("a stale lesson URL falls back to the first lesson and canonicalises", async () => {
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test/lessons/gone-lesson");
+
+    render(<App />);
+
+    expect(await screen.findByText(/lesson 1 of 1/i)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),
+    );
   });
 
   it("the reader's Overview exit returns to the landing tab end-to-end", async () => {
@@ -272,7 +348,10 @@ describe("App — URL routing (live studio)", () => {
     await screen.findByRole("radio", { name: "Overview" });
 
     fireEvent.click(screen.getByRole("radio", { name: "Lessons" }));
-    expect(window.location.pathname).toBe("/courses/course-test/lessons");
+    // The reader canonicalises its bare URL to the focused lesson (P6).
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),
+    );
 
     fireEvent.click(screen.getByRole("radio", { name: "Map" }));
     expect(window.location.pathname).toBe("/courses/course-test/map");
