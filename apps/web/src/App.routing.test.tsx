@@ -311,9 +311,15 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/courses/course-test/lessons");
 
     render(<App />);
+    // Let the reader finish canonicalising the bare /lessons URL first — clicking inside that
+    // sub-frame window would race the pending replace against the exit navigation (a timing no
+    // real click can hit; it flaked on slower CI runners).
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),
+    );
     fireEvent.click(await screen.findByRole("button", { name: /back to overview/i }));
 
-    expect(window.location.pathname).toBe("/courses/course-test");
+    await waitFor(() => expect(window.location.pathname).toBe("/courses/course-test"));
     expect(await screen.findByRole("button", { name: /continue learning/i })).toBeInTheDocument();
   });
 
@@ -455,7 +461,8 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Activity" }));
     expect(window.location.pathname).toBe("/activity");
-    expect(await screen.findByText(/learning activity/i)).toBeInTheDocument();
+    // A user with no history gets the Activity screen's designed empty state, not zero-tiles.
+    expect(await screen.findByText(/no activity yet/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Bookmarks" }));
     expect(window.location.pathname).toBe("/bookmarks");

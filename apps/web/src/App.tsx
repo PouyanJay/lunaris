@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, useLocation, useNavigate } from "react-router";
 
+import { ActivityScreen } from "./components/activity/ActivityScreen";
 import { AppFrame } from "./components/AppFrame";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
@@ -61,7 +62,7 @@ import styles from "./App.module.css";
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
 /** The designed full-canvas notices for navigation destinations that carry no data yet: the 404
- *  and the coming-soon placeholders later phases fill (activity P9, bookmarks P10). */
+ *  and the coming-soon placeholder P10 fills (bookmarks). */
 function placeholderCanvas(
   route: ShellRoute,
   onGoHome: () => void,
@@ -75,21 +76,6 @@ function placeholderCanvas(
           eyebrow="404"
           title="Page not found"
           body="This page doesn't exist. It may have moved, or the link is wrong."
-          actionLabel="Go home"
-          onAction={onGoHome}
-        />
-      ),
-    };
-  }
-  if (route.kind === "activity") {
-    return {
-      title: "Activity",
-      meta: null,
-      body: (
-        <CanvasNotice
-          eyebrow="Coming soon"
-          title="Your learning activity lands here"
-          body="Streaks, study minutes, and concepts mastered — day by day. Keep learning; the history starts counting soon."
           actionLabel="Go home"
           onAction={onGoHome}
         />
@@ -519,6 +505,18 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
     const placeholder = placeholderCanvas(route, () => navigate("/"));
     if (placeholder) return placeholder;
+    if (route.kind === "activity") {
+      return {
+        title: "Activity",
+        meta: null,
+        body: (
+          <ActivityScreen
+            apiBaseUrl={apiBaseUrl}
+            onBrowseCourses={() => navigate(ROUTES.library)}
+          />
+        ),
+      };
+    }
     if (route.kind === "library") {
       return {
         title: "My courses",

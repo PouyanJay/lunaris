@@ -40,4 +40,24 @@ describe("homeSubline", () => {
   it("gives an empty library a neutral workspace line", () => {
     expect(homeSubline([])).toBe("Your learning workspace");
   });
+
+  it("leads with the streak when one is alight", () => {
+    expect(
+      homeSubline(
+        [makeCourseSummary({ lessonsDone: 6, learnerStatus: "completed" })],
+        5,
+      ),
+    ).toBe("5-day streak · 6 lessons completed");
+  });
+
+  it("singularises a one-day streak and omits a cold one", () => {
+    const courses = [makeCourseSummary({ lessonsDone: 1, learnerStatus: "completed" })];
+    expect(homeSubline(courses, 1)).toBe("1-day streak · 1 lesson completed");
+    expect(homeSubline(courses, 0)).toBe("1 lesson completed");
+  });
+
+  it("never decorates the empty-library line with a streak", () => {
+    // A fresh account can't have a real streak; the first-run hero owns the call to action.
+    expect(homeSubline([], 3)).toBe("Your learning workspace");
+  });
 });

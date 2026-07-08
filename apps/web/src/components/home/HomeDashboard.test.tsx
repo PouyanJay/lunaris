@@ -52,6 +52,43 @@ describe("HomeDashboard", () => {
     expect(await screen.findByText("6 lessons completed")).toBeInTheDocument();
   });
 
+  it("leads the subline with the live streak once activity loads", async () => {
+    // The P9 feedback loop: the streak figure from /api/activity joins the greeting. Progressive
+    // enhancement — the library-derived subline renders first and the streak prefixes it.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        library: [completed()],
+        activity: {
+          stats: { currentStreak: 5, longestStreak: 11, minutesThisWeek: 30, conceptsThisWeek: 2 },
+          heat: [],
+          week: [],
+          feed: [],
+        },
+      }),
+    );
+
+    renderHome();
+
+    expect(await screen.findByText("5-day streak · 6 lessons completed")).toBeInTheDocument();
+  });
+
+  it("keeps the honest subline when the activity fetch fails", async () => {
+    // No invented figures: a dead activity backend must not break or decorate the greeting.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+        const url = input instanceof Request ? input.url : String(input);
+        if (url.includes("/api/activity")) return Promise.reject(new Error("down"));
+        return routedFetch({ library: [completed()] })(input, init);
+      }),
+    );
+
+    renderHome();
+
+    expect(await screen.findByText("6 lessons completed")).toBeInTheDocument();
+  });
+
   it("falls back to a natural greeting when there is no signed-in email", async () => {
     vi.stubGlobal("fetch", routedFetch({ library: [] }));
 

@@ -1,0 +1,101 @@
+/* Activity: the learner's telemetry surface — stat tiles, 14-day heat, week bars, typed feed.
+   Reads as one instrument: hairline-divided panels, mono data, accent reserved for the current
+   streak and today's bar. */
+.canvas {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6);
+}
+
+.inner {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.subline {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Loading skeleton (mirrors the final layout: tiles row + two panels + feed) ── */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.skeletonTiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-4);
+}
+
+.skeletonTile {
+  height: 76px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+}
+
+.skeletonPanels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+}
+
+.skeletonPanel {
+  height: 168px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+}
+
+.skeletonFeed {
+  height: 200px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-muted);
+}
+
+@media (max-width: 720px) {
+  .skeletonTiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .skeletonPanels {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── The loaded instrument: tiles row → two chart panels → the feed ── */
+.instrument {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+}
+
+.recentLabel {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: 400;
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.quietFeed {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 720px) {
+  .charts {
+    grid-template-columns: 1fr;
+  }
+}

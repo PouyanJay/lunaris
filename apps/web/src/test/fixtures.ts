@@ -417,6 +417,7 @@ export function routedFetch(
     me?: unknown;
     progress?: unknown;
     library?: unknown;
+    activity?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -457,6 +458,20 @@ export function routedFetch(
       method === "PUT"
     ) {
       return Promise.resolve({ ok: true, status: 204 });
+    }
+    // The reader's study-minutes heartbeat succeeds silently — fire-and-forget telemetry.
+    if (url.includes("/api/activity/heartbeat") && method === "PUT") {
+      return Promise.resolve({ ok: true, status: 204 });
+    }
+    // The activity snapshot (streaks / heat / feed) — carries a ?tz= query.
+    if (/\/api\/activity(\?|$)/.test(url) && method === "GET") {
+      const activity = handlers.activity ?? {
+        stats: { currentStreak: 0, longestStreak: 0, minutesThisWeek: 0, conceptsThisWeek: 0 },
+        heat: [],
+        week: [],
+        feed: [],
+      };
+      return Promise.resolve({ ok: true, json: async () => activity });
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);
