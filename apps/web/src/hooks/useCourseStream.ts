@@ -15,6 +15,17 @@ import { streamCourse } from "../lib/streamCourse";
 import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
 
+/** The parameters of one build, carried as a single object so adding a build option doesn't grow
+ *  every call site's argument list. Threaded from the composer's Generate → `generate()` → the SSE
+ *  request, and stashed on the error state so a retry re-runs the identical build (topic +
+ *  clarification + depth + trust switch). */
+export interface BuildRequest {
+  topic: string;
+  clarification?: Clarification | undefined;
+  discoveryDepth?: DiscoveryDepth | undefined;
+  officialOnly?: boolean | undefined;
+}
+
 export type BuildState =
   | { status: "idle" }
   // A device-compute build front-loads the on-device model download (with real progress) BEFORE
@@ -44,8 +55,9 @@ export type BuildState =
     }
   // runId is carried from the streaming state so the ready course's Build tab can replay this run.
   | { status: "ready"; course: Course; runId: string | undefined }
-  // discoveryDepth is carried so a retry re-runs at the depth the learner chose, not the default.
-  | { status: "error"; message: string; topic: string; discoveryDepth: DiscoveryDepth };
+  // The full request is carried so a retry re-runs the identical build (same depth/level/trust),
+  // not a defaulted one.
+  | { status: "error"; message: string; request: BuildRequest };
 
 /** The engine slice the build flow needs: the bridge's chat plus the front-loaded download. */
 export interface BuildDeviceEngine extends ChatBackend {
@@ -62,14 +74,9 @@ interface CourseStreamOptions {
 
 interface CourseStream {
   state: BuildState;
-  /** Start (or restart) a live build for `topic`, optionally with the learner's confirm answers,
-   *  chosen discovery depth, and the "Official sources only" switch. */
-  generate: (
-    topic: string,
-    clarification?: Clarification,
-    discoveryDepth?: DiscoveryDepth,
-    officialOnly?: boolean,
-  ) => void;
+  /** Start (or restart) a live build from a request (topic + optional clarification, depth, and the
+   *  "Official sources only" switch). */
+  generate: (request: BuildRequest) => void;
   /** Abort any in-flight build and return to the idle topic form. */
   reset: () => void;
 }
@@ -96,11 +103,7 @@ function applyAgentEvent(prev: BuildState, event: AgentEvent): BuildState {
 
 interface StreamBuildOptions {
   apiBaseUrl: string;
-  topic: string;
-  clarification: Clarification | undefined;
-  discoveryDepth: DiscoveryDepth | undefined;
-  /** The "Official sources only" switch (P5) — raises the grounding trust floor for this build. */
-  officialOnly: boolean | undefined;
+  request: BuildRequest;
   /** Non-null = a device build: stream with compute=device and serve the bridge from this tab. */
   engine: BuildDeviceEngine | null;
   controller: AbortController;
@@ -110,8 +113,8 @@ interface StreamBuildOptions {
 /** Run one build stream to its terminal state (ready/error), serving the bridge when `engine`
  *  is present. Module-level (not a closure in the hook) so every input is an explicit parameter. */
 function streamBuild(options: StreamBuildOptions): void {
-  const { apiBaseUrl, topic, clarification, discoveryDepth, officialOnly, engine, controller, setState } =
-    options;
+  const { apiBaseUrl, request, engine, controller, setState } = options;
+  const { topic, clarification, discoveryDepth, officialOnly } = request;
   // Captured from the response headers for the reconnect path: closures over local lets, since the
   // .catch needs them and they land before any frame (so they're set well before a drop).
   let runId: string | undefined;
@@ -185,15 +188,14 @@ function streamBuild(options: StreamBuildOptions): void {
           apiBaseUrl,
           runId,
           courseId,
-          topic,
-          discoveryDepth,
+          request,
           controller,
           setState,
         });
         return;
       }
       const message = buildFailureMessage(error, engine !== null);
-      setState({ status: "error", message, topic, discoveryDepth: discoveryDepth ?? "standard" });
+      setState({ status: "error", message, request });
     });
 }
 
@@ -206,8 +208,7 @@ interface ReconnectOptions {
   apiBaseUrl: string;
   runId: string;
   courseId: string;
-  topic: string;
-  discoveryDepth: DiscoveryDepth | undefined;
+  request: BuildRequest;
   controller: AbortController;
   setState: SetBuildState;
 }
@@ -220,7 +221,7 @@ interface ReconnectOptions {
  * on the controller's abort (a new build, reset, or unmount).
  */
 async function reconnectBuild(options: ReconnectOptions): Promise<void> {
-  const { apiBaseUrl, runId, courseId, topic, discoveryDepth, controller, setState } = options;
+  const { apiBaseUrl, runId, courseId, request, controller, setState } = options;
   const { signal } = controller;
   setState((prev) => (prev.status === "streaming" ? { ...prev, reconnecting: true } : prev));
 
@@ -257,8 +258,7 @@ async function reconnectBuild(options: ReconnectOptions): Promise<void> {
             error instanceof CourseLoadError
               ? error.message
               : "An unexpected error occurred while building the course.",
-          topic,
-          discoveryDepth: discoveryDepth ?? "standard",
+          request,
         });
         return;
       }
@@ -276,8 +276,7 @@ async function reconnectBuild(options: ReconnectOptions): Promise<void> {
             run.status === "cancelled"
               ? "This build was cancelled."
               : "The build failed before the course was ready.",
-          topic,
-          discoveryDepth: discoveryDepth ?? "standard",
+          request,
         });
         return;
       }
@@ -328,8 +327,8 @@ function buildFailureMessage(error: unknown, onDevice: boolean): string {
 /** Download + boot the on-device model, then hand off to the stream; a failed preparation is a
  *  recoverable error state, never a build that starts without its model. */
 function prepareDeviceThenStream(options: StreamBuildOptions & { engine: BuildDeviceEngine }): void {
-  const { engine, controller, setState, topic, discoveryDepth } = options;
-  setState({ status: "preparing-device", topic, progress: null });
+  const { engine, controller, setState, request } = options;
+  setState({ status: "preparing-device", topic: request.topic, progress: null });
   engine
     .preload((progress) => {
       if (controller.signal.aborted) return;
@@ -346,8 +345,7 @@ function prepareDeviceThenStream(options: StreamBuildOptions & { engine: BuildDe
         message:
           "The on-device model could not be prepared. Check your connection and free disk " +
           "space, or switch the compute choice back to the Lunaris server.",
-        topic,
-        discoveryDepth: discoveryDepth ?? "standard",
+        request,
       });
     });
 }
@@ -373,27 +371,13 @@ export function useCourseStream(
   }, []);
 
   const generate = useCallback(
-    (
-      topic: string,
-      clarification?: Clarification,
-      discoveryDepth?: DiscoveryDepth,
-      officialOnly?: boolean,
-    ) => {
+    (request: BuildRequest) => {
       abort();
       const controller = new AbortController();
       controllerRef.current = controller;
       const onDevice = isDeviceComputeActive(llmKeyless);
       const engine = onDevice ? (deviceEngine ?? getDeviceEngine()) : null;
-      const options = {
-        apiBaseUrl,
-        topic,
-        clarification,
-        discoveryDepth,
-        officialOnly,
-        engine,
-        controller,
-        setState,
-      };
+      const options = { apiBaseUrl, request, engine, controller, setState };
       if (engine === null) {
         streamBuild(options);
         return;

@@ -49,7 +49,7 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
 
     // Assert — engine prepared first, then the stream carries the device choice and the
     // worker starts against the reported run id with the same engine.
@@ -78,7 +78,7 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
 
     // Assert
     await waitFor(() => {
@@ -100,11 +100,36 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
 
     // Assert — a recoverable error state; the build never started.
     await waitFor(() => expect(result.current.state.status).toBe("error"));
     expect(streamCourseMock).not.toHaveBeenCalled();
+  });
+
+  it("carries the full request on the error state so a retry re-runs the identical build", async () => {
+    // Arrange — a device build that fails to prepare, requested with a non-default depth + the
+    // Official-sources-only switch on.
+    armDeviceChoice();
+    const engine = fakeEngine(vi.fn(async () => Promise.reject(new Error("no space"))));
+    const { result } = renderHook(() =>
+      useCourseStream("http://api", { llmKeyless: true, deviceEngine: engine }),
+    );
+
+    // Act
+    act(() =>
+      result.current.generate({ topic: "graphs", discoveryDepth: "thorough", officialOnly: true }),
+    );
+
+    // Assert — the error state preserves every build option (retry parity, incl. official_only).
+    await waitFor(() => expect(result.current.state.status).toBe("error"));
+    const state = result.current.state;
+    if (state.status !== "error") throw new Error("expected the error state");
+    expect(state.request).toEqual({
+      topic: "graphs",
+      discoveryDepth: "thorough",
+      officialOnly: true,
+    });
   });
 
   it("explains a failed device build in terms of the tab-open contract", async () => {
@@ -126,7 +151,7 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
 
     // Assert — the error names the likely cause, not just a generic stream failure.
     await waitFor(() => expect(result.current.state.status).toBe("error"));
@@ -145,7 +170,7 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
 
     // Assert — straight to a server stream: no preload, no compute param, no worker.
     await waitFor(() => expect(streamCourseMock).toHaveBeenCalled());
@@ -164,7 +189,7 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
 
     // Assert — no preload, no compute param, no worker: today's hosted build untouched.
     await waitFor(() => expect(streamCourseMock).toHaveBeenCalled());
@@ -186,7 +211,7 @@ describe("useCourseStream device compute", () => {
     );
 
     // Act
-    act(() => result.current.generate("graphs"));
+    act(() => result.current.generate({ topic: "graphs" }));
     await waitFor(() => expect(result.current.state.status).toBe("preparing-device"));
     act(() => result.current.reset());
 

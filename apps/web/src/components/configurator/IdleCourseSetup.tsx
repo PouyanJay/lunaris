@@ -7,9 +7,11 @@ import { answersToClarification, recommendedAnswers } from "../../lib/clarificat
 import { applyComposerLevel, type ComposerLevel } from "../../lib/composerLevel";
 import { fetchBrief } from "../../lib/fetchBrief";
 import { CourseLoadError } from "../../lib/loadCourse";
-import type { BriefLoadState, Clarification } from "../../types/clarifier";
+import type { BuildRequest } from "../../hooks/useCourseStream";
+import type { BriefLoadState } from "../../types/clarifier";
 import type { CourseRun, DiscoveryDepth } from "../../types/course";
 import { TopicForm } from "../TopicForm";
+import { ComposerFeatures } from "./ComposerFeatures";
 import { ComposerOptions } from "./ComposerOptions";
 import { ConfigRail } from "./ConfigRail";
 import { RecentBuildsTable } from "./RecentBuildsTable";
@@ -20,14 +22,9 @@ const RAIL_STORAGE_KEY = "lunaris.config.rail";
 
 interface IdleCourseSetupProps {
   apiBaseUrl: string;
-  /** Build the course: the topic, the learner's confirmed clarification (absent → inference-only),
-   *  the chosen search depth, and the "Official sources only" trust switch. */
-  onGenerate: (
-    topic: string,
-    clarification: Clarification | undefined,
-    discoveryDepth: DiscoveryDepth,
-    officialOnly: boolean,
-  ) => void;
+  /** Build the course from a request: the topic, the learner's confirmed clarification (absent →
+   *  inference-only), the chosen search depth, and the "Official sources only" trust switch. */
+  onGenerate: (request: BuildRequest) => void;
   /** Open the operator/admin Settings panel (the rail only points there). */
   onOpenSettings: () => void;
   /** The run history (from the shell's useRuns) — drives the composer's recent-builds table. */
@@ -110,7 +107,7 @@ export function IdleCourseSetup({
       const fromBrief =
         brief.status === "ready" ? answersToClarification(brief.answers) : undefined;
       const clarification = applyComposerLevel(fromBrief, level);
-      onGenerate(submitted, clarification, depth, officialOnly);
+      onGenerate({ topic: submitted, clarification, discoveryDepth: depth, officialOnly });
     },
     [brief, level, depth, officialOnly, onGenerate],
   );
@@ -157,6 +154,7 @@ export function IdleCourseSetup({
             />
           }
         />
+        <ComposerFeatures />
         <RecentBuildsTable runs={runs} />
       </div>
 

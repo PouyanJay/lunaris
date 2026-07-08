@@ -37,7 +37,12 @@ describe("IdleCourseSetup", () => {
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     // Default depth (standard), recommended level (no override → undefined), trust switch off.
-    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "standard", false);
+    expect(onGenerate).toHaveBeenCalledWith({
+      topic: "binary search",
+      clarification: undefined,
+      discoveryDepth: "standard",
+      officialOnly: false,
+    });
   });
 
   it("threads the brief plus the options-bar Level override into the build", async () => {
@@ -54,13 +59,13 @@ describe("IdleCourseSetup", () => {
     fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    expect(onGenerate).toHaveBeenCalledWith(
-      "english",
+    expect(onGenerate).toHaveBeenCalledWith({
+      topic: "english",
       // The options-bar level overrides the target level; the inferred goal_type (R0) still threads.
-      expect.objectContaining({ targetLevel: "advanced", goalType: "credential" }),
-      "standard",
-      false,
-    );
+      clarification: expect.objectContaining({ targetLevel: "advanced", goalType: "credential" }),
+      discoveryDepth: "standard",
+      officialOnly: false,
+    });
   });
 
   it("invalidates a loaded brief when the topic changes, so stale answers can't build", async () => {
@@ -117,7 +122,12 @@ describe("IdleCourseSetup", () => {
     fireEvent.click(within(depth).getByRole("radio", { name: "Thorough" }));
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "thorough", false);
+    expect(onGenerate).toHaveBeenCalledWith({
+      topic: "binary search",
+      clarification: undefined,
+      discoveryDepth: "thorough",
+      officialOnly: false,
+    });
   });
 
   it("threads the Official-sources-only switch into the build", () => {
@@ -128,7 +138,12 @@ describe("IdleCourseSetup", () => {
     fireEvent.click(screen.getByRole("switch", { name: /official sources only/i }));
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    expect(onGenerate).toHaveBeenCalledWith("binary search", undefined, "standard", true);
+    expect(onGenerate).toHaveBeenCalledWith({
+      topic: "binary search",
+      clarification: undefined,
+      discoveryDepth: "standard",
+      officialOnly: true,
+    });
   });
 
   it("opens Settings from the operator pointer", () => {
@@ -246,12 +261,12 @@ describe("IdleCourseSetup — variant coverage across goal types", () => {
       fireEvent.click(within(depth).getByRole("radio", { name: "Thorough" }));
       fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-      expect(onGenerate).toHaveBeenCalledWith(
-        `topic-${goalType}`,
-        expect.objectContaining({ goalType }),
-        "thorough",
-        false,
-      );
+      expect(onGenerate).toHaveBeenCalledWith({
+        topic: `topic-${goalType}`,
+        clarification: expect.objectContaining({ goalType }),
+        discoveryDepth: "thorough",
+        officialOnly: false,
+      });
     },
   );
 });

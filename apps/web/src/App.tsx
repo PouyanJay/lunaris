@@ -733,16 +733,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       };
     }
     if (state.status === "error") {
-      const { topic, message, discoveryDepth } = state;
+      const { request, message } = state;
       return {
-        title: topic,
+        title: request.topic,
         meta: null,
-        body: (
-          <ErrorState
-            message={message}
-            onRetry={() => generate(topic, undefined, discoveryDepth)}
-          />
-        ),
+        // Retry re-runs the identical build — same depth, level, and trust switch.
+        body: <ErrorState message={message} onRetry={() => generate(request)} />,
       };
     }
     // Streaming pre-handoff (course id not yet known), or the one transient frame between the

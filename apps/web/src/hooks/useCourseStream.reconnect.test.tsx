@@ -65,7 +65,7 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
     const { result } = renderHook(() => useCourseStream("http://api"));
 
     // Act
-    act(() => result.current.generate("Graphs"));
+    act(() => result.current.generate({ topic: "Graphs" }));
 
     // Assert — it lands on the finished course, NOT a broken-build error.
     await waitFor(() => expect(result.current.state.status).toBe("ready"));
@@ -81,7 +81,7 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
     const { result, unmount } = renderHook(() => useCourseStream("http://api"));
 
     // Act
-    act(() => result.current.generate("Graphs"));
+    act(() => result.current.generate({ topic: "Graphs" }));
 
     // Assert — it stays in the in-progress (streaming) state, flagged reconnecting; not "error".
     await waitFor(() => {
@@ -99,7 +99,7 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
     const { result } = renderHook(() => useCourseStream("http://api"));
 
     // Act
-    act(() => result.current.generate("Graphs"));
+    act(() => result.current.generate({ topic: "Graphs" }));
 
     // Assert — a genuine failure surfaces as an error with an honest message.
     await waitFor(() => expect(result.current.state.status).toBe("error"));
@@ -114,7 +114,7 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
     const { result } = renderHook(() => useCourseStream("http://api"));
 
     // Act
-    act(() => result.current.generate("Graphs"));
+    act(() => result.current.generate({ topic: "Graphs" }));
 
     // Assert
     await waitFor(() => expect(result.current.state.status).toBe("error"));
@@ -130,7 +130,7 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
     const { result } = renderHook(() => useCourseStream("http://api"));
 
     // Act
-    act(() => result.current.generate("Graphs"));
+    act(() => result.current.generate({ topic: "Graphs" }));
 
     // Assert — surfaced as an error; the run-status check is never reached for this tick.
     await waitFor(() => expect(result.current.state.status).toBe("error"));
@@ -149,7 +149,7 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
     const { result } = renderHook(() => useCourseStream("http://api"));
 
     // Act
-    act(() => result.current.generate("Graphs"));
+    act(() => result.current.generate({ topic: "Graphs" }));
 
     // Assert — straight to error; the reconnect path is never taken.
     await waitFor(() => expect(result.current.state.status).toBe("error"));
