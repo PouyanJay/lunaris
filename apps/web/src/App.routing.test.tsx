@@ -471,6 +471,44 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Home" }));
     expect(window.location.pathname).toBe("/");
+  });
+
+  it("a saved concept deep-links onto the course map with its inspector open", async () => {
+    // The Bookmarks → Map path: no URL grammar carries a KC, so the selection rides the one-shot
+    // MapFocusRequest — landing on /courses/:id/map with the concept's inspector already open.
+    vi.stubGlobal(
+      "fetch",
+      routedFetch({
+        runs: [makeRun()],
+        course: makeCourse(),
+        bookmarks: [
+          {
+            kind: "concept",
+            courseId: "course-test",
+            targetId: "comparison",
+            courseTitle: "How binary search works",
+            title: "Comparison",
+            conceptTier: 1,
+            savedAt: "2026-07-08T12:00:00Z",
+          },
+        ],
+      }),
+    );
+    window.history.pushState(null, "", "/bookmarks");
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /open comparison on the map/i }),
+    );
+
+    expect(window.location.pathname).toBe("/courses/course-test/map");
+    // The KC inspector opened on arrival (plain DOM, unaffected by the jsdom RF caveat).
+    expect(
+      await screen.findByRole("heading", { name: "Comparison" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "Home" }));
+    expect(window.location.pathname).toBe("/");
     expect(
       await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
     ).toBeInTheDocument();

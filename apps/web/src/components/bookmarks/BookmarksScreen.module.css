@@ -1,5 +1,5 @@
-/* Bookmarks: the learner's saved lessons/concepts/sources — filter pills over hairline-divided
-   sections. Accent is the saved-glyph only. */
+/* Bookmarks: filter pills over three hairline sections (lesson rows, concept chips, source
+   cards). Accent lives only in the saved glyph; data lines are mono. */
 .canvas {
   height: 100%;
   overflow-y: auto;
@@ -15,6 +15,261 @@
   margin: 0 0 var(--space-6);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+}
+
+/* ── Filter pills (the library's motif) ── */
+.pills {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.pill {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  border: var(--border-width) solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+
+.pill:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.pill:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.pill[aria-pressed="true"] {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+/* ── Sections ── */
+.section {
+  margin-bottom: var(--space-8);
+}
+
+.sectionLabel {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: 400;
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.filteredEmpty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Lesson rows ── */
+.lessonList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.lessonRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.lessonRow:hover {
+  border-color: var(--border-strong);
+}
+
+.lessonBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lessonBody:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.lessonTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowMeta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+
+/* ── Concept chips ── */
+.conceptGrid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.conceptChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.conceptChip:hover {
+  border-color: var(--border-strong);
+}
+
+.conceptBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conceptBody:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.tierSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-sm);
+  flex: none;
+  background: var(--bg-muted);
+}
+
+.conceptText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.conceptTitle {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Source cards ── */
+.sourceList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sourceCard {
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.sourceClaim {
+  margin: 0 0 var(--space-3);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.sourceFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sourceOrigin {
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sourceOrigin:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.sourceOrigin:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.sourceActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
 }
 
 /* ── Loading skeleton (pills row + list rows) ── */
@@ -42,21 +297,8 @@
   background: var(--bg-muted);
 }
 
-/* ── Walking-skeleton list (the designed rows/chips/cards land with the screen task) ── */
-.plainList {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.plainRow {
-  padding: var(--space-3) var(--space-4);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  font-size: var(--text-sm);
-  color: var(--text);
+@media (max-width: 720px) {
+  .conceptGrid {
+    grid-template-columns: 1fr;
+  }
 }

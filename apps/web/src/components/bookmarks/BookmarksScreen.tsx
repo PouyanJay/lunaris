@@ -1,24 +1,173 @@
+import { useState } from "react";
+
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
+import { SourceTrust } from "../primitives/SourceTrust";
+import { relativeTime } from "../../lib/relativeTime";
 import { useBookmarksApi } from "./BookmarksContext";
-import type { Bookmark } from "../../lib/bookmarks";
+import { BookmarkToggle } from "./BookmarkToggle";
+import type { Bookmark, BookmarkKind } from "../../lib/bookmarks";
+import type { TrustTier } from "../../types/course";
 import styles from "./BookmarksScreen.module.css";
+
+type Filter = "all" | BookmarkKind;
+
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "lesson", label: "Lessons" },
+  { value: "concept", label: "Concepts" },
+  { value: "source", label: "Sources" },
+];
+
+const KIND_LABEL: Record<BookmarkKind, string> = {
+  lesson: "lessons",
+  concept: "concepts",
+  source: "sources",
+};
 
 interface BookmarksScreenProps {
   /** The empty state's next step — a fresh account has nothing saved but somewhere to go. */
   onBrowseCourses: () => void;
+  /** Deep links back to each save's origin. */
+  onOpenLesson: (courseId: string, lessonId: string) => void;
+  onOpenConcept: (courseId: string, kcId: string) => void;
+  /** Fallback when a save carries no lesson pointer (e.g. a rebuilt course). */
+  onOpenCourse: (courseId: string) => void;
 }
 
-function rowLine(bookmark: Bookmark): string {
-  const label = bookmark.title ?? bookmark.targetId;
-  return bookmark.courseTitle ? `${label} — ${bookmark.courseTitle}` : label;
+function savedMeta(bookmark: Bookmark): string {
+  const saved = `saved ${relativeTime(bookmark.savedAt)}`;
+  return bookmark.courseTitle ? `${bookmark.courseTitle} · ${saved}` : saved;
 }
 
-/** The Bookmarks canvas: everything the learner saved to return to, from real rows only —
- *  reading the SAME provider instance the save affordances write, so a save made in the reader
- *  is already here. Walking-skeleton form — the designed pills/rows/chips/cards land next. */
-export function BookmarksScreen({ onBrowseCourses }: BookmarksScreenProps) {
+function LessonRow({
+  bookmark,
+  onOpen,
+}: {
+  bookmark: Bookmark;
+  onOpen: (courseId: string, lessonId: string) => void;
+}) {
+  const label = bookmark.title ?? "Saved lesson";
+  return (
+    <li className={styles.lessonRow}>
+      <BookmarkToggle draft={bookmark} subject={label} />
+      <button
+        type="button"
+        className={styles.lessonBody}
+        aria-label={`Open ${label}`}
+        onClick={() => onOpen(bookmark.courseId, bookmark.lessonId ?? bookmark.targetId)}
+      >
+        <span className={styles.lessonTitle}>{label}</span>
+        <span className={`${styles.rowMeta} mono`}>{savedMeta(bookmark)}</span>
+      </button>
+      <svg
+        className={styles.chevron}
+        viewBox="0 0 24 24"
+        width="15"
+        height="15"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M9 18l6-6-6-6" />
+      </svg>
+    </li>
+  );
+}
+
+function ConceptChip({
+  bookmark,
+  onOpen,
+}: {
+  bookmark: Bookmark;
+  onOpen: (courseId: string, kcId: string) => void;
+}) {
+  const label = bookmark.title ?? "Saved concept";
+  return (
+    <li className={styles.conceptChip}>
+      <button
+        type="button"
+        className={styles.conceptBody}
+        aria-label={`Open ${label} on the map`}
+        onClick={() => onOpen(bookmark.courseId, bookmark.targetId)}
+      >
+        <span
+          className={styles.tierSwatch}
+          style={
+            bookmark.conceptTier ? { background: `var(--tier-${bookmark.conceptTier})` } : undefined
+          }
+          aria-hidden="true"
+        />
+        <span className={styles.conceptText}>
+          <span className={styles.conceptTitle}>{label}</span>
+          {bookmark.courseTitle && (
+            <span className={`${styles.rowMeta} mono`}>{bookmark.courseTitle}</span>
+          )}
+        </span>
+      </button>
+      <BookmarkToggle draft={bookmark} subject={label} />
+    </li>
+  );
+}
+
+function SourceCard({
+  bookmark,
+  onOpenLesson,
+  onOpenCourse,
+}: {
+  bookmark: Bookmark;
+  onOpenLesson: (courseId: string, lessonId: string) => void;
+  onOpenCourse: (courseId: string) => void;
+}) {
+  const name = bookmark.title ?? "Saved source";
+  const openLabel = bookmark.lessonId
+    ? `Open the lesson citing ${name}`
+    : `Open ${bookmark.courseTitle ?? "the course"}`;
+  return (
+    <li className={styles.sourceCard}>
+      {bookmark.snippet && <p className={styles.sourceClaim}>{bookmark.snippet}</p>}
+      <div className={styles.sourceFooter}>
+        <button
+          type="button"
+          className={styles.sourceOrigin}
+          aria-label={openLabel}
+          onClick={() =>
+            bookmark.lessonId
+              ? onOpenLesson(bookmark.courseId, bookmark.lessonId)
+              : onOpenCourse(bookmark.courseId)
+          }
+        >
+          {name}
+          {bookmark.courseTitle ? ` · ${bookmark.courseTitle}` : ""}
+        </button>
+        <div className={styles.sourceActions}>
+          {bookmark.trustTier && (
+            <SourceTrust
+              tier={bookmark.trustTier as TrustTier}
+              credibility={bookmark.credibility ?? null}
+            />
+          )}
+          <BookmarkToggle draft={bookmark} subject={name} />
+        </div>
+      </div>
+    </li>
+  );
+}
+
+/** The Bookmarks canvas per the Unified design: filter pills over three hairline sections —
+ *  lesson rows, concept chips (tier swatch), source cards (claim + trust grade) — each
+ *  deep-linking to its origin. Reads the SAME provider instance the save affordances write. */
+export function BookmarksScreen({
+  onBrowseCourses,
+  onOpenLesson,
+  onOpenConcept,
+  onOpenCourse,
+}: BookmarksScreenProps) {
   const { state, reload } = useBookmarksApi();
+  const [filter, setFilter] = useState<Filter>("all");
 
   const body = (() => {
     if (state.status === "loading") {
@@ -49,17 +198,83 @@ export function BookmarksScreen({ onBrowseCourses }: BookmarksScreenProps) {
         />
       );
     }
+
+    const ofKind = (kind: BookmarkKind) =>
+      state.bookmarks.filter((bookmark) => bookmark.kind === kind);
+    const visible = (kind: BookmarkKind) => filter === "all" || filter === kind;
+    const section = (kind: BookmarkKind, items: Bookmark[], children: React.ReactNode) => {
+      if (!visible(kind)) return null;
+      // A filtered-empty kind says so; under "All", an empty kind simply doesn't render.
+      if (items.length === 0) {
+        return filter === kind ? (
+          <p key={kind} className={styles.filteredEmpty}>
+            No saved {KIND_LABEL[kind]} yet.
+          </p>
+        ) : null;
+      }
+      return children;
+    };
+
+    const lessons = ofKind("lesson");
+    const concepts = ofKind("concept");
+    const sources = ofKind("source");
     return (
-      <ul className={styles.plainList}>
-        {state.bookmarks.map((bookmark) => (
-          <li
-            key={`${bookmark.kind}-${bookmark.courseId}-${bookmark.targetId}`}
-            className={styles.plainRow}
-          >
-            {rowLine(bookmark)}
-          </li>
-        ))}
-      </ul>
+      <>
+        <div className={styles.pills} role="group" aria-label="Filter bookmarks">
+          {FILTERS.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              className={styles.pill}
+              aria-pressed={filter === value}
+              onClick={() => setFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {section(
+          "lesson",
+          lessons,
+          <section key="lesson" className={styles.section} aria-label="Lessons">
+            <h2 className={styles.sectionLabel}>Lessons</h2>
+            <ul className={styles.lessonList}>
+              {lessons.map((bookmark) => (
+                <LessonRow key={bookmark.targetId} bookmark={bookmark} onOpen={onOpenLesson} />
+              ))}
+            </ul>
+          </section>,
+        )}
+        {section(
+          "concept",
+          concepts,
+          <section key="concept" className={styles.section} aria-label="Concepts">
+            <h2 className={styles.sectionLabel}>Concepts</h2>
+            <ul className={styles.conceptGrid}>
+              {concepts.map((bookmark) => (
+                <ConceptChip key={bookmark.targetId} bookmark={bookmark} onOpen={onOpenConcept} />
+              ))}
+            </ul>
+          </section>,
+        )}
+        {section(
+          "source",
+          sources,
+          <section key="source" className={styles.section} aria-label="Sources">
+            <h2 className={styles.sectionLabel}>Sources</h2>
+            <ul className={styles.sourceList}>
+              {sources.map((bookmark) => (
+                <SourceCard
+                  key={bookmark.targetId}
+                  bookmark={bookmark}
+                  onOpenLesson={onOpenLesson}
+                  onOpenCourse={onOpenCourse}
+                />
+              ))}
+            </ul>
+          </section>,
+        )}
+      </>
     );
   })();
 

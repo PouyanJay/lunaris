@@ -11,7 +11,10 @@ import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
 import { HomeDashboard } from "./components/home/HomeDashboard";
 import { CourseOverview } from "./components/overview/CourseOverview";
-import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
+import {
+  PrereqGraphExplorer,
+  type MapFocusRequest,
+} from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
 import { Button } from "./components/primitives/Button";
@@ -131,6 +134,7 @@ function CourseBody({
   apiBaseUrl,
   onReload,
   onOpenLesson,
+  mapFocus,
 }: {
   course: Course;
   /** Origin for the learner's progress snapshot (P7 mastery badges); absent = offline, the map
@@ -138,6 +142,8 @@ function CourseBody({
   apiBaseUrl?: string | undefined;
   onReload: () => void;
   onOpenLesson?: ((kcId: string) => void) | undefined;
+  /** One-shot concept selection on arrival (Bookmarks → Map). */
+  mapFocus?: MapFocusRequest | null | undefined;
 }) {
   const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
   return course.graph.nodes.length > 0 ? (
@@ -145,6 +151,7 @@ function CourseBody({
       course={course}
       kcMastery={progress?.kcMastery ?? null}
       onOpenLesson={onOpenLesson}
+      focusRequest={mapFocus}
     />
   ) : (
     <EmptyState onReload={onReload} />
@@ -274,6 +281,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // request for the same concept after the learner has navigated away.
   const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
   const focusSeq = useRef(0);
+  const [mapFocusRequest, setMapFocusRequest] = useState<MapFocusRequest | null>(null);
+  const mapFocusSeq = useRef(0);
 
   // Whether THIS tab's build stream is the canvas for the routed course — streaming (once the
   // X-Course-Id header lands) or just-finished. When it is, the opened-run flow stays out of the
@@ -372,6 +381,17 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     },
     [navigate],
   );
+  // Bookmarks → Map: land on the course's map with the concept selected. The URL can't carry a
+  // KC (no /map/:kc grammar), so the selection rides a one-shot request like the reader's.
+  const openCourseConcept = useCallback(
+    (courseId: string, kcId: string) => {
+      setMobileNavOpen(false);
+      mapFocusSeq.current += 1;
+      setMapFocusRequest({ kc: kcId, seq: mapFocusSeq.current });
+      navigate(coursePath(courseId, "map"));
+    },
+    [navigate],
+  );
   const selectedRunId = routedCourseId ?? undefined;
 
   // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
@@ -443,6 +463,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           apiBaseUrl={apiBaseUrl}
           onReload={onReload}
           onOpenLesson={openLessonForKc}
+          mapFocus={mapFocusRequest}
         />
       ),
       build: () => (
@@ -495,7 +516,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       return {
         title: "Bookmarks",
         meta: null,
-        body: <BookmarksScreen onBrowseCourses={() => navigate(ROUTES.library)} />,
+        body: (
+          <BookmarksScreen
+            onBrowseCourses={() => navigate(ROUTES.library)}
+            onOpenLesson={openCourseLesson}
+            onOpenConcept={openCourseConcept}
+            onOpenCourse={openCourseOverview}
+          />
+        ),
       };
     }
     if (route.kind === "activity") {
