@@ -455,7 +455,8 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "Activity" }));
     expect(window.location.pathname).toBe("/activity");
-    expect(await screen.findByText(/learning activity/i)).toBeInTheDocument();
+    // A user with no history gets the Activity screen's designed empty state, not zero-tiles.
+    expect(await screen.findByText(/no activity yet/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Bookmarks" }));
     expect(window.location.pathname).toBe("/bookmarks");

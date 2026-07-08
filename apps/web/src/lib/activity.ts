@@ -1,0 +1,69 @@
+import { authedFetch } from "./apiClient";
+
+export type LearningEventType = "started" | "completed" | "mastered" | "verified";
+
+export interface ActivityStats {
+  currentStreak: number;
+  longestStreak: number;
+  minutesThisWeek: number;
+  conceptsThisWeek: number;
+}
+
+/** One of the last-14-days heat squares; `active` covers event-only days (marks without
+ *  recorded study minutes still count as studied). */
+export interface HeatDay {
+  date: string;
+  minutes: number;
+  active: boolean;
+}
+
+/** One bar of the current ISO week's (Monday-first) study-minutes chart. */
+export interface WeekDay {
+  date: string;
+  minutes: number;
+}
+
+export interface ActivityFeedItem {
+  eventType: LearningEventType;
+  courseId: string;
+  courseTitle?: string | null;
+  lessonId?: string | null;
+  lessonTitle?: string | null;
+  kcId?: string | null;
+  occurredAt: string;
+}
+
+export interface ActivityView {
+  stats: ActivityStats;
+  heat: HeatDay[];
+  week: WeekDay[];
+  feed: ActivityFeedItem[];
+}
+
+export class ActivityError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ActivityError";
+  }
+}
+
+/** The viewer's IANA timezone — day/streak math is user-local, so the API needs it. */
+function viewerTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+/** Fetch the caller's activity snapshot (streaks, study minutes, feed). Rejects with
+ *  ActivityError on a transport/HTTP failure so the caller can surface a recoverable message. */
+export async function fetchActivity(apiBaseUrl: string, signal?: AbortSignal): Promise<ActivityView> {
+  const url = `${apiBaseUrl}/api/activity?tz=${encodeURIComponent(viewerTimeZone())}`;
+  let response: Response;
+  try {
+    response = await authedFetch(url, signal ? { signal } : undefined);
+  } catch (cause) {
+    throw new ActivityError("Could not reach your activity history.", { cause });
+  }
+  if (!response.ok) {
+    throw new ActivityError(`Couldn't load your activity (HTTP ${response.status}).`);
+  }
+  return response.json() as Promise<ActivityView>;
+}

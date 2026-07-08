@@ -59,6 +59,7 @@ from lunaris_video import (
 )
 from structlog.contextvars import bind_contextvars
 
+from .activity import IActivityStore, InMemoryActivityStore, SupabaseActivityStore
 from .admin_users import (
     InMemoryUserDirectory,
     IUserDirectory,
@@ -861,6 +862,27 @@ def get_progress_store(
 
 
 ProgressStoreDep = Annotated[IProgressStore, Depends(get_progress_store)]
+
+
+# Activity stores follow the progress-store posture: process-wide singletons, Supabase when keyed
+# (durable, owner-scoped RLS), in-memory otherwise (offline dev / hermetic tests).
+_in_memory_activity_store = InMemoryActivityStore()
+_supabase_activity_store = SupabaseActivityStore()
+
+
+def get_activity_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+    owner_id: Annotated[str | None, Depends(optional_user_id)],
+) -> IActivityStore:
+    """The learning-telemetry store: Supabase (durable, owner-scoped RLS) for an authenticated
+    caller when keyed; the in-memory fallback otherwise — including the auth-off single-user
+    posture, where there is no user_id to scope Supabase rows by (the progress-store precedent)."""
+    if settings.has_supabase and owner_id is not None:
+        return _supabase_activity_store
+    return _in_memory_activity_store
+
+
+ActivityStoreDep = Annotated[IActivityStore, Depends(get_activity_store)]
 
 
 async def get_explain_binding(

@@ -1,3 +1,10 @@
+from .activity import (
+    ActivityFeedItemView,
+    ActivityStatsView,
+    ActivityView,
+    HeatDayView,
+    WeekDayView,
+)
 from .app_config import ConfigSettingView, ConfigValue, ConfigView
 from .authorities import SourceAuthorityRequest, SourceAuthorityView
 from .bridge import BridgeMessageView, BridgeRequestView, BridgeResultRequest
@@ -23,6 +30,9 @@ from .settings import SecretStatusView, SecretValue, SettingsView
 from .signup_gate import SignupGateStatusView, SignupGateUpdate, SignupGateView
 
 __all__ = [
+    "ActivityFeedItemView",
+    "ActivityStatsView",
+    "ActivityView",
     "BridgeMessageView",
     "BridgeRequestView",
     "BridgeResultRequest",
@@ -41,6 +51,7 @@ __all__ = [
     "CredentialTestResult",
     "ExplainRequest",
     "ExplainResponse",
+    "HeatDayView",
     "IngestResultView",
     "KeylessReadinessView",
     "LessonMarkRequest",
@@ -57,4 +68,5 @@ __all__ = [
     "SignupGateView",
     "SourceAuthorityRequest",
     "SourceAuthorityView",
+    "WeekDayView",
 ]
