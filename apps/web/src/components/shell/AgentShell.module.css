@@ -139,6 +139,14 @@
   flex: none;
 }
 
+/* The global-search trigger sits between the title and the meta, absorbing the slack. */
+.search {
+  display: flex;
+  justify-content: flex-end;
+  flex: 1;
+  min-width: 0;
+}
+
 .body {
   flex: 1;
   min-height: 0;

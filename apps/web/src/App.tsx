@@ -3,13 +3,23 @@ import { BrowserRouter, useLocation, useNavigate } from "react-router";
 
 import { ActivityScreen } from "./components/activity/ActivityScreen";
 import { AppFrame } from "./components/AppFrame";
+import { BookmarksProvider } from "./components/bookmarks/BookmarksContext";
+import { BookmarksScreen } from "./components/bookmarks/BookmarksScreen";
+import { CommandPalette } from "./components/search/CommandPalette";
+import { SearchTrigger } from "./components/search/SearchTrigger";
+import { useSearchIndex } from "./hooks/useSearchIndex";
+import { useSearchShortcut } from "./hooks/useSearchShortcut";
+import type { SearchEntry } from "./lib/searchIndex";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
 import { HomeDashboard } from "./components/home/HomeDashboard";
 import { CourseOverview } from "./components/overview/CourseOverview";
-import { PrereqGraphExplorer } from "./components/graph/PrereqGraphExplorer";
+import {
+  PrereqGraphExplorer,
+  type MapFocusRequest,
+} from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
 import { Button } from "./components/primitives/Button";
@@ -61,8 +71,7 @@ import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
-/** The designed full-canvas notices for navigation destinations that carry no data yet: the 404
- *  and the coming-soon placeholder P10 fills (bookmarks). */
+/** The designed full-canvas notice for the one navigation destination with no data: the 404. */
 function placeholderCanvas(
   route: ShellRoute,
   onGoHome: () => void,
@@ -76,21 +85,6 @@ function placeholderCanvas(
           eyebrow="404"
           title="Page not found"
           body="This page doesn't exist. It may have moved, or the link is wrong."
-          actionLabel="Go home"
-          onAction={onGoHome}
-        />
-      ),
-    };
-  }
-  if (route.kind === "bookmarks") {
-    return {
-      title: "Bookmarks",
-      meta: null,
-      body: (
-        <CanvasNotice
-          eyebrow="Coming soon"
-          title="Saved lessons, concepts, and sources land here"
-          body="Bookmark anything worth returning to — lessons mid-read, tricky concepts, and the sources behind the claims."
           actionLabel="Go home"
           onAction={onGoHome}
         />
@@ -145,6 +139,7 @@ function CourseBody({
   apiBaseUrl,
   onReload,
   onOpenLesson,
+  mapFocus,
 }: {
   course: Course;
   /** Origin for the learner's progress snapshot (P7 mastery badges); absent = offline, the map
@@ -152,6 +147,8 @@ function CourseBody({
   apiBaseUrl?: string | undefined;
   onReload: () => void;
   onOpenLesson?: ((kcId: string) => void) | undefined;
+  /** One-shot concept selection on arrival (Bookmarks → Map). */
+  mapFocus?: MapFocusRequest | null | undefined;
 }) {
   const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
   return course.graph.nodes.length > 0 ? (
@@ -159,6 +156,7 @@ function CourseBody({
       course={course}
       kcMastery={progress?.kcMastery ?? null}
       onOpenLesson={onOpenLesson}
+      focusRequest={mapFocus}
     />
   ) : (
     <EmptyState onReload={onReload} />
@@ -288,6 +286,8 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // request for the same concept after the learner has navigated away.
   const [focusRequest, setFocusRequest] = useState<LessonFocusRequest | null>(null);
   const focusSeq = useRef(0);
+  const [mapFocusRequest, setMapFocusRequest] = useState<MapFocusRequest | null>(null);
+  const mapFocusSeq = useRef(0);
 
   // Whether THIS tab's build stream is the canvas for the routed course — streaming (once the
   // X-Course-Id header lands) or just-finished. When it is, the opened-run flow stays out of the
@@ -386,6 +386,32 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     },
     [navigate],
   );
+  // Bookmarks → Map: land on the course's map with the concept selected. The URL can't carry a
+  // KC (no /map/:kc grammar), so the selection rides a one-shot request like the reader's.
+  const openCourseConcept = useCallback(
+    (courseId: string, kcId: string) => {
+      setMobileNavOpen(false);
+      mapFocusSeq.current += 1;
+      setMapFocusRequest({ kc: kcId, seq: mapFocusSeq.current });
+      navigate(coursePath(courseId, "map"));
+    },
+    [navigate],
+  );
+  // The ⌘K palette: opened by the topbar trigger or the global shortcut; the index builds
+  // lazily on first open and is cached for the session.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  useSearchShortcut(openPalette);
+  const searchIndex = useSearchIndex(apiBaseUrl, paletteOpen);
+  const onPalettePick = useCallback(
+    (entry: SearchEntry) => {
+      setPaletteOpen(false);
+      if (entry.kind === "course") openCourseOverview(entry.courseId);
+      else if (entry.kind === "lesson") openCourseLesson(entry.courseId, entry.targetId);
+      else openCourseConcept(entry.courseId, entry.targetId);
+    },
+    [openCourseOverview, openCourseLesson, openCourseConcept],
+  );
   const selectedRunId = routedCourseId ?? undefined;
 
   // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
@@ -457,6 +483,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           apiBaseUrl={apiBaseUrl}
           onReload={onReload}
           onOpenLesson={openLessonForKc}
+          mapFocus={mapFocusRequest}
         />
       ),
       build: () => (
@@ -505,6 +532,20 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
     const placeholder = placeholderCanvas(route, () => navigate("/"));
     if (placeholder) return placeholder;
+    if (route.kind === "bookmarks") {
+      return {
+        title: "Bookmarks",
+        meta: null,
+        body: (
+          <BookmarksScreen
+            onBrowseCourses={() => navigate(ROUTES.library)}
+            onOpenLesson={openCourseLesson}
+            onOpenConcept={openCourseConcept}
+            onOpenCourse={openCourseOverview}
+          />
+        ),
+      };
+    }
     if (route.kind === "activity") {
       return {
         title: "Activity",
@@ -770,11 +811,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   })();
 
   return (
-    <>
+    <BookmarksProvider apiBaseUrl={apiBaseUrl}>
       <AgentShell
         sidebar={sidebar}
         title={canvas.title}
         meta={canvas.meta}
+        search={<SearchTrigger onOpen={openPalette} />}
         banner={
           <DraftModeBanner
             capabilities={capabilities}
@@ -816,7 +858,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         onConfirm={termination.confirm}
         onCancel={termination.dismiss}
       />
-    </>
+      <CommandPalette
+        open={paletteOpen}
+        index={searchIndex}
+        onClose={() => setPaletteOpen(false)}
+        onPick={onPalettePick}
+      />
+    </BookmarksProvider>
   );
 }
 

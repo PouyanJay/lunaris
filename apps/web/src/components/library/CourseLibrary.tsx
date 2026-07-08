@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { CourseCard } from "../course/CourseCard";
+import { FilterPills } from "../primitives/FilterPills";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
@@ -60,19 +61,7 @@ function LibraryFilterToolbar({
 }) {
   return (
     <div className={styles.toolbar}>
-      <div className={styles.filters} role="group" aria-label="Filter courses">
-        {FILTERS.map(({ value, label }) => (
-          <button
-            key={value}
-            type="button"
-            className={styles.pill}
-            aria-pressed={filter === value}
-            onClick={() => onChange(value)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <FilterPills options={FILTERS} value={filter} onChange={onChange} label="Filter courses" />
       <span className={styles.sortNote}>Sorted by last opened ↓</span>
     </div>
   );

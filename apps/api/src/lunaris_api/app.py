@@ -23,6 +23,7 @@ from .routers import (
     admin_users,
     app_config,
     authorities,
+    bookmarks,
     bridge,
     briefs,
     capabilities,
@@ -106,6 +107,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(authorities.router)
     app.include_router(progress.router)
     app.include_router(activity.router)
+    app.include_router(bookmarks.router)
     app.include_router(app_config.router)
     app.include_router(credentials.router)
     app.include_router(capabilities.router)

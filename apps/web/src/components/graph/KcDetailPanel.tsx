@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import { difficultyTier, orderInPath, UNKNOWN_ORDER } from "../../lib/graphLayout";
 import type { Course, KnowledgeComponent } from "../../types/course";
+import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Button } from "../primitives/Button";
 import styles from "./KcDetailPanel.module.css";
 
@@ -78,22 +79,35 @@ export function KcDetailPanel({ course, selectedId, onClose, onOpenLesson }: KcD
           <h2 className={styles.title}>{kc.label}</h2>
           <span className={`${styles.id} mono`}>{kc.id}</span>
         </div>
-        <button
-          ref={closeRef}
-          type="button"
-          className={styles.close}
-          aria-label="Close details"
-          onClick={onClose}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <path
-              d="M3 3l8 8M11 3l-8 8"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+        <div className={styles.headerActions}>
+          <BookmarkToggle
+            subject={kc.label}
+            draft={{
+              kind: "concept",
+              courseId: course.id,
+              targetId: kc.id,
+              courseTitle: course.topic,
+              title: kc.label,
+              conceptTier: tier,
+            }}
+          />
+          <button
+            ref={closeRef}
+            type="button"
+            className={styles.close}
+            aria-label="Close details"
+            onClick={onClose}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path
+                d="M3 3l8 8M11 3l-8 8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <dl className={styles.metrics}>

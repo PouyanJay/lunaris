@@ -24,6 +24,13 @@ import { KcNode } from "./KcNode";
 const NODE_TYPES: NodeTypes = { kc: KcNode };
 const FIT_VIEW_OPTIONS = { padding: 0.18, maxZoom: 1.1 };
 
+/** A one-shot request to land on the Map with a concept selected (Bookmarks → Map). The seq
+ *  gates re-firing — the reader's LessonFocusRequest pattern, pointed the other way. */
+export interface MapFocusRequest {
+  kc: string;
+  seq: number;
+}
+
 interface PrereqGraphExplorerProps {
   course: Course;
   /** The learner's live per-KC mastery (P2 snapshot); null while loading / offline — the map
@@ -31,12 +38,19 @@ interface PrereqGraphExplorerProps {
   kcMastery?: Record<string, boolean> | null | undefined;
   /** Drill from the selected concept into the lesson that teaches it (switches to the reader). */
   onOpenLesson?: ((kcId: string) => void) | undefined;
+  /** Select this concept on arrival (once per request); unknown ids leave the map untouched. */
+  focusRequest?: MapFocusRequest | null | undefined;
 }
 
 /** The interactive prerequisite-graph canvas: a dagre-laid DAG of knowledge components with
  *  learning-state badges lit by live mastery, amber frontier edges, a difficulty legend, and a
  *  docked concept inspector. */
-export function PrereqGraphExplorer({ course, kcMastery, onOpenLesson }: PrereqGraphExplorerProps) {
+export function PrereqGraphExplorer({
+  course,
+  kcMastery,
+  onOpenLesson,
+  focusRequest,
+}: PrereqGraphExplorerProps) {
   const layout = useMemo(
     () => buildGraphLayout(course.graph, course.goalConcept, kcMastery ?? null),
     [course.graph, course.goalConcept, kcMastery],
@@ -72,6 +86,18 @@ export function PrereqGraphExplorer({ course, kcMastery, onOpenLesson }: PrereqG
   useEffect(() => {
     setNodes((current) => current.map((node) => ({ ...node, selected: node.id === selectedId })));
   }, [selectedId, setNodes]);
+
+  // Honour a concept drill-in once per request (Bookmarks → Map): select the KC so the inspector
+  // opens on arrival. A concept the graph no longer holds (rebuilt course) leaves the map as-is —
+  // never a phantom selection. The seq ref gates StrictMode replays and course switches.
+  const handledFocusSeq = useRef(0);
+  useEffect(() => {
+    if (!focusRequest || focusRequest.seq === handledFocusSeq.current) return;
+    handledFocusSeq.current = focusRequest.seq;
+    if (course.graph.nodes.some((node) => node.id === focusRequest.kc)) {
+      setSelectedId(focusRequest.kc);
+    }
+  }, [focusRequest, course.graph]);
 
   const onNodeClick = useCallback((_: MouseEvent, node: Node) => setSelectedId(node.id), []);
   const onPaneClick = useCallback(() => setSelectedId(null), []);

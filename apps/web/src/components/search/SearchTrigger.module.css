@@ -1,0 +1,55 @@
+/* The design's topbar search field, as the palette's trigger. */
+.trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 340px;
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.trigger:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+
+.trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.placeholder {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hint {
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 900px) {
+  .trigger {
+    width: auto;
+    max-width: none;
+  }
+
+  .placeholder,
+  .hint {
+    display: none;
+  }
+}

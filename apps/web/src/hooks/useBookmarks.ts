@@ -1,0 +1,87 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { BookmarksError, deleteBookmark, fetchBookmarks, putBookmark } from "../lib/bookmarks";
+import type { Bookmark, BookmarkDraft, BookmarkRef } from "../lib/bookmarks";
+
+export type BookmarksState =
+  | { status: "loading" }
+  | { status: "ready"; bookmarks: Bookmark[] }
+  | { status: "error"; message: string };
+
+interface UseBookmarksResult {
+  state: BookmarksState;
+  /** Re-fetch the list (aborts any in-flight load first). */
+  reload: () => void;
+  /** Whether the natural key is currently saved (false while loading/on error — an affordance
+   *  renders unsaved until truth arrives; it never guesses). */
+  isSaved: (ref: BookmarkRef) => boolean;
+  /** Optimistic toggle: save when unsaved, remove when saved; reconciles by refetch on failure. */
+  toggle: (draft: BookmarkDraft) => void;
+}
+
+function keyOf(ref: BookmarkRef): string {
+  return `${ref.kind}::${ref.courseId}::${ref.targetId}`;
+}
+
+/**
+ * The caller's bookmarks: loading → ready or error, with an optimistic membership toggle. Each
+ * load aborts any prior in-flight request; a reload keeps the loaded list visible
+ * (stale-while-revalidate). Toggles update the list immediately and reconcile by refetch when
+ * the write fails — the useCourseProgress posture.
+ */
+export function useBookmarks(apiBaseUrl: string): UseBookmarksResult {
+  const [state, setState] = useState<BookmarksState>({ status: "loading" });
+  const controllerRef = useRef<AbortController | null>(null);
+
+  const load = useCallback(() => {
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setState((prev) => (prev.status === "ready" ? prev : { status: "loading" }));
+
+    fetchBookmarks(apiBaseUrl, controller.signal)
+      .then((bookmarks) => {
+        if (!controller.signal.aborted) setState({ status: "ready", bookmarks });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const message =
+          error instanceof BookmarksError ? error.message : "Couldn't load your bookmarks.";
+        setState((prev) => (prev.status === "ready" ? prev : { status: "error", message }));
+      });
+  }, [apiBaseUrl]);
+
+  useEffect(() => {
+    if (!apiBaseUrl) return;
+    load();
+    return () => controllerRef.current?.abort();
+  }, [apiBaseUrl, load]);
+
+  const isSaved = useCallback(
+    (ref: BookmarkRef): boolean =>
+      state.status === "ready" &&
+      state.bookmarks.some((bookmark) => keyOf(bookmark) === keyOf(ref)),
+    [state],
+  );
+
+  const toggle = useCallback(
+    (draft: BookmarkDraft) => {
+      if (state.status !== "ready") return;
+      const saved = state.bookmarks.some((bookmark) => keyOf(bookmark) === keyOf(draft));
+      if (saved) {
+        setState({
+          status: "ready",
+          bookmarks: state.bookmarks.filter((bookmark) => keyOf(bookmark) !== keyOf(draft)),
+        });
+        deleteBookmark(apiBaseUrl, draft).catch(load);
+      } else {
+        const optimistic: Bookmark = { ...draft, savedAt: new Date().toISOString() };
+        setState({ status: "ready", bookmarks: [optimistic, ...state.bookmarks] });
+        putBookmark(apiBaseUrl, draft).catch(load);
+      }
+    },
+    [apiBaseUrl, state, load],
+  );
+
+  return { state, reload: load, isSaved, toggle };
+}

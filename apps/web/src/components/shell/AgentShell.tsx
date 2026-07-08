@@ -20,6 +20,8 @@ interface AgentShellProps {
   title: string;
   /** Right-aligned canvas-header content — status, metrics, view actions. */
   meta?: ReactNode;
+  /** The global-search trigger, docked between the title and the meta (the ⌘K field). */
+  search?: ReactNode;
   /** Optional band rendered between the header and the body (e.g. the Draft-mode banner). */
   banner?: ReactNode;
   children: ReactNode;
@@ -46,6 +48,7 @@ export function AgentShell({
   sidebar,
   title,
   meta,
+  search,
   banner,
   children,
   layout,
@@ -142,6 +145,7 @@ export function AgentShell({
           <h1 className={styles.title} title={title}>
             {title}
           </h1>
+          {search && <div className={styles.search}>{search}</div>}
           {meta && <div className={styles.meta}>{meta}</div>}
         </header>
         {banner}

@@ -1,0 +1,37 @@
+/* The bookmark glyph toggle: muted at rest, accent when saved — the design's saved-lesson mark.
+   ≥32px hit target in dense chrome. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+
+.toggle:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.toggle[data-saved] {
+  color: var(--accent-500);
+}

@@ -418,6 +418,7 @@ export function routedFetch(
     progress?: unknown;
     library?: unknown;
     activity?: unknown;
+    bookmarks?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -461,6 +462,14 @@ export function routedFetch(
     }
     // The reader's study-minutes heartbeat succeeds silently — fire-and-forget telemetry.
     if (url.includes("/api/activity/heartbeat") && method === "PUT") {
+      return Promise.resolve({ ok: true, status: 204 });
+    }
+    // Bookmarks: GET serves the list; the toggle's writes succeed silently (the hook is
+    // optimistic and only refetches on failure).
+    if (url.includes("/api/bookmarks")) {
+      if (method === "GET") {
+        return Promise.resolve({ ok: true, json: async () => handlers.bookmarks ?? [] });
+      }
       return Promise.resolve({ ok: true, status: 204 });
     }
     // The activity snapshot (streaks / heat / feed) — carries a ?tz= query.
