@@ -174,6 +174,12 @@ function stagedEntries(agentEvents: AgentEvent[]): StagedEntry[] {
   return staged;
 }
 
+/** The agent activity as one linear ticker feed (the control room's console): the same fold as
+ *  the timeline — delta coalescing, call/result pairing, source rows — without phase bucketing. */
+export function consoleEntries(agentEvents: AgentEvent[]): TimelineEntry[] {
+  return stagedEntries(agentEvents).map((staged) => staged.entry);
+}
+
 /** The most recent plan the agent emitted — the latest non-empty `write_todos`, scanning
  *  newest-first; its overall done/total is the build's coarse progress. Null until the agent has
  *  planned. (Where it renders — the pinned top panel — is the caller's concern.) */
@@ -240,14 +246,19 @@ function durationForPhase(
  * in-flight one is `active`), a one-line summary, the bucketed reasoning/tool entries, and its
  * duration. A leading "Start" node holds the agent's opening reasoning (the pre-stage beats), and
  * appears only when there is such reasoning to show; the plan itself rides the pinned top panel.
+ *
+ * `complete: true` marks every phase done regardless of the last stage seen — the terminal course
+ * frame can land before (or coalesced with) the tail progress events, and a finished run must
+ * never show a frozen active phase (the Verify-freeze fix).
  */
 export function buildTimeline(
   events: ProgressEvent[],
   agentEvents: AgentEvent[],
   stageTimes: StageTimes = {},
+  options: { complete?: boolean } = {},
 ): TimelinePhase[] {
   const staged = stagedEntries(agentEvents);
-  const current = currentPhaseIndex(events);
+  const current = options.complete ? PHASES.length : currentPhaseIndex(events);
   const entriesFor = (key: string) => staged.filter((s) => s.phaseKey === key).map((s) => s.entry);
 
   const phases: TimelinePhase[] = [];

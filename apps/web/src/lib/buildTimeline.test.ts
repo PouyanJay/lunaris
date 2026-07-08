@@ -521,6 +521,32 @@ describe("buildTimeline", () => {
   });
 });
 
+describe("buildTimeline — completion override", () => {
+  it("marks every phase done once the run is complete, even without run_completed", () => {
+    // The terminal course frame can land before (or instead of) the tail progress events — the
+    // live view used to freeze Verify as active forever (the P8 Verify-freeze fix).
+    const events = [
+      makeProgressEvent("run_started", 0),
+      makeProgressEvent("claims_verified", 1, { label: "18 of 21 supported" }),
+    ];
+
+    const phases = buildTimeline(events, [], {}, { complete: true });
+
+    expect(phase(phases, "Verify").status).toBe("done");
+    expect(phase(phases, "Publish").status).toBe("done");
+    expect(phases.every((p) => p.status === "done")).toBe(true);
+  });
+
+  it("keeps the normal single-active-phase model while the run is incomplete", () => {
+    const events = [makeProgressEvent("run_started", 0), makeProgressEvent("claims_verified", 1)];
+
+    const phases = buildTimeline(events, [], {}, { complete: false });
+
+    expect(phase(phases, "Verify").status).toBe("active");
+    expect(phase(phases, "Resources").status).toBe("pending");
+  });
+});
+
 describe("latestPlan", () => {
   it("returns the most recent plan the agent emitted (latest write_todos wins)", () => {
     const plan = latestPlan([

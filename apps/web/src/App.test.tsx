@@ -393,9 +393,10 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "HTTPS" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
-    // The build timeline is live, and the active Lessons phase shows the delegated subagent — branded,
-    // not raw JSON — proving the `task` payload flowed through the real SSE → timeline path.
+    // The control room is live; the full branded transcript sits one toggle away (P8) — these
+    // assertions exercise that lens, proving the `task` payload flowed SSE → timeline unchanged.
     expect(await screen.findByRole("region", { name: /building HTTPS/i })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("radio", { name: "Transcript" }));
     expect(await screen.findByText("module-author")).toBeInTheDocument();
     expect(await screen.findByText(/Author the Foundations module/i)).toBeInTheDocument();
     // No tool's payload leaks as raw JSON anywhere — including the deliberately truncated graph result.

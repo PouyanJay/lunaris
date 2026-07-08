@@ -15,7 +15,7 @@ import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
-import { BuildTimeline } from "./components/transcript/BuildTimeline";
+import { BuildControlRoom } from "./components/controlroom/BuildControlRoom";
 import { BuildReplay } from "./components/transcript/BuildReplay";
 import { LiveBuildReplay } from "./components/transcript/LiveBuildReplay";
 import { VideosGeneratingPanel } from "./components/transcript/VideosGeneratingPanel";
@@ -590,7 +590,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
                 compute select (its hint while "This device" is chosen) — no separate band. */}
             {!stream.servedByThisDevice && <KeylessProvisioningBanner status={keylessReadiness} />}
             <ExplainProvider apiBaseUrl={apiBaseUrl} available={canExplain}>
-              <BuildTimeline
+              <BuildControlRoom
                 topic={stream.topic}
                 events={stream.events}
                 agentEvents={stream.agentEvents}
