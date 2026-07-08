@@ -226,13 +226,17 @@ a.itemTitle:focus-visible {
   }
 }
 
-/* Phone: tighten the outer gutter, give inputs ≥44px height, and let the Paste/URL/File toggle span
-   the full width as three equal ≥44px tap targets instead of a tight inline cluster. */
+/* Phone: tighten the outer gutter and give the text controls ≥44px height with a ≥16px font so
+   iOS Safari doesn't auto-zoom the page on focus. */
 @media (max-width: 768px) {
   .panel {
     padding: var(--space-4);
   }
   .input {
     height: 44px;
+    font-size: 16px;
+  }
+  .textarea {
+    font-size: 16px;
   }
 }

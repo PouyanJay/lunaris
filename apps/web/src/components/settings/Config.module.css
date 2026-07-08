@@ -140,11 +140,13 @@
   padding: var(--space-4) var(--space-5);
 }
 
-/* Phone: the editable control + select become ≥44px tap targets (WCAG 2.5.5). */
+/* Phone: the editable control + select become ≥44px tap targets (WCAG 2.5.5) with a ≥16px font so
+   iOS Safari doesn't auto-zoom the page on focus. */
 @media (max-width: 768px) {
   .input,
   .select,
   .lengthSelect {
     height: 44px;
+    font-size: 16px;
   }
 }

@@ -39,6 +39,14 @@
   box-shadow: var(--shadow-xs);
 }
 
+/* Phone: grow each segment's hit area to ≥44px tall (WCAG 2.5.5 / iOS ergonomics) without changing
+   the inline layout, so every consumer (composer options bar, corpus source-type toggle) benefits. */
+@media (max-width: 768px) {
+  .segment {
+    min-height: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .segment {
     transition: none;
