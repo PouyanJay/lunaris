@@ -82,6 +82,18 @@ describe("buildGraphLayout", () => {
     expect(dim.style?.stroke).toBe("var(--border-strong)");
   });
 
+  it("keeps an edge dim when neither endpoint is on the active path", () => {
+    const course = makeCourse();
+
+    // Nothing mastered: comparison/arrays-level roots are up next, but deeper edges join two
+    // locked/up-next mixes — the sorted_order → binary_search edge has a locked endpoint.
+    const { edges } = buildGraphLayout(course.graph, course.goalConcept, {});
+
+    for (const edge of edges.filter((e) => e.target === "binary_search")) {
+      expect(edge.className).toBe("edge-dim");
+    }
+  });
+
   it("maps each prerequisite edge to a directed React Flow edge with an arrowhead", () => {
     const course = makeCourse();
 

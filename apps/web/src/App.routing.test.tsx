@@ -209,7 +209,8 @@ describe("App — URL routing (live studio)", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: "Overview" }));
     fireEvent.click(await screen.findByRole("button", { name: /view the map/i }));
-    expect(window.location.pathname).toBe("/courses/course-test/map");
+    // waitFor lets the map's progress fetch (P7 mastery badges) settle inside act.
+    await waitFor(() => expect(window.location.pathname).toBe("/courses/course-test/map"));
   });
 
   it("deep-links to a specific lesson at /courses/:courseId/lessons/:lessonId", async () => {

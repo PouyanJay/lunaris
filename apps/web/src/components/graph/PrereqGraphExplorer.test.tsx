@@ -68,6 +68,27 @@ describe("PrereqGraphExplorer mastery overlay", () => {
     );
   });
 
+  it("GOAL keeps the badge face on a goal node the learner has mastered (AD-3)", async () => {
+    // The destination outranks its state on the card; mastery still reaches the label sentence.
+    setViewport(false);
+    const { container } = render(
+      <PrereqGraphExplorer
+        course={makeCourse()}
+        kcMastery={{ comparison: true, sorted_order: true, binary_search: true }}
+      />,
+    );
+
+    const goal = await waitFor(() => {
+      const node = container.querySelector('[data-id="binary_search"]');
+      expect(node?.querySelector('[aria-label*="Course goal."][aria-label*="Mastered."]')).not
+        .toBeNull();
+      return node!;
+    });
+    const badge = goal.querySelector('[class*="badge"]')!;
+    expect(badge).toHaveTextContent("GOAL");
+    expect(badge).not.toHaveTextContent("MASTERED");
+  });
+
   it("re-seeding on a course change still drops the selection", async () => {
     setViewport(false);
     const { container, rerender } = render(
