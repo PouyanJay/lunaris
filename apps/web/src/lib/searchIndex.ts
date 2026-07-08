@@ -68,7 +68,11 @@ export function searchEntries(entries: SearchEntry[], query: string): SearchResu
   const needle = query.trim().toLowerCase();
   const groups: SearchResults = { courses: [], lessons: [], concepts: [] };
   const bucket = (entry: SearchEntry) =>
-    entry.kind === "course" ? groups.courses : entry.kind === "lesson" ? groups.lessons : groups.concepts;
+    entry.kind === "course"
+      ? groups.courses
+      : entry.kind === "lesson"
+        ? groups.lessons
+        : groups.concepts;
 
   if (needle === "") {
     for (const entry of entries) {

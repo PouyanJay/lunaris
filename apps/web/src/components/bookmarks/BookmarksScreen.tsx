@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { CanvasNotice } from "../states/CanvasNotice";
+import { FilterPills, type FilterPillOption } from "../primitives/FilterPills";
 import { ErrorState } from "../states/ErrorState";
 import { SourceTrust } from "../primitives/SourceTrust";
 import { relativeTime } from "../../lib/relativeTime";
@@ -12,7 +13,7 @@ import styles from "./BookmarksScreen.module.css";
 
 type Filter = "all" | BookmarkKind;
 
-const FILTERS: { value: Filter; label: string }[] = [
+const FILTERS: FilterPillOption<Filter>[] = [
   { value: "all", label: "All" },
   { value: "lesson", label: "Lessons" },
   { value: "concept", label: "Concepts" },
@@ -157,6 +158,92 @@ function SourceCard({
   );
 }
 
+/** The loaded canvas: the filter pills over the per-kind sections. A filtered-empty kind says
+ *  so; under "All", an empty kind simply doesn't render. */
+function LoadedBookmarks({
+  bookmarks,
+  filter,
+  onFilter,
+  onOpenLesson,
+  onOpenConcept,
+  onOpenCourse,
+}: {
+  bookmarks: Bookmark[];
+  filter: Filter;
+  onFilter: (filter: Filter) => void;
+} & Pick<BookmarksScreenProps, "onOpenLesson" | "onOpenConcept" | "onOpenCourse">) {
+  const ofKind = (kind: BookmarkKind) => bookmarks.filter((bookmark) => bookmark.kind === kind);
+  const visible = (kind: BookmarkKind) => filter === "all" || filter === kind;
+  const section = (kind: BookmarkKind, items: Bookmark[], children: React.ReactNode) => {
+    if (!visible(kind)) return null;
+    if (items.length === 0) {
+      return filter === kind ? (
+        <p key={kind} className={styles.filteredEmpty}>
+          No saved {KIND_LABEL[kind]} yet.
+        </p>
+      ) : null;
+    }
+    return children;
+  };
+
+  const lessons = ofKind("lesson");
+  const concepts = ofKind("concept");
+  const sources = ofKind("source");
+  return (
+    <>
+      <div className={styles.pillsRow}>
+        <FilterPills
+          options={FILTERS}
+          value={filter}
+          onChange={onFilter}
+          label="Filter bookmarks"
+        />
+      </div>
+      {section(
+        "lesson",
+        lessons,
+        <section key="lesson" className={styles.section} aria-label="Lessons">
+          <h2 className={styles.sectionLabel}>Lessons</h2>
+          <ul className={styles.lessonList}>
+            {lessons.map((bookmark) => (
+              <LessonRow key={bookmark.targetId} bookmark={bookmark} onOpen={onOpenLesson} />
+            ))}
+          </ul>
+        </section>,
+      )}
+      {section(
+        "concept",
+        concepts,
+        <section key="concept" className={styles.section} aria-label="Concepts">
+          <h2 className={styles.sectionLabel}>Concepts</h2>
+          <ul className={styles.conceptGrid}>
+            {concepts.map((bookmark) => (
+              <ConceptChip key={bookmark.targetId} bookmark={bookmark} onOpen={onOpenConcept} />
+            ))}
+          </ul>
+        </section>,
+      )}
+      {section(
+        "source",
+        sources,
+        <section key="source" className={styles.section} aria-label="Sources">
+          <h2 className={styles.sectionLabel}>Sources</h2>
+          <ul className={styles.sourceList}>
+            {sources.map((bookmark) => (
+              <SourceCard
+                key={bookmark.targetId}
+                bookmark={bookmark}
+                onOpenLesson={onOpenLesson}
+                onOpenCourse={onOpenCourse}
+              />
+            ))}
+          </ul>
+        </section>,
+      )}
+    </>
+  );
+}
+
 /** The Bookmarks canvas per the Unified design: filter pills over three hairline sections —
  *  lesson rows, concept chips (tier swatch), source cards (claim + trust grade) — each
  *  deep-linking to its origin. Reads the SAME provider instance the save affordances write. */
@@ -199,82 +286,15 @@ export function BookmarksScreen({
       );
     }
 
-    const ofKind = (kind: BookmarkKind) =>
-      state.bookmarks.filter((bookmark) => bookmark.kind === kind);
-    const visible = (kind: BookmarkKind) => filter === "all" || filter === kind;
-    const section = (kind: BookmarkKind, items: Bookmark[], children: React.ReactNode) => {
-      if (!visible(kind)) return null;
-      // A filtered-empty kind says so; under "All", an empty kind simply doesn't render.
-      if (items.length === 0) {
-        return filter === kind ? (
-          <p key={kind} className={styles.filteredEmpty}>
-            No saved {KIND_LABEL[kind]} yet.
-          </p>
-        ) : null;
-      }
-      return children;
-    };
-
-    const lessons = ofKind("lesson");
-    const concepts = ofKind("concept");
-    const sources = ofKind("source");
     return (
-      <>
-        <div className={styles.pills} role="group" aria-label="Filter bookmarks">
-          {FILTERS.map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              className={styles.pill}
-              aria-pressed={filter === value}
-              onClick={() => setFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {section(
-          "lesson",
-          lessons,
-          <section key="lesson" className={styles.section} aria-label="Lessons">
-            <h2 className={styles.sectionLabel}>Lessons</h2>
-            <ul className={styles.lessonList}>
-              {lessons.map((bookmark) => (
-                <LessonRow key={bookmark.targetId} bookmark={bookmark} onOpen={onOpenLesson} />
-              ))}
-            </ul>
-          </section>,
-        )}
-        {section(
-          "concept",
-          concepts,
-          <section key="concept" className={styles.section} aria-label="Concepts">
-            <h2 className={styles.sectionLabel}>Concepts</h2>
-            <ul className={styles.conceptGrid}>
-              {concepts.map((bookmark) => (
-                <ConceptChip key={bookmark.targetId} bookmark={bookmark} onOpen={onOpenConcept} />
-              ))}
-            </ul>
-          </section>,
-        )}
-        {section(
-          "source",
-          sources,
-          <section key="source" className={styles.section} aria-label="Sources">
-            <h2 className={styles.sectionLabel}>Sources</h2>
-            <ul className={styles.sourceList}>
-              {sources.map((bookmark) => (
-                <SourceCard
-                  key={bookmark.targetId}
-                  bookmark={bookmark}
-                  onOpenLesson={onOpenLesson}
-                  onOpenCourse={onOpenCourse}
-                />
-              ))}
-            </ul>
-          </section>,
-        )}
-      </>
+      <LoadedBookmarks
+        bookmarks={state.bookmarks}
+        filter={filter}
+        onFilter={setFilter}
+        onOpenLesson={onOpenLesson}
+        onOpenConcept={onOpenConcept}
+        onOpenCourse={onOpenCourse}
+      />
     );
   })();
 

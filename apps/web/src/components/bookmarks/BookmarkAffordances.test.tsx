@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AnnotationRail } from "../reader/AnnotationRail";
 import { CourseReader } from "../reader/CourseReader";
 import { KcDetailPanel } from "../graph/KcDetailPanel";
+import { difficultyTier } from "../../lib/graphLayout";
 import { makeCourse } from "../../test/fixtures";
 import type { Annotation } from "../reader/annotations";
 import { BookmarksProvider } from "./BookmarksContext";
@@ -22,7 +23,10 @@ function bookmarksFetch() {
     }
     // The reader's ambient calls (progress GET/PUTs, heartbeat) succeed silently.
     if (method === "GET") {
-      return Promise.resolve({ ok: true, json: async () => ({ courseId: "", objectives: [], lessons: [] }) });
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ courseId: "", objectives: [], lessons: [] }),
+      });
     }
     return Promise.resolve({ ok: true, status: 204 });
   });
@@ -90,7 +94,8 @@ describe("bookmark affordances", () => {
             kind: "concept",
             targetId: kc.id,
             title: kc.label,
-            conceptTier: expect.any(Number),
+            // The exact tier the inspector computes — the same mapping the Map uses.
+            conceptTier: difficultyTier(kc.difficulty),
           }),
         }),
       ),
@@ -105,7 +110,11 @@ describe("bookmark affordances", () => {
       id: "demonstrate-0",
       phaseKey: "demonstrate",
       phaseLabel: "Strategies & worked example",
-      claim: { text: "HTTPS encrypts data in transit.", supportedBy: "cite-42", verifierStatus: "supported" },
+      claim: {
+        text: "HTTPS encrypts data in transit.",
+        supportedBy: "cite-42",
+        verifierStatus: "supported",
+      },
       citation: {
         id: "cite-42",
         title: "RFC 8446 — TLS 1.3",
@@ -122,7 +131,11 @@ describe("bookmark affordances", () => {
           annotations={[annotation]}
           activeClaimId={null}
           onSelect={() => {}}
-          sourceContext={{ courseId: "course-1", courseTitle: "How HTTPS works", lessonId: "m-1-l0" }}
+          sourceContext={{
+            courseId: "course-1",
+            courseTitle: "How HTTPS works",
+            lessonId: "m-1-l0",
+          }}
         />
       </BookmarksProvider>,
     );
@@ -150,7 +163,7 @@ describe("bookmark affordances", () => {
     );
   });
 
-  it("offers no source save without a source context (offline posture)", () => {
+  it("offers no source save without a source context (offline posture)", async () => {
     vi.stubGlobal("fetch", bookmarksFetch().mock);
     const annotation: Annotation = {
       id: "demonstrate-0",
@@ -166,6 +179,9 @@ describe("bookmark affordances", () => {
       </BookmarksProvider>,
     );
 
-    expect(screen.queryByRole("button", { name: /bookmark source/i })).not.toBeInTheDocument();
+    // Let the provider's mount fetch settle (keeps the run act()-warning-free), then assert.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /bookmark source/i })).not.toBeInTheDocument(),
+    );
   });
 });

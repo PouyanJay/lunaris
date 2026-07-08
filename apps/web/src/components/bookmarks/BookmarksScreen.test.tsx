@@ -212,9 +212,7 @@ describe("BookmarksScreen", () => {
     renderScreen({ onOpenCourse });
 
     // Act
-    fireEvent.click(
-      await screen.findByRole("button", { name: /open how https works/i }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: /open how https works/i }));
 
     // Assert — honest fallback: no lesson recorded → the course, never a guess.
     expect(onOpenCourse).toHaveBeenCalledWith("course-1");

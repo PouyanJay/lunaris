@@ -17,6 +17,58 @@ interface CommandPaletteProps {
 
 const GROUP_TITLES = { courses: "Courses", lessons: "Lessons", concepts: "Concepts" } as const;
 
+function rowId(entry: SearchEntry): string {
+  return `palette-${entry.kind}-${entry.courseId}-${entry.targetId}`;
+}
+
+/** One result group of the listbox; the active row is styled AND announced (aria-selected +
+ *  the input's aria-activedescendant both key off the same row id). */
+function PaletteGroup({
+  kind,
+  items,
+  active,
+  onPick,
+}: {
+  kind: keyof typeof GROUP_TITLES;
+  items: SearchEntry[];
+  active: SearchEntry | undefined;
+  onPick: (entry: SearchEntry) => void;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <li role="presentation">
+      <p className={styles.groupLabel} role="presentation">
+        {GROUP_TITLES[kind]}
+      </p>
+      <ul className={styles.group} role="group" aria-label={GROUP_TITLES[kind]}>
+        {items.map((entry) => (
+          <li
+            key={rowId(entry)}
+            id={rowId(entry)}
+            role="option"
+            aria-selected={entry === active}
+            className={styles.row}
+            data-active={entry === active || undefined}
+          >
+            <button
+              type="button"
+              tabIndex={-1}
+              className={styles.rowButton}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onPick(entry)}
+            >
+              <span className={styles.rowLabel}>{entry.label}</span>
+              {entry.kind !== "course" && (
+                <span className={`${styles.rowHint} mono`}>{entry.courseTitle}</span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </li>
+  );
+}
+
 /** The ⌘K command palette: search courses/lessons/concepts and jump there. Focus-trapped modal
  *  (the ConfirmDialog contract), listbox keyboard pattern — ↑/↓ move, Enter opens, Esc closes,
  *  focus stays in the input while aria-activedescendant tracks the active row. */
@@ -96,45 +148,6 @@ export function CommandPalette({ open, index, onClose, onPick }: CommandPaletteP
     }
   };
 
-  const rowId = (entry: SearchEntry) => `palette-${entry.kind}-${entry.courseId}-${entry.targetId}`;
-
-  const group = (kind: keyof typeof GROUP_TITLES) => {
-    const items = results?.[kind] ?? [];
-    if (items.length === 0) return null;
-    return (
-      <li key={kind} role="presentation">
-        <p className={styles.groupLabel} role="presentation">
-          {GROUP_TITLES[kind]}
-        </p>
-        <ul className={styles.group} role="group" aria-label={GROUP_TITLES[kind]}>
-          {items.map((entry) => (
-            <li
-              key={rowId(entry)}
-              id={rowId(entry)}
-              role="option"
-              aria-selected={entry === active}
-              className={styles.row}
-              data-active={entry === active || undefined}
-            >
-              <button
-                type="button"
-                tabIndex={-1}
-                className={styles.rowButton}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => onPick(entry)}
-              >
-                <span className={styles.rowLabel}>{entry.label}</span>
-                {entry.kind !== "course" && (
-                  <span className={`${styles.rowHint} mono`}>{entry.courseTitle}</span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </li>
-    );
-  };
-
   return createPortal(
     <div
       className={styles.backdrop}
@@ -193,9 +206,15 @@ export function CommandPalette({ open, index, onClose, onPick }: CommandPaletteP
             <p className={styles.notice}>No matches for “{query}”.</p>
           ) : (
             <ul id="palette-results" role="listbox" aria-label="Results" className={styles.list}>
-              {group("courses")}
-              {group("lessons")}
-              {group("concepts")}
+              {(["courses", "lessons", "concepts"] as const).map((kind) => (
+                <PaletteGroup
+                  key={kind}
+                  kind={kind}
+                  items={results?.[kind] ?? []}
+                  active={active}
+                  onPick={onPick}
+                />
+              ))}
             </ul>
           )}
         </div>

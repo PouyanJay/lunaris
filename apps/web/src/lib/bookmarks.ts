@@ -2,6 +2,9 @@ import { authedFetch } from "./apiClient";
 
 export type BookmarkKind = "lesson" | "concept" | "source";
 
+/** The longest claim quote a source bookmark stores — mirrors the DB's snippet check. */
+export const MAX_SNIPPET_LENGTH = 2000;
+
 export interface Bookmark {
   kind: BookmarkKind;
   courseId: string;
@@ -37,7 +40,10 @@ export class BookmarksError extends Error {
 /** Fetch the caller's saves (newest first). Rejects with BookmarksError on transport/HTTP
  *  failure — and on an alien payload shape (trust-boundary check: consumers read fields
  *  unguarded). */
-export async function fetchBookmarks(apiBaseUrl: string, signal?: AbortSignal): Promise<Bookmark[]> {
+export async function fetchBookmarks(
+  apiBaseUrl: string,
+  signal?: AbortSignal,
+): Promise<Bookmark[]> {
   let response: Response;
   try {
     response = await authedFetch(`${apiBaseUrl}/api/bookmarks`, signal ? { signal } : undefined);
@@ -62,7 +68,8 @@ export async function putBookmark(apiBaseUrl: string, draft: BookmarkDraft): Pro
     headers: { "content-type": "application/json" },
     body: JSON.stringify(draft),
   });
-  if (!response.ok) throw new BookmarksError(`Couldn't save the bookmark (HTTP ${response.status}).`);
+  if (!response.ok)
+    throw new BookmarksError(`Couldn't save the bookmark (HTTP ${response.status}).`);
 }
 
 /** Remove by the natural key (idempotent). Rejects on failure for optimistic reconcile. */

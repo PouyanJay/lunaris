@@ -125,3 +125,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* iOS Safari auto-zooms focused inputs under 16px — keep the palette input at 16px on touch
+   widths (the desktop size stays the house 15px base). */
+@media (max-width: 720px) {
+  .input {
+    font-size: 16px;
+  }
+}

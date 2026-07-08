@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
+import { MAX_SNIPPET_LENGTH } from "../../lib/bookmarks";
 import { StatusDot } from "../primitives/StatusDot";
 import { type Annotation, groupByPhase, verifierStatusTone } from "./annotations";
 import { ClaimProvenance } from "./ClaimProvenance";
@@ -170,7 +171,7 @@ export function AnnotationRail({
                               title: annotation.citation.title,
                               lessonId: sourceContext.lessonId,
                               // The claim this source grounds — what the bookmarks card quotes.
-                              snippet: annotation.claim.text.slice(0, 2000),
+                              snippet: annotation.claim.text.slice(0, MAX_SNIPPET_LENGTH),
                               trustTier: annotation.citation.trustTier ?? null,
                               credibility: annotation.citation.credibility ?? null,
                             }}

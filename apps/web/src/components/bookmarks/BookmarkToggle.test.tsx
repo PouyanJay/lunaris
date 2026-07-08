@@ -61,9 +61,7 @@ describe("BookmarkToggle", () => {
 
     // Assert
     expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await waitFor(() =>
-      expect(writes.some((write) => write.method === "DELETE")).toBe(true),
-    );
+    await waitFor(() => expect(writes.some((write) => write.method === "DELETE")).toBe(true));
   });
 
   it("reflects an already-saved bookmark from the server", async () => {
@@ -87,5 +85,31 @@ describe("BookmarkToggle", () => {
     render(<BookmarkToggle draft={DRAFT} subject="Lesson 1 · Fundamentals" />);
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("reconciles a failed save by refetching — the optimistic press reverts", async () => {
+    // Arrange — GET serves an empty list; the PUT is down.
+    const mock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (!url.includes("/api/bookmarks")) throw new Error(`unhandled ${url}`);
+      if (method === "GET") return Promise.resolve({ ok: true, json: async () => [] });
+      return Promise.reject(new Error("network down"));
+    });
+    vi.stubGlobal("fetch", mock);
+    render(
+      <BookmarksProvider apiBaseUrl="http://test">
+        <BookmarkToggle draft={DRAFT} subject="Lesson 1 · Fundamentals" />
+      </BookmarksProvider>,
+    );
+    const toggle = await screen.findByRole("button", { name: /bookmark lesson 1/i });
+    await waitFor(() => expect(toggle).toBeEnabled());
+
+    // Act — the press is optimistic, then the failed write reconciles by refetch (A4).
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    // Assert — truth returns: the server never saved it, so the press reverts.
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-pressed", "false"));
   });
 });
