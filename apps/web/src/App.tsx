@@ -5,6 +5,11 @@ import { ActivityScreen } from "./components/activity/ActivityScreen";
 import { AppFrame } from "./components/AppFrame";
 import { BookmarksProvider } from "./components/bookmarks/BookmarksContext";
 import { BookmarksScreen } from "./components/bookmarks/BookmarksScreen";
+import { CommandPalette } from "./components/search/CommandPalette";
+import { SearchTrigger } from "./components/search/SearchTrigger";
+import { useSearchIndex } from "./hooks/useSearchIndex";
+import { useSearchShortcut } from "./hooks/useSearchShortcut";
+import type { SearchEntry } from "./lib/searchIndex";
 import { AuthGate } from "./components/auth/AuthGate";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
@@ -391,6 +396,21 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       navigate(coursePath(courseId, "map"));
     },
     [navigate],
+  );
+  // The ⌘K palette: opened by the topbar trigger or the global shortcut; the index builds
+  // lazily on first open and is cached for the session.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const openPalette = useCallback(() => setPaletteOpen(true), []);
+  useSearchShortcut(openPalette);
+  const searchIndex = useSearchIndex(apiBaseUrl, paletteOpen);
+  const onPalettePick = useCallback(
+    (entry: SearchEntry) => {
+      setPaletteOpen(false);
+      if (entry.kind === "course") openCourseOverview(entry.courseId);
+      else if (entry.kind === "lesson") openCourseLesson(entry.courseId, entry.targetId);
+      else openCourseConcept(entry.courseId, entry.targetId);
+    },
+    [openCourseOverview, openCourseLesson, openCourseConcept],
   );
   const selectedRunId = routedCourseId ?? undefined;
 
@@ -796,6 +816,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         sidebar={sidebar}
         title={canvas.title}
         meta={canvas.meta}
+        search={<SearchTrigger onOpen={openPalette} />}
         banner={
           <DraftModeBanner
             capabilities={capabilities}
@@ -836,6 +857,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         errorMessage={termination.terminateError}
         onConfirm={termination.confirm}
         onCancel={termination.dismiss}
+      />
+      <CommandPalette
+        open={paletteOpen}
+        index={searchIndex}
+        onClose={() => setPaletteOpen(false)}
+        onPick={onPalettePick}
       />
     </BookmarksProvider>
   );
