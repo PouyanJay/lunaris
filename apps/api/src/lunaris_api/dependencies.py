@@ -21,6 +21,7 @@ from lunaris_agent.subagents.goal_interpreter import (
     IGoalInterpreter,
 )
 from lunaris_grounding import (
+    ICorpusStore,
     InMemoryCorpusStore,
     InMemorySourceAuthorityStore,
     ISourceAuthorityStore,
@@ -333,6 +334,16 @@ def get_corpus_service(settings: Annotated[Settings, Depends(get_settings)]) -> 
 
 
 CorpusServiceDep = Annotated[CorpusService, Depends(get_corpus_service)]
+
+
+def get_corpus_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICorpusStore:
+    """The grounding corpus store for the course-deletion cascade: the durable Supabase store when
+    configured (deleting a course's chunks needs no embeddings, unlike ingest), else the in-memory
+    fallback. Course-scoped — the table is server-only, so there's no owner to thread here."""
+    return _supabase_corpus_store if settings.has_supabase else _in_memory_corpus_store
+
+
+CorpusStoreDep = Annotated[ICorpusStore, Depends(get_corpus_store)]
 
 # The editable trust config (P6.2), one per process (same singleton rationale as the corpus store):
 # an in-memory config must be shared so an added authority survives for a later list/delete within
@@ -931,6 +942,7 @@ def get_course_service(
     progress_store: ProgressStoreDep,
     bookmark_store: BookmarkStoreDep,
     activity_store: ActivityStoreDep,
+    corpus_store: CorpusStoreDep,
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
@@ -977,6 +989,7 @@ def get_course_service(
         progress_store=progress_store,
         bookmark_store=bookmark_store,
         activity_store=activity_store,
+        corpus_store=corpus_store,
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
         bridge_limits=BridgeLimits(

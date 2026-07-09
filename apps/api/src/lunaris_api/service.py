@@ -7,6 +7,7 @@ from dataclasses import astuple, dataclass
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
+from lunaris_grounding import ICorpusStore
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
@@ -179,6 +180,7 @@ class CourseService:
         progress_store: IProgressStore | None = None,
         bookmark_store: IBookmarkStore | None = None,
         activity_store: IActivityStore | None = None,
+        corpus_store: ICorpusStore | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -209,6 +211,9 @@ class CourseService:
         self._progress_store = progress_store
         self._bookmark_store = bookmark_store
         self._activity_store = activity_store
+        # The course's grounding corpus. Course-scoped (server-only table, no owner column), so it
+        # purges even for an unowned delete — unlike the owner-scoped learner stores above (AD4).
+        self._corpus_store = corpus_store
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -716,6 +721,7 @@ class CourseService:
         progress_purged = await self._purge_course_progress(course_id, owner_id=owner_id)
         bookmarks_purged = await self._purge_course_bookmarks(course_id, owner_id=owner_id)
         activity_purged = await self._purge_course_activity(course_id, owner_id=owner_id)
+        grounding_purged = await self._purge_course_grounding(course_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
@@ -726,6 +732,7 @@ class CourseService:
             progress_purged=progress_purged,
             bookmarks_purged=bookmarks_purged,
             activity_purged=activity_purged,
+            grounding_purged=grounding_purged,
         )
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
@@ -808,6 +815,19 @@ class CourseService:
             )
         except ActivityStoreUnavailableError:
             logger.warning("course_activity_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_grounding(self, course_id: str) -> int:
+        """Learner-data cascade (course-delete): remove the course's grounding corpus — every chunk,
+        including agent-path chunks with no source_id. Course-scoped, NOT owner-scoped: the table is
+        server-only (no user column) and a course belongs to one owner (AD4), so this runs even for
+        an unowned delete. Best-effort — a purge failure logs and is swallowed."""
+        if self._corpus_store is None:
+            return 0
+        try:
+            return await self._corpus_store.delete_for_course(course_id)
+        except PersistenceError:
+            logger.warning("course_grounding_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def list_runs(

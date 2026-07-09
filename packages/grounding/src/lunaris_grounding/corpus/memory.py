@@ -75,6 +75,12 @@ class InMemoryCorpusStore:
             del self._documents[doc_id]
         return len(removed)
 
+    async def delete_for_course(self, course_id: str) -> int:
+        removed = [doc_id for doc_id, doc in self._documents.items() if doc.course_id == course_id]
+        for doc_id in removed:
+            del self._documents[doc_id]
+        return len(removed)
+
 
 def _summarize(source_id: str, chunks: list[GroundingDocument]) -> CorpusSourceSummary:
     """Fold a source's chunks into one summary (provenance from any chunk; they share it)."""

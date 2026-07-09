@@ -11,6 +11,7 @@ from lunaris_api.progress import InMemoryProgressStore
 from lunaris_api.run_registry import RunRegistry
 from lunaris_api.service import CourseService
 from lunaris_api.user_config import InMemoryUserConfigStore
+from lunaris_grounding import InMemoryCorpusStore
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryRunEventStore,
@@ -40,6 +41,7 @@ def _service_for(settings: Settings) -> CourseService:
         progress_store=InMemoryProgressStore(),
         bookmark_store=InMemoryBookmarkStore(),
         activity_store=InMemoryActivityStore(),
+        corpus_store=InMemoryCorpusStore(),
     )
 
 

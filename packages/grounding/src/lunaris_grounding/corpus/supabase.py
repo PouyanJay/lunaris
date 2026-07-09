@@ -3,6 +3,7 @@ import os
 from enum import Enum
 
 import structlog
+from lunaris_runtime.persistence import PersistenceError
 from lunaris_runtime.resilience import retry_on_rate_limit
 from lunaris_runtime.schema import AcquisitionMode, Citation, SourceType, TrustTier
 from pydantic import ValidationError
@@ -148,6 +149,26 @@ class SupabaseCorpusStore:
                 )
             )
         )
+        return int(response.count or 0)
+
+    async def delete_for_course(self, course_id: str) -> int:
+        """Purge every chunk for a course (the grounding arm of a full course delete), including
+        agent-path chunks with no source_id. Course-scoped — the table has no owner column. Failure
+        maps to PersistenceError so the best-effort purge caller can log-and-swallow it."""
+        client = self._ensure_client()
+        try:
+            response = await retry_on_rate_limit(
+                lambda: asyncio.to_thread(
+                    lambda: (
+                        client.table(_TABLE)  # type: ignore[attr-defined]
+                        .delete(count="exact")
+                        .eq("course_id", course_id)
+                        .execute()
+                    )
+                )
+            )
+        except Exception as exc:
+            raise PersistenceError("grounding corpus backend unavailable") from exc
         return int(response.count or 0)
 
 
