@@ -69,7 +69,7 @@ function renderOverview(
     onContinue: (lessonId?: string) => void;
     onViewMap: () => void;
     onOpenLesson: (lessonId: string) => void;
-    onDelete: () => void;
+    onRequestDelete: () => void;
   }> = {},
 ) {
   const handlers = {
@@ -85,7 +85,7 @@ function renderOverview(
       onContinue={handlers.onContinue}
       onViewMap={handlers.onViewMap}
       onOpenLesson={handlers.onOpenLesson}
-      onDelete={overrides.onDelete}
+      onRequestDelete={overrides.onRequestDelete}
     />,
   );
   return handlers;
@@ -97,14 +97,14 @@ describe("CourseOverview", () => {
   it("asks to delete the course from its danger-zone action", () => {
     // Arrange
     vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
-    const onDelete = vi.fn();
-    renderOverview({ onDelete });
+    const onRequestDelete = vi.fn();
+    renderOverview({ onRequestDelete });
 
     // Act
     fireEvent.click(screen.getByRole("button", { name: /delete course/i }));
 
     // Assert
-    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(onRequestDelete).toHaveBeenCalledTimes(1);
   });
 
   it("omits the delete affordance when the course can't be deleted here", () => {

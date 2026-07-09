@@ -1,9 +1,16 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { HomeDashboard } from "./HomeDashboard";
 import { makeCourse, makeCourseSummary, makeRun, routedFetch } from "../../test/fixtures";
+
+const EMPTY_ACTIVITY = {
+  stats: { currentStreak: 0, longestStreak: 0, minutesThisWeek: 0, conceptsThisWeek: 0 },
+  heat: [],
+  week: [],
+  feed: [],
+};
 
 /** A completed course summary — lands in the recent grid, not the continue section. */
 function completed(overrides = {}) {
@@ -185,6 +192,41 @@ describe("HomeDashboard", () => {
     );
     // Only three recent cards on Home; the library holds the rest.
     expect(screen.getAllByRole("link", { name: /^course \d/i })).toHaveLength(3);
+  });
+
+  it("deletes a course from its Home recent-grid card: confirm → DELETE → the card leaves", async () => {
+    // Arrange — a stateful fake: DELETE empties the library; the reload GET reflects it.
+    let library = [completed({ id: "c-https", topic: "How HTTPS works" })];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (method === "DELETE" && /\/api\/courses\/[^/?]+$/.test(url)) {
+        library = [];
+        return { ok: true, status: 204, json: async () => ({}) };
+      }
+      if (/\/api\/activity(\?|$)/.test(url)) {
+        return { ok: true, json: async () => EMPTY_ACTIVITY };
+      }
+      if (/\/api\/courses$/.test(url)) return { ok: true, json: async () => library };
+      throw new Error(`unhandled ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderHome();
+    await screen.findByRole("link", { name: /how https works/i });
+
+    // Act — the recent-grid card's recycle bin, then confirm in the dialog.
+    fireEvent.click(screen.getByRole("button", { name: /delete course: how https works/i }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^delete$/i }));
+
+    // Assert — the DELETE hit the course id, and the card leaves Home after the reload.
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/courses\/c-https$/),
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: /how https works/i })).not.toBeInTheDocument(),
+    );
   });
 
   describe("continue-learning hero", () => {

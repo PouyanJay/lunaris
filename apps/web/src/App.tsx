@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
 import { HomeDashboard } from "./components/home/HomeDashboard";
+import { DeleteCourseDialog } from "./components/course/DeleteCourseDialog";
 import { CourseOverview } from "./components/overview/CourseOverview";
 import {
   PrereqGraphExplorer,
@@ -459,7 +460,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           onContinue={openLessonById}
           onViewMap={() => navigate(coursePath(course.id, "map"))}
           onOpenLesson={openLessonById}
-          onDelete={() => overviewDeletion.request({ id: course.id, topic: course.topic })}
+          onRequestDelete={() => overviewDeletion.request({ id: course.id, topic: course.topic })}
         />
       ),
       lessons: () => (
@@ -854,22 +855,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         onConfirm={deleteRun.confirm}
         onCancel={deleteRun.cancel}
       />
-      <ConfirmDialog
-        open={overviewDeletion.pending !== null}
-        title="Delete this course?"
-        description={
-          overviewDeletion.pending
-            ? `“${overviewDeletion.pending.topic}” and everything about it — lessons, videos, your progress, bookmarks, and notes — will be permanently deleted. This can’t be undone.`
-            : ""
-        }
-        confirmLabel="Delete course"
-        pendingLabel="Deleting…"
-        danger
-        pending={overviewDeletion.isDeleting}
-        errorMessage={overviewDeletion.error}
-        onConfirm={overviewDeletion.confirm}
-        onCancel={overviewDeletion.cancel}
-      />
+      <DeleteCourseDialog deletion={overviewDeletion} confirmLabel="Delete course" />
       <ConfirmDialog
         open={termination.isConfirming}
         title="Terminate course generation?"

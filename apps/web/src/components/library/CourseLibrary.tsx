@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { CourseCard } from "../course/CourseCard";
-import { ConfirmDialog } from "../overlays/ConfirmDialog";
+import { DeleteCourseDialog } from "../course/DeleteCourseDialog";
 import { FilterPills } from "../primitives/FilterPills";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { CanvasNotice } from "../states/CanvasNotice";
@@ -132,22 +132,7 @@ export function CourseLibrary({ apiBaseUrl, onNewCourse, runs = [] }: CourseLibr
           ))}
         </ul>
       )}
-      <ConfirmDialog
-        open={deletion.pending !== null}
-        title="Delete this course?"
-        description={
-          deletion.pending
-            ? `“${deletion.pending.topic}” and everything about it — lessons, videos, your progress, bookmarks, and notes — will be permanently deleted. This can’t be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
-        pendingLabel="Deleting…"
-        danger
-        pending={deletion.isDeleting}
-        errorMessage={deletion.error}
-        onConfirm={deletion.confirm}
-        onCancel={deletion.cancel}
-      />
+      <DeleteCourseDialog deletion={deletion} />
     </div>
   );
 }

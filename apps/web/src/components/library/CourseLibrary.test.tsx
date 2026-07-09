@@ -115,6 +115,28 @@ describe("CourseLibrary", () => {
     expect(screen.getByRole("link", { name: /how binary search works/i })).toBeInTheDocument();
   });
 
+  it("keeps the dialog open with the reason when the delete 409s (still building)", async () => {
+    // Arrange — the DELETE is refused with 409 (the course's build is still running).
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "DELETE" && /\/api\/courses\//.test(url)) {
+        return { ok: false, status: 409, json: async () => ({}) };
+      }
+      return json(TWO_COURSES);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderLibrary();
+    await screen.findByRole("link", { name: /how https works/i });
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /delete course: how https works/i }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /^delete$/i }));
+
+    // Assert — the dialog stays open carrying the reason, and the course is still listed.
+    expect(await screen.findByText(/still building/i)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /how https works/i })).toBeInTheDocument();
+  });
+
   it("shows the designed empty state whose action starts a new course", async () => {
     // Arrange
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json([])));

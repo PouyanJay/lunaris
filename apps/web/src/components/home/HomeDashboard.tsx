@@ -2,8 +2,8 @@ import { Link } from "react-router";
 
 import { ContinueLearning } from "./ContinueLearning";
 import { CourseCard } from "../course/CourseCard";
+import { DeleteCourseDialog } from "../course/DeleteCourseDialog";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
-import { ConfirmDialog } from "../overlays/ConfirmDialog";
 import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
 import { useActivity, type ActivityState } from "../../hooks/useActivity";
@@ -197,22 +197,7 @@ export function HomeDashboard({
         onViewCourse={onViewCourse}
         onRequestDelete={deletion.request}
       />
-      <ConfirmDialog
-        open={deletion.pending !== null}
-        title="Delete this course?"
-        description={
-          deletion.pending
-            ? `“${deletion.pending.topic}” and everything about it — lessons, videos, your progress, bookmarks, and notes — will be permanently deleted. This can’t be undone.`
-            : ""
-        }
-        confirmLabel="Delete"
-        pendingLabel="Deleting…"
-        danger
-        pending={deletion.isDeleting}
-        errorMessage={deletion.error}
-        onConfirm={deletion.confirm}
-        onCancel={deletion.cancel}
-      />
+      <DeleteCourseDialog deletion={deletion} />
     </div>
   );
 }

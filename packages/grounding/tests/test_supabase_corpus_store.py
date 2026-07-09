@@ -265,3 +265,19 @@ async def test_supabase_delete_source_targets_source_id_and_returns_count() -> N
     assert ("table", "grounding_documents") in client.calls
     assert ("delete", "exact") in client.calls
     assert ("eq", "source_id", "s1") in client.calls
+
+
+async def test_supabase_delete_for_course_scopes_by_course_id_and_returns_count() -> None:
+    # Arrange — the DB reports three chunks removed for the course (incl. any source-less ones).
+    client = _FakeClient(delete_count=3)
+    store = _store_with(client)
+
+    # Act — the full-course-delete grounding arm (course-scoped: the table has no owner column).
+    removed = await store.delete_for_course("course-1")
+
+    # Assert — a DELETE on grounding_documents scoped to course_id ONLY, with an exact count.
+    assert removed == 3
+    assert ("table", "grounding_documents") in client.calls
+    assert ("delete", "exact") in client.calls
+    assert ("eq", "course_id", "course-1") in client.calls
+    assert not any(call[:2] == ("eq", "user_id") for call in client.calls)

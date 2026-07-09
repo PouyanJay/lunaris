@@ -24,7 +24,7 @@ interface CourseOverviewProps {
   /** Open the reader focused on one lesson (a row click). */
   onOpenLesson: (lessonId: string) => void;
   /** Ask to delete this course (opens the confirm dialog). Absent → no delete affordance. */
-  onDelete?: (() => void) | undefined;
+  onRequestDelete?: (() => void) | undefined;
 }
 
 /** One Overview row: a lesson in course order with its owning module's title, plus the module's
@@ -168,7 +168,7 @@ export function CourseOverview({
   onContinue,
   onViewMap,
   onOpenLesson,
-  onDelete,
+  onRequestDelete,
 }: CourseOverviewProps) {
   const { progress } = useCourseProgress(apiBaseUrl ?? "", course.id);
   const rows = buildRows(course);
@@ -201,7 +201,7 @@ export function CourseOverview({
             ))}
           </ul>
         </section>
-        {onDelete && (
+        {onRequestDelete && (
           <section className={styles.danger} aria-label="Delete course">
             <div className={styles.dangerText}>
               <p className="eyebrow">Danger zone</p>
@@ -210,7 +210,7 @@ export function CourseOverview({
                 progress, bookmarks, and notes. This can’t be undone.
               </p>
             </div>
-            <Button variant="danger" onClick={onDelete}>
+            <Button variant="danger" onClick={onRequestDelete}>
               Delete course
             </Button>
           </section>

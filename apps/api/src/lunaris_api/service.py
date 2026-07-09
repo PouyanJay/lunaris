@@ -702,7 +702,8 @@ class CourseService:
             raise CourseDeletionConflictError(course_id)
 
     async def _purge_course_assets(self, course_id: str, *, owner_id: str | None = None) -> None:
-        """Remove the stored course + run row + build-event log; not-found if neither existed."""
+        """Remove the authoritative assets (stored course + run row), then cascade every secondary
+        per-course asset. Not-found if neither authoritative asset existed."""
         # Off-load the (possibly network-backed) delete so the event loop isn't blocked.
         course_deleted = await asyncio.to_thread(
             lambda: self._store.delete(course_id, owner_id=owner_id)
@@ -713,27 +714,32 @@ class CourseService:
             else False
         )
         # Guard before the secondary purge: not-found is keyed on the authoritative assets (the
-        # course + run row); the event-log I/O should only fire for a course that actually existed.
+        # course + run row); the secondary I/O should only fire for a course that actually existed.
         if not course_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
-        events_purged = await self._purge_event_log(course_id, owner_id=owner_id)
-        videos_purged = await self._purge_course_videos(course_id, owner_id=owner_id)
-        progress_purged = await self._purge_course_progress(course_id, owner_id=owner_id)
-        bookmarks_purged = await self._purge_course_bookmarks(course_id, owner_id=owner_id)
-        activity_purged = await self._purge_course_activity(course_id, owner_id=owner_id)
-        grounding_purged = await self._purge_course_grounding(course_id)
+        purged = await self._purge_secondary_assets(course_id, owner_id=owner_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
             course_deleted=course_deleted,
             row_deleted=row_deleted,
-            events_purged=events_purged,
-            videos_purged=videos_purged,
-            progress_purged=progress_purged,
-            bookmarks_purged=bookmarks_purged,
-            activity_purged=activity_purged,
-            grounding_purged=grounding_purged,
+            **purged,
         )
+
+    async def _purge_secondary_assets(
+        self, course_id: str, *, owner_id: str | None = None
+    ) -> dict[str, int]:
+        """Best-effort cascade over every non-authoritative per-course asset — each arm logs and
+        swallows its own failure so none can block the delete. Returns per-arm purged counts for the
+        ``course_deleted`` log."""
+        return {
+            "events_purged": await self._purge_event_log(course_id, owner_id=owner_id),
+            "videos_purged": await self._purge_course_videos(course_id, owner_id=owner_id),
+            "progress_purged": await self._purge_course_progress(course_id, owner_id=owner_id),
+            "bookmarks_purged": await self._purge_course_bookmarks(course_id, owner_id=owner_id),
+            "activity_purged": await self._purge_course_activity(course_id, owner_id=owner_id),
+            "grounding_purged": await self._purge_course_grounding(course_id),
+        }
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
         """Best-effort: a purge failure must never block the user's delete (the build-event log is
