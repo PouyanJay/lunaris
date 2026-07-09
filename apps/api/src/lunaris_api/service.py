@@ -42,6 +42,7 @@ from lunaris_runtime.video_build import (
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .library import LibraryEntry
+from .progress import IProgressStore, ProgressStoreUnavailableError
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
@@ -173,6 +174,7 @@ class CourseService:
         video_coordinator_factory: VideoCoordinatorFactory | None = None,
         video_job_queue: IVideoJobQueue | None = None,
         video_storage: IVideoStorage | None = None,
+        progress_store: IProgressStore | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -197,6 +199,10 @@ class CourseService:
         # an old course's artifacts must be reclaimable even after video generation is turned off.
         self._video_job_queue = video_job_queue
         self._video_storage = video_storage
+        # Per-course learner data purged on a full course delete (course-delete): the learner's
+        # progress. Owner-scoped; best-effort like the video/event purges. None → the purge is
+        # skipped (callers that never delete a course, or the auth-off single-user posture).
+        self._progress_store = progress_store
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -701,6 +707,7 @@ class CourseService:
             raise CourseNotFoundError(course_id)
         events_purged = await self._purge_event_log(course_id, owner_id=owner_id)
         videos_purged = await self._purge_course_videos(course_id, owner_id=owner_id)
+        progress_purged = await self._purge_course_progress(course_id, owner_id=owner_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
@@ -708,6 +715,7 @@ class CourseService:
             row_deleted=row_deleted,
             events_purged=events_purged,
             videos_purged=videos_purged,
+            progress_purged=progress_purged,
         )
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
@@ -747,6 +755,22 @@ class CourseService:
             )
         except PersistenceError:
             logger.warning("course_videos_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_progress(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Learner-data cascade (course-delete): remove the owner's progress for the course —
+        objective mastery, lesson state, and the course-state row. Best-effort (a purge failure
+        logs and is swallowed, never blocking the authoritative delete). Owner-required: the store
+        is keyed by user and an unowned (auth-off) delete has no user to scope to, so it is skipped
+        (mirrors the video cascade; the Supabase store also requires a real user)."""
+        if self._progress_store is None or owner_id is None:
+            return 0
+        try:
+            return await self._progress_store.delete_for_course(
+                user_id=owner_id, course_id=course_id
+            )
+        except ProgressStoreUnavailableError:
+            logger.warning("course_progress_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def list_runs(

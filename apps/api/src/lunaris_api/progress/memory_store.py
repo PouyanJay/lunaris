@@ -92,3 +92,14 @@ class InMemoryProgressStore:
 
     async def course_states(self, *, user_id: str | None) -> list[CourseStateMark]:
         return [mark for (owner, _), mark in self._course_states.items() if owner == user_id]
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        removed = 0
+        for table in (self._objectives, self._lessons):
+            doomed = [key for key in table if key[0] == user_id and key[1] == course_id]
+            for key in doomed:
+                del table[key]
+                removed += 1
+        if self._course_states.pop((user_id, course_id), None) is not None:
+            removed += 1
+        return removed

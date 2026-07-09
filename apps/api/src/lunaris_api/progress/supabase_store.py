@@ -311,3 +311,30 @@ class SupabaseProgressStore:
         except Exception as exc:
             raise ProgressStoreUnavailableError("progress backend unavailable") from exc
         return [_course_state_from_row(row) for row in rows]
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        """Purge every progress row for the (user, course) across the three progress tables — the
+        progress arm of a full course delete. Owner-scoped in the query (belt-and-braces with RLS);
+        failure maps to the domain error so the purge caller can log-and-swallow it."""
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+
+        def _delete(table: str) -> int:
+            response = (
+                client.table(table)  # type: ignore[attr-defined]
+                .delete(count="exact")
+                .eq("user_id", owner)
+                .eq("course_id", course_id)
+                .execute()
+            )
+            return response.count or 0  # type: ignore[attr-defined]
+
+        try:
+            counts = await asyncio.gather(
+                asyncio.to_thread(_delete, _OBJECTIVES_TABLE),
+                asyncio.to_thread(_delete, _LESSONS_TABLE),
+                asyncio.to_thread(_delete, _COURSE_STATE_TABLE),
+            )
+        except Exception as exc:
+            raise ProgressStoreUnavailableError("progress backend unavailable") from exc
+        return sum(counts)
