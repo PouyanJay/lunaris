@@ -30,3 +30,11 @@ class InMemoryActivityStore:
 
     async def minutes(self, *, user_id: str | None) -> list[datetime]:
         return list(self._minutes.get(user_id, {}))
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        events = self._events.get(user_id)
+        if not events:
+            return 0
+        kept = [event for event in events if event.course_id != course_id]
+        self._events[user_id] = kept
+        return len(events) - len(kept)

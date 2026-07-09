@@ -26,3 +26,9 @@ class IActivityStore(Protocol):
     async def events(self, *, user_id: str | None) -> list[LearningEvent]: ...
 
     async def minutes(self, *, user_id: str | None) -> list[datetime]: ...
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        """Remove the user's per-course feed events for a course — the activity arm of a full
+        course delete. ``study_minutes`` has no course dimension (coarse global buckets), so study
+        time is intentionally left untouched. Returns the number of events removed."""
+        ...

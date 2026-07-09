@@ -53,3 +53,8 @@ class IProgressStore(Protocol):
     async def set_lesson(
         self, *, user_id: str | None, course_id: str, lesson_id: str, state: LessonState
     ) -> LessonState | None: ...
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        """Purge ALL of the user's progress for a course — objective marks, lesson marks, and the
+        course-state row — as the progress arm of a full course delete. Returns the rows removed."""
+        ...

@@ -21,6 +21,7 @@ from lunaris_agent.subagents.goal_interpreter import (
     IGoalInterpreter,
 )
 from lunaris_grounding import (
+    ICorpusStore,
     InMemoryCorpusStore,
     InMemorySourceAuthorityStore,
     ISourceAuthorityStore,
@@ -334,6 +335,16 @@ def get_corpus_service(settings: Annotated[Settings, Depends(get_settings)]) -> 
 
 CorpusServiceDep = Annotated[CorpusService, Depends(get_corpus_service)]
 
+
+def get_corpus_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICorpusStore:
+    """The grounding corpus store for the course-deletion cascade: the durable Supabase store when
+    configured (deleting a course's chunks needs no embeddings, unlike ingest), else the in-memory
+    fallback. Course-scoped — the table is server-only, so there's no owner to thread here."""
+    return _supabase_corpus_store if settings.has_supabase else _in_memory_corpus_store
+
+
+CorpusStoreDep = Annotated[ICorpusStore, Depends(get_corpus_store)]
+
 # The editable trust config (P6.2), one per process (same singleton rationale as the corpus store):
 # an in-memory config must be shared so an added authority survives for a later list/delete within
 # the process; the Supabase store is shared so its lazy client is built once. The in-memory store is
@@ -617,63 +628,9 @@ def _get_keyless_build_throttle(settings: Settings) -> KeylessBuildThrottle:
     )
 
 
-def get_course_service(
-    settings: Annotated[Settings, Depends(get_settings)],
-    run_store: Annotated[IRunStore, Depends(get_run_store)],
-    registry: Annotated[RunRegistry, Depends(get_run_registry)],
-    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
-    vault: CredentialVaultDep,
-    user_config_store: UserConfigStoreDep,
-) -> CourseService:
-    """Compose the CourseService for the configured pipeline (overridable in tests)."""
-    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
-    # across replicas — the stateless-container need); the file store otherwise (offline dev).
-    store = _resolve_course_store(settings)
-    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
-    if factory is None:
-        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
-        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
-        factory = build_orchestrator
-    # BYOK on (a vault is configured) → builds run on the caller's own keys; off → on the process
-    # environment (admin/single-user), keeping today's behaviour.
-    resolver = _byok_credential_resolver(vault) if vault is not None else None
-    # Per-user config (model selection) when auth is on → builds run on the tenant's chosen models;
-    # off → the process env / code defaults. Gated on has_auth (a verifier exists) — note this can
-    # diverge from has_supabase: with a JWKS URL but no service-role key, the resolver is wired yet
-    # the store is the in-memory fallback. Cheap to always wire (the store is lazy); the resolver
-    # only fires for an owned build.
-    config_resolver = _runtime_config_resolver(user_config_store) if settings.has_auth else None
-    # Video generation (explainer-video V4) is gated by the operator kill-switch: wire the factory
-    # only when it's on, so a build enqueues videos only where the operator opted in (dev now, prod
-    # at V7). The per-build keyed + owner checks layer on top inside CourseService.
-    video_coordinator_factory = (
-        _video_coordinator_factory(get_video_job_queue(settings), get_video_storage(settings))
-        if settings.video_generation_enabled
-        else None
-    )
-    return CourseService(
-        store,
-        factory,
-        run_store,
-        registry,
-        event_store,
-        credential_resolver=resolver,
-        config_resolver=config_resolver,
-        video_coordinator_factory=video_coordinator_factory,
-        # The course-deletion storage cascade (V7-T4) — wired unconditionally (independent of the
-        # video gate) so an old course's artifacts are reclaimable even after video is turned off.
-        video_job_queue=get_video_job_queue(settings),
-        video_storage=get_video_storage(settings),
-        throttle=_get_keyless_build_throttle(settings),
-        bridge_registry=_device_bridge_registry,
-        bridge_limits=BridgeLimits(
-            liveness_s=settings.device_bridge_liveness_s,
-            completion_timeout_s=settings.device_bridge_completion_timeout_s,
-        ),
-    )
-
-
-CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]
+# `get_course_service` + `CourseServiceDep` are defined at the end of this module: composing the
+# service now depends on the per-course learner stores (progress/…) whose getters are declared
+# further down, and a dependency default can only reference a callable already defined.
 
 # One ConfigStore per config-file path (owns process env + the on-disk file), shared by requests.
 # Tests override get_config_store.
@@ -973,3 +930,73 @@ def get_explain_throttle(
 
 
 ExplainThrottleDep = Annotated[KeylessExplainThrottle, Depends(get_explain_throttle)]
+
+
+def get_course_service(
+    settings: Annotated[Settings, Depends(get_settings)],
+    run_store: Annotated[IRunStore, Depends(get_run_store)],
+    registry: Annotated[RunRegistry, Depends(get_run_registry)],
+    event_store: Annotated[IRunEventStore, Depends(get_run_event_store)],
+    vault: CredentialVaultDep,
+    user_config_store: UserConfigStoreDep,
+    progress_store: ProgressStoreDep,
+    bookmark_store: BookmarkStoreDep,
+    activity_store: ActivityStoreDep,
+    corpus_store: CorpusStoreDep,
+) -> CourseService:
+    """Compose the CourseService for the configured pipeline (overridable in tests)."""
+    # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
+    # across replicas — the stateless-container need); the file store otherwise (offline dev).
+    store = _resolve_course_store(settings)
+    factory = _PIPELINE_FACTORIES.get(settings.pipeline)
+    if factory is None:
+        # An unrecognized LUNARIS_PIPELINE shouldn't silently run the paid live path; warn loudly.
+        logger.warning("unknown_pipeline_falling_back", requested=settings.pipeline, default="live")
+        factory = build_orchestrator
+    # BYOK on (a vault is configured) → builds run on the caller's own keys; off → on the process
+    # environment (admin/single-user), keeping today's behaviour.
+    resolver = _byok_credential_resolver(vault) if vault is not None else None
+    # Per-user config (model selection) when auth is on → builds run on the tenant's chosen models;
+    # off → the process env / code defaults. Gated on has_auth (a verifier exists) — note this can
+    # diverge from has_supabase: with a JWKS URL but no service-role key, the resolver is wired yet
+    # the store is the in-memory fallback. Cheap to always wire (the store is lazy); the resolver
+    # only fires for an owned build.
+    config_resolver = _runtime_config_resolver(user_config_store) if settings.has_auth else None
+    # Video generation (explainer-video V4) is gated by the operator kill-switch: wire the factory
+    # only when it's on, so a build enqueues videos only where the operator opted in (dev now, prod
+    # at V7). The per-build keyed + owner checks layer on top inside CourseService.
+    video_coordinator_factory = (
+        _video_coordinator_factory(get_video_job_queue(settings), get_video_storage(settings))
+        if settings.video_generation_enabled
+        else None
+    )
+    return CourseService(
+        store,
+        factory,
+        run_store,
+        registry,
+        event_store,
+        credential_resolver=resolver,
+        config_resolver=config_resolver,
+        video_coordinator_factory=video_coordinator_factory,
+        # The course-deletion storage cascade (V7-T4) — wired unconditionally (independent of the
+        # video gate) so an old course's artifacts are reclaimable even after video is turned off.
+        video_job_queue=get_video_job_queue(settings),
+        video_storage=get_video_storage(settings),
+        # The learner-data cascade for a full course delete (course-delete): the caller's per-course
+        # progress, bookmarks, and activity feed, so deleting a course purges them too. Owner-scoped
+        # in the service.
+        progress_store=progress_store,
+        bookmark_store=bookmark_store,
+        activity_store=activity_store,
+        corpus_store=corpus_store,
+        throttle=_get_keyless_build_throttle(settings),
+        bridge_registry=_device_bridge_registry,
+        bridge_limits=BridgeLimits(
+            liveness_s=settings.device_bridge_liveness_s,
+            completion_timeout_s=settings.device_bridge_completion_timeout_s,
+        ),
+    )
+
+
+CourseServiceDep = Annotated[CourseService, Depends(get_course_service)]

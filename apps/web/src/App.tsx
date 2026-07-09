@@ -15,6 +15,7 @@ import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
 import { HomeDashboard } from "./components/home/HomeDashboard";
+import { DeleteCourseDialog } from "./components/course/DeleteCourseDialog";
 import { CourseOverview } from "./components/overview/CourseOverview";
 import {
   PrereqGraphExplorer,
@@ -64,6 +65,7 @@ import { coursePath, lessonPath, resolveRoute, ROUTES, type ShellRoute } from ".
 import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
+import { useCourseDeletion } from "./hooks/useCourseDeletion";
 import { useDeleteRun } from "./hooks/useDeleteRun";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
@@ -422,6 +424,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     navigate("/");
   }, [opened, navigate]);
   const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeDeletedRun, reloadRuns);
+  // Delete the course you're viewing, from its Overview tab: same confirm→DELETE→purge flow as the
+  // sidebar, then leave the now-dead course URL for Home and refresh the history.
+  const overviewDeletion = useCourseDeletion(apiBaseUrl, () => {
+    closeDeletedRun();
+    reloadRuns();
+  });
   // Cancel an in-flight run (no confirm — it's recoverable): POST cancel → refresh (flips CANCELLED).
   const cancellation = useCancelRun(apiBaseUrl, reloadRuns);
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
@@ -452,6 +460,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           onContinue={openLessonById}
           onViewMap={() => navigate(coursePath(course.id, "map"))}
           onOpenLesson={openLessonById}
+          onRequestDelete={() => overviewDeletion.request({ id: course.id, topic: course.topic })}
         />
       ),
       lessons: () => (
@@ -846,6 +855,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         onConfirm={deleteRun.confirm}
         onCancel={deleteRun.cancel}
       />
+      <DeleteCourseDialog deletion={overviewDeletion} confirmLabel="Delete course" />
       <ConfirmDialog
         open={termination.isConfirming}
         title="Terminate course generation?"

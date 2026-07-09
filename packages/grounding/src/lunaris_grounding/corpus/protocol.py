@@ -31,3 +31,10 @@ class ICorpusStore(Protocol):
     async def list_sources_for_course(self, course_id: str) -> list[CorpusSourceSummary]: ...
 
     async def delete_source(self, source_id: str) -> int: ...
+
+    async def delete_for_course(self, course_id: str) -> int:
+        """Purge EVERY chunk for a course — the grounding arm of a full course delete. Unlike
+        ``delete_source`` this also removes agent-path chunks with no ``source_id`` (which
+        ``list_sources_for_course`` hides). Course-scoped (the table is server-only, no owner
+        column). Returns the number of chunks removed."""
+        ...

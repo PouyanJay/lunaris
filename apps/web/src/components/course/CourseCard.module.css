@@ -64,6 +64,59 @@
   flex: none;
 }
 
+/* The card holds the link plus the (optional) delete button as siblings — the button can't nest in
+   the anchor. `position: relative` anchors the button to the card's top-right corner. */
+.item {
+  position: relative;
+}
+
+/* Recycle-bin delete: hidden until the card is hovered or the button itself is focused (keyboard
+   reachable, never hover-only), and always shown on touch devices that have no hover. Solid surface
+   backdrop so the glyph stays legible over the constellation cover. */
+.deleteButton {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.item:hover .deleteButton,
+.deleteButton:focus-visible {
+  opacity: 1;
+}
+
+.deleteButton:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--bg-muted);
+}
+
+.deleteButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+@media (hover: none) {
+  .deleteButton {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card {
     transition: none;
@@ -71,5 +124,9 @@
 
   .card:hover {
     transform: none;
+  }
+
+  .deleteButton {
+    transition: none;
   }
 }

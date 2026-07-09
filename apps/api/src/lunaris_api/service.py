@@ -7,6 +7,7 @@ from dataclasses import astuple, dataclass
 
 import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
+from lunaris_grounding import ICorpusStore
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
@@ -39,9 +40,12 @@ from lunaris_runtime.video_build import (
     video_config_from_map,
 )
 
+from .activity import ActivityStoreUnavailableError, IActivityStore
+from .bookmarks import BookmarkStoreUnavailableError, IBookmarkStore
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .library import LibraryEntry
+from .progress import IProgressStore, ProgressStoreUnavailableError
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_event_recorder import RunEventRecorder
 from .run_registry import RunRegistry
@@ -173,6 +177,10 @@ class CourseService:
         video_coordinator_factory: VideoCoordinatorFactory | None = None,
         video_job_queue: IVideoJobQueue | None = None,
         video_storage: IVideoStorage | None = None,
+        progress_store: IProgressStore | None = None,
+        bookmark_store: IBookmarkStore | None = None,
+        activity_store: IActivityStore | None = None,
+        corpus_store: ICorpusStore | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -197,6 +205,15 @@ class CourseService:
         # an old course's artifacts must be reclaimable even after video generation is turned off.
         self._video_job_queue = video_job_queue
         self._video_storage = video_storage
+        # Per-course learner data purged on a full course delete (course-delete): progress,
+        # bookmarks, and the per-course activity feed. Owner-scoped; best-effort like the video and
+        # event purges. None → that arm is skipped (callers that never delete, or auth-off posture).
+        self._progress_store = progress_store
+        self._bookmark_store = bookmark_store
+        self._activity_store = activity_store
+        # The course's grounding corpus. Course-scoped (server-only table, no owner column), so it
+        # purges even for an unowned delete — unlike the owner-scoped learner stores above (AD4).
+        self._corpus_store = corpus_store
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -685,7 +702,8 @@ class CourseService:
             raise CourseDeletionConflictError(course_id)
 
     async def _purge_course_assets(self, course_id: str, *, owner_id: str | None = None) -> None:
-        """Remove the stored course + run row + build-event log; not-found if neither existed."""
+        """Remove the authoritative assets (stored course + run row), then cascade every secondary
+        per-course asset. Not-found if neither authoritative asset existed."""
         # Off-load the (possibly network-backed) delete so the event loop isn't blocked.
         course_deleted = await asyncio.to_thread(
             lambda: self._store.delete(course_id, owner_id=owner_id)
@@ -696,19 +714,32 @@ class CourseService:
             else False
         )
         # Guard before the secondary purge: not-found is keyed on the authoritative assets (the
-        # course + run row); the event-log I/O should only fire for a course that actually existed.
+        # course + run row); the secondary I/O should only fire for a course that actually existed.
         if not course_deleted and not row_deleted:
             raise CourseNotFoundError(course_id)
-        events_purged = await self._purge_event_log(course_id, owner_id=owner_id)
-        videos_purged = await self._purge_course_videos(course_id, owner_id=owner_id)
+        purged = await self._purge_secondary_assets(course_id, owner_id=owner_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
             course_deleted=course_deleted,
             row_deleted=row_deleted,
-            events_purged=events_purged,
-            videos_purged=videos_purged,
+            **purged,
         )
+
+    async def _purge_secondary_assets(
+        self, course_id: str, *, owner_id: str | None = None
+    ) -> dict[str, int]:
+        """Best-effort cascade over every non-authoritative per-course asset — each arm logs and
+        swallows its own failure so none can block the delete. Returns per-arm purged counts for the
+        ``course_deleted`` log."""
+        return {
+            "events_purged": await self._purge_event_log(course_id, owner_id=owner_id),
+            "videos_purged": await self._purge_course_videos(course_id, owner_id=owner_id),
+            "progress_purged": await self._purge_course_progress(course_id, owner_id=owner_id),
+            "bookmarks_purged": await self._purge_course_bookmarks(course_id, owner_id=owner_id),
+            "activity_purged": await self._purge_course_activity(course_id, owner_id=owner_id),
+            "grounding_purged": await self._purge_course_grounding(course_id),
+        }
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
         """Best-effort: a purge failure must never block the user's delete (the build-event log is
@@ -747,6 +778,62 @@ class CourseService:
             )
         except PersistenceError:
             logger.warning("course_videos_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_progress(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Learner-data cascade (course-delete): remove the owner's progress for the course —
+        objective mastery, lesson state, and the course-state row. Best-effort (a purge failure
+        logs and is swallowed, never blocking the authoritative delete). Owner-required: the store
+        is keyed by user and an unowned (auth-off) delete has no user to scope to, so it is skipped
+        (mirrors the video cascade; the Supabase store also requires a real user)."""
+        if self._progress_store is None or owner_id is None:
+            return 0
+        try:
+            return await self._progress_store.delete_for_course(
+                user_id=owner_id, course_id=course_id
+            )
+        except ProgressStoreUnavailableError:
+            logger.warning("course_progress_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_bookmarks(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Learner-data cascade (course-delete): remove the owner's saved lessons/concepts/sources
+        for the course. Best-effort + owner-required, like the progress purge."""
+        if self._bookmark_store is None or owner_id is None:
+            return 0
+        try:
+            return await self._bookmark_store.delete_for_course(
+                user_id=owner_id, course_id=course_id
+            )
+        except BookmarkStoreUnavailableError:
+            logger.warning("course_bookmarks_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_activity(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Learner-data cascade (course-delete): remove the owner's per-course activity feed events
+        for the course. Best-effort + owner-required. study_minutes has no course dimension, so
+        global study time is intentionally untouched (the store handles that split)."""
+        if self._activity_store is None or owner_id is None:
+            return 0
+        try:
+            return await self._activity_store.delete_for_course(
+                user_id=owner_id, course_id=course_id
+            )
+        except ActivityStoreUnavailableError:
+            logger.warning("course_activity_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_grounding(self, course_id: str) -> int:
+        """Learner-data cascade (course-delete): remove the course's grounding corpus — every chunk,
+        including agent-path chunks with no source_id. Course-scoped, NOT owner-scoped: the table is
+        server-only (no user column) and a course belongs to one owner (AD4), so this runs even for
+        an unowned delete. Best-effort — a purge failure logs and is swallowed."""
+        if self._corpus_store is None:
+            return 0
+        try:
+            return await self._corpus_store.delete_for_course(course_id)
+        except PersistenceError:
+            logger.warning("course_grounding_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def list_runs(

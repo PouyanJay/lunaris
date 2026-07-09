@@ -1,10 +1,12 @@
 import { useState } from "react";
 
 import { CourseCard } from "../course/CourseCard";
+import { DeleteCourseDialog } from "../course/DeleteCourseDialog";
 import { FilterPills } from "../primitives/FilterPills";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
 import { CanvasNotice } from "../states/CanvasNotice";
 import { ErrorState } from "../states/ErrorState";
+import { useCourseDeletion } from "../../hooks/useCourseDeletion";
 import { useLibrary } from "../../hooks/useLibrary";
 import { LEARNER_STATUS_META } from "../../lib/courseLabels";
 import type { CourseRun, CourseSummary, LearnerCourseStatus } from "../../types/course";
@@ -73,6 +75,7 @@ function LibraryFilterToolbar({
  *  filtered-empty notices, and a recoverable error. */
 export function CourseLibrary({ apiBaseUrl, onNewCourse, runs = [] }: CourseLibraryProps) {
   const { state, reload } = useLibrary(apiBaseUrl);
+  const deletion = useCourseDeletion(apiBaseUrl, reload);
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const runningRuns = runs.filter((run) => run.status === "running");
 
@@ -125,10 +128,11 @@ export function CourseLibrary({ apiBaseUrl, onNewCourse, runs = [] }: CourseLibr
       ) : (
         <ul className={styles.grid}>
           {visible.map((course) => (
-            <CourseCard key={course.id} course={course} />
+            <CourseCard key={course.id} course={course} onRequestDelete={deletion.request} />
           ))}
         </ul>
       )}
+      <DeleteCourseDialog deletion={deletion} />
     </div>
   );
 }
