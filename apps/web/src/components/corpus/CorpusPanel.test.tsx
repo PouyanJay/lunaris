@@ -159,6 +159,21 @@ describe("CorpusPanel", () => {
     expect(screen.getByText("My notes")).toBeInTheDocument();
   });
 
+  it("switches the add form to URL entry via the source-type segmented control", async () => {
+    // Arrange — default mode is Paste, so the URL field is absent until the segment is chosen.
+    vi.stubGlobal("fetch", fakeServer([]));
+    renderPanel();
+    await waitFor(() => expect(screen.getByText(/no sources yet/i)).toBeInTheDocument());
+    expect(screen.queryByPlaceholderText(/example\.edu/i)).not.toBeInTheDocument();
+
+    // Act — pick the URL segment (a radiogroup radio).
+    fireEvent.click(screen.getByRole("radio", { name: "URL" }));
+
+    // Assert — the URL field appears and the segment reports itself selected.
+    expect(screen.getByPlaceholderText(/example\.edu/i)).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "URL" })).toBeChecked();
+  });
+
   it("reports a declined source (e.g. a duplicate)", async () => {
     vi.stubGlobal(
       "fetch",

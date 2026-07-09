@@ -50,47 +50,6 @@
   gap: var(--space-4);
 }
 
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.label {
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: var(--space-3);
-  font-family: var(--font-sans);
-  font-size: var(--text-base);
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
-  transition: border-color var(--dur) var(--ease);
-}
-
-.input:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
-  border-color: var(--focus-ring);
-}
-
-.input:disabled {
-  background: var(--bg-muted);
-  color: var(--text-muted);
-  cursor: not-allowed;
-}
-
-.input[aria-invalid="true"] {
-  border-color: var(--danger);
-}
-
 .submit {
   width: 100%;
   margin-top: var(--space-2);

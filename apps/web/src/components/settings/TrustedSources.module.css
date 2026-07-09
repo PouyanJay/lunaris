@@ -153,9 +153,11 @@
   color: var(--danger);
 }
 
-/* Phone: the add/replace inputs and selects (all share .input) become ≥44px tap targets. */
+/* Phone: the add/replace inputs and selects (all share .input) become ≥44px tap targets with a
+   ≥16px font so iOS Safari doesn't auto-zoom the page on focus. */
 @media (max-width: 768px) {
   .input {
     height: 44px;
+    font-size: 16px;
   }
 }
