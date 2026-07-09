@@ -39,6 +39,8 @@ from lunaris_runtime.video_build import (
     video_config_from_map,
 )
 
+from .activity import ActivityStoreUnavailableError, IActivityStore
+from .bookmarks import BookmarkStoreUnavailableError, IBookmarkStore
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .library import LibraryEntry
@@ -175,6 +177,8 @@ class CourseService:
         video_job_queue: IVideoJobQueue | None = None,
         video_storage: IVideoStorage | None = None,
         progress_store: IProgressStore | None = None,
+        bookmark_store: IBookmarkStore | None = None,
+        activity_store: IActivityStore | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -199,10 +203,12 @@ class CourseService:
         # an old course's artifacts must be reclaimable even after video generation is turned off.
         self._video_job_queue = video_job_queue
         self._video_storage = video_storage
-        # Per-course learner data purged on a full course delete (course-delete): the learner's
-        # progress. Owner-scoped; best-effort like the video/event purges. None → the purge is
-        # skipped (callers that never delete a course, or the auth-off single-user posture).
+        # Per-course learner data purged on a full course delete (course-delete): progress,
+        # bookmarks, and the per-course activity feed. Owner-scoped; best-effort like the video and
+        # event purges. None → that arm is skipped (callers that never delete, or auth-off posture).
         self._progress_store = progress_store
+        self._bookmark_store = bookmark_store
+        self._activity_store = activity_store
         # Best-effort: a failed history write must never propagate and break a build (mirrors how
         # the progress/agent sinks default to a no-op for batch callers).
         self._run_store = run_store
@@ -708,6 +714,8 @@ class CourseService:
         events_purged = await self._purge_event_log(course_id, owner_id=owner_id)
         videos_purged = await self._purge_course_videos(course_id, owner_id=owner_id)
         progress_purged = await self._purge_course_progress(course_id, owner_id=owner_id)
+        bookmarks_purged = await self._purge_course_bookmarks(course_id, owner_id=owner_id)
+        activity_purged = await self._purge_course_activity(course_id, owner_id=owner_id)
         logger.info(
             "course_deleted",
             course_id=course_id,
@@ -716,6 +724,8 @@ class CourseService:
             events_purged=events_purged,
             videos_purged=videos_purged,
             progress_purged=progress_purged,
+            bookmarks_purged=bookmarks_purged,
+            activity_purged=activity_purged,
         )
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
@@ -771,6 +781,33 @@ class CourseService:
             )
         except ProgressStoreUnavailableError:
             logger.warning("course_progress_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_bookmarks(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Learner-data cascade (course-delete): remove the owner's saved lessons/concepts/sources
+        for the course. Best-effort + owner-required, like the progress purge."""
+        if self._bookmark_store is None or owner_id is None:
+            return 0
+        try:
+            return await self._bookmark_store.delete_for_course(
+                user_id=owner_id, course_id=course_id
+            )
+        except BookmarkStoreUnavailableError:
+            logger.warning("course_bookmarks_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_activity(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Learner-data cascade (course-delete): remove the owner's per-course activity feed events
+        for the course. Best-effort + owner-required. study_minutes has no course dimension, so
+        global study time is intentionally untouched (the store handles that split)."""
+        if self._activity_store is None or owner_id is None:
+            return 0
+        try:
+            return await self._activity_store.delete_for_course(
+                user_id=owner_id, course_id=course_id
+            )
+        except ActivityStoreUnavailableError:
+            logger.warning("course_activity_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def list_runs(

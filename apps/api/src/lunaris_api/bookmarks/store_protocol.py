@@ -22,3 +22,8 @@ class IBookmarkStore(Protocol):
     async def remove(
         self, *, user_id: str | None, kind: BookmarkKind, course_id: str, target_id: str
     ) -> None: ...
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        """Remove every save the user made in a course — the bookmarks arm of a full course
+        delete. Returns the number of rows removed."""
+        ...

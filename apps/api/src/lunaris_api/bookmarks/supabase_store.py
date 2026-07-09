@@ -149,3 +149,24 @@ class SupabaseBookmarkStore:
             await asyncio.to_thread(_delete)
         except Exception as exc:
             raise BookmarkStoreUnavailableError("bookmarks backend unavailable") from exc
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        """Remove every save the user made in a course (the bookmarks arm of a full course delete).
+        Owner-scoped in the query (belt-and-braces with RLS); returns the rows removed."""
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+
+        def _delete() -> object:
+            return (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .delete(count="exact")
+                .eq("user_id", owner)
+                .eq("course_id", course_id)
+                .execute()
+            )
+
+        try:
+            response = await asyncio.to_thread(_delete)
+        except Exception as exc:
+            raise BookmarkStoreUnavailableError("bookmarks backend unavailable") from exc
+        return response.count or 0  # type: ignore[attr-defined]

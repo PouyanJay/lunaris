@@ -33,3 +33,9 @@ class InMemoryBookmarkStore:
         self, *, user_id: str | None, kind: BookmarkKind, course_id: str, target_id: str
     ) -> None:
         self._bookmarks.pop((user_id, kind, course_id, target_id), None)
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        doomed = [key for key in self._bookmarks if key[0] == user_id and key[2] == course_id]
+        for key in doomed:
+            del self._bookmarks[key]
+        return len(doomed)

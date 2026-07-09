@@ -3,6 +3,8 @@ file-backed store otherwise — the same has_supabase selection the run/event st
 
 from pathlib import Path
 
+from lunaris_api.activity import InMemoryActivityStore
+from lunaris_api.bookmarks import InMemoryBookmarkStore
 from lunaris_api.config import Settings
 from lunaris_api.dependencies import get_course_service
 from lunaris_api.progress import InMemoryProgressStore
@@ -36,6 +38,8 @@ def _service_for(settings: Settings) -> CourseService:
         vault=None,
         user_config_store=InMemoryUserConfigStore(),
         progress_store=InMemoryProgressStore(),
+        bookmark_store=InMemoryBookmarkStore(),
+        activity_store=InMemoryActivityStore(),
     )
 
 

@@ -929,6 +929,8 @@ def get_course_service(
     vault: CredentialVaultDep,
     user_config_store: UserConfigStoreDep,
     progress_store: ProgressStoreDep,
+    bookmark_store: BookmarkStoreDep,
+    activity_store: ActivityStoreDep,
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
@@ -969,9 +971,12 @@ def get_course_service(
         # video gate) so an old course's artifacts are reclaimable even after video is turned off.
         video_job_queue=get_video_job_queue(settings),
         video_storage=get_video_storage(settings),
-        # The learner-data cascade for a full course delete (course-delete): the caller's progress
-        # store, so deleting a course also purges its progress rows. Owner-scoped in the service.
+        # The learner-data cascade for a full course delete (course-delete): the caller's per-course
+        # progress, bookmarks, and activity feed, so deleting a course purges them too. Owner-scoped
+        # in the service.
         progress_store=progress_store,
+        bookmark_store=bookmark_store,
+        activity_store=activity_store,
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
         bridge_limits=BridgeLimits(

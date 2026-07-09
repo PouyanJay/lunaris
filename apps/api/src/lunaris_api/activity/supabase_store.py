@@ -150,3 +150,26 @@ class SupabaseActivityStore:
         except Exception as exc:
             raise ActivityStoreUnavailableError("activity backend unavailable") from exc
         return [_parse_timestamp(row["bucket_start"]) for row in response.data or []]  # type: ignore[attr-defined]
+
+    async def delete_for_course(self, *, user_id: str | None, course_id: str) -> int:
+        """Remove the user's feed events for a course (the activity arm of a full course delete).
+        ``learning_events`` is append-only for ``authenticated``, but this service-role client
+        bypasses RLS/grants; the delete is owner+course scoped. ``study_minutes`` has no course
+        dimension, so global study time is intentionally left untouched (AD2)."""
+        owner = self._require_user(user_id)
+        client = self._ensure_client()
+
+        def _delete() -> object:
+            return (
+                client.table(_EVENTS_TABLE)  # type: ignore[attr-defined]
+                .delete(count="exact")
+                .eq("user_id", owner)
+                .eq("course_id", course_id)
+                .execute()
+            )
+
+        try:
+            response = await asyncio.to_thread(_delete)
+        except Exception as exc:
+            raise ActivityStoreUnavailableError("activity backend unavailable") from exc
+        return response.count or 0  # type: ignore[attr-defined]
