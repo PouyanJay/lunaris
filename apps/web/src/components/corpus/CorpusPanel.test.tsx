@@ -171,7 +171,7 @@ describe("CorpusPanel", () => {
 
     // Assert — the URL field appears and the segment reports itself selected.
     expect(screen.getByPlaceholderText(/example\.edu/i)).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "URL" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("radio", { name: "URL" })).toBeChecked();
   });
 
   it("reports a declined source (e.g. a duplicate)", async () => {
