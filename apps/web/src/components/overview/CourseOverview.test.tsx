@@ -69,6 +69,7 @@ function renderOverview(
     onContinue: (lessonId?: string) => void;
     onViewMap: () => void;
     onOpenLesson: (lessonId: string) => void;
+    onDelete: () => void;
   }> = {},
 ) {
   const handlers = {
@@ -84,6 +85,7 @@ function renderOverview(
       onContinue={handlers.onContinue}
       onViewMap={handlers.onViewMap}
       onOpenLesson={handlers.onOpenLesson}
+      onDelete={overrides.onDelete}
     />,
   );
   return handlers;
@@ -91,6 +93,28 @@ function renderOverview(
 
 describe("CourseOverview", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("asks to delete the course from its danger-zone action", () => {
+    // Arrange
+    vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
+    const onDelete = vi.fn();
+    renderOverview({ onDelete });
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /delete course/i }));
+
+    // Assert
+    expect(onDelete).toHaveBeenCalledTimes(1);
+  });
+
+  it("omits the delete affordance when the course can't be deleted here", () => {
+    // Arrange / Act — no onDelete (e.g. the offline sample course).
+    vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
+    renderOverview();
+
+    // Assert
+    expect(screen.queryByRole("button", { name: /delete course/i })).not.toBeInTheDocument();
+  });
 
   it("renders the hero facts: counts, a real level pill, and the course title", () => {
     // Arrange / Act — the fixture graph's mean difficulty (0.1+0.45+0.75)/3 ≈ 0.43.

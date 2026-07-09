@@ -171,6 +171,31 @@
 }
 
 /* Phones: the hero stacks and the cover goes full-width. */
+/* Danger zone: a hairline-topped region set well apart from the lessons, the destructive delete
+   held to the right of an honest explanation of what a delete removes. */
+.danger {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-10);
+  padding-top: var(--space-6);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.dangerText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 52ch;
+}
+
+.dangerBody {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
 @media (max-width: 720px) {
   .hero {
     flex-direction: column;
@@ -184,6 +209,10 @@
 
   .progressRow {
     margin-top: var(--space-2);
+  }
+
+  .danger {
+    flex-direction: column;
   }
 }
 

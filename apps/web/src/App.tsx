@@ -64,6 +64,7 @@ import { coursePath, lessonPath, resolveRoute, ROUTES, type ShellRoute } from ".
 import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
+import { useCourseDeletion } from "./hooks/useCourseDeletion";
 import { useDeleteRun } from "./hooks/useDeleteRun";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
 import type { Course, CourseRun, CourseStatus } from "./types/course";
@@ -422,6 +423,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     navigate("/");
   }, [opened, navigate]);
   const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeDeletedRun, reloadRuns);
+  // Delete the course you're viewing, from its Overview tab: same confirm→DELETE→purge flow as the
+  // sidebar, then leave the now-dead course URL for Home and refresh the history.
+  const overviewDeletion = useCourseDeletion(apiBaseUrl, () => {
+    closeDeletedRun();
+    reloadRuns();
+  });
   // Cancel an in-flight run (no confirm — it's recoverable): POST cancel → refresh (flips CANCELLED).
   const cancellation = useCancelRun(apiBaseUrl, reloadRuns);
   // Terminate the live (streaming) build: a confirm step → cancel server-side → reset the stream.
@@ -452,6 +459,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
           onContinue={openLessonById}
           onViewMap={() => navigate(coursePath(course.id, "map"))}
           onOpenLesson={openLessonById}
+          onDelete={() => overviewDeletion.request({ id: course.id, topic: course.topic })}
         />
       ),
       lessons: () => (
@@ -845,6 +853,22 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         errorMessage={deleteRun.deleteError}
         onConfirm={deleteRun.confirm}
         onCancel={deleteRun.cancel}
+      />
+      <ConfirmDialog
+        open={overviewDeletion.pending !== null}
+        title="Delete this course?"
+        description={
+          overviewDeletion.pending
+            ? `“${overviewDeletion.pending.topic}” and everything about it — lessons, videos, your progress, bookmarks, and notes — will be permanently deleted. This can’t be undone.`
+            : ""
+        }
+        confirmLabel="Delete course"
+        pendingLabel="Deleting…"
+        danger
+        pending={overviewDeletion.isDeleting}
+        errorMessage={overviewDeletion.error}
+        onConfirm={overviewDeletion.confirm}
+        onCancel={overviewDeletion.cancel}
       />
       <ConfirmDialog
         open={termination.isConfirming}
