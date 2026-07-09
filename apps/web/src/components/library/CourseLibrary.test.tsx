@@ -79,6 +79,42 @@ describe("CourseLibrary", () => {
     expect(search).toHaveAccessibleName(/1 lesson\b/i);
   });
 
+  it("deletes a course from its card: confirm dialog → DELETE → the card leaves the grid", async () => {
+    // Arrange — a stateful fake: GET lists the (shrinking) library; DELETE removes one course.
+    let courses = [...TWO_COURSES];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      const del = url.match(/\/api\/courses\/([^/?]+)$/);
+      if (method === "DELETE" && del) {
+        const deletedId = decodeURIComponent(del[1] ?? "");
+        courses = courses.filter((c) => c.id !== deletedId);
+        return { ok: true, status: 204, json: async () => ({}) };
+      }
+      return json(courses);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderLibrary();
+    await screen.findByRole("link", { name: /how https works/i });
+
+    // Act — open the card's delete affordance, then confirm in the dialog.
+    fireEvent.click(screen.getByRole("button", { name: /delete course: how https works/i }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/how https works/i)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /^delete$/i }));
+
+    // Assert — the DELETE hit the course's endpoint and the card left the grid after the reload.
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringMatching(/\/api\/courses\/c-https$/),
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("link", { name: /how https works/i })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("link", { name: /how binary search works/i })).toBeInTheDocument();
+  });
+
   it("shows the designed empty state whose action starts a new course", async () => {
     // Arrange
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json([])));

@@ -3,9 +3,11 @@ import { Link } from "react-router";
 import { ContinueLearning } from "./ContinueLearning";
 import { CourseCard } from "../course/CourseCard";
 import { LiveBuildBanner } from "../course/LiveBuildBanner";
+import { ConfirmDialog } from "../overlays/ConfirmDialog";
 import { Button } from "../primitives/Button";
 import { ErrorState } from "../states/ErrorState";
 import { useActivity, type ActivityState } from "../../hooks/useActivity";
+import { useCourseDeletion } from "../../hooks/useCourseDeletion";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
 import { displayNameFromEmail, greetingForHour } from "../../lib/greeting";
 import { RECENT_LIMIT, splitHomeCourses } from "../../lib/homeCourses";
@@ -76,6 +78,7 @@ interface HomeBodyProps {
   onNewCourse: () => void;
   onResumeLesson: (courseId: string, lessonId?: string) => void;
   onViewCourse: (courseId: string) => void;
+  onRequestDelete: (course: CourseSummary) => void;
 }
 
 /** The data region below the greeting: loading skeleton, recoverable error, first-run empty, or —
@@ -89,6 +92,7 @@ function HomeBody({
   onNewCourse,
   onResumeLesson,
   onViewCourse,
+  onRequestDelete,
 }: HomeBodyProps) {
   if (state.status === "loading") {
     return (
@@ -120,7 +124,9 @@ function HomeBody({
           onViewCourse={onViewCourse}
         />
       )}
-      {recent.length > 0 && <RecentCourses courses={recent} />}
+      {recent.length > 0 && (
+        <RecentCourses courses={recent} onRequestDelete={onRequestDelete} />
+      )}
       {hasMore && (
         <div className={styles.viewAllRow}>
           <Link className={styles.viewAll} to={ROUTES.library}>
@@ -134,7 +140,13 @@ function HomeBody({
 
 /** The recent grid: recently-opened courses that aren't already in the continue section, as cover
  *  cards. Capped by the caller; the "View all" hatch lives below in HomeBody. */
-function RecentCourses({ courses }: { courses: CourseSummary[] }) {
+function RecentCourses({
+  courses,
+  onRequestDelete,
+}: {
+  courses: CourseSummary[];
+  onRequestDelete: (course: CourseSummary) => void;
+}) {
   return (
     <section aria-labelledby="home-recent" className={styles.recent}>
       <h2 id="home-recent" className={styles.sectionTitle}>
@@ -142,7 +154,7 @@ function RecentCourses({ courses }: { courses: CourseSummary[] }) {
       </h2>
       <ul className={styles.grid}>
         {courses.map((course) => (
-          <CourseCard key={course.id} course={course} />
+          <CourseCard key={course.id} course={course} onRequestDelete={onRequestDelete} />
         ))}
       </ul>
     </section>
@@ -161,6 +173,7 @@ export function HomeDashboard({
   onViewCourse,
 }: HomeDashboardProps) {
   const { state, reload } = useLibrary(apiBaseUrl);
+  const deletion = useCourseDeletion(apiBaseUrl, reload);
   // Best-effort: the streak decorates the subline when it loads; a failure changes nothing.
   const { state: activityState } = useActivity(apiBaseUrl);
   const name = displayNameFromEmail(userEmail);
@@ -182,6 +195,23 @@ export function HomeDashboard({
         onNewCourse={onNewCourse}
         onResumeLesson={onResumeLesson}
         onViewCourse={onViewCourse}
+        onRequestDelete={deletion.request}
+      />
+      <ConfirmDialog
+        open={deletion.pending !== null}
+        title="Delete this course?"
+        description={
+          deletion.pending
+            ? `“${deletion.pending.topic}” and everything about it — lessons, videos, your progress, bookmarks, and notes — will be permanently deleted. This can’t be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        danger
+        pending={deletion.isDeleting}
+        errorMessage={deletion.error}
+        onConfirm={deletion.confirm}
+        onCancel={deletion.cancel}
       />
     </div>
   );
