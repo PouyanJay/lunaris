@@ -10,7 +10,8 @@ export function greetingForHour(hour: number): GreetingPart {
 
 /** A friendly display name from a sign-in email — the local-part, split on separators and
  *  title-cased ("ada.lovelace@x.com" → "Ada Lovelace"). Falls back to "there" for an empty or
- *  address-less email, so the greeting always reads naturally. No profile-name field exists yet. */
+ *  address-less email, so the greeting always reads naturally. This is the fallback when no
+ *  profile display_name is set — see resolveDisplayName in lib/profile.ts. */
 export function displayNameFromEmail(email: string | null | undefined): string {
   const local = email?.split("@")[0]?.trim();
   if (!local) return "there";

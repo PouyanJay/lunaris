@@ -39,6 +39,7 @@ import { ErrorState } from "./components/states/ErrorState";
 import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
 import { AdminPortalPanel } from "./components/admin/AdminPortalPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { ProfileScreen } from "./components/profile/ProfileScreen";
 import { CanvasNotice } from "./components/states/CanvasNotice";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
@@ -66,9 +67,8 @@ import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useCourseDeletion } from "./hooks/useCourseDeletion";
-import { useDeleteRun } from "./hooks/useDeleteRun";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
-import type { Course, CourseRun, CourseStatus } from "./types/course";
+import type { Course, CourseStatus } from "./types/course";
 import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
@@ -328,7 +328,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const { open: openRun } = opened;
 
   // URL ⇄ course-state wiring (opened-run sync + one-shot live handoff) lives in its own hook.
-  const { routedCourseId, liveMatchesRoute, handedOff, clearHandoff } = useCourseRouting({
+  const { liveMatchesRoute, handedOff, clearHandoff } = useCourseRouting({
     route,
     streamCourseId,
     runs: runsState.status === "ready" ? runsState.runs : null,
@@ -360,13 +360,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     resetBuild();
     navigate(ROUTES.composer);
   }, [resetBuild, navigate]);
-  const selectRun = useCallback(
-    (run: CourseRun) => {
-      setMobileNavOpen(false);
-      navigate(coursePath(run.id));
-    },
-    [navigate],
-  );
   const openSettings = useCallback(() => {
     setMobileNavOpen(false);
     navigate("/settings");
@@ -414,18 +407,13 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     },
     [openCourseOverview, openCourseLesson, openCourseConcept],
   );
-  const selectedRunId = routedCourseId ?? undefined;
-
-  // Delete a run: a confirm-before dialog (irreversible) → DELETE the course → drop any open view
-  // of it + refresh the history. The workflow lives in its own hook to keep StudioApp lean.
-  // Deleting the course you're looking at also leaves its now-dead URL.
+  // Leaving a just-deleted course: drop any open view of it and return Home (its URL is now dead).
   const closeDeletedRun = useCallback(() => {
     opened.close();
     navigate("/");
   }, [opened, navigate]);
-  const deleteRun = useDeleteRun(apiBaseUrl, opened.state, closeDeletedRun, reloadRuns);
-  // Delete the course you're viewing, from its Overview tab: same confirm→DELETE→purge flow as the
-  // sidebar, then leave the now-dead course URL for Home and refresh the history.
+  // Delete the course you're viewing, from its Overview tab: a confirm→DELETE→purge flow, then
+  // leave the now-dead course URL for Home and refresh the history.
   const overviewDeletion = useCourseDeletion(apiBaseUrl, () => {
     closeDeletedRun();
     reloadRuns();
@@ -518,18 +506,11 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
 
   const sidebar = (
     <Sidebar
-      runs={runsState}
-      onReloadRuns={reloadRuns}
       onNewCourse={startNewCourse}
       showAdmin={isAdmin}
       onNavigate={closeMobileNav}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
       onToggleCollapse={sidebarLayout.toggleCollapsed}
-      onSelectRun={selectRun}
-      onDeleteRun={deleteRun.request}
-      onCancelRun={(run) => cancellation.cancel(run.runId)}
-      cancellingRunId={cancellation.cancellingRunId}
-      selectedRunId={selectedRunId}
       theme={theme}
       onToggleTheme={onToggleTheme}
     />
@@ -592,6 +573,15 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         </Button>
       );
       return { title: "Settings", meta, body };
+    }
+    if (route.kind === "profile") {
+      const body = <ProfileScreen onGoHome={() => navigate("/")} />;
+      const meta = (
+        <Button type="button" onClick={closeNavView}>
+          Done
+        </Button>
+      );
+      return { title: "Profile", meta, body };
     }
     if (route.kind === "admin") {
       // Fail closed: until /api/me confirms the admin claim, the portal stays behind the notice
@@ -839,22 +829,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       >
         {canvas.body}
       </AgentShell>
-      <ConfirmDialog
-        open={deleteRun.pendingDelete !== null}
-        title="Delete this course?"
-        description={
-          deleteRun.pendingDelete
-            ? `“${deleteRun.pendingDelete.topic}” and its build history will be permanently removed. This can’t be undone.`
-            : ""
-        }
-        confirmLabel="Delete course"
-        pendingLabel="Deleting…"
-        danger
-        pending={deleteRun.isDeleting}
-        errorMessage={deleteRun.deleteError}
-        onConfirm={deleteRun.confirm}
-        onCancel={deleteRun.cancel}
-      />
       <DeleteCourseDialog deletion={overviewDeletion} confirmLabel="Delete course" />
       <ConfirmDialog
         open={termination.isConfirming}

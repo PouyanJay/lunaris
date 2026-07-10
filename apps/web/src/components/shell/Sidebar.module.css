@@ -26,18 +26,19 @@
   margin-right: auto;
 }
 
+/* The "New course" action. No dividing hairline below it — it flows straight into the nav. */
 .actions {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: var(--border-width) solid var(--border);
+  padding: var(--space-3);
   flex: none;
 }
 
 .newCourse {
   width: 100%;
+  min-height: var(--space-10);
 }
 
 /* ─── Collapsed mini rail ──────────────────────────────────────────────────
-   Brand, actions, and Settings stack centred as icons; the run history is hidden. */
+   Brand, actions, and the bottom cluster stack centred as icons. */
 .sidebar[data-collapsed] .brand {
   flex-direction: column;
   gap: var(--space-2);
@@ -49,7 +50,7 @@
   padding: var(--space-2) 0;
 }
 
-/* Icon-only rail action (New course, Settings) — matches the toggle's quiet icon-button style. */
+/* Icon-only rail action (New course, theme, profile) — matches the toggle's quiet icon-button style. */
 .railAction {
   position: relative;
   display: inline-flex;
@@ -77,89 +78,27 @@
   color: var(--text);
 }
 
-.history {
+/* ─── Primary nav — the app's destinations, directly under the CTA (no divider). ── */
+.primaryNav {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  flex: 1;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-2) var(--space-2);
-}
-
-.sectionLabel {
-  padding: 0 var(--space-2);
+  gap: 2px;
   flex: none;
-}
-
-/* Identity row: avatar + email + a trailing sign-out icon button. Shares its left gutter (the avatar)
-   and trailing icon-button column with the Settings row below, so the two bottom rows line up. */
-.account {
-  border-top: var(--border-width) solid var(--border);
   padding: var(--space-2);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.avatar {
-  flex: none;
-  width: var(--space-6);
-  height: var(--space-6);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
-  background: var(--bg-muted);
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  text-transform: uppercase;
-  user-select: none;
-}
-.accountEmail {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
+/* ─── Secondary cluster — theme, Settings/Admin. Pinned to the bottom (the account row follows).
+   Shares the primary nav's gutter so every icon + label column lines up. ── */
 .footer {
-  /* Pinned to the bottom: in the expanded rail the flex:1 history already pushes it down; in the
-     collapsed rail (no history) this auto margin does the pushing. Expanded = a row with Settings on
-     the left and the theme toggle trailing; collapsed = the two icons stacked + centered. */
   margin-top: auto;
-  border-top: var(--border-width) solid var(--border);
-  padding: var(--space-2);
-  /* Clear the home indicator when the rail is a full-height drawer on a notched phone. */
-  padding-bottom: max(var(--space-2), env(safe-area-inset-bottom));
   flex: none;
   display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-.footer .navItem {
-  flex: 1; /* Settings grows; the theme toggle sits at the trailing edge */
-  width: auto;
-  /* Drop the side padding so the gear shares the avatar's left gutter (no double indent inside the
-     footer's own padding) and the email + "Settings" labels start at the same x. */
-  padding-block: var(--space-2);
-  padding-inline: 0;
-}
-/* Leading icon slot — same width as the avatar so the two bottom rows align. */
-.navIcon {
-  flex: none;
-  width: var(--space-6);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
 }
 .sidebar[data-collapsed] .footer {
-  flex-direction: column;
-  justify-content: center;
-  padding: var(--space-2) 0;
+  align-items: center;
 }
 
 .navItem {
@@ -188,10 +127,23 @@
   color: var(--text);
   background: var(--bg-muted);
 }
-/* The house active-nav indicator: a 2px accent bar. Shared by the expanded nav item and the
-   collapsed rail icon; only the horizontal offset differs (flush vs. outset into the rail gutter). */
+
+/* Leading icon slot — fixed width so every row's label starts at the same x (nav, theme, Settings,
+   and the account name below all share this gutter). */
+.navIcon {
+  flex: none;
+  width: var(--space-6);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+/* The house active-nav indicator: a 2px accent bar. Shared by the expanded nav item, the collapsed
+   rail icon, and the account row; only the horizontal offset differs. */
 .navItemActive::before,
-.railActionActive::before {
+.railActionActive::before,
+.accountActive::before {
   content: "";
   position: absolute;
   top: 50%;
@@ -201,23 +153,12 @@
   background: var(--accent-500);
   border-radius: var(--radius-full);
 }
-.navItemActive::before {
-  /* Outset into the footer's padding gutter so the accent bar sits flush at the rail edge rather than
-     overlapping the leading gear icon. */
+.navItemActive::before,
+.accountActive::before {
   left: calc(-1 * var(--space-2));
 }
 .railActionActive::before {
   left: -8px;
-}
-
-/* ─── Primary nav — the app's destinations, between the CTA and the run history. ── */
-.primaryNav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: none;
-  padding: var(--space-3) var(--space-2);
-  border-bottom: var(--border-width) solid var(--border);
 }
 
 /* Nav entries render as real links; keep the shared navItem look on anchors. */
@@ -228,4 +169,75 @@ a.railAction {
 
 .sidebar[data-collapsed] .primaryNav {
   align-items: center;
+}
+
+/* ─── Account row — a link to the profile page. Avatar + name + workspace, aligned to the nav
+   gutter so the name column lines up with the nav labels above it. The one hairline down here sits
+   above it, separating the account from the secondary cluster. ── */
+.account {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  text-decoration: none;
+  border-top: var(--border-width) solid var(--border);
+  /* Left gutter = the nav container padding + the nav item padding, so the avatar's left edge lines
+     up with the nav icons and the name lines up with the nav labels. */
+  padding: var(--space-3) var(--space-3) var(--space-3) calc(var(--space-2) + var(--space-3));
+  /* Clear the home indicator when the rail is a full-height drawer on a notched phone. */
+  padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  color: var(--text-secondary);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.account:hover {
+  background: var(--bg-muted);
+}
+.accountActive {
+  background: var(--bg-muted);
+}
+
+.avatar {
+  flex: none;
+  width: var(--space-6);
+  height: var(--space-6);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.accountText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.accountName {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.accountMeta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Collapsed: the account is a centred avatar button (a direct-child rail action); the accent spine
+   and hover carry the active/hover state, no dividing border in the mini rail. */
+.sidebar[data-collapsed] > a.railAction {
+  align-self: center;
+  margin-top: var(--space-2);
+  margin-bottom: max(var(--space-2), env(safe-area-inset-bottom));
 }
