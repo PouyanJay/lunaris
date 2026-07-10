@@ -12,7 +12,10 @@ from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import (
+    CoverArtifactPaths,
     ICourseStore,
+    ICoverJobQueue,
+    ICoverStorage,
     IRunEventStore,
     IRunStore,
     IVideoJobQueue,
@@ -177,6 +180,8 @@ class CourseService:
         video_coordinator_factory: VideoCoordinatorFactory | None = None,
         video_job_queue: IVideoJobQueue | None = None,
         video_storage: IVideoStorage | None = None,
+        cover_job_queue: ICoverJobQueue | None = None,
+        cover_storage: ICoverStorage | None = None,
         progress_store: IProgressStore | None = None,
         bookmark_store: IBookmarkStore | None = None,
         activity_store: IActivityStore | None = None,
@@ -205,6 +210,11 @@ class CourseService:
         # an old course's artifacts must be reclaimable even after video generation is turned off.
         self._video_job_queue = video_job_queue
         self._video_storage = video_storage
+        # The cover-job queue + image store, for the course-deletion storage cascade
+        # (course-cover-images): remove the course's cover image + job row on a full delete. Wired
+        # like the video pair; None → that arm is skipped.
+        self._cover_job_queue = cover_job_queue
+        self._cover_storage = cover_storage
         # Per-course learner data purged on a full course delete (course-delete): progress,
         # bookmarks, and the per-course activity feed. Owner-scoped; best-effort like the video and
         # event purges. None → that arm is skipped (callers that never delete, or auth-off posture).
@@ -735,6 +745,7 @@ class CourseService:
         return {
             "events_purged": await self._purge_event_log(course_id, owner_id=owner_id),
             "videos_purged": await self._purge_course_videos(course_id, owner_id=owner_id),
+            "covers_purged": await self._purge_course_covers(course_id, owner_id=owner_id),
             "progress_purged": await self._purge_course_progress(course_id, owner_id=owner_id),
             "bookmarks_purged": await self._purge_course_bookmarks(course_id, owner_id=owner_id),
             "activity_purged": await self._purge_course_activity(course_id, owner_id=owner_id),
@@ -778,6 +789,33 @@ class CourseService:
             )
         except PersistenceError:
             logger.warning("course_videos_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_covers(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Storage cascade for course deletion (course-cover-images): remove the course's cover
+        image + provenance artifact + job row. Best-effort — a failure logs and is swallowed so it
+        never blocks the user's delete (the cover is recoverable cruft, not authoritative state).
+
+        Owner-scoping needs a real owner (the queue/storage are keyed by ``{user_id}/...``); an
+        unowned (auth-off) delete is skipped. Paths are derived from each job row
+        (``CoverArtifactPaths``) rather than listed — exact, and safe for a FAILED job that wrote
+        only some files (``delete`` ignores missing paths). Mirrors ``_purge_course_videos``."""
+        if self._cover_job_queue is None or owner_id is None:
+            return 0
+        try:
+            jobs = await self._cover_job_queue.list_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+            if self._cover_storage is not None and jobs:
+                # astuple over the frozen CoverArtifactPaths so a new artifact field is purged
+                # automatically — the path convention stays the single source of truth.
+                paths = [path for job in jobs for path in astuple(CoverArtifactPaths.for_job(job))]
+                await self._cover_storage.delete(paths=paths)
+            return await self._cover_job_queue.delete_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+        except PersistenceError:
+            logger.warning("course_covers_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def _purge_course_progress(self, course_id: str, *, owner_id: str | None = None) -> int:

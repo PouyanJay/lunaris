@@ -1015,6 +1015,10 @@ def get_course_service(
         # video gate) so an old course's artifacts are reclaimable even after video is turned off.
         video_job_queue=get_video_job_queue(settings),
         video_storage=get_video_storage(settings),
+        # The cover-image storage cascade (course-cover-images) — wired the same way so a deleted
+        # course's cover image + job row are reclaimed too.
+        cover_job_queue=get_cover_job_queue(settings),
+        cover_storage=get_cover_storage(settings),
         # The learner-data cascade for a full course delete (course-delete): the caller's per-course
         # progress, bookmarks, and activity feed, so deleting a course purges them too. Owner-scoped
         # in the service.
