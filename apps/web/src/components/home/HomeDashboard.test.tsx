@@ -32,7 +32,7 @@ function renderHome(props: Partial<Parameters<typeof HomeDashboard>[0]> = {}) {
     <MemoryRouter>
       <HomeDashboard
         apiBaseUrl="http://test"
-        userEmail="ada.lovelace@example.com"
+        userName="Ada Lovelace"
         runs={[]}
         {...callbacks}
         {...props}
@@ -45,7 +45,7 @@ function renderHome(props: Partial<Parameters<typeof HomeDashboard>[0]> = {}) {
 describe("HomeDashboard", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("greets the signed-in learner by their derived name", async () => {
+  it("greets the signed-in learner by their display name", async () => {
     vi.stubGlobal("fetch", routedFetch({ library: [completed()] }));
 
     renderHome();
@@ -96,10 +96,10 @@ describe("HomeDashboard", () => {
     expect(await screen.findByText("6 lessons completed")).toBeInTheDocument();
   });
 
-  it("falls back to a natural greeting when there is no signed-in email", async () => {
+  it("renders the natural fallback name in the greeting", async () => {
     vi.stubGlobal("fetch", routedFetch({ library: [] }));
 
-    renderHome({ userEmail: null });
+    renderHome({ userName: "there" });
 
     expect(
       await screen.findByRole("heading", { name: /good (morning|afternoon|evening), there/i }),

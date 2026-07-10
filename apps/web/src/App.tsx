@@ -62,6 +62,7 @@ import { ConfirmDialog } from "./components/overlays/ConfirmDialog";
 import { regenerateLesson } from "./lib/loadCourse";
 import { putCourseOpened } from "./lib/progress";
 import { isLlmKeyless } from "./lib/capabilities";
+import { resolveDisplayName } from "./lib/profile";
 import { coursePath, lessonPath, resolveRoute, ROUTES, type ShellRoute } from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
@@ -756,7 +757,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         body: (
           <HomeDashboard
             apiBaseUrl={apiBaseUrl}
-            userEmail={user?.email ?? null}
+            userName={resolveDisplayName(user)}
             runs={runsState.status === "ready" ? runsState.runs : []}
             onNewCourse={startNewCourse}
             onResumeLesson={openCourseLesson}

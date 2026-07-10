@@ -9,7 +9,7 @@ import { ErrorState } from "../states/ErrorState";
 import { useActivity, type ActivityState } from "../../hooks/useActivity";
 import { useCourseDeletion } from "../../hooks/useCourseDeletion";
 import { useLibrary, type LibraryState } from "../../hooks/useLibrary";
-import { displayNameFromEmail, greetingForHour } from "../../lib/greeting";
+import { greetingForHour } from "../../lib/greeting";
 import { RECENT_LIMIT, splitHomeCourses } from "../../lib/homeCourses";
 import { homeSubline } from "../../lib/homeSummary";
 import { ROUTES } from "../../lib/routes";
@@ -18,8 +18,9 @@ import styles from "./HomeDashboard.module.css";
 
 interface HomeDashboardProps {
   apiBaseUrl: string;
-  /** The signed-in caller's email — the greeting name is derived from it (offline: null). */
-  userEmail: string | null;
+  /** The signed-in caller's display name (profile display_name, else email-derived; "there" when
+   *  there's no session) — resolved by the caller and shown in the greeting. */
+  userName: string;
   /** Run history from the shell's useRuns — RUNNING rows drive the live-build banner. */
   runs: CourseRun[];
   /** Open the composer (first-run recovery + the empty state's action). */
@@ -166,7 +167,7 @@ function RecentCourses({
  *  Phase 3 courses API via useLibrary; the composer now lives at /new. */
 export function HomeDashboard({
   apiBaseUrl,
-  userEmail,
+  userName,
   runs,
   onNewCourse,
   onResumeLesson,
@@ -176,14 +177,13 @@ export function HomeDashboard({
   const deletion = useCourseDeletion(apiBaseUrl, reload);
   // Best-effort: the streak decorates the subline when it loads; a failure changes nothing.
   const { state: activityState } = useActivity(apiBaseUrl);
-  const name = displayNameFromEmail(userEmail);
   const greeting = greetingForHour(new Date().getHours());
 
   return (
     <div className={styles.canvas}>
       <header className={styles.greeting}>
         <h2 className={styles.title}>
-          Good {greeting}, {name}
+          Good {greeting}, {userName}
         </h2>
         <p className={styles.subline}>{subline(state, activityState)}</p>
       </header>
