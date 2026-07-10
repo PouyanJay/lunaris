@@ -33,7 +33,7 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/");
 
     render(<App />);
-    expect(await screen.findByText(/no runs yet/i)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i });
 
     fireEvent.click(screen.getByRole("link", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
@@ -423,32 +423,12 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/courses/course-test");
   });
 
-  it("opening a run from the rail navigates to its course URL; back returns home", async () => {
-    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
-    window.history.pushState(null, "", "/");
-
-    render(<App />);
-    const history = await screen.findByRole("navigation", { name: /run history/i });
-    fireEvent.click(within(history).getByText("How binary search works"));
-
-    expect(
-      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
-    ).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/courses/course-test");
-
-    // jsdom dispatches popstate asynchronously; findByRole polls until the router re-renders.
-    act(() => window.history.back());
-    expect(
-      await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i }),
-    ).toBeInTheDocument();
-  });
-
   it("routes the primary nav to My courses, Activity, and Bookmarks", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
 
     render(<App />);
-    await screen.findByText(/no runs yet/i);
+    await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i });
 
     fireEvent.click(screen.getByRole("link", { name: "My courses" }));
     expect(window.location.pathname).toBe("/courses");

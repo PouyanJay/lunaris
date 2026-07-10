@@ -1,4 +1,5 @@
-import { vi } from "vitest";
+import { waitFor } from "@testing-library/react";
+import { vi, type Mock } from "vitest";
 
 import { type BriefResponse, QUESTION_IDS } from "../types/clarifier";
 import type {
@@ -495,5 +496,16 @@ export function routedFetch(
       return Promise.resolve({ ok: true, json: async () => handlers.course });
     }
     throw new Error(`routedFetch: unhandled URL ${url}`);
+  });
+}
+
+/** Flush the shell's run-history fetch (fire-and-forget at mount) so its state update lands inside
+ *  act. The idle composer no longer renders a run list to await on, so tests that only need the
+ *  effect to settle wait on the fetch having fired instead. */
+export async function waitForRunsFetch(fetchMock: Mock): Promise<void> {
+  await waitFor(() => {
+    if (!fetchMock.mock.calls.some((call) => String(call[0]).includes("/api/runs"))) {
+      throw new Error("waiting for the /api/runs fetch to fire");
+    }
   });
 }

@@ -19,6 +19,8 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, inviteCode?: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
+  /** Persist the account's display name to Supabase user_metadata (read via resolveDisplayName). */
+  updateDisplayName: (displayName: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -84,6 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut: async () => {
         await supabase?.auth.signOut();
+      },
+      updateDisplayName: async (displayName) => {
+        if (!supabase) unconfigured();
+        // updateUser emits a USER_UPDATED event; the onAuthStateChange listener above refreshes
+        // the session so the new name flows to the account row and greeting without a reload.
+        const { error } = await supabase.auth.updateUser({ data: { display_name: displayName } });
+        if (error) throw error;
       },
     }),
     [enabled, loading, session],

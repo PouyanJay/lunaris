@@ -10,6 +10,7 @@ export const ROUTES = {
   activity: "/activity",
   bookmarks: "/bookmarks",
   settings: "/settings",
+  profile: "/profile",
   admin: "/admin",
 } as const;
 
@@ -27,6 +28,7 @@ export type ShellRoute =
   | { kind: "home" }
   | { kind: "composer" }
   | { kind: "settings" }
+  | { kind: "profile" }
   | { kind: "admin" }
   | { kind: "library" }
   | { kind: "activity" }
@@ -39,6 +41,7 @@ export function resolveRoute(pathname: string): ShellRoute {
   // The composer is its own place at /new; Home is the dashboard at /.
   if (pathname === ROUTES.composer) return { kind: "composer" };
   if (pathname === ROUTES.settings) return { kind: "settings" };
+  if (pathname === ROUTES.profile) return { kind: "profile" };
   if (pathname === ROUTES.admin) return { kind: "admin" };
   if (pathname === ROUTES.library) return { kind: "library" };
   if (pathname === ROUTES.activity) return { kind: "activity" };

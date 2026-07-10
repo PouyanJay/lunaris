@@ -3,57 +3,46 @@ import { NavLink } from "react-router";
 
 import { Button } from "../primitives/Button";
 import { BrandMark } from "./BrandMark";
-import { RunList } from "./RunList";
 import { SidebarToggle } from "./SidebarToggle";
-import { ThemeToggle } from "./ThemeToggle";
+import { MoonIcon, SunIcon } from "./themeIcons";
 import { useAuth } from "../../hooks/useAuth";
-import type { RunsState } from "../../hooks/useRuns";
 import type { ThemeProps } from "../../hooks/useTheme";
 import { ROUTES } from "../../lib/routes";
-import type { CourseRun } from "../../types/course";
+import { resolveDisplayName } from "../../lib/profile";
 import styles from "./Sidebar.module.css";
 
 interface SidebarProps extends ThemeProps {
-  runs: RunsState;
-  onReloadRuns: () => void;
   onNewCourse: () => void;
   /** Show the "Admin Portal" nav entry — only for admins. */
   showAdmin?: boolean;
-  /** Whether the rail is collapsed to the mini icon rail (run history hidden, actions as icons). */
+  /** Whether the rail is collapsed to the mini icon rail (labels drop away, actions become icons). */
   collapsed: boolean;
   /** Collapse / expand the rail — the toggle lives in the brand row in both states. */
   onToggleCollapse: () => void;
   /** Fired on any nav-link navigation (e.g. so the phone drawer dismisses). */
   onNavigate?: (() => void) | undefined;
-  onSelectRun?: ((run: CourseRun) => void) | undefined;
-  onDeleteRun?: ((run: CourseRun) => void) | undefined;
-  onCancelRun?: ((run: CourseRun) => void) | undefined;
-  cancellingRunId?: string | null | undefined;
-  selectedRunId?: string | undefined;
 }
 
-/** The instrument rail: brand, the primary "New course" action, the app's primary nav (Home /
- *  My courses / Activity / Bookmarks — real links, spine-marked when active), the run-history
- *  feed, and the Settings/Admin nav — hairline-divided regions, not floating cards. Collapses to
- *  a mini icon rail: labels drop away leaving the icons; the run history is hidden until
- *  expanded. The toggle stays mounted across the transition so keyboard focus persists. */
+/** The instrument rail: brand, the "New course" action, the app's primary nav (Home / My courses /
+ *  Activity / Bookmarks — real links, spine-marked when active), and a bottom cluster — theme,
+ *  Settings/Admin, and the account row (a link to the profile page). Hairline-divided regions, not
+ *  floating cards: the only rules are under the brand and above the account. Collapses to a mini
+ *  icon rail: labels drop away leaving the icons. The toggle stays mounted across the transition so
+ *  keyboard focus persists. */
 export function Sidebar({
-  runs,
-  onReloadRuns,
   onNewCourse,
   showAdmin,
   collapsed,
   onToggleCollapse,
   onNavigate,
-  onSelectRun,
-  onDeleteRun,
-  onCancelRun,
-  cancellingRunId,
-  selectedRunId,
   theme,
   onToggleTheme,
 }: SidebarProps) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
+  const displayName = resolveDisplayName(user);
+  const goingDark = theme === "light";
+  const themeLabel = goingDark ? "Dark theme" : "Light theme";
+  const themeAction = `Switch to ${goingDark ? "dark" : "light"} mode`;
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
       <div className={styles.brand}>
@@ -74,7 +63,8 @@ export function Sidebar({
             <PlusIcon />
           </button>
         ) : (
-          <Button variant="primary" className={styles.newCourse} onClick={onNewCourse}>
+          <Button variant="secondary" className={styles.newCourse} onClick={onNewCourse}>
+            <PlusIcon />
             New course
           </Button>
         )}
@@ -112,42 +102,7 @@ export function Sidebar({
         />
       </nav>
 
-      {!collapsed && (
-        <nav className={styles.history} aria-label="Run history">
-          <span className={`eyebrow ${styles.sectionLabel}`}>Recent runs</span>
-          <RunList
-            state={runs}
-            onRetry={onReloadRuns}
-            onSelectRun={onSelectRun}
-            onDeleteRun={onDeleteRun}
-            onCancelRun={onCancelRun}
-            cancellingRunId={cancellingRunId}
-            selectedRunId={selectedRunId}
-          />
-        </nav>
-      )}
-
-      {user && !collapsed && (
-        <div className={styles.account}>
-          <span className={styles.avatar} aria-hidden="true">
-            {(user.email ?? "?").charAt(0)}
-          </span>
-          <span className={styles.accountEmail} title={user.email ?? undefined}>
-            {user.email}
-          </span>
-          <button
-            type="button"
-            className={styles.railAction}
-            onClick={() => void signOut()}
-            aria-label={`Sign out ${user.email ?? ""}`.trim()}
-            title="Sign out"
-          >
-            <SignOutIcon />
-          </button>
-        </div>
-      )}
-
-      <div className={styles.footer}>
+      <nav className={styles.footer} aria-label="Secondary">
         {showAdmin && (
           <NavItem
             to={ROUTES.admin}
@@ -157,6 +112,31 @@ export function Sidebar({
             onNavigate={onNavigate}
           />
         )}
+        {collapsed ? (
+          <button
+            type="button"
+            className={styles.railAction}
+            onClick={onToggleTheme}
+            aria-label={themeAction}
+            aria-pressed={theme === "dark"}
+            title={themeAction}
+          >
+            {goingDark ? <SunIcon /> : <MoonIcon />}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={styles.navItem}
+            onClick={onToggleTheme}
+            aria-label={themeAction}
+            aria-pressed={theme === "dark"}
+          >
+            <span className={styles.navIcon} aria-hidden="true">
+              {goingDark ? <SunIcon /> : <MoonIcon />}
+            </span>
+            {themeLabel}
+          </button>
+        )}
         <NavItem
           to={ROUTES.settings}
           icon={<GearIcon />}
@@ -164,19 +144,40 @@ export function Sidebar({
           collapsed={collapsed}
           onNavigate={onNavigate}
         />
-        {user && collapsed && (
-          <button
-            type="button"
-            className={styles.railAction}
-            onClick={() => void signOut()}
-            aria-label={`Sign out ${user.email ?? ""}`.trim()}
-            title="Sign out"
+      </nav>
+
+      {user &&
+        (collapsed ? (
+          <NavLink
+            to={ROUTES.profile}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              `${styles.railAction} ${isActive ? styles.railActionActive : ""}`.trim()
+            }
+            aria-label="Your profile"
+            title={displayName}
           >
-            <SignOutIcon />
-          </button>
-        )}
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
-      </div>
+            <span className={styles.avatar} aria-hidden="true">
+              {displayName.charAt(0)}
+            </span>
+          </NavLink>
+        ) : (
+          <NavLink
+            to={ROUTES.profile}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              `${styles.account} ${isActive ? styles.accountActive : ""}`.trim()
+            }
+          >
+            <span className={styles.avatar} aria-hidden="true">
+              {displayName.charAt(0)}
+            </span>
+            <span className={styles.accountText}>
+              <span className={styles.accountName}>{displayName}</span>
+              <span className={styles.accountMeta}>Personal workspace</span>
+            </span>
+          </NavLink>
+        ))}
     </div>
   );
 }
@@ -279,20 +280,6 @@ function BookmarkIcon() {
         d="M6 3h12v18l-6-4-6 4z"
         stroke="currentColor"
         strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function SignOutIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6M10.5 11l3-3-3-3M13 8H6"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
         strokeLinejoin="round"
       />
     </svg>
