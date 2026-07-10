@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from lunaris_runtime.credentials import resolve_secret
+from lunaris_runtime.resilience import retry_on_rate_limit
 
 from lunaris_covers.errors import CoverPipelineError
 
@@ -74,8 +75,13 @@ class OpenAiImageRenderer:
 
         client = self._client_factory()
         try:
-            response = await client.images.generate(
-                model=self._model, prompt=prompt, size=self._size, quality=self._quality, n=1
+            # A transient 429/503 is retried in place (the shared, provider-agnostic backoff — it
+            # matches openai.RateLimitError too) rather than burning a whole render → QA round and
+            # the Claude calls already spent on it. A non-transient error still surfaces below.
+            response = await retry_on_rate_limit(
+                lambda: client.images.generate(
+                    model=self._model, prompt=prompt, size=self._size, quality=self._quality, n=1
+                )
             )
         except OpenAIError as exc:
             raise CoverPipelineError(

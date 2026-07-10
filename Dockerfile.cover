@@ -1,0 +1,65 @@
+# syntax=docker/dockerfile:1
+#
+# Container image for the Lunaris COVER WORKER (course-cover-images). It runs the SAME CoverWorker
+# loop the API runs in-process — composed from the SAME lunaris-api dependencies.py, so there is zero
+# drift between the two deployments and the cloud worker can resolve per-job tenant keys from the BYOK
+# vault. Unlike the video worker, cover generation calls provider APIs only (Claude art-director + GPT
+# Image 2 + Claude vision-QA) with NO local render toolchain — no cairo/pango/ffmpeg, no Manim — so
+# this image is much leaner. The only differences from Dockerfile.api are the entry point
+# (`lunaris_api.cover_worker_entrypoint`) and no HTTP ingress. Shipped to a dedicated, KEDA-scaled
+# Azure Container App (infra/cover.bicep). Built in CI (no push) and, in cd-*, pushed to ACR.
+
+# ── builder: resolve lunaris-api (which pulls in lunaris-covers) into /app/.venv ───────────────────
+FROM python:3.12-slim AS builder
+
+# Pinned uv (matches the repo's toolchain + Dockerfile.api) copied from the official image.
+COPY --from=ghcr.io/astral-sh/uv:0.11.17 /uv /usr/local/bin/uv
+
+ENV UV_PYTHON_PREFERENCE=only-system \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1
+
+WORKDIR /app
+
+# The cover worker entry point lives in lunaris_api, whose closure includes lunaris-covers (OpenAI +
+# the Claude seams over lunaris-runtime). No render extra — cover generation is provider-API only.
+# apps/web + tests are excluded via .dockerignore.
+COPY pyproject.toml uv.lock ./
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --package lunaris-api --no-dev
+
+# ── runtime: slim, non-root, venv on PATH ─────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    LUNARIS_ENV=production
+
+# Debian security point-release upgrade (CI Trivy-gates fixable HIGH/CRITICAL). No render libraries —
+# the cover worker only makes outbound HTTPS calls to the LLM/image providers and Supabase.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Unprivileged runtime user — the container drops root as defence in depth (it holds a BYOK master key
+# to decrypt tenant provider keys in memory; no on-disk secrets, and nothing untrusted is executed).
+RUN useradd --create-home --uid 1000 app
+WORKDIR /app
+COPY --from=builder --chown=app:app /app /app
+
+# Fail the BUILD if the cover worker's closure can't import — surfaces a packaging break here, not at
+# first job in cloud.
+RUN python -c "import lunaris_covers; import lunaris_api.cover_worker_entrypoint; print('cover worker ok')"
+
+USER app
+
+# No EXPOSE / HTTP ingress — the worker has no port. KEDA scales it on the pending-job COUNT in
+# Postgres (infra/cover.bicep), not on HTTP traffic; "liveness" is draining the queue. ACA sends
+# SIGTERM on scale-in, which the entry point turns into a graceful, lease-preserving shutdown.
+CMD ["python", "-m", "lunaris_api.cover_worker_entrypoint"]

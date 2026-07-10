@@ -37,14 +37,18 @@ class _FakeCourseStore:
 
 
 class _HeartbeatSpyQueue(InMemoryCoverJobQueue):
-    """An in-memory queue that counts heartbeat calls, to prove the render extends its lease."""
+    """An in-memory queue that counts heartbeat calls and signals (event, not sleep-poll) once the
+    lease has been beaten twice — proving the render extends its lease while it runs."""
 
     def __init__(self) -> None:
         super().__init__()
         self.heartbeats = 0
+        self.two_beats = asyncio.Event()
 
     async def heartbeat(self, *, job_id: str) -> None:
         self.heartbeats += 1
+        if self.heartbeats >= 2:
+            self.two_beats.set()
         await super().heartbeat(job_id=job_id)
 
 
@@ -79,12 +83,10 @@ async def test_heartbeat_fires_while_a_slow_render_runs() -> None:
         cancel_poll_interval_s=5.0,
     )
 
-    # Act — start the render, wait until the heartbeat has fired a couple of times, then release.
+    # Act — start the render, wait (event, not sleep-poll) until the lease has been beaten twice,
+    # then release the render so it completes.
     run = asyncio.create_task(worker.run_once())
-    for _ in range(500):
-        if queue.heartbeats >= 2:
-            break
-        await asyncio.sleep(0.005)
+    await asyncio.wait_for(queue.two_beats.wait(), timeout=2)
     release.set()
 
     # Assert — the render completed READY, and the lease was heartbeated while it ran.

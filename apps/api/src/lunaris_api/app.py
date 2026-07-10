@@ -65,9 +65,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     what lets the API enqueue) and a ``*_inproc_worker_enabled`` flag (whether THIS process also
     drains the queue). Locally (``make run``) both are on — one process enqueues + renders. In cloud
     the API keeps enqueue on but turns the in-process worker OFF (app.bicep), so it never competes
-    with the
-    dedicated worker container — without that gate the API's stub-pipeline workers would race the
-    real worker and settle jobs with placeholder media.
+    with the dedicated worker container — without that gate the API's stub-pipeline workers would
+    race the real worker and settle jobs with placeholder media.
 
     Each pool is supervised by its shared ``run_*_workers`` spawn-N + drain-on-stop coroutine — the
     exact same one the standalone worker container runs, so there is one worker code path, never a
