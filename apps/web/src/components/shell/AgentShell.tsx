@@ -20,10 +20,11 @@ interface AgentShellProps {
   title: string;
   /** Right-aligned canvas-header content — status, metrics, view actions. */
   meta?: ReactNode;
-  /** The global-search trigger, docked between the title and the meta (the ⌘K field). */
+  /** The global-search trigger, docked in the header's right cluster (the ⌘K field). */
   search?: ReactNode;
-  /** Optional secondary row under the header (e.g. a course's view tabs) — keeps the title row
-   *  uncluttered. Hairline-divided from the header and the body. */
+  /** Optional view controls (e.g. a course's view tabs). On wide screens they sit inline in the
+   *  header's right cluster, before the search; below 900px they reflow to a full-width scrollable
+   *  row beneath the title so the header never gets crushed. */
   toolbar?: ReactNode;
   /** Optional band rendered between the header and the body (e.g. the Draft-mode banner). */
   banner?: ReactNode;
@@ -149,10 +150,10 @@ export function AgentShell({
           <h1 className={styles.title} title={title}>
             {title}
           </h1>
+          {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
           {search && <div className={styles.search}>{search}</div>}
           {meta && <div className={styles.meta}>{meta}</div>}
         </header>
-        {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
         {banner}
         <main id={CANVAS_ID} className={styles.body}>
           {children}
