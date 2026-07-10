@@ -5,6 +5,7 @@ description = "Lunaris course covers — the AI cover-image worker loop + pipeli
 requires-python = ">=3.12"
 dependencies = [
     "lunaris-runtime",
+    "openai>=2.0",
     "pydantic>=2.9",
     "structlog>=24.4",
 ]
