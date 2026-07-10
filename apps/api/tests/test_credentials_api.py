@@ -171,7 +171,7 @@ async def test_delete_removes_only_the_callers_key(client: httpx.AsyncClient) ->
 
 async def test_set_unknown_provider_is_404(client: httpx.AsyncClient) -> None:
     response = await client.put(
-        "/api/credentials/openai", json={"value": "k"}, headers=_auth(_USER_A)
+        "/api/credentials/cohere", json={"value": "k"}, headers=_auth(_USER_A)
     )
     assert response.status_code == 404
 

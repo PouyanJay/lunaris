@@ -35,6 +35,11 @@ class CapabilitySpec:
     # vs. a keyless web service (e.g. DuckDuckGo). Only inference-backed fallbacks carry a compute
     # (GPU/CPU) badge in the Draft UI. The LLM is GPU-acceleratable today; embeddings stay CPU.
     runs_on_local_inference: bool = False
+    # Whether this capability is recorded on the per-course build tag (:func:`capture_build_
+    # capabilities`). True for every leg the course build itself runs; False for a capability that
+    # is not part of the build (the cover generates async, post-build) — it still shows on the live
+    # settings badge, but tagging it per course would record a build the run never performed.
+    build_tagged: bool = True
 
 
 # Order is the stable UI order for both indicators. ``secret_id`` matches the API's KNOWN_SECRETS,
@@ -69,5 +74,15 @@ CAPABILITY_SPECS: tuple[CapabilitySpec, ...] = (
         env_var="YOUTUBE_API_KEY",
         live_label="YouTube",
         fallback_label="Web search",
+    ),
+    CapabilitySpec(
+        capability=CapabilityName.COVER,
+        secret_id="openai",
+        env_var="OPENAI_API_KEY",
+        live_label="OpenAI",
+        fallback_label="Typographic",
+        # Not part of the course build — the cover generates async, so it never runs inside a
+        # build's credential scope. Live-badge only; excluded from the per-course build tag.
+        build_tagged=False,
     ),
 )

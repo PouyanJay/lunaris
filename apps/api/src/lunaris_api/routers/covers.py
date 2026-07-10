@@ -1,9 +1,11 @@
 import asyncio
 import hashlib
+import os
 import uuid
+from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
@@ -25,12 +27,33 @@ from ..dependencies import (
     CourseStoreDep,
     CoverJobQueueDep,
     CoverStorageDep,
+    CredentialVaultDep,
     CurrentUserIdDep,
 )
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api", tags=["covers"])
+
+_KEYLESS_DETAIL = (
+    "AI cover generation needs an OpenAI API key — add one in Settings. Without it, courses show "
+    "the Typographic cover."
+)
+
+
+async def require_keyed_cover_caller(owner_id: CurrentUserIdDep, vault: CredentialVaultDep) -> str:
+    """The keyed-only tier gate for enqueue: AI covers need the caller's OpenAI key.
+
+    Mirrors the video gate's credential ladder — with a vault (auth + BYOK) the caller's own OpenAI
+    key decides; without one, the process env does (single-user / auth-off deployments). A keyless
+    caller gets a 403, so the web never enqueues for them and shows the Typographic cover."""
+    if vault is not None:
+        keyed = bool(await vault.reveal(user_id=owner_id, provider="openai"))
+    else:
+        keyed = bool(os.environ.get("OPENAI_API_KEY"))
+    if not keyed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_KEYLESS_DETAIL)
+    return owner_id
 
 
 class CoverJobView(CourseModel):
@@ -70,17 +93,17 @@ async def _load_owned_course(store: ICourseStore, *, course_id: str, owner_id: s
 @router.post("/courses/{course_id}/cover", status_code=status.HTTP_202_ACCEPTED)
 async def enqueue_cover(
     course_id: str,
-    owner_id: CurrentUserIdDep,
+    owner_id: Annotated[str, Depends(require_keyed_cover_caller)],
     queue: CoverJobQueueDep,
     store: CourseStoreDep,
     response: Response,
 ) -> CoverJobView:
     """Enqueue one course cover-image job. The worker drains it; the job row is the status record.
 
-    The caller must **own** the course (else 404 — never spend worker capacity on a course you don't
-    own), and a **duplicate** is deduped (idempotent). One cover per course, so the dedup keys on
-    (course, owner) with no kind/lesson dimension. (The OpenAI-key tier gate lands in T3; the
-    walking-skeleton stub producer needs no key.)"""
+    Gates: the caller must have an **OpenAI key** (else 403 — a keyless account shows the
+    Typographic cover and never enqueues), must **own** the course (else 404 — never spend worker
+    capacity on a course you don't own), and a **duplicate** is deduped (idempotent). One cover per
+    course, so the dedup keys on (course, owner) with no kind/lesson dimension."""
     request_id = uuid.uuid4().hex
     bind_request_id(request_id)
     response.headers["X-Request-Id"] = request_id

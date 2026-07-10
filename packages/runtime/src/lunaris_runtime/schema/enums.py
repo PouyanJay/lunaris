@@ -17,6 +17,10 @@ class CapabilityName(StrEnum):
     EMBEDDINGS = "embeddings"
     SEARCH = "search"
     VIDEO = "video"
+    # The AI course cover (course-cover-images): live = OpenAI GPT Image 2, fallback = Typographic.
+    # Surfaced on the live settings badge so the reader can gate cover generation on the OpenAI key;
+    # NOT a per-course build tag (covers generate async, outside the build's run scope).
+    COVER = "cover"
 
 
 class CapabilityMode(StrEnum):

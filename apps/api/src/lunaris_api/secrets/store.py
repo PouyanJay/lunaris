@@ -16,6 +16,7 @@ KNOWN_SECRETS: dict[str, str] = {
     "search": "SEARCH_API_KEY",
     "youtube": "YOUTUBE_API_KEY",
     "elevenlabs": "ELEVENLABS_API_KEY",
+    "openai": "OPENAI_API_KEY",  # AI course covers (GPT Image 2) — course-cover-images
     "langsmith": "LANGSMITH_API_KEY",
 }
 

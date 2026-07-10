@@ -115,7 +115,7 @@ async def test_test_trims_before_probing() -> None:
 async def test_set_rejects_an_unknown_provider() -> None:
     vault = _vault()
     with pytest.raises(UnknownProviderError):
-        await vault.set(user_id="u-1", provider="openai", value="k")
+        await vault.set(user_id="u-1", provider="cohere", value="k")
 
 
 async def test_statuses_lists_every_provider() -> None:
@@ -161,7 +161,7 @@ async def test_delete_removes_a_key_and_is_owner_scoped() -> None:
 
 async def test_delete_rejects_an_unknown_provider() -> None:
     with pytest.raises(UnknownProviderError):
-        await _vault().delete(user_id="u-1", provider="openai")
+        await _vault().delete(user_id="u-1", provider="cohere")
 
 
 async def test_test_probe_passes_for_a_good_key() -> None:
@@ -176,7 +176,7 @@ async def test_test_probe_raises_for_a_bad_key() -> None:
 
 async def test_test_probe_rejects_an_unknown_provider() -> None:
     with pytest.raises(UnknownProviderError):
-        await _vault().test(provider="openai", value="k")
+        await _vault().test(provider="cohere", value="k")
 
 
 async def test_test_probe_rejects_an_empty_value() -> None:

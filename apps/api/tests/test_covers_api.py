@@ -122,7 +122,9 @@ async def client(
     queue: InMemoryCoverJobQueue,
     storage: InMemoryCoverStorage,
     course_store: _FakeCourseStore,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncIterator[httpx.AsyncClient]:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")  # the caller is keyed (env path, no vault)
     async with _build_client(tmp_path, queue, storage, course_store) as http_client:
         yield http_client
 
@@ -206,3 +208,21 @@ async def test_status_is_owner_scoped(client: httpx.AsyncClient, worker: CoverWo
 async def test_anonymous_callers_get_401(client: httpx.AsyncClient) -> None:
     assert (await client.post(_ENQUEUE)).status_code == 401
     assert (await client.get("/api/covers/j1")).status_code == 401
+
+
+# ── the OpenAI-key tier gate (T3): keyless enqueue is refused, so the reader shows Typographic ──
+
+
+async def test_keyless_caller_cannot_enqueue(
+    tmp_path: Path,
+    queue: InMemoryCoverJobQueue,
+    storage: InMemoryCoverStorage,
+    course_store: _FakeCourseStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange — authed + owns the course, but NO OpenAI key (env path, no vault).
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    async with _build_client(tmp_path, queue, storage, course_store) as keyless:
+        # Act / Assert — 403 (a keyed-tier feature), so the web falls back to the Typographic cover.
+        resp = await keyless.post(_ENQUEUE, headers=auth_headers(USER_A))
+        assert resp.status_code == 403
