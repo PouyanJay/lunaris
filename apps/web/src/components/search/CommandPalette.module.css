@@ -1,5 +1,7 @@
-/* The ⌘K palette: a raised panel dropped from the top third — the house modal contract
-   (backdrop = overlay, panel = modal), hairline-divided regions, mono hints. */
+/* The ⌘K palette: a raised panel that drops from directly under the search trigger — the trigger
+   lives at the top-right of the header, so the panel opens just below the header, right-aligned to
+   it, reading as "opened from the search" rather than floating mid-page. Backdrop = overlay, panel =
+   modal (the house modal contract), hairline-divided regions, mono hints. */
 .backdrop {
   position: fixed;
   inset: 0;
@@ -7,8 +9,17 @@
   background: color-mix(in srgb, var(--bg) 55%, transparent);
   display: flex;
   align-items: flex-start;
-  justify-content: center;
-  padding: 12vh var(--space-4) var(--space-4);
+  justify-content: flex-end;
+  padding: calc(var(--header-height) + var(--space-2)) var(--space-5) var(--space-4);
+}
+
+/* Phone: the header is tighter and the search collapses to an icon — center the panel and match the
+   header's side padding so it isn't jammed against the right edge. */
+@media (max-width: 768px) {
+  .backdrop {
+    justify-content: center;
+    padding: calc(var(--header-height) + var(--space-2)) var(--space-4) var(--space-4);
+  }
 }
 
 .dialog {
