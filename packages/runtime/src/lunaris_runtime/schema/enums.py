@@ -429,6 +429,44 @@ class VideoJobStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class CoverJobStatus(StrEnum):
+    """The cover-image job lifecycle — the queue's status machine, mirrored by the DB CHECK.
+
+    ``QUEUED`` rows are claimable; a claim atomically flips to ``ART_DIRECTING`` (the first
+    in-flight stage — Claude writes the house-style prompt) and stamps the lease. The in-flight
+    stages mirror the cover pipeline: ``ART_DIRECTING`` → ``RENDERING`` (GPT Image 2 draws) → ``QA``
+    (Claude vision checks the result) → ``UPLOADING`` (to the private course-covers bucket).
+    ``READY``, ``FAILED``, and ``CANCELLED`` are terminal. ``CANCELLED`` is the owner stopping a job
+    before it finished. The job row doubles as the status record the reader's cover slot polls, so
+    these values are wire-visible. There is exactly one cover per course (no kind/lesson).
+    """
+
+    QUEUED = "queued"
+    ART_DIRECTING = "art_directing"
+    RENDERING = "rendering"
+    QA = "qa"
+    UPLOADING = "uploading"
+    READY = "ready"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class CoverStylePreset(StrEnum):
+    """The art-direction preset a course cover renders with (course-cover-images tunability).
+
+    Every preset keeps the locked anti-slop constraints (one focal subject, generous negative space,
+    no text in the image, brand-anchored palette, matte/editorial finish) — the preset varies the
+    medium and mood, not the discipline. ``NOCTURNE`` is the house night-sky editorial default;
+    ``BLUEPRINT`` is a technical schematic / line-art look; ``AURORA`` is a soft abstract gradient
+    with a single motif. Carried on the job's ``style_preset`` column and the user's
+    ``coverStylePreset`` config key.
+    """
+
+    NOCTURNE = "nocturne"
+    BLUEPRINT = "blueprint"
+    AURORA = "aurora"
+
+
 class RegenerateMode(StrEnum):
     """How a video regenerate re-enters the pipeline (explainer-video V6-T2 — the regenerate menu).
 
