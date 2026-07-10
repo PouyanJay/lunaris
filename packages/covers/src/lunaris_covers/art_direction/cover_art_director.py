@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 import structlog
 
@@ -30,14 +30,27 @@ render directly. Describe the ONE focal subject, the composition and negative sp
 palette, obeying every constraint above. Do NOT ask the model to add any text or labels. Respond \
 with ONLY the image prompt itself — no preamble, no quotes, no commentary."""
 
+# Appended when a prior render was rejected by the vision-QA gate (the regenerate round): the prior
+# prompt plus the named defects, so Claude revises the brief to fix exactly what failed rather than
+# re-rolling blindly.
+_REVISION_TEMPLATE = """\
+
+
+THE PREVIOUS ATTEMPT WAS REJECTED
+- prior prompt: {prior_prompt}
+- defects the visual-QA gate found: {defects}
+Revise the brief to fix EVERY defect above while still obeying the house style. Respond with ONLY \
+the corrected image prompt."""
+
 
 class CoverArtDirector:
     """Turns a ``CoverBrief`` into the house-style image-generation prompt (the anti-slop brief).
 
     Claude reads the course topic + concept graph and the preset's house style and writes the exact
-    prompt GPT Image 2 renders. Keeping the discipline in the prompt (and, in T5, the matching QA
-    rubric) is what makes covers a consistent series instead of one-off generations. ``model`` is
-    surfaced so the pipeline can record it in provenance (the art-director model).
+    prompt GPT Image 2 renders. Keeping the discipline in the prompt AND the matching QA rubric (T5)
+    is what makes covers a consistent series instead of one-off generations. On a regenerate round,
+    ``prior_prompt`` + the QA ``defects`` are appended so the revision fixes exactly what failed.
+    ``model`` is surfaced so the pipeline can record it in provenance (the art-director model).
     """
 
     def __init__(self, *, invoke: TextInvoke, model: str) -> None:
@@ -48,18 +61,29 @@ class CoverArtDirector:
     def model(self) -> str:
         return self._model
 
-    async def direct(self, brief: CoverBrief) -> str:
+    async def direct(
+        self,
+        brief: CoverBrief,
+        *,
+        prior_prompt: str | None = None,
+        defects: Sequence[str] = (),
+    ) -> str:
         prompt = _DIRECTION_TEMPLATE.format(
             topic=brief.topic,
             concepts=", ".join(brief.concept_labels) or brief.topic,
             audience=brief.audience,
             style=house_style(brief.style_preset).as_prompt_block(),
         )
+        if prior_prompt is not None and defects:
+            prompt += _REVISION_TEMPLATE.format(
+                prior_prompt=prior_prompt, defects="; ".join(defects)
+            )
         image_prompt = (await self._invoke(prompt)).strip()
         _logger.info(
             "cover_art_director.directed",
             style=brief.style_preset.value,
             concept_count=len(brief.concept_labels),
             prompt_chars=len(image_prompt),
+            revision=bool(defects),
         )
         return image_prompt

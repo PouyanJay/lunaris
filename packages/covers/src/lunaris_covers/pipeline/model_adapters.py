@@ -1,7 +1,10 @@
+import base64
+
 from lunaris_runtime.resilience import build_chat_model, retry_on_rate_limit
 from lunaris_runtime.run_config import resolve_config
 
 from lunaris_covers.art_direction.cover_art_director import TextInvoke
+from lunaris_covers.qa.cover_vision_qa import VisionInvoke
 
 # The art director + vision QA run on the build's strong, vision-capable tier — the same Claude the
 # video pipeline uses for planning/QA. Resolved per call so a per-job tenant credential scope (BYOK)
@@ -29,6 +32,37 @@ def build_cover_text_invoke(model_id: str) -> TextInvoke:
     async def invoke(prompt: str) -> str:
         model = build_chat_model(model_id)
         message = await retry_on_rate_limit(lambda: model.ainvoke(prompt))
+        return _message_text(message)
+
+    return invoke
+
+
+def build_cover_vision_invoke(model_id: str) -> VisionInvoke:
+    """A multimodal seam — a text prompt plus the rendered cover — for the vision-QA gate.
+
+    The image is sent as an Anthropic-native base64 image block (the keyed path is Claude, which is
+    vision-capable). ``langchain_core`` is imported lazily so hermetic code never pays for it. A QA
+    verdict is a short JSON object, so the provider default output ceiling is ample (no raised
+    max_tokens). Mirrors ``lunaris_video``'s vision adapter.
+    """
+
+    async def invoke(prompt: str, images: list[bytes]) -> str:
+        from langchain_core.messages import HumanMessage
+
+        content: list[dict[str, object]] = [{"type": "text", "text": prompt}]
+        for image in images:
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": base64.b64encode(image).decode("ascii"),
+                    },
+                }
+            )
+        model = build_chat_model(model_id)
+        message = await retry_on_rate_limit(lambda: model.ainvoke([HumanMessage(content=content)]))
         return _message_text(message)
 
     return invoke

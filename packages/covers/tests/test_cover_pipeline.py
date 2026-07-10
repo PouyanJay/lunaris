@@ -15,6 +15,7 @@ from lunaris_covers.art_direction.cover_art_director import CoverArtDirector
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.pipeline.cover_pipeline import CoverPipeline
 from lunaris_covers.rendering.openai_image_renderer import OpenAiImageRenderer
+from lunaris_covers.schemas.cover_qa_verdict import CoverQaDefect, CoverQaVerdict
 from lunaris_covers.sourcing.course_store_cover_source_provider import (
     CourseStoreCoverSourceProvider,
 )
@@ -215,3 +216,147 @@ async def test_missing_course_raises_cover_pipeline_error() -> None:
         await _pipeline(store, _StubArtDirectorInvoke(), _FakeImagesClient()).produce(
             _job(), on_stage=_noop_stage
         )
+
+
+# ---- T5: vision-QA gate + bounded regenerate loop -------------------------------------------
+
+
+class _RecordingArtInvoke:
+    """A ``TextInvoke`` returning a distinct reply per call, recording every prompt it saw."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    async def __call__(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return f"art brief #{len(self.prompts)}"
+
+
+class _ScriptedInspector:
+    """A fake ``ICoverVisionQa`` that fails its first ``fail_first`` inspections, then passes.
+
+    Records the images it inspected so a test can prove the loop re-renders (a fresh image per QA
+    round), not just re-inspects the same bytes.
+    """
+
+    def __init__(self, *, fail_first: int) -> None:
+        self._fail_first = fail_first
+        self.calls = 0
+        self.images: list[bytes] = []
+        self.model = "claude-opus-4-8"
+
+    async def inspect(self, image: bytes, brief: object) -> CoverQaVerdict:
+        self.calls += 1
+        self.images.append(image)
+        if self.calls <= self._fail_first:
+            return CoverQaVerdict(
+                passed=False, defects=[CoverQaDefect(issue=f"defect round {self.calls}")]
+            )
+        return CoverQaVerdict(passed=True)
+
+
+class _CountingImagesClient:
+    """Like ``_FakeImagesClient`` but returns a distinct PNG per render (round in the last byte)."""
+
+    def __init__(self) -> None:
+        self.renders = 0
+        self.images = self._Images(self)
+
+    class _Images:
+        def __init__(self, outer: "_CountingImagesClient") -> None:
+            self._outer = outer
+
+        async def generate(self, **kwargs: object) -> object:
+            self._outer.renders += 1
+            b64 = base64.b64encode(_PNG + bytes([self._outer.renders])).decode("ascii")
+            return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
+
+
+def _qa_pipeline(
+    store: _FakeCourseStore,
+    invoke: _RecordingArtInvoke,
+    client: _CountingImagesClient,
+    inspector: _ScriptedInspector,
+    *,
+    max_attempts: int = 3,
+) -> CoverPipeline:
+    return CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(store),
+        art_director=CoverArtDirector(invoke=invoke, model="claude-opus-4-8"),
+        renderer=OpenAiImageRenderer(client_factory=lambda: client),
+        qa_model="claude-opus-4-8",
+        inspector=inspector,
+        max_attempts=max_attempts,
+    )
+
+
+@pytest.mark.asyncio
+async def test_passing_first_qa_round_records_one_attempt() -> None:
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    invoke = _RecordingArtInvoke()
+    inspector = _ScriptedInspector(fail_first=0)
+
+    rendered = await _qa_pipeline(store, invoke, _CountingImagesClient(), inspector).produce(
+        _job(), on_stage=_noop_stage
+    )
+
+    assert rendered.provenance.qa_attempts == 1
+    assert len(invoke.prompts) == 1  # no regenerate needed
+    assert inspector.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_qa_regenerates_with_defect_feedback_then_passes() -> None:
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    invoke = _RecordingArtInvoke()
+    client = _CountingImagesClient()
+    inspector = _ScriptedInspector(fail_first=1)  # fail once, pass on the retry
+
+    rendered = await _qa_pipeline(store, invoke, client, inspector).produce(
+        _job(), on_stage=_noop_stage
+    )
+
+    assert rendered.provenance.qa_attempts == 2
+    assert len(invoke.prompts) == 2  # art-directed twice
+    assert "defect round 1" in invoke.prompts[1]  # the retry brief carries the QA defect
+    assert client.renders == 2  # a fresh render per round
+    assert inspector.images[0] != inspector.images[1]  # QA saw the new image, not the old bytes
+    # The image returned is the one that passed (the second render).
+    assert rendered.image == inspector.images[1]
+
+
+@pytest.mark.asyncio
+async def test_exhausting_attempts_raises_rather_than_shipping_slop() -> None:
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    invoke = _RecordingArtInvoke()
+    inspector = _ScriptedInspector(fail_first=99)  # never passes
+
+    with pytest.raises(CoverPipelineError):
+        await _qa_pipeline(
+            store, invoke, _CountingImagesClient(), inspector, max_attempts=3
+        ).produce(_job(), on_stage=_noop_stage)
+
+    assert inspector.calls == 3  # bounded — exactly max_attempts rounds, no more
+
+
+@pytest.mark.asyncio
+async def test_qa_stage_is_reported() -> None:
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    stages: list[CoverJobStatus] = []
+
+    async def record(stage: CoverJobStatus) -> None:
+        stages.append(stage)
+
+    await _qa_pipeline(
+        store, _RecordingArtInvoke(), _CountingImagesClient(), _ScriptedInspector(fail_first=0)
+    ).produce(_job(), on_stage=record)
+
+    assert stages == [
+        CoverJobStatus.ART_DIRECTING,
+        CoverJobStatus.RENDERING,
+        CoverJobStatus.QA,
+    ]
