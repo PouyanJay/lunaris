@@ -59,3 +59,27 @@ def test_cover_artifact_round_trips_by_alias() -> None:
     artifact = CoverArtifact(status=CoverJobStatus.READY, job_id="job-1", provenance=_provenance())
     reloaded = CoverArtifact.model_validate_json(artifact.model_dump_json(by_alias=True))
     assert reloaded == artifact
+
+
+def test_cover_job_serialises_camelcase_on_the_wire() -> None:
+    # CoverJob rides on CoverJobView.job — lock its camelCase aliases so the web CoverJob* types
+    # (which read jobs off the status endpoint) stay in step with the runtime schema.
+    from datetime import UTC, datetime
+
+    from lunaris_runtime.schema import CoverJob
+
+    job = CoverJob(
+        id="job-1",
+        user_id="u-1",
+        course_id="course-1",
+        style_preset=CoverStylePreset.BLUEPRINT,
+        input_hash="h",
+        claimed_at=datetime(2026, 7, 10, tzinfo=UTC),
+    )
+    wire = json.loads(job.model_dump_json(by_alias=True))
+    assert wire["userId"] == "u-1"
+    assert wire["courseId"] == "course-1"
+    assert wire["stylePreset"] == "blueprint"
+    assert wire["inputHash"] == "h"
+    assert wire["claimedAt"].startswith("2026-07-10")
+    assert wire["status"] == "queued"

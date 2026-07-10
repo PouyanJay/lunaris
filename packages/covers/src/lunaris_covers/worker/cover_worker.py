@@ -93,15 +93,22 @@ class CoverWorker:
         try:
             rendered = await self._produce(job)
             await self._upload(job, rendered)
-            artifact = CoverArtifact(
-                status=CoverJobStatus.READY, job_id=job.id, provenance=rendered.provenance
-            )
-            await self._attach_to_course(job, artifact)
         except Exception as exc:
+            # A render/upload failure is the job's own fault → settle FAILED (no retry of a bad
+            # render). CANCELLED settles stick (the queue guards it), so an owner stop still wins.
             _logger.exception("cover_worker.job_failed", failure_class=type(exc).__name__)
             await self._queue.fail(job_id=job.id, error=_user_error(exc))
             return
 
+        # Produce + upload succeeded. Fold the cover onto the course payload, then settle READY. An
+        # infrastructure failure here (course store / queue backend down) is NOT a render failure:
+        # it propagates out to run_once, which leaves the job in-flight so the lease sweep requeues
+        # it — rather than marking a job READY whose Course.cover never got written (the queue's
+        # "job state must never be silently wrong" invariant). At-least-once: a requeue re-produces.
+        artifact = CoverArtifact(
+            status=CoverJobStatus.READY, job_id=job.id, provenance=rendered.provenance
+        )
+        await self._attach_to_course(job, artifact)
         await self._queue.complete(job_id=job.id)
         _logger.info("cover_worker.job_ready", job_id=job.id)
 
@@ -140,9 +147,11 @@ class CoverWorker:
     async def _attach_to_course(self, job: CoverJob, artifact: CoverArtifact) -> None:
         """Fold the finished cover onto the course payload (``Course.cover``) so every surface reads
         it as course material. Covers generate async (post-build), so — unlike video, folded at
-        build finalize — the worker writes it here. Best-effort read-modify-write scoped to the
-        owner: a course deleted mid-generation is a benign skip (the image still uploaded and the
-        job still settles READY)."""
+        build finalize — the worker writes it here. A course deleted mid-generation is a benign skip
+        (``FileNotFoundError`` — the image still uploaded, the job still settles READY). A genuine
+        backend failure (``PersistenceError``) is NOT swallowed: it propagates so the caller leaves
+        the job in-flight for the lease sweep to requeue, rather than settling a job READY whose
+        ``Course.cover`` never got written."""
 
         def _write() -> None:
             course = self._course_store.load(job.course_id, owner_id=job.user_id)
@@ -154,8 +163,6 @@ class CoverWorker:
             await asyncio.to_thread(_write)
         except FileNotFoundError:
             _logger.info("cover_worker.course_gone", course_id=job.course_id)
-        except PersistenceError:
-            _logger.warning("cover_worker.attach_failed", course_id=job.course_id)
 
     async def _resolve_credentials(self, job: CoverJob) -> Mapping[str, str] | None:
         """The job owner's BYOK keys to bind for this render, or ``None`` to read the env."""

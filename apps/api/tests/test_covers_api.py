@@ -163,7 +163,8 @@ async def test_walking_skeleton_cover_roundtrip(
     prov = body["provenance"]
     assert prov is not None
     assert prov["jobId"] == job_id
-    assert prov["source"] == "stub" and prov["model"] == "stub"
+    assert prov["source"] == "stub"
+    assert prov["model"] == "stub"
     assert prov["stylePreset"] == "nocturne"
 
     # Assert (behaviour, not surface) — the image landed in storage as real PNG bytes, and the
@@ -193,6 +194,15 @@ async def test_enqueue_on_unowned_course_is_404(client: httpx.AsyncClient) -> No
     # USER_B does not own course-1 → a not-found answer that never leaks its existence.
     resp = await client.post(_ENQUEUE, headers=auth_headers(USER_B))
     assert resp.status_code == 404
+    # Correlation survives the failure path: the id rides on the HTTPException, not the discarded
+    # request-scoped Response (the reader/log can still triangulate a 404).
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_status_404_still_carries_the_request_id(client: httpx.AsyncClient) -> None:
+    resp = await client.get("/api/covers/does-not-exist", headers=auth_headers(USER_A))
+    assert resp.status_code == 404
+    assert resp.headers.get("X-Request-Id")
 
 
 async def test_status_is_owner_scoped(client: httpx.AsyncClient, worker: CoverWorker) -> None:
