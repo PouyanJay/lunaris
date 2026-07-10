@@ -118,18 +118,21 @@
   display: none;
 }
 
-/* The contextual title styled as an oversized eyebrow label — uppercase, tracked, muted — matching
-   the canvas "Build a course" treatment (kept at the title size, AA-legible secondary tone). */
+/* The contextual title styled as an eyebrow label — uppercase, tracked, muted. It shrinks and
+   truncates before it can crowd the search field; the full text stays available via its title
+   tooltip (set on the element in AgentShell). Capped so a long course name never dominates the row. */
 .title {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 3ch;
+  max-width: 40ch;
 }
 
 .meta {
@@ -139,12 +142,30 @@
   flex: none;
 }
 
-/* The global-search trigger sits between the title and the meta, absorbing the slack. */
+/* The global-search trigger sits between the title and the meta, absorbing the slack so it stays a
+   visible field rather than collapsing when the title is long. */
 .search {
   display: flex;
   justify-content: flex-end;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+}
+
+/* The secondary row under the header — hosts the course view tabs, left-aligned, on its own line so
+   the title row stays uncluttered. Scrolls horizontally on narrow widths rather than overflowing. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding: var(--space-2) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .body {
@@ -163,20 +184,11 @@
   .header {
     /* Tighter side padding; the menu button supplies the left affordance. */
     padding: var(--space-3) var(--space-4);
-    /* Let dense header meta (view tabs + status) wrap below the title instead of overflowing. */
-    flex-wrap: wrap;
-    row-gap: var(--space-2);
   }
-  /* Drop the view tabs + status onto their own second row so the title keeps the full first row
-     beside the menu button; the tabs scroll horizontally there if they exceed the width. */
-  .meta {
-    flex-basis: 100%;
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-  .title {
-    flex: 1;
+  /* Match the header's tighter side padding so the tabs line up with the title above them. */
+  .toolbar {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
   }
   .sidebar {
     position: fixed;

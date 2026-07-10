@@ -1,30 +1,36 @@
-/* The design's topbar search field, as the palette's trigger. */
+/* The design's topbar search field, as the palette's trigger. A visible bordered field (not a faint
+   ghost) so it reads as an actionable control on the near-black header. */
 .trigger {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  max-width: 340px;
-  padding: var(--space-2) var(--space-3);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-subtle);
+  max-width: 360px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
   color: var(--text-muted);
   font-size: var(--text-sm);
   cursor: pointer;
   transition:
     color var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
+    border-color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
 }
 
 .trigger:hover {
   color: var(--text-secondary);
-  border-color: var(--border-strong);
+  border-color: var(--text-muted);
+  background: var(--surface-raised);
 }
 
 .trigger:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .placeholder {
@@ -38,7 +44,15 @@
 
 .hint {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-2);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
   font-size: 11px;
+  line-height: 1;
   letter-spacing: 0.04em;
 }
 
