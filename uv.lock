@@ -1610,6 +1610,7 @@ version = "0.0.0"
 source = { editable = "packages/covers" }
 dependencies = [
     { name = "lunaris-runtime" },
+    { name = "openai" },
     { name = "pydantic" },
     { name = "structlog" },
 ]
@@ -1617,6 +1618,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "openai", specifier = ">=2.0" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "structlog", specifier = ">=24.4" },
 ]

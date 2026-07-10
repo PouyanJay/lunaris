@@ -50,6 +50,9 @@ param keylessEmbeddingsBaseUrl string = ''
 @description('Explainer-video generation operator kill-switch (V7). False (the default) keeps the API from enqueuing any video jobs, so the dedicated worker stays scaled to zero — prod stays dark until this flips. True (dev, and prod at the V7-T5 rollout) lets keyed+owned builds enqueue videos.')
 param videoGenerationEnabled bool = false
 
+@description('Course-cover-image generation operator kill-switch (course-cover-images). False (the default) keeps the API from enqueuing any cover jobs, so the dedicated cover worker stays scaled to zero. True lets keyed+owned builds auto-enqueue covers.')
+param coverGenerationEnabled bool = false
+
 @description('Comma-separated emails allowed to manage the signup invite-gate (LUNARIS_ADMIN_EMAILS). Empty (the default) means no admins, so the admin endpoints 403 everyone.')
 param adminEmails string = ''
 
@@ -128,6 +131,10 @@ var baseEnv = [
   // (infra/video.bicep) renders them. Without this, the API's stub-pipeline workers (the lean API
   // image has no Manim) would race the real worker and settle jobs with placeholder media.
   { name: 'LUNARIS_VIDEO_INPROC_WORKER', value: 'false' }
+  { name: 'COVER_GENERATION_ENABLED', value: string(coverGenerationEnabled) }
+  // Likewise: the cloud API enqueues covers but the dedicated cover worker (infra/cover.bicep)
+  // generates them — the API never drains the cover queue in-process.
+  { name: 'LUNARIS_COVER_INPROC_WORKER', value: 'false' }
 ]
 
 // Point the keyless fallbacks at the self-hosted inference endpoints when wired; otherwise omit the

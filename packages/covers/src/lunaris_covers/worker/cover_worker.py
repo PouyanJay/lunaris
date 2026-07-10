@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Mapping
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, nullcontext, suppress
 
 import structlog
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
@@ -21,11 +21,25 @@ from lunaris_covers.protocols.cover_pipeline_protocol import ICoverPipeline, Sta
 _logger = structlog.get_logger(__name__)
 
 
+class _CoverCancelledError(Exception):
+    """Internal signal: the owner stopped this job mid-render, so the worker aborted the render.
+
+    Raised by ``_produce`` ONLY when the cancel-watcher fired (the job row went CANCELLED, or
+    vanished) — distinct from a plain ``asyncio.CancelledError`` (a worker shutdown), which still
+    propagates so the supervisor can drain. ``_process`` catches it and stops without settling: the
+    row is already CANCELLED and no image was uploaded, so no compute is spent and nothing is
+    published (mirrors ``VideoWorker``'s ``_VideoCancelledError``)."""
+
+    def __init__(self, job_id: str) -> None:
+        super().__init__(f"cover job {job_id!r} cancelled by its owner")
+        self.job_id = job_id
+
+
 class CoverWorker:
     """The cover worker loop: poll → claim → produce → upload → settle. One job at a time.
 
-    Mirrors ``VideoWorker`` (heartbeat + cancel-watcher land in Phase 2; T0 is the core loop). Its
-    contract:
+    Mirrors ``VideoWorker`` end to end — the core loop (T0) plus the lease heartbeat and cancel-
+    watcher (T6). Its contract:
 
     - **It never raises.** A job-level error settles that job FAILED; an infrastructure error is
       logged and absorbed — the next poll retries. A crash-loop must never be one bad job away.
@@ -50,6 +64,8 @@ class CoverWorker:
         course_store: ICourseStore,
         worker_id: str,
         credential_resolver: CredentialResolver | None = None,
+        heartbeat_interval_s: float = 60.0,
+        cancel_poll_interval_s: float = 5.0,
     ) -> None:
         self._queue = queue
         self._pipeline = pipeline
@@ -57,6 +73,10 @@ class CoverWorker:
         self._course_store = course_store
         self._worker_id = worker_id
         self._credential_resolver = credential_resolver
+        self._heartbeat_interval_s = heartbeat_interval_s
+        # Tighter than the heartbeat so a stopped render aborts promptly — the cloud worker has no
+        # direct channel from the API; this DB poll IS the cancellation signal.
+        self._cancel_poll_interval_s = cancel_poll_interval_s
 
     async def run_forever(self, *, poll_interval_seconds: float = 2.0) -> None:
         """Drain the queue forever; idle-poll when empty. Cancellation is the stop signal."""
@@ -93,6 +113,12 @@ class CoverWorker:
         try:
             rendered = await self._produce(job)
             await self._upload(job, rendered)
+        except _CoverCancelledError:
+            # The owner stopped this job mid-render: the row is already CANCELLED and the render was
+            # aborted (no more compute, nothing uploaded). Do NOT settle (complete/fail would be a
+            # sticky no-op anyway) — just stop.
+            _logger.info("cover_worker.job_cancelled", job_id=job.id)
+            return
         except Exception as exc:
             # A render/upload failure is the job's own fault → settle FAILED (no retry of a bad
             # render). CANCELLED settles stick (the queue guards it), so an owner stop still wins.
@@ -113,11 +139,73 @@ class CoverWorker:
         _logger.info("cover_worker.job_ready", job_id=job.id)
 
     async def _produce(self, job: CoverJob) -> RenderedCover:
-        """Render inside the owner's credential scope. Only the pipeline's provider calls are
-        scoped; infrastructure work (queue/storage/course store) stays on the worker's own env."""
+        """Render the job with a lease heartbeat and a cancel-watcher running alongside (T6).
+
+        The render runs as its own task so the watcher can cancel it the moment the owner stops the
+        job — no compute is spent on a stopped cover. The heartbeat extends the lease while the
+        render runs, so the lease-timeout sweep can tell a live worker from a dead one. Both run
+        outside the credential scope (they touch only the queue's own infra creds).
+
+        A watcher-fired cancel is re-raised as ``_CoverCancelledError`` so ``_process`` aborts
+        without settling; an ``asyncio.CancelledError`` the watcher did NOT cause (a worker
+        shutdown) is left untouched so the supervisor can still drain."""
+        heartbeat = asyncio.create_task(self._heartbeat(job.id))
+        render = asyncio.create_task(self._render(job))
+        # The watcher sets this BEFORE cancelling the render (synchronously, no await between), so
+        # by the time the render task's CancelledError reaches the except below the flag is already
+        # set — that is how an owner stop is told apart from a shutdown cancel.
+        cancelled = asyncio.Event()
+        watcher = asyncio.create_task(self._watch_for_cancel(job.id, render, cancelled))
+        try:
+            return await render
+        except asyncio.CancelledError:
+            if cancelled.is_set():
+                raise _CoverCancelledError(job.id) from None
+            raise  # a shutdown cancel, not an owner stop — let it propagate
+        finally:
+            watcher.cancel()
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher
+            with suppress(asyncio.CancelledError):
+                await heartbeat
+
+    async def _render(self, job: CoverJob) -> RenderedCover:
+        """The pipeline render itself, inside the owner's credential scope. Only the pipeline's
+        provider calls (Claude / OpenAI) are scoped; infrastructure work (queue/storage/course
+        store) stays on the worker's own env, so upload + settle stay outside it."""
         credentials = await self._resolve_credentials(job)
         with self._credential_scope(credentials):
             return await self._pipeline.produce(job, on_stage=self._stage_reporter(job))
+
+    async def _watch_for_cancel(
+        self, job_id: str, render: "asyncio.Task[RenderedCover]", cancelled: asyncio.Event
+    ) -> None:
+        """Poll the job row; the moment the owner stops it (status CANCELLED) or it vanishes, cancel
+        the render task so no compute is wasted. Marks ``cancelled`` first so ``_produce`` can tell
+        an owner stop from a shutdown cancel. A transient read blip is retried next tick (the
+        heartbeat owns lease health); the watcher never fails the render itself."""
+        while True:
+            await asyncio.sleep(self._cancel_poll_interval_s)
+            try:
+                job = await self._queue.get(job_id=job_id)
+            except PersistenceError:
+                continue
+            if job is None or job.status is CoverJobStatus.CANCELLED:
+                cancelled.set()
+                render.cancel()
+                return
+
+    async def _heartbeat(self, job_id: str) -> None:
+        """Extend the job's lease every ``heartbeat_interval_s`` until cancelled (render done). A
+        heartbeat failure is logged, never fatal — the loop survives so a transient blip doesn't
+        abandon a render (a sustained outage just lets the lease lapse and the job requeue)."""
+        while True:
+            await asyncio.sleep(self._heartbeat_interval_s)
+            try:
+                await self._queue.heartbeat(job_id=job_id)
+            except PersistenceError:
+                _logger.warning("cover_worker.heartbeat_failed", job_id=job_id)
 
     def _stage_reporter(self, job: CoverJob) -> StageReporter:
         async def report(stage: CoverJobStatus) -> None:

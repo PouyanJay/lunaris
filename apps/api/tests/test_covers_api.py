@@ -236,3 +236,126 @@ async def test_keyless_caller_cannot_enqueue(
         # Act / Assert — 403 (a keyed-tier feature), so the web falls back to the Typographic cover.
         resp = await keyless.post(_ENQUEUE, headers=auth_headers(USER_A))
         assert resp.status_code == 403
+
+
+# ── T7: active (re-attach) / regenerate / cancel ────────────────────────────────────
+
+
+async def _enqueue_ready(client: httpx.AsyncClient, worker: CoverWorker) -> str:
+    """Enqueue a cover for course-1 and drain it to READY; return its job id."""
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    assert await worker.run_once() is True
+    return job_id
+
+
+async def test_active_returns_the_in_flight_job(client: httpx.AsyncClient) -> None:
+    # A cover is enqueued but not yet drained — /active re-attaches the reader to the live job.
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    resp = await client.get(f"/api/covers/{job_id}/active", headers=auth_headers(USER_A))
+    assert resp.status_code == 200
+    assert resp.json()["job"]["id"] == job_id
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_active_returns_a_settled_regenerate_newer_than_the_source(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    # The reader holds the FIRST cover's id; a regenerate settles under a NEW id. /active surfaces
+    # the newer READY cover (with signed URL + provenance) so a completed regenerate persists.
+    source_id = await _enqueue_ready(client, worker)
+    regen = await client.post(f"/api/covers/{source_id}/regenerate", headers=auth_headers(USER_A))
+    new_id = regen.json()["job"]["id"]
+    assert await worker.run_once() is True  # drain the regenerate to READY
+
+    resp = await client.get(f"/api/covers/{source_id}/active", headers=auth_headers(USER_A))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["job"]["id"] == new_id
+    assert body["imageUrl"]  # a READY active job carries the signed URL + provenance
+    assert body["provenance"] is not None
+
+
+async def test_active_204_when_nothing_newer_than_the_source(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    source_id = await _enqueue_ready(client, worker)
+    resp = await client.get(f"/api/covers/{source_id}/active", headers=auth_headers(USER_A))
+    assert resp.status_code == 204
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_active_is_owner_scoped_404(client: httpx.AsyncClient, worker: CoverWorker) -> None:
+    source_id = await _enqueue_ready(client, worker)
+    resp = await client.get(f"/api/covers/{source_id}/active", headers=auth_headers(USER_B))
+    assert resp.status_code == 404
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_regenerate_enqueues_a_fresh_job(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    source_id = await _enqueue_ready(client, worker)
+    resp = await client.post(f"/api/covers/{source_id}/regenerate", headers=auth_headers(USER_A))
+    assert resp.status_code == 202
+    assert resp.headers.get("X-Request-Id")
+    new_id = resp.json()["job"]["id"]
+    assert new_id != source_id
+    assert resp.json()["job"]["status"] == CoverJobStatus.QUEUED.value
+
+
+async def test_regenerate_dedups_an_in_flight_job(client: httpx.AsyncClient) -> None:
+    # A regenerate while one is already generating returns the in-flight job, never a second.
+    source_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    resp = await client.post(f"/api/covers/{source_id}/regenerate", headers=auth_headers(USER_A))
+    assert resp.status_code == 202
+    assert resp.json()["job"]["id"] == source_id
+
+
+async def test_regenerate_is_keyless_gated_403(
+    tmp_path: Path,
+    queue: InMemoryCoverJobQueue,
+    storage: InMemoryCoverStorage,
+    course_store: _FakeCourseStore,
+    worker: CoverWorker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    async with _build_client(tmp_path, queue, storage, course_store) as keyed:
+        source_id = await _enqueue_ready(keyed, worker)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    async with _build_client(tmp_path, queue, storage, course_store) as keyless:
+        resp = await keyless.post(
+            f"/api/covers/{source_id}/regenerate", headers=auth_headers(USER_A)
+        )
+        assert resp.status_code == 403
+
+
+async def test_regenerate_unknown_job_404(client: httpx.AsyncClient) -> None:
+    resp = await client.post("/api/covers/nope/regenerate", headers=auth_headers(USER_A))
+    assert resp.status_code == 404
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_cancel_stops_a_queued_job(client: httpx.AsyncClient) -> None:
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    resp = await client.post(f"/api/covers/{job_id}/cancel", headers=auth_headers(USER_A))
+    assert resp.status_code == 200
+    assert resp.json()["job"]["status"] == CoverJobStatus.CANCELLED.value
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_cancel_is_owner_scoped_404(client: httpx.AsyncClient) -> None:
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    resp = await client.post(f"/api/covers/{job_id}/cancel", headers=auth_headers(USER_B))
+    assert resp.status_code == 404
+    assert resp.headers.get("X-Request-Id")
+
+
+async def test_cancel_is_idempotent_on_a_terminal_job(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    # Cancelling an already-READY cover is a no-op that returns its current (terminal) state.
+    job_id = await _enqueue_ready(client, worker)
+    resp = await client.post(f"/api/covers/{job_id}/cancel", headers=auth_headers(USER_A))
+    assert resp.status_code == 200
+    assert resp.json()["job"]["status"] == CoverJobStatus.READY.value
