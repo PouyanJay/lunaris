@@ -4,6 +4,7 @@ from .base import CourseModel
 from .build_provenance import CapabilityBuildTag
 from .course_scope import CourseScope
 from .course_videos import CourseVideos
+from .cover_artifact import CoverArtifact
 from .enums import CourseStatus, GoalType
 from .instruction import Module
 from .knowledge import Citation, PrerequisiteGraph
@@ -41,3 +42,7 @@ class Course(CourseModel):
     # None until the build's finalize stitches them (V5-T2); a course built before V5, with video
     # off, or whose course render degraded carries none — the reader shows no Overview section.
     videos: CourseVideos | None = None
+    # The course's AI cover image (course-cover-images). None until a cover job settles READY (or on
+    # a keyless account, which never enqueues one — the reader shows the Typographic cover instead).
+    # Keeps a job_id handle only; the API resolves a fresh signed URL on demand.
+    cover: CoverArtifact | None = None

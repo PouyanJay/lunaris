@@ -29,6 +29,7 @@ from .routers import (
     capabilities,
     corpus,
     courses,
+    covers,
     credentials,
     explain,
     health,
@@ -113,6 +114,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(capabilities.router)
     app.include_router(keyless.router)
     app.include_router(videos.router)
+    app.include_router(covers.router)
 
 
 def create_app() -> FastAPI:

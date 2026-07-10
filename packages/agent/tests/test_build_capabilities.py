@@ -19,6 +19,7 @@ from lunaris_agent.coverage_critic import StubCoverageCritic
 from lunaris_agent.critic import MinimalCritic
 from lunaris_agent.harness.draft import CourseDraft
 from lunaris_agent.harness.tools import make_finalize_course_tool
+from lunaris_runtime.capabilities.capability_spec import CAPABILITY_SPECS
 from lunaris_runtime.credentials import run_credentials
 from lunaris_runtime.device_bridge import DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import CourseStore
@@ -29,6 +30,10 @@ from lunaris_runtime.schema import (
     KnowledgeComponent,
     PrerequisiteGraph,
 )
+
+# The capabilities the course build itself runs (and therefore tags) — COVER is excluded (it
+# generates async, so it carries no per-course build tag). Derived from the spec so it can't drift.
+_BUILD_TAGGED = {spec.capability for spec in CAPABILITY_SPECS if spec.build_tagged}
 
 
 def _draft_with_graph(course_id: str, run_id: str) -> CourseDraft:
@@ -75,7 +80,7 @@ async def test_keyless_build_tags_every_capability_with_its_fallback(tmp_path: P
     # label), and the tag survives the store round-trip (structural provenance persists).
     assert course is not None
     tagged = {t.capability for t in course.build_capabilities}
-    assert tagged == set(CapabilityName)
+    assert tagged == _BUILD_TAGGED
     llm = _tag(course, CapabilityName.LLM)
     assert llm.mode is CapabilityMode.FALLBACK
     assert "Qwen" in llm.provider
@@ -138,7 +143,7 @@ async def test_finalize_logs_the_fallback_capabilities_run_id_correlated(tmp_pat
     # Assert — the finalize event carries the run_id and names the keyless capabilities (labels).
     finalized = next(e for e in logs if e["event"] == "agent_course_finalized")
     assert finalized["run_id"] == "run-log"
-    assert set(finalized["fallback_capabilities"]) == {c.value for c in CapabilityName}
+    assert set(finalized["fallback_capabilities"]) == {c.value for c in _BUILD_TAGGED}
 
 
 async def test_a_device_compute_build_tags_the_llm_with_the_device_provider(

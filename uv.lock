@@ -12,6 +12,7 @@ members = [
     "lunaris",
     "lunaris-agent",
     "lunaris-api",
+    "lunaris-covers",
     "lunaris-eval",
     "lunaris-graph",
     "lunaris-grounding",
@@ -1570,6 +1571,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "lunaris-agent" },
+    { name = "lunaris-covers" },
     { name = "lunaris-grounding" },
     { name = "lunaris-runtime" },
     { name = "lunaris-video" },
@@ -1590,6 +1592,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "lunaris-agent", editable = "packages/agent" },
+    { name = "lunaris-covers", editable = "packages/covers" },
     { name = "lunaris-grounding", editable = "packages/grounding" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "lunaris-video", editable = "packages/video" },
@@ -1600,6 +1603,23 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 provides-extras = ["render"]
+
+[[package]]
+name = "lunaris-covers"
+version = "0.0.0"
+source = { editable = "packages/covers" }
+dependencies = [
+    { name = "lunaris-runtime" },
+    { name = "pydantic" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "structlog", specifier = ">=24.4" },
+]
 
 [[package]]
 name = "lunaris-eval"

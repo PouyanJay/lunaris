@@ -24,6 +24,10 @@ def capture_build_capabilities() -> list[CapabilityBuildTag]:
     """
     tags: list[CapabilityBuildTag] = []
     for spec in CAPABILITY_SPECS:
+        # Skip capabilities that aren't part of the build (the cover generates async) — tagging them
+        # per course would record a build the run never performed.
+        if not spec.build_tagged:
+            continue
         is_live = resolve_secret(spec.env_var) is not None
         provider = spec.live_label if is_live else spec.fallback_label
         if (

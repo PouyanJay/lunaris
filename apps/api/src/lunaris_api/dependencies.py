@@ -34,6 +34,10 @@ from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.persistence import (
     CourseStore,
     ICourseStore,
+    ICoverJobQueue,
+    ICoverStorage,
+    InMemoryCoverJobQueue,
+    InMemoryCoverStorage,
     InMemoryRunEventStore,
     InMemoryRunStore,
     InMemoryVideoJobQueue,
@@ -43,6 +47,8 @@ from lunaris_runtime.persistence import (
     IVideoJobQueue,
     IVideoStorage,
     SupabaseCourseStore,
+    SupabaseCoverJobQueue,
+    SupabaseCoverStorage,
     SupabaseRunEventStore,
     SupabaseRunStore,
     SupabaseVideoJobQueue,
@@ -253,6 +259,32 @@ def get_video_storage(settings: Annotated[Settings, Depends(get_settings)]) -> I
 
 VideoJobQueueDep = Annotated[IVideoJobQueue, Depends(get_video_job_queue)]
 VideoStorageDep = Annotated[IVideoStorage, Depends(get_video_storage)]
+
+
+# The cover-image queue + storage — same shared-instance posture as the video pair: the lifespan
+# worker and the request DI must see the SAME in-memory instances or enqueues would vanish.
+_in_memory_cover_queue = InMemoryCoverJobQueue()
+_supabase_cover_queue = SupabaseCoverJobQueue()
+_in_memory_cover_storage = InMemoryCoverStorage()
+_supabase_cover_storage = SupabaseCoverStorage()
+
+
+def get_cover_job_queue(settings: Annotated[Settings, Depends(get_settings)]) -> ICoverJobQueue:
+    """The cover-job queue: Supabase (durable, SKIP LOCKED claims) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_cover_queue
+    return _in_memory_cover_queue
+
+
+def get_cover_storage(settings: Annotated[Settings, Depends(get_settings)]) -> ICoverStorage:
+    """The cover-image store: the private course-covers bucket when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_cover_storage
+    return _in_memory_cover_storage
+
+
+CoverJobQueueDep = Annotated[ICoverJobQueue, Depends(get_cover_job_queue)]
+CoverStorageDep = Annotated[ICoverStorage, Depends(get_cover_storage)]
 
 
 def _video_coordinator_factory(
@@ -983,6 +1015,10 @@ def get_course_service(
         # video gate) so an old course's artifacts are reclaimable even after video is turned off.
         video_job_queue=get_video_job_queue(settings),
         video_storage=get_video_storage(settings),
+        # The cover-image storage cascade (course-cover-images) — wired the same way so a deleted
+        # course's cover image + job row are reclaimed too.
+        cover_job_queue=get_cover_job_queue(settings),
+        cover_storage=get_cover_storage(settings),
         # The learner-data cascade for a full course delete (course-delete): the caller's per-course
         # progress, bookmarks, and activity feed, so deleting a course purges them too. Owner-scoped
         # in the service.
