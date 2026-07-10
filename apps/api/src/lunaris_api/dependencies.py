@@ -20,6 +20,19 @@ from lunaris_agent.subagents.goal_interpreter import (
     DefaultGoalInterpreter,
     IGoalInterpreter,
 )
+from lunaris_covers import (
+    CourseStoreCoverSourceProvider,
+    CoverArtDirector,
+    CoverPipeline,
+    CoverVisionQa,
+    ICoverPipeline,
+    OpenAiImageRenderer,
+)
+from lunaris_covers.pipeline.model_adapters import (
+    build_cover_text_invoke,
+    build_cover_vision_invoke,
+    cover_claude_model,
+)
 from lunaris_grounding import (
     ICorpusStore,
     InMemoryCorpusStore,
@@ -285,6 +298,35 @@ def get_cover_storage(settings: Annotated[Settings, Depends(get_settings)]) -> I
 
 CoverJobQueueDep = Annotated[ICoverJobQueue, Depends(get_cover_job_queue)]
 CoverStorageDep = Annotated[ICoverStorage, Depends(get_cover_storage)]
+
+
+def get_cover_pipeline(settings: Settings) -> ICoverPipeline:
+    """The cover worker's pipeline: the real Claude art-director → GPT Image 2 → vision-QA loop.
+
+    Composed OUTSIDE request DI (the lifespan task locally, the dedicated container in cloud), like
+    ``get_video_pipeline`` — a plain ``Settings`` arg, not a ``Depends``. Claude (art director +
+    vision QA) and OpenAI (GPT Image 2) authenticate on the job owner's BYOK keys, resolved per call
+    inside the model seams from the run's credential scope — so this factory holds no keys. There is
+    no stub branch: a keyless account never enqueues a cover (the enqueue tier gate), so the worker
+    only ever runs on a keyed tenant. The art director + QA share one Claude model id."""
+    claude_model = cover_claude_model()
+    return CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(_resolve_course_store(settings)),
+        art_director=CoverArtDirector(
+            invoke=build_cover_text_invoke(claude_model), model=claude_model
+        ),
+        renderer=OpenAiImageRenderer(),
+        qa_model=claude_model,
+        inspector=CoverVisionQa(invoke=build_cover_vision_invoke(claude_model), model=claude_model),
+    )
+
+
+def get_cover_credential_resolver(settings: Settings) -> CredentialResolver | None:
+    """The BYOK resolver the cover worker renders each job's owner on — their OpenAI + Anthropic
+    keys. Identical composition to the video resolver (the vault resolves every BYOK provider), so
+    it delegates, keeping the cover wiring self-descriptive. ``None`` when BYOK is off (env
+    fallback)."""
+    return get_video_credential_resolver(settings)
 
 
 def _video_coordinator_factory(

@@ -13,6 +13,7 @@ from .rendering.openai_image_renderer import OpenAiImageRenderer
 from .schemas.cover_qa_verdict import CoverQaDefect, CoverQaVerdict
 from .sourcing.course_store_cover_source_provider import CourseStoreCoverSourceProvider
 from .worker.cover_worker import CoverWorker
+from .worker.runner import run_cover_workers
 
 __all__ = [
     "CourseStoreCoverSourceProvider",
@@ -34,4 +35,5 @@ __all__ = [
     "StubCoverPipeline",
     "TextInvoke",
     "VisionInvoke",
+    "run_cover_workers",
 ]
