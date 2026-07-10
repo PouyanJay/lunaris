@@ -22,6 +22,9 @@ interface AgentShellProps {
   meta?: ReactNode;
   /** The global-search trigger, docked between the title and the meta (the ⌘K field). */
   search?: ReactNode;
+  /** Optional secondary row under the header (e.g. a course's view tabs) — keeps the title row
+   *  uncluttered. Hairline-divided from the header and the body. */
+  toolbar?: ReactNode;
   /** Optional band rendered between the header and the body (e.g. the Draft-mode banner). */
   banner?: ReactNode;
   children: ReactNode;
@@ -49,6 +52,7 @@ export function AgentShell({
   title,
   meta,
   search,
+  toolbar,
   banner,
   children,
   layout,
@@ -148,6 +152,7 @@ export function AgentShell({
           {search && <div className={styles.search}>{search}</div>}
           {meta && <div className={styles.meta}>{meta}</div>}
         </header>
+        {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
         {banner}
         <main id={CANVAS_ID} className={styles.body}>
           {children}

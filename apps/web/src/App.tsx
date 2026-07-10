@@ -70,7 +70,6 @@ import { useCancelRun } from "./hooks/useCancelRun";
 import { useCourseDeletion } from "./hooks/useCourseDeletion";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
 import type { Course, CourseStatus } from "./types/course";
-import styles from "./App.module.css";
 
 const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
 
@@ -112,28 +111,11 @@ function statusTone(status: CourseStatus): { tone: StatusTone; live: boolean } {
   return { tone: "neutral", live: false };
 }
 
+/** The course canvas's status pill (REVIEW / PUBLISHED / building…) — the graph metrics that used
+ *  to sit here were noise in the title row and now live on the Map view where they belong. */
 function HeaderMeta({ course }: { course: Course }) {
-  const { graph, status } = course;
-  const { tone, live } = statusTone(status);
-  return (
-    <>
-      <dl className={styles.metrics}>
-        <Metric label="KCs" value={String(graph.nodes.length)} />
-        <Metric label="Edges" value={String(graph.edges.length)} />
-        <Metric label="Acyclic" value={graph.isAcyclic ? "yes" : "no"} />
-      </dl>
-      <StatusDot label={status} tone={tone} live={live} />
-    </>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className={styles.metric}>
-      <dt className="eyebrow">{label}</dt>
-      <dd className={`${styles.metricValue} mono`}>{value}</dd>
-    </div>
-  );
+  const { tone, live } = statusTone(course.status);
+  return <StatusDot label={course.status} tone={tone} live={live} />;
 }
 
 /** A loaded course's graph, or its empty state when no concepts were mapped. */
@@ -495,12 +477,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
     };
     return {
       title: course.topic,
-      meta: (
-        <>
-          <ViewToggle value={viewMode} onChange={(view) => navigate(coursePath(course.id, view))} />
-          <HeaderMeta course={course} />
-        </>
+      // The view tabs move to their own toolbar row so the title row stays uncluttered; only the
+      // course status stays as header meta beside the search field.
+      toolbar: (
+        <ViewToggle value={viewMode} onChange={(view) => navigate(coursePath(course.id, view))} />
       ),
+      meta: <HeaderMeta course={course} />,
       body: bodies[viewMode](),
     };
   };
@@ -520,7 +502,12 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   // Resolve the single canvas surface; the shell + sidebar wrap it once. The URL decides the
   // navigation surface (not-found / settings / admin); the home route then resolves an opened
   // historical run or the live build (idle / streaming / error / ready).
-  const canvas = ((): { title: string; meta: ReactNode; body: ReactNode } => {
+  const canvas = ((): {
+    title: string;
+    meta: ReactNode;
+    body: ReactNode;
+    toolbar?: ReactNode;
+  } => {
     const placeholder = placeholderCanvas(route, () => navigate("/"));
     if (placeholder) return placeholder;
     if (route.kind === "bookmarks") {
@@ -816,6 +803,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
         sidebar={sidebar}
         title={canvas.title}
         meta={canvas.meta}
+        toolbar={canvas.toolbar}
         search={<SearchTrigger onOpen={openPalette} />}
         banner={
           <DraftModeBanner
