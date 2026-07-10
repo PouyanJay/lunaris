@@ -4,6 +4,7 @@
  * modelled; extend as more of the course surface is built out.
  */
 
+import type { CoverJobStatus, CoverStylePreset } from "../lib/coverJobs";
 import type { VideoJobStatus } from "../lib/videoJobs";
 import type { GoalType } from "./clarifier";
 
@@ -451,6 +452,35 @@ export interface CourseVideos {
   overview?: VideoArtifact | null;
 }
 
+/** Where a generated course cover came from — structural provenance (CLAUDE.md; mirrors the runtime
+ *  `CoverProvenance`). The anti-slop record: which image model drew it (`source`/`model`) and which
+ *  Claude models wrote the house-style prompt (`artDirectorModel`) and inspected the result
+ *  (`qaModel`), plus the exact `prompt` and how many render→QA rounds it took (`qaAttempts`). */
+export interface CoverProvenance {
+  jobId: string;
+  courseId: string;
+  source: string;
+  model: string;
+  artDirectorModel: string;
+  qaModel: string;
+  stylePreset: CoverStylePreset;
+  prompt: string;
+  qaAttempts: number;
+  inputHash: string;
+  generatedAt: string;
+}
+
+/** A course's AI cover image as it rides in the course payload (mirrors the runtime `CoverArtifact`).
+ *  Keeps a `jobId` HANDLE only — the reader resolves a fresh signed URL on demand via
+ *  `GET /api/covers/{jobId}`, never a stale persisted URL. `provenance` is absent on a FAILED cover;
+ *  `jobId` is present even when FAILED so a regenerate can re-run it. Absent on a course that never
+ *  got an AI cover (keyless account) → the reader shows the Typographic cover instead. */
+export interface CoverArtifact {
+  status: CoverJobStatus;
+  jobId?: string | null;
+  provenance?: CoverProvenance | null;
+}
+
 export interface Course {
   id: string;
   topic: string;
@@ -472,6 +502,9 @@ export interface Course {
   buildCapabilities?: CapabilityBuildTag[];
   /** The course's opening videos (explainer-video V5); absent on a pre-V5 / video-off course. */
   videos?: CourseVideos | null;
+  /** The course's AI cover image (course-cover-images); absent until a cover job settles READY, or
+   *  on a keyless account that never enqueues one → the reader shows the Typographic cover. */
+  cover?: CoverArtifact | null;
   status: CourseStatus;
 }
 
