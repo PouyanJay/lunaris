@@ -77,7 +77,6 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-5);
   border-bottom: var(--border-width) solid var(--border);
@@ -118,9 +117,10 @@
   display: none;
 }
 
-/* The contextual title styled as an eyebrow label — uppercase, tracked, muted. It shrinks and
-   truncates before it can crowd the search field; the full text stays available via its title
-   tooltip (set on the element in AgentShell). Capped so a long course name never dominates the row. */
+/* The contextual title styled as an eyebrow label — uppercase, tracked, muted. It grows to fill the
+   row's slack (pinning the view tabs, search, and status to the right edge) but shrinks and
+   truncates before it can ever crowd them; the full text stays available via its title tooltip
+   (set on the element in AgentShell). */
 .title {
   font-size: var(--text-sm);
   font-weight: 500;
@@ -130,9 +130,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 0 1 auto;
-  min-width: 3ch;
-  max-width: 40ch;
+  flex: 1 1 auto;
+  min-width: 4ch;
 }
 
 .meta {
@@ -142,36 +141,59 @@
   flex: none;
 }
 
-/* The global-search trigger sits between the title and the meta, absorbing the slack so it stays a
-   visible field rather than collapsing when the title is long. */
+/* The global-search trigger sits in the right cluster, after the view tabs. Fixed to ~75% of its
+   former width so the tabs fit beside it; it collapses to an icon below 900px (see SearchTrigger). */
 .search {
   display: flex;
   justify-content: flex-end;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  width: 270px;
   min-width: 0;
 }
 
-/* The secondary row under the header — hosts the course view tabs, left-aligned, on its own line so
-   the title row stays uncluttered. Scrolls horizontally on narrow widths rather than overflowing. */
+/* The course view tabs — inline in the header's right cluster on wide screens, before the search.
+   Below 900px they reflow to their own full-width scrollable row beneath the title (see the media
+   query) so the header never overflows. */
 .toolbar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   flex: none;
-  padding: var(--space-2) var(--space-5);
-  border-bottom: var(--border-width) solid var(--border);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-.toolbar::-webkit-scrollbar {
-  display: none;
 }
 
 .body {
   flex: 1;
   min-height: 0;
   position: relative;
+}
+
+/* ─── Narrow (≤900px): the header wraps, view tabs drop to their own row ────────
+   Below the point where the search collapses to an icon, the title row can't also hold the tabs.
+   The header wraps: title + search-icon + status stay on the first line, and the tabs reflow to a
+   full-width scrollable row beneath them, hairline-divided from the title row above. */
+@media (max-width: 900px) {
+  .header {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+  .search {
+    /* Collapsed to the search icon (SearchTrigger hides its label/hint here) — size to content. */
+    flex: none;
+    width: auto;
+  }
+  .toolbar {
+    order: 1;
+    flex-basis: 100%;
+    width: 100%;
+    padding-top: var(--space-2);
+    border-top: var(--border-width) solid var(--border);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ─── Phone (≤768px): the rail becomes an off-canvas drawer ────────────────────
@@ -184,11 +206,6 @@
   .header {
     /* Tighter side padding; the menu button supplies the left affordance. */
     padding: var(--space-3) var(--space-4);
-  }
-  /* Match the header's tighter side padding so the tabs line up with the title above them. */
-  .toolbar {
-    padding-left: var(--space-4);
-    padding-right: var(--space-4);
   }
   .sidebar {
     position: fixed;
