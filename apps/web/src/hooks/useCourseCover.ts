@@ -10,8 +10,18 @@ import {
   type CoverJobView,
 } from "../lib/coverJobs";
 import type { CoverArtifact } from "../types/course";
+import type { Theme } from "./useTheme";
 
 export const COURSE_COVER_POLL_INTERVAL_MS = 3000;
+
+/** The cover image URL to show for the app `theme` — the INVERTED / contrast mapping: the app's
+ *  LIGHT theme shows the DARK cover (it pops against the light chrome) and the DARK theme shows the
+ *  LIGHT cover. Falls back to the dark image when there is no light twin (a dark-only or
+ *  pre-dual-theme cover), and returns null when the state is not a resolved image. */
+export function coverImageUrlForTheme(state: CourseCoverState, theme: Theme): string | null {
+  if (state.phase !== "image") return null;
+  return theme === "dark" ? (state.imageUrlLight ?? state.imageUrl) : state.imageUrl;
+}
 
 /** What a surface knows about a course's AI cover, resolved from its payload artifact.
  *
