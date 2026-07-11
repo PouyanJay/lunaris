@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CoverArtifact } from "../types/course";
-import { useCourseCover } from "./useCourseCover";
+import { coverImageUrlForTheme, useCourseCover, type CourseCoverState } from "./useCourseCover";
 
 vi.mock("../lib/coverJobs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/coverJobs")>();
@@ -156,6 +156,32 @@ describe("useCourseCover", () => {
       const { result } = renderHook(() => useCourseCover(API, artifact(s)));
       await waitFor(() => expect(result.current.state).toEqual({ phase: "fallback" }));
       expect(fetchJob).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("coverImageUrlForTheme (inverted mapping variant sweep)", () => {
+  const DARK = "https://signed/cover.png";
+  const LIGHT = "https://signed/cover-light.png";
+  const dual: CourseCoverState = { phase: "image", imageUrl: DARK, imageUrlLight: LIGHT };
+  const darkOnly: CourseCoverState = { phase: "image", imageUrl: DARK, imageUrlLight: null };
+
+  // theme × variant → the image the reader should show (light theme → dark image; dark theme →
+  // light image, falling back to the dark image when there is no light twin).
+  it.each([
+    ["light" as const, dual, DARK],
+    ["dark" as const, dual, LIGHT],
+    ["light" as const, darkOnly, DARK],
+    ["dark" as const, darkOnly, DARK], // no light twin → the dark image in both themes
+  ])("theme=%s picks the contrasting image", (theme, state, expected) => {
+    expect(coverImageUrlForTheme(state, theme)).toBe(expected);
+  });
+
+  it.each(["light" as const, "dark" as const])(
+    "returns null for a non-image state in theme=%s",
+    (theme) => {
+      expect(coverImageUrlForTheme({ phase: "fallback" }, theme)).toBeNull();
+      expect(coverImageUrlForTheme({ phase: "generating", status: "rendering" }, theme)).toBeNull();
     },
   );
 });

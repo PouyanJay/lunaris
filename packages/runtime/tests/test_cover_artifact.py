@@ -61,6 +61,36 @@ def test_cover_artifact_round_trips_by_alias() -> None:
     assert reloaded == artifact
 
 
+def test_dual_theme_provenance_serialises_the_light_fields() -> None:
+    prov = _provenance().model_copy(update={"has_light_variant": True, "light_mode": "retheme"})
+    wire = json.loads(prov.model_dump_json(by_alias=True))
+    assert wire["hasLightVariant"] is True
+    assert wire["lightMode"] == "retheme"
+
+
+def test_old_provenance_without_light_fields_defaults_to_dark_only() -> None:
+    # A cover made before dual-theme: its persisted provenance JSON has no light fields. It must
+    # still parse — defaulting to has_light_variant=False (dark-only, shown in both app themes) —
+    # so existing covers keep working with no migration.
+    old = _provenance().model_dump(by_alias=True)
+    old.pop("hasLightVariant", None)
+    old.pop("lightMode", None)
+
+    reloaded = CoverProvenance.model_validate_json(json.dumps(old))
+
+    assert reloaded.has_light_variant is False
+    assert reloaded.light_mode is None
+
+
+def test_cover_artifact_paths_include_a_light_image() -> None:
+    from lunaris_runtime.persistence import CoverArtifactPaths
+
+    paths = CoverArtifactPaths.for_coordinates("u-1", "course-1", "job-1")
+    assert paths.image == "u-1/course-1/job-1/cover.png"  # the dark image keeps the original path
+    assert paths.image_light == "u-1/course-1/job-1/cover-light.png"
+    assert paths.provenance == "u-1/course-1/job-1/provenance.json"
+
+
 def test_cover_job_serialises_camelcase_on_the_wire() -> None:
     # CoverJob rides on CoverJobView.job — lock its camelCase aliases so the web CoverJob* types
     # (which read jobs off the status endpoint) stay in step with the runtime schema.

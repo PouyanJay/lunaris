@@ -108,6 +108,11 @@ async def test_pipeline_covers_every_style_preset(preset: CoverStylePreset) -> N
     # The chosen preset steers the art director AND is recorded in provenance.
     assert invoke.prompt is not None and preset.value in invoke.prompt.lower()
     assert rendered.provenance.style_preset is preset
+    # Every preset yields a dual-theme cover: a light twin alongside the dark render (the light/dark
+    # axis is orthogonal to the preset). No inspector here (local-dev path) → the re-theme is kept.
+    assert rendered.image_light is not None and rendered.image_light != rendered.image
+    assert rendered.provenance.has_light_variant is True
+    assert rendered.provenance.light_mode == "retheme"
 
 
 @pytest.mark.asyncio

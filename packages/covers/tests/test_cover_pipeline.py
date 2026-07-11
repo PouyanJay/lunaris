@@ -259,9 +259,7 @@ class _ScriptedInspector:
         self.images: list[bytes] = []
         self.model = "claude-opus-4-8"
 
-    async def inspect(
-        self, image: bytes, brief: object, *, light: bool = False
-    ) -> CoverQaVerdict:
+    async def inspect(self, image: bytes, brief: object, *, light: bool = False) -> CoverQaVerdict:
         self.calls += 1
         self.images.append(image)
         if self.calls <= self._fail_first:
@@ -422,9 +420,7 @@ class _LightAwareInspector:
         self.light_calls = 0
         self.variants: list[str] = []
 
-    async def inspect(
-        self, image: bytes, brief: object, *, light: bool = False
-    ) -> CoverQaVerdict:
+    async def inspect(self, image: bytes, brief: object, *, light: bool = False) -> CoverQaVerdict:
         self.variants.append("light" if light else "dark")
         if not light:
             self.dark_calls += 1
