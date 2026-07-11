@@ -62,6 +62,8 @@ async def test_get_returns_every_setting_with_its_default(client: httpx.AsyncCli
         "videoSummarySeconds",
         "videoOverviewSeconds",
         "videoLessonSeconds",
+        "coverGenerationEnabled",
+        "coverStylePreset",
     }
     # Unset → the value IS the default, and the default is reported alongside it.
     assert settings["langsmithTracing"] == {

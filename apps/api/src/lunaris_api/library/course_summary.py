@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from lunaris_runtime.schema import CourseStatus
+from lunaris_runtime.schema import CourseStatus, CoverArtifact
 
 from .course_level import CourseLevel
 from .learner_course_status import LearnerCourseStatus
@@ -23,3 +23,7 @@ class CourseSummary:
     course_status: CourseStatus
     built_at: datetime
     last_opened_at: datetime | None
+    # The course's AI cover handle (course-cover-images), carried so the grid card can render the
+    # image or the Typographic fallback. Only the artifact (jobId + status) rides here — the signed
+    # URL is minted on demand client-side, never at list time (N courses ⇒ N signed-URL calls).
+    cover: CoverArtifact | None = None

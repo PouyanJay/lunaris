@@ -1,13 +1,14 @@
+import { useCourseCover } from "../../hooks/useCourseCover";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
+import { resolveCoverJobId } from "../../lib/coverJobs";
 import { bucketLevel } from "../../lib/courseLevel";
-import { coverSeed } from "../../lib/coverSeed";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor, type LessonState } from "../../lib/lessonState";
 import type { CourseProgress, ProgressSummary } from "../../lib/progress";
 import type { Course, CourseLevel, Lesson } from "../../types/course";
 import { LessonChip } from "../course/LessonChip";
 import { Button } from "../primitives/Button";
-import { CourseCover } from "../primitives/CourseCover";
+import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
 import { ScopeBand } from "../reader/ScopeBand";
@@ -102,6 +103,7 @@ function LessonRow({ row, state, onOpen }: LessonRowProps) {
 
 interface OverviewHeroProps {
   course: Course;
+  apiBaseUrl?: string | undefined;
   lessonTotal: number;
   level: CourseLevel | null;
   summary: ProgressSummary | null;
@@ -112,6 +114,7 @@ interface OverviewHeroProps {
 
 function OverviewHero({
   course,
+  apiBaseUrl,
   lessonTotal,
   level,
   summary,
@@ -120,10 +123,14 @@ function OverviewHero({
   onViewMap,
 }: OverviewHeroProps) {
   const conceptTotal = course.graph.nodes.length;
+  // Own the cover hook here so the regenerate button and the cover image share one source of truth
+  // (a completed regenerate swaps the image in place). A regenerate needs an existing cover job.
+  const { state, regenerate, regenerating } = useCourseCover(apiBaseUrl, course.cover);
+  const canRegenerate = resolveCoverJobId(course.cover) !== null;
   return (
     <section className={styles.hero}>
       <div className={styles.cover} aria-hidden="true">
-        <CourseCover seed={coverSeed(course.id)} />
+        <CourseCoverImage courseId={course.id} topic={course.topic} state={state} />
       </div>
       <div className={styles.heroBody}>
         <p className={styles.counts}>
@@ -152,6 +159,11 @@ function OverviewHero({
             Continue learning
           </Button>
           <Button onClick={onViewMap}>View the map</Button>
+          {canRegenerate && (
+            <Button onClick={regenerate} disabled={regenerating}>
+              {regenerating ? "Regenerating cover…" : "Regenerate cover"}
+            </Button>
+          )}
         </div>
       </div>
     </section>
@@ -180,6 +192,7 @@ export function CourseOverview({
       <div className={styles.content}>
         <OverviewHero
           course={course}
+          apiBaseUrl={apiBaseUrl}
           lessonTotal={rows.length}
           level={bucketLevel(course.graph.nodes)}
           summary={progress?.summary ?? null}

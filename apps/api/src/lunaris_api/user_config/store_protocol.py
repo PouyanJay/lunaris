@@ -17,6 +17,8 @@ PER_USER_CONFIG: dict[str, str] = {
     "videoSummarySeconds": KNOWN_CONFIG["videoSummarySeconds"],
     "videoOverviewSeconds": KNOWN_CONFIG["videoOverviewSeconds"],
     "videoLessonSeconds": KNOWN_CONFIG["videoLessonSeconds"],
+    "coverGenerationEnabled": KNOWN_CONFIG["coverGenerationEnabled"],
+    "coverStylePreset": KNOWN_CONFIG["coverStylePreset"],
 }
 
 

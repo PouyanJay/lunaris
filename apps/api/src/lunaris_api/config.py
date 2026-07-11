@@ -77,6 +77,24 @@ class Settings:
     # (app.bicep) so it ENQUEUES only and the dedicated worker container renders — otherwise the
     # API's stub-pipeline workers (no Manim in the lean API image) would race the real worker.
     video_inproc_worker_enabled: bool = True
+    # The course-cover-image operator kill-switch (course-cover-images). Default OFF — fail-closed,
+    # like video: a keyed build only auto-enqueues a cover when this is on, and the worker only ever
+    # runs when there are jobs to drain. Turn it on per-env (COVER_GENERATION_ENABLED=true).
+    cover_generation_enabled: bool = False
+    # How often the in-process cover worker polls an idle queue (tests turn this way down).
+    cover_worker_poll_seconds: float = 2.0
+    # How many in-process cover workers drain the queue concurrently. They share the queue
+    # (SKIP-LOCKED claims never double-serve) and the process-wide Claude rate limiter. Cloud scales
+    # the dedicated worker with KEDA (infra/cover.bicep) instead.
+    cover_worker_count: int = 2
+    # Lease window (seconds): a cover job whose worker hasn't heartbeated within it is considered
+    # dead and requeued by the sweep. infra/cover.bicep passes it as the env var so the dedicated
+    # worker and any operator override agree.
+    cover_lease_seconds: int = 300
+    # Whether THIS process drains the cover queue in-process. True (default) = `make run` renders
+    # covers inside the API; the cloud API sets it False (app.bicep) so it ENQUEUES only and the
+    # dedicated cover-worker container renders.
+    cover_inproc_worker_enabled: bool = True
     # Admin allowlist for the signup invite-gate screen: the lowercased emails permitted to manage
     # the shared invite code (LUNARIS_ADMIN_EMAILS, comma-separated). Empty ⇒ no admins, so the
     # admin endpoints 403 everyone — a deploy must set the owner's email to open the screen.
@@ -141,6 +159,11 @@ def get_settings() -> Settings:
         video_worker_count=_env_int("LUNARIS_VIDEO_WORKER_COUNT", default=2),
         video_lease_seconds=_env_int("LUNARIS_VIDEO_LEASE_SECONDS", default=300),
         video_inproc_worker_enabled=_env_flag("LUNARIS_VIDEO_INPROC_WORKER", default=True),
+        cover_generation_enabled=_env_flag("COVER_GENERATION_ENABLED", default=False),
+        cover_worker_poll_seconds=_env_float("LUNARIS_COVER_WORKER_POLL_S", default=2.0),
+        cover_worker_count=_env_int("LUNARIS_COVER_WORKER_COUNT", default=2),
+        cover_lease_seconds=_env_int("LUNARIS_COVER_LEASE_SECONDS", default=300),
+        cover_inproc_worker_enabled=_env_flag("LUNARIS_COVER_INPROC_WORKER", default=True),
         admin_emails=_env_csv_lower("LUNARIS_ADMIN_EMAILS"),
     )
 

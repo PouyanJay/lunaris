@@ -1,10 +1,9 @@
 import { Link } from "react-router";
 
 import { Button } from "../primitives/Button";
-import { CourseCover } from "../primitives/CourseCover";
+import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { useContinueLearning, type ContinueState } from "../../hooks/useContinueLearning";
-import { coverSeed } from "../../lib/coverSeed";
 import { CONTINUE_ROW_LIMIT } from "../../lib/homeCourses";
 import { coursePath } from "../../lib/routes";
 import type { CourseSummary } from "../../types/course";
@@ -64,7 +63,7 @@ function ContinueHero({
   return (
     <section className={styles.hero}>
       <div className={styles.cover} aria-hidden="true">
-        <CourseCover seed={coverSeed(course.id)} />
+        <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
       </div>
       <div className={styles.heroBody}>
         <h3 className={styles.heroTitle}>{course.topic}</h3>
@@ -100,7 +99,7 @@ function InProgressRow({ course }: { course: CourseSummary }) {
     <li>
       <Link className={styles.row} to={coursePath(course.id)}>
         <div className={styles.rowCover} aria-hidden="true">
-          <CourseCover seed={coverSeed(course.id)} />
+          <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
         </div>
         <span className={styles.rowBody}>
           <span className={styles.rowTitle}>{course.topic}</span>

@@ -43,7 +43,8 @@ async def test_authed_get_returns_only_the_per_user_settings(tmp_path: Path) -> 
 
     assert response.status_code == 200, response.text
     names = {s["name"] for s in response.json()["settings"]}
-    # Model selection + the V6 video settings; LangSmith is operator-only and absent here.
+    # Model selection + the V6 video settings + the cover tunability (T10); LangSmith is operator-
+    # only and absent here.
     assert names == {
         "modelStrong",
         "modelWorker",
@@ -53,6 +54,8 @@ async def test_authed_get_returns_only_the_per_user_settings(tmp_path: Path) -> 
         "videoSummarySeconds",
         "videoOverviewSeconds",
         "videoLessonSeconds",
+        "coverGenerationEnabled",
+        "coverStylePreset",
     }
 
 

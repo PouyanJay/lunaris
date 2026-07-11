@@ -9,10 +9,14 @@ import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_grounding import ICorpusStore
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
+from lunaris_runtime.cover_build import cover_config_from_map
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import (
+    CoverArtifactPaths,
     ICourseStore,
+    ICoverJobQueue,
+    ICoverStorage,
     IRunEventStore,
     IRunStore,
     IVideoJobQueue,
@@ -42,6 +46,7 @@ from lunaris_runtime.video_build import (
 
 from .activity import ActivityStoreUnavailableError, IActivityStore
 from .bookmarks import BookmarkStoreUnavailableError, IBookmarkStore
+from .cover_enqueue import enqueue_cover_job
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .library import LibraryEntry
@@ -56,6 +61,10 @@ logger = structlog.get_logger()
 # The env var whose presence means the LLM ran live (else keyless Draft) — read once from the shared
 # capability table so the throttle's keyless check and the live badge agree on what "keyed" means.
 _LLM_KEY_ENV = next(s.env_var for s in CAPABILITY_SPECS if s.capability is CapabilityName.LLM)
+# The env var whose presence means the build can generate an AI cover (GPT Image 2 is OpenAI) — read
+# from the same capability table so the build-time auto-enqueue gate and the enqueue route's tier
+# gate (require_keyed_cover_caller) agree on what "keyed for covers" means.
+_COVER_KEY_ENV = next(s.env_var for s in CAPABILITY_SPECS if s.capability is CapabilityName.COVER)
 # The per-day cap bucket for a build with no owner (auth off / single-user instance).
 _LOCAL_OWNER_KEY = "__local__"
 
@@ -177,6 +186,9 @@ class CourseService:
         video_coordinator_factory: VideoCoordinatorFactory | None = None,
         video_job_queue: IVideoJobQueue | None = None,
         video_storage: IVideoStorage | None = None,
+        cover_job_queue: ICoverJobQueue | None = None,
+        cover_storage: ICoverStorage | None = None,
+        cover_generation_enabled: bool = False,
         progress_store: IProgressStore | None = None,
         bookmark_store: IBookmarkStore | None = None,
         activity_store: IActivityStore | None = None,
@@ -205,6 +217,16 @@ class CourseService:
         # an old course's artifacts must be reclaimable even after video generation is turned off.
         self._video_job_queue = video_job_queue
         self._video_storage = video_storage
+        # The cover-job queue + image store, for the course-deletion storage cascade
+        # (course-cover-images): remove the course's cover image + job row on a full delete. Wired
+        # like the video pair; None → that arm is skipped.
+        self._cover_job_queue = cover_job_queue
+        self._cover_storage = cover_storage
+        # The operator kill-switch for auto-enqueuing a cover at build completion (COVER_GENERATION_
+        # ENABLED). False (the default, fail-closed) → a build enqueues no cover, exactly like the
+        # video operator flag. Independent of the queue above, which stays wired for the delete
+        # cascade even when generation is off.
+        self._cover_generation_enabled = cover_generation_enabled
         # Per-course learner data purged on a full course delete (course-delete): progress,
         # bookmarks, and the per-course activity feed. Owner-scoped; best-effort like the video and
         # event purges. None → that arm is skipped (callers that never delete, or auth-off posture).
@@ -366,6 +388,62 @@ class CourseService:
         return self._video_coordinator_factory(owner_id, video_config)
 
     @staticmethod
+    def _is_keyed_for_cover(credentials: Mapping[str, str] | None) -> bool:
+        """Whether this build can generate an AI cover — mirrors ``require_keyed_cover_caller``'s
+        ladder (and ``_is_keyless_llm``, but for the OpenAI key GPT Image 2 needs): a scoped tenant
+        with an OpenAI key, or no scope and an OpenAI key in the process env. Distinct from the LLM
+        key — a build keyed for Claude but with no OpenAI key gets the Typographic cover, not an
+        AI one."""
+        if credentials is not None:
+            return bool(credentials.get(_COVER_KEY_ENV))
+        return bool(os.environ.get(_COVER_KEY_ENV))
+
+    async def _maybe_enqueue_cover(
+        self,
+        course: Course,
+        owner_id: str | None,
+        credentials: Mapping[str, str] | None,
+        config: Mapping[str, str] | None,
+    ) -> None:
+        """Enqueue one AI cover for a freshly-built course when covers are on for this build.
+
+        The whole gate in one place, mirroring ``_video_coordinator_for``: the operator flag
+        (``cover_generation_enabled``), a known **owner** (a ``cover_jobs`` row needs a
+        ``user_id``), the queue wired, the build **keyed for OpenAI** (covers need GPT Image 2 —
+        never a keyless build; a keyless account shows the Typographic cover instead), AND the
+        owner's per-user **master toggle** on (T10 — ``coverGenerationEnabled``, layered on top of
+        the operator flag, exactly like the video master toggle). The owner's chosen
+        ``coverStylePreset`` is stamped on the job so the render uses it. Deduped against an
+        in-flight job. **Best-effort**: a cover is a nice-to-have, generated async minutes later, so
+        failure here is logged and swallowed — it must never fail or delay the build."""
+        if (
+            not self._cover_generation_enabled
+            or owner_id is None
+            or self._cover_job_queue is None
+            or not self._is_keyed_for_cover(credentials)
+        ):
+            return
+        cover_config = cover_config_from_map(config)
+        if not cover_config.enabled:
+            return  # the owner turned cover generation off in Settings (per-user master toggle)
+        try:
+            job, created = await enqueue_cover_job(
+                self._cover_job_queue,
+                course=course,
+                owner_id=owner_id,
+                style_preset=cover_config.style_preset,
+            )
+            if created:
+                logger.info(
+                    "cover_job_auto_enqueued",
+                    job_id=job.id,
+                    course_id=course.id,
+                    style=job.style_preset.value,
+                )
+        except Exception:
+            logger.warning("cover_job_auto_enqueue_failed", course_id=course.id, exc_info=True)
+
+    @staticmethod
     def _video_scope(
         coordinator: IVideoBuildCoordinator | None,
     ) -> AbstractContextManager[None]:
@@ -458,6 +536,10 @@ class CourseService:
             # The await-full build's task has ended here (awaited above) — free its Draft slot.
             self._release(admission.reservation)
         await self._record_finish(course, owner_id=owner_id)
+        # Auto-enqueue the course's AI cover (best-effort, gated + deduped). The await-full path is
+        # already outside the run's credential/config scope, so ``credentials`` + ``config`` are
+        # passed explicitly for the keyed-for-OpenAI check + the per-user toggle.
+        await self._maybe_enqueue_cover(course, owner_id, credentials, config)
         return course
 
     async def stream(
@@ -534,6 +616,8 @@ class CourseService:
                     course_id=course_id,
                     run_id=run_id,
                     owner_id=owner_id,
+                    credentials=credentials,
+                    config=config,
                     recorder=recorder,
                 )
             )
@@ -603,6 +687,8 @@ class CourseService:
         course_id: str,
         run_id: str,
         owner_id: str | None,
+        credentials: Mapping[str, str] | None,
+        config: Mapping[str, str] | None,
         recorder: RunEventRecorder,
     ) -> Course:
         """Run a build to completion and record its terminal status — disconnect-proof.
@@ -633,6 +719,10 @@ class CourseService:
             raise
         else:
             await self._record_finish(course, owner_id=owner_id)
+            # Auto-enqueue the cover from the DURABLE build task (not the stream generator), so a
+            # course built while the client had navigated away still gets its cover. Best-effort +
+            # gated; ``credentials`` + ``config`` are threaded in for the keyed check + the toggle.
+            await self._maybe_enqueue_cover(course, owner_id, credentials, config)
             return course
         finally:
             # Flush the buffered build-log tail (the sinks recorded as the pipeline emitted; this
@@ -735,6 +825,7 @@ class CourseService:
         return {
             "events_purged": await self._purge_event_log(course_id, owner_id=owner_id),
             "videos_purged": await self._purge_course_videos(course_id, owner_id=owner_id),
+            "covers_purged": await self._purge_course_covers(course_id, owner_id=owner_id),
             "progress_purged": await self._purge_course_progress(course_id, owner_id=owner_id),
             "bookmarks_purged": await self._purge_course_bookmarks(course_id, owner_id=owner_id),
             "activity_purged": await self._purge_course_activity(course_id, owner_id=owner_id),
@@ -778,6 +869,33 @@ class CourseService:
             )
         except PersistenceError:
             logger.warning("course_videos_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_covers(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Storage cascade for course deletion (course-cover-images): remove the course's cover
+        image + provenance artifact + job row. Best-effort — a failure logs and is swallowed so it
+        never blocks the user's delete (the cover is recoverable cruft, not authoritative state).
+
+        Owner-scoping needs a real owner (the queue/storage are keyed by ``{user_id}/...``); an
+        unowned (auth-off) delete is skipped. Paths are derived from each job row
+        (``CoverArtifactPaths``) rather than listed — exact, and safe for a FAILED job that wrote
+        only some files (``delete`` ignores missing paths). Mirrors ``_purge_course_videos``."""
+        if self._cover_job_queue is None or owner_id is None:
+            return 0
+        try:
+            jobs = await self._cover_job_queue.list_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+            if self._cover_storage is not None and jobs:
+                # astuple over the frozen CoverArtifactPaths so a new artifact field is purged
+                # automatically — the path convention stays the single source of truth.
+                paths = [path for job in jobs for path in astuple(CoverArtifactPaths.for_job(job))]
+                await self._cover_storage.delete(paths=paths)
+            return await self._cover_job_queue.delete_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+        except PersistenceError:
+            logger.warning("course_covers_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def _purge_course_progress(self, course_id: str, *, owner_id: str | None = None) -> int:

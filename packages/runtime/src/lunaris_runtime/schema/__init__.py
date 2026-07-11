@@ -7,6 +7,9 @@ from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, Targe
 from .course_run import CourseRun
 from .course_scope import CourseScope
 from .course_videos import CourseVideos
+from .cover_artifact import CoverArtifact
+from .cover_job import CoverJob
+from .cover_provenance import CoverProvenance
 from .enums import (
     AcquisitionMode,
     AgentEventKind,
@@ -17,6 +20,9 @@ from .enums import (
     ClarifierKind,
     ComputeKind,
     CourseStatus,
+    CoverJobStatus,
+    CoverLightMode,
+    CoverStylePreset,
     DetailDepth,
     DiscoveryDepth,
     GapMagnitude,
@@ -120,6 +126,12 @@ __all__ = [
     "CourseSettings",
     "CourseStatus",
     "CourseVideos",
+    "CoverArtifact",
+    "CoverJob",
+    "CoverJobStatus",
+    "CoverLightMode",
+    "CoverProvenance",
+    "CoverStylePreset",
     "CurriculumModuleMap",
     "DegradedScene",
     "DeliverableShape",

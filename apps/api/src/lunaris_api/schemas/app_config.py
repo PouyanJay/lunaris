@@ -12,7 +12,7 @@ class ConfigSettingView(CamelModel):
     name: str
     value: str
     default: str
-    kind: Literal["toggle", "text", "model", "number"]
+    kind: Literal["toggle", "text", "model", "number", "preset"]
     restart_required: bool
 
 

@@ -20,6 +20,19 @@ from lunaris_agent.subagents.goal_interpreter import (
     DefaultGoalInterpreter,
     IGoalInterpreter,
 )
+from lunaris_covers import (
+    CourseStoreCoverSourceProvider,
+    CoverArtDirector,
+    CoverPipeline,
+    CoverVisionQa,
+    ICoverPipeline,
+    OpenAiImageRenderer,
+)
+from lunaris_covers.pipeline.model_adapters import (
+    build_cover_text_invoke,
+    build_cover_vision_invoke,
+    cover_claude_model,
+)
 from lunaris_grounding import (
     ICorpusStore,
     InMemoryCorpusStore,
@@ -34,6 +47,10 @@ from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.persistence import (
     CourseStore,
     ICourseStore,
+    ICoverJobQueue,
+    ICoverStorage,
+    InMemoryCoverJobQueue,
+    InMemoryCoverStorage,
     InMemoryRunEventStore,
     InMemoryRunStore,
     InMemoryVideoJobQueue,
@@ -43,6 +60,8 @@ from lunaris_runtime.persistence import (
     IVideoJobQueue,
     IVideoStorage,
     SupabaseCourseStore,
+    SupabaseCoverJobQueue,
+    SupabaseCoverStorage,
     SupabaseRunEventStore,
     SupabaseRunStore,
     SupabaseVideoJobQueue,
@@ -253,6 +272,61 @@ def get_video_storage(settings: Annotated[Settings, Depends(get_settings)]) -> I
 
 VideoJobQueueDep = Annotated[IVideoJobQueue, Depends(get_video_job_queue)]
 VideoStorageDep = Annotated[IVideoStorage, Depends(get_video_storage)]
+
+
+# The cover-image queue + storage — same shared-instance posture as the video pair: the lifespan
+# worker and the request DI must see the SAME in-memory instances or enqueues would vanish.
+_in_memory_cover_queue = InMemoryCoverJobQueue()
+_supabase_cover_queue = SupabaseCoverJobQueue()
+_in_memory_cover_storage = InMemoryCoverStorage()
+_supabase_cover_storage = SupabaseCoverStorage()
+
+
+def get_cover_job_queue(settings: Annotated[Settings, Depends(get_settings)]) -> ICoverJobQueue:
+    """The cover-job queue: Supabase (durable, SKIP LOCKED claims) when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_cover_queue
+    return _in_memory_cover_queue
+
+
+def get_cover_storage(settings: Annotated[Settings, Depends(get_settings)]) -> ICoverStorage:
+    """The cover-image store: the private course-covers bucket when keyed, else in-memory."""
+    if settings.has_supabase:
+        return _supabase_cover_storage
+    return _in_memory_cover_storage
+
+
+CoverJobQueueDep = Annotated[ICoverJobQueue, Depends(get_cover_job_queue)]
+CoverStorageDep = Annotated[ICoverStorage, Depends(get_cover_storage)]
+
+
+def get_cover_pipeline(settings: Settings) -> ICoverPipeline:
+    """The cover worker's pipeline: the real Claude art-director → GPT Image 2 → vision-QA loop.
+
+    Composed OUTSIDE request DI (the lifespan task locally, the dedicated container in cloud), like
+    ``get_video_pipeline`` — a plain ``Settings`` arg, not a ``Depends``. Claude (art director +
+    vision QA) and OpenAI (GPT Image 2) authenticate on the job owner's BYOK keys, resolved per call
+    inside the model seams from the run's credential scope — so this factory holds no keys. There is
+    no stub branch: a keyless account never enqueues a cover (the enqueue tier gate), so the worker
+    only ever runs on a keyed tenant. The art director + QA share one Claude model id."""
+    claude_model = cover_claude_model()
+    return CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(_resolve_course_store(settings)),
+        art_director=CoverArtDirector(
+            invoke=build_cover_text_invoke(claude_model), model=claude_model
+        ),
+        renderer=OpenAiImageRenderer(),
+        qa_model=claude_model,
+        inspector=CoverVisionQa(invoke=build_cover_vision_invoke(claude_model), model=claude_model),
+    )
+
+
+def get_cover_credential_resolver(settings: Settings) -> CredentialResolver | None:
+    """The BYOK resolver the cover worker renders each job's owner on — their OpenAI + Anthropic
+    keys. Identical composition to the video resolver (the vault resolves every BYOK provider), so
+    it delegates, keeping the cover wiring self-descriptive. ``None`` when BYOK is off (env
+    fallback)."""
+    return get_video_credential_resolver(settings)
 
 
 def _video_coordinator_factory(
@@ -983,6 +1057,13 @@ def get_course_service(
         # video gate) so an old course's artifacts are reclaimable even after video is turned off.
         video_job_queue=get_video_job_queue(settings),
         video_storage=get_video_storage(settings),
+        # The cover-image storage cascade (course-cover-images) — wired the same way so a deleted
+        # course's cover image + job row are reclaimed too.
+        cover_job_queue=get_cover_job_queue(settings),
+        cover_storage=get_cover_storage(settings),
+        # The operator flag for auto-enqueuing a cover at build completion (course-cover-images T8):
+        # the enqueue-side twin of the worker's own COVER_GENERATION_ENABLED gate. Off → no covers.
+        cover_generation_enabled=settings.cover_generation_enabled,
         # The learner-data cascade for a full course delete (course-delete): the caller's per-course
         # progress, bookmarks, and activity feed, so deleting a course purges them too. Owner-scoped
         # in the service.
