@@ -400,9 +400,29 @@ async def test_produce_also_renders_a_light_variant_via_image_edit() -> None:
     assert rendered.image_light != rendered.image  # a distinct image, derived from the dark render
     assert rendered.provenance.has_light_variant is True
     assert rendered.provenance.light_mode == "retheme"
-    # The edit seam was handed the dark render to re-theme, under a light-palette instruction.
+    # The edit seam was handed the dark render to re-theme, under a light-palette instruction —
+    # and the JOB's preset (nocturne here) picked the palette: amber, never the general azure.
     assert client.edit_kwargs, "images.edit was never called for the light re-theme"
-    assert "light" in str(client.edit_kwargs.get("prompt", "")).lower()
+    edit_prompt = str(client.edit_kwargs.get("prompt", "")).lower()
+    assert "light" in edit_prompt
+    assert "amber" in edit_prompt and "azure" not in edit_prompt
+
+
+@pytest.mark.asyncio
+async def test_light_retheme_uses_the_jobs_preset_palette() -> None:
+    # The wiring this exists to pin: the pipeline must thread the JOB's style preset into the light
+    # re-theme instruction. A GENERAL job re-themes to the azure light palette — a hardcoded preset
+    # anywhere in the chain would ship amber here and fail this test.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    client = _FakeImagesClient()
+
+    await _pipeline(store, _StubArtDirectorInvoke(), client).produce(
+        _job(CoverStylePreset.GENERAL), on_stage=_noop_stage
+    )
+
+    edit_prompt = str(client.edit_kwargs.get("prompt", "")).lower()
+    assert "azure" in edit_prompt and "amber" not in edit_prompt
 
 
 class _LightAwareInspector:

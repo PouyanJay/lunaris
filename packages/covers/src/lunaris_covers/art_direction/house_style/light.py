@@ -13,6 +13,8 @@ original ivory ground with the amber accent. Every palette keeps the no-text dis
 
 from lunaris_runtime.schema import CoverStylePreset
 
+from .house_style import EDITORIAL_PRESETS
+
 # GENERAL light mode (the operator's Azure theme): white/pale ground, azure-blue accent family.
 _AZURE_LIGHT_PALETTE = (
     "Use a LIGHT, daylight palette: a clean white, soft ivory or very pale cool-gray ground in "
@@ -36,8 +38,8 @@ _AMBER_LIGHT_PALETTE = (
 
 def _light_palette(preset: CoverStylePreset) -> str:
     """The light-mode palette for ``preset`` — azure for GENERAL (and any unknown preset, matching
-    ``house_style``'s GENERAL fallback), amber for the editorial trio."""
-    if preset in (CoverStylePreset.NOCTURNE, CoverStylePreset.BLUEPRINT, CoverStylePreset.AURORA):
+    ``house_style``'s GENERAL fallback), amber for the editorial family (one membership source)."""
+    if preset in EDITORIAL_PRESETS:
         return _AMBER_LIGHT_PALETTE
     return _AZURE_LIGHT_PALETTE
 

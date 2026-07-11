@@ -48,6 +48,13 @@ _GENERAL_CONSTRAINTS = (
     "halos, cyberpunk styling, or an obvious AI-generated-poster look.",
 )
 
+# The editorial family — the ONE place membership lives. Both the constraint routing below and the
+# light-palette routing in the sibling ``light`` module derive from this set, so a future editorial
+# preset can't end up with an editorial dark render but the GENERAL azure light twin.
+EDITORIAL_PRESETS: frozenset[CoverStylePreset] = frozenset(
+    {CoverStylePreset.NOCTURNE, CoverStylePreset.BLUEPRINT, CoverStylePreset.AURORA}
+)
+
 # Per-preset medium/mood. The preset varies the look; it never relaxes a shared constraint above.
 _PRESET_DIRECTIVES: dict[CoverStylePreset, str] = {
     CoverStylePreset.GENERAL: (
@@ -70,13 +77,11 @@ _PRESET_DIRECTIVES: dict[CoverStylePreset, str] = {
     ),
 }
 
-# Which constraint set each preset obeys — GENERAL has its own; the editorial trio shares the
-# original locked set.
+# Which constraint set each preset obeys — GENERAL has its own; the editorial family shares the
+# original locked set. Derived from EDITORIAL_PRESETS so membership lives in one place.
 _PRESET_CONSTRAINTS: dict[CoverStylePreset, tuple[str, ...]] = {
-    CoverStylePreset.GENERAL: _GENERAL_CONSTRAINTS,
-    CoverStylePreset.NOCTURNE: _EDITORIAL_CONSTRAINTS,
-    CoverStylePreset.BLUEPRINT: _EDITORIAL_CONSTRAINTS,
-    CoverStylePreset.AURORA: _EDITORIAL_CONSTRAINTS,
+    preset: (_EDITORIAL_CONSTRAINTS if preset in EDITORIAL_PRESETS else _GENERAL_CONSTRAINTS)
+    for preset in CoverStylePreset
 }
 
 
@@ -106,5 +111,5 @@ def house_style(preset: CoverStylePreset) -> HouseStyle:
     twin's look lives in the sibling ``light`` module.
     """
     directive = _PRESET_DIRECTIVES.get(preset, _PRESET_DIRECTIVES[CoverStylePreset.GENERAL])
-    constraints = _PRESET_CONSTRAINTS.get(preset, _GENERAL_CONSTRAINTS)
+    constraints = _PRESET_CONSTRAINTS.get(preset, _PRESET_CONSTRAINTS[CoverStylePreset.GENERAL])
     return HouseStyle(constraints=constraints, preset_directive=directive)

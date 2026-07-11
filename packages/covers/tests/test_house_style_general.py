@@ -8,6 +8,7 @@ editorial presets, whose light twin stays ivory + amber). GENERAL is the default
 an unknown preset and the product default when nothing is configured.
 """
 
+import pytest
 from lunaris_covers.art_direction.house_style import (
     house_style,
     light_retheme_instruction,
@@ -51,11 +52,14 @@ def test_general_block_does_not_mandate_the_flat_illustration_finish() -> None:
     assert "flat-illustration" not in block
 
 
-def test_editorial_presets_keep_their_locked_constraints() -> None:
-    for preset in (CoverStylePreset.NOCTURNE, CoverStylePreset.BLUEPRINT, CoverStylePreset.AURORA):
-        block = house_style(preset).as_prompt_block().lower()
-        assert "flat-illustration" in block  # the editorial discipline is untouched
-        assert "no text" in block
+@pytest.mark.parametrize(
+    "preset",
+    [CoverStylePreset.NOCTURNE, CoverStylePreset.BLUEPRINT, CoverStylePreset.AURORA],
+)
+def test_editorial_preset_keeps_its_locked_constraints(preset: CoverStylePreset) -> None:
+    block = house_style(preset).as_prompt_block().lower()
+    assert "flat-illustration" in block  # the editorial discipline is untouched
+    assert "no text" in block
 
 
 def test_unknown_preset_falls_back_to_general() -> None:
@@ -77,3 +81,5 @@ def test_editorial_light_twin_keeps_ivory_plus_amber() -> None:
     instruction = light_retheme_instruction(CoverStylePreset.NOCTURNE).lower()
     assert "amber" in instruction
     assert "azure" not in instruction
+    rubric = light_style_block(CoverStylePreset.NOCTURNE).lower()
+    assert "amber" in rubric and "azure" not in rubric

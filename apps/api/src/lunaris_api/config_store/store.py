@@ -61,7 +61,7 @@ _DEFAULTS: dict[str, str] = {
     "videoOverviewSeconds": str(target_seconds_for(VideoKind.OVERVIEW)),
     "videoLessonSeconds": str(target_seconds_for(VideoKind.LESSON)),
     "coverGenerationEnabled": "true",
-    "coverStylePreset": CoverStylePreset.NOCTURNE.value,
+    "coverStylePreset": CoverStylePreset.GENERAL.value,
 }
 
 _KINDS: dict[str, ConfigKind] = {
