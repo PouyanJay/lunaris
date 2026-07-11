@@ -61,3 +61,43 @@ def house_style(preset: CoverStylePreset) -> HouseStyle:
     """
     directive = _PRESET_DIRECTIVES.get(preset, _PRESET_DIRECTIVES[CoverStylePreset.NOCTURNE])
     return HouseStyle(constraints=_LOCKED_CONSTRAINTS, preset_directive=directive)
+
+
+# The house LIGHT-theme rendition (dual-theme covers). The base cover is DARK (every preset is
+# night-sky anchored — locked constraint #3); the light variant is the SAME cover in a daylight
+# palette, shown in the app's dark theme so the cover contrasts with the page chrome. Two shapes,
+# ONE definition of the light look so they can't drift: an EDIT instruction that re-themes an
+# existing dark render in place (composition preserved), and a NATIVE art-direction suffix appended
+# to a fresh prompt when the edit can't pass QA. Both keep every anti-slop discipline (one subject,
+# no text, matte editorial finish, a single amber accent) — only the ground flips to bright.
+_LIGHT_PALETTE = (
+    "Use a LIGHT, daylight palette: a bright near-white or pale warm ivory ground in place of the "
+    "near-black night sky, with the single warm amber accent kept as the one saturated focal note. "
+    "Keep the matte, editorial, flat-illustration finish — never photoreal, glossy or clip-art — a "
+    "single focal subject with generous negative space, and NO text, letters, numerals or logos."
+)
+
+
+def light_retheme_instruction(preset: CoverStylePreset) -> str:
+    """The image-EDIT instruction to re-theme a DARK cover render into its light-theme twin.
+
+    Preserves the exact composition, subject, shapes and layout of the supplied image — only the
+    value structure flips from night to day. Anchored to the same ``_LIGHT_PALETTE`` the native
+    fallback uses so both routes mean the same light look.
+    """
+    _ = preset  # the preset already shaped the dark render being edited; the palette is shared
+    return (
+        "Re-theme THIS image into its light-mode twin. Preserve the exact composition, subject, "
+        "shapes, line work and negative space — change ONLY the palette and value structure. "
+        f"{_LIGHT_PALETTE}"
+    )
+
+
+def light_native_directive() -> str:
+    """The suffix appended to a fresh art-direction prompt to compose a NATIVE light cover.
+
+    Used only when the edit-based re-theme fails the vision-QA bar — the cover is then art-directed
+    natively for a bright ground (same subject + preset, its own composition) rather than shipped as
+    a washed-out edit. Same light look as ``light_retheme_instruction``, expressed as a directive.
+    """
+    return f"Compose this cover for LIGHT MODE. {_LIGHT_PALETTE}"

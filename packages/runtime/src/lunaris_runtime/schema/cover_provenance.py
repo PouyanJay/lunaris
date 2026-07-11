@@ -29,3 +29,11 @@ class CoverProvenance(CourseModel):
     # ISO-8601 instant, stamped when the pipeline produced the image — a string to match the sibling
     # provenance timestamp convention (Citation.fetched_at / VideoProvenance.generated_at).
     generated_at: str
+    # Dual-theme covers: whether a LIGHT-theme rendition was also produced (uploaded as a second
+    # object). The API mints the light signed URL ONLY when this is True, so a URL is never asked
+    # for a missing object — and covers made before dual-theme (whose provenance JSON lacks the
+    # field) default to False, i.e. dark-only in both app themes. ``light_mode`` records HOW it was
+    # made: ``"retheme"`` (image-edit of the dark render, same composition) or ``"native"`` (its own
+    # light art-direction, when the re-theme failed QA); ``None`` when there is no light variant.
+    has_light_variant: bool = False
+    light_mode: str | None = None

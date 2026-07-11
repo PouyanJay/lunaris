@@ -224,6 +224,15 @@ class CoverWorker:
         await self._storage.upload(
             path=paths.image, data=rendered.image, content_type=rendered.content_type
         )
+        # Dual-theme covers: the LIGHT rendition is a second object, uploaded only when the pipeline
+        # produced one (``provenance.has_light_variant`` mirrors this). A dark-only cover uploads
+        # just the one image, exactly like a pre-dual-theme cover.
+        if rendered.image_light is not None:
+            await self._storage.upload(
+                path=paths.image_light,
+                data=rendered.image_light,
+                content_type=rendered.content_type,
+            )
         # Structural-provenance contract (CLAUDE.md): its own artifact so the API threads it onto
         # the wire independently of the image.
         await self._storage.upload(

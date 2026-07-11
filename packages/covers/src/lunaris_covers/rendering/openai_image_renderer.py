@@ -92,6 +92,37 @@ class OpenAiImageRenderer:
         _logger.info("cover_renderer.rendered", model=self._model, image_bytes=len(image))
         return image
 
+    async def retheme(self, image: bytes, *, instruction: str) -> bytes:
+        """Re-theme ``image`` in place via the Images EDIT endpoint (dual-theme light variant).
+
+        Same client/BYOK scope, retry and decode path as ``render`` — only the call differs: an edit
+        of the supplied render under ``instruction`` (the house light-palette instruction), so the
+        light twin keeps the dark cover's composition. GPT Image edit returns base64 PNG like
+        ``generate``. A provider error is wrapped as ``CoverPipelineError`` so the caller can
+        degrade to a dark-only cover rather than failing the whole job."""
+        from openai import OpenAIError
+
+        client = self._client_factory()
+        try:
+            response = await retry_on_rate_limit(
+                lambda: client.images.edit(
+                    model=self._model,
+                    image=("cover.png", image, "image/png"),
+                    prompt=instruction,
+                    size=self._size,
+                    quality=self._quality,
+                    n=1,
+                )
+            )
+        except OpenAIError as exc:
+            raise CoverPipelineError(
+                f"OpenAI image re-theme failed: {type(exc).__name__}",
+                user_detail="the image provider could not re-theme this cover",
+            ) from exc
+        light = _decode(response)
+        _logger.info("cover_renderer.rethemed", model=self._model, image_bytes=len(light))
+        return light
+
 
 def _decode(response: object) -> bytes:
     """The PNG bytes from an Images API response, or a ``CoverPipelineError`` on a malformed one.

@@ -4,6 +4,7 @@ import structlog
 from lunaris_runtime.schema import CoverJob, CoverJobStatus, CoverProvenance
 
 from lunaris_covers.art_direction.cover_art_director import CoverArtDirector
+from lunaris_covers.art_direction.house_style import light_retheme_instruction
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.models.cover_brief import CoverBrief
 from lunaris_covers.models.rendered_cover import RenderedCover
@@ -58,6 +59,7 @@ class CoverPipeline:
     async def produce(self, job: CoverJob, *, on_stage: StageReporter) -> RenderedCover:
         brief = await self._source_provider.load(job)
         image, prompt, attempts = await self._render_until_on_brand(brief, on_stage)
+        image_light, light_mode = await self._render_light_variant(image, job)
         provenance = CoverProvenance(
             job_id=job.id,
             course_id=job.course_id,
@@ -70,11 +72,37 @@ class CoverPipeline:
             qa_attempts=attempts,
             input_hash=job.input_hash,
             generated_at=datetime.now(UTC).isoformat(),
+            has_light_variant=image_light is not None,
+            light_mode=light_mode,
         )
         _logger.info(
-            "cover_pipeline.produced", job_id=job.id, qa_attempts=attempts, image_bytes=len(image)
+            "cover_pipeline.produced",
+            job_id=job.id,
+            qa_attempts=attempts,
+            image_bytes=len(image),
+            light_mode=light_mode,
         )
-        return RenderedCover(image=image, provenance=provenance)
+        return RenderedCover(image=image, image_light=image_light, provenance=provenance)
+
+    async def _render_light_variant(
+        self, base: bytes, job: CoverJob
+    ) -> tuple[bytes | None, str | None]:
+        """The DARK cover's light-theme twin, produced best-effort (dual-theme covers).
+
+        Re-themes the passed dark render into a light palette via the image-edit seam, preserving
+        composition (``light_mode="retheme"``). The light variant is an ENHANCEMENT, never a gate:
+        the dark cover has already passed QA and is shippable on its own, so a re-theme failure
+        degrades to a dark-only cover (``None``) rather than failing the whole job — the reader then
+        shows the dark image in both themes, exactly as a pre-dual-theme cover does. The QA gate on
+        the light result and the native-light fallback are layered on in T2."""
+        try:
+            light = await self._renderer.retheme(
+                base, instruction=light_retheme_instruction(job.style_preset)
+            )
+        except CoverPipelineError:
+            _logger.warning("cover_pipeline.light_retheme_failed", job_id=job.id)
+            return None, None
+        return light, "retheme"
 
     async def _render_until_on_brand(
         self, brief: CoverBrief, on_stage: StageReporter

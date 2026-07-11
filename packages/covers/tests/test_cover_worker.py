@@ -165,6 +165,35 @@ async def test_concurrent_run_once_calls_each_claim_a_distinct_job() -> None:
     assert (await queue.get(job_id="job-2")).status == CoverJobStatus.READY  # type: ignore[union-attr]
 
 
+async def test_a_dual_theme_cover_uploads_both_the_dark_and_light_images() -> None:
+    # Arrange — a pipeline that produced BOTH a dark and a light image (a dual-theme cover). The
+    # worker must upload both objects so the reader can show the light one in dark theme.
+    class _DualThemePipeline:
+        async def produce(self, job: CoverJob, *, on_stage) -> RenderedCover:
+            base = await StubCoverPipeline().produce(job, on_stage=on_stage)
+            return RenderedCover(
+                image=base.image,
+                image_light=base.image + b"L",
+                provenance=base.provenance.model_copy(
+                    update={"has_light_variant": True, "light_mode": "retheme"}
+                ),
+            )
+
+    queue, storage = InMemoryCoverJobQueue(), InMemoryCoverStorage()
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, _store(), pipeline=_DualThemePipeline())
+
+    # Act
+    assert await worker.run_once() is True
+
+    # Assert — the job is READY and BOTH images landed in the bucket under the job's path.
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == CoverJobStatus.READY
+    paths = storage.paths()
+    assert any(p.endswith("/cover.png") for p in paths)
+    assert any(p.endswith("/cover-light.png") for p in paths)
+
+
 def _store_that_fails_save() -> _FakeCourseStore:
     store = _FakeCourseStore(fail_save=True)
     store.seed(Course(id="course-1", topic="How HTTP works"), owner_id=_OWNER)

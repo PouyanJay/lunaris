@@ -50,12 +50,23 @@ class _StubArtDirectorInvoke:
         return self.reply
 
 
+def _b64_resp(image: bytes) -> object:
+    b64 = base64.b64encode(image).decode("ascii")
+    return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
+
+
 class _FakeImagesClient:
-    """A fake OpenAI client exposing just ``images.generate``, recording its kwargs."""
+    """A fake OpenAI client exposing ``images.generate`` + ``images.edit``, recording their kwargs.
+
+    ``edit`` is the composition-preserving re-theme seam (dual-theme covers): it returns a distinct
+    PNG (the dark bytes with a ``L`` marker appended) so a test can prove the light variant is a
+    different image derived from the dark render.
+    """
 
     def __init__(self, *, png: bytes = _PNG) -> None:
         self._png = png
         self.kwargs: dict[str, object] = {}
+        self.edit_kwargs: dict[str, object] = {}
         self.images = self._Images(self)
 
     class _Images:
@@ -64,8 +75,11 @@ class _FakeImagesClient:
 
         async def generate(self, **kwargs: object) -> object:
             self._outer.kwargs = kwargs
-            b64 = base64.b64encode(self._outer._png).decode("ascii")
-            return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
+            return _b64_resp(self._outer._png)
+
+        async def edit(self, **kwargs: object) -> object:
+            self._outer.edit_kwargs = kwargs
+            return _b64_resp(self._outer._png + b"L")
 
 
 class _FakeCourseStore:
@@ -260,6 +274,7 @@ class _CountingImagesClient:
 
     def __init__(self) -> None:
         self.renders = 0
+        self.edits = 0
         self.images = self._Images(self)
 
     class _Images:
@@ -268,8 +283,11 @@ class _CountingImagesClient:
 
         async def generate(self, **kwargs: object) -> object:
             self._outer.renders += 1
-            b64 = base64.b64encode(_PNG + bytes([self._outer.renders])).decode("ascii")
-            return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
+            return _b64_resp(_PNG + bytes([self._outer.renders]))
+
+        async def edit(self, **kwargs: object) -> object:
+            self._outer.edits += 1
+            return _b64_resp(_PNG + b"L" + bytes([self._outer.edits]))
 
 
 def _qa_pipeline(
@@ -360,3 +378,28 @@ async def test_qa_stage_is_reported() -> None:
         CoverJobStatus.RENDERING,
         CoverJobStatus.QA,
     ]
+
+
+# ---- dual-theme: a light variant re-themed from the dark render ------------------------------
+
+
+@pytest.mark.asyncio
+async def test_produce_also_renders_a_light_variant_via_image_edit() -> None:
+    # A dual-theme cover: after the dark render, the pipeline re-themes THAT render to a light
+    # palette via the image-edit seam, so the course gets both a dark and a light image of the same
+    # cover. Provenance records that a light variant exists and how it was produced.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    invoke = _StubArtDirectorInvoke()
+    client = _FakeImagesClient()
+
+    rendered = await _pipeline(store, invoke, client).produce(_job(), on_stage=_noop_stage)
+
+    assert rendered.image == _PNG  # the dark render (the base) is unchanged
+    assert rendered.image_light is not None
+    assert rendered.image_light != rendered.image  # a distinct image, derived from the dark render
+    assert rendered.provenance.has_light_variant is True
+    assert rendered.provenance.light_mode == "retheme"
+    # The edit seam was handed the dark render to re-theme, under a light-palette instruction.
+    assert client.edit_kwargs, "images.edit was never called for the light re-theme"
+    assert "light" in str(client.edit_kwargs.get("prompt", "")).lower()

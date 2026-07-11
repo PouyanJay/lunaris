@@ -56,6 +56,11 @@ class _FakeImagesClient:
             b64 = base64.b64encode(_PNG).decode("ascii")
             return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
 
+        async def edit(self, **kwargs: object) -> object:
+            # The dual-theme light re-theme seam — a distinct image derived from the dark render.
+            b64 = base64.b64encode(_PNG + b"L").decode("ascii")
+            return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
+
 
 class _FakeCourseStore:
     def __init__(self) -> None:
