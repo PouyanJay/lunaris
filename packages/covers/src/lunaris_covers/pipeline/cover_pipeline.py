@@ -119,7 +119,7 @@ class CoverPipeline:
         rejection — resolves to ``(None, None)`` so it can never propagate out and fail the job."""
         try:
             candidate = await self._renderer.retheme(
-                inputs.base, instruction=light_retheme_instruction()
+                inputs.base, instruction=light_retheme_instruction(inputs.brief.style_preset)
             )
         except CoverPipelineError:
             _logger.warning("cover_pipeline.light_retheme_failed", job_id=inputs.job_id)
@@ -142,7 +142,7 @@ class CoverPipeline:
         miss degrades to dark-only."""
         try:
             native = await self._renderer.render(
-                f"{inputs.dark_prompt}\n\n{light_native_directive()}"
+                f"{inputs.dark_prompt}\n\n{light_native_directive(inputs.brief.style_preset)}"
             )
         except CoverPipelineError:
             _logger.warning("cover_pipeline.light_native_render_failed", job_id=inputs.job_id)

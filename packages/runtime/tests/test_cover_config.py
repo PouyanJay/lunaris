@@ -16,7 +16,7 @@ from lunaris_runtime.schema import CoverStylePreset
 def test_none_map_is_all_defaults() -> None:
     config = cover_config_from_map(None)
     assert config.enabled is True
-    assert config.style_preset is CoverStylePreset.NOCTURNE
+    assert config.style_preset is CoverStylePreset.GENERAL
     assert config == DEFAULT_COVER_CONFIG
 
 
@@ -28,7 +28,7 @@ def test_reads_the_toggle_and_preset() -> None:
 
 def test_unknown_preset_falls_back_to_the_house_default() -> None:
     config = cover_config_from_map({COVER_STYLE_PRESET_ENV: "chartreuse"})
-    assert config.style_preset is CoverStylePreset.NOCTURNE
+    assert config.style_preset is CoverStylePreset.GENERAL
 
 
 def test_malformed_toggle_falls_back_to_enabled() -> None:

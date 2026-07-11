@@ -28,7 +28,8 @@ interface CoverConfigPanelProps {
 }
 
 const PRESET_LABELS: Record<string, string> = {
-  nocturne: "Nocturne — night-sky editorial (default)",
+  general: "General — premium enterprise infographic (default)",
+  nocturne: "Nocturne — night-sky editorial",
   blueprint: "Blueprint — technical line-art",
   aurora: "Aurora — soft abstract gradient",
 };

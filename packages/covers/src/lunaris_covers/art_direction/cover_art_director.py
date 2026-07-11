@@ -26,7 +26,7 @@ HOUSE STYLE
 
 YOUR TASK
 Write a single vivid image-generation prompt (2-4 sentences) that a text-to-image model will \
-render directly. Describe the ONE focal subject, the composition and negative space, and the \
+render directly. Describe the focal subject matter, the composition and negative space, and the \
 palette, obeying every constraint above. Do NOT ask the model to add any text or labels. Respond \
 with ONLY the image prompt itself — no preamble, no quotes, no commentary."""
 

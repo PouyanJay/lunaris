@@ -2,26 +2,62 @@ from dataclasses import dataclass
 
 from lunaris_runtime.schema import CoverStylePreset
 
-# The locked anti-slop constraints EVERY cover obeys, regardless of preset (requirements § House
-# style). This is the single source of truth for the discipline — the art director bakes it into the
-# image prompt, and the vision-QA gate (T5) rejects any cover that violates it — so the prompt and
-# the rubric can never drift into two different definitions of "on brand".
-_LOCKED_CONSTRAINTS = (
-    "ONE focal subject, with generous negative space — never busy or cluttered.",
+# The anti-slop constraints shared by EVERY preset (requirements § House style). This is the part of
+# the discipline that never varies: the art director bakes it into the image prompt, and the
+# vision-QA gate rejects any cover that violates it — so the prompt and the rubric can never drift
+# into two different definitions of "on brand".
+_SHARED_CONSTRAINTS = (
     "NO text, letters, numerals, logos or watermarks anywhere in the image "
     "(garbled AI text is the #1 slop tell).",
-    "A limited palette anchored to the Lunaris brand: a near-black night-sky ground with a single "
-    "warm amber accent; no other saturated colours.",
-    "A matte, editorial, flat-illustration finish — never photoreal stock, generic 3D render, or "
-    "glossy corporate clip-art.",
     "The subject is DERIVED from the course topic and its concepts — evocative and descriptive, "
     "not a literal or busy depiction of them.",
 )
 
-# Per-preset medium/mood. The preset varies the look; it never relaxes a locked constraint above.
+# The EDITORIAL discipline (the original locked constraints) — the nocturne/blueprint/aurora trio:
+# one focal subject, a flat matte illustration, a night-sky ground with a single amber accent.
+_EDITORIAL_CONSTRAINTS = (
+    *_SHARED_CONSTRAINTS,
+    "ONE focal subject, with generous negative space — never busy or cluttered.",
+    "A limited palette anchored to the Lunaris brand: a near-black night-sky ground with a single "
+    "warm amber accent; no other saturated colours.",
+    "A matte, editorial, flat-illustration finish — never photoreal stock, generic 3D render, or "
+    "glossy corporate clip-art.",
+)
+
+# The GENERAL discipline (cover-general-preset, distilled from the operator's course-cover prompt
+# system): a premium enterprise-learning cover — a modern editorial infographic fused with REFINED
+# 3D illustration. Deliberately its own constraint set: the editorial trio forbids 3D and mandates
+# a flat finish, which would make every general cover fail its own QA gate.
+_GENERAL_CONSTRAINTS = (
+    *_SHARED_CONSTRAINTS,
+    "ONE dominant hero visualization of the topic placed toward the center-right, with two to "
+    "four supporting elements (dimensional diagrams, connected components, flowing paths, layered "
+    "systems, scientific structures, or step-by-step relationships) — generous clean negative "
+    "space weighted to the left, readable at thumbnail size, important elements away from the "
+    "edges, never busy or cluttered.",
+    "A dark, sophisticated ground of near-black, charcoal and deep graphite with the amber family "
+    "as the accent (rich amber, golden orange, warm honey, dark bronze, muted copper, warm "
+    "ivory), applied selectively to important components — no blue or purple accents, no neon "
+    "yellow, no flat pure black without dimensional variation.",
+    "A premium enterprise finish: a modern editorial infographic combined with refined 3D "
+    "illustration — clean geometry, precise spacing, soft controlled studio lighting, subtle "
+    "shadows and ambient occlusion, refined glass / matte metal / ceramic / translucent "
+    "materials, subtle dimensional depth. Sophisticated rather than playful; technically "
+    "credible.",
+    "Never: cartoon characters, generic stock-photo appearance, excessive glow or large glowing "
+    "halos, cyberpunk styling, or an obvious AI-generated-poster look.",
+)
+
+# Per-preset medium/mood. The preset varies the look; it never relaxes a shared constraint above.
 _PRESET_DIRECTIVES: dict[CoverStylePreset, str] = {
+    CoverStylePreset.GENERAL: (
+        "Preset GENERAL (the house default): a premium enterprise-learning course cover — one "
+        "dominant hero visualization of the subject with a few supporting elements, rendered as a "
+        "modern editorial infographic fused with refined 3D illustration on a dark graphite "
+        "ground with selective amber lighting."
+    ),
     CoverStylePreset.NOCTURNE: (
-        "Preset NOCTURNE (the house default): a night-sky editorial illustration — a single "
+        "Preset NOCTURNE: a night-sky editorial illustration — a single "
         "luminous motif against deep near-black, faint constellation accents in amber."
     ),
     CoverStylePreset.BLUEPRINT: (
@@ -34,14 +70,23 @@ _PRESET_DIRECTIVES: dict[CoverStylePreset, str] = {
     ),
 }
 
+# Which constraint set each preset obeys — GENERAL has its own; the editorial trio shares the
+# original locked set.
+_PRESET_CONSTRAINTS: dict[CoverStylePreset, tuple[str, ...]] = {
+    CoverStylePreset.GENERAL: _GENERAL_CONSTRAINTS,
+    CoverStylePreset.NOCTURNE: _EDITORIAL_CONSTRAINTS,
+    CoverStylePreset.BLUEPRINT: _EDITORIAL_CONSTRAINTS,
+    CoverStylePreset.AURORA: _EDITORIAL_CONSTRAINTS,
+}
+
 
 @dataclass(frozen=True)
 class HouseStyle:
-    """The house-style brief for one preset: the locked constraints plus that preset's medium/mood.
+    """The house-style brief for one preset: its constraints plus that preset's medium/mood.
 
-    ``constraints`` are the same for every preset (the anti-slop discipline);
-    ``preset_directive`` is the preset-specific medium. Both the art director's prompt and the QA
-    rubric read from here so they share one definition of the style.
+    ``constraints`` carry the anti-slop discipline (the shared core + the preset family's own
+    rules); ``preset_directive`` is the preset-specific medium. Both the art director's prompt and
+    the QA rubric read from here so they share one definition of the style.
     """
 
     constraints: tuple[str, ...]
@@ -54,11 +99,12 @@ class HouseStyle:
 
 
 def house_style(preset: CoverStylePreset) -> HouseStyle:
-    """The locked constraints plus the medium/mood for ``preset`` (the DARK, night-sky house style).
+    """The constraints plus the medium/mood for ``preset`` (the DARK base render's style).
 
-    An unknown preset falls back to the house ``NOCTURNE`` directive rather than raising — a cover
-    is always designable — while still carrying the full locked constraints. The LIGHT-theme twin's
-    look lives in the sibling ``light`` module.
+    An unknown preset falls back to the house ``GENERAL`` directive rather than raising — a cover
+    is always designable — while still carrying the full anti-slop discipline. The LIGHT-theme
+    twin's look lives in the sibling ``light`` module.
     """
-    directive = _PRESET_DIRECTIVES.get(preset, _PRESET_DIRECTIVES[CoverStylePreset.NOCTURNE])
-    return HouseStyle(constraints=_LOCKED_CONSTRAINTS, preset_directive=directive)
+    directive = _PRESET_DIRECTIVES.get(preset, _PRESET_DIRECTIVES[CoverStylePreset.GENERAL])
+    constraints = _PRESET_CONSTRAINTS.get(preset, _GENERAL_CONSTRAINTS)
+    return HouseStyle(constraints=constraints, preset_directive=directive)

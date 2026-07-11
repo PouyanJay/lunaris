@@ -60,7 +60,7 @@ async def test_keyed_build_auto_enqueues_a_cover(
     job = await queue.find_active(course_id=course_id, owner_id=_OWNER)
     assert job is not None
     assert job.status is CoverJobStatus.QUEUED
-    assert job.style_preset is CoverStylePreset.NOCTURNE  # T10 wires the per-user preset
+    assert job.style_preset is CoverStylePreset.GENERAL  # T10 wires the per-user preset
     assert job.input_hash  # fingerprints the generation inputs
 
 

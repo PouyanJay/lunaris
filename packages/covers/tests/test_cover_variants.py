@@ -88,7 +88,7 @@ async def _noop_stage(_: CoverJobStatus) -> None:
 
 @pytest.mark.parametrize(
     "preset",
-    [CoverStylePreset.NOCTURNE, CoverStylePreset.BLUEPRINT, CoverStylePreset.AURORA],
+    list(CoverStylePreset),  # every preset, incl. GENERAL — a new preset joins the sweep free
 )
 @pytest.mark.asyncio
 async def test_pipeline_covers_every_style_preset(preset: CoverStylePreset) -> None:

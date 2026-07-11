@@ -24,7 +24,7 @@ class CoverJob(CourseModel):
     user_id: str
     course_id: str
     status: CoverJobStatus = CoverJobStatus.QUEUED
-    style_preset: CoverStylePreset = CoverStylePreset.NOCTURNE
+    style_preset: CoverStylePreset = CoverStylePreset.GENERAL
     input_hash: str
     config: dict[str, object] = Field(default_factory=dict)
     attempts: int = 0

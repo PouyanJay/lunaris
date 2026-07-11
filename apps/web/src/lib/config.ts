@@ -34,7 +34,7 @@ export const VIDEO_CONFIG_KEYS: ReadonlySet<string> = new Set<string>([
 // Runtime configuration panel filters them out so they render once, in their own section.
 export const COVER_MASTER_KEY = "coverGenerationEnabled";
 export const COVER_PRESET_KEY = "coverStylePreset";
-export const COVER_STYLE_PRESETS = ["nocturne", "blueprint", "aurora"] as const;
+export const COVER_STYLE_PRESETS = ["general", "nocturne", "blueprint", "aurora"] as const;
 export const COVER_CONFIG_KEYS: ReadonlySet<string> = new Set<string>([
   COVER_MASTER_KEY,
   COVER_PRESET_KEY,

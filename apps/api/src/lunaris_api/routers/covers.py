@@ -112,7 +112,7 @@ async def enqueue_cover(
         store, course_id=course_id, owner_id=owner_id, request_id=request_id
     )
     job, created = await enqueue_cover_job(
-        queue, course=course, owner_id=owner_id, style_preset=CoverStylePreset.NOCTURNE
+        queue, course=course, owner_id=owner_id, style_preset=CoverStylePreset.GENERAL
     )
     logger.info(
         "cover_job_enqueued" if created else "cover_job_enqueue_deduped",
