@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import os
 import uuid
 from typing import Annotated
@@ -23,6 +22,7 @@ from lunaris_runtime.schema import (
 from lunaris_runtime.schema.base import CourseModel
 from pydantic import ValidationError
 
+from ..cover_enqueue import enqueue_cover_job
 from ..dependencies import (
     CourseStoreDep,
     CoverJobQueueDep,
@@ -66,18 +66,6 @@ class CoverJobView(CourseModel):
     provenance: CoverProvenance | None = None
 
 
-def _cover_input_hash(course: Course, style_preset: CoverStylePreset) -> str:
-    """Fingerprint the cover's generation inputs — the course topic + the chosen art-direction
-    preset — so a later staleness check can flag a cover outdated when the topic changes."""
-    digest = hashlib.sha256()
-    digest.update(course.id.encode())
-    digest.update(b"\x00")
-    digest.update(course.topic.encode())
-    digest.update(b"\x00")
-    digest.update(style_preset.value.encode())
-    return digest.hexdigest()
-
-
 async def _load_owned_course(
     store: ICourseStore, *, course_id: str, owner_id: str, request_id: str
 ) -> Course:
@@ -117,20 +105,14 @@ async def enqueue_cover(
     course = await _load_owned_course(
         store, course_id=course_id, owner_id=owner_id, request_id=request_id
     )
-    existing = await queue.find_active(course_id=course_id, owner_id=owner_id)
-    if existing is not None:
-        logger.info("cover_job_enqueue_deduped", job_id=existing.id, course_id=course_id)
-        return CoverJobView(job=existing)
-    style_preset = CoverStylePreset.NOCTURNE
-    job = CoverJob(
-        id=uuid.uuid4().hex,
-        user_id=owner_id,
-        course_id=course_id,
-        style_preset=style_preset,
-        input_hash=_cover_input_hash(course, style_preset),
+    job, created = await enqueue_cover_job(
+        queue, course=course, owner_id=owner_id, style_preset=CoverStylePreset.NOCTURNE
     )
-    await queue.enqueue(job)
-    logger.info("cover_job_enqueued", job_id=job.id, course_id=course_id)
+    logger.info(
+        "cover_job_enqueued" if created else "cover_job_enqueue_deduped",
+        job_id=job.id,
+        course_id=course_id,
+    )
     return CoverJobView(job=job)
 
 
@@ -233,23 +215,20 @@ async def regenerate_cover(
             detail="Cover job not found",
             headers={"X-Request-Id": request_id},
         )
-    existing = await queue.find_active(course_id=source.course_id, owner_id=owner_id)
-    if existing is not None:
-        logger.info("cover_job_regenerate_deduped", job_id=existing.id, source_job_id=source.id)
-        return CoverJobView(job=existing)
     course = await _load_owned_course(
         store, course_id=source.course_id, owner_id=owner_id, request_id=request_id
     )
-    new_job = CoverJob(
-        id=uuid.uuid4().hex,
-        user_id=owner_id,
-        course_id=source.course_id,
-        style_preset=source.style_preset,
-        input_hash=_cover_input_hash(course, source.style_preset),
+    # Regenerate preserves the source's preset and re-fingerprints the CURRENT course topic; the
+    # shared helper dedups an in-flight regenerate rather than stacking a second.
+    job, created = await enqueue_cover_job(
+        queue, course=course, owner_id=owner_id, style_preset=source.style_preset
     )
-    await queue.enqueue(new_job)
-    logger.info("cover_job_regenerate_enqueued", job_id=new_job.id, source_job_id=source.id)
-    return CoverJobView(job=new_job)
+    logger.info(
+        "cover_job_regenerate_enqueued" if created else "cover_job_regenerate_deduped",
+        job_id=job.id,
+        source_job_id=source.id,
+    )
+    return CoverJobView(job=job)
 
 
 @router.post("/covers/{job_id}/cancel")
