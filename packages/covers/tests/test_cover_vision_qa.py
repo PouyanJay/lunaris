@@ -70,6 +70,32 @@ async def test_rubric_carries_the_locked_house_style_constraints() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dark_rubric_demands_a_near_black_ground() -> None:
+    invoke = _StubVisionInvoke('{"passed": true}')
+
+    await CoverVisionQa(invoke=invoke, model="claude-opus-4-8").inspect(_IMAGE, _BRIEF)
+
+    assert invoke.prompt is not None
+    assert "near-black" in invoke.prompt.lower()  # the dark rubric's ground constraint
+
+
+@pytest.mark.asyncio
+async def test_light_variant_is_judged_against_a_bright_ground_rubric() -> None:
+    # A light-theme variant must be judged against the LIGHT rubric — the dark rubric's near-black
+    # ground would reject any correct light cover. Same anti-slop discipline (no text) on a bright
+    # ground.
+    invoke = _StubVisionInvoke('{"passed": true}')
+
+    await CoverVisionQa(invoke=invoke, model="claude-opus-4-8").inspect(_IMAGE, _BRIEF, light=True)
+
+    assert invoke.prompt is not None
+    lowered = invoke.prompt.lower()
+    assert "light" in lowered and ("near-white" in lowered or "ivory" in lowered)
+    assert "near-black night-sky ground" not in lowered  # not the dark ground constraint
+    assert "no text" in lowered  # the shared anti-slop discipline still holds
+
+
+@pytest.mark.asyncio
 async def test_malformed_completion_is_repaired() -> None:
     invoke = _StubVisionInvoke("not json at all", '{"passed": true}')
 

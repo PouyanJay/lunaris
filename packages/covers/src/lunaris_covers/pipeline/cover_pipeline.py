@@ -4,7 +4,10 @@ import structlog
 from lunaris_runtime.schema import CoverJob, CoverJobStatus, CoverProvenance
 
 from lunaris_covers.art_direction.cover_art_director import CoverArtDirector
-from lunaris_covers.art_direction.house_style import light_retheme_instruction
+from lunaris_covers.art_direction.house_style import (
+    light_native_directive,
+    light_retheme_instruction,
+)
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.models.cover_brief import CoverBrief
 from lunaris_covers.models.rendered_cover import RenderedCover
@@ -59,7 +62,7 @@ class CoverPipeline:
     async def produce(self, job: CoverJob, *, on_stage: StageReporter) -> RenderedCover:
         brief = await self._source_provider.load(job)
         image, prompt, attempts = await self._render_until_on_brand(brief, on_stage)
-        image_light, light_mode = await self._render_light_variant(image, job)
+        image_light, light_mode = await self._render_light_variant(image, brief, prompt, job)
         provenance = CoverProvenance(
             job_id=job.id,
             course_id=job.course_id,
@@ -85,24 +88,56 @@ class CoverPipeline:
         return RenderedCover(image=image, image_light=image_light, provenance=provenance)
 
     async def _render_light_variant(
-        self, base: bytes, job: CoverJob
+        self, base: bytes, brief: CoverBrief, dark_prompt: str, job: CoverJob
     ) -> tuple[bytes | None, str | None]:
-        """The DARK cover's light-theme twin, produced best-effort (dual-theme covers).
+        """The DARK cover's light-theme twin, produced best-effort + quality-gated (dual-theme).
 
-        Re-themes the passed dark render into a light palette via the image-edit seam, preserving
-        composition (``light_mode="retheme"``). The light variant is an ENHANCEMENT, never a gate:
-        the dark cover has already passed QA and is shippable on its own, so a re-theme failure
-        degrades to a dark-only cover (``None``) rather than failing the whole job — the reader then
-        shows the dark image in both themes, exactly as a pre-dual-theme cover does. The QA gate on
-        the light result and the native-light fallback are layered on in T2."""
+        The hybrid, quality-first path (requirements — quality is the top priority):
+
+        1. Re-theme the dark render into a light palette via the image-edit seam, preserving
+           composition (``light_mode="retheme"``).
+        2. Vision-QA that light candidate against the LIGHT rubric. Passes → keep it (same
+           composition AND on-brand — the best case).
+        3. Fails → the edit read as washed/filtered; art-direct a NATIVE light cover instead (the
+           passing dark prompt + the light directive, its own composition) and QA that
+           (``light_mode="native"``).
+        4. Even that fails → ship DARK-ONLY (``None``). The light variant is an ENHANCEMENT, never a
+           gate: the dark cover already passed QA, so a light failure degrades to the reader showing
+           the dark image in both themes (exactly like a pre-dual-theme cover) rather than failing
+           the job. Without an inspector (local dev) the re-theme is kept unjudged, mirroring the
+           dark path's render-once behaviour.
+        """
         try:
-            light = await self._renderer.retheme(
+            candidate = await self._renderer.retheme(
                 base, instruction=light_retheme_instruction(job.style_preset)
             )
         except CoverPipelineError:
             _logger.warning("cover_pipeline.light_retheme_failed", job_id=job.id)
             return None, None
-        return light, "retheme"
+        if self._inspector is None:
+            return candidate, "retheme"
+        if (await self._inspector.inspect(candidate, brief, light=True)).passed:
+            return candidate, "retheme"
+        return await self._render_native_light(brief, dark_prompt, job)
+
+    async def _render_native_light(
+        self, brief: CoverBrief, dark_prompt: str, job: CoverJob
+    ) -> tuple[bytes | None, str | None]:
+        """Fallback: art-direct a NATIVE light cover when the re-theme failed the light QA bar.
+
+        Renders the passing dark composition prompt under the light directive (same subject, bright
+        ground) and QA's it once. A pass ships it (``light_mode="native"``); a render error or a QA
+        miss degrades to dark-only — bounded to a single native attempt so a stubborn cover can't
+        burn the provider budget chasing a light twin the dark cover doesn't need."""
+        try:
+            native = await self._renderer.render(f"{dark_prompt}\n\n{light_native_directive()}")
+        except CoverPipelineError:
+            _logger.warning("cover_pipeline.light_native_render_failed", job_id=job.id)
+            return None, None
+        if (await self._inspector.inspect(native, brief, light=True)).passed:  # type: ignore[union-attr]
+            return native, "native"
+        _logger.info("cover_pipeline.light_variant_dropped", job_id=job.id)
+        return None, None
 
     async def _render_until_on_brand(
         self, brief: CoverBrief, on_stage: StageReporter

@@ -259,7 +259,9 @@ class _ScriptedInspector:
         self.images: list[bytes] = []
         self.model = "claude-opus-4-8"
 
-    async def inspect(self, image: bytes, brief: object) -> CoverQaVerdict:
+    async def inspect(
+        self, image: bytes, brief: object, *, light: bool = False
+    ) -> CoverQaVerdict:
         self.calls += 1
         self.images.append(image)
         if self.calls <= self._fail_first:
@@ -321,7 +323,7 @@ async def test_passing_first_qa_round_records_one_attempt() -> None:
 
     assert rendered.provenance.qa_attempts == 1
     assert len(invoke.prompts) == 1  # no regenerate needed
-    assert inspector.calls == 1
+    assert inspector.calls == 2  # one dark QA (passed) + one light-variant QA (passed)
 
 
 @pytest.mark.asyncio
@@ -403,3 +405,98 @@ async def test_produce_also_renders_a_light_variant_via_image_edit() -> None:
     # The edit seam was handed the dark render to re-theme, under a light-palette instruction.
     assert client.edit_kwargs, "images.edit was never called for the light re-theme"
     assert "light" in str(client.edit_kwargs.get("prompt", "")).lower()
+
+
+class _LightAwareInspector:
+    """A vision-QA double that verdicts dark and light variants independently.
+
+    The dark cover always passes; the light QA fails its first ``light_fail_first`` inspections then
+    passes — so a test can drive the re-theme→native-light→dark-only ladder deterministically. Every
+    call records which variant it judged.
+    """
+
+    def __init__(self, *, light_fail_first: int = 0) -> None:
+        self._light_fail_first = light_fail_first
+        self.model = "claude-opus-4-8"
+        self.dark_calls = 0
+        self.light_calls = 0
+        self.variants: list[str] = []
+
+    async def inspect(
+        self, image: bytes, brief: object, *, light: bool = False
+    ) -> CoverQaVerdict:
+        self.variants.append("light" if light else "dark")
+        if not light:
+            self.dark_calls += 1
+            return CoverQaVerdict(passed=True)
+        self.light_calls += 1
+        if self.light_calls <= self._light_fail_first:
+            return CoverQaVerdict(passed=False, defects=[CoverQaDefect(issue="washed out")])
+        return CoverQaVerdict(passed=True)
+
+
+def _light_pipeline(
+    store: _FakeCourseStore, client: _CountingImagesClient, inspector: _LightAwareInspector
+) -> CoverPipeline:
+    return CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(store),
+        art_director=CoverArtDirector(invoke=_RecordingArtInvoke(), model="claude-opus-4-8"),
+        renderer=OpenAiImageRenderer(client_factory=lambda: client),
+        qa_model="claude-opus-4-8",
+        inspector=inspector,
+    )
+
+
+@pytest.mark.asyncio
+async def test_light_variant_that_passes_qa_is_kept_as_a_retheme() -> None:
+    # The re-theme (same composition) passes the light QA → it is kept, recorded as "retheme".
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    client = _CountingImagesClient()
+    inspector = _LightAwareInspector(light_fail_first=0)
+
+    rendered = await _light_pipeline(store, client, inspector).produce(_job(), on_stage=_noop_stage)
+
+    assert rendered.provenance.has_light_variant is True
+    assert rendered.provenance.light_mode == "retheme"
+    assert rendered.image_light is not None and rendered.image_light != rendered.image
+    assert inspector.light_calls == 1  # the re-theme was QA'd once and accepted
+    assert client.edits == 1 and client.renders == 1  # no native render needed
+
+
+@pytest.mark.asyncio
+async def test_a_washed_out_retheme_falls_back_to_a_native_light_cover() -> None:
+    # The re-theme fails the light QA (reads washed) → a NATIVE light cover is art-directed + QA'd.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    client = _CountingImagesClient()
+    inspector = _LightAwareInspector(light_fail_first=1)  # retheme fails, native passes
+
+    rendered = await _light_pipeline(store, client, inspector).produce(_job(), on_stage=_noop_stage)
+
+    assert rendered.provenance.has_light_variant is True
+    assert rendered.provenance.light_mode == "native"
+    assert client.edits == 1  # the re-theme was attempted
+    assert client.renders == 2  # the dark render + the native light render
+    assert inspector.light_calls == 2  # QA'd the failed re-theme, then the passing native
+    # The kept light image is the NATIVE render (a generate call, renders=2 → _PNG + byte 2), not
+    # the re-theme edit output (which would carry the b"L" marker).
+    assert rendered.image_light == _PNG + bytes([2])
+
+
+@pytest.mark.asyncio
+async def test_light_variant_exhausted_ships_a_dark_only_cover() -> None:
+    # Neither the re-theme nor the native light cover can pass QA → ship dark-only, never fail the
+    # job. The dark cover already passed; the reader shows it in both themes (like an old cover).
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    client = _CountingImagesClient()
+    inspector = _LightAwareInspector(light_fail_first=99)  # light never passes
+
+    rendered = await _light_pipeline(store, client, inspector).produce(_job(), on_stage=_noop_stage)
+
+    assert rendered.image is not None  # the dark cover still ships
+    assert rendered.image_light is None
+    assert rendered.provenance.has_light_variant is False
+    assert rendered.provenance.light_mode is None
+    assert inspector.light_calls == 2  # bounded: one re-theme QA + one native QA, then give up

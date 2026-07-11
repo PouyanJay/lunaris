@@ -101,3 +101,14 @@ def light_native_directive() -> str:
     a washed-out edit. Same light look as ``light_retheme_instruction``, expressed as a directive.
     """
     return f"Compose this cover for LIGHT MODE. {_LIGHT_PALETTE}"
+
+
+def light_style_block() -> str:
+    """The house-style block the LIGHT variant is JUDGED against (the light vision-QA rubric).
+
+    The dark rubric requires a near-black ground (locked constraint #3), which a correct light cover
+    would violate — so the light variant is checked against this block instead. It is the same
+    ``_LIGHT_PALETTE`` the re-theme instruction and native directive use, so the thing produced and
+    the thing judged can't drift.
+    """
+    return f"LIGHT-THEME COVER — the light-mode twin of the course's dark cover.\n{_LIGHT_PALETTE}"
