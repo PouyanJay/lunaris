@@ -8,6 +8,7 @@ from lunaris_covers.art_direction.house_style import (
     build_general_prompt,
     house_style,
 )
+from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.models.cover_brief import CoverBrief
 from lunaris_covers.schemas.general_cover_fields import GeneralCoverFields
 
@@ -158,12 +159,20 @@ class CoverArtDirector:
         )
         if defects:
             prompt += _GENERAL_REVISION_TEMPLATE.format(defects="; ".join(defects))
-        fields = await invoke_with_parse_repair(
-            self._invoke,
-            prompt,
-            GeneralCoverFields.model_validate_json,
-            repair_instruction=_GENERAL_REPAIR_TEMPLATE,
-        )
+        try:
+            fields = await invoke_with_parse_repair(
+                self._invoke,
+                prompt,
+                GeneralCoverFields.model_validate_json,
+                repair_instruction=_GENERAL_REPAIR_TEMPLATE,
+            )
+        except ValueError as exc:
+            # Repair turns exhausted (ValidationError is a ValueError). Wrap so the worker settles
+            # the job with an actionable owner-safe reason instead of a raw exception class name.
+            raise CoverPipelineError(
+                "general cover fields did not parse after repair turns",
+                user_detail="couldn't write the cover's descriptive fields",
+            ) from exc
         return build_general_prompt(
             title=brief.topic, key_concepts=self._concepts(brief), fields=fields
         )

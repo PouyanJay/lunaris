@@ -7,7 +7,9 @@ light-variant look (re-theme instruction, native-light rebuild, QA rubric — on
 lives in ``light``. Importers use this package's surface.
 """
 
-from .general_prompt import GENERAL_DARK_THEME, GENERAL_LIGHT_THEME, build_general_prompt
+from .general_dark_theme import GENERAL_DARK_THEME
+from .general_light_theme import GENERAL_LIGHT_THEME
+from .general_prompt import build_general_prompt
 from .house_style import EDITORIAL_PRESETS, HouseStyle, house_style
 from .light import light_retheme_instruction, light_style_block, native_light_prompt
 

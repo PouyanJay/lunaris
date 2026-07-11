@@ -113,6 +113,31 @@ async def test_a_pipeline_failure_settles_the_job_failed_without_raising() -> No
     assert "RuntimeError" in job.error
 
 
+async def test_a_pipeline_error_with_user_detail_settles_that_reason_on_the_job() -> None:
+    # The actionable-failure contract (general-template-fidelity review): a CoverPipelineError's
+    # user_detail — e.g. the art director exhausting its fields parse-repair budget — lands on the
+    # job row verbatim, so the owner sees "couldn't write the cover's descriptive fields" instead
+    # of a raw exception class name.
+    from lunaris_covers.errors import CoverPipelineError
+
+    class _DetailedFailurePipeline:
+        async def produce(self, job: CoverJob, *, on_stage) -> RenderedCover:
+            raise CoverPipelineError(
+                "general cover fields did not parse after repair turns",
+                user_detail="couldn't write the cover's descriptive fields",
+            )
+
+    queue, storage = InMemoryCoverJobQueue(), InMemoryCoverStorage()
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, _store(), pipeline=_DetailedFailurePipeline())
+
+    assert await worker.run_once() is True
+
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == CoverJobStatus.FAILED
+    assert job.error == "couldn't write the cover's descriptive fields"
+
+
 async def test_an_attach_backend_failure_leaves_the_job_in_flight_for_requeue() -> None:
     # Arrange — produce + upload succeed, but folding Course.cover hits a backend failure. The job
     # must NOT be marked READY (its Course.cover never got written) — it stays in-flight so the

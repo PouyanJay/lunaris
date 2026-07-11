@@ -7,52 +7,15 @@ Claude compress everything into 2-4 sentences of prose — which is exactly why 
 looked nothing like the references (general-preset template fidelity). Here the LLM fills only the
 descriptive fields (``GeneralCoverFields``); everything else is this template, byte-stable.
 
-The three public constants/functions are tightly-coupled siblings of one contract: the template
-builder, and the two COLOR THEME blocks (dark amber / light azure) that the light-variant module
-reuses so the re-theme instruction and the native-light rebuild carry the operator's exact theme
-text. One deliberate deviation from the source doc: the OUTPUT section says "wide landscape" rather
-than "16:9" — the Images API renders 1536x1024 (3:2), which matches the operator's reference images.
+The two theme blocks live in their own sibling modules (one export per file); this module owns
+the template and its builder. One deliberate deviation from the source doc: the OUTPUT section
+says "wide landscape" rather than "16:9" — the Images API renders 1536x1024 (3:2), which matches
+the operator's reference images.
 """
 
 from lunaris_covers.schemas.general_cover_fields import GeneralCoverFields
 
-# § Dark Mode Theme: Amber — verbatim from the operator's prompt system.
-GENERAL_DARK_THEME = """\
-Use a near-black, charcoal, and deep graphite background with amber as the dominant accent color.
-
-Use rich amber, golden orange, warm honey highlights, dark bronze, muted copper, warm ivory, and \
-soft neutral gray.
-
-Apply amber lighting selectively to important components. Keep the background predominantly dark \
-and sophisticated.
-
-Avoid:
-- Neon yellow
-- Excessive orange saturation
-- Large glowing halos
-- Blue accents
-- Purple accents
-- Flat pure black without dimensional variation
-- Cyberpunk styling"""
-
-# § Light Mode Theme: Azure — verbatim from the operator's prompt system.
-GENERAL_LIGHT_THEME = """\
-Use a clean white, soft ivory, or very pale cool-gray background with Azure blue as the dominant \
-accent color.
-
-Use Azure blue, clear medium blue, navy, slate blue, pale sky blue, cool silver, and soft neutral \
-gray.
-
-Apply Azure to important components, directional paths, active states, and focal highlights. Keep \
-most surfaces white or very light with subtle blue-gray shadows.
-
-Avoid:
-- Large areas of dark navy
-- Excessive cyan
-- Neon glow
-- Purple accents
-- Flat sterile white backgrounds without depth
-- Cartoon or playful styling"""
+from .general_dark_theme import GENERAL_DARK_THEME
 
 # § Reusable Course Cover Prompt — verbatim, with the template variables as format fields.
 _TEMPLATE = """\

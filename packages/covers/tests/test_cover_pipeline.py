@@ -11,6 +11,7 @@ bytes came back).
 import base64
 
 import pytest
+from _general_fields import FIELDS_JSON, FIELDS_JSON_REVISED, is_fields_ask
 from lunaris_covers.art_direction.cover_art_director import CoverArtDirector
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.pipeline.cover_pipeline import CoverPipeline
@@ -19,6 +20,7 @@ from lunaris_covers.schemas.cover_qa_verdict import CoverQaDefect, CoverQaVerdic
 from lunaris_covers.sourcing.course_store_cover_source_provider import (
     CourseStoreCoverSourceProvider,
 )
+from lunaris_runtime.resilience import DEFAULT_PARSE_REPAIR_ATTEMPTS
 from lunaris_runtime.schema import (
     Course,
     CoverJob,
@@ -36,14 +38,6 @@ _PNG = base64.b64decode(
 )
 
 
-_FIELDS_JSON = (
-    '{"subtitle": "A guided tour", "subject": "How the system works end to end", '
-    '"primary_visual": "a refined 3D hero mechanism", '
-    '"supporting_visuals": "connected components and flowing paths", '
-    '"process_visualization": "a clear left-to-right flow"}'
-)
-
-
 class _StubArtDirectorInvoke:
     """A fake ``TextInvoke``: canned prose for the editorial ask, valid fields JSON for the GENERAL
     structured ask (identified by its JSON contract)."""
@@ -56,8 +50,8 @@ class _StubArtDirectorInvoke:
 
     async def __call__(self, prompt: str) -> str:
         self.prompt = prompt
-        if '"primary_visual"' in prompt:
-            return _FIELDS_JSON
+        if is_fields_ask(prompt):
+            return FIELDS_JSON
         return self.reply
 
 
@@ -670,3 +664,81 @@ async def test_a_light_qa_exception_degrades_to_a_dark_only_cover() -> None:
     _assert_dark_only(rendered)
     assert inspector.dark_calls == 1  # the dark cover was still QA'd and shipped
     assert inspector.light_calls == 2  # both light QA attempts raised and were absorbed
+
+
+# ---- GENERAL regenerate round + parse-repair exhaustion (review: the untested new paths) ----
+
+
+class _GeneralSequenceInvoke:
+    """A ``TextInvoke`` for GENERAL jobs: returns a different fields JSON per fields-ask, recording
+    every prompt — so a test can prove the revision round carried the defects and produced NEW
+    fields, not a re-roll of the first attempt's."""
+
+    def __init__(self, replies: list[str]) -> None:
+        self._replies = replies
+        self.prompts: list[str] = []
+
+    async def __call__(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return self._replies[min(len(self.prompts), len(self._replies)) - 1]
+
+
+@pytest.mark.asyncio
+async def test_general_qa_rejection_revises_the_fields_and_reassembles_the_template() -> None:
+    # The GENERAL regenerate round: QA rejects the first render → the art director is re-asked for
+    # NEW fields with the defects folded in → the template is re-assembled with those new fields.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    client = _CountingImagesClient()
+    invoke = _GeneralSequenceInvoke([FIELDS_JSON, FIELDS_JSON_REVISED])
+    inspector = _ScriptedInspector(fail_first=1)  # reject round 1, pass round 2
+
+    rendered = await CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(store),
+        art_director=CoverArtDirector(invoke=invoke, model="claude-opus-4-8"),
+        renderer=OpenAiImageRenderer(client_factory=lambda: client),
+        qa_model="claude-opus-4-8",
+        inspector=inspector,
+    ).produce(_job(CoverStylePreset.GENERAL), on_stage=_noop_stage)
+
+    assert rendered.provenance.qa_attempts == 2
+    # Round 2's fields-ask carried the QA defect (and stayed a fields-ask, not a prose ask).
+    assert len(invoke.prompts) == 2
+    assert is_fields_ask(invoke.prompts[1])
+    assert "defect round 1" in invoke.prompts[1]
+    # The prior attempt's assembled template must NOT leak into the retry's fields-ask.
+    assert "COLOR THEME:" not in invoke.prompts[1]
+    # The winning prompt is the template re-assembled with the REVISED fields.
+    assert "a calmer matte-ceramic hero mechanism" in rendered.provenance.prompt
+    assert "Reserve approximately 38% of the left side" in rendered.provenance.prompt
+
+
+@pytest.mark.asyncio
+async def test_general_fields_that_never_parse_fail_with_an_actionable_reason() -> None:
+    # Parse-repair exhaustion (review): a GENERAL invoke that never yields valid fields JSON must
+    # fail as a CoverPipelineError with an owner-safe, actionable user_detail — the worker then
+    # settles the job FAILED with that reason (its CoverPipelineError contract) instead of leaking
+    # a raw ValidationError class name. Bounded: exactly the repair budget, no runaway loop.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+
+    class _GarbageInvoke:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def __call__(self, prompt: str) -> str:
+            self.calls += 1
+            return "not json at all"
+
+    invoke = _GarbageInvoke()
+    pipeline = CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(store),
+        art_director=CoverArtDirector(invoke=invoke, model="claude-opus-4-8"),
+        renderer=OpenAiImageRenderer(client_factory=_FakeImagesClient),
+        qa_model="claude-opus-4-8",
+    )
+    with pytest.raises(CoverPipelineError) as caught:
+        await pipeline.produce(_job(CoverStylePreset.GENERAL), on_stage=_noop_stage)
+
+    assert caught.value.user_detail == "couldn't write the cover's descriptive fields"
+    assert invoke.calls == DEFAULT_PARSE_REPAIR_ATTEMPTS  # bounded — the repair budget, no more

@@ -14,7 +14,8 @@ keeps the no-text discipline.
 
 from lunaris_runtime.schema import CoverStylePreset
 
-from .general_prompt import GENERAL_DARK_THEME, GENERAL_LIGHT_THEME
+from .general_dark_theme import GENERAL_DARK_THEME
+from .general_light_theme import GENERAL_LIGHT_THEME
 from .house_style import EDITORIAL_PRESETS
 
 # GENERAL light mode: the operator's Azure theme block, verbatim, plus the no-text tail the theme

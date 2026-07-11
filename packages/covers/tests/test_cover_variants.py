@@ -11,6 +11,7 @@ final parametric sweep the journey mandates.
 import base64
 
 import pytest
+from _general_fields import FIELDS_JSON, is_fields_ask
 from lunaris_covers import (
     CourseStoreCoverSourceProvider,
     CoverArtDirector,
@@ -37,14 +38,6 @@ _PNG = base64.b64decode(
 )
 
 
-_FIELDS_JSON = (
-    '{"subtitle": "A guided tour", "subject": "How the system works end to end", '
-    '"primary_visual": "a refined 3D hero mechanism", '
-    '"supporting_visuals": "connected components and flowing paths", '
-    '"process_visualization": "a clear left-to-right flow"}'
-)
-
-
 class _StubInvoke:
     """Answers the editorial prose ask with a canned brief, and the GENERAL structured-fields ask
     (identified by its JSON contract) with valid fields JSON."""
@@ -55,8 +48,8 @@ class _StubInvoke:
 
     async def __call__(self, prompt: str) -> str:
         self.prompt = prompt
-        if '"primary_visual"' in prompt:
-            return _FIELDS_JSON
+        if is_fields_ask(prompt):
+            return FIELDS_JSON
         return self.reply
 
 

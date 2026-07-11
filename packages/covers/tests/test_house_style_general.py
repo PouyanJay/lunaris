@@ -152,3 +152,11 @@ def test_general_retheme_instruction_carries_the_azure_theme_verbatim() -> None:
     instruction = light_retheme_instruction(CoverStylePreset.GENERAL)
     assert GENERAL_LIGHT_THEME in instruction
     assert "Preserve the exact composition" in instruction
+
+
+def test_native_light_prompt_falls_back_to_append_without_the_dark_block() -> None:
+    # The defensive branch: a general prompt missing the verbatim dark theme block (should not
+    # happen) still gets a light attempt via the append shape rather than being skipped.
+    light = native_light_prompt("a prompt with no theme block", CoverStylePreset.GENERAL)
+    assert light.startswith("a prompt with no theme block")
+    assert "LIGHT MODE" in light and GENERAL_LIGHT_THEME in light
