@@ -41,6 +41,12 @@ const PROVIDERS = [
     hint: "Narrates explainer videos in one pass when voice is on — optional; without it videos render silent.",
     placeholder: "sk_…",
   },
+  {
+    provider: "openai",
+    label: "OpenAI API key",
+    hint: "Generates the AI cover image for each course (GPT Image 2) — optional; without it courses show the Typographic cover.",
+    placeholder: "sk-…",
+  },
 ] as const;
 
 type State =

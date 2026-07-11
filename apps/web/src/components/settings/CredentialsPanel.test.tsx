@@ -9,6 +9,7 @@ const READY = [
   { provider: "search", isSet: false, last4: null },
   { provider: "youtube", isSet: false, last4: null },
   { provider: "elevenlabs", isSet: false, last4: null },
+  { provider: "openai", isSet: false, last4: null },
 ];
 
 /** Routes the credentials API by method + path. `onMutate` shapes PUT/DELETE/POST responses. */
@@ -41,6 +42,9 @@ describe("CredentialsPanel", () => {
     expect(screen.getByLabelText("Search API key (Tavily)")).toBeInTheDocument();
     expect(screen.getByLabelText("YouTube API key")).toBeInTheDocument();
     expect(screen.getByLabelText("ElevenLabs API key")).toBeInTheDocument();
+    // The OpenAI key (AI course covers). Without this field a tenant could never store the key, so
+    // the cover-images toggle stayed permanently disabled — the bug this row guards against.
+    expect(screen.getByLabelText("OpenAI API key")).toBeInTheDocument();
     // anthropic is set → shows its last4 (masked), never the value; input is a password field.
     expect(screen.getByText(/set ····9abc/i)).toBeInTheDocument();
     expect(screen.getByLabelText("Anthropic API key")).toHaveAttribute("type", "password");
