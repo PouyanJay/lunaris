@@ -239,7 +239,20 @@ class CoverWorker:
         (``FileNotFoundError`` — the image still uploaded, the job still settles READY). A genuine
         backend failure (``PersistenceError``) is NOT swallowed: it propagates so the caller leaves
         the job in-flight for the lease sweep to requeue, rather than settling a job READY whose
-        ``Course.cover`` never got written."""
+        ``Course.cover`` never got written.
+
+        **Concurrency (course-cover-images T11 AD).** The load + merge + save run in one
+        ``to_thread`` hop with no ``await`` between, so within this call they are effectively atomic
+        relative to the event loop, and the load re-reads the LATEST course — a concurrent write
+        that landed *before* this load is preserved (its fields ride through the ``model_copy``).
+        The residual race is only a writer that saves the full Course *between* this load and this
+        save (e.g. a lesson-regenerate): last-writer-wins could drop the just-attached cover. This
+        is a **pre-existing systemic gap** — NO Course writer uses optimistic concurrency — not
+        specific to covers (the worker is merely the first background Course writer to surface it).
+        The correct fix is a Course version column + compare-and-set (or a dedicated ``cover``
+        column outside the payload JSONB) applied across every writer; that is a Course-persistence
+        initiative tracked separately, out of scope for this feature. The cover is re-derivable
+        (regenerate) and the at-least-once requeue recovers a lost attach, so the window is fine."""
 
         def _write() -> None:
             course = self._course_store.load(job.course_id, owner_id=job.user_id)

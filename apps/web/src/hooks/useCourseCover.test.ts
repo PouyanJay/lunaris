@@ -13,12 +13,7 @@ vi.mock("../lib/coverJobs", async (importOriginal) => {
     regenerateCover: vi.fn(),
   };
 });
-import {
-  fetchCoverJob,
-  pollCoverJob,
-  regenerateCover,
-  type CoverJobView,
-} from "../lib/coverJobs";
+import { fetchCoverJob, pollCoverJob, regenerateCover, type CoverJobView } from "../lib/coverJobs";
 
 const fetchJob = vi.mocked(fetchCoverJob);
 const poll = vi.mocked(pollCoverJob);
@@ -127,4 +122,24 @@ describe("useCourseCover", () => {
     act(() => result.current.regenerate());
     expect(regen).not.toHaveBeenCalled();
   });
+
+  // T11 variant sweep: every cover status resolves to the right precedence phase.
+  const IN_FLIGHT = ["queued", "art_directing", "rendering", "qa", "uploading"] as const;
+  it.each(IN_FLIGHT)(
+    "resolves an in-flight %s cover to the generating (loading) phase",
+    async (s) => {
+      poll.mockImplementation(async (_api, _jobId, opts) => opts.onWorking(s));
+      const { result } = renderHook(() => useCourseCover(API, artifact(s)));
+      await waitFor(() => expect(result.current.state).toEqual({ phase: "generating", status: s }));
+    },
+  );
+
+  it.each(["failed", "cancelled"] as const)(
+    "resolves a terminal %s cover to the fallback phase",
+    async (s) => {
+      const { result } = renderHook(() => useCourseCover(API, artifact(s)));
+      await waitFor(() => expect(result.current.state).toEqual({ phase: "fallback" }));
+      expect(fetchJob).not.toHaveBeenCalled();
+    },
+  );
 });
