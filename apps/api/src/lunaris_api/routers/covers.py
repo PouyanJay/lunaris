@@ -57,12 +57,18 @@ async def require_keyed_cover_caller(owner_id: CurrentUserIdDep, vault: Credenti
 
 
 class CoverJobView(CourseModel):
-    """The wire shape of one cover job: the row itself, a short-lived signed image URL once the
-    cover is READY, and the structural provenance (the anti-slop record — which models drew and
-    inspected it). A non-READY job carries just the row so the reader can render its progress."""
+    """The wire shape of one cover job: the row itself, short-lived signed image URLs once the cover
+    is READY, and the structural provenance (the anti-slop record — which models drew and inspected
+    it). A non-READY job carries just the row so the reader can render its progress.
+
+    ``image_url`` is the DARK cover; ``image_url_light`` is its LIGHT-theme twin (dual-theme
+    covers) and is ``None`` for a dark-only cover — the web shows the dark image in the app's light
+    theme and the light image in its dark theme (an inverted/contrast mapping), falling back to the
+    dark image when there is no light one."""
 
     job: CoverJob
     image_url: str | None = None
+    image_url_light: str | None = None
     provenance: CoverProvenance | None = None
 
 
@@ -271,10 +277,14 @@ async def cancel_cover_job(
 
 
 async def _cover_job_view(job: CoverJob, storage: ICoverStorage) -> CoverJobView:
-    """The wire view of a cover job: a READY job carries a short-lived signed image URL and the
+    """The wire view of a cover job: a READY job carries short-lived signed image URL(s) and the
     structural provenance (resolved on demand, never persisted stale); any other status is the bare
     row so the reader renders its progress. Shared by the status, active and (indirectly) enqueue
-    surfaces so they thread provenance identically."""
+    surfaces so they thread provenance identically.
+
+    A dual-theme cover also carries ``image_url_light`` — minted ONLY when ``provenance`` says a
+    light variant exists, so a signed URL is never requested for a missing object (a dark-only or
+    pre-dual-theme cover has no ``cover-light.png``)."""
     if job.status != CoverJobStatus.READY:
         return CoverJobView(job=job)
     paths = CoverArtifactPaths.for_job(job)
@@ -282,7 +292,12 @@ async def _cover_job_view(job: CoverJob, storage: ICoverStorage) -> CoverJobView
         storage.signed_url(path=paths.image),
         _read_provenance(storage, paths.provenance),
     )
-    return CoverJobView(job=job, image_url=image_url, provenance=provenance)
+    image_url_light: str | None = None
+    if provenance is not None and provenance.has_light_variant:
+        image_url_light = await storage.signed_url(path=paths.image_light)
+    return CoverJobView(
+        job=job, image_url=image_url, image_url_light=image_url_light, provenance=provenance
+    )
 
 
 async def _read_provenance(storage: ICoverStorage, path: str) -> CoverProvenance | None:
