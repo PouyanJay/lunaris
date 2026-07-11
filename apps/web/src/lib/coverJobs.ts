@@ -71,11 +71,15 @@ export interface CoverJob {
   error?: string | null;
 }
 
-/** The `GET /api/covers/{jobId}` (and `/active`) response: the job row, a short-lived signed image
- *  URL once READY (never persisted stale — re-minted on demand), and the structural provenance. */
+/** The `GET /api/covers/{jobId}` (and `/active`) response: the job row, short-lived signed image
+ *  URL(s) once READY (never persisted stale — re-minted on demand), and the structural provenance.
+ *  `imageUrl` is the DARK cover; `imageUrlLight` is its LIGHT-theme twin (dual-theme covers) and is
+ *  null/absent for a dark-only cover — the reader shows the dark image in the app's light theme and
+ *  the light image in its dark theme (an inverted/contrast mapping). */
 export interface CoverJobView {
   job: CoverJob;
   imageUrl?: string | null;
+  imageUrlLight?: string | null;
   provenance?: CoverProvenance | null;
 }
 

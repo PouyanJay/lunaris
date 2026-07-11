@@ -20,11 +20,14 @@ export const COURSE_COVER_POLL_INTERVAL_MS = 3000;
  *  - `generating` — a cover is in flight (the payload carries a non-terminal artifact, or the reader
  *    just triggered a regenerate): the surface shows the constellation as the LOADING state and this
  *    hook polls until it settles.
- *  - `image` — a READY cover whose short-lived signed URL resolved: the surface renders the image. */
+ *  - `image` — a READY cover whose short-lived signed URL resolved: the surface renders the image.
+ *    `imageUrl` is the DARK cover; `imageUrlLight` is its LIGHT-theme twin (dual-theme covers) or
+ *    null for a dark-only cover — the surface picks by the app theme (light theme → dark image, dark
+ *    theme → light image), falling back to the dark image when there is no light one. */
 export type CourseCoverState =
   | { phase: "fallback" }
   | { phase: "generating"; status: CoverJobStatus }
-  | { phase: "image"; imageUrl: string };
+  | { phase: "image"; imageUrl: string; imageUrlLight: string | null };
 
 /** Resolve a course's cover to a renderable state, and let the reader regenerate it
  *  (course-cover-images T9 + T10).
@@ -52,7 +55,7 @@ export function useCourseCover(
   const applyView = useCallback((view: CoverJobView | null) => {
     setState(
       view?.job.status === "ready" && view.imageUrl
-        ? { phase: "image", imageUrl: view.imageUrl }
+        ? { phase: "image", imageUrl: view.imageUrl, imageUrlLight: view.imageUrlLight ?? null }
         : { phase: "fallback" },
     );
   }, []);
@@ -70,7 +73,9 @@ export function useCourseCover(
       void fetchCoverJob(apiBaseUrl, jobId, controller.signal).then((view) => {
         if (controller.signal.aborted) return;
         setState(
-          view?.imageUrl ? { phase: "image", imageUrl: view.imageUrl } : { phase: "fallback" },
+          view?.imageUrl
+            ? { phase: "image", imageUrl: view.imageUrl, imageUrlLight: view.imageUrlLight ?? null }
+            : { phase: "fallback" },
         );
       });
       return () => controller.abort();

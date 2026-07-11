@@ -21,10 +21,11 @@ const regen = vi.mocked(regenerateCover);
 
 const API = "http://api.test";
 
-function readyView(jobId: string): CoverJobView {
+function readyView(jobId: string, imageUrlLight: string | null = null): CoverJobView {
   return {
     job: { id: jobId, courseId: "c1", status: "ready", stylePreset: "nocturne", error: null },
     imageUrl: `https://signed/${jobId}.png`,
+    imageUrlLight,
     provenance: null,
   };
 }
@@ -49,6 +50,19 @@ describe("useCourseCover", () => {
       expect(result.current.state).toEqual({
         phase: "image",
         imageUrl: "https://signed/job-1.png",
+        imageUrlLight: null,
+      }),
+    );
+  });
+
+  it("carries the light twin's URL for a dual-theme READY cover", async () => {
+    fetchJob.mockResolvedValue(readyView("job-1", "https://signed/job-1-light.png"));
+    const { result } = renderHook(() => useCourseCover(API, artifact("ready")));
+    await waitFor(() =>
+      expect(result.current.state).toEqual({
+        phase: "image",
+        imageUrl: "https://signed/job-1.png",
+        imageUrlLight: "https://signed/job-1-light.png",
       }),
     );
   });
@@ -81,6 +95,7 @@ describe("useCourseCover", () => {
       expect(result.current.state).toEqual({
         phase: "image",
         imageUrl: "https://signed/job-1.png",
+        imageUrlLight: null,
       }),
     );
   });
@@ -111,6 +126,7 @@ describe("useCourseCover", () => {
       expect(result.current.state).toEqual({
         phase: "image",
         imageUrl: "https://signed/job-2.png",
+        imageUrlLight: null,
       }),
     );
     expect(regen).toHaveBeenCalledWith(API, "job-1");
