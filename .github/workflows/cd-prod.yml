@@ -82,6 +82,18 @@ jobs:
             --image "lunaris-video-worker:${{ steps.sha.outputs.value }}" \
             --force
 
+      # Promote the dev-built cover-worker image the same way (course-cover-images) — only when covers
+      # are on for prod. The exact SHA cd-dev built must exist in the dev ACR.
+      - name: Promote cover-worker image (dev ACR -> prod ACR, same tag)
+        if: vars.COVER_GENERATION_ENABLED == 'true'
+        run: |
+          az acr import \
+            --name "${{ vars.ACR_NAME }}" \
+            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
+            --source "lunaris-cover-worker:${{ steps.sha.outputs.value }}" \
+            --image "lunaris-cover-worker:${{ steps.sha.outputs.value }}" \
+            --force
+
       - name: Setup Supabase CLI
         if: vars.SUPABASE_DB_POOLER_HOST != ''
         uses: supabase/setup-cli@v1
@@ -121,6 +133,7 @@ jobs:
               keylessLlmBaseUrl="${{ vars.KEYLESS_LLM_BASE_URL }}" \
               keylessEmbeddingsBaseUrl="${{ vars.KEYLESS_EMBEDDINGS_BASE_URL }}" \
               videoGenerationEnabled="${{ vars.VIDEO_GENERATION_ENABLED || 'false' }}" \
+              coverGenerationEnabled="${{ vars.COVER_GENERATION_ENABLED || 'false' }}" \
               adminEmails="${{ vars.LUNARIS_ADMIN_EMAILS }}" \
               prodOpsSubscriptionId="${{ secrets.AZURE_SUBSCRIPTION_ID }}" \
               prodOpsResourceGroup="${{ vars.RESOURCE_GROUP }}"
@@ -157,6 +170,39 @@ jobs:
               supabaseUrl="${{ vars.SUPABASE_URL }}" \
               withByok="${{ vars.WITH_BYOK || 'false' }}" \
               videoJobsDbConnection="$PG_CONN"
+
+      # The dedicated cover-worker Container App (course-cover-images) — flipping vars.
+      # COVER_GENERATION_ENABLED on both lets the API enqueue and deploys this. KEDA keeps it at zero
+      # replicas until a job is enqueued. Scaler conn = the IPv4 pooler (same as migrations + video);
+      # without a pooler host it deploys scaler-less (idles at 0).
+      - name: Deploy cover worker (cover.bicep, prod)
+        if: vars.COVER_GENERATION_ENABLED == 'true'
+        env:
+          PGPW: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          PG_CONN=""
+          if [ -n "${{ vars.SUPABASE_DB_POOLER_HOST }}" ]; then
+            ENCPW=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PGPW'],safe=''))")
+            PG_CONN="postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${ENCPW}@${{ vars.SUPABASE_DB_POOLER_HOST }}:5432/postgres?sslmode=require"
+          else
+            echo "::warning::SUPABASE_DB_POOLER_HOST unset — cover worker deploys without the KEDA scaler (idles at 0)."
+          fi
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-prod-cover-${{ github.run_number }}" \
+            --template-file infra/cover.bicep \
+            --parameters \
+              env=prod \
+              location="${{ vars.LOCATION }}" \
+              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-cover-worker:${{ steps.sha.outputs.value }}" \
+              managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
+              managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              keyVaultUri="${{ vars.KEYVAULT_URI }}" \
+              supabaseUrl="${{ vars.SUPABASE_URL }}" \
+              withByok="${{ vars.WITH_BYOK || 'false' }}" \
+              coverJobsDbConnection="$PG_CONN"
 
       # app.bicep's ingress block doesn't carry customDomains, so a deploy resets ingress and drops
       # the api.lunaris.pouyan.ai binding — restore it here (idempotent). DNS (CNAME + asuid TXT) and
