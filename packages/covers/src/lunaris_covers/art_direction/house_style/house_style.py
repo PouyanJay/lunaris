@@ -9,14 +9,14 @@ from lunaris_runtime.schema import CoverStylePreset
 _SHARED_CONSTRAINTS = (
     "NO text, letters, numerals, logos or watermarks anywhere in the image "
     "(garbled AI text is the #1 slop tell).",
-    "The subject is DERIVED from the course topic and its concepts — evocative and descriptive, "
-    "not a literal or busy depiction of them.",
 )
 
 # The EDITORIAL discipline (the original locked constraints) — the nocturne/blueprint/aurora trio:
 # one focal subject, a flat matte illustration, a night-sky ground with a single amber accent.
 _EDITORIAL_CONSTRAINTS = (
     *_SHARED_CONSTRAINTS,
+    "The subject is DERIVED from the course topic and its concepts — evocative and descriptive, "
+    "not a literal or busy depiction of them.",
     "ONE focal subject, with generous negative space — never busy or cluttered.",
     "A limited palette anchored to the Lunaris brand: a near-black night-sky ground with a single "
     "warm amber accent; no other saturated colours.",
@@ -30,11 +30,16 @@ _EDITORIAL_CONSTRAINTS = (
 # a flat finish, which would make every general cover fail its own QA gate.
 _GENERAL_CONSTRAINTS = (
     *_SHARED_CONSTRAINTS,
-    "ONE dominant hero visualization of the topic placed toward the center-right, with two to "
-    "four supporting elements (dimensional diagrams, connected components, flowing paths, layered "
-    "systems, scientific structures, or step-by-step relationships) — generous clean negative "
-    "space weighted to the left, readable at thumbnail size, important elements away from the "
-    "edges, never busy or cluttered.",
+    "A LITERAL, technically and anatomically accurate depiction of the course's actual subject "
+    "and mechanism — the scene a textbook illustrator would draw (recognizable organs, devices, "
+    "systems, structures, processes); never an abstract metaphor, a mood piece, or shapes that "
+    "merely 'suggest' the topic.",
+    "ONE dominant hero visualization placed toward the center-right, plus two to four SEPARATE, "
+    "stand-alone supporting elements arranged around it as a diagram — e.g. a magnified circular "
+    "inset revealing internal structure, discrete floating components, a connected flow between "
+    "parts — each element its own distinct object with clear spatial separation, readable at "
+    "thumbnail size, important elements away from the edges, generous clean negative space "
+    "weighted to the left.",
     "A dark, sophisticated ground of near-black, charcoal and deep graphite with the amber family "
     "as the accent (rich amber, golden orange, warm honey, dark bronze, muted copper, warm "
     "ivory), applied selectively to important components — no blue or purple accents, no neon "
@@ -42,7 +47,9 @@ _GENERAL_CONSTRAINTS = (
     "A premium enterprise finish: a modern editorial infographic combined with refined 3D "
     "illustration — clean geometry, precise spacing, soft controlled studio lighting, subtle "
     "shadows and ambient occlusion, refined glass / matte metal / ceramic / translucent "
-    "materials, subtle dimensional depth. Sophisticated rather than playful; technically "
+    "materials, subtle dimensional depth. Sharp edges and crisp, high-frequency detail "
+    "throughout, at medical/technical-illustration precision — never hazy, soft-focus, "
+    "dreamlike, or atmospheric-abstract. Sophisticated rather than playful; technically "
     "credible.",
     "Never: cartoon characters, generic stock-photo appearance, excessive glow or large glowing "
     "halos, cyberpunk styling, or an obvious AI-generated-poster look.",
