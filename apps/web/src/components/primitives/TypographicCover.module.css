@@ -11,6 +11,8 @@
   background: #0a0c10;
   display: grid;
   place-items: center;
+  /* Size the word to the cover's own width (not the viewport) so it scales with the card. */
+  container-type: inline-size;
 }
 
 /* The seeded constellation, dimmed to a faint accent behind the word. */

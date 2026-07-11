@@ -106,10 +106,11 @@ async def test_pipeline_covers_every_style_preset(preset: CoverStylePreset) -> N
 
 
 @pytest.mark.asyncio
-async def test_cover_attach_preserves_a_concurrent_course_change(monkeypatch) -> None:
-    # The worker's attach re-reads the LATEST course, so a concurrent write that landed before the
-    # attach (here: the topic changed after the job was claimed) survives alongside the new cover
-    # (course-cover-images T11 concurrency AD).
+async def test_cover_attach_reloads_the_course_instead_of_a_stale_snapshot() -> None:
+    # The worker's attach re-reads the LATEST course rather than an earlier snapshot, so a course
+    # field changed after the job was claimed (here the topic) survives alongside the new cover
+    # (course-cover-images T11 concurrency AD). The residual true-concurrency race — a full-Course
+    # save BETWEEN this load and save — is the documented systemic gap, out of scope here.
     queue, storage = InMemoryCoverJobQueue(), InMemoryCoverStorage()
     store = _FakeCourseStore()
     store.seed(Course(id="c-1", topic="Original topic"), owner_id=_OWNER)

@@ -21,9 +21,7 @@ def test_none_map_is_all_defaults() -> None:
 
 
 def test_reads_the_toggle_and_preset() -> None:
-    config = cover_config_from_map(
-        {COVER_ENABLED_ENV: "false", COVER_STYLE_PRESET_ENV: "aurora"}
-    )
+    config = cover_config_from_map({COVER_ENABLED_ENV: "false", COVER_STYLE_PRESET_ENV: "aurora"})
     assert config.enabled is False
     assert config.style_preset is CoverStylePreset.AURORA
 

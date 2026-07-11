@@ -5,7 +5,7 @@ from lunaris_runtime.persistence import ICoverJobQueue
 from lunaris_runtime.schema import Course, CoverJob, CoverStylePreset
 
 
-def cover_input_hash(course: Course, style_preset: CoverStylePreset) -> str:
+def _cover_input_hash(course: Course, style_preset: CoverStylePreset) -> str:
     """Fingerprint a cover's generation inputs — the course topic + the chosen art-direction
     preset — so a later staleness check can flag a cover outdated when the topic (or preset)
     changes. The course id is folded in too so the hash is unique per course, even across topics."""
@@ -38,7 +38,7 @@ async def enqueue_cover_job(
         user_id=owner_id,
         course_id=course.id,
         style_preset=style_preset,
-        input_hash=cover_input_hash(course, style_preset),
+        input_hash=_cover_input_hash(course, style_preset),
     )
     await queue.enqueue(job)
     return job, True

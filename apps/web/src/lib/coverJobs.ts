@@ -1,5 +1,6 @@
 import type { CoverArtifact, CoverProvenance } from "../types/course";
 import { authedFetch } from "./apiClient";
+import { COVER_STYLE_PRESETS } from "./config";
 
 /** The cover-image job lifecycle — mirrors the runtime `CoverJobStatus`. There is exactly one cover
  *  per course, so (unlike video) there is no kind/lesson dimension. */
@@ -13,9 +14,11 @@ export type CoverJobStatus =
   | "failed"
   | "cancelled";
 
-/** The art-direction preset a cover renders with — mirrors the runtime `CoverStylePreset`. Every
- *  preset keeps the locked anti-slop constraints; it varies the medium/mood, not the discipline. */
-export type CoverStylePreset = "nocturne" | "blueprint" | "aurora";
+/** The art-direction preset a cover renders with — mirrors the runtime `CoverStylePreset`. Derived
+ *  from the single `COVER_STYLE_PRESETS` list (one source of truth on the TS side) so a fourth preset
+ *  is added in one place. Every preset keeps the locked anti-slop constraints; it varies the
+ *  medium/mood, not the discipline. */
+export type CoverStylePreset = (typeof COVER_STYLE_PRESETS)[number];
 
 /** The job id to resolve a cover artifact by: prefer the provenance jobId (populated on a READY
  *  artifact) over the artifact's own jobId (present even when FAILED). The single place that

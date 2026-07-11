@@ -13,7 +13,12 @@ from pathlib import Path
 import pytest
 from lunaris_agent import build_stub_orchestrator
 from lunaris_api.service import CourseService
-from lunaris_runtime.persistence import CourseStore, InMemoryCoverJobQueue, InMemoryRunStore
+from lunaris_runtime.persistence import (
+    CourseStore,
+    InMemoryCoverJobQueue,
+    InMemoryRunStore,
+    PersistenceError,
+)
 from lunaris_runtime.schema import CoverJob, CoverJobStatus, CoverStylePreset
 
 _OWNER = "00000000-0000-0000-0000-00000000000a"
@@ -167,3 +172,65 @@ async def test_stream_build_also_auto_enqueues(
         pass
 
     assert await queue.find_active(course_id="course-t8", owner_id=_OWNER) is not None
+
+
+async def _stream(service: CourseService, *, owner_id: str | None) -> None:
+    async for _ in service.stream(
+        "How HTTPS works", course_id="course-t8", run_id="run-1", owner_id=owner_id
+    ):
+        pass
+
+
+async def test_stream_path_threads_byok_credentials_and_the_per_user_preset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The durable stream path (_run_recording_status) threads credentials + config SEPARATELY from
+    # create(); prove BOTH reach the gate there — a BYOK OpenAI key makes it keyed AND the per-user
+    # preset is honoured — so a regression that drops either on that path is caught.
+    monkeypatch.delenv(_OPENAI_ENV, raising=False)
+
+    async def creds(user_id: str) -> Mapping[str, str]:
+        return {_OPENAI_ENV: "sk-tenant"}
+
+    async def config(user_id: str) -> Mapping[str, str]:
+        return {"LUNARIS_COVER_STYLE_PRESET": "blueprint"}
+
+    queue = InMemoryCoverJobQueue()
+    service = _service(tmp_path, queue, credential_resolver=creds, config_resolver=config)
+    await _stream(service, owner_id=_OWNER)
+
+    job = await queue.find_active(course_id="course-t8", owner_id=_OWNER)
+    assert job is not None and job.style_preset is CoverStylePreset.BLUEPRINT
+
+
+async def test_stream_path_respects_the_per_user_toggle_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(_OPENAI_ENV, "sk-test")
+
+    async def config(user_id: str) -> Mapping[str, str]:
+        return {"LUNARIS_COVER_ENABLED": "false"}
+
+    queue = InMemoryCoverJobQueue()
+    service = _service(tmp_path, queue, config_resolver=config)
+    await _stream(service, owner_id=_OWNER)
+
+    assert await queue.find_active(course_id="course-t8", owner_id=_OWNER) is None
+
+
+async def test_a_queue_failure_never_fails_the_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The hard invariant: auto-enqueue is best-effort. A queue backend error must be swallowed — the
+    # build the learner is waiting on completes normally, it just gets no cover.
+    monkeypatch.setenv(_OPENAI_ENV, "sk-test")
+
+    class _FailingQueue(InMemoryCoverJobQueue):
+        async def enqueue(self, job: CoverJob) -> None:
+            raise PersistenceError("cover queue unavailable")
+
+    queue = _FailingQueue()
+    course_id = await _build(_service(tmp_path, queue), owner_id=_OWNER)  # must NOT raise
+
+    # The build finished (a Course was returned) despite the enqueue failing; no job was created.
+    assert await queue.find_active(course_id=course_id, owner_id=_OWNER) is None
