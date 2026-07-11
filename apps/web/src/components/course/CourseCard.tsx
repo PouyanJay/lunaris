@@ -1,12 +1,11 @@
 import { Link } from "react-router";
 
 import { Badge } from "../primitives/Badge";
-import { CourseCover } from "../primitives/CourseCover";
+import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { StatusDot } from "../primitives/StatusDot";
 import { TrashIcon } from "../icons/TrashIcon";
 import { LEARNER_STATUS_META, LEVEL_LABELS } from "../../lib/courseLabels";
-import { coverSeed } from "../../lib/coverSeed";
 import { coursePath } from "../../lib/routes";
 import type { CourseSummary } from "../../types/course";
 import styles from "./CourseCard.module.css";
@@ -34,7 +33,7 @@ export function CourseCard({ course, onRequestDelete }: CourseCardProps) {
     <li className={styles.item}>
       <Link className={styles.card} to={coursePath(course.id)}>
         <div className={styles.cover} aria-hidden="true">
-          <CourseCover seed={coverSeed(course.id)} />
+          <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
         </div>
         <span className={styles.cardBody}>
           <span className={styles.cardTitle}>{course.topic}</span>

@@ -1,13 +1,12 @@
 import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { bucketLevel } from "../../lib/courseLevel";
-import { coverSeed } from "../../lib/coverSeed";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor, type LessonState } from "../../lib/lessonState";
 import type { CourseProgress, ProgressSummary } from "../../lib/progress";
 import type { Course, CourseLevel, Lesson } from "../../types/course";
 import { LessonChip } from "../course/LessonChip";
 import { Button } from "../primitives/Button";
-import { CourseCover } from "../primitives/CourseCover";
+import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
 import { ScopeBand } from "../reader/ScopeBand";
@@ -123,7 +122,7 @@ function OverviewHero({
   return (
     <section className={styles.hero}>
       <div className={styles.cover} aria-hidden="true">
-        <CourseCover seed={coverSeed(course.id)} />
+        <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
       </div>
       <div className={styles.heroBody}>
         <p className={styles.counts}>

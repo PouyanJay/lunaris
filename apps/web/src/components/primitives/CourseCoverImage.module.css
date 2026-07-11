@@ -1,0 +1,16 @@
+/* The AI cover image fills its frame like the constellation it replaces — the frame owns the aspect
+   ratio and the aria-hidden. object-fit keeps a non-matching render from distorting. */
+.image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #0a0c10; /* night-sky ground while the image decodes (brand art, literal — §11) */
+}
+
+/* The constellation loading state fills the frame identically, so swapping to the image is seamless
+   (no layout shift). */
+.loading {
+  width: 100%;
+  height: 100%;
+}

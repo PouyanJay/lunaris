@@ -1,0 +1,47 @@
+/* The Typographic cover is brand art on the fixed night-sky canvas — like CourseCover/BrandMark its
+   colours are intentionally literal (not themed tokens) so a cover renders identically on light and
+   dark (the sanctioned brand-art exception, enterprise-ui §11). The ghost word echoes the amber
+   brand mark; the ground echoes CourseCover's night sky. */
+
+.root {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0a0c10;
+  display: grid;
+  place-items: center;
+}
+
+/* The seeded constellation, dimmed to a faint accent behind the word. */
+.accents {
+  position: absolute;
+  inset: 0;
+  opacity: 0.45;
+}
+
+/* One ghosted topic word, tight and uppercase, clamped so it never overflows the cover. The soft
+   amber keeps it legible-but-recessive — the title beside the cover carries the real name. */
+.word {
+  position: relative;
+  z-index: 1;
+  max-width: 88%;
+  padding: 0 var(--space-3);
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: clamp(1.375rem, 4.5cqi, 2.5rem);
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-transform: uppercase;
+  color: rgba(224, 162, 60, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* Size the word to the cover's own width (not the viewport) so it scales with the card. */
+.root {
+  container-type: inline-size;
+}

@@ -603,6 +603,9 @@ export interface CourseSummary {
   courseStatus: CourseStatus;
   builtAt: string;
   lastOpenedAt: string | null;
+  /** The AI cover handle (course-cover-images) — the card mints its signed URL on demand, else
+   *  renders the Typographic fallback. Absent on a keyless / pre-covers / cover-less course. */
+  cover?: CoverArtifact | null;
 }
 
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */

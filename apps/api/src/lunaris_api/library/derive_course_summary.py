@@ -61,4 +61,5 @@ def derive_course_summary(entry: LibraryEntry, marks: CourseMarks) -> CourseSumm
         course_status=entry.course.status,
         built_at=entry.run.updated_at,
         last_opened_at=marks.state.last_opened_at if marks.state else None,
+        cover=entry.course.cover,
     )
