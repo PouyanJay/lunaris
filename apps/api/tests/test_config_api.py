@@ -73,6 +73,12 @@ async def test_get_returns_every_setting_with_its_default(client: httpx.AsyncCli
         "kind": "toggle",
         "restartRequired": True,
     }
+    # The cover preset default is GENERAL (cover-general-preset). Regression: the config-store
+    # default once stayed 'nocturne' when every other layer flipped, so the Settings dropdown
+    # showed Nocturne selected beside a General option labeled "(default)" — and a no-op save
+    # would persist the wrong preset.
+    assert settings["coverStylePreset"]["value"] == "general"
+    assert settings["coverStylePreset"]["default"] == "general"
     assert settings["modelStrong"]["value"] == "claude-opus-4-8"
     assert settings["modelWorker"]["kind"] == "model"
     assert settings["modelWorker"]["restartRequired"] is False

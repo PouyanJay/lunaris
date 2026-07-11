@@ -79,18 +79,34 @@ async def test_dark_rubric_demands_a_near_black_ground() -> None:
     assert "near-black" in invoke.prompt.lower()  # the dark rubric's ground constraint
 
 
+@pytest.mark.parametrize(
+    ("preset", "expected_accent", "forbidden_accent"),
+    [
+        (CoverStylePreset.NOCTURNE, "amber", "azure"),  # editorial light = ivory + amber
+        (CoverStylePreset.GENERAL, "azure", "amber"),  # general light = white + azure
+    ],
+)
 @pytest.mark.asyncio
-async def test_light_variant_is_judged_against_a_bright_ground_rubric() -> None:
-    # A light-theme variant must be judged against the LIGHT rubric — the dark rubric's near-black
-    # ground would reject any correct light cover. Same anti-slop discipline (no text) on a bright
-    # ground.
+async def test_light_variant_is_judged_against_its_presets_bright_rubric(
+    preset: CoverStylePreset, expected_accent: str, forbidden_accent: str
+) -> None:
+    # A light-theme variant must be judged against the LIGHT rubric — the dark rubric's dark ground
+    # would reject any correct light cover — and against the BRIEF's preset palette: a hardcoded
+    # preset in CoverVisionQa.inspect would judge a general cover on amber and fail this test.
+    brief = CoverBrief(
+        topic="How HTTPS works",
+        concept_labels=("TCP handshake", "TLS"),
+        audience="engineers",
+        style_preset=preset,
+    )
     invoke = _StubVisionInvoke('{"passed": true}')
 
-    await CoverVisionQa(invoke=invoke, model="claude-opus-4-8").inspect(_IMAGE, _BRIEF, light=True)
+    await CoverVisionQa(invoke=invoke, model="claude-opus-4-8").inspect(_IMAGE, brief, light=True)
 
     assert invoke.prompt is not None
     lowered = invoke.prompt.lower()
-    assert "light" in lowered and ("near-white" in lowered or "ivory" in lowered)
+    assert "light" in lowered
+    assert expected_accent in lowered and forbidden_accent not in lowered
     assert "near-black night-sky ground" not in lowered  # not the dark ground constraint
     assert "no text" in lowered  # the shared anti-slop discipline still holds
 

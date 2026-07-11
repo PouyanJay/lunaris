@@ -458,14 +458,18 @@ class CoverJobStatus(StrEnum):
 class CoverStylePreset(StrEnum):
     """The art-direction preset a course cover renders with (course-cover-images tunability).
 
-    Every preset keeps the locked anti-slop constraints (one focal subject, generous negative space,
-    no text in the image, brand-anchored palette, matte/editorial finish) — the preset varies the
-    medium and mood, not the discipline. ``NOCTURNE`` is the house night-sky editorial default;
-    ``BLUEPRINT`` is a technical schematic / line-art look; ``AURORA`` is a soft abstract gradient
-    with a single motif. Carried on the job's ``style_preset`` column and the user's
-    ``coverStylePreset`` config key.
+    Every preset keeps the shared anti-slop discipline (no text in the image, uncluttered
+    composition, generous negative space, a brand-anchored palette) — the preset varies the medium
+    and mood, not the discipline. ``GENERAL`` is the house default (cover-general-preset): a premium
+    enterprise editorial-infographic fused with refined 3D illustration — one hero visualization
+    plus a few supporting elements on a graphite + amber dark ground, whose LIGHT twin re-themes to
+    white + azure. The editorial trio keeps the original flat-illustration discipline: ``NOCTURNE``
+    is the night-sky editorial look; ``BLUEPRINT`` a technical schematic / line-art look; ``AURORA``
+    a soft abstract gradient with a single motif. Carried on the job's ``style_preset`` column and
+    the user's ``coverStylePreset`` config key.
     """
 
+    GENERAL = "general"
     NOCTURNE = "nocturne"
     BLUEPRINT = "blueprint"
     AURORA = "aurora"

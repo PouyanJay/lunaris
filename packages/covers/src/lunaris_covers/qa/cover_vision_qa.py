@@ -27,8 +27,8 @@ IT MUST OBEY THE HOUSE STYLE
 {style}
 
 CHECK the rendered image against every constraint above. Reject "AI slop": any readable/garbled \
-text or letterforms, a busy or cluttered composition, an off-brand palette, a photoreal-stock or \
-generic-3D finish, or a subject that ignores the topic.
+text or letterforms, a busy or cluttered composition, or a palette, finish or subject that \
+violates the house style above.
 
 VERDICT
 Respond with ONLY this JSON object, no prose, no code fences:
@@ -66,7 +66,11 @@ class CoverVisionQa:
         # A light-theme variant is judged against the light rubric (bright ground); the dark
         # rubric's near-black-ground constraint would reject any correct light cover. Same
         # brief/topic either way — only the house-style block the image must obey differs.
-        style = light_style_block() if light else house_style(brief.style_preset).as_prompt_block()
+        style = (
+            light_style_block(brief.style_preset)
+            if light
+            else house_style(brief.style_preset).as_prompt_block()
+        )
         prompt = _INSPECT_TEMPLATE.format(
             topic=brief.topic,
             concepts=", ".join(brief.concept_labels) or brief.topic,

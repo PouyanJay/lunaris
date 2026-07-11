@@ -11,8 +11,8 @@ from ..schema import CoverStylePreset
 COVER_ENABLED_ENV = "LUNARIS_COVER_ENABLED"
 COVER_STYLE_PRESET_ENV = "LUNARIS_COVER_STYLE_PRESET"
 
-# The house default when nothing is configured — the night-sky editorial look.
-_DEFAULT_PRESET = CoverStylePreset.NOCTURNE
+# The house default when nothing is configured — the premium enterprise-infographic look.
+_DEFAULT_PRESET = CoverStylePreset.GENERAL
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ class CoverConfig:
     """One build's resolved cover settings: whether to auto-generate a cover at all, and which
     art-direction preset to use. Read from the run-config scope (the build path) or a resolved
     env-var map (the enqueue gate). Every field has a default, so an unset value never refuses — it
-    falls back to the product default (generation ON, the ``nocturne`` preset)."""
+    falls back to the product default (generation ON, the ``general`` preset)."""
 
     enabled: bool
     style_preset: CoverStylePreset
@@ -59,7 +59,7 @@ def _as_bool(value: str | None, *, default: bool) -> bool:
 
 def _as_preset(value: str | None) -> CoverStylePreset:
     """A known preset, or the house default when unset/unknown — a malformed stored value must never
-    abort the enqueue, only fall back to ``nocturne``."""
+    abort the enqueue, only fall back to ``general``."""
     if value is None:
         return _DEFAULT_PRESET
     try:
@@ -68,6 +68,6 @@ def _as_preset(value: str | None) -> CoverStylePreset:
         return _DEFAULT_PRESET
 
 
-# The product default when nothing is configured (generation ON, nocturne). Defined after ``_parse``
+# The product default when nothing is configured (generation ON, general). Defined after ``_parse``
 # so the module-load call resolves.
 DEFAULT_COVER_CONFIG = cover_config_from_map(None)

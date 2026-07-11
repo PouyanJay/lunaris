@@ -5,10 +5,11 @@ live in ``house_style``; the light-variant look (re-theme instruction, native di
 all derived from one shared palette) lives in ``light``. Importers use this package's surface.
 """
 
-from .house_style import HouseStyle, house_style
+from .house_style import EDITORIAL_PRESETS, HouseStyle, house_style
 from .light import light_native_directive, light_retheme_instruction, light_style_block
 
 __all__ = [
+    "EDITORIAL_PRESETS",
     "HouseStyle",
     "house_style",
     "light_native_directive",

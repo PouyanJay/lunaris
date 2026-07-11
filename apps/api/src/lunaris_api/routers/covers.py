@@ -111,8 +111,12 @@ async def enqueue_cover(
     course = await _load_owned_course(
         store, course_id=course_id, owner_id=owner_id, request_id=request_id
     )
+    # Deliberate asymmetry (AD): the MANUAL enqueue always uses the house default preset; only
+    # the build-completion auto-enqueue honors the per-user coverStylePreset config. Threading
+    # the user config store into this router is a follow-up if per-preset manual enqueue is
+    # ever wanted — Regenerate already preserves each cover's own preset.
     job, created = await enqueue_cover_job(
-        queue, course=course, owner_id=owner_id, style_preset=CoverStylePreset.NOCTURNE
+        queue, course=course, owner_id=owner_id, style_preset=CoverStylePreset.GENERAL
     )
     logger.info(
         "cover_job_enqueued" if created else "cover_job_enqueue_deduped",

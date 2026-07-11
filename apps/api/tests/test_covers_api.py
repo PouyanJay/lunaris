@@ -166,7 +166,7 @@ async def test_walking_skeleton_cover_roundtrip(
     assert prov["jobId"] == job_id
     assert prov["source"] == "stub"
     assert prov["model"] == "stub"
-    assert prov["stylePreset"] == "nocturne"
+    assert prov["stylePreset"] == "general"
 
     # Assert (behaviour, not surface) — the image landed in storage as real PNG bytes, and the
     # cover was folded onto the course payload as course material.
