@@ -78,6 +78,10 @@ type State =
  *  and see the current pipeline mode. */
 export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
   const [state, setState] = useState<State>({ status: "loading" });
+  // Bumped whenever a BYOK key is saved/removed. Threaded into the key-gated sections so they
+  // re-read the vault at once — otherwise a newly-added key doesn't unlock its section until the
+  // page is reloaded (the bug that made the cover toggle impossible to turn on).
+  const [keysVersion, setKeysVersion] = useState(0);
   // Per-capability badges; reloaded when a key is saved so a capability flips live immediately.
   const { capabilities, reload: reloadCapabilities } = useCapabilities(apiBaseUrl);
 
@@ -131,7 +135,10 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
               {/* When BYOK is on, each tenant manages their own keys via the authed per-user
                   credentials API; otherwise the single-tenant file-backed secret store is used. */}
               {state.view.byokEnabled ? (
-                <CredentialsPanel apiBaseUrl={apiBaseUrl} />
+                <CredentialsPanel
+                  apiBaseUrl={apiBaseUrl}
+                  onKeysChanged={() => setKeysVersion((v) => v + 1)}
+                />
               ) : (
                 <>
                   <div className={styles.fields}>
@@ -168,6 +175,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
             keyless={isLlmKeyless(capabilities)}
             byokEnabled={state.view.byokEnabled}
             secrets={state.view.secrets}
+            keysVersion={keysVersion}
           />
         )}
         {state.status === "ready" && (
@@ -175,6 +183,7 @@ export function SettingsPanel({ apiBaseUrl }: SettingsPanelProps) {
             apiBaseUrl={apiBaseUrl}
             byokEnabled={state.view.byokEnabled}
             secrets={state.view.secrets}
+            keysVersion={keysVersion}
           />
         )}
       </div>
