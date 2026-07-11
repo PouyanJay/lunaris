@@ -36,8 +36,17 @@ _PNG = base64.b64decode(
 )
 
 
+_FIELDS_JSON = (
+    '{"subtitle": "A guided tour", "subject": "How the system works end to end", '
+    '"primary_visual": "a refined 3D hero mechanism", '
+    '"supporting_visuals": "connected components and flowing paths", '
+    '"process_visualization": "a clear left-to-right flow"}'
+)
+
+
 class _StubArtDirectorInvoke:
-    """A fake ``TextInvoke``: records the prompt Claude was handed, returns a canned art brief."""
+    """A fake ``TextInvoke``: canned prose for the editorial ask, valid fields JSON for the GENERAL
+    structured ask (identified by its JSON contract)."""
 
     def __init__(
         self, reply: str = "A lone amber lighthouse over a near-black sea, vast sky."
@@ -47,6 +56,8 @@ class _StubArtDirectorInvoke:
 
     async def __call__(self, prompt: str) -> str:
         self.prompt = prompt
+        if '"primary_visual"' in prompt:
+            return _FIELDS_JSON
         return self.reply
 
 
@@ -140,6 +151,8 @@ def _pipeline(
         art_director=CoverArtDirector(invoke=invoke, model="claude-opus-4-8"),
         renderer=OpenAiImageRenderer(client_factory=lambda: client),
         qa_model="claude-opus-4-8",
+        # The light-twin capability is default-OFF; these tests exercise it deliberately.
+        light_variant=True,
     )
 
 
@@ -305,6 +318,7 @@ def _qa_pipeline(
         qa_model="claude-opus-4-8",
         inspector=inspector,
         max_attempts=max_attempts,
+        light_variant=True,
     )
 
 
@@ -409,6 +423,31 @@ async def test_produce_also_renders_a_light_variant_via_image_edit() -> None:
 
 
 @pytest.mark.asyncio
+async def test_general_job_sends_the_full_operator_template_to_the_image_model() -> None:
+    # General-preset template fidelity, pinned at the INTEGRATION seam: the prompt GPT Image 2
+    # receives must be the operator's full structured template (Claude fills only the fields) —
+    # not a prose paraphrase. The compression to 2-4 sentences is exactly the production bug that
+    # made general covers look nothing like the references.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    client = _FakeImagesClient()
+
+    rendered = await _pipeline(store, _StubArtDirectorInvoke(), client).produce(
+        _job(CoverStylePreset.GENERAL), on_stage=_noop_stage
+    )
+
+    sent = str(client.kwargs["prompt"])
+    assert "Create a premium, enterprise-grade educational course cover" in sent
+    assert 'Course title: "How HTTPS works"' in sent  # the course's topic, in the template slot
+    assert "Reserve approximately 38% of the left side" in sent
+    assert "Modern editorial infographic combined with refined 3D illustration" in sent
+    assert "near-black, charcoal, and deep graphite" in sent  # the dark amber theme, verbatim
+    assert "a refined 3D hero mechanism" in sent  # Claude's field landed in its slot
+    # Provenance records the full prompt actually sent, not a summary.
+    assert rendered.provenance.prompt == sent
+
+
+@pytest.mark.asyncio
 async def test_light_retheme_uses_the_jobs_preset_palette() -> None:
     # The wiring this exists to pin: the pipeline must thread the JOB's style preset into the light
     # re-theme instruction. A GENERAL job re-themes to the azure light palette — a hardcoded preset
@@ -460,6 +499,7 @@ def _light_pipeline(
         renderer=OpenAiImageRenderer(client_factory=lambda: client),
         qa_model="claude-opus-4-8",
         inspector=inspector,
+        light_variant=True,
     )
 
 
@@ -574,6 +614,7 @@ def _pipeline_with(store: _FakeCourseStore, renderer: object, inspector: object)
         renderer=renderer,  # type: ignore[arg-type]
         qa_model="claude-opus-4-8",
         inspector=inspector,  # type: ignore[arg-type]
+        light_variant=True,
     )
 
 

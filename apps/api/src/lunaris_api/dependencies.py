@@ -308,8 +308,13 @@ def get_cover_pipeline(settings: Settings) -> ICoverPipeline:
     vision QA) and OpenAI (GPT Image 2) authenticate on the job owner's BYOK keys, resolved per call
     inside the model seams from the run's credential scope — so this factory holds no keys. There is
     no stub branch: a keyless account never enqueues a cover (the enqueue tier gate), so the worker
-    only ever runs on a keyed tenant. The art director + QA share one Claude model id."""
+    only ever runs on a keyed tenant. The art director + QA share one Claude model id.
+
+    The dual-theme LIGHT twin is generated only when LUNARIS_COVER_LIGHT_VARIANT=true — default off
+    (cover-light-variant-off): it roughly doubles per-cover image spend, and the reader shows the
+    dark cover in both app themes when no light twin exists."""
     claude_model = cover_claude_model()
+    light_variant = os.environ.get("LUNARIS_COVER_LIGHT_VARIANT", "").strip().lower() == "true"
     return CoverPipeline(
         source_provider=CourseStoreCoverSourceProvider(_resolve_course_store(settings)),
         art_director=CoverArtDirector(
@@ -318,6 +323,7 @@ def get_cover_pipeline(settings: Settings) -> ICoverPipeline:
         renderer=OpenAiImageRenderer(),
         qa_model=claude_model,
         inspector=CoverVisionQa(invoke=build_cover_vision_invoke(claude_model), model=claude_model),
+        light_variant=light_variant,
     )
 
 

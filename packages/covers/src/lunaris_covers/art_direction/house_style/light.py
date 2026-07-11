@@ -2,29 +2,25 @@
 
 The base cover is DARK (every preset renders on a near-black/graphite ground); the light variant is
 the SAME cover in a daylight palette, shown in the app's dark theme so the cover contrasts with the
-page chrome. These three functions are tightly-coupled siblings: all three interpolate the one
-per-preset palette below, so the thing produced (an edit re-theme, or a native light render) and the
-thing judged (the light QA rubric) can never drift into two definitions of the light look.
+page chrome. These functions are tightly-coupled siblings: they interpolate the one per-preset
+palette below, so the thing produced (an edit re-theme, or a native light render) and the thing
+judged (the light QA rubric) can never drift into two definitions of the light look.
 
-The palette is per-preset (cover-general-preset): the GENERAL preset's light twin is a clean white
-ground with AZURE BLUE accents (the operator's light-mode theme); the editorial trio keeps the
-original ivory ground with the amber accent. Every palette keeps the no-text discipline.
+The palette is per-preset: the GENERAL preset uses the operator's Azure theme VERBATIM
+(general-preset template fidelity — paraphrasing it is what made covers diverge from the reference
+look); the editorial trio keeps the original ivory ground with the amber accent. Every palette
+keeps the no-text discipline.
 """
 
 from lunaris_runtime.schema import CoverStylePreset
 
+from .general_prompt import GENERAL_DARK_THEME, GENERAL_LIGHT_THEME
 from .house_style import EDITORIAL_PRESETS
 
-# GENERAL light mode (the operator's Azure theme): white/pale ground, azure-blue accent family.
+# GENERAL light mode: the operator's Azure theme block, verbatim, plus the no-text tail the theme
+# block itself doesn't restate.
 _AZURE_LIGHT_PALETTE = (
-    "Use a LIGHT, daylight palette: a clean white, soft ivory or very pale cool-gray ground in "
-    "place of the dark graphite, with AZURE BLUE as the dominant accent (azure, clear medium blue, "
-    "navy, slate blue, pale sky blue, cool silver, soft neutral gray) applied to the important "
-    "components, directional paths and focal highlights. Keep most surfaces white or very light "
-    "with subtle blue-gray shadows, and keep the premium editorial-infographic + refined-3D "
-    "finish. "
-    "Avoid large areas of dark navy, excessive cyan, neon glow, purple accents, and a flat sterile "
-    "white background without depth. NO text, letters, numerals or logos."
+    f"{GENERAL_LIGHT_THEME}\n\nNO text, letters, numerals, logos or watermarks anywhere."
 )
 
 # Editorial light mode (nocturne/blueprint/aurora): the original ivory + amber daylight look.
@@ -57,14 +53,23 @@ def light_retheme_instruction(preset: CoverStylePreset) -> str:
     )
 
 
-def light_native_directive(preset: CoverStylePreset) -> str:
-    """The suffix appended to a fresh art-direction prompt to compose a NATIVE light cover.
+def native_light_prompt(dark_prompt: str, preset: CoverStylePreset) -> str:
+    """The full image prompt for a NATIVE light render, derived from the passing dark prompt.
 
-    Used only when the edit-based re-theme fails the vision-QA bar — the cover is then art-directed
-    natively for a bright ground (same subject + preset, its own composition) rather than shipped
-    as a washed-out edit. Same light look as ``light_retheme_instruction``, as a directive.
+    Used only when the edit-based re-theme fails the vision-QA bar. For the GENERAL preset the dark
+    prompt is the operator's full template with the dark COLOR THEME embedded — appending a light
+    directive would contradict it — so the dark theme block is SWAPPED for the light one, keeping
+    every other field of the passing prompt intact (same subject, same composition spec). The
+    editorial prose prompts carry no embedded theme block, so they keep the original behavior: the
+    light directive is appended.
     """
-    return f"Compose this cover for LIGHT MODE. {_light_palette(preset)}"
+    if preset in EDITORIAL_PRESETS:
+        return f"{dark_prompt}\n\nCompose this cover for LIGHT MODE. {_AMBER_LIGHT_PALETTE}"
+    if GENERAL_DARK_THEME in dark_prompt:
+        return dark_prompt.replace(GENERAL_DARK_THEME, GENERAL_LIGHT_THEME)
+    # A general prompt without the verbatim dark block (defensive — should not happen): fall back
+    # to the append shape so a light render is still attempted rather than skipped.
+    return f"{dark_prompt}\n\nCompose this cover for LIGHT MODE. {_AZURE_LIGHT_PALETTE}"
 
 
 def light_style_block(preset: CoverStylePreset) -> str:
@@ -72,7 +77,7 @@ def light_style_block(preset: CoverStylePreset) -> str:
 
     The dark rubric requires a dark ground, which a correct light cover would violate — so the
     light variant is checked against this block instead. It is the same per-preset palette the
-    re-theme instruction and native directive use, so the thing produced and the thing judged
+    re-theme instruction and native rebuild use, so the thing produced and the thing judged
     can't drift.
     """
     return (

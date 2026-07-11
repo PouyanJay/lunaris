@@ -37,13 +37,26 @@ _PNG = base64.b64decode(
 )
 
 
+_FIELDS_JSON = (
+    '{"subtitle": "A guided tour", "subject": "How the system works end to end", '
+    '"primary_visual": "a refined 3D hero mechanism", '
+    '"supporting_visuals": "connected components and flowing paths", '
+    '"process_visualization": "a clear left-to-right flow"}'
+)
+
+
 class _StubInvoke:
+    """Answers the editorial prose ask with a canned brief, and the GENERAL structured-fields ask
+    (identified by its JSON contract) with valid fields JSON."""
+
     def __init__(self, reply: str = "an amber motif on near-black") -> None:
         self.reply = reply
         self.prompt: str | None = None
 
     async def __call__(self, prompt: str) -> str:
         self.prompt = prompt
+        if '"primary_visual"' in prompt:
+            return _FIELDS_JSON
         return self.reply
 
 
@@ -108,11 +121,12 @@ async def test_pipeline_covers_every_style_preset(preset: CoverStylePreset) -> N
     # The chosen preset steers the art director AND is recorded in provenance.
     assert invoke.prompt is not None and preset.value in invoke.prompt.lower()
     assert rendered.provenance.style_preset is preset
-    # Every preset yields a dual-theme cover: a light twin alongside the dark render (the light/dark
-    # axis is orthogonal to the preset). No inspector here (local-dev path) → the re-theme is kept.
-    assert rendered.image_light is not None and rendered.image_light != rendered.image
-    assert rendered.provenance.has_light_variant is True
-    assert rendered.provenance.light_mode == "retheme"
+    # The light twin is OFF by default (cover-light-variant-off: it doubles per-cover spend, and
+    # the reader shows the dark image in both app themes) — every preset ships dark-only unless the
+    # operator opts in via light_variant=True (that capability is covered in test_cover_pipeline).
+    assert rendered.image_light is None
+    assert rendered.provenance.has_light_variant is False
+    assert rendered.provenance.light_mode is None
 
 
 @pytest.mark.asyncio
