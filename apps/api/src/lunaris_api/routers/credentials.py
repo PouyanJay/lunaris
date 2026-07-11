@@ -1,9 +1,16 @@
+import structlog
 from fastapi import APIRouter, HTTPException, status
 
 from ..credential_vault import CredentialVault, UnknownProviderError
 from ..dependencies import CredentialVaultDep, CurrentUserIdDep
 from ..schemas import CredentialStatusView, CredentialTestResult, SecretValue
 from ..secrets import CredentialStatus, SecretValidationError
+
+# Structured audit trail for BYOK key operations (provider + outcome ONLY — never a value, never
+# last4). Added after a production incident where the decisive question — "did a save for provider X
+# ever reach the API, and what happened to it?" — could only be answered by piecing together uvicorn
+# access lines; these events make it one Log Analytics query.
+logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/credentials", tags=["credentials"])
 
@@ -46,12 +53,15 @@ async def set_credential(
             user_id=user_id, provider=provider, value=payload.value.get_secret_value()
         )
     except UnknownProviderError as exc:
+        logger.warning("credential_save_unknown_provider", provider=provider)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown provider: {provider}"
         ) from exc
     except (ValueError, SecretValidationError) as exc:
         # The messages are value-free (no key echoed); the value is never logged either.
+        logger.warning("credential_save_rejected", provider=provider, reason=type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    logger.info("credential_saved", provider=provider)
     return _to_view(result)
 
 
@@ -67,6 +77,7 @@ async def delete_credential(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Unknown provider: {provider}"
         ) from exc
+    logger.info("credential_deleted", provider=provider)
     return CredentialStatusView(provider=provider, is_set=False, last4=None)
 
 
@@ -86,5 +97,7 @@ async def test_credential(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except SecretValidationError as exc:
+        logger.info("credential_probe", provider=provider, ok=False)
         return CredentialTestResult(ok=False, detail=str(exc))
+    logger.info("credential_probe", provider=provider, ok=True)
     return CredentialTestResult(ok=True)

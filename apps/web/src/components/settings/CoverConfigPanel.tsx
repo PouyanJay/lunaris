@@ -116,8 +116,10 @@ function KeylessCoverNotice({ master }: { master: ConfigSetting }) {
         />
       </div>
       <p className={styles.notice} role="note">
-        AI cover images need an OpenAI API key — add one in Keys above. Without it, courses show a
-        Typographic cover. ({master.default === "true" ? "On by default once keyed." : ""})
+        AI cover images need an OpenAI API key. Paste one into the &ldquo;OpenAI API key&rdquo;
+        field in Keys &amp; configuration above and press Save — this toggle unlocks immediately.
+        Without a key, courses show a Typographic cover.
+        {master.default === "true" ? " (On by default once keyed.)" : ""}
       </p>
     </div>
   );

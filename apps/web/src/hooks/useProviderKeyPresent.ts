@@ -28,12 +28,27 @@ export function useProviderKeyPresent(
     const controller = new AbortController();
     void fetchCredentials(apiBaseUrl, controller.signal)
       .then((creds) => {
-        if (!controller.signal.aborted) {
-          setByokPresent(creds.some((c) => c.provider === provider && c.isSet));
+        if (controller.signal.aborted) return;
+        // The server not listing the provider AT ALL is lockstep drift (API BYOK_PROVIDERS vs this
+        // client) — the gate would read false forever with zero signal. Make it loud in the console
+        // so the next investigation starts here instead of at the network tab.
+        if (!creds.some((c) => c.provider === provider)) {
+          console.warn(
+            `useProviderKeyPresent: /api/credentials does not list provider "${provider}" — ` +
+              "the key can never read as set (API/web BYOK provider lists out of lockstep?)",
+          );
         }
+        setByokPresent(creds.some((c) => c.provider === provider && c.isSet));
       })
-      .catch(() => {
-        /* best-effort: leave false so the section locks with the add-a-key hint */
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        // Best-effort: the section locks with its add-a-key hint — but say WHY in the console, so a
+        // locked toggle caused by an auth/network failure is distinguishable from a missing key.
+        console.warn(
+          `useProviderKeyPresent: could not read /api/credentials for "${provider}" — treating the ` +
+            "key as absent.",
+          error,
+        );
       });
     return () => controller.abort();
   }, [apiBaseUrl, byokEnabled, provider, keysVersion]);
