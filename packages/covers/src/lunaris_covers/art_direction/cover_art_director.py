@@ -70,12 +70,20 @@ HOUSE STYLE (the template enforces this; your fields must fit inside it)
 {style}
 
 YOUR TASK
+Write LITERAL, textbook-accurate scene descriptions with sharp, concrete nouns — depict the actual \
+subject itself (real organs, devices, systems, structures), the way a medical or technical \
+illustrator would. Never use "suggesting", "implying", "evoking" or "hinting" language, and never \
+dreamy words (drifting, motes, wisps, subtle glow) — every element is a crisp, defined object. \
+Supporting elements must be SEPARATE stand-alone objects arranged around the hero (a magnified \
+circular inset revealing internal structure, discrete floating components, individual cells/parts) \
+— never features fused onto the hero.
+
 Respond with ONLY this JSON object, no prose, no code fences:
 {{"subtitle": "a short supporting subtitle for the course",
-  "subject": "one clear sentence describing the subject to visualize",
-  "primary_visual": "the dominant hero illustration, concrete and specific",
-  "supporting_visuals": "two to four secondary visual elements",
-  "process_visualization": "the flow/relationship/mechanism to show, no readable text"}}"""
+  "subject": "one clear sentence naming the literal subject to depict",
+  "primary_visual": "the hero — a recognizable, literal depiction, crisp physical detail",
+  "supporting_visuals": "2-4 SEPARATE stand-alone elements (inset magnification, floating parts)",
+  "process_visualization": "the mechanism as a flow between the separate elements, no text"}}"""
 
 _GENERAL_REVISION_TEMPLATE = """\
 

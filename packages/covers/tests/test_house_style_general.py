@@ -160,3 +160,24 @@ def test_native_light_prompt_falls_back_to_append_without_the_dark_block() -> No
     light = native_light_prompt("a prompt with no theme block", CoverStylePreset.GENERAL)
     assert light.startswith("a prompt with no theme block")
     assert "LIGHT MODE" in light and GENERAL_LIGHT_THEME in light
+
+
+# ---- general-literal-diagram-style: literal textbook depiction, separated components, no haze ----
+
+
+def test_general_block_demands_literal_textbook_depiction() -> None:
+    # The operator's references are textbook-accurate diagrams of the ACTUAL mechanism. The
+    # inherited "evocative, not literal" rule steered renders into abstract blobs — for GENERAL it
+    # is inverted: literal depiction, separated diagram components, crisp detail, no haze.
+    block = house_style(CoverStylePreset.GENERAL).as_prompt_block()
+    lowered = block.lower()
+    assert "literal" in lowered and "textbook" in lowered
+    assert "evocative" not in lowered  # the editorial philosophy must not leak in
+    assert "separate" in lowered and "magnified" in lowered  # diagram grammar: discrete components
+    assert "never hazy" in lowered  # the anti-cloud rule
+    assert "no text" in lowered  # the one truly shared discipline survives
+
+
+def test_editorial_blocks_keep_the_evocative_philosophy() -> None:
+    block = house_style(CoverStylePreset.NOCTURNE).as_prompt_block().lower()
+    assert "evocative" in block and "not a literal" in block
