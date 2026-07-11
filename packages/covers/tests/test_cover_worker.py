@@ -18,7 +18,7 @@ from lunaris_runtime.persistence import (
     InMemoryCoverStorage,
     PersistenceError,
 )
-from lunaris_runtime.schema import Course, CoverJob, CoverJobStatus
+from lunaris_runtime.schema import Course, CoverJob, CoverJobStatus, CoverLightMode
 
 _OWNER = "u1"
 
@@ -163,6 +163,101 @@ async def test_concurrent_run_once_calls_each_claim_a_distinct_job() -> None:
 
     assert (await queue.get(job_id="job-1")).status == CoverJobStatus.READY  # type: ignore[union-attr]
     assert (await queue.get(job_id="job-2")).status == CoverJobStatus.READY  # type: ignore[union-attr]
+
+
+async def test_a_dual_theme_cover_uploads_both_the_dark_and_light_images() -> None:
+    # Arrange — a pipeline that produced BOTH a dark and a light image (a dual-theme cover). The
+    # worker must upload both objects so the reader can show the light one in dark theme.
+    class _DualThemePipeline:
+        async def produce(self, job: CoverJob, *, on_stage) -> RenderedCover:
+            base = await StubCoverPipeline().produce(job, on_stage=on_stage)
+            return RenderedCover(
+                image=base.image,
+                image_light=base.image + b"L",
+                provenance=base.provenance.model_copy(
+                    update={"has_light_variant": True, "light_mode": CoverLightMode.RETHEME}
+                ),
+            )
+
+    queue, storage = InMemoryCoverJobQueue(), InMemoryCoverStorage()
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, _store(), pipeline=_DualThemePipeline())
+
+    # Act
+    assert await worker.run_once() is True
+
+    # Assert — the job is READY and BOTH images landed in the bucket under the job's path.
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == CoverJobStatus.READY
+    paths = storage.paths()
+    assert any(p.endswith("/cover.png") for p in paths)
+    assert any(p.endswith("/cover-light.png") for p in paths)
+
+
+class _LightUploadFailsStorage:
+    """Wraps InMemoryCoverStorage but fails the LIGHT image upload — the dark image and provenance
+    still land. Proves a light-upload blip never sinks an already-stored dark cover (AD2 at the
+    storage layer): the job settles READY dark-only, and the persisted provenance is downgraded."""
+
+    def __init__(self) -> None:
+        self._inner = InMemoryCoverStorage()
+
+    async def upload(self, *, path: str, data: bytes, content_type: str) -> None:
+        if path.endswith("/cover-light.png"):
+            raise PersistenceError("light upload boom")
+        await self._inner.upload(path=path, data=data, content_type=content_type)
+
+    async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str:
+        return await self._inner.signed_url(path=path, expires_in_seconds=expires_in_seconds)
+
+    async def download(self, *, path: str) -> bytes:
+        return await self._inner.download(path=path)
+
+    async def delete(self, *, paths: list[str]) -> None:
+        await self._inner.delete(paths=paths)
+
+    def paths(self) -> list[str]:
+        return self._inner.paths()
+
+    def read(self, path: str) -> bytes:
+        return self._inner.read(path)
+
+
+async def test_a_failed_light_upload_still_ships_a_dark_only_cover() -> None:
+    # Arrange — a dual-theme cover, but the LIGHT image upload fails. The dark image already landed,
+    # so the job must settle READY dark-only (not FAILED), with the persisted + attached provenance
+    # downgraded to has_light_variant=False so what's recorded matches what's in the bucket.
+    class _DualThemePipeline:
+        async def produce(self, job: CoverJob, *, on_stage) -> RenderedCover:
+            base = await StubCoverPipeline().produce(job, on_stage=on_stage)
+            return RenderedCover(
+                image=base.image,
+                image_light=base.image + b"L",
+                provenance=base.provenance.model_copy(
+                    update={"has_light_variant": True, "light_mode": CoverLightMode.RETHEME}
+                ),
+            )
+
+    queue, storage = InMemoryCoverJobQueue(), _LightUploadFailsStorage()
+    course_store = _store()
+    await queue.enqueue(_job())
+    worker = _worker(queue, storage, course_store, pipeline=_DualThemePipeline())
+
+    # Act
+    assert await worker.run_once() is True
+
+    # Assert — READY (not FAILED); the dark image + provenance landed, the light image did not.
+    job = await queue.get(job_id="job-1")
+    assert job is not None and job.status == CoverJobStatus.READY
+    paths = storage.paths()
+    assert any(p.endswith("/cover.png") for p in paths)
+    assert not any(p.endswith("/cover-light.png") for p in paths)
+    # The provenance folded onto the course is downgraded to dark-only (matches the bucket).
+    course = course_store.load("course-1", owner_id=_OWNER)
+    assert course.cover is not None
+    assert course.cover.provenance is not None
+    assert course.cover.provenance.has_light_variant is False
+    assert course.cover.provenance.light_mode is None
 
 
 def _store_that_fails_save() -> _FakeCourseStore:

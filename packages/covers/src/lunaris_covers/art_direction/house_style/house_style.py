@@ -54,10 +54,11 @@ class HouseStyle:
 
 
 def house_style(preset: CoverStylePreset) -> HouseStyle:
-    """The locked constraints plus the medium/mood for ``preset``.
+    """The locked constraints plus the medium/mood for ``preset`` (the DARK, night-sky house style).
 
     An unknown preset falls back to the house ``NOCTURNE`` directive rather than raising — a cover
-    is always designable — while still carrying the full locked constraints.
+    is always designable — while still carrying the full locked constraints. The LIGHT-theme twin's
+    look lives in the sibling ``light`` module.
     """
     directive = _PRESET_DIRECTIVES.get(preset, _PRESET_DIRECTIVES[CoverStylePreset.NOCTURNE])
     return HouseStyle(constraints=_LOCKED_CONSTRAINTS, preset_directive=directive)

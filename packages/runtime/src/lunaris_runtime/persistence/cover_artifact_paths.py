@@ -10,12 +10,15 @@ class CoverArtifactPaths:
 
     ``{user_id}/{course_id}/{job_id}/…`` is load-bearing three ways: the storage RLS policy scopes
     reads to the first segment, course deletion is a prefix-delete on the first two, and the
-    worker/API never have to exchange paths — both derive them from the job row. A cover has just
-    two durable artifacts: the ``image`` (the displayed PNG) and its ``provenance`` (the structural
-    record the API threads onto the wire).
+    worker/API never have to exchange paths — both derive them from the job row. A cover has up to
+    three durable artifacts: the ``image`` (the DARK PNG — the original ``cover.png``, so every
+    pre-dual-theme cover keeps working unchanged), the optional ``image_light`` (the LIGHT-theme
+    rendition, present only for dual-theme covers), and the ``provenance`` (the structural record
+    the API threads onto the wire).
     """
 
     image: str
+    image_light: str
     provenance: str
 
     @classmethod
@@ -28,5 +31,6 @@ class CoverArtifactPaths:
         prefix = f"{user_id}/{course_id}/{job_id}"
         return cls(
             image=f"{prefix}/cover.png",
+            image_light=f"{prefix}/cover-light.png",
             provenance=f"{prefix}/provenance.json",
         )

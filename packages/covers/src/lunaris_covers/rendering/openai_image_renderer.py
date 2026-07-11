@@ -71,25 +71,59 @@ class OpenAiImageRenderer:
         return self._model
 
     async def render(self, prompt: str) -> bytes:
+        client = self._client_factory()
+        return await self._call_images_api(
+            lambda: client.images.generate(
+                model=self._model, prompt=prompt, size=self._size, quality=self._quality, n=1
+            ),
+            action="render",
+            event="cover_renderer.rendered",
+        )
+
+    async def retheme(self, image: bytes, *, instruction: str) -> bytes:
+        """Re-theme ``image`` in place via the Images EDIT endpoint (dual-theme light variant).
+
+        An edit of the supplied render under ``instruction`` (the house light-palette instruction),
+        so the light twin keeps the dark cover's composition. Shares ``render``'s client/BYOK scope,
+        retry, decode and error-wrap path — only the call differs. A provider error is wrapped as
+        ``CoverPipelineError`` so the caller can degrade to a dark-only cover rather than failing
+        the whole job."""
+        client = self._client_factory()
+        return await self._call_images_api(
+            lambda: client.images.edit(
+                model=self._model,
+                image=("cover.png", image, "image/png"),
+                prompt=instruction,
+                size=self._size,
+                quality=self._quality,
+                n=1,
+            ),
+            action="re-theme",
+            event="cover_renderer.rethemed",
+        )
+
+    async def _call_images_api(
+        self, call: Callable[[], object], *, action: str, event: str
+    ) -> bytes:
+        """Run one Images API ``call`` (generate/edit) through the shared retry → decode → wrap.
+
+        ``action`` names the operation in the owner-safe error ("render" / "re-theme"); ``event`` is
+        the structlog event on success. A transient 429/503 is retried in place (the shared,
+        provider-agnostic backoff — it matches ``openai.RateLimitError`` too) rather than burning
+        the Claude calls already spent on the round; any other provider error is wrapped as a
+        ``CoverPipelineError`` so the worker settles the job with an owner-safe reason and the full
+        error stays in the logs."""
         from openai import OpenAIError
 
-        client = self._client_factory()
         try:
-            # A transient 429/503 is retried in place (the shared, provider-agnostic backoff — it
-            # matches openai.RateLimitError too) rather than burning a whole render → QA round and
-            # the Claude calls already spent on it. A non-transient error still surfaces below.
-            response = await retry_on_rate_limit(
-                lambda: client.images.generate(
-                    model=self._model, prompt=prompt, size=self._size, quality=self._quality, n=1
-                )
-            )
+            response = await retry_on_rate_limit(call)
         except OpenAIError as exc:
             raise CoverPipelineError(
-                f"OpenAI image render failed: {type(exc).__name__}",
-                user_detail="the image provider could not render this cover",
+                f"OpenAI image {action} failed: {type(exc).__name__}",
+                user_detail=f"the image provider could not {action} this cover",
             ) from exc
         image = _decode(response)
-        _logger.info("cover_renderer.rendered", model=self._model, image_bytes=len(image))
+        _logger.info(event, model=self._model, image_bytes=len(image))
         return image
 
 

@@ -10,8 +10,18 @@ import {
   type CoverJobView,
 } from "../lib/coverJobs";
 import type { CoverArtifact } from "../types/course";
+import type { Theme } from "./useTheme";
 
 export const COURSE_COVER_POLL_INTERVAL_MS = 3000;
+
+/** The cover image URL to show for the app `theme` — the INVERTED / contrast mapping: the app's
+ *  LIGHT theme shows the DARK cover (it pops against the light chrome) and the DARK theme shows the
+ *  LIGHT cover. Falls back to the dark image when there is no light twin (a dark-only or
+ *  pre-dual-theme cover), and returns null when the state is not a resolved image. */
+export function coverImageUrlForTheme(state: CourseCoverState, theme: Theme): string | null {
+  if (state.phase !== "image") return null;
+  return theme === "dark" ? (state.imageUrlLight ?? state.imageUrl) : state.imageUrl;
+}
 
 /** What a surface knows about a course's AI cover, resolved from its payload artifact.
  *
@@ -20,11 +30,14 @@ export const COURSE_COVER_POLL_INTERVAL_MS = 3000;
  *  - `generating` — a cover is in flight (the payload carries a non-terminal artifact, or the reader
  *    just triggered a regenerate): the surface shows the constellation as the LOADING state and this
  *    hook polls until it settles.
- *  - `image` — a READY cover whose short-lived signed URL resolved: the surface renders the image. */
+ *  - `image` — a READY cover whose short-lived signed URL resolved: the surface renders the image.
+ *    `imageUrl` is the DARK cover; `imageUrlLight` is its LIGHT-theme twin (dual-theme covers) or
+ *    null for a dark-only cover — the surface picks by the app theme (light theme → dark image, dark
+ *    theme → light image), falling back to the dark image when there is no light one. */
 export type CourseCoverState =
   | { phase: "fallback" }
   | { phase: "generating"; status: CoverJobStatus }
-  | { phase: "image"; imageUrl: string };
+  | { phase: "image"; imageUrl: string; imageUrlLight: string | null };
 
 /** Resolve a course's cover to a renderable state, and let the reader regenerate it
  *  (course-cover-images T9 + T10).
@@ -52,7 +65,7 @@ export function useCourseCover(
   const applyView = useCallback((view: CoverJobView | null) => {
     setState(
       view?.job.status === "ready" && view.imageUrl
-        ? { phase: "image", imageUrl: view.imageUrl }
+        ? { phase: "image", imageUrl: view.imageUrl, imageUrlLight: view.imageUrlLight ?? null }
         : { phase: "fallback" },
     );
   }, []);
@@ -69,9 +82,7 @@ export function useCourseCover(
       setState({ phase: "generating", status });
       void fetchCoverJob(apiBaseUrl, jobId, controller.signal).then((view) => {
         if (controller.signal.aborted) return;
-        setState(
-          view?.imageUrl ? { phase: "image", imageUrl: view.imageUrl } : { phase: "fallback" },
-        );
+        applyView(view); // READY → image (both URLs), else fallback — one mapping, shared
       });
       return () => controller.abort();
     }

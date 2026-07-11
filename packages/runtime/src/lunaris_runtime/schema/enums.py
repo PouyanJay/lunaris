@@ -471,6 +471,20 @@ class CoverStylePreset(StrEnum):
     AURORA = "aurora"
 
 
+class CoverLightMode(StrEnum):
+    """How a cover's LIGHT-theme variant was produced (dual-theme covers).
+
+    The base cover is DARK; its light twin is made one of two ways. ``RETHEME`` = an image-edit
+    re-theme of the dark render (same composition — the preferred case); ``NATIVE`` = its own light
+    art-direction, the fallback taken when the re-theme fails the light vision-QA bar. Carried on
+    ``CoverProvenance.light_mode``, which is ``None`` when the cover has no light variant at all
+    (dark-only — a light failure, or a pre-dual-theme cover).
+    """
+
+    RETHEME = "retheme"
+    NATIVE = "native"
+
+
 class RegenerateMode(StrEnum):
     """How a video regenerate re-enters the pipeline (explainer-video V6-T2 — the regenerate menu).
 

@@ -3,7 +3,12 @@ import { useEffect, useState } from "react";
 import { CourseCover } from "./CourseCover";
 import { TypographicCover } from "./TypographicCover";
 import styles from "./CourseCoverImage.module.css";
-import { useCourseCover, type CourseCoverState } from "../../hooks/useCourseCover";
+import {
+  coverImageUrlForTheme,
+  useCourseCover,
+  type CourseCoverState,
+} from "../../hooks/useCourseCover";
+import { useThemeValue } from "../../hooks/useThemeValue";
 import { coverSeed } from "../../lib/coverSeed";
 import type { CoverArtifact } from "../../types/course";
 
@@ -46,17 +51,22 @@ export function CourseCoverImage({
   );
   const state = providedState ?? owned.state;
   const seed = coverSeed(courseId);
+  // The cover contrasts with the app chrome (dual-theme): light theme shows the DARK image, dark
+  // theme shows the LIGHT one (falling back to dark when there is no light twin). Read-only theme
+  // observer so this many-call-site component reacts to a toggle without owning the theme.
+  const theme = useThemeValue();
+  const imageUrl = coverImageUrlForTheme(state, theme);
   // A signed URL can 404 by the time the browser loads it (it expired, or the object was purged);
-  // fall back to the Typographic cover rather than showing a broken image.
+  // fall back to the Typographic cover rather than showing a broken image. Keyed on the displayed
+  // URL so switching theme (a different variant) re-tries rather than staying broken.
   const [broken, setBroken] = useState(false);
-  const imageUrl = state.phase === "image" ? state.imageUrl : null;
   useEffect(() => setBroken(false), [imageUrl]);
 
-  if (state.phase === "image" && !broken) {
+  if (imageUrl && !broken) {
     return (
       <img
         className={styles.image}
-        src={state.imageUrl}
+        src={imageUrl}
         alt=""
         loading="lazy"
         decoding="async"

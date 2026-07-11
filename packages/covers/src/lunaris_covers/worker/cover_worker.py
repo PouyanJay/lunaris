@@ -12,7 +12,7 @@ from lunaris_runtime.persistence import (
     ICoverStorage,
     PersistenceError,
 )
-from lunaris_runtime.schema import CoverArtifact, CoverJob, CoverJobStatus
+from lunaris_runtime.schema import CoverArtifact, CoverJob, CoverJobStatus, CoverProvenance
 
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.models.rendered_cover import RenderedCover
@@ -112,7 +112,7 @@ class CoverWorker:
         )
         try:
             rendered = await self._produce(job)
-            await self._upload(job, rendered)
+            provenance = await self._upload(job, rendered)
         except _CoverCancelledError:
             # The owner stopped this job mid-render: the row is already CANCELLED and the render was
             # aborted (no more compute, nothing uploaded). Do NOT settle (complete/fail would be a
@@ -131,9 +131,7 @@ class CoverWorker:
         # it propagates out to run_once, which leaves the job in-flight so the lease sweep requeues
         # it — rather than marking a job READY whose Course.cover never got written (the queue's
         # "job state must never be silently wrong" invariant). At-least-once: a requeue re-produces.
-        artifact = CoverArtifact(
-            status=CoverJobStatus.READY, job_id=job.id, provenance=rendered.provenance
-        )
+        artifact = CoverArtifact(status=CoverJobStatus.READY, job_id=job.id, provenance=provenance)
         await self._attach_to_course(job, artifact)
         await self._queue.complete(job_id=job.id)
         _logger.info("cover_worker.job_ready", job_id=job.id)
@@ -218,19 +216,42 @@ class CoverWorker:
 
         return report
 
-    async def _upload(self, job: CoverJob, rendered: RenderedCover) -> None:
+    async def _upload(self, job: CoverJob, rendered: RenderedCover) -> CoverProvenance:
+        """Upload the cover's objects; return the provenance that was actually persisted.
+
+        The dark image is essential — a failure here fails the job (a cover with no image is not a
+        cover). The LIGHT rendition (dual-theme) is best-effort: uploaded only when the pipeline
+        produced one, and a light-upload blip must NOT sink an already-stored dark cover. On such a
+        failure the provenance is downgraded to dark-only so what is persisted (and folded onto
+        ``Course.cover``) matches what is actually in the bucket — the reader then shows the dark
+        image in both themes, exactly like a pre-dual-theme cover. The returned provenance is what
+        the caller attaches to the course."""
         await self._queue.update_status(job_id=job.id, status=CoverJobStatus.UPLOADING)
         paths = CoverArtifactPaths.for_job(job)
         await self._storage.upload(
             path=paths.image, data=rendered.image, content_type=rendered.content_type
         )
+        provenance = rendered.provenance
+        if rendered.image_light is not None:
+            try:
+                await self._storage.upload(
+                    path=paths.image_light,
+                    data=rendered.image_light,
+                    content_type=rendered.content_type,
+                )
+            except PersistenceError:
+                _logger.warning("cover_worker.light_upload_failed", job_id=job.id)
+                provenance = provenance.model_copy(
+                    update={"has_light_variant": False, "light_mode": None}
+                )
         # Structural-provenance contract (CLAUDE.md): its own artifact so the API threads it onto
-        # the wire independently of the image.
+        # the wire independently of the image. Persist the effective (possibly downgraded) record.
         await self._storage.upload(
             path=paths.provenance,
-            data=rendered.provenance.model_dump_json(by_alias=True).encode(),
+            data=provenance.model_dump_json(by_alias=True).encode(),
             content_type="application/json",
         )
+        return provenance
 
     async def _attach_to_course(self, job: CoverJob, artifact: CoverArtifact) -> None:
         """Fold the finished cover onto the course payload (``Course.cover``) so every surface reads

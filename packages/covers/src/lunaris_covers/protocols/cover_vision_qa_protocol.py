@@ -16,4 +16,10 @@ class ICoverVisionQa(Protocol):
     @property
     def model(self) -> str: ...
 
-    async def inspect(self, image: bytes, brief: CoverBrief) -> CoverQaVerdict: ...
+    async def inspect(
+        self, image: bytes, brief: CoverBrief, *, light: bool = False
+    ) -> CoverQaVerdict:
+        """Judge ``image`` against the house-style rubric. ``light=True`` judges a LIGHT-theme
+        variant against the light rubric (bright ground) instead of the dark one — the dark rubric's
+        near-black-ground constraint would otherwise reject any correct light cover."""
+        ...

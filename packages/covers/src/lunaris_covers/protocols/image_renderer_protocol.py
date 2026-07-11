@@ -14,3 +14,12 @@ class IImageRenderer(Protocol):
     def model(self) -> str: ...
 
     async def render(self, prompt: str) -> bytes: ...
+
+    async def retheme(self, image: bytes, *, instruction: str) -> bytes:
+        """Re-theme an existing render in place (image-edit), preserving its composition.
+
+        Powers the dual-theme cover's light variant: the dark render is edited into its light-mode
+        twin under ``instruction`` (a house light-palette instruction). Returns the new image's raw
+        PNG bytes; a provider failure raises ``CoverPipelineError`` exactly like ``render``.
+        """
+        ...

@@ -22,13 +22,14 @@ from lunaris_api.dependencies import (
     get_cover_storage,
 )
 from lunaris_covers import CoverWorker, StubCoverPipeline
+from lunaris_covers.models.rendered_cover import RenderedCover
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
 )
-from lunaris_runtime.schema import Course, CoverJobStatus
+from lunaris_runtime.schema import Course, CoverJobStatus, CoverLightMode
 
 
 class _FakeCourseStore:
@@ -175,6 +176,62 @@ async def test_walking_skeleton_cover_roundtrip(
     assert course.cover is not None
     assert course.cover.status == CoverJobStatus.READY
     assert course.cover.job_id == job_id
+
+
+# ── dual-theme: the READY view carries a light URL only when a light variant exists ──
+
+
+class _DualThemePipeline:
+    """A pipeline double that produced BOTH a dark and a light image (a dual-theme cover)."""
+
+    async def produce(self, job, *, on_stage) -> RenderedCover:  # type: ignore[no-untyped-def]
+        base = await StubCoverPipeline().produce(job, on_stage=on_stage)
+        return RenderedCover(
+            image=base.image,
+            image_light=base.image + b"L",
+            provenance=base.provenance.model_copy(
+                update={"has_light_variant": True, "light_mode": CoverLightMode.RETHEME}
+            ),
+        )
+
+
+async def test_ready_view_carries_a_light_url_for_a_dual_theme_cover(
+    client: httpx.AsyncClient,
+    queue: InMemoryCoverJobQueue,
+    storage: InMemoryCoverStorage,
+    course_store: _FakeCourseStore,
+) -> None:
+    # A worker whose pipeline produced both variants → the READY view exposes both signed URLs, so
+    # the web can show the dark image in light theme and the light image in dark theme.
+    worker = CoverWorker(
+        queue=queue,
+        pipeline=_DualThemePipeline(),
+        storage=storage,
+        course_store=course_store,  # type: ignore[arg-type]
+        worker_id="dual-worker-test",
+    )
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    assert await worker.run_once() is True
+
+    body = (await client.get(f"/api/covers/{job_id}", headers=auth_headers(USER_A))).json()
+    assert body["job"]["status"] == CoverJobStatus.READY.value
+    assert body["imageUrl"]  # the dark cover
+    assert body["imageUrlLight"]  # the light twin
+    assert body["imageUrl"] != body["imageUrlLight"]  # two distinct objects
+    # The light object really landed in storage under the light path.
+    paths = CoverArtifactPaths.for_coordinates(USER_A, "course-1", job_id)
+    assert storage.read(paths.image_light) == storage.read(paths.image) + b"L"
+
+
+async def test_ready_view_omits_the_light_url_for_a_dark_only_cover(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    # The stub pipeline produces a dark-only cover (no light variant) → no light URL is minted, so
+    # the reader shows the dark image in both themes (like a pre-dual-theme cover).
+    job_id = await _enqueue_ready(client, worker)
+    body = (await client.get(f"/api/covers/{job_id}", headers=auth_headers(USER_A))).json()
+    assert body["imageUrl"]
+    assert body["imageUrlLight"] is None
 
 
 # ── dedup: a second enqueue returns the in-flight job, never a duplicate ─────────────

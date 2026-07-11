@@ -56,6 +56,11 @@ class _FakeImagesClient:
             b64 = base64.b64encode(_PNG).decode("ascii")
             return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
 
+        async def edit(self, **kwargs: object) -> object:
+            # The dual-theme light re-theme seam — a distinct image derived from the dark render.
+            b64 = base64.b64encode(_PNG + b"L").decode("ascii")
+            return type("Resp", (), {"data": [type("Datum", (), {"b64_json": b64})()]})()
+
 
 class _FakeCourseStore:
     def __init__(self) -> None:
@@ -103,6 +108,11 @@ async def test_pipeline_covers_every_style_preset(preset: CoverStylePreset) -> N
     # The chosen preset steers the art director AND is recorded in provenance.
     assert invoke.prompt is not None and preset.value in invoke.prompt.lower()
     assert rendered.provenance.style_preset is preset
+    # Every preset yields a dual-theme cover: a light twin alongside the dark render (the light/dark
+    # axis is orthogonal to the preset). No inspector here (local-dev path) → the re-theme is kept.
+    assert rendered.image_light is not None and rendered.image_light != rendered.image
+    assert rendered.provenance.has_light_variant is True
+    assert rendered.provenance.light_mode == "retheme"
 
 
 @pytest.mark.asyncio
