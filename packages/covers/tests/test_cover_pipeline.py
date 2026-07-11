@@ -496,3 +496,116 @@ async def test_light_variant_exhausted_ships_a_dark_only_cover() -> None:
     assert rendered.provenance.has_light_variant is False
     assert rendered.provenance.light_mode is None
     assert inspector.light_calls == 2  # bounded: one re-theme QA + one native QA, then give up
+    assert client.edits == 1 and client.renders == 2  # exactly one re-theme + one native attempt
+
+
+# ---- dual-theme: the light variant NEVER fails the whole job (AD2) ---------------------------
+
+
+class _ConfigurableRenderer:
+    """A fake ``IImageRenderer`` whose dark render works but whose LIGHT calls can be made to raise.
+
+    Proves the light path degrades to a dark-only cover on a provider failure rather than letting
+    the error propagate out of ``produce`` and fail a job whose dark cover already passed QA (AD2).
+    ``render_raises_on_call`` targets the Nth ``render`` (call 1 = the dark render, call 2 = the
+    native light render)."""
+
+    def __init__(
+        self, *, retheme_raises: bool = False, render_raises_on_call: int | None = None
+    ) -> None:
+        self.model = "gpt-image-2"
+        self.render_calls = 0
+        self._retheme_raises = retheme_raises
+        self._render_raises_on_call = render_raises_on_call
+
+    async def render(self, prompt: str) -> bytes:
+        self.render_calls += 1
+        if self.render_calls == self._render_raises_on_call:
+            raise CoverPipelineError("render failed", user_detail="provider down")
+        return _PNG + bytes([self.render_calls])
+
+    async def retheme(self, image: bytes, *, instruction: str) -> bytes:
+        if self._retheme_raises:
+            raise CoverPipelineError("re-theme failed", user_detail="provider down")
+        return _PNG + b"L"
+
+
+class _LightQaRaisesInspector:
+    """Dark QA passes; every LIGHT QA call raises (parse-exhaustion / provider error) instead of
+    returning a verdict — the gap the review caught: an unwrapped QA exception must not fail it."""
+
+    def __init__(self) -> None:
+        self.model = "claude-opus-4-8"
+        self.dark_calls = 0
+        self.light_calls = 0
+
+    async def inspect(self, image: bytes, brief: object, *, light: bool = False) -> CoverQaVerdict:
+        if not light:
+            self.dark_calls += 1
+            return CoverQaVerdict(passed=True)
+        self.light_calls += 1
+        raise ValueError("light QA parse exhausted")
+
+
+def _pipeline_with(store: _FakeCourseStore, renderer: object, inspector: object) -> CoverPipeline:
+    return CoverPipeline(
+        source_provider=CourseStoreCoverSourceProvider(store),
+        art_director=CoverArtDirector(invoke=_RecordingArtInvoke(), model="claude-opus-4-8"),
+        renderer=renderer,  # type: ignore[arg-type]
+        qa_model="claude-opus-4-8",
+        inspector=inspector,  # type: ignore[arg-type]
+    )
+
+
+def _assert_dark_only(rendered: object) -> None:
+    assert rendered.image is not None  # type: ignore[attr-defined] — the dark cover still ships
+    assert rendered.image_light is None  # type: ignore[attr-defined]
+    assert rendered.provenance.has_light_variant is False  # type: ignore[attr-defined]
+    assert rendered.provenance.light_mode is None  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_a_retheme_provider_error_degrades_to_a_dark_only_cover() -> None:
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    inspector = _LightAwareInspector()  # dark passes; light QA never reached
+
+    rendered = await _pipeline_with(
+        store, _ConfigurableRenderer(retheme_raises=True), inspector
+    ).produce(_job(), on_stage=_noop_stage)
+
+    _assert_dark_only(rendered)
+    assert inspector.light_calls == 0  # the re-theme raised before any light QA
+
+
+@pytest.mark.asyncio
+async def test_a_native_render_error_degrades_to_a_dark_only_cover() -> None:
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    # The re-theme QA fails → native path; the native render (the 2nd render call) then raises.
+    renderer = _ConfigurableRenderer(render_raises_on_call=2)
+    inspector = _LightAwareInspector(light_fail_first=1)
+
+    rendered = await _pipeline_with(store, renderer, inspector).produce(
+        _job(), on_stage=_noop_stage
+    )
+
+    _assert_dark_only(rendered)
+    assert renderer.render_calls == 2  # dark render + the native render that raised
+
+
+@pytest.mark.asyncio
+async def test_a_light_qa_exception_degrades_to_a_dark_only_cover() -> None:
+    # The review's blocking gap: a light-QA exception (parse-exhaustion / provider error) must be
+    # swallowed as a miss, not propagate out of produce() and fail the whole job.
+    store = _FakeCourseStore()
+    store.seed(_course(), owner_id=_OWNER)
+    inspector = _LightQaRaisesInspector()
+
+    rendered = await _pipeline_with(store, _ConfigurableRenderer(), inspector).produce(
+        _job(), on_stage=_noop_stage
+    )
+
+    _assert_dark_only(rendered)
+    assert inspector.dark_calls == 1  # the dark cover was still QA'd and shipped
+    assert inspector.light_calls == 2  # both light QA attempts raised and were absorbed

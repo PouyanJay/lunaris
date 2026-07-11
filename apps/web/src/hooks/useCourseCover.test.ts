@@ -114,19 +114,22 @@ describe("useCourseCover", () => {
       imageUrl: null,
       provenance: null,
     });
-    poll.mockImplementation(async (_api, jobId, opts) => opts.onSettled(readyView(jobId)));
+    poll.mockImplementation(async (_api, jobId, opts) =>
+      opts.onSettled(readyView(jobId, `https://signed/${jobId}-light.png`)),
+    );
 
     const { result } = renderHook(() => useCourseCover(API, artifact("ready")));
     await waitFor(() => expect(result.current.state.phase).toBe("image"));
 
     act(() => result.current.regenerate());
 
-    // The regenerate enqueues job-2 and polls it → the image swaps to the new job's signed URL.
+    // The regenerate enqueues job-2 and polls it → the image swaps to the new job's signed URLs
+    // (dark + light both carried through the settle handler).
     await waitFor(() =>
       expect(result.current.state).toEqual({
         phase: "image",
         imageUrl: "https://signed/job-2.png",
-        imageUrlLight: null,
+        imageUrlLight: "https://signed/job-2-light.png",
       }),
     );
     expect(regen).toHaveBeenCalledWith(API, "job-1");

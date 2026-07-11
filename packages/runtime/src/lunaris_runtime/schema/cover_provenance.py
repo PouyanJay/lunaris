@@ -1,5 +1,5 @@
 from .base import CourseModel
-from .enums import CoverStylePreset
+from .enums import CoverLightMode, CoverStylePreset
 
 
 class CoverProvenance(CourseModel):
@@ -33,7 +33,7 @@ class CoverProvenance(CourseModel):
     # object). The API mints the light signed URL ONLY when this is True, so a URL is never asked
     # for a missing object — and covers made before dual-theme (whose provenance JSON lacks the
     # field) default to False, i.e. dark-only in both app themes. ``light_mode`` records HOW it was
-    # made: ``"retheme"`` (image-edit of the dark render, same composition) or ``"native"`` (its own
+    # made: ``RETHEME`` (image-edit of the dark render, same composition) or ``NATIVE`` (its own
     # light art-direction, when the re-theme failed QA); ``None`` when there is no light variant.
     has_light_variant: bool = False
-    light_mode: str | None = None
+    light_mode: CoverLightMode | None = None

@@ -4,6 +4,7 @@ for byte. Also asserts the fallback shape: a course without a cover serialises `
 
 import json
 
+from lunaris_runtime.persistence import CoverArtifactPaths
 from lunaris_runtime.schema import (
     Course,
     CoverArtifact,
@@ -83,8 +84,6 @@ def test_old_provenance_without_light_fields_defaults_to_dark_only() -> None:
 
 
 def test_cover_artifact_paths_include_a_light_image() -> None:
-    from lunaris_runtime.persistence import CoverArtifactPaths
-
     paths = CoverArtifactPaths.for_coordinates("u-1", "course-1", "job-1")
     assert paths.image == "u-1/course-1/job-1/cover.png"  # the dark image keeps the original path
     assert paths.image_light == "u-1/course-1/job-1/cover-light.png"

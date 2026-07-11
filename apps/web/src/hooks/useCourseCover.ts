@@ -82,11 +82,7 @@ export function useCourseCover(
       setState({ phase: "generating", status });
       void fetchCoverJob(apiBaseUrl, jobId, controller.signal).then((view) => {
         if (controller.signal.aborted) return;
-        setState(
-          view?.imageUrl
-            ? { phase: "image", imageUrl: view.imageUrl, imageUrlLight: view.imageUrlLight ?? null }
-            : { phase: "fallback" },
-        );
+        applyView(view); // READY → image (both URLs), else fallback — one mapping, shared
       });
       return () => controller.abort();
     }

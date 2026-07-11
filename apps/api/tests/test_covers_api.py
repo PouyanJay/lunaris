@@ -29,7 +29,7 @@ from lunaris_runtime.persistence import (
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
 )
-from lunaris_runtime.schema import Course, CoverJobStatus
+from lunaris_runtime.schema import Course, CoverJobStatus, CoverLightMode
 
 
 class _FakeCourseStore:
@@ -190,7 +190,7 @@ class _DualThemePipeline:
             image=base.image,
             image_light=base.image + b"L",
             provenance=base.provenance.model_copy(
-                update={"has_light_variant": True, "light_mode": "retheme"}
+                update={"has_light_variant": True, "light_mode": CoverLightMode.RETHEME}
             ),
         )
 

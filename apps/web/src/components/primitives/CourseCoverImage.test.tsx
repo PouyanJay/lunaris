@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CourseCoverImage } from "./CourseCoverImage";
@@ -30,6 +30,8 @@ function setTheme(theme: "light" | "dark"): void {
 
 beforeEach(() => fetchJob.mockReset());
 afterEach(() => {
+  // Unmount before clearing the theme attribute so useThemeValue's observer can't fire outside act.
+  cleanup();
   vi.clearAllMocks();
   document.documentElement.removeAttribute("data-theme");
 });
@@ -99,6 +101,26 @@ describe("CourseCoverImage theme-aware selection (inverted / contrast)", () => {
     await waitFor(() =>
       expect(container.querySelector("img")?.getAttribute("src")).toBe("https://signed/cover.png"),
     );
+  });
+
+  it("degrades to the Typographic fallback when the displayed image fails to load", async () => {
+    setTheme("light");
+    fetchJob.mockResolvedValue(readyView("https://signed/cover-light.png"));
+    const { container } = render(
+      <CourseCoverImage courseId="c1" topic="Broken" cover={READY_COVER} apiBaseUrl={API} />,
+    );
+    const img = await waitFor(() => {
+      const el = container.querySelector("img");
+      if (!el) throw new Error("image not rendered yet");
+      return el;
+    });
+
+    fireEvent.error(img); // the signed URL 404'd (expired / purged)
+
+    await waitFor(() => {
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.textContent).toContain("Broken"); // the Typographic word
+    });
   });
 
   it("swaps the image live when the theme is toggled", async () => {

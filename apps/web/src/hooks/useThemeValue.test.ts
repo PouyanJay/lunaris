@@ -1,9 +1,14 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { useThemeValue } from "./useThemeValue";
 
-afterEach(() => document.documentElement.removeAttribute("data-theme"));
+afterEach(() => {
+  // Unmount (disconnecting the MutationObserver) BEFORE mutating the attribute, so the observer
+  // can't fire a state update outside act() — a same-level afterEach runs before RTL's auto-cleanup.
+  cleanup();
+  document.documentElement.removeAttribute("data-theme");
+});
 
 describe("useThemeValue", () => {
   it("reads the initial theme off <html data-theme> (default light)", () => {
