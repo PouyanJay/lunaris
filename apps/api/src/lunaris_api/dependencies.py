@@ -1061,6 +1061,9 @@ def get_course_service(
         # course's cover image + job row are reclaimed too.
         cover_job_queue=get_cover_job_queue(settings),
         cover_storage=get_cover_storage(settings),
+        # The operator flag for auto-enqueuing a cover at build completion (course-cover-images T8):
+        # the enqueue-side twin of the worker's own COVER_GENERATION_ENABLED gate. Off → no covers.
+        cover_generation_enabled=settings.cover_generation_enabled,
         # The learner-data cascade for a full course delete (course-delete): the caller's per-course
         # progress, bookmarks, and activity feed, so deleting a course purges them too. Owner-scoped
         # in the service.

@@ -89,6 +89,7 @@ def _summary_view(summary: CourseSummary) -> CourseSummaryView:
         course_status=summary.course_status,
         built_at=summary.built_at,
         last_opened_at=summary.last_opened_at,
+        cover=summary.cover,
     )
 
 

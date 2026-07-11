@@ -101,3 +101,27 @@ def test_zero_lesson_course_without_marks_reads_not_started() -> None:
     # Assert
     assert summary.learner_status == "not_started"
     assert summary.lesson_total == 0
+
+
+def _entry_with_cover(cover: object | None) -> LibraryEntry:
+    entry = _entry([0.5])
+    return LibraryEntry(run=entry.run, course=entry.course.model_copy(update={"cover": cover}))
+
+
+def test_summary_carries_the_courses_cover_artifact() -> None:
+    # A READY cover on the course rides onto the card summary (jobId + status, no signed URL) so the
+    # grid can render the image or the Typographic fallback (course-cover-images T9).
+    from lunaris_runtime.schema import CoverArtifact
+
+    cover = CoverArtifact(status="ready", job_id="cover-job-1")
+
+    summary = derive_course_summary(_entry_with_cover(cover), CourseMarks())
+
+    assert summary.cover is not None
+    assert summary.cover.status == "ready"
+    assert summary.cover.job_id == "cover-job-1"
+
+
+def test_summary_cover_is_none_when_the_course_has_no_cover() -> None:
+    summary = derive_course_summary(_entry_with_cover(None), CourseMarks())
+    assert summary.cover is None
