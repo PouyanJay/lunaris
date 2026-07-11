@@ -1,7 +1,8 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 
 import { useConfig } from "../../hooks/useConfig";
 import { useConfigSaver, type SaveFeedback } from "../../hooks/useConfigSaver";
+import { useProviderKeyPresent } from "../../hooks/useProviderKeyPresent";
 import {
   COVER_MASTER_KEY,
   COVER_PRESET_KEY,
@@ -9,7 +10,6 @@ import {
   boolToConfigValue,
   type ConfigSetting,
 } from "../../lib/config";
-import { fetchCredentials } from "../../lib/credentials";
 import type { SecretStatus } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { Switch } from "../primitives/Switch";
@@ -22,6 +22,9 @@ interface CoverConfigPanelProps {
   byokEnabled: boolean;
   /** The file-store secret statuses (the non-BYOK path's source for the OpenAI key). */
   secrets: SecretStatus[];
+  /** Bumped by the Settings shell whenever a key is saved/removed, so a freshly-added OpenAI key
+   *  unlocks this section immediately instead of only after a full page reload. */
+  keysVersion?: number;
 }
 
 const PRESET_LABELS: Record<string, string> = {
@@ -34,10 +37,21 @@ const PRESET_LABELS: Record<string, string> = {
  *  AI cover at build time, and — when on — the art-direction preset. AI covers need an OpenAI key
  *  (GPT Image 2), so without one the section is deactivated with a needs-a-key affordance and the
  *  account shows the Typographic cover instead. */
-export function CoverConfigPanel({ apiBaseUrl, byokEnabled, secrets }: CoverConfigPanelProps) {
+export function CoverConfigPanel({
+  apiBaseUrl,
+  byokEnabled,
+  secrets,
+  keysVersion = 0,
+}: CoverConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
-  const keyPresent = useOpenAiKeyPresent(apiBaseUrl, byokEnabled, secrets);
+  const keyPresent = useProviderKeyPresent(
+    apiBaseUrl,
+    byokEnabled,
+    secrets,
+    "openai",
+    keysVersion,
+  );
 
   const byName = useMemo(
     () =>
@@ -182,27 +196,3 @@ function PresetRow({ setting, busy, feedback, onSave }: PresetRowProps) {
   );
 }
 
-/** Whether the caller has an OpenAI key — the gate for AI cover generation. Under BYOK the per-user
- *  key lives in the vault (read via /api/credentials); otherwise the file-store secret status carries
- *  it. Best-effort: a failed read leaves it false (the section locks, never crashes). */
-function useOpenAiKeyPresent(
-  apiBaseUrl: string,
-  byokEnabled: boolean,
-  secrets: SecretStatus[],
-): boolean {
-  const [byokPresent, setByokPresent] = useState(false);
-  useEffect(() => {
-    if (!byokEnabled) return;
-    const controller = new AbortController();
-    void fetchCredentials(apiBaseUrl, controller.signal)
-      .then((creds) => {
-        if (!controller.signal.aborted) {
-          setByokPresent(creds.some((c) => c.provider === "openai" && c.isSet));
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [apiBaseUrl, byokEnabled]);
-  if (byokEnabled) return byokPresent;
-  return secrets.some((s) => s.name === "openai" && s.isSet);
-}

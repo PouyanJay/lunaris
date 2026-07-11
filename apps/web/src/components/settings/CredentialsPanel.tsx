@@ -6,6 +6,10 @@ import styles from "./Settings.module.css";
 
 interface CredentialsPanelProps {
   apiBaseUrl: string;
+  /** Fired after a key is stored or removed. The Settings shell uses it to re-read the vault, so a
+   *  key-gated section (AI covers, video narration) unlocks the moment its key is added — without it
+   *  those sections read the vault once on mount and stay locked for the whole session. */
+  onKeysChanged?: () => void;
 }
 
 /** The per-user BYOK providers. These are the tenant's own LLM/search/video keys (the platform's
@@ -56,7 +60,7 @@ type State =
 
 /** The BYOK keys surface (Phase 2): each tenant manages their OWN provider keys via the authed
  *  per-user credentials API. Keys are write-only — only set/unset + last4 is ever shown. */
-export function CredentialsPanel({ apiBaseUrl }: CredentialsPanelProps) {
+export function CredentialsPanel({ apiBaseUrl, onKeysChanged }: CredentialsPanelProps) {
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -82,6 +86,9 @@ export function CredentialsPanel({ apiBaseUrl }: CredentialsPanelProps) {
           }
         : prev,
     );
+    // Tell the shell a key changed, so key-gated sections (covers, narration) re-read the vault and
+    // unlock immediately rather than staying locked until the next full page load.
+    onKeysChanged?.();
   }
 
   if (state.status === "loading") {

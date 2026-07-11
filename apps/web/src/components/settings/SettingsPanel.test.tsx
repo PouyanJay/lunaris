@@ -44,6 +44,71 @@ function stubFetch(onPut: (body: unknown) => { ok: boolean; status?: number; jso
   });
 }
 
+/** BYOK on + the cover settings, with a live `/api/credentials` view whose OpenAI key flips to SET
+ *  the moment it is PUT — exactly what the server does. Reproduces the reported flow: a tenant adds
+ *  their OpenAI key and expects the Cover-images toggle to unlock. */
+function stubByokFetch() {
+  let openAiSet = false;
+  const coverSettings = [
+    {
+      name: "coverGenerationEnabled",
+      value: "true",
+      default: "true",
+      kind: "toggle",
+      restartRequired: false,
+    },
+    {
+      name: "coverStylePreset",
+      value: "nocturne",
+      default: "nocturne",
+      kind: "preset",
+      restartRequired: false,
+    },
+  ];
+  return vi.fn(async (url: string | URL, init?: RequestInit) => {
+    const href = url.toString();
+    const method = init?.method ?? "GET";
+    if (href.includes("/api/credentials/openai") && method === "PUT") {
+      openAiSet = true; // the server stored it
+      return { ok: true, json: async () => ({ provider: "openai", isSet: true, last4: "abcd" }) };
+    }
+    if (href.includes("/api/credentials")) {
+      return { ok: true, json: async () => [{ provider: "openai", isSet: openAiSet, last4: null }] };
+    }
+    if (href.includes("/api/source-authorities")) return { ok: true, json: async () => [] };
+    if (href.includes("/api/capabilities")) return { ok: true, json: async () => CAPABILITIES };
+    if (href.includes("/api/config")) {
+      return { ok: true, json: async () => ({ settings: coverSettings }) };
+    }
+    return { ok: true, json: async () => ({ ...SETTINGS, byokEnabled: true }) };
+  });
+}
+
+describe("SettingsPanel — adding an OpenAI key unlocks the cover toggle in the same session", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("enables the cover-images toggle right after the OpenAI key is saved (no reload)", async () => {
+    // The reported bug: CoverConfigPanel read /api/credentials once on mount, and CredentialsPanel
+    // kept its saves to itself — so a freshly-added OpenAI key left the toggle disabled for the whole
+    // session. With the deep-link 404 also breaking a manual reload, the toggle could NEVER be turned
+    // on. The key must propagate to the cover section immediately.
+    vi.stubGlobal("fetch", stubByokFetch());
+    render(<SettingsPanel apiBaseUrl="http://test" />);
+
+    // Add the OpenAI key in the Keys section.
+    fireEvent.click(await screen.findByRole("button", { name: /keys & configuration/i }));
+    const input = await screen.findByLabelText("OpenAI API key");
+    fireEvent.change(input, { target: { value: "sk-test-abcd" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save OpenAI API key" }));
+    expect(await screen.findByText("Saved")).toBeInTheDocument();
+
+    // The Cover-images section must now offer a live toggle, not the needs-a-key notice.
+    fireEvent.click(await screen.findByRole("button", { name: /cover images/i }));
+    const toggle = await screen.findByRole("switch", { name: "Generate cover images" });
+    await waitFor(() => expect(toggle).toBeEnabled());
+  });
+});
+
 describe("SettingsPanel", () => {
   afterEach(() => vi.unstubAllGlobals());
 

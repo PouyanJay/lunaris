@@ -1,8 +1,8 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo } from "react";
 
 import { useConfig } from "../../hooks/useConfig";
 import { useConfigSaver, type SaveFeedback } from "../../hooks/useConfigSaver";
-import { fetchCredentials } from "../../lib/credentials";
+import { useProviderKeyPresent } from "../../hooks/useProviderKeyPresent";
 import {
   VIDEO_LENGTH_KEYS,
   VIDEO_LESSONS_KEY,
@@ -26,6 +26,9 @@ interface VideoConfigPanelProps {
   byokEnabled: boolean;
   /** The file-store secret statuses (the non-BYOK path's source for the ElevenLabs key). */
   secrets: SecretStatus[];
+  /** Bumped by the Settings shell whenever a key is saved/removed, so a freshly-added ElevenLabs key
+   *  unlocks the voice toggle immediately instead of only after a full page reload. */
+  keysVersion?: number;
 }
 
 const LABELS: Record<string, string> = {
@@ -64,10 +67,17 @@ export function VideoConfigPanel({
   keyless,
   byokEnabled,
   secrets,
+  keysVersion = 0,
 }: VideoConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
-  const voiceKeyPresent = useElevenLabsKeyPresent(apiBaseUrl, byokEnabled, secrets);
+  const voiceKeyPresent = useProviderKeyPresent(
+    apiBaseUrl,
+    byokEnabled,
+    secrets,
+    "elevenlabs",
+    keysVersion,
+  );
 
   const byName = useMemo(
     () =>
@@ -300,25 +310,3 @@ function formatSeconds(seconds: number): string {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
-/** Whether the caller has a validated ElevenLabs key — the gate for the voice toggle. Under BYOK
- *  the per-user key lives in the vault (read via /api/credentials); otherwise the file-store secret
- *  status carries it. Best-effort: a failed read leaves it false (the toggle locks, never crashes). */
-function useElevenLabsKeyPresent(
-  apiBaseUrl: string,
-  byokEnabled: boolean,
-  secrets: SecretStatus[],
-): boolean {
-  const [byokPresent, setByokPresent] = useState(false);
-  useEffect(() => {
-    if (!byokEnabled) return;
-    const controller = new AbortController();
-    fetchCredentials(apiBaseUrl, controller.signal)
-      .then((creds) => setByokPresent(creds.some((c) => c.provider === "elevenlabs" && c.isSet)))
-      .catch(() => {
-        /* best-effort: leave false so the toggle locks with the add-a-key hint */
-      });
-    return () => controller.abort();
-  }, [apiBaseUrl, byokEnabled]);
-  if (byokEnabled) return byokPresent;
-  return secrets.some((s) => s.name === "elevenlabs" && s.isSet);
-}
