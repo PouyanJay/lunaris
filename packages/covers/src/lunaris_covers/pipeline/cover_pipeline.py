@@ -6,8 +6,8 @@ from lunaris_runtime.schema import CoverJob, CoverJobStatus, CoverLightMode, Cov
 
 from lunaris_covers.art_direction.cover_art_director import CoverArtDirector
 from lunaris_covers.art_direction.house_style import (
-    light_native_directive,
     light_retheme_instruction,
+    native_light_prompt,
 )
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.models.cover_brief import CoverBrief
@@ -63,6 +63,7 @@ class CoverPipeline:
         qa_model: str,
         inspector: ICoverVisionQa | None = None,
         max_attempts: int = COVER_MAX_QA_ATTEMPTS,
+        light_variant: bool = False,
     ) -> None:
         self._source_provider = source_provider
         self._art_director = art_director
@@ -72,12 +73,21 @@ class CoverPipeline:
         self._qa_model = qa_model
         self._inspector = inspector
         self._max_attempts = max(1, max_attempts)
+        # Dual-theme light twins are OFF by default (cover-light-variant-off): the light render
+        # roughly doubles per-cover provider spend (an images.edit + a second vision QA, sometimes a
+        # third render), and the reader shows the dark image in both app themes when no light twin
+        # exists. The capability stays built + tested — an operator turns it back on via the
+        # composition root (LUNARIS_COVER_LIGHT_VARIANT).
+        self._light_variant = light_variant
 
     async def produce(self, job: CoverJob, *, on_stage: StageReporter) -> RenderedCover:
         brief = await self._source_provider.load(job)
         image, prompt, attempts = await self._render_until_on_brand(brief, on_stage)
-        inputs = _LightVariantInputs(base=image, brief=brief, dark_prompt=prompt, job_id=job.id)
-        image_light, light_mode = await self._render_light_variant(inputs)
+        if self._light_variant:
+            inputs = _LightVariantInputs(base=image, brief=brief, dark_prompt=prompt, job_id=job.id)
+            image_light, light_mode = await self._render_light_variant(inputs)
+        else:
+            image_light, light_mode = None, None
         provenance = CoverProvenance(
             job_id=job.id,
             course_id=job.course_id,
@@ -142,7 +152,7 @@ class CoverPipeline:
         miss degrades to dark-only."""
         try:
             native = await self._renderer.render(
-                f"{inputs.dark_prompt}\n\n{light_native_directive(inputs.brief.style_preset)}"
+                native_light_prompt(inputs.dark_prompt, inputs.brief.style_preset)
             )
         except CoverPipelineError:
             _logger.warning("cover_pipeline.light_native_render_failed", job_id=inputs.job_id)
