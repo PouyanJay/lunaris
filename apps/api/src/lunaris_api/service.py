@@ -9,6 +9,7 @@ import structlog
 from lunaris_agent import CoursePipeline, LessonRegenerator
 from lunaris_grounding import ICorpusStore
 from lunaris_runtime.capabilities import CAPABILITY_SPECS
+from lunaris_runtime.cover_build import cover_config_from_map
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
 from lunaris_runtime.persistence import (
@@ -31,7 +32,6 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseRun,
-    CoverStylePreset,
     DiscoveryDepth,
     ProgressEvent,
     RunEvent,
@@ -399,18 +399,23 @@ class CourseService:
         return bool(os.environ.get(_COVER_KEY_ENV))
 
     async def _maybe_enqueue_cover(
-        self, course: Course, owner_id: str | None, credentials: Mapping[str, str] | None
+        self,
+        course: Course,
+        owner_id: str | None,
+        credentials: Mapping[str, str] | None,
+        config: Mapping[str, str] | None,
     ) -> None:
         """Enqueue one AI cover for a freshly-built course when covers are on for this build.
 
         The whole gate in one place, mirroring ``_video_coordinator_for``: the operator flag
         (``cover_generation_enabled``), a known **owner** (a ``cover_jobs`` row needs a
-        ``user_id``), the queue wired, and the build **keyed for OpenAI** (covers need GPT Image 2 —
-        never a keyless build; a keyless account shows the Typographic cover instead). Deduped
-        against an in-flight job. **Best-effort**: a cover is a nice-to-have, generated async
-        minutes later, so any failure here is logged and swallowed — it must never fail or delay the
-        build the learner is waiting on. (The per-user ``coverGenerationEnabled`` toggle +
-        ``coverStylePreset`` land in T10; today it defaults on with the house NOCTURNE preset.)"""
+        ``user_id``), the queue wired, the build **keyed for OpenAI** (covers need GPT Image 2 —
+        never a keyless build; a keyless account shows the Typographic cover instead), AND the
+        owner's per-user **master toggle** on (T10 — ``coverGenerationEnabled``, layered on top of
+        the operator flag, exactly like the video master toggle). The owner's chosen
+        ``coverStylePreset`` is stamped on the job so the render uses it. Deduped against an
+        in-flight job. **Best-effort**: a cover is a nice-to-have, generated async minutes later, so
+        failure here is logged and swallowed — it must never fail or delay the build."""
         if (
             not self._cover_generation_enabled
             or owner_id is None
@@ -418,15 +423,23 @@ class CourseService:
             or not self._is_keyed_for_cover(credentials)
         ):
             return
+        cover_config = cover_config_from_map(config)
+        if not cover_config.enabled:
+            return  # the owner turned cover generation off in Settings (per-user master toggle)
         try:
             job, created = await enqueue_cover_job(
                 self._cover_job_queue,
                 course=course,
                 owner_id=owner_id,
-                style_preset=CoverStylePreset.NOCTURNE,
+                style_preset=cover_config.style_preset,
             )
             if created:
-                logger.info("cover_job_auto_enqueued", job_id=job.id, course_id=course.id)
+                logger.info(
+                    "cover_job_auto_enqueued",
+                    job_id=job.id,
+                    course_id=course.id,
+                    style=job.style_preset.value,
+                )
         except Exception:
             logger.warning("cover_job_auto_enqueue_failed", course_id=course.id, exc_info=True)
 
@@ -524,9 +537,9 @@ class CourseService:
             self._release(admission.reservation)
         await self._record_finish(course, owner_id=owner_id)
         # Auto-enqueue the course's AI cover (best-effort, gated + deduped). The await-full path is
-        # already outside the run's credential scope here, so the resolved ``credentials`` map is
-        # passed explicitly for the keyed-for-OpenAI check.
-        await self._maybe_enqueue_cover(course, owner_id, credentials)
+        # already outside the run's credential/config scope, so ``credentials`` + ``config`` are
+        # passed explicitly for the keyed-for-OpenAI check + the per-user toggle.
+        await self._maybe_enqueue_cover(course, owner_id, credentials, config)
         return course
 
     async def stream(
@@ -604,6 +617,7 @@ class CourseService:
                     run_id=run_id,
                     owner_id=owner_id,
                     credentials=credentials,
+                    config=config,
                     recorder=recorder,
                 )
             )
@@ -674,6 +688,7 @@ class CourseService:
         run_id: str,
         owner_id: str | None,
         credentials: Mapping[str, str] | None,
+        config: Mapping[str, str] | None,
         recorder: RunEventRecorder,
     ) -> Course:
         """Run a build to completion and record its terminal status — disconnect-proof.
@@ -706,8 +721,8 @@ class CourseService:
             await self._record_finish(course, owner_id=owner_id)
             # Auto-enqueue the cover from the DURABLE build task (not the stream generator), so a
             # course built while the client had navigated away still gets its cover. Best-effort +
-            # gated; ``credentials`` is threaded in for the keyed-for-OpenAI check.
-            await self._maybe_enqueue_cover(course, owner_id, credentials)
+            # gated; ``credentials`` + ``config`` are threaded in for the keyed check + the toggle.
+            await self._maybe_enqueue_cover(course, owner_id, credentials, config)
             return course
         finally:
             # Flush the buffered build-log tail (the sinks recorded as the pipeline emitted; this

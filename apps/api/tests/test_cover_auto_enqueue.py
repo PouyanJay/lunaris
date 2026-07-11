@@ -26,6 +26,7 @@ def _service(
     *,
     cover_generation_enabled: bool = True,
     credential_resolver=None,
+    config_resolver=None,
 ) -> CourseService:
     return CourseService(
         CourseStore(tmp_path),
@@ -34,6 +35,7 @@ def _service(
         cover_job_queue=queue,
         cover_generation_enabled=cover_generation_enabled,
         credential_resolver=credential_resolver,
+        config_resolver=config_resolver,
     )
 
 
@@ -116,6 +118,38 @@ async def test_a_cover_already_in_flight_is_not_re_enqueued(
 
     jobs = await queue.list_for_course(course_id="course-t8", owner_id=_OWNER)
     assert [j.id for j in jobs] == ["pre-existing"]  # deduped — no second job
+
+
+async def test_per_user_toggle_off_enqueues_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The owner turned cover generation off in Settings (T10) — even keyed + operator-on, no cover.
+    monkeypatch.setenv(_OPENAI_ENV, "sk-test")
+
+    async def config(user_id: str) -> Mapping[str, str]:
+        return {"LUNARIS_COVER_ENABLED": "false"}
+
+    queue = InMemoryCoverJobQueue()
+    service = _service(tmp_path, queue, config_resolver=config)
+    course_id = await _build(service, owner_id=_OWNER)
+
+    assert await queue.find_active(course_id=course_id, owner_id=_OWNER) is None
+
+
+async def test_per_user_style_preset_is_stamped_on_the_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(_OPENAI_ENV, "sk-test")
+
+    async def config(user_id: str) -> Mapping[str, str]:
+        return {"LUNARIS_COVER_STYLE_PRESET": "blueprint"}
+
+    queue = InMemoryCoverJobQueue()
+    service = _service(tmp_path, queue, config_resolver=config)
+    course_id = await _build(service, owner_id=_OWNER)
+
+    job = await queue.find_active(course_id=course_id, owner_id=_OWNER)
+    assert job is not None and job.style_preset is CoverStylePreset.BLUEPRINT
 
 
 async def test_stream_build_also_auto_enqueues(

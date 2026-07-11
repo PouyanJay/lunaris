@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CoverArtifact } from "../types/course";
@@ -6,12 +6,23 @@ import { useCourseCover } from "./useCourseCover";
 
 vi.mock("../lib/coverJobs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/coverJobs")>();
-  return { ...actual, fetchCoverJob: vi.fn(), pollCoverJob: vi.fn() };
+  return {
+    ...actual,
+    fetchCoverJob: vi.fn(),
+    pollCoverJob: vi.fn(),
+    regenerateCover: vi.fn(),
+  };
 });
-import { fetchCoverJob, pollCoverJob, type CoverJobView } from "../lib/coverJobs";
+import {
+  fetchCoverJob,
+  pollCoverJob,
+  regenerateCover,
+  type CoverJobView,
+} from "../lib/coverJobs";
 
 const fetchJob = vi.mocked(fetchCoverJob);
 const poll = vi.mocked(pollCoverJob);
+const regen = vi.mocked(regenerateCover);
 
 const API = "http://api.test";
 
@@ -30,6 +41,7 @@ function artifact(status: CoverArtifact["status"], jobId: string | null = "job-1
 beforeEach(() => {
   fetchJob.mockReset();
   poll.mockReset();
+  regen.mockReset();
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -83,5 +95,36 @@ describe("useCourseCover", () => {
     expect(result.current.state).toEqual({ phase: "fallback" });
     expect(fetchJob).not.toHaveBeenCalled();
     expect(poll).not.toHaveBeenCalled();
+  });
+
+  it("regenerate() re-runs the cover job and swaps in the new image when it settles", async () => {
+    fetchJob.mockResolvedValue(readyView("job-1"));
+    regen.mockResolvedValue({
+      job: { id: "job-2", courseId: "c1", status: "queued", stylePreset: "nocturne", error: null },
+      imageUrl: null,
+      provenance: null,
+    });
+    poll.mockImplementation(async (_api, jobId, opts) => opts.onSettled(readyView(jobId)));
+
+    const { result } = renderHook(() => useCourseCover(API, artifact("ready")));
+    await waitFor(() => expect(result.current.state.phase).toBe("image"));
+
+    act(() => result.current.regenerate());
+
+    // The regenerate enqueues job-2 and polls it → the image swaps to the new job's signed URL.
+    await waitFor(() =>
+      expect(result.current.state).toEqual({
+        phase: "image",
+        imageUrl: "https://signed/job-2.png",
+      }),
+    );
+    expect(regen).toHaveBeenCalledWith(API, "job-1");
+    expect(result.current.regenerating).toBe(false);
+  });
+
+  it("regenerate() is a no-op when there is no cover job to regenerate", () => {
+    const { result } = renderHook(() => useCourseCover(API, null));
+    act(() => result.current.regenerate());
+    expect(regen).not.toHaveBeenCalled();
   });
 });

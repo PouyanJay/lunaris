@@ -57,6 +57,8 @@ async def test_service_settings_returns_defaults_when_unset() -> None:
         "videoSummarySeconds",
         "videoOverviewSeconds",
         "videoLessonSeconds",
+        "coverGenerationEnabled",
+        "coverStylePreset",
     }
 
 
@@ -120,3 +122,24 @@ async def test_service_rejects_an_out_of_bounds_video_length() -> None:
 
     with pytest.raises(ConfigError):
         await service.set(user_id=_USER_A, name="videoLessonSeconds", value="99999")
+
+
+async def test_service_accepts_the_cover_style_preset_and_toggle() -> None:
+    # The T10 cover keys are per-user: the preset dropdown value + the master toggle round-trip.
+    service = UserConfigService(InMemoryUserConfigStore())
+
+    preset = await service.set(user_id=_USER_A, name="coverStylePreset", value="Blueprint")
+    toggle = await service.set(user_id=_USER_A, name="coverGenerationEnabled", value="false")
+
+    assert preset.value == "blueprint"  # normalized to the lowercase enum value
+    assert preset.kind == "preset"
+    assert toggle.value == "false"
+    assert toggle.kind == "toggle"
+
+
+async def test_service_rejects_an_unknown_cover_preset() -> None:
+    # A value off the art-direction allow-list is rejected at the write boundary.
+    service = UserConfigService(InMemoryUserConfigStore())
+
+    with pytest.raises(ConfigError):
+        await service.set(user_id=_USER_A, name="coverStylePreset", value="chartreuse")

@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from lunaris_runtime.schema import VideoKind
+from lunaris_runtime.cover_build import COVER_ENABLED_ENV, COVER_STYLE_PRESET_ENV
+from lunaris_runtime.schema import CoverStylePreset, VideoKind
 from lunaris_runtime.video_build import (
     MAX_VIDEO_SECONDS,
     MIN_VIDEO_SECONDS,
@@ -16,6 +17,10 @@ from lunaris_runtime.video_build import (
     VIDEO_VOICE_ENV,
     target_seconds_for,
 )
+
+# The art-direction presets the cover dropdown offers — the allow-list the ``preset`` kind validates
+# against. Sourced from the runtime enum so the UI, the validator, and the pipeline never drift.
+COVER_STYLE_PRESETS: tuple[str, ...] = tuple(preset.value for preset in CoverStylePreset)
 
 # Logical config id (the web/API contract) → the environment variable the runtime reads. Unlike
 # secrets these are NON-secret: their values are shown in the UI. Populating os.environ is how a
@@ -33,11 +38,13 @@ KNOWN_CONFIG: dict[str, str] = {
     "videoSummarySeconds": VIDEO_SUMMARY_SECONDS_ENV,
     "videoOverviewSeconds": VIDEO_OVERVIEW_SECONDS_ENV,
     "videoLessonSeconds": VIDEO_LESSON_SECONDS_ENV,
+    "coverGenerationEnabled": COVER_ENABLED_ENV,
+    "coverStylePreset": COVER_STYLE_PRESET_ENV,
 }
 
 # How the web renders each control: ``toggle`` = on/off; ``model`` = a known-model dropdown;
-# ``number`` = a bounded seconds control; ``text`` = a free-text field.
-ConfigKind = Literal["toggle", "text", "model", "number"]
+# ``number`` = a bounded seconds control; ``preset`` = a cover-style dropdown; ``text`` = free text.
+ConfigKind = Literal["toggle", "text", "model", "number", "preset"]
 
 # Defaults mirror the runtime's own fallbacks (composition.py `_DEFAULT_STRONG`/`_DEFAULT_WORKER`,
 # the langsmith env conventions, the per-kind `target_seconds_for`) so an unset value reads the same
@@ -53,6 +60,8 @@ _DEFAULTS: dict[str, str] = {
     "videoSummarySeconds": str(target_seconds_for(VideoKind.SUMMARY)),
     "videoOverviewSeconds": str(target_seconds_for(VideoKind.OVERVIEW)),
     "videoLessonSeconds": str(target_seconds_for(VideoKind.LESSON)),
+    "coverGenerationEnabled": "true",
+    "coverStylePreset": CoverStylePreset.NOCTURNE.value,
 }
 
 _KINDS: dict[str, ConfigKind] = {
@@ -66,6 +75,8 @@ _KINDS: dict[str, ConfigKind] = {
     "videoSummarySeconds": "number",
     "videoOverviewSeconds": "number",
     "videoLessonSeconds": "number",
+    "coverGenerationEnabled": "toggle",
+    "coverStylePreset": "preset",
 }
 
 # Values consumed at process start (the langsmith SDK) only take effect after a restart; the UI
@@ -121,6 +132,13 @@ def validate_config_value(name: str, value: str) -> str:
                 f"{name} must be between {MIN_VIDEO_SECONDS} and {MAX_VIDEO_SECONDS} seconds"
             )
         return str(seconds)
+    if _KINDS[name] == "preset":
+        # A closed enum (the art-direction presets) — reject anything off the allow-list so a bad
+        # value can't reach the pipeline; the runtime also falls back defensively on an unknown one.
+        normalized = cleaned.lower()
+        if normalized not in COVER_STYLE_PRESETS:
+            raise ConfigError(f"{name} must be one of {', '.join(COVER_STYLE_PRESETS)}")
+        return normalized
     # Model ids are free-form — a new model needs no backend release; the UI offers a shortlist.
     if not cleaned:
         raise ConfigError(f"{name} must not be empty")

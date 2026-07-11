@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { CourseCover } from "./CourseCover";
 import { TypographicCover } from "./TypographicCover";
 import styles from "./CourseCoverImage.module.css";
-import { useCourseCover } from "../../hooks/useCourseCover";
+import { useCourseCover, type CourseCoverState } from "../../hooks/useCourseCover";
 import { coverSeed } from "../../lib/coverSeed";
 import type { CoverArtifact } from "../../types/course";
 
@@ -16,8 +16,12 @@ interface CourseCoverImageProps {
   cover?: CoverArtifact | null | undefined;
   /** API base URL for exchanging a READY cover's jobId for a short-lived signed image URL. Defaults
    *  to the build-time ``VITE_API_URL`` so the many card call sites need not thread it; the Overview
-   *  passes its own. */
+   *  passes its own. Ignored when ``state`` is supplied. */
   apiBaseUrl?: string | undefined;
+  /** A pre-resolved cover state. When supplied (the Overview, which owns the hook so its regenerate
+   *  button + the image share one source of truth), this component is purely presentational and does
+   *  NOT run its own hook; card sites omit it and let the component resolve the state itself. */
+  state?: CourseCoverState;
 }
 
 /** A course's cover, resolved to the right treatment (course-cover-images T9): the AI **image**
@@ -31,8 +35,16 @@ export function CourseCoverImage({
   topic,
   cover,
   apiBaseUrl = import.meta.env.VITE_API_URL as string | undefined,
+  state: providedState,
 }: CourseCoverImageProps) {
-  const { state } = useCourseCover(apiBaseUrl, cover);
+  // Own the hook only when no state is provided (card sites). The Overview passes its own hook's
+  // state so the regenerate button and this image never diverge; calling the hook with a null
+  // artifact there keeps the hooks-count stable without doing any work.
+  const owned = useCourseCover(
+    providedState ? undefined : apiBaseUrl,
+    providedState ? null : cover,
+  );
+  const state = providedState ?? owned.state;
   const seed = coverSeed(courseId);
   // A signed URL can 404 by the time the browser loads it (it expired, or the object was purged);
   // fall back to the Typographic cover rather than showing a broken image.

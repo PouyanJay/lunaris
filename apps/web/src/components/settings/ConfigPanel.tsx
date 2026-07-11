@@ -2,7 +2,12 @@ import { useId, useState } from "react";
 
 import { useConfig } from "../../hooks/useConfig";
 import { useConfigSaver, type SaveFeedback } from "../../hooks/useConfigSaver";
-import { VIDEO_CONFIG_KEYS, boolToConfigValue, type ConfigSetting } from "../../lib/config";
+import {
+  COVER_CONFIG_KEYS,
+  VIDEO_CONFIG_KEYS,
+  boolToConfigValue,
+  type ConfigSetting,
+} from "../../lib/config";
 import { Button } from "../primitives/Button";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { Switch } from "../primitives/Switch";
@@ -46,7 +51,9 @@ export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelPr
 
   const settings =
     state.status === "ready"
-      ? state.settings.filter((setting) => !VIDEO_CONFIG_KEYS.has(setting.name))
+      ? state.settings.filter(
+          (setting) => !VIDEO_CONFIG_KEYS.has(setting.name) && !COVER_CONFIG_KEYS.has(setting.name),
+        )
       : [];
 
   return (

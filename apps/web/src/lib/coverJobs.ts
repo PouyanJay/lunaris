@@ -96,6 +96,43 @@ export async function fetchCoverJob(
   }
 }
 
+/** Regenerate a course's cover (`POST /api/covers/{jobId}/regenerate`) — a fresh art-direction +
+ *  render keyed by the source cover job. Keyed-gated + owner-scoped on the server; dedups an
+ *  in-flight regenerate. Returns the (new or in-flight) job view, or null when it can't be read
+ *  (gone / unauthorized / keyless-403 / network). */
+export async function regenerateCover(
+  apiBaseUrl: string,
+  jobId: string,
+): Promise<CoverJobView | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/covers/${encodeURIComponent(jobId)}/regenerate`,
+      { method: "POST" },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as CoverJobView;
+  } catch {
+    return null;
+  }
+}
+
+/** Stop a cover the caller owns (`POST /api/covers/{jobId}/cancel`) — a queued job is then never
+ *  claimed, an in-flight one aborted by the worker. Owner-scoped + idempotent on the server. Returns
+ *  the job (now CANCELLED) or null when it can't be read; the caller drops to its stopped state
+ *  regardless, since the stop request was sent. */
+export async function cancelCover(apiBaseUrl: string, jobId: string): Promise<CoverJobView | null> {
+  try {
+    const response = await authedFetch(
+      `${apiBaseUrl}/api/covers/${encodeURIComponent(jobId)}/cancel`,
+      { method: "POST" },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as CoverJobView;
+  } catch {
+    return null;
+  }
+}
+
 /** Poll a cover job until it settles (`ready`/`failed`/`cancelled`) or `signal` aborts: `onWorking`
  *  fires for each in-flight status (drives the determinate caption), `onSettled` once for the
  *  terminal view. A missed read (null) is retried — a transient blip must not strand a slow job, and

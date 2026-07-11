@@ -1,7 +1,7 @@
 import { authedFetch } from "./apiClient";
 /** Config API client. Unlike secrets, these values ARE shown — we read them back and edit them. */
 
-export type ConfigKind = "toggle" | "text" | "model" | "number";
+export type ConfigKind = "toggle" | "text" | "model" | "number" | "preset";
 
 export interface ConfigSetting {
   name: string;
@@ -28,6 +28,16 @@ export const VIDEO_CONFIG_KEYS: ReadonlySet<string> = new Set<string>([
   VIDEO_LESSONS_KEY,
   VIDEO_VOICE_KEY,
   ...VIDEO_LENGTH_KEYS,
+]);
+
+// The course-cover config keys (course-cover-images T10). The Cover section owns these; the generic
+// Runtime configuration panel filters them out so they render once, in their own section.
+export const COVER_MASTER_KEY = "coverGenerationEnabled";
+export const COVER_PRESET_KEY = "coverStylePreset";
+export const COVER_STYLE_PRESETS = ["nocturne", "blueprint", "aurora"] as const;
+export const COVER_CONFIG_KEYS: ReadonlySet<string> = new Set<string>([
+  COVER_MASTER_KEY,
+  COVER_PRESET_KEY,
 ]);
 
 /** The wire value for a toggle setting — the one place the boolean ⇄ "true"/"false" mapping lives. */
