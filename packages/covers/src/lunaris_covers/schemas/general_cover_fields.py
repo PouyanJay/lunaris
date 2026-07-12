@@ -22,6 +22,11 @@ class GeneralCoverFields(BaseModel):
 
     # ---- artwork ----
     subject: str = Field(min_length=1)
+    # Domain guardrails so the cover is not confidently wrong — the thing a subject-matter expert
+    # would catch (e.g. 'keep eosinophils visually distinct from generic blood cells', 'do not
+    # imply antibodies accumulate inside the airway lumen'). A cover that misteaches is worse
+    # than a plain one, so these ride in the prompt AND the QA rubric.
+    accuracy_requirements: list[str] = Field(default_factory=list, max_length=4)
     primary_visual: str = Field(min_length=1)
     supporting_visuals: str = Field(min_length=1)
     process_visualization: str = Field(min_length=1)

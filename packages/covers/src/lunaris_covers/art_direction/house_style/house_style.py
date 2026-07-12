@@ -35,6 +35,9 @@ _GENERAL_CONSTRAINTS = (
     "labels are typeset INTO the image, in the left third, never overlapping the artwork. Every "
     "letterform must be crisp, correctly spelled and legible — garbled, invented, misspelled or "
     "duplicated words are the #1 slop tell and are rejected.",
+    "Scientifically/technically CORRECT: the image must not depict a misleading relationship, a "
+    "wrong structure, or anything a subject-matter expert would call an error — a cover that "
+    "misteaches is worse than a plain one.",
     "A LITERAL, technically and anatomically accurate depiction of the course's actual subject "
     "and mechanism — the scene a textbook illustrator would draw (recognizable organs, devices, "
     "systems, structures, processes); never an abstract metaphor, a mood piece, or shapes that "

@@ -18,7 +18,8 @@ FIELDS_JSON = (
     '"highlight_line": "HTTPS", '
     '"subtitle": "A guided tour", '
     '"badges": ["FOUNDATIONAL", "PRACTICAL", "ESSENTIAL"], '
-    '"callouts": ["TLS", "TCP"]}'
+    '"callouts": ["TLS", "TCP"], '
+    '"accuracy_requirements": ["show the handshake before the data flow"]}'
 )
 
 # A second, distinguishable field set — the revision-round tests assert the retry re-assembled the

@@ -57,6 +57,10 @@ around it. Every element fully inside the frame with comfortable margins — not
 edges.
 {callout_block}
 
+EDUCATIONAL ACCURACY:
+- The image must teach the topic correctly: never depict a misleading scientific, medical, \
+mathematical or technical relationship.
+{accuracy_block}
 VISUAL STYLE:
 - Premium pharmaceutical / enterprise-education design
 - Refined 3D scientific illustration, scientifically credible but visually dramatic
@@ -84,6 +88,8 @@ OUTPUT:
 - Typography in the left third, artwork in the center-right
 - Clear, legible, correctly spelled text
 - Balanced, professional, premium composition"""
+
+_ACCURACY_LINE = "- {requirement}"
 
 _CALLOUT_LINE = (
     "- Add small scientific callout labels with thin leader lines beside the relevant parts of the "
@@ -114,6 +120,9 @@ def build_general_prompt(
     callout_block = (
         _CALLOUT_LINE.format(callouts=", ".join(fields.callouts)) if fields.callouts else ""
     )
+    accuracy_block = "\n".join(
+        _ACCURACY_LINE.format(requirement=r) for r in fields.accuracy_requirements
+    )
     return _TEMPLATE.format(
         eyebrow=fields.eyebrow,
         title_block=title_block,
@@ -125,6 +134,7 @@ def build_general_prompt(
         supporting_visuals=fields.supporting_visuals,
         process_visualization=fields.process_visualization,
         callout_block=callout_block,
+        accuracy_block=accuracy_block,
         key_concepts=key_concepts,
         theme=theme,
     )

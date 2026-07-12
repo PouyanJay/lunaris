@@ -187,3 +187,17 @@ def test_general_block_demands_literal_textbook_depiction() -> None:
 def test_editorial_blocks_keep_the_evocative_philosophy() -> None:
     block = house_style(CoverStylePreset.NOCTURNE).as_prompt_block().lower()
     assert "evocative" in block and "not a literal" in block
+
+
+def test_general_prompt_carries_the_educational_accuracy_guardrails() -> None:
+    # From the operator's ChatGPT tooling: an EDUCATIONAL ACCURACY section with domain guardrails,
+    # so the cover cannot be confidently wrong (a cover that misteaches is worse than a plain one).
+    fields = _fields().model_copy(
+        update={"accuracy_requirements": ["keep eosinophils distinct from generic blood cells"]}
+    )
+    prompt = build_general_prompt(title="T", key_concepts="k", fields=fields)
+    assert "EDUCATIONAL ACCURACY:" in prompt
+    assert "never depict a misleading scientific" in prompt
+    assert "- keep eosinophils distinct from generic blood cells" in prompt
+    # And the QA rubric judges the same rule, so the gate can reject a misteaching cover.
+    assert "misteaches" in house_style(CoverStylePreset.GENERAL).as_prompt_block()

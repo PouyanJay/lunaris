@@ -81,6 +81,10 @@ subject as the hero; supporting \
 elements are SEPARATE stand-alone objects around it (a magnified circular inset revealing internal \
 detail, discrete floating components, individual parts) — never features fused onto the hero.
 
+ACCURACY — list up to four guardrails a subject-matter expert would insist on, so the art does \
+not misteach (e.g. "keep eosinophils visually distinct from generic blood cells", "do not imply \
+antibodies accumulate inside the airway lumen").
+
 TYPOGRAPHY — split the course title into 2-4 short stacked lines using ONLY the real words of the \
 title, in order, nothing added or changed; pick ONE of those lines to accent in amber (the most \
 distinctive word). Write a short subtitle, three ALL-CAPS badge captions naming what the course \
@@ -92,6 +96,7 @@ Respond with ONLY this JSON object, no prose, no code fences:
   "primary_visual": "the hero — the whole recognizable subject, crisp physical detail",
   "supporting_visuals": "2-4 SEPARATE stand-alone elements (magnified inset, floating parts)",
   "process_visualization": "the mechanism as a flow between the separate elements",
+  "accuracy_requirements": ["up to 4 domain guardrails so the art is not misleading"],
   "eyebrow": "a short ALL-CAPS label, e.g. PROFESSIONAL EDUCATION COURSE",
   "title_lines": ["2-4", "short", "lines"],
   "highlight_line": "exactly one of title_lines, verbatim",
