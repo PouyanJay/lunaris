@@ -75,11 +75,19 @@ export interface CoverJob {
  *  URL(s) once READY (never persisted stale — re-minted on demand), and the structural provenance.
  *  `imageUrl` is the DARK cover; `imageUrlLight` is its LIGHT-theme twin (dual-theme covers) and is
  *  null/absent for a dark-only cover — the reader shows the dark image in the app's light theme and
- *  the light image in its dark theme (an inverted/contrast mapping). */
+ *  the light image in its dark theme (an inverted/contrast mapping).
+ *
+ *  `thumbUrl` / `thumbUrlLight` are the SAME artwork resized by storage to display size. The card
+ *  and Overview frames load the thumb — a cover master is 2048x1152, and letting the browser shrink
+ *  that into a 260px card is what makes a card look soft — while only the full-size lightbox loads
+ *  the master. Both are optional: absent (older cover / storage without image transformations), the
+ *  reader falls back to the master, so a cover always renders. */
 export interface CoverJobView {
   job: CoverJob;
   imageUrl?: string | null;
   imageUrlLight?: string | null;
+  thumbUrl?: string | null;
+  thumbUrlLight?: string | null;
   provenance?: CoverProvenance | null;
 }
 

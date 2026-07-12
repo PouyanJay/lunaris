@@ -14,6 +14,7 @@ import structlog
 from lunaris_covers import CoverWorker, StubCoverPipeline
 from lunaris_covers.models.rendered_cover import RenderedCover
 from lunaris_runtime.persistence import (
+    CoverImageTransform,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
     PersistenceError,
@@ -232,8 +233,16 @@ class _LightUploadFailsStorage:
             raise PersistenceError("light upload boom")
         await self._inner.upload(path=path, data=data, content_type=content_type)
 
-    async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str:
-        return await self._inner.signed_url(path=path, expires_in_seconds=expires_in_seconds)
+    async def signed_url(
+        self,
+        *,
+        path: str,
+        expires_in_seconds: int = 3600,
+        transform: CoverImageTransform | None = None,
+    ) -> str:
+        return await self._inner.signed_url(
+            path=path, expires_in_seconds=expires_in_seconds, transform=transform
+        )
 
     async def download(self, *, path: str) -> bytes:
         return await self._inner.download(path=path)

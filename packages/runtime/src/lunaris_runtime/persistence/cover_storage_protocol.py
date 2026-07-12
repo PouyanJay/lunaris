@@ -1,5 +1,7 @@
 from typing import Protocol
 
+from .cover_image_transform import CoverImageTransform
+
 
 class ICoverStorage(Protocol):
     """Binary artifact storage for course cover images — the ``course-covers`` bucket.
@@ -16,7 +18,20 @@ class ICoverStorage(Protocol):
 
     async def upload(self, *, path: str, data: bytes, content_type: str) -> None: ...
 
-    async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str: ...
+    async def signed_url(
+        self,
+        *,
+        path: str,
+        expires_in_seconds: int = 3600,
+        transform: CoverImageTransform | None = None,
+    ) -> str:
+        """A short-lived display URL for one cover object.
+
+        ``transform`` asks storage to resample the master down to display size and re-encode it
+        (see ``CoverImageTransform``) — the card and Overview surfaces pass one so the browser is
+        never left to downscale a 2048px master into a 260px frame. Omitting it yields the untouched
+        master, which is what the full-size lightbox wants."""
+        ...
 
     async def download(self, *, path: str) -> bytes: ...
 

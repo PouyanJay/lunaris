@@ -123,8 +123,13 @@ file_size_limit = "50MiB"
 enabled = true
 
 # Image transformation API is available to Supabase Pro plan.
-# [storage.image_transformation]
-# enabled = true
+# Course covers are 2048x1152 masters; the card and Overview frames are served a storage-RESIZED
+# derivative instead (see CoverImageTransform), so the browser is never left to downscale a master
+# into a ~260px card — that is what made card covers look soft. Enabled locally so a dev sees the
+# same image the hosted (Pro) project serves; without it the web falls back to the master and a card
+# renders correctly but soft.
+[storage.image_transformation]
+enabled = true
 
 # Store analytical data in S3 for running ETL jobs over Iceberg Catalog
 # This feature is only available on the hosted platform.

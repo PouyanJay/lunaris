@@ -16,6 +16,7 @@ import pytest
 from _auth import JWT_SECRET, USER_A, USER_B, auth_headers
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
+from lunaris_api.cover_display_transform import COVER_DISPLAY_TRANSFORM
 from lunaris_api.dependencies import (
     get_course_store,
     get_cover_job_queue,
@@ -26,8 +27,10 @@ from lunaris_covers.models.rendered_cover import RenderedCover
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
+    CoverImageTransform,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
+    PersistenceError,
 )
 from lunaris_runtime.schema import Course, CoverJobStatus, CoverLightMode
 
@@ -221,6 +224,119 @@ async def test_ready_view_carries_a_light_url_for_a_dual_theme_cover(
     # The light object really landed in storage under the light path.
     paths = CoverArtifactPaths.for_coordinates(USER_A, "course-1", job_id)
     assert storage.read(paths.image_light) == storage.read(paths.image) + b"L"
+
+
+# ── display derivatives: the card/Overview surfaces get a resized thumb, the lightbox the master ──
+
+
+async def test_ready_view_carries_a_resized_thumb_alongside_the_master(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    # A cover master is 2048x1152; a card frame is ~260px wide. Shipping the master to the card and
+    # letting the browser shrink it is what makes a card cover look soft, so the view carries a
+    # SEPARATE storage-resized derivative for the display surfaces. The master URL stays untouched —
+    # the full-size lightbox must not be silently served a downscale.
+    job_id = await _enqueue_ready(client, worker)
+
+    body = (await client.get(f"/api/covers/{job_id}", headers=auth_headers(USER_A))).json()
+
+    assert body["imageUrl"]
+    assert body["thumbUrl"]
+    assert body["thumbUrl"] != body["imageUrl"]  # a distinct mint, not the master with params
+    assert f"width={COVER_DISPLAY_TRANSFORM.width}" in body["thumbUrl"]
+    assert "width=" not in body["imageUrl"]  # the master is served whole
+
+
+async def test_display_derivative_is_sharp_at_every_surface_and_dpr() -> None:
+    # The derivative must out-resolve the largest frame that shows it at the highest DPR we support,
+    # or we would have swapped a browser downscale for a browser UPSCALE — visibly worse. The widest
+    # frame is the ~420px card track (grid: minmax(260px, 1fr)); 3x is the top device-pixel ratio.
+    widest_frame_css_px = 420
+    assert COVER_DISPLAY_TRANSFORM.width >= widest_frame_css_px * 3
+    # And it keeps the cover's native 16:9, so the server-side crop is a no-op on a correct render.
+    assert COVER_DISPLAY_TRANSFORM.width / COVER_DISPLAY_TRANSFORM.height == 16 / 9
+
+
+async def test_ready_view_carries_a_light_thumb_only_for_a_dual_theme_cover(
+    client: httpx.AsyncClient,
+    queue: InMemoryCoverJobQueue,
+    storage: InMemoryCoverStorage,
+    course_store: _FakeCourseStore,
+) -> None:
+    # The thumb dimension is orthogonal to the light/dark one: a dual-theme cover gets a derivative
+    # for BOTH variants, so the dark-theme app shows a sharp LIGHT card, not a downscaled one.
+    worker = CoverWorker(
+        queue=queue,
+        pipeline=_DualThemePipeline(),
+        storage=storage,
+        course_store=course_store,  # type: ignore[arg-type]
+        worker_id="dual-thumb-worker-test",
+    )
+    job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+    assert await worker.run_once() is True
+
+    body = (await client.get(f"/api/covers/{job_id}", headers=auth_headers(USER_A))).json()
+
+    assert f"width={COVER_DISPLAY_TRANSFORM.width}" in body["thumbUrlLight"]  # really resized
+    assert body["thumbUrlLight"] != body["imageUrlLight"]  # the light master is still whole
+    assert body["thumbUrlLight"] != body["thumbUrl"]  # and it is the LIGHT object's derivative
+
+
+async def test_ready_view_omits_the_light_thumb_for_a_dark_only_cover(
+    client: httpx.AsyncClient, worker: CoverWorker
+) -> None:
+    # No light object exists, so no light derivative may be minted — a signed URL for a missing
+    # object would render as a broken image rather than falling back to the dark cover.
+    job_id = await _enqueue_ready(client, worker)
+    body = (await client.get(f"/api/covers/{job_id}", headers=auth_headers(USER_A))).json()
+    assert body["thumbUrlLight"] is None
+
+
+class _CannotResizeStorage(InMemoryCoverStorage):
+    """Storage that can sign a master but not a derivative — image transformations disabled, or a
+    transform-specific quota / hiccup."""
+
+    async def signed_url(
+        self,
+        *,
+        path: str,
+        expires_in_seconds: int = 3600,
+        transform: CoverImageTransform | None = None,
+    ) -> str:
+        if transform is not None:
+            raise PersistenceError("transformations unavailable")
+        return await super().signed_url(path=path, expires_in_seconds=expires_in_seconds)
+
+
+async def test_ready_view_still_serves_the_master_when_the_thumb_cannot_be_minted(
+    tmp_path: Path,
+    queue: InMemoryCoverJobQueue,
+    course_store: _FakeCourseStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The derivative is an OPTIMIZATION, not the cover. A backend that cannot resize must not take
+    # the whole view down with it: the master and provenance resolved fine beside it, and the reader
+    # falls back to the master — so the cover renders softer, never missing (and never a 500).
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    storage = _CannotResizeStorage()
+    worker = CoverWorker(
+        queue=queue,
+        pipeline=StubCoverPipeline(),
+        storage=storage,
+        course_store=course_store,  # type: ignore[arg-type]
+        worker_id="no-resize-worker-test",
+    )
+    async with _build_client(tmp_path, queue, storage, course_store) as client:
+        job_id = (await client.post(_ENQUEUE, headers=auth_headers(USER_A))).json()["job"]["id"]
+        assert await worker.run_once() is True
+
+        response = await client.get(f"/api/covers/{job_id}", headers=auth_headers(USER_A))
+
+        assert response.status_code == 200  # NOT a 500
+        body = response.json()
+        assert body["imageUrl"]  # the cover still renders, at the master
+        assert body["thumbUrl"] is None  # the derivative simply isn't offered
+        assert body["provenance"] is not None  # and provenance survived alongside it
 
 
 async def test_ready_view_omits_the_light_url_for_a_dark_only_cover(

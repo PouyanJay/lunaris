@@ -1,6 +1,7 @@
 from .course_store import CourseStore
 from .course_store_protocol import ICourseStore
 from .cover_artifact_paths import CoverArtifactPaths
+from .cover_image_transform import CoverImageTransform
 from .cover_job_queue_protocol import ICoverJobQueue
 from .cover_storage_protocol import ICoverStorage
 from .lease_sweep_result import LeaseSweepResult
@@ -28,6 +29,7 @@ from .video_storage_protocol import IVideoStorage
 __all__ = [
     "CourseStore",
     "CoverArtifactPaths",
+    "CoverImageTransform",
     "ICourseStore",
     "ICoverJobQueue",
     "ICoverStorage",

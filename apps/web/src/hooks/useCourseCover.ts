@@ -19,8 +19,44 @@ export const COURSE_COVER_POLL_INTERVAL_MS = 3000;
  *  LIGHT cover. Falls back to the dark image when there is no light twin (a dark-only or
  *  pre-dual-theme cover), and returns null when the state is not a resolved image. */
 export function coverImageUrlForTheme(state: CourseCoverState, theme: Theme): string | null {
+  return coverVariantForTheme(state, theme)?.master ?? null;
+}
+
+/** The cover VARIANT the app `theme` shows — the one decision both URL selectors read off, so they
+ *  can never disagree about which artwork is on screen (the card and the lightbox must show one
+ *  cover). Encodes the inverted/contrast mapping in ONE place: the app's LIGHT theme shows the DARK
+ *  cover, its DARK theme the LIGHT one, falling back to the dark cover when there is no light twin.
+ *
+ *  Each variant is a `master` (the full 2048x1152 render) and its `thumb` (the same artwork resized
+ *  by storage to display size, or null when the cover has none). Null when the state is not a
+ *  resolved image. */
+export function coverVariantForTheme(
+  state: CourseCoverState,
+  theme: Theme,
+): { master: string; thumb: string | null } | null {
   if (state.phase !== "image") return null;
-  return theme === "dark" ? (state.imageUrlLight ?? state.imageUrl) : state.imageUrl;
+  if (theme === "dark" && state.imageUrlLight !== null) {
+    return { master: state.imageUrlLight, thumb: state.thumbUrlLight };
+  }
+  return { master: state.imageUrl, thumb: state.thumbUrl };
+}
+
+/** The cover THUMB URL to show for the app `theme` — the storage-resized derivative of whichever
+ *  variant `coverImageUrlForTheme` would pick, so the two selectors can never disagree about which
+ *  artwork is on screen.
+ *
+ *  This is what the card and Overview frames load. A cover master is 2048x1152; handing it to a
+ *  260px card and letting the browser shrink it is what makes a card cover look soft (a browser
+ *  downscales with a cheap filter, and a composed cover's typography and hairlines alias into mush).
+ *  Falls back to the master when there is no derivative — an older cover, or storage without image
+ *  transformations — so a cover always renders. Null when the state is not a resolved image. */
+export function coverThumbUrlForTheme(state: CourseCoverState, theme: Theme): string | null {
+  const variant = coverVariantForTheme(state, theme);
+  if (variant === null) return null;
+  // The variant is chosen FIRST (above), and only then its derivative preferred over its master.
+  // Choosing among thumbs first would let a light cover with no light thumb fall back to the DARK
+  // thumb — the card and the lightbox would then be showing two different covers.
+  return variant.thumb ?? variant.master;
 }
 
 /** What a surface knows about a course's AI cover, resolved from its payload artifact.
@@ -33,11 +69,21 @@ export function coverImageUrlForTheme(state: CourseCoverState, theme: Theme): st
  *  - `image` — a READY cover whose short-lived signed URL resolved: the surface renders the image.
  *    `imageUrl` is the DARK cover; `imageUrlLight` is its LIGHT-theme twin (dual-theme covers) or
  *    null for a dark-only cover — the surface picks by the app theme (light theme → dark image, dark
- *    theme → light image), falling back to the dark image when there is no light one. */
+ *    theme → light image), falling back to the dark image when there is no light one. Each variant
+ *    also carries a `thumb…` — the same artwork resized by storage to display size. Card/Overview
+ *    frames load the thumb (`coverThumbUrlForTheme`); the full-size lightbox loads the master
+ *    (`coverImageUrlForTheme`). A thumb is null when the cover predates them or storage cannot
+ *    resize, and the selectors fall back to the master. */
 export type CourseCoverState =
   | { phase: "fallback" }
   | { phase: "generating"; status: CoverJobStatus }
-  | { phase: "image"; imageUrl: string; imageUrlLight: string | null };
+  | {
+      phase: "image";
+      imageUrl: string;
+      imageUrlLight: string | null;
+      thumbUrl: string | null;
+      thumbUrlLight: string | null;
+    };
 
 /** Resolve a course's cover to a renderable state, and let the reader regenerate it
  *  (course-cover-images T9 + T10).
@@ -65,7 +111,13 @@ export function useCourseCover(
   const applyView = useCallback((view: CoverJobView | null) => {
     setState(
       view?.job.status === "ready" && view.imageUrl
-        ? { phase: "image", imageUrl: view.imageUrl, imageUrlLight: view.imageUrlLight ?? null }
+        ? {
+            phase: "image",
+            imageUrl: view.imageUrl,
+            imageUrlLight: view.imageUrlLight ?? null,
+            thumbUrl: view.thumbUrl ?? null,
+            thumbUrlLight: view.thumbUrlLight ?? null,
+          }
         : { phase: "fallback" },
     );
   }, []);

@@ -13,13 +13,38 @@ import { fetchCoverJob, type CoverJobView } from "../../lib/coverJobs";
 const fetchJob = vi.mocked(fetchCoverJob);
 const API = "http://api.test";
 
+const DARK = "https://signed/cover.png";
+const LIGHT = "https://signed/cover-light.png";
+const DARK_THUMB = "https://signed/cover.png?width=1280";
+const LIGHT_THUMB = "https://signed/cover-light.png?width=1280";
+
+/** A READY view carrying each variant's master AND its storage-resized derivative — what the API
+ *  now returns. The frames render the derivative; only the lightbox loads the master. */
 function readyView(imageUrlLight: string | null = null): CoverJobView {
   return {
     job: { id: "job-1", courseId: "c1", status: "ready", stylePreset: "nocturne", error: null },
-    imageUrl: "https://signed/cover.png",
+    imageUrl: DARK,
     imageUrlLight,
+    thumbUrl: DARK_THUMB,
+    thumbUrlLight: imageUrlLight === null ? null : LIGHT_THUMB,
     provenance: null,
   };
+}
+
+/** A cover minted before derivatives existed (or storage that cannot resize): masters only. */
+function masterOnlyView(imageUrlLight: string | null = null): CoverJobView {
+  return { ...readyView(imageUrlLight), thumbUrl: null, thumbUrlLight: null };
+}
+
+function srcOf(container: HTMLElement): string | null | undefined {
+  return container.querySelector("img")?.getAttribute("src");
+}
+
+/** The rendered cover image, or a failure — so an error can be fired at it without a null check. */
+function imageIn(container: HTMLElement): HTMLImageElement {
+  const img = container.querySelector("img");
+  if (img === null) throw new Error("no cover image rendered");
+  return img;
 }
 
 const READY_COVER: CoverArtifact = { status: "ready", jobId: "job-1", provenance: null };
@@ -51,10 +76,7 @@ describe("CourseCoverImage precedence", () => {
     const { container } = render(
       <CourseCoverImage courseId="c1" topic="How HTTPS works" cover={cover} apiBaseUrl={API} />,
     );
-    await waitFor(() => {
-      const img = container.querySelector("img");
-      expect(img?.getAttribute("src")).toBe("https://signed/cover.png");
-    });
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
   });
 
   it("renders the Typographic fallback for a FAILED cover (never a broken image)", async () => {
@@ -74,9 +96,7 @@ describe("CourseCoverImage theme-aware selection (inverted / contrast)", () => {
     const { container } = render(
       <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
     );
-    await waitFor(() =>
-      expect(container.querySelector("img")?.getAttribute("src")).toBe("https://signed/cover.png"),
-    );
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
   });
 
   it("shows the LIGHT image in the app's DARK theme", async () => {
@@ -85,11 +105,7 @@ describe("CourseCoverImage theme-aware selection (inverted / contrast)", () => {
     const { container } = render(
       <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
     );
-    await waitFor(() =>
-      expect(container.querySelector("img")?.getAttribute("src")).toBe(
-        "https://signed/cover-light.png",
-      ),
-    );
+    await waitFor(() => expect(srcOf(container)).toBe(LIGHT_THUMB));
   });
 
   it("falls back to the DARK image in DARK theme when there is no light twin (old cover)", async () => {
@@ -98,25 +114,24 @@ describe("CourseCoverImage theme-aware selection (inverted / contrast)", () => {
     const { container } = render(
       <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
     );
-    await waitFor(() =>
-      expect(container.querySelector("img")?.getAttribute("src")).toBe("https://signed/cover.png"),
-    );
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
   });
 
-  it("degrades to the Typographic fallback when the displayed image fails to load", async () => {
+  it("degrades to the Typographic fallback when every image URL fails to load", async () => {
     setTheme("light");
-    fetchJob.mockResolvedValue(readyView("https://signed/cover-light.png"));
+    fetchJob.mockResolvedValue(readyView(LIGHT));
     const { container } = render(
       <CourseCoverImage courseId="c1" topic="Broken" cover={READY_COVER} apiBaseUrl={API} />,
     );
-    const img = await waitFor(() => {
-      const el = container.querySelector("img");
-      if (!el) throw new Error("image not rendered yet");
-      return el;
-    });
 
-    fireEvent.error(img); // the signed URL 404'd (expired / purged)
+    // Rung 1 (the derivative) 404s → the ladder tries the master rather than giving up.
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
+    fireEvent.error(imageIn(container));
+    await waitFor(() => expect(srcOf(container)).toBe(DARK));
 
+    // Rung 2 (the master) 404s too — the signed URL expired or the object was purged. Only NOW does
+    // it give up, and it gives up to the Typographic cover, never to a broken image.
+    fireEvent.error(imageIn(container));
     await waitFor(() => {
       expect(container.querySelector("img")).toBeNull();
       expect(container.textContent).toContain("Broken"); // the Typographic word
@@ -125,19 +140,87 @@ describe("CourseCoverImage theme-aware selection (inverted / contrast)", () => {
 
   it("swaps the image live when the theme is toggled", async () => {
     setTheme("light");
-    fetchJob.mockResolvedValue(readyView("https://signed/cover-light.png"));
+    fetchJob.mockResolvedValue(readyView(LIGHT));
     const { container } = render(
       <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
     );
-    await waitFor(() =>
-      expect(container.querySelector("img")?.getAttribute("src")).toBe("https://signed/cover.png"),
-    );
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
 
     act(() => setTheme("dark"));
-    await waitFor(() =>
-      expect(container.querySelector("img")?.getAttribute("src")).toBe(
-        "https://signed/cover-light.png",
-      ),
+    await waitFor(() => expect(srcOf(container)).toBe(LIGHT_THUMB));
+  });
+});
+
+describe("CourseCoverImage load ladder (derivative → master → Typographic)", () => {
+  it("loads the storage-resized derivative, NOT the 2048px master", async () => {
+    // The whole point: a card frame is ~260px wide. Handing it the master and letting the browser
+    // shrink it is what made card covers look soft — and shipped ~3.5MB per card.
+    fetchJob.mockResolvedValue(readyView());
+    const { container } = render(
+      <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
     );
+
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
+    expect(srcOf(container)).not.toBe(DARK);
+  });
+
+  it("loads the master when a cover has no derivative (an older cover)", async () => {
+    // Covers minted before derivatives existed must keep rendering — at the master, not at nothing.
+    fetchJob.mockResolvedValue(masterOnlyView());
+    const { container } = render(
+      <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
+    );
+
+    await waitFor(() => expect(srcOf(container)).toBe(DARK));
+  });
+
+  it("reaches the Typographic fallback when a cover with NO derivative fails to load", async () => {
+    // Regression: with no derivative, the thumb selector falls back to the master, so both rungs are
+    // the SAME url. Un-deduped, the ladder would "advance" to an identical src — React would reuse
+    // the <img> (same key), the browser would never retry, no second error would fire, and the frame
+    // would sit on a broken image forever instead of ever reaching the Typographic cover.
+    fetchJob.mockResolvedValue(masterOnlyView());
+    const { container } = render(
+      <CourseCoverImage courseId="c1" topic="Broken" cover={READY_COVER} apiBaseUrl={API} />,
+    );
+    await waitFor(() => expect(srcOf(container)).toBe(DARK));
+
+    fireEvent.error(imageIn(container)); // the one and only URL 404s
+
+    await waitFor(() => {
+      expect(container.querySelector("img")).toBeNull();
+      expect(container.textContent).toContain("Broken"); // the Typographic word
+    });
+  });
+
+  it("falls back to the master when the derivative cannot be served", async () => {
+    // Storage without image transformations answers the derivative URL with an error. The cover must
+    // still appear — degraded in sharpness, not missing.
+    fetchJob.mockResolvedValue(readyView());
+    const { container } = render(
+      <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
+    );
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
+
+    fireEvent.error(imageIn(container));
+
+    await waitFor(() => expect(srcOf(container)).toBe(DARK));
+  });
+
+  it("re-enters at the derivative when the theme swaps to the other variant", async () => {
+    // A failure on one variant must not strand the OTHER variant on its master: toggling the theme
+    // picks a different artwork, so the ladder starts over at the top for it.
+    setTheme("light");
+    fetchJob.mockResolvedValue(readyView(LIGHT));
+    const { container } = render(
+      <CourseCoverImage courseId="c1" topic="t" cover={READY_COVER} apiBaseUrl={API} />,
+    );
+    await waitFor(() => expect(srcOf(container)).toBe(DARK_THUMB));
+    fireEvent.error(imageIn(container)); // the dark derivative fails → the dark master
+    await waitFor(() => expect(srcOf(container)).toBe(DARK));
+
+    act(() => setTheme("dark"));
+
+    await waitFor(() => expect(srcOf(container)).toBe(LIGHT_THUMB));
   });
 });

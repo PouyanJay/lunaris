@@ -2,7 +2,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CoverArtifact } from "../types/course";
-import { coverImageUrlForTheme, useCourseCover, type CourseCoverState } from "./useCourseCover";
+import {
+  coverImageUrlForTheme,
+  coverThumbUrlForTheme,
+  useCourseCover,
+  type CourseCoverState,
+} from "./useCourseCover";
 
 vi.mock("../lib/coverJobs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/coverJobs")>();
@@ -21,11 +26,29 @@ const regen = vi.mocked(regenerateCover);
 
 const API = "http://api.test";
 
+const DARK = "https://signed/cover.png";
+const LIGHT = "https://signed/cover-light.png";
+const DARK_THUMB = "https://signed/cover.png?width=1280";
+const LIGHT_THUMB = "https://signed/cover-light.png?width=1280";
+
+/** A resolved-image state: each variant's master plus its storage-resized derivative. */
+function imageState(imageUrl: string, imageUrlLight: string | null): CourseCoverState {
+  return {
+    phase: "image",
+    imageUrl,
+    imageUrlLight,
+    thumbUrl: DARK_THUMB,
+    thumbUrlLight: imageUrlLight === null ? null : LIGHT_THUMB,
+  };
+}
+
 function readyView(jobId: string, imageUrlLight: string | null = null): CoverJobView {
   return {
     job: { id: jobId, courseId: "c1", status: "ready", stylePreset: "nocturne", error: null },
     imageUrl: `https://signed/${jobId}.png`,
     imageUrlLight,
+    thumbUrl: `https://signed/${jobId}.png?width=1280`,
+    thumbUrlLight: imageUrlLight === null ? null : LIGHT_THUMB,
     provenance: null,
   };
 }
@@ -51,6 +74,8 @@ describe("useCourseCover", () => {
         phase: "image",
         imageUrl: "https://signed/job-1.png",
         imageUrlLight: null,
+        thumbUrl: "https://signed/job-1.png?width=1280",
+        thumbUrlLight: null,
       }),
     );
   });
@@ -63,6 +88,8 @@ describe("useCourseCover", () => {
         phase: "image",
         imageUrl: "https://signed/job-1.png",
         imageUrlLight: "https://signed/job-1-light.png",
+        thumbUrl: "https://signed/job-1.png?width=1280",
+        thumbUrlLight: LIGHT_THUMB,
       }),
     );
   });
@@ -96,6 +123,8 @@ describe("useCourseCover", () => {
         phase: "image",
         imageUrl: "https://signed/job-1.png",
         imageUrlLight: null,
+        thumbUrl: "https://signed/job-1.png?width=1280",
+        thumbUrlLight: null,
       }),
     );
   });
@@ -130,6 +159,8 @@ describe("useCourseCover", () => {
         phase: "image",
         imageUrl: "https://signed/job-2.png",
         imageUrlLight: "https://signed/job-2-light.png",
+        thumbUrl: "https://signed/job-2.png?width=1280",
+        thumbUrlLight: LIGHT_THUMB,
       }),
     );
     expect(regen).toHaveBeenCalledWith(API, "job-1");
@@ -164,10 +195,8 @@ describe("useCourseCover", () => {
 });
 
 describe("coverImageUrlForTheme (inverted mapping variant sweep)", () => {
-  const DARK = "https://signed/cover.png";
-  const LIGHT = "https://signed/cover-light.png";
-  const dual: CourseCoverState = { phase: "image", imageUrl: DARK, imageUrlLight: LIGHT };
-  const darkOnly: CourseCoverState = { phase: "image", imageUrl: DARK, imageUrlLight: null };
+  const dual = imageState(DARK, LIGHT);
+  const darkOnly = imageState(DARK, null);
 
   // theme × variant → the image the reader should show (light theme → dark image; dark theme →
   // light image, falling back to the dark image when there is no light twin).
@@ -185,6 +214,66 @@ describe("coverImageUrlForTheme (inverted mapping variant sweep)", () => {
     (theme) => {
       expect(coverImageUrlForTheme({ phase: "fallback" }, theme)).toBeNull();
       expect(coverImageUrlForTheme({ phase: "generating", status: "rendering" }, theme)).toBeNull();
+    },
+  );
+});
+
+describe("coverThumbUrlForTheme (the derivative the card + Overview frames load)", () => {
+  // theme × variant → the DERIVATIVE of whichever variant `coverImageUrlForTheme` picks. The two
+  // selectors must always name the same artwork: the card and the lightbox show one cover.
+  it.each([
+    ["light" as const, imageState(DARK, LIGHT), DARK_THUMB],
+    ["dark" as const, imageState(DARK, LIGHT), LIGHT_THUMB],
+    ["light" as const, imageState(DARK, null), DARK_THUMB],
+    ["dark" as const, imageState(DARK, null), DARK_THUMB], // no light twin → the dark derivative
+  ])("theme=%s picks the contrasting variant's derivative", (theme, state, expected) => {
+    expect(coverThumbUrlForTheme(state, theme)).toBe(expected);
+  });
+
+  it("falls back to the master when a cover has no derivative (an older cover)", () => {
+    // Covers minted before derivatives existed carry no thumb — they must still render, at the
+    // master, rather than showing nothing.
+    const noThumbs: CourseCoverState = {
+      phase: "image",
+      imageUrl: DARK,
+      imageUrlLight: null,
+      thumbUrl: null,
+      thumbUrlLight: null,
+    };
+    expect(coverThumbUrlForTheme(noThumbs, "light")).toBe(DARK);
+    expect(coverThumbUrlForTheme(noThumbs, "dark")).toBe(DARK);
+  });
+
+  it("falls back to the DARK master, not the light thumb, when only the dark derivative is missing", () => {
+    // The mirror of the case below — closing the theme x variant x thumb-present/absent matrix.
+    const darkMasterOnly: CourseCoverState = {
+      phase: "image",
+      imageUrl: DARK,
+      imageUrlLight: LIGHT,
+      thumbUrl: null,
+      thumbUrlLight: LIGHT_THUMB,
+    };
+    expect(coverThumbUrlForTheme(darkMasterOnly, "light")).toBe(DARK);
+  });
+
+  it("falls back to the LIGHT master, not the dark thumb, when only the light derivative is missing", () => {
+    // The variant is chosen FIRST, then thumb-or-master within it. Choosing among thumbs first would
+    // show the dark artwork on the card while the lightbox showed the light one — two covers.
+    const lightMasterOnly: CourseCoverState = {
+      phase: "image",
+      imageUrl: DARK,
+      imageUrlLight: LIGHT,
+      thumbUrl: DARK_THUMB,
+      thumbUrlLight: null,
+    };
+    expect(coverThumbUrlForTheme(lightMasterOnly, "dark")).toBe(LIGHT);
+  });
+
+  it.each(["light" as const, "dark" as const])(
+    "returns null for a non-image state in theme=%s",
+    (theme) => {
+      expect(coverThumbUrlForTheme({ phase: "fallback" }, theme)).toBeNull();
+      expect(coverThumbUrlForTheme({ phase: "generating", status: "rendering" }, theme)).toBeNull();
     },
   );
 });
