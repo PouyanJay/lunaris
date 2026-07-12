@@ -1,6 +1,7 @@
 import asyncio
 import os
 
+from .cover_image_transform import CoverImageTransform
 from .guard import guard
 from .persistence_error import PersistenceError
 
@@ -53,12 +54,21 @@ class SupabaseCoverStorage:
         await asyncio.to_thread(_run)
 
     @guard("course-covers signed url")
-    async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str:
+    async def signed_url(
+        self,
+        *,
+        path: str,
+        expires_in_seconds: int = 3600,
+        transform: CoverImageTransform | None = None,
+    ) -> str:
         client = self._ensure_client()
+        # supabase-py signs the transform INTO the token (storage-api ignores query params on a
+        # signed URL), so a resized derivative is a distinct mint — not the master URL with params.
+        options = None if transform is None else {"transform": transform.as_options()}
 
         def _run() -> object:
             bucket = client.storage.from_(_BUCKET)  # type: ignore[attr-defined]
-            return bucket.create_signed_url(path, expires_in_seconds)
+            return bucket.create_signed_url(path, expires_in_seconds, options)
 
         response = await asyncio.to_thread(_run)
         # supabase-py has shipped both key spellings across versions; accept either.

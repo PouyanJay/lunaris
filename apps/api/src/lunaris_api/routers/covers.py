@@ -22,6 +22,7 @@ from lunaris_runtime.schema import (
 from lunaris_runtime.schema.base import CourseModel
 from pydantic import ValidationError
 
+from ..cover_display_transform import COVER_DISPLAY_TRANSFORM
 from ..cover_enqueue import enqueue_cover_job
 from ..dependencies import (
     CourseStoreDep,
@@ -64,11 +65,20 @@ class CoverJobView(CourseModel):
     ``image_url`` is the DARK cover; ``image_url_light`` is its LIGHT-theme twin (dual-theme
     covers) and is ``None`` for a dark-only cover — the web shows the dark image in the app's light
     theme and the light image in its dark theme (an inverted/contrast mapping), falling back to the
-    dark image when there is no light one."""
+    dark image when there is no light one.
+
+    Each variant also carries a ``thumb_url`` — the SAME artwork, resized by storage to display
+    size (``COVER_DISPLAY_TRANSFORM``). The card and Overview frames render the thumb; only the
+    full-size lightbox loads the master. The thumb dimension is orthogonal to light/dark, so a
+    dual-theme cover carries two of each. A reader that gets no thumb (an older client, or storage
+    without image transformations) falls back to the master — the field is additive, never
+    required."""
 
     job: CoverJob
     image_url: str | None = None
     image_url_light: str | None = None
+    thumb_url: str | None = None
+    thumb_url_light: str | None = None
     provenance: CoverProvenance | None = None
 
 
@@ -286,22 +296,52 @@ async def _cover_job_view(job: CoverJob, storage: ICoverStorage) -> CoverJobView
     row so the reader renders its progress. Shared by the status, active and (indirectly) enqueue
     surfaces so they thread provenance identically.
 
-    A dual-theme cover also carries ``image_url_light`` — minted ONLY when ``provenance`` says a
+    Each variant is minted TWICE: the master (for the full-size lightbox) and a storage-resized
+    derivative (for the card and Overview frames, which would otherwise make the browser downscale a
+    2048px master into a 260px box — the thing that makes a card cover look soft). The mints are
+    independent, so they are gathered rather than awaited in turn.
+
+    A dual-theme cover also carries the ``*_light`` URLs — minted ONLY when ``provenance`` says a
     light variant exists, so a signed URL is never requested for a missing object (a dark-only or
     pre-dual-theme cover has no ``cover-light.png``)."""
     if job.status != CoverJobStatus.READY:
         return CoverJobView(job=job)
     paths = CoverArtifactPaths.for_job(job)
-    image_url, provenance = await asyncio.gather(
+    image_url, thumb_url, provenance = await asyncio.gather(
         storage.signed_url(path=paths.image),
+        _mint_thumb(storage, paths.image),
         _read_provenance(storage, paths.provenance),
     )
     image_url_light: str | None = None
+    thumb_url_light: str | None = None
     if provenance is not None and provenance.has_light_variant:
-        image_url_light = await storage.signed_url(path=paths.image_light)
+        image_url_light, thumb_url_light = await asyncio.gather(
+            storage.signed_url(path=paths.image_light),
+            _mint_thumb(storage, paths.image_light),
+        )
     return CoverJobView(
-        job=job, image_url=image_url, image_url_light=image_url_light, provenance=provenance
+        job=job,
+        image_url=image_url,
+        image_url_light=image_url_light,
+        thumb_url=thumb_url,
+        thumb_url_light=thumb_url_light,
+        provenance=provenance,
     )
+
+
+async def _mint_thumb(storage: ICoverStorage, path: str) -> str | None:
+    """The display-size derivative's signed URL — best effort.
+
+    The derivative is an OPTIMIZATION (a sharp, ~20x lighter card image), not the cover itself, so a
+    storage backend that cannot resize — image transformations disabled, a transform-specific quota
+    or hiccup — must not take down the whole view along with the master URL and provenance that
+    resolved fine beside it. Degrading to ``None`` is exactly what the reader's load ladder expects:
+    it falls back to the master, and the cover still renders (softer, not missing)."""
+    try:
+        return await storage.signed_url(path=path, transform=COVER_DISPLAY_TRANSFORM)
+    except PersistenceError as exc:
+        logger.warning("cover_thumb_unavailable", path=path, reason=type(exc).__name__)
+        return None
 
 
 async def _read_provenance(storage: ICoverStorage, path: str) -> CoverProvenance | None:

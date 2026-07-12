@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CourseCover } from "./CourseCover";
 import { TypographicCover } from "./TypographicCover";
 import styles from "./CourseCoverImage.module.css";
 import {
-  coverImageUrlForTheme,
+  coverVariantForTheme,
   useCourseCover,
   type CourseCoverState,
 } from "../../hooks/useCourseCover";
@@ -55,22 +55,41 @@ export function CourseCoverImage({
   // theme shows the LIGHT one (falling back to dark when there is no light twin). Read-only theme
   // observer so this many-call-site component reacts to a toggle without owning the theme.
   const theme = useThemeValue();
-  const imageUrl = coverImageUrlForTheme(state, theme);
-  // A signed URL can 404 by the time the browser loads it (it expired, or the object was purged);
-  // fall back to the Typographic cover rather than showing a broken image. Keyed on the displayed
-  // URL so switching theme (a different variant) re-tries rather than staying broken.
-  const [broken, setBroken] = useState(false);
-  useEffect(() => setBroken(false), [imageUrl]);
+  // The load ladder for the theme's variant, sharpest-and-lightest first:
+  //   1. the storage-RESIZED derivative — what a card or the Overview should show. A cover master is
+  //      2048x1152; letting the browser shrink that into a ~260px card frame is what made card
+  //      covers look soft (a browser downscales with a cheap filter, so a composed cover's
+  //      typography and hairline callouts alias into mush). Storage resamples properly, once.
+  //   2. the MASTER — for a cover minted before derivatives existed, or storage that cannot resize.
+  //   3. the Typographic cover — the signed URL 404'd (expired / purged); never a broken image.
+  // Each rung is tried on the previous one's error. The rungs are DEDUPED: a cover with no
+  // derivative has thumb === master, and a repeated URL would re-render the identical `key`/`src`,
+  // so React would never remount the <img>, the browser would never retry, no second error would
+  // fire — and the frame would sit on a broken image forever instead of reaching the fallback.
+  const variant = coverVariantForTheme(state, theme);
+  const master = variant?.master ?? null;
+  const thumb = variant?.thumb ?? null;
+  const rungs = useMemo(
+    () => [...new Set([thumb, master].filter((url): url is string => url !== null))],
+    [thumb, master],
+  );
+  const [rung, setRung] = useState(0);
+  // Re-enter at the top when the displayed cover changes (a theme toggle picks the other variant, a
+  // regenerate lands a new one), so a transient failure never strands the surface on a lower rung.
+  useEffect(() => setRung(0), [thumb, master]);
+  const src = rungs[rung];
 
-  if (imageUrl && !broken) {
+  if (src) {
     return (
       <img
+        // Keyed on the src so a fall to the next rung remounts rather than reusing the errored node.
+        key={src}
         className={styles.image}
-        src={imageUrl}
+        src={src}
         alt=""
         loading="lazy"
         decoding="async"
-        onError={() => setBroken(true)}
+        onError={() => setRung((current) => current + 1)}
       />
     );
   }

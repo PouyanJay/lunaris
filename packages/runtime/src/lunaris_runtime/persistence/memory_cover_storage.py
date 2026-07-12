@@ -1,3 +1,4 @@
+from .cover_image_transform import CoverImageTransform
 from .persistence_error import PersistenceError
 
 
@@ -16,8 +17,19 @@ class InMemoryCoverStorage:
     async def upload(self, *, path: str, data: bytes, content_type: str) -> None:
         self._objects[path] = (data, content_type)  # upsert, like the real bucket
 
-    async def signed_url(self, *, path: str, expires_in_seconds: int = 3600) -> str:
-        return f"memory://course-covers/{path}?signed=true"
+    async def signed_url(
+        self,
+        *,
+        path: str,
+        expires_in_seconds: int = 3600,
+        transform: CoverImageTransform | None = None,
+    ) -> str:
+        # The transform rides in the pseudo-URL so a test can tell a resized derivative from the
+        # master it came from — the real backend likewise mints a *different* URL for each.
+        if transform is None:
+            return f"memory://course-covers/{path}?signed=true"
+        options = "&".join(f"{key}={value}" for key, value in transform.as_options().items())
+        return f"memory://course-covers/{path}?signed=true&{options}"
 
     async def download(self, *, path: str) -> bytes:
         stored = self._objects.get(path)
