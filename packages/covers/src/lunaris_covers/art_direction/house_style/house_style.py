@@ -42,12 +42,16 @@ _GENERAL_CONSTRAINTS = (
     "and mechanism — the scene a textbook illustrator would draw (recognizable organs, devices, "
     "systems, structures, processes); never an abstract metaphor, a mood piece, or shapes that "
     "merely 'suggest' the topic.",
-    "ONE dominant hero visualization placed toward the center-right, plus two to four SEPARATE, "
-    "stand-alone supporting elements arranged around it as a diagram — e.g. a magnified circular "
-    "inset revealing internal structure, discrete floating components, a connected flow between "
-    "parts — each element its own distinct object with clear spatial separation, readable at "
-    "thumbnail size, important elements away from the edges, generous clean negative space "
-    "weighted to the left.",
+    "It is a COURSE COVER, not a lecture slide: it reads at a glance and invites the learner in "
+    "— it does NOT try to teach the whole syllabus. Reject a cover that is dense, crowded, or "
+    "reads as a wall of labelled parts.",
+    "The hero is the WHOLE, immediately recognizable subject (the complete organ, device or "
+    "system a layperson would name on sight — a whole pair of lungs, not one airway), placed "
+    "toward the center-right, joined by ONE magnified circular inset and at most two other "
+    "SEPARATE stand-alone elements. Generous empty space between them; fewer, larger and "
+    "cleaner beats more; readable at thumbnail size.",
+    "MARGINS: every element, the hero included, sits FULLY inside the frame with clear space "
+    "around it. Reject any cover where the subject touches, bleeds off, or is cut by an edge.",
     "A dark, sophisticated ground of near-black, charcoal and deep graphite with the amber family "
     "as the accent (rich amber, golden orange, warm honey, dark bronze, muted copper, warm "
     "ivory), applied selectively to important components — no blue or purple accents, no neon "

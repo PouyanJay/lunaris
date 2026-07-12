@@ -20,13 +20,26 @@
   align-items: stretch;
 }
 
+/* The cover is a 16:9 box — the aspect covers are generated at. It was 360x216 (5:3), which
+   object-fit:cover then cropped left-and-right — clipping exactly where a composed cover carries
+   its typography. Clicking it opens the full-size lightbox. */
 .cover {
   flex: none;
   width: 360px;
-  height: 216px;
+  aspect-ratio: var(--course-cover-aspect);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-xl);
   overflow: hidden;
+  padding: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.cover:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--focus-ring);
 }
 
 .heroBody {

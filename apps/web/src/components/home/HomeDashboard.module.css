@@ -1,6 +1,7 @@
 /* Home dashboard: greeting header over the learner's live state (recent grid, continue-hero,
    live-build banner). Shares the library's card geometry so covers read as one system. */
 .canvas {
+  --home-cover-height: var(--course-card-cover-height);
   --home-card-body-height: 96px;
   height: 100%;
   overflow-y: auto;
@@ -111,8 +112,7 @@
 .skeletonCard {
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-xl);
-  /* The real card's geometry: a 16:9 cover box plus the body — so no layout shift. */
-  padding-bottom: var(--home-card-body-height);
+  height: calc(var(--home-cover-height) + var(--home-card-body-height));
   background: linear-gradient(
     100deg,
     var(--bg-subtle) 30%,
@@ -130,12 +130,6 @@
   to {
     background-position: -200% 0;
   }
-}
-
-.skeletonCard::before {
-  content: "";
-  display: block;
-  aspect-ratio: var(--course-card-cover-aspect);
 }
 
 @media (prefers-reduced-motion: reduce) {

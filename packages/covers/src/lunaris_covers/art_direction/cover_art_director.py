@@ -73,13 +73,15 @@ YOUR TASK
 This cover is a COMPOSED COVER: the image model typesets the course's own title and labels \
 into the artwork. Write both halves.
 
-ARTWORK — literal, textbook-accurate scenes with sharp, concrete nouns: depict the actual \
-subject (real organs, devices, systems, structures), as a medical or technical illustrator \
-would. Never use "suggesting", "implying", "evoking" or "hinting" language, and never dreamy \
-words (drifting, motes, wisps, subtle glow). Lead with the WHOLE, instantly recognizable \
-subject as the hero; supporting \
-elements are SEPARATE stand-alone objects around it (a magnified circular inset revealing internal \
-detail, discrete floating components, individual parts) — never features fused onto the hero.
+ARTWORK — this is a COURSE COVER: it must read at a glance and invite the learner in, NOT teach \
+the syllabus. Choose FEW, LARGE, calm elements and leave concepts out rather than cram them in. \
+Depict the actual subject literally (real organs, devices, systems), as a medical or technical \
+illustrator would. Never use "suggesting", "implying", "evoking" or "hinting" language, and \
+never dreamy words (drifting, motes, wisps, subtle glow). The hero is the WHOLE, instantly \
+recognizable subject — \
+the complete organ/device/system a layperson would name on sight (a whole pair of lungs, NOT a \
+single airway cross-section). Add ONE magnified circular inset plus AT MOST TWO other separate \
+elements — never features fused onto the hero, and never a crowd of labelled parts.
 
 ACCURACY — list up to four guardrails a subject-matter expert would insist on, so the art does \
 not misteach (e.g. "keep eosinophils visually distinct from generic blood cells", "do not imply \
@@ -94,7 +96,7 @@ delivers, and up to four tiny scientific callout labels (real terms from the con
 Respond with ONLY this JSON object, no prose, no code fences:
 {{"subject": "one clear sentence naming the literal subject to depict",
   "primary_visual": "the hero — the whole recognizable subject, crisp physical detail",
-  "supporting_visuals": "2-4 SEPARATE stand-alone elements (magnified inset, floating parts)",
+  "supporting_visuals": "ONE magnified inset + at most two other separate elements — keep it calm",
   "process_visualization": "the mechanism as a flow between the separate elements",
   "accuracy_requirements": ["up to 4 domain guardrails so the art is not misleading"],
   "eyebrow": "a short ALL-CAPS label, e.g. PROFESSIONAL EDUCATION COURSE",
@@ -102,7 +104,7 @@ Respond with ONLY this JSON object, no prose, no code fences:
   "highlight_line": "exactly one of title_lines, verbatim",
   "subtitle": "a short supporting subtitle",
   "badges": ["THREE", "ALL-CAPS", "CAPTIONS"],
-  "callouts": ["up to 4 short labels, or empty"]}}"""
+  "callouts": ["at most TWO short labels, or empty — a cover is not a lecture slide"]}}"""
 
 _GENERAL_REVISION_TEMPLATE = """\
 

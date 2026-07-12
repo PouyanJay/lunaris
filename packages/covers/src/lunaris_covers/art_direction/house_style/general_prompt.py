@@ -45,16 +45,23 @@ the artwork.
 - Every letterform must be crisp, correctly spelled and legible. No lorem ipsum, no invented \
 words, no duplicated text.
 
-MAIN VISUAL (the right two-thirds):
+MAIN VISUAL (the right two-thirds) — this is a COURSE COVER, not a lecture slide or a textbook \
+plate: it must read at a glance and invite the learner in, NOT teach the whole syllabus. Depict a \
+few large, confident elements with real breathing room; leave concepts out rather than cram them \
+in.
 - Subject: {subject}
 - Key concepts to convey: {key_concepts}
 - Hero: {primary_visual}
 - Supporting elements: {supporting_visuals}
 - Relationship to show: {process_visualization}
-- Lead with the whole, immediately recognizable subject as the anchor, then add a dramatic \
-magnified circular cutaway/inset revealing its internal detail, plus discrete floating components \
-around it. Every element fully inside the frame with comfortable margins — nothing cropped by the \
-edges.
+- Lead with the WHOLE, immediately recognizable subject as the anchor — the complete organ, \
+device or system a layperson would name on sight (e.g. a whole pair of lungs, not a single \
+airway; a whole engine, not one piston). Add ONE dramatic magnified circular inset revealing its \
+internal detail, and at most two other discrete supporting elements.
+- COMPOSE FOR CALM: generous empty space between elements; no crowding, no wall of labelled \
+parts. Fewer, larger, cleaner beats more.
+- MARGINS ARE HARD: every element — including the hero — sits FULLY inside the frame with clear \
+space around it. NOTHING may touch, bleed off, or be cut by any edge of the image.
 {callout_block}
 
 EDUCATIONAL ACCURACY:
