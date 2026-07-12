@@ -123,13 +123,18 @@
 
   /* Shared course-cover-card geometry — one source of truth so the My-courses / Home grids and
      their loading skeletons (which mirror the real card) can't drift apart. */
-  /* Two different frames on purpose. Cards show covers as a WIDE BAND (the original geometry):
-     calmer and more premium at thumbnail size, where a full 16:9 composition reads as cramped —
-     the 16:9 render is center-cropped into it. The Overview hero (and the click-to-zoom lightbox)
-     show the cover at its NATIVE aspect, uncropped, which is where the composed artwork and its
-     typography are actually meant to be read. */
-  --course-card-cover-height: 142px;
+  /* EVERY cover frame is 16:9 — the aspect the covers are actually rendered at. A frame with a
+     fixed height instead center-cropped the artwork, and these covers are COMPOSED: the crop ate
+     the eyebrow pill off the top and the badge row off the bottom, which is most of what makes one
+     read as a course cover. Frames now take the artwork's own aspect, so the whole composition
+     survives at every size. */
   --course-cover-aspect: 16 / 9;
+  /* My-courses grid track. 312px = the previous 260px + 20%: a bigger image region, without
+     stretching the artwork to get it (the cover scales inside its 16:9 frame). */
+  --course-card-min-width: 312px;
+  /* Letterbox ground for a cover whose render is NOT exactly 16:9 (an older one): the artwork is
+     fit whole, never cropped or distorted, and the remainder is pure black. */
+  --course-cover-letterbox: #000000;
 }
 
 [data-theme="dark"] {

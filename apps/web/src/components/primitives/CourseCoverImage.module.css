@@ -1,11 +1,17 @@
 /* The AI cover image fills its frame like the constellation it replaces — the frame owns the aspect
-   ratio and the aria-hidden. object-fit keeps a non-matching render from distorting. */
+   ratio and the aria-hidden.
+   `contain`, never `cover`: these covers are COMPOSED artworks that carry their own typography, so
+   cropping them is lossy in a way cropping a photo is not — a center-crop slices the eyebrow pill
+   off the top and the badge row off the bottom, which is most of what makes one read as a course
+   cover. Every frame is 16:9 (the render's own aspect), so `contain` is normally an exact fit; the
+   black ground only shows for a cover whose render is NOT 16:9 (an older one), which is letterboxed
+   whole rather than cropped or stretched. */
 .image {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  background: #0a0c10; /* night-sky ground while the image decodes (brand art, literal — §11) */
+  object-fit: contain;
+  background: var(--course-cover-letterbox);
 }
 
 /* The constellation loading state fills the frame identically, so swapping to the image is seamless

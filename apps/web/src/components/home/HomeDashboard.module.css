@@ -1,7 +1,6 @@
 /* Home dashboard: greeting header over the learner's live state (recent grid, continue-hero,
    live-build banner). Shares the library's card geometry so covers read as one system. */
 .canvas {
-  --home-cover-height: var(--course-card-cover-height);
   --home-card-body-height: 96px;
   height: 100%;
   overflow-y: auto;
@@ -108,11 +107,14 @@
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-/* Loading skeleton mirrors the recent-grid cards (no centered spinner, no layout shift). */
+/* Loading skeleton mirrors the recent-grid cards (no centered spinner, no layout shift). The card's
+   cover is aspect-driven, not a fixed height, so the skeleton is built the same way — a 16:9 cover
+   block over a fixed body — else it mis-predicts the card height and the grid jumps as cards land. */
 .skeletonCard {
+  display: flex;
+  flex-direction: column;
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-xl);
-  height: calc(var(--home-cover-height) + var(--home-card-body-height));
   background: linear-gradient(
     100deg,
     var(--bg-subtle) 30%,
@@ -121,6 +123,16 @@
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s var(--ease) infinite;
+}
+
+.skeletonCard::before {
+  content: "";
+  aspect-ratio: var(--course-cover-aspect); /* the cover */
+}
+
+.skeletonCard::after {
+  content: "";
+  height: var(--home-card-body-height); /* the body beneath it */
 }
 
 @keyframes shimmer {
