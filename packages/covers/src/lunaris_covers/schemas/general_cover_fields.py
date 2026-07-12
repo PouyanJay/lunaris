@@ -40,5 +40,7 @@ class GeneralCoverFields(BaseModel):
     subtitle: str = Field(min_length=1, max_length=90)
     # Three captioned badges along the lower-left — each a short ALL-CAPS caption.
     badges: list[str] = Field(min_length=3, max_length=3)
-    # Small scientific callout labels beside the artwork (e.g. IL-5, TLS, O(log n)) — up to four.
-    callouts: list[str] = Field(default_factory=list, max_length=4)
+    # Small scientific callout labels beside the artwork (e.g. IL-5, TLS, O(log n)). Capped at TWO
+    # (was four): a cover is a poster, not a lecture slide — the first render read as a dense
+    # infographic because every concept demanded its own labelled callout.
+    callouts: list[str] = Field(default_factory=list, max_length=2)

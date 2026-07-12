@@ -201,3 +201,23 @@ def test_general_prompt_carries_the_educational_accuracy_guardrails() -> None:
     assert "- keep eosinophils distinct from generic blood cells" in prompt
     # And the QA rubric judges the same rule, so the gate can reject a misteaching cover.
     assert "misteaches" in house_style(CoverStylePreset.GENERAL).as_prompt_block()
+
+
+def test_general_is_a_cover_not_a_lecture_slide() -> None:
+    # The operator's density note: the first composed render read as a dense infographic — every
+    # concept demanding its own labelled callout. A cover reads at a glance and invites the learner
+    # in; it does not teach the syllabus. Pinned in BOTH the prompt and the QA rubric.
+    prompt = build_general_prompt(title="T", key_concepts="k", fields=_fields())
+    assert "COURSE COVER, not a lecture slide" in prompt
+    assert "COMPOSE FOR CALM" in prompt
+    assert "MARGINS ARE HARD" in prompt
+
+    rubric = house_style(CoverStylePreset.GENERAL).as_prompt_block()
+    assert "not a lecture slide" in rubric  # the gate rejects a crowded cover
+    assert "MARGINS" in rubric  # ... and one whose subject bleeds off an edge
+    assert "whole pair of lungs, not one airway" in rubric  # the whole-subject hero anchor
+
+
+def test_callouts_are_capped_at_two() -> None:
+    # The density dial: four labelled callouts turned the cover into a lecture slide.
+    assert GeneralCoverFields.model_fields["callouts"].metadata[0].max_length == 2

@@ -439,7 +439,7 @@ async def test_general_job_sends_the_full_operator_template_to_the_image_model()
     assert "correctly spelled and legible" in sent
     # Amber as the dominant grade + the whole-subject anchor (pathology-plate / anchor fixes).
     assert "Amber is the DOMINANT GRADE" in sent
-    assert "whole, immediately recognizable subject as the anchor" in sent
+    assert "WHOLE, immediately recognizable subject as the anchor" in sent
     assert "near-black, charcoal, and deep graphite" in sent  # the dark amber theme, verbatim
     assert "- Hero: a refined 3D hero mechanism" in sent  # Claude's artwork field, in its slot
     # The image model is asked on the 16:9 canvas the composed cover is designed for.

@@ -1,4 +1,7 @@
-import { useCourseCover } from "../../hooks/useCourseCover";
+import { useState } from "react";
+import { coverImageUrlForTheme, useCourseCover } from "../../hooks/useCourseCover";
+import { useThemeValue } from "../../hooks/useThemeValue";
+import { CoverLightbox } from "../primitives/CoverLightbox";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { resolveCoverJobId } from "../../lib/coverJobs";
 import { bucketLevel } from "../../lib/courseLevel";
@@ -127,11 +130,35 @@ function OverviewHero({
   // (a completed regenerate swaps the image in place). A regenerate needs an existing cover job.
   const { state, regenerate, regenerating } = useCourseCover(apiBaseUrl, course.cover);
   const canRegenerate = resolveCoverJobId(course.cover) !== null;
+  // A real cover is a composed 16:9 artwork carrying its own typography — far more than a thumbnail
+  // can show — so it opens full-size on click. The constellation/Typographic fallbacks are not worth
+  // enlarging, so only a resolved image is a trigger (and only then is the frame a button).
+  const theme = useThemeValue();
+  const fullImageUrl = coverImageUrlForTheme(state, theme);
+  const [zoomed, setZoomed] = useState(false);
   return (
     <section className={styles.hero}>
-      <div className={styles.cover} aria-hidden="true">
-        <CourseCoverImage courseId={course.id} topic={course.topic} state={state} />
-      </div>
+      {fullImageUrl ? (
+        <button
+          type="button"
+          className={styles.cover}
+          onClick={() => setZoomed(true)}
+          aria-label={`View the cover for ${course.topic} full size`}
+        >
+          <CourseCoverImage courseId={course.id} topic={course.topic} state={state} />
+        </button>
+      ) : (
+        <div className={styles.cover} aria-hidden="true">
+          <CourseCoverImage courseId={course.id} topic={course.topic} state={state} />
+        </div>
+      )}
+      {zoomed && fullImageUrl && (
+        <CoverLightbox
+          imageUrl={fullImageUrl}
+          topic={course.topic}
+          onClose={() => setZoomed(false)}
+        />
+      )}
       <div className={styles.heroBody}>
         <p className={styles.counts}>
           {lessonTotal} {lessonTotal === 1 ? "lesson" : "lessons"} · {conceptTotal}{" "}
