@@ -6,15 +6,14 @@ from lunaris_runtime.schema import CoverStylePreset
 # the discipline that never varies: the art director bakes it into the image prompt, and the
 # vision-QA gate rejects any cover that violates it — so the prompt and the rubric can never drift
 # into two different definitions of "on brand".
-_SHARED_CONSTRAINTS = (
-    "NO text, letters, numerals, logos or watermarks anywhere in the image "
-    "(garbled AI text is the #1 slop tell).",
-)
+_SHARED_CONSTRAINTS = ("No logos or watermarks anywhere in the image.",)
 
 # The EDITORIAL discipline (the original locked constraints) — the nocturne/blueprint/aurora trio:
 # one focal subject, a flat matte illustration, a night-sky ground with a single amber accent.
 _EDITORIAL_CONSTRAINTS = (
     *_SHARED_CONSTRAINTS,
+    "NO text, letters or numerals anywhere in the image (the editorial covers are wordless art; "
+    "garbled lettering is the #1 slop tell).",
     "The subject is DERIVED from the course topic and its concepts — evocative and descriptive, "
     "not a literal or busy depiction of them.",
     "ONE focal subject, with generous negative space — never busy or cluttered.",
@@ -30,6 +29,12 @@ _EDITORIAL_CONSTRAINTS = (
 # a flat finish, which would make every general cover fail its own QA gate.
 _GENERAL_CONSTRAINTS = (
     *_SHARED_CONSTRAINTS,
+    "The cover CARRIES TYPOGRAPHY (general-cover-typography): the eyebrow label, the stacked "
+    "course title with one line accented in amber, the subtitle, three captioned badges, and any "
+    "callout "
+    "labels are typeset INTO the image, in the left third, never overlapping the artwork. Every "
+    "letterform must be crisp, correctly spelled and legible — garbled, invented, misspelled or "
+    "duplicated words are the #1 slop tell and are rejected.",
     "A LITERAL, technically and anatomically accurate depiction of the course's actual subject "
     "and mechanism — the scene a textbook illustrator would draw (recognizable organs, devices, "
     "systems, structures, processes); never an abstract metaphor, a mood piece, or shapes that "

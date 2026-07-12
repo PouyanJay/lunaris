@@ -70,20 +70,34 @@ HOUSE STYLE (the template enforces this; your fields must fit inside it)
 {style}
 
 YOUR TASK
-Write LITERAL, textbook-accurate scene descriptions with sharp, concrete nouns — depict the actual \
-subject itself (real organs, devices, systems, structures), the way a medical or technical \
-illustrator would. Never use "suggesting", "implying", "evoking" or "hinting" language, and never \
-dreamy words (drifting, motes, wisps, subtle glow) — every element is a crisp, defined object. \
-Supporting elements must be SEPARATE stand-alone objects arranged around the hero (a magnified \
-circular inset revealing internal structure, discrete floating components, individual cells/parts) \
-— never features fused onto the hero.
+This cover is a COMPOSED COVER: the image model typesets the course's own title and labels \
+into the artwork. Write both halves.
+
+ARTWORK — literal, textbook-accurate scenes with sharp, concrete nouns: depict the actual \
+subject (real organs, devices, systems, structures), as a medical or technical illustrator \
+would. Never use "suggesting", "implying", "evoking" or "hinting" language, and never dreamy \
+words (drifting, motes, wisps, subtle glow). Lead with the WHOLE, instantly recognizable \
+subject as the hero; supporting \
+elements are SEPARATE stand-alone objects around it (a magnified circular inset revealing internal \
+detail, discrete floating components, individual parts) — never features fused onto the hero.
+
+TYPOGRAPHY — split the course title into 2-4 short stacked lines using ONLY the real words of the \
+title, in order, nothing added or changed; pick ONE of those lines to accent in amber (the most \
+distinctive word). Write a short subtitle, three ALL-CAPS badge captions naming what the course \
+delivers, and up to four tiny scientific callout labels (real terms from the concepts, e.g. \
+"IL-5", "TLS", "O(log n)") — or an empty list when the topic has no such shorthand.
 
 Respond with ONLY this JSON object, no prose, no code fences:
-{{"subtitle": "a short supporting subtitle for the course",
-  "subject": "one clear sentence naming the literal subject to depict",
-  "primary_visual": "the hero — a recognizable, literal depiction, crisp physical detail",
-  "supporting_visuals": "2-4 SEPARATE stand-alone elements (inset magnification, floating parts)",
-  "process_visualization": "the mechanism as a flow between the separate elements, no text"}}"""
+{{"subject": "one clear sentence naming the literal subject to depict",
+  "primary_visual": "the hero — the whole recognizable subject, crisp physical detail",
+  "supporting_visuals": "2-4 SEPARATE stand-alone elements (magnified inset, floating parts)",
+  "process_visualization": "the mechanism as a flow between the separate elements",
+  "eyebrow": "a short ALL-CAPS label, e.g. PROFESSIONAL EDUCATION COURSE",
+  "title_lines": ["2-4", "short", "lines"],
+  "highlight_line": "exactly one of title_lines, verbatim",
+  "subtitle": "a short supporting subtitle",
+  "badges": ["THREE", "ALL-CAPS", "CAPTIONS"],
+  "callouts": ["up to 4 short labels, or empty"]}}"""
 
 _GENERAL_REVISION_TEMPLATE = """\
 

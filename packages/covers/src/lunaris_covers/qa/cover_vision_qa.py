@@ -3,7 +3,11 @@ from collections.abc import Awaitable, Callable
 import structlog
 from lunaris_runtime.resilience import invoke_with_parse_repair
 
-from lunaris_covers.art_direction.house_style import house_style, light_style_block
+from lunaris_covers.art_direction.house_style import (
+    EDITORIAL_PRESETS,
+    house_style,
+    light_style_block,
+)
 from lunaris_covers.models.cover_brief import CoverBrief
 from lunaris_covers.schemas.cover_qa_verdict import CoverQaVerdict
 
@@ -22,13 +26,13 @@ so you LOOK at the cover.
 THE COVER SHOULD EVOKE
 - topic: {topic}
 - key concepts: {concepts}
-
+{text_check}
 IT MUST OBEY THE HOUSE STYLE
 {style}
 
-CHECK the rendered image against every constraint above. Reject "AI slop": any readable/garbled \
-text or letterforms, a busy or cluttered composition, or a palette, finish or subject that \
-violates the house style above.
+CHECK the rendered image against every constraint above. Reject "AI slop": a busy or cluttered \
+composition, a palette, finish or subject that violates the house style above, or any lettering \
+that breaks the text rules stated above for this cover.
 
 VERDICT
 Respond with ONLY this JSON object, no prose, no code fences:
@@ -36,6 +40,22 @@ Respond with ONLY this JSON object, no prose, no code fences:
 {{"passed": false, "defects": [{{"issue": "what is wrong, citing the constraint it breaks"}}]}}  \
 when any constraint fails.
 A passing verdict must have NO defects; a failing verdict must name at least one."""
+
+# The typography check (general-cover-typography). A GENERAL cover typesets its own title, so the
+# gate's job flips: instead of rejecting ANY text it must verify the text is RIGHT. A misspelled or
+# garbled title is worse than no cover — it ships a broken artifact — so this is a hard reject that
+# sends the round back to the art director.
+_TEXT_CHECK_TEMPLATE = """
+THIS COVER CARRIES TYPOGRAPHY — VERIFY IT CHARACTER BY CHARACTER
+The rendered title must read EXACTLY (ignoring line breaks and letter case): "{title}"
+REJECT the cover if ANY of these is true:
+- a word in the title is misspelled, garbled, invented, or has malformed/duplicated letterforms
+- the title text differs from the expected title above
+- any rendered text is illegible, cut off, overlapping the artwork, or duplicated
+- there is lorem-ipsum or nonsense lettering anywhere
+Legible, correctly-spelled supporting text (the eyebrow, subtitle, badge captions, small callout \
+labels) is EXPECTED and must NOT be treated as a defect.
+"""
 
 _REPAIR_TEMPLATE = """
 
@@ -71,10 +91,20 @@ class CoverVisionQa:
             if light
             else house_style(brief.style_preset).as_prompt_block()
         )
+        # A cover that typesets its own title (GENERAL) inverts the gate's text rule: instead of
+        # rejecting ANY lettering it must verify the title is spelled EXACTLY right — a garbled
+        # title ships a broken artifact. The editorial presets stay wordless, so they get no block
+        # and their rubric's "NO text" constraint still rejects any lettering at all.
+        text_check = (
+            ""
+            if brief.style_preset in EDITORIAL_PRESETS
+            else _TEXT_CHECK_TEMPLATE.format(title=brief.topic)
+        )
         prompt = _INSPECT_TEMPLATE.format(
             topic=brief.topic,
             concepts=", ".join(brief.concept_labels) or brief.topic,
             style=style,
+            text_check=text_check,
         )
         verdict = await invoke_with_parse_repair(
             lambda p: self._invoke(p, [image]),

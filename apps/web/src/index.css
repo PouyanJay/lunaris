@@ -123,7 +123,9 @@
 
   /* Shared course-cover-card geometry — one source of truth so the My-courses / Home grids and
      their loading skeletons (which mirror the real card) can't drift apart. */
-  --course-card-cover-height: 142px;
+  /* Course covers are generated 16:9 (2048x1152). The card frame matches that aspect so a
+     composed cover — which carries its own typography in the left third — is never cropped. */
+  --course-card-cover-aspect: 16 / 9;
 }
 
 [data-theme="dark"] {

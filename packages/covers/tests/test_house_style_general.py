@@ -44,10 +44,23 @@ def test_general_block_is_the_premium_enterprise_style() -> None:
     # Dark ground stays brand-anchored: graphite/near-black + amber accents.
     assert "amber" in lowered
     assert "near-black" in lowered or "graphite" in lowered
-    # The no-text discipline (the #1 slop tell) is NON-NEGOTIABLE for every preset.
-    assert "no text" in lowered
     # And its avoid-list guards the premium finish.
     assert "cyberpunk" in lowered and "cartoon" in lowered
+
+
+def test_general_block_requires_correct_typography_not_a_wordless_cover() -> None:
+    # general-cover-typography: the GENERAL cover typesets its own title — the wordless "NO text"
+    # rule is exactly what kept covers looking like bare illustrations. It must instead demand
+    # correctly-spelled lettering, and the gate rejects garbles.
+    lowered = house_style(CoverStylePreset.GENERAL).as_prompt_block().lower()
+    assert "typography" in lowered
+    assert "correctly spelled" in lowered
+    assert "no text" not in lowered  # the wordless rule must NOT apply to GENERAL
+
+
+def test_editorial_blocks_stay_wordless() -> None:
+    for preset in (CoverStylePreset.NOCTURNE, CoverStylePreset.BLUEPRINT, CoverStylePreset.AURORA):
+        assert "no text" in house_style(preset).as_prompt_block().lower()
 
 
 def test_general_block_does_not_mandate_the_flat_illustration_finish() -> None:
@@ -95,11 +108,16 @@ def test_editorial_light_twin_keeps_ivory_plus_amber() -> None:
 
 def _fields() -> GeneralCoverFields:
     return GeneralCoverFields(
-        subtitle="Understand the protocol that powers the web",
         subject="The HTTP request/response lifecycle between a browser and a server",
         primary_visual="a refined 3D laptop communicating with a modern server stack",
         supporting_visuals="request/response paths, protocol layers, message cards",
-        process_visualization="a bidirectional client-server flow without readable text",
+        process_visualization="a bidirectional client-server flow",
+        eyebrow="PROFESSIONAL EDUCATION COURSE",
+        title_lines=["How", "HTTP", "Works"],
+        highlight_line="HTTP",
+        subtitle="Understand the protocol that powers the web",
+        badges=["FOUNDATIONAL", "PRACTICAL", "ESSENTIAL"],
+        callouts=["TLS", "TCP"],
     )
 
 
@@ -110,27 +128,16 @@ def test_general_prompt_is_the_operator_template_verbatim() -> None:
         title="How HTTP Works", key_concepts="requests, responses, headers", fields=_fields()
     )
     # Framing context + every section header, verbatim.
-    assert "Create a premium, enterprise-grade educational course cover" in prompt
-    assert 'Course title: "How HTTP Works"' in prompt
-    assert 'Key concepts: "requests, responses, headers"' in prompt
-    for section in (
-        "COMPOSITION:",
-        "SUBJECT VISUALIZATION:",
-        "STYLE:",
-        "COLOR THEME:",
-        "LIGHTING AND MATERIALS:",
-        "OUTPUT:",
-    ):
-        assert section in prompt
+    assert "Create a premium, enterprise-grade 16:9 educational course cover" in prompt
+    assert "Key concepts to convey: requests, responses, headers" in prompt
     # Landmark lines the compression used to drop.
-    assert "Reserve approximately 38% of the left side" in prompt
-    assert "Premium enterprise learning platform" in prompt
-    assert "Modern editorial infographic combined with refined 3D illustration" in prompt
-    assert "No obvious AI-generated poster appearance" in prompt
+    assert "Keep ALL of this typography in the left third" in prompt
+    assert "Premium pharmaceutical / enterprise-education design" in prompt
+    assert "AI-generated-poster look" in prompt
     # The dark amber theme block rides verbatim, and the fields landed in their slots.
     assert GENERAL_DARK_THEME in prompt
     assert "a refined 3D laptop communicating" in prompt
-    assert "- Primary visual: a refined 3D laptop" in prompt
+    assert "- Hero: a refined 3D laptop" in prompt
 
 
 def test_native_light_prompt_swaps_only_the_theme_block_for_general() -> None:
@@ -175,7 +182,6 @@ def test_general_block_demands_literal_textbook_depiction() -> None:
     assert "evocative" not in lowered  # the editorial philosophy must not leak in
     assert "separate" in lowered and "magnified" in lowered  # diagram grammar: discrete components
     assert "never hazy" in lowered  # the anti-cloud rule
-    assert "no text" in lowered  # the one truly shared discipline survives
 
 
 def test_editorial_blocks_keep_the_evocative_philosophy() -> None:
