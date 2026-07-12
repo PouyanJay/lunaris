@@ -2,7 +2,6 @@
 .canvas {
   /* Shared card geometry: the loading skeleton mirrors the real card from these two numbers
      (cover height + the card body's box), so they can't drift apart independently. */
-  --library-cover-height: var(--course-card-cover-height);
   --library-card-body-height: 138px;
   height: 100%;
   overflow-y: auto;
@@ -52,15 +51,19 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--course-card-min-width), 1fr));
   gap: var(--space-5);
 }
 
-/* Loading skeleton mirrors the card grid (no centered spinner, no layout shift). */
+/* Loading skeleton mirrors the card grid (no centered spinner, no layout shift). The card's cover
+   is now aspect-driven rather than a fixed height, so the skeleton is built the same way — a 16:9
+   cover block over a fixed body — or it would mis-predict the card height at every grid width and
+   the grid would jump as the cards land. */
 .skeletonCard {
+  display: flex;
+  flex-direction: column;
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-xl);
-  height: calc(var(--library-cover-height) + var(--library-card-body-height));
   background: linear-gradient(
     100deg,
     var(--bg-subtle) 30%,
@@ -69,6 +72,16 @@
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s var(--ease) infinite;
+}
+
+.skeletonCard::before {
+  content: "";
+  aspect-ratio: var(--course-cover-aspect); /* the cover */
+}
+
+.skeletonCard::after {
+  content: "";
+  height: var(--library-card-body-height); /* the body beneath it */
 }
 
 @keyframes shimmer {

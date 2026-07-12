@@ -63,7 +63,11 @@ function ContinueHero({
   return (
     <section className={styles.hero}>
       <div className={styles.cover} aria-hidden="true">
-        <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
+        {/* The inner box holds the cover's 16:9; the outer cell centers it on the letterbox ground,
+            since the grid stretches this column to the (taller) body's height. */}
+        <div className={styles.coverInner}>
+          <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
+        </div>
       </div>
       <div className={styles.heroBody}>
         <h3 className={styles.heroTitle}>{course.topic}</h3>

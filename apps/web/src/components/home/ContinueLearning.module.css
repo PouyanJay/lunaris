@@ -18,8 +18,20 @@
   overflow: hidden;
 }
 
+/* The hero cover keeps its 240px column. The grid stretches this cell to the body's height, which is
+   taller than 240px at 16:9 — so the cover is CENTERED in the cell at its true aspect on the black
+   letterbox ground rather than being stretched to fill it or center-cropped to a tall slice (which
+   is what sliced the eyebrow pill and badge row off the composition). */
 .cover {
+  display: flex;
+  align-items: center;
+  background: var(--course-cover-letterbox);
   border-right: var(--border-width) solid var(--border);
+}
+
+.coverInner {
+  width: 100%;
+  aspect-ratio: var(--course-cover-aspect);
 }
 
 .heroBody {
@@ -108,10 +120,11 @@
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
+/* 16:9 like every other cover frame — a 7:5 box would letterbox the artwork on these small thumbs. */
 .rowCover {
   flex: none;
-  width: 56px;
-  height: 40px;
+  width: 64px;
+  aspect-ratio: var(--course-cover-aspect);
   border-radius: var(--radius-sm);
   overflow: hidden;
   border: var(--border-width) solid var(--border);
@@ -156,10 +169,10 @@
     grid-template-columns: 1fr;
   }
 
+  /* Stacked: the cover spans the full width, so its own 16:9 is an exact fit — no letterbox. */
   .cover {
     border-right: none;
     border-bottom: var(--border-width) solid var(--border);
-    height: 148px;
   }
 
   .rowTrack {
