@@ -431,12 +431,19 @@ async def test_general_job_sends_the_full_operator_template_to_the_image_model()
     )
 
     sent = str(client.kwargs["prompt"])
-    assert "Create a premium, enterprise-grade educational course cover" in sent
-    assert 'Course title: "How HTTPS works"' in sent  # the course's topic, in the template slot
-    assert "Reserve approximately 38% of the left side" in sent
-    assert "Modern editorial infographic combined with refined 3D illustration" in sent
+    assert "Create a premium, enterprise-grade 16:9 educational course cover" in sent
+    # The TYPOGRAPHY Claude wrote is typeset into the cover — the composed-cover contract.
+    assert "PROFESSIONAL EDUCATION COURSE" in sent
+    assert 'Typeset the line "HTTPS" in rich amber' in sent
+    assert "FOUNDATIONAL / PRACTICAL / ESSENTIAL" in sent
+    assert "correctly spelled and legible" in sent
+    # Amber as the dominant grade + the whole-subject anchor (pathology-plate / anchor fixes).
+    assert "Amber is the DOMINANT GRADE" in sent
+    assert "whole, immediately recognizable subject as the anchor" in sent
     assert "near-black, charcoal, and deep graphite" in sent  # the dark amber theme, verbatim
-    assert "a refined 3D hero mechanism" in sent  # Claude's field landed in its slot
+    assert "- Hero: a refined 3D hero mechanism" in sent  # Claude's artwork field, in its slot
+    # The image model is asked on the 16:9 canvas the composed cover is designed for.
+    assert client.kwargs["size"] == "2048x1152"
     # Provenance records the full prompt actually sent, not a summary.
     assert rendered.provenance.prompt == sent
 
@@ -710,7 +717,7 @@ async def test_general_qa_rejection_revises_the_fields_and_reassembles_the_templ
     assert "COLOR THEME:" not in invoke.prompts[1]
     # The winning prompt is the template re-assembled with the REVISED fields.
     assert "a calmer matte-ceramic hero mechanism" in rendered.provenance.prompt
-    assert "Reserve approximately 38% of the left side" in rendered.provenance.prompt
+    assert "Typography in the left third" in rendered.provenance.prompt
 
 
 @pytest.mark.asyncio

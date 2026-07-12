@@ -14,10 +14,11 @@ if TYPE_CHECKING:
 _logger = structlog.get_logger(__name__)
 
 # The image model + render settings, pinned as constants so they are easy to change in one place.
-# GPT Image 2 via the OpenAI Images API at high quality (requirements § Decisions). The size is a
-# landscape frame that suits a course card / hero without cropping.
+# GPT Image 2 via the OpenAI Images API at high quality (requirements § Decisions). 2048x1152 is
+# the model's 16:9 landscape preset — the aspect the operator's cover system specifies, and the one
+# the web card frame renders, so a composed cover is never cropped in the grid.
 COVER_IMAGE_MODEL = "gpt-image-2"
-COVER_IMAGE_SIZE = "1536x1024"
+COVER_IMAGE_SIZE = "2048x1152"
 COVER_IMAGE_QUALITY = "high"
 
 # A factory so the client is built per render — picking up the current run's tenant credential scope

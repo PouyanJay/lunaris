@@ -58,7 +58,7 @@ async def test_render_decodes_base64_png_and_asks_at_high_quality() -> None:
     assert images.kwargs["model"] == "gpt-image-2"
     assert images.kwargs["prompt"] == "a lone amber lighthouse"
     assert images.kwargs["quality"] == "high"
-    assert images.kwargs["size"] == "1536x1024"
+    assert images.kwargs["size"] == "2048x1152"
     assert renderer.model == "gpt-image-2"
 
 
@@ -93,7 +93,7 @@ async def test_retheme_edits_the_given_image_under_the_instruction() -> None:
     assert light == _PNG + b"L"  # the edited (light) image, distinct from the input render
     assert images.edit_kwargs["model"] == "gpt-image-2"
     assert images.edit_kwargs["prompt"] == "make it light"
-    assert images.edit_kwargs["size"] == "1536x1024"
+    assert images.edit_kwargs["size"] == "2048x1152"
     # The dark render is handed to the edit endpoint as the image to re-theme.
     assert images.edit_kwargs["image"] == ("cover.png", _PNG, "image/png")
 

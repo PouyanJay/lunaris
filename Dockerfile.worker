@@ -57,10 +57,15 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # binary, not a wheel) for the assembler's concat / mux / poster. NO LaTeX (texlive) — the skill's
 # no-LaTeX rule keeps the image hundreds of MB smaller (plan §V7-T0). apt lists are dropped to keep
 # the layer slim + reproducible.
+# NOTE the ordering: upgrade runs AFTER install. ffmpeg drags in a Mesa/GL closure as a transitive
+# dependency, so an upgrade that ran BEFORE the install left those libraries at whatever version the
+# install resolved — which is how a fixed CRITICAL (CVE-2026-40393, libgbm1/libgl1-mesa-dri/
+# libglx-mesa0/mesa-libgallium) survived the Trivy gate. Upgrading last patches the transitive
+# closure too.
 RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libglib2.0-0 ffmpeg \
+    && apt-get upgrade -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 

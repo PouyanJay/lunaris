@@ -2,7 +2,6 @@
 .canvas {
   /* Shared card geometry: the loading skeleton mirrors the real card from these two numbers
      (cover height + the card body's box), so they can't drift apart independently. */
-  --library-cover-height: var(--course-card-cover-height);
   --library-card-body-height: 138px;
   height: 100%;
   overflow-y: auto;
@@ -60,7 +59,8 @@
 .skeletonCard {
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-xl);
-  height: calc(var(--library-cover-height) + var(--library-card-body-height));
+  /* The real card's geometry: a 16:9 cover box plus the body — so no layout shift. */
+  padding-bottom: var(--library-card-body-height);
   background: linear-gradient(
     100deg,
     var(--bg-subtle) 30%,
@@ -78,6 +78,12 @@
   to {
     background-position: -200% 0;
   }
+}
+
+.skeletonCard::before {
+  content: "";
+  display: block;
+  aspect-ratio: var(--course-card-cover-aspect);
 }
 
 @media (prefers-reduced-motion: reduce) {
