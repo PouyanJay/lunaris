@@ -1,6 +1,6 @@
-/* Shared course cover card (My-courses grid + Home recent grid). The cover is a 16:9 box (the
-   --course-card-cover-aspect token — the aspect the covers are generated at), mirrored by each
-   grid's loading skeleton so there is no layout shift. */
+/* Shared course cover card (My-courses grid + Home recent grid). Cover height is the shared
+   --course-card-cover-height token, mirrored by each grid's loading skeleton. The cover renders
+   16:9 and is center-cropped into this wider band — the full artwork is on the Overview. */
 .card {
   display: flex;
   flex-direction: column;
@@ -28,7 +28,7 @@
 }
 
 .cover {
-  aspect-ratio: var(--course-card-cover-aspect);
+  height: var(--course-card-cover-height);
   border-bottom: var(--border-width) solid var(--border);
 }
 

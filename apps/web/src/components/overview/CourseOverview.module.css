@@ -26,7 +26,7 @@
 .cover {
   flex: none;
   width: 360px;
-  aspect-ratio: var(--course-card-cover-aspect);
+  aspect-ratio: var(--course-cover-aspect);
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-xl);
   overflow: hidden;

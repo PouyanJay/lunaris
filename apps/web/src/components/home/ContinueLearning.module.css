@@ -18,11 +18,8 @@
   overflow: hidden;
 }
 
-/* A 16:9 box (the aspect covers are generated at), so the hero row is as tall as the cover and
-   the composed cover is never cropped. */
 .cover {
   border-right: var(--border-width) solid var(--border);
-  aspect-ratio: var(--course-card-cover-aspect);
 }
 
 .heroBody {
