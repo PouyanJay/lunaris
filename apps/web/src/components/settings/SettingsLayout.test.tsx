@@ -42,6 +42,10 @@ function stubSettingsFetch(view: Record<string, unknown> = {}) {
       });
     if (url.includes("/api/credentials"))
       return Promise.resolve({ ok: true, json: async () => [] });
+    // The Sources section's TrustedSourcesPanel expects an array (it calls .some) — a bare {} would
+    // crash it; every other list endpoint the sections read is likewise an array.
+    if (url.includes("/api/source-authorities"))
+      return Promise.resolve({ ok: true, json: async () => [] });
     return Promise.resolve({ ok: true, json: async () => ({}) });
   });
   vi.stubGlobal("fetch", fetchMock);

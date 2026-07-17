@@ -72,8 +72,8 @@ def test_every_byok_provider_is_offered_by_the_web_keys_ui() -> None:
     store the key, its presence check stayed false forever and the cover-images toggle was
     permanently disabled — the feature was unreachable in the product despite shipping end to end.
 
-    Since the Settings reorganization the web source of truth is ``credentialCatalog.ts`` (each key's
-    section + its byok/fileStore availability), so this reads the ``byok: true`` entries there.
+    Since the Settings reorganization the web source of truth is ``credentialCatalog.ts`` (each
+    key's section + its byok/fileStore availability), so this reads its ``byok: true`` entries.
     """
     offered = set(_WEB_BYOK_PROVIDER.findall(_CREDENTIAL_CATALOG.read_text()))
     missing = set(BYOK_PROVIDERS) - offered
