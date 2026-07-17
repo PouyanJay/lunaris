@@ -181,22 +181,26 @@ export function HomeDashboard({
 
   return (
     <div className={styles.canvas}>
-      <header className={styles.greeting}>
-        <h2 className={styles.title}>
-          Good {greeting}, {userName}
-        </h2>
-        <p className={styles.subline}>{subline(state, activityState)}</p>
-      </header>
-      <LiveBuilds runs={runs} />
-      <HomeBody
-        apiBaseUrl={apiBaseUrl}
-        state={state}
-        reload={reload}
-        onNewCourse={onNewCourse}
-        onResumeLesson={onResumeLesson}
-        onViewCourse={onViewCourse}
-        onRequestDelete={deletion.request}
-      />
+      {/* A capped, centred column — the dashboard reads as one focused surface rather than stretching
+          edge-to-edge on a wide monitor. */}
+      <div className={styles.content}>
+        <header className={styles.greeting}>
+          <h2 className={styles.title}>
+            Good {greeting}, {userName}
+          </h2>
+          <p className={styles.subline}>{subline(state, activityState)}</p>
+        </header>
+        <LiveBuilds runs={runs} />
+        <HomeBody
+          apiBaseUrl={apiBaseUrl}
+          state={state}
+          reload={reload}
+          onNewCourse={onNewCourse}
+          onResumeLesson={onResumeLesson}
+          onViewCourse={onViewCourse}
+          onRequestDelete={deletion.request}
+        />
+      </div>
       <DeleteCourseDialog deletion={deletion} />
     </div>
   );
