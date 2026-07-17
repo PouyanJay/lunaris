@@ -1,16 +1,57 @@
-.shell {
+/* The app frame: a full-width top bar over a two-pane lower region (sidebar + canvas). The top bar
+   and the sidebar share one ground so the chrome reads as a single inverted-L around the canvas;
+   the lighter top edge gives it its light-from-above. */
+.frame {
   height: 100%;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   background: var(--bg);
   border-top: var(--border-width) solid var(--frame-top);
 }
 
 /* While dragging the splitter: force the resize cursor and kill text selection so the drag feels
    solid and never selects canvas text mid-drag. */
-.shell[data-resizing] {
+.frame[data-resizing] {
   cursor: col-resize;
   user-select: none;
+}
+
+/* ─── Top bar ──────────────────────────────────────────────────────────────────
+   Full width, same ground as the sidebar, welded to the lower region by one hairline. Brand at the
+   far left; the contextual title grows to fill the slack, pinning the toolbar / search / status to
+   the right edge. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  min-height: var(--header-height);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-subtle);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+/* The brand lockup — the amber mark (a fixed brand asset, literal hue) + the wordmark. Sits at the
+   far left over the sidebar column. */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.wordmark {
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+/* ─── Lower region: sidebar + resizer + canvas ─────────────────────────────────── */
+.lower {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar {
@@ -23,7 +64,7 @@
   transition: width var(--dur) var(--ease);
 }
 /* During a drag the width tracks the cursor 1:1 — no easing lag behind the pointer. */
-.shell[data-resizing] .sidebar {
+.frame[data-resizing] .sidebar {
   transition: none;
 }
 
@@ -72,16 +113,6 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-5);
-  border-bottom: var(--border-width) solid var(--border);
-  flex: none;
-  min-height: var(--header-height);
 }
 
 /* The mobile nav trigger — hidden on desktop (the rail is always docked there), a 44px tap target
@@ -151,9 +182,9 @@
   min-width: 0;
 }
 
-/* The course view tabs — inline in the header's right cluster on wide screens, before the search.
+/* The course view tabs — inline in the top bar's right cluster on wide screens, before the search.
    Below 900px they reflow to their own full-width scrollable row beneath the title (see the media
-   query) so the header never overflows. */
+   query) so the top bar never overflows. */
 .toolbar {
   display: flex;
   align-items: center;
@@ -167,12 +198,12 @@
   position: relative;
 }
 
-/* ─── Narrow (≤900px): the header wraps, view tabs drop to their own row ────────
+/* ─── Narrow (≤900px): the top bar wraps, view tabs drop to their own row ────────
    Below the point where the search collapses to an icon, the title row can't also hold the tabs.
-   The header wraps: title + search-icon + status stay on the first line, and the tabs reflow to a
-   full-width scrollable row beneath them, hairline-divided from the title row above. */
+   The top bar wraps: brand + title + search-icon + status stay on the first line, and the tabs
+   reflow to a full-width scrollable row beneath them, hairline-divided from the row above. */
 @media (max-width: 900px) {
-  .header {
+  .topbar {
     flex-wrap: wrap;
     row-gap: var(--space-2);
   }
@@ -197,13 +228,13 @@
 }
 
 /* ─── Phone (≤768px): the rail becomes an off-canvas drawer ────────────────────
-   The sidebar leaves the flex flow (fixed, off-screen left) so the canvas gets the full width; the
-   menu button reveals it over a scrim. Content-first, per the mobile nav decision. */
+   The sidebar leaves the flow (fixed, off-screen left) so the canvas gets the full width; the menu
+   button in the top bar reveals it over a scrim. Content-first, per the mobile nav decision. */
 @media (max-width: 768px) {
   .menuButton {
     display: inline-flex;
   }
-  .header {
+  .topbar {
     /* Tighter side padding; the menu button supplies the left affordance. */
     padding: var(--space-3) var(--space-4);
   }
@@ -213,8 +244,9 @@
     left: 0;
     bottom: 0;
     width: min(320px, 86vw);
-    /* Sit above the canvas + scrim; respect a notch on the left edge in landscape. */
+    /* Sit above the canvas + scrim; respect a notch on the top / left edges in landscape. */
     z-index: var(--z-modal);
+    padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
     border-right: var(--border-width) solid var(--border);
     box-shadow: var(--shadow-lg);
