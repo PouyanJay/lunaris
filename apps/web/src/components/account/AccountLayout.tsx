@@ -22,13 +22,17 @@ interface AccountLayoutProps {
 export function AccountLayout({ apiBaseUrl, section, isAdmin, onGoHome }: AccountLayoutProps) {
   const content = renderSection(section, isAdmin, apiBaseUrl, onGoHome);
 
+  // The content region is the single scroller (mirrors Settings) — each section renders its own bare
+  // panel stack into it, so there's exactly one scrollbar and one gutter, never a nested pair.
+  const surface = <div className={settingsStyles.content}>{content}</div>;
+
   // Non-admins have a single surface — render it plainly, no sub-nav.
-  if (!isAdmin) return content;
+  if (!isAdmin) return surface;
 
   return (
     <div className={settingsStyles.layout}>
       <AccountNav active={section} />
-      <div className={settingsStyles.content}>{content}</div>
+      {surface}
     </div>
   );
 }

@@ -40,12 +40,10 @@ export function UserAccountSection({ onGoHome }: UserAccountSectionProps) {
   }
 
   return (
-    <div className={styles.center}>
-      <div className={styles.stack}>
-        <IdentityPanel name={name} email={email} />
-        <DisplayNameForm currentName={name} onSave={updateDisplayName} />
-        <SessionPanel onSignOut={onSignOut} />
-      </div>
+    <div className={styles.stack}>
+      <IdentityPanel name={name} email={email} />
+      <DisplayNameForm currentName={name} onSave={updateDisplayName} />
+      <SessionPanel onSignOut={onSignOut} />
     </div>
   );
 }

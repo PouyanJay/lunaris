@@ -43,21 +43,20 @@ describe("App — URL routing (live studio)", () => {
     expect(screen.getByRole("link", { name: /^llm$/i })).toHaveAttribute("aria-current", "page");
   });
 
-  it("the sidebar has a labeled Account entry that routes to /account with no top-bar title", async () => {
+  it("deep-links to /account with no top-bar title and no separate Account nav entry", async () => {
     vi.stubGlobal("fetch", routedFetch());
-    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/account");
 
     render(<App />);
-    await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i });
 
-    // Account is a first-class, labeled left-nav entry (the reorg moved it off the top bar).
-    fireEvent.click(screen.getByRole("link", { name: "Account" }));
-    expect(window.location.pathname).toBe("/account");
-    // Its location is shown by the active sidebar entry — the top bar carries no "Account" title.
+    // The Account surface owns its heading — the top bar carries no "Account" title.
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "Account", level: 1 })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page");
+    expect(window.location.pathname).toBe("/account");
+    // There's no dedicated "Account" nav link anymore — the surface is reached from the identity row
+    // at the foot of the rail (which only renders for a signed-in user; auth is off in these tests).
+    expect(screen.queryByRole("link", { name: "Account" })).not.toBeInTheDocument();
   });
 
   it("resolves the legacy /profile URL to the Account page", async () => {
