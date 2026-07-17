@@ -42,6 +42,24 @@ export function settingsPath(section: SettingsSection): string {
   return `${ROUTES.settings}/${section}`;
 }
 
+/** The Account surface's sub-sections. Admins get a sub-nav (User account | Admin Portal); a
+ *  non-admin only ever sees `user-account`. One source of truth for the nav, the URL segment
+ *  (`/account/:section`), and the section renderer. */
+export const ACCOUNT_SECTIONS = ["user-account", "admin-portal"] as const;
+
+export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
+
+export const DEFAULT_ACCOUNT_SECTION: AccountSection = "user-account";
+
+function isAccountSection(value: string): value is AccountSection {
+  return (ACCOUNT_SECTIONS as readonly string[]).includes(value);
+}
+
+/** The canonical URL for an account section (Account sub-nav + deep links). */
+export function accountPath(section: AccountSection): string {
+  return section === DEFAULT_ACCOUNT_SECTION ? ROUTES.account : `${ROUTES.account}/${section}`;
+}
+
 const COURSE_VIEWS: CourseView[] = ["overview", "lessons", "map", "build", "corpus"];
 
 /** The reader segment was spelled "learn" before Overview became the landing tab — old
@@ -56,8 +74,7 @@ export type ShellRoute =
   | { kind: "home" }
   | { kind: "composer" }
   | { kind: "settings"; section: SettingsSection }
-  | { kind: "account" }
-  | { kind: "admin" }
+  | { kind: "account"; section: AccountSection }
   | { kind: "library" }
   | { kind: "activity" }
   | { kind: "bookmarks" }
@@ -79,9 +96,18 @@ export function resolveRoute(pathname: string): ShellRoute {
       ? { kind: "settings", section: settings.params.section }
       : { kind: "not-found" };
   }
-  // /profile is legacy — old links resolve to the Account page.
-  if (pathname === ROUTES.account || pathname === ROUTES.profile) return { kind: "account" };
-  if (pathname === ROUTES.admin) return { kind: "admin" };
+  // Bare /account (and the legacy /profile) land on the default section; /account/:section
+  // deep-links a section; /admin folds into the Account surface's Admin Portal section.
+  if (pathname === ROUTES.account || pathname === ROUTES.profile) {
+    return { kind: "account", section: DEFAULT_ACCOUNT_SECTION };
+  }
+  if (pathname === ROUTES.admin) return { kind: "account", section: "admin-portal" };
+  const account = matchPath(`${ROUTES.account}/:section`, pathname);
+  if (account?.params.section) {
+    return isAccountSection(account.params.section)
+      ? { kind: "account", section: account.params.section }
+      : { kind: "not-found" };
+  }
   if (pathname === ROUTES.library) return { kind: "library" };
   if (pathname === ROUTES.activity) return { kind: "activity" };
   if (pathname === ROUTES.bookmarks) return { kind: "bookmarks" };

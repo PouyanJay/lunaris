@@ -105,17 +105,20 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/");
   });
 
-  it("renders the Admin Portal at /admin once /api/me confirms an admin", async () => {
+  it("folds /admin into the Account surface's Admin Portal section for a confirmed admin", async () => {
     vi.stubGlobal("fetch", routedFetch({ me: { isAdmin: true } }));
     window.history.pushState(null, "", "/admin");
 
     render(<App />);
 
-    // The fail-closed notice may flash while /api/me resolves; it must then yield to the portal.
-    await waitFor(() =>
-      expect(screen.queryByText(/admin access required/i)).not.toBeInTheDocument(),
+    // /admin resolves to the Account surface; once /api/me confirms admin, the account sub-nav
+    // appears with Admin Portal as the active section (and the fail-closed notice is gone).
+    const nav = await screen.findByRole("navigation", { name: /account sections/i });
+    expect(within(nav).getByRole("link", { name: /admin portal/i })).toHaveAttribute(
+      "aria-current",
+      "page",
     );
-    expect(screen.getByRole("heading", { name: "Admin Portal" })).toBeInTheDocument();
+    expect(screen.queryByText(/admin access required/i)).not.toBeInTheDocument();
   });
 
   it("renders a designed not-found state for an unknown URL", async () => {

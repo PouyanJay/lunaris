@@ -80,7 +80,8 @@ describe("CoverConfigPanel", () => {
     await waitFor(() => expect(toggle).toBeEnabled());
     expect(toggle).toHaveAttribute("aria-checked", "true");
     // With the master on, the art-direction preset becomes tunable.
-    expect(screen.getByLabelText("Art-direction style")).toBeInTheDocument();
+    // The Style control (a custom Select) becomes tunable with the master on.
+    expect(screen.getByRole("button", { name: /style/i })).toBeInTheDocument();
   });
 
   it("reads the key from the file-store secrets when BYOK is off", async () => {

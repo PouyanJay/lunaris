@@ -13,6 +13,7 @@ import {
 } from "../../lib/config";
 import type { SecretStatus } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
+import { Select } from "../primitives/Select";
 import { Switch } from "../primitives/Switch";
 import { SaveResult } from "./SaveResult";
 import styles from "./Config.module.css";
@@ -32,6 +33,8 @@ interface VideoConfigPanelProps {
   /** Whether to render the narration toggle here. The reorganized Settings owns narration under the
    *  Voice section (see `VoiceConfigPanel`), so the Video section passes `false`. Defaults to true. */
   showVoice?: boolean;
+  /** Whether the disclosure starts open — Video is its section's first (and only) panel. */
+  defaultOpen?: boolean;
 }
 
 const LABELS: Record<string, string> = {
@@ -72,6 +75,7 @@ export function VideoConfigPanel({
   secrets,
   keysVersion = 0,
   showVoice = true,
+  defaultOpen = false,
 }: VideoConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
@@ -96,7 +100,7 @@ export function VideoConfigPanel({
   const voice = byName.get(VIDEO_VOICE_KEY);
 
   return (
-    <CollapsibleSection eyebrow="Video" title="Video generation" defaultOpen={false}>
+    <CollapsibleSection eyebrow="Video" title="Video generation" defaultOpen={defaultOpen}>
       <p className={styles.muted}>
         Generated explainer videos in your courses — a trailer and topic intro up top, and a video
         at the head of each lesson.
@@ -284,23 +288,21 @@ function LengthRow({ setting, busy, feedback, onSave }: LengthRowProps) {
   return (
     <div className={styles.row}>
       <div className={styles.head}>
-        <label className={styles.label} htmlFor={controlId} id={labelId}>
+        <span className={styles.label} id={labelId}>
           {LABELS[setting.name]}
-        </label>
-        <select
+        </span>
+        <Select
           id={controlId}
-          className={styles.lengthSelect}
           value={setting.value}
+          options={options.map((seconds) => ({
+            value: String(seconds),
+            label: formatSeconds(seconds),
+          }))}
+          onChange={onSave}
           disabled={busy}
           aria-labelledby={labelId}
-          onChange={(event) => onSave(event.target.value)}
-        >
-          {options.map((seconds) => (
-            <option key={seconds} value={String(seconds)}>
-              {formatSeconds(seconds)}
-            </option>
-          ))}
-        </select>
+          size="compact"
+        />
       </div>
       <SaveResult feedback={feedback} />
     </div>
