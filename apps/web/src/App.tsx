@@ -17,10 +17,7 @@ import { CourseLibrary } from "./components/library/CourseLibrary";
 import { HomeDashboard } from "./components/home/HomeDashboard";
 import { DeleteCourseDialog } from "./components/course/DeleteCourseDialog";
 import { CourseOverview } from "./components/overview/CourseOverview";
-import {
-  PrereqGraphExplorer,
-  type MapFocusRequest,
-} from "./components/graph/PrereqGraphExplorer";
+import { PrereqGraphExplorer, type MapFocusRequest } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
 import { Button } from "./components/primitives/Button";
@@ -493,7 +490,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       showAdmin={isAdmin}
       onNavigate={closeMobileNav}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
-      onToggleCollapse={sidebarLayout.toggleCollapsed}
       theme={theme}
       onToggleTheme={onToggleTheme}
     />

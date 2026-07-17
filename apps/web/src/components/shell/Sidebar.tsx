@@ -2,8 +2,6 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import { Button } from "../primitives/Button";
-import { BrandMark } from "./BrandMark";
-import { SidebarToggle } from "./SidebarToggle";
 import { MoonIcon, SunIcon } from "./themeIcons";
 import { useAuth } from "../../hooks/useAuth";
 import type { ThemeProps } from "../../hooks/useTheme";
@@ -17,23 +15,20 @@ interface SidebarProps extends ThemeProps {
   showAdmin?: boolean;
   /** Whether the rail is collapsed to the mini icon rail (labels drop away, actions become icons). */
   collapsed: boolean;
-  /** Collapse / expand the rail — the toggle lives in the brand row in both states. */
-  onToggleCollapse: () => void;
   /** Fired on any nav-link navigation (e.g. so the phone drawer dismisses). */
   onNavigate?: (() => void) | undefined;
 }
 
-/** The instrument rail: brand, the "New course" action, the app's primary nav (Home / My courses /
+/** The instrument rail: the "New course" action, the app's primary nav (Home / My courses /
  *  Activity / Bookmarks — real links, spine-marked when active), and a bottom cluster — theme,
  *  Settings/Admin, and the account row (a link to the profile page). Hairline-divided regions, not
- *  floating cards: the only rules are under the brand and above the account. Collapses to a mini
- *  icon rail: labels drop away leaving the icons. The toggle stays mounted across the transition so
- *  keyboard focus persists. */
+ *  floating cards: the only rule down here is above the account. Collapses to a mini icon rail:
+ *  labels drop away leaving the icons. The brand and the collapse toggle live in the top bar above
+ *  the rail (see AgentShell), so the rail leads straight with its primary action. */
 export function Sidebar({
   onNewCourse,
   showAdmin,
   collapsed,
-  onToggleCollapse,
   onNavigate,
   theme,
   onToggleTheme,
@@ -45,12 +40,6 @@ export function Sidebar({
   const themeAction = `Switch to ${goingDark ? "dark" : "light"} mode`;
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
-      <div className={styles.brand}>
-        {!collapsed && <BrandMark size={24} />}
-        {!collapsed && <span className={styles.wordmark}>Lunaris</span>}
-        <SidebarToggle collapsed={collapsed} onClick={onToggleCollapse} />
-      </div>
-
       <div className={styles.actions}>
         {collapsed ? (
           <button

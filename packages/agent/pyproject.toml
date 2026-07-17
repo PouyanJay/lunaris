@@ -12,9 +12,9 @@ dependencies = [
     "langchain-core>=0.3",
     "langgraph>=0.2",
     "deepagents>=0.0.2",
-    "mcp>=1.2",
+    "mcp>=1.28.1",
     "structlog>=24.4",
-    "json-repair>=0.59.10",
+    "json-repair>=0.60.1",
 ]
 
 [project.scripts]

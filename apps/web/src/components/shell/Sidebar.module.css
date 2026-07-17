@@ -5,28 +5,8 @@
   min-height: 0;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* Match the canvas header height so the top band is one continuous strip — the dividing hairline
-     lines up across the seam and the brand sits on the same baseline as the canvas title. */
-  min-height: var(--header-height);
-  padding: 0 var(--space-3);
-  border-bottom: var(--border-width) solid var(--border);
-  flex: none;
-}
-
-.wordmark {
-  font-size: var(--text-base);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  /* Push the collapse toggle to the rail's edge. */
-  margin-right: auto;
-}
-
-/* The "New course" action. No dividing hairline below it — it flows straight into the nav. */
+/* The rail leads with the "New course" action (the brand + collapse toggle live in the top bar
+   above it). No dividing hairline below it — it flows straight into the nav. */
 .actions {
   padding: var(--space-3);
   flex: none;
@@ -38,12 +18,7 @@
 }
 
 /* ─── Collapsed mini rail ──────────────────────────────────────────────────
-   Brand, actions, and the bottom cluster stack centred as icons. */
-.sidebar[data-collapsed] .brand {
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-}
+   Actions and the bottom cluster stack centred as icons. */
 .sidebar[data-collapsed] .actions {
   display: flex;
   justify-content: center;

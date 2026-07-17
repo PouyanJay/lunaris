@@ -1,5 +1,7 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
+import { BrandMark } from "./BrandMark";
+import { SidebarToggle } from "./SidebarToggle";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
   SIDEBAR_MAX_WIDTH,
@@ -39,11 +41,14 @@ interface AgentShellProps {
   onCloseMobileNav: () => void;
 }
 
-/** The two-pane instrument shell: a persistent left sidebar welded by a draggable hairline splitter
- *  to the canvas (a contextual header band over a full-bleed body). On desktop the rail collapses to
- *  a narrow icon rail and, when expanded, is resizable. On phones (≤768px) the rail goes off-canvas
- *  and opens as a focus-trapped drawer from the header's menu button — content gets the full width.
- *  Panels, not floating cards; the lighter top edge gives the frame its light-from-above.
+/** The instrument shell: a full-width top bar (brand at the far left, then the contextual view
+ *  title, toolbar, search and status) welded by a hairline to the lower region — a persistent left
+ *  sidebar and the full-bleed canvas beside it. The top bar and the sidebar share one ground
+ *  (`--bg-subtle`), so the chrome reads as a single inverted-L frame around the canvas. On desktop
+ *  the rail collapses to a narrow icon rail (from the toggle beside the brand) and, when expanded,
+ *  is resizable. On phones (≤768px) the rail goes off-canvas and opens as a focus-trapped drawer
+ *  from the top bar's menu button — content gets the full width. Panels, not floating cards; the
+ *  lighter top edge gives the frame its light-from-above.
  *
  *  Intentionally separate from `AppFrame`, which serves the offline SeedApp (no sidebar, brand mark
  *  in its header) — merging them would entangle two brand placements and an optional rail into one
@@ -61,7 +66,7 @@ export function AgentShell({
   onOpenMobileNav,
   onCloseMobileNav,
 }: AgentShellProps) {
-  const { collapsed, width, resizing, startResize, nudgeWidth } = layout;
+  const { collapsed, width, resizing, toggleCollapsed, startResize, nudgeWidth } = layout;
   const shellStyle = {
     "--sidebar-width": `${collapsed ? SIDEBAR_RAIL_WIDTH : width}px`,
   } as CSSProperties;
@@ -106,59 +111,70 @@ export function AgentShell({
   }, [mobileNavOpen]);
 
   return (
-    <div className={styles.shell} style={shellStyle} data-resizing={resizing || undefined}>
+    <div className={styles.frame} style={shellStyle} data-resizing={resizing || undefined}>
       <a className="skip-link" href={`#${CANVAS_ID}`}>
         Skip to content
       </a>
-      <aside
-        ref={asideRef}
-        id={SIDEBAR_ID}
-        className={styles.sidebar}
-        aria-label="Runs and navigation"
-        data-drawer-open={mobileNavOpen || undefined}
-      >
-        {sidebar}
-      </aside>
-      {!collapsed && (
-        <div
-          className={styles.resizer}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-          aria-valuenow={width}
-          aria-valuemin={SIDEBAR_MIN_WIDTH}
-          aria-valuemax={SIDEBAR_MAX_WIDTH}
-          tabIndex={0}
-          onPointerDown={startResize}
-          onKeyDown={nudgeWidth}
-          data-resizing={resizing || undefined}
-        />
-      )}
-      <section className={styles.canvas}>
-        <header className={styles.header}>
-          <button
-            ref={menuButtonRef}
-            type="button"
-            className={styles.menuButton}
-            aria-label="Open navigation"
-            aria-controls={SIDEBAR_ID}
-            aria-expanded={mobileNavOpen}
-            onClick={onOpenMobileNav}
-          >
-            <MenuIcon />
-          </button>
-          <h1 className={styles.title} title={title}>
-            {title}
-          </h1>
-          {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
-          {search && <div className={styles.search}>{search}</div>}
-          {meta && <div className={styles.meta}>{meta}</div>}
-        </header>
-        {banner}
-        <main id={CANVAS_ID} className={styles.body}>
-          {children}
-        </main>
-      </section>
+      {/* The full-width top bar: brand at the far left, then the contextual view title and the
+          right cluster (view tabs, search, status). Same ground as the sidebar below it. */}
+      <header className={styles.topbar}>
+        <button
+          ref={menuButtonRef}
+          type="button"
+          className={styles.menuButton}
+          aria-label="Open navigation"
+          aria-controls={SIDEBAR_ID}
+          aria-expanded={mobileNavOpen}
+          onClick={onOpenMobileNav}
+        >
+          <MenuIcon />
+        </button>
+        <div className={styles.brand}>
+          <BrandMark size={24} />
+          <span className={styles.wordmark}>Lunaris</span>
+        </div>
+        {/* Collapse the rail — beside the brand it sits over the sidebar column it controls. Hides
+            itself on phones, where the rail is a drawer rather than a collapsible mini-rail. */}
+        <SidebarToggle collapsed={collapsed} onClick={toggleCollapsed} />
+        <h1 className={styles.title} title={title}>
+          {title}
+        </h1>
+        {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
+        {search && <div className={styles.search}>{search}</div>}
+        {meta && <div className={styles.meta}>{meta}</div>}
+      </header>
+      <div className={styles.lower}>
+        <aside
+          ref={asideRef}
+          id={SIDEBAR_ID}
+          className={styles.sidebar}
+          aria-label="Runs and navigation"
+          data-drawer-open={mobileNavOpen || undefined}
+        >
+          {sidebar}
+        </aside>
+        {!collapsed && (
+          <div
+            className={styles.resizer}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuenow={width}
+            aria-valuemin={SIDEBAR_MIN_WIDTH}
+            aria-valuemax={SIDEBAR_MAX_WIDTH}
+            tabIndex={0}
+            onPointerDown={startResize}
+            onKeyDown={nudgeWidth}
+            data-resizing={resizing || undefined}
+          />
+        )}
+        <section className={styles.canvas}>
+          {banner}
+          <main id={CANVAS_ID} className={styles.body}>
+            {children}
+          </main>
+        </section>
+      </div>
       {mobileNavOpen && (
         <button
           type="button"
