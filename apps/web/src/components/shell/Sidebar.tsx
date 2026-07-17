@@ -20,12 +20,13 @@ interface SidebarProps extends ThemeProps {
   onNavigate?: (() => void) | undefined;
 }
 
-/** The instrument rail: a collapse toggle at its head, the "New course" action, the app's primary
- *  nav (Home / My courses / Activity / Bookmarks — real links, spine-marked when active), and a
- *  bottom cluster — theme, Settings, and the account row (the signed-in identity, itself the link to
- *  the Account page). Hairline-divided regions, not floating cards: the only rule down here is above
- *  the account. Collapses to a mini icon rail: labels drop away leaving the icons. The brand lives in
- *  the top bar above the rail (see AgentShell); the collapse toggle rides the rail it controls. */
+/** The instrument rail: a primary-action row ("New course" with the collapse toggle at its right
+ *  end), the app's primary nav (Home / My courses / Activity / Bookmarks — real links, spine-marked
+ *  when active), and a bottom cluster — theme, Settings, and the account row (the signed-in identity,
+ *  itself the link to the Account page). Hairline-divided regions, not floating cards: the only rule
+ *  down here is above the account. Collapses to a mini icon rail: labels drop away leaving the icons,
+ *  and the action row stacks (toggle over New course). The brand lives in the top bar above the rail
+ *  (see AgentShell); the collapse toggle rides the rail it controls. */
 export function Sidebar({
   onNewCourse,
   collapsed,
@@ -41,11 +42,10 @@ export function Sidebar({
   const themeAction = `Switch to ${goingDark ? "dark" : "light"} mode`;
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
-      {/* The collapse / expand toggle heads the rail it controls: right-aligned when expanded,
-          centred over the mini rail when collapsed so there's always an affordance to grow it back. */}
-      <div className={styles.railHeader}>
-        <SidebarToggle collapsed={collapsed} onClick={onToggleCollapsed} />
-      </div>
+      {/* The primary-action row: "New course" grows to fill it and the collapse toggle sits at its
+          right end, so the top row carries real content — no empty band. Collapsed, the row becomes a
+          centred column with the toggle above the New-course icon (see the CSS), keeping an
+          always-visible affordance to grow the rail back. */}
       <div className={styles.actions}>
         {collapsed ? (
           <button
@@ -63,6 +63,7 @@ export function Sidebar({
             New course
           </Button>
         )}
+        <SidebarToggle collapsed={collapsed} onClick={onToggleCollapsed} />
       </div>
 
       <nav className={styles.primaryNav} aria-label="Primary">
