@@ -11,8 +11,6 @@ import styles from "./Sidebar.module.css";
 
 interface SidebarProps extends ThemeProps {
   onNewCourse: () => void;
-  /** Show the "Admin Portal" nav entry — only for admins. */
-  showAdmin?: boolean;
   /** Whether the rail is collapsed to the mini icon rail (labels drop away, actions become icons). */
   collapsed: boolean;
   /** Fired on any nav-link navigation (e.g. so the phone drawer dismisses). */
@@ -21,13 +19,12 @@ interface SidebarProps extends ThemeProps {
 
 /** The instrument rail: the "New course" action, the app's primary nav (Home / My courses /
  *  Activity / Bookmarks — real links, spine-marked when active), and a bottom cluster — theme,
- *  Settings/Admin, and the account row (a link to the profile page). Hairline-divided regions, not
+ *  Settings, and the account row (a link to the Account page). Hairline-divided regions, not
  *  floating cards: the only rule down here is above the account. Collapses to a mini icon rail:
  *  labels drop away leaving the icons. The brand and the collapse toggle live in the top bar above
  *  the rail (see AgentShell), so the rail leads straight with its primary action. */
 export function Sidebar({
   onNewCourse,
-  showAdmin,
   collapsed,
   onNavigate,
   theme,
@@ -92,15 +89,6 @@ export function Sidebar({
       </nav>
 
       <nav className={styles.footer} aria-label="Secondary">
-        {showAdmin && (
-          <NavItem
-            to={ROUTES.admin}
-            icon={<AdminIcon />}
-            label="Admin Portal"
-            collapsed={collapsed}
-            onNavigate={onNavigate}
-          />
-        )}
         {collapsed ? (
           <button
             type="button"
@@ -138,12 +126,12 @@ export function Sidebar({
       {user &&
         (collapsed ? (
           <NavLink
-            to={ROUTES.profile}
+            to={ROUTES.account}
             onClick={onNavigate}
             className={({ isActive }) =>
               `${styles.railAction} ${isActive ? styles.railActionActive : ""}`.trim()
             }
-            aria-label="Your profile"
+            aria-label="Your account"
             title={displayName}
           >
             <span className={styles.avatar} aria-hidden="true">
@@ -152,7 +140,7 @@ export function Sidebar({
           </NavLink>
         ) : (
           <NavLink
-            to={ROUTES.profile}
+            to={ROUTES.account}
             onClick={onNavigate}
             className={({ isActive }) =>
               `${styles.account} ${isActive ? styles.accountActive : ""}`.trim()
@@ -288,26 +276,6 @@ function PlusIcon() {
   );
 }
 
-function AdminIcon() {
-  // A shield with a check — the admin / privileged-access mark.
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M8 1.75 13 3.5v4.2c0 3.2-2.1 5.3-5 6.3-2.9-1-5-3.1-5-6.3V3.5L8 1.75Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M5.9 7.9 7.4 9.4 10.2 6.4"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
 
 function GearIcon() {
   return (

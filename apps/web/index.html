@@ -36,10 +36,18 @@
     />
     <meta name="twitter:image" content="https://lunaris.pouyan.ai/og-image.png" />
     <script>
-      // Apply the saved theme before first paint (no flash). Default: light.
+      // Apply the saved theme before first paint (no flash). Default: light. The stored preference
+      // is "light" | "dark" | "system"; "system" resolves against the OS prefers-color-scheme here
+      // so it matches what useTheme.ts resolves after hydration.
       (function () {
         try {
-          if (localStorage.getItem("lunaris-theme") === "dark") {
+          var pref = localStorage.getItem("lunaris-theme");
+          var dark =
+            pref === "dark" ||
+            (pref === "system" &&
+              window.matchMedia &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) {
             document.documentElement.setAttribute("data-theme", "dark");
             var m = document.querySelector('meta[name="theme-color"]');
             if (m) m.setAttribute("content", "#090a0c"); // THEME_COLOR.dark in useTheme.ts

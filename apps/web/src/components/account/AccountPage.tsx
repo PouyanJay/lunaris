@@ -1,22 +1,27 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router";
 
 import { useAuth } from "../../hooks/useAuth";
 import { resolveDisplayName } from "../../lib/profile";
+import { ROUTES } from "../../lib/routes";
 import { Button } from "../primitives/Button";
 import { Input } from "../primitives/Input";
 import { Panel } from "../primitives/Panel";
 import { CanvasNotice } from "../states/CanvasNotice";
-import styles from "./Profile.module.css";
+import styles from "./Account.module.css";
 
-interface ProfileScreenProps {
+interface AccountPageProps {
   /** Return to the app after signing out (or when there's no session to show). */
   onGoHome: () => void;
+  /** Whether the signed-in user is a workspace admin — gates the Admin Portal entry. */
+  isAdmin: boolean;
 }
 
-/** The account's own page: change the display name (persisted to Supabase user_metadata) and sign
- *  out. Reached from the sidebar account row. Renders a designed notice — never a blank — when
- *  there's no session (auth disabled or already signed out). */
-export function ProfileScreen({ onGoHome }: ProfileScreenProps) {
+/** The account page: the user's identity (display name, avatar, email), the sign-out control, and —
+ *  for admins — an entry to the Admin Portal. Reached by clicking the user's name/avatar in the
+ *  sidebar. Renders a designed notice — never a blank — when there's no session (auth disabled or
+ *  already signed out). */
+export function AccountPage({ onGoHome, isAdmin }: AccountPageProps) {
   const { user, updateDisplayName, signOut } = useAuth();
 
   if (!user) {
@@ -24,7 +29,7 @@ export function ProfileScreen({ onGoHome }: ProfileScreenProps) {
       <CanvasNotice
         eyebrow="Account"
         title="You're not signed in"
-        body="Sign in to manage your profile and display name."
+        body="Sign in to manage your account and display name."
         actionLabel="Go home"
         onAction={onGoHome}
       />
@@ -45,6 +50,7 @@ export function ProfileScreen({ onGoHome }: ProfileScreenProps) {
         <IdentityPanel name={name} email={email} />
         <DisplayNameForm currentName={name} onSave={updateDisplayName} />
         <SessionPanel onSignOut={onSignOut} />
+        {isAdmin && <AdminPortalEntry />}
       </div>
     </div>
   );
@@ -162,6 +168,23 @@ function SessionPanel({ onSignOut }: { onSignOut: () => Promise<void> }) {
         >
           {signingOut ? "Signing out…" : "Sign out"}
         </Button>
+      </div>
+    </Panel>
+  );
+}
+
+/** Admins only: a link into the Admin Portal (the portal itself keeps its own full-canvas route so
+ *  its wide charts/tables aren't squeezed into this column). */
+function AdminPortalEntry() {
+  return (
+    <Panel heading="Admin Portal">
+      <div className={styles.session}>
+        <p className={styles.hint}>
+          Manage invitations, workspace users, and production operations.
+        </p>
+        <Link className={styles.adminLink} to={ROUTES.admin}>
+          Open Admin Portal
+        </Link>
       </div>
     </Panel>
   );

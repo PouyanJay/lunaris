@@ -19,6 +19,13 @@ interface ConfigPanelProps {
   /** When true, the panel describes its settings as the signed-in user's own; when false, as
    *  process-wide operator config. (The settings rendered are whatever the API returns.) */
   perUserConfig?: boolean;
+  /** The disclosure's eyebrow/title. Defaults to "Configuration" / "Runtime configuration". */
+  eyebrow?: string;
+  title?: string;
+  /** Restrict to config keys matching this predicate — so one server-driven config list can be
+   *  split across sub-nav sections (LLM models vs System observability). Video/cover keys are always
+   *  excluded (they own dedicated sections). */
+  filter?: (name: string) => boolean;
 }
 
 const LABELS: Record<string, string> = {
@@ -44,7 +51,13 @@ type Feedback = SaveFeedback;
  *  each shown with its current value + default. LangSmith vars are read at startup, so a change is
  *  flagged "restart to apply"; model vars take effect on the next build. The video settings render
  *  in their own Video section (the three-layer disclosure), so they're filtered out here. */
-export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelProps) {
+export function ConfigPanel({
+  apiBaseUrl,
+  perUserConfig = false,
+  eyebrow = "Configuration",
+  title = "Runtime configuration",
+  filter,
+}: ConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -52,12 +65,15 @@ export function ConfigPanel({ apiBaseUrl, perUserConfig = false }: ConfigPanelPr
   const settings =
     state.status === "ready"
       ? state.settings.filter(
-          (setting) => !VIDEO_CONFIG_KEYS.has(setting.name) && !COVER_CONFIG_KEYS.has(setting.name),
+          (setting) =>
+            !VIDEO_CONFIG_KEYS.has(setting.name) &&
+            !COVER_CONFIG_KEYS.has(setting.name) &&
+            (filter?.(setting.name) ?? true),
         )
       : [];
 
   return (
-    <CollapsibleSection eyebrow="Configuration" title="Runtime configuration" defaultOpen={false}>
+    <CollapsibleSection eyebrow={eyebrow} title={title} defaultOpen={false}>
       <p className={styles.muted}>
         {perUserConfig
           ? "The Claude models your own builds use."
