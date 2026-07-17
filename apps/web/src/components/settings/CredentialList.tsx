@@ -6,14 +6,19 @@ import type { SettingsSurface } from "./settingsSurface";
 import type { SettingsSection } from "../../lib/routes";
 import styles from "./Settings.module.css";
 
-/** One credential key, rendered with the right chrome for the deployment's mode: a per-user BYOK
- *  field (save / test / remove against the vault) when BYOK is on, or a write-only file-store secret
- *  field otherwise. Returns null when the key doesn't exist in the active mode — an operator-owned
- *  key (Supabase / LangSmith) has no BYOK field, and some keys (OpenAI) have no file-store field —
- *  so a section only shows the keys a user can actually set here. */
+/** Whether a key is settable in the deployment's active mode — an operator-owned key (Supabase /
+ *  LangSmith) has no BYOK field, and some keys (OpenAI) have no file-store field, so a section only
+ *  shows what a user can actually set here. The single source of truth for the mode filter. */
+function isSettable(spec: CredentialSpec, byokEnabled: boolean): boolean {
+  return byokEnabled ? spec.byok : spec.fileStore;
+}
+
+/** One settable credential key, rendered with the right chrome for the mode: a per-user BYOK field
+ *  (save / test / remove against the vault) when BYOK is on, or a write-only file-store secret field
+ *  otherwise. Only ever rendered for a spec that `isSettable` in the active mode (the caller filters
+ *  first), so it has no null branch. */
 function CredentialRow({ spec, surface }: { spec: CredentialSpec; surface: SettingsSurface }) {
   if (surface.byokEnabled) {
-    if (!spec.byok) return null;
     return (
       <CredentialField
         apiBaseUrl={surface.apiBaseUrl}
@@ -26,7 +31,6 @@ function CredentialRow({ spec, surface }: { spec: CredentialSpec; surface: Setti
       />
     );
   }
-  if (!spec.fileStore) return null;
   return (
     <SecretField
       apiBaseUrl={surface.apiBaseUrl}
@@ -54,8 +58,9 @@ export function CredentialList({
   eyebrow?: string;
   title?: string;
 }) {
-  const specs = credentialsForSection(section);
-  const visible = specs.filter((spec) => (surface.byokEnabled ? spec.byok : spec.fileStore));
+  const visible = credentialsForSection(section).filter((spec) =>
+    isSettable(spec, surface.byokEnabled),
+  );
   if (visible.length === 0) return null;
 
   return (

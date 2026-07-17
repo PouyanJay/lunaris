@@ -69,6 +69,25 @@ describe("AccountPage", () => {
     expect(auth.updateDisplayName).toHaveBeenCalledWith("Ada");
   });
 
+  it("rejects a blank name inline without calling the mutation", () => {
+    renderAccount();
+
+    fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: /save name/i }));
+
+    expect(screen.getByText(/enter a display name/i)).toBeInTheDocument();
+    expect(auth.updateDisplayName).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a save failure as a recoverable message", async () => {
+    auth.updateDisplayName = vi.fn().mockRejectedValue(new Error("Network down"));
+    renderAccount();
+
+    fireEvent.click(screen.getByRole("button", { name: /save name/i }));
+
+    expect(await screen.findByText("Network down")).toBeInTheDocument();
+  });
+
   it("signs out and returns home", async () => {
     const onGoHome = vi.fn();
     renderAccount({ onGoHome });

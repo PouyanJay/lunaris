@@ -5,6 +5,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { resolveDisplayName } from "../../lib/profile";
 import { ROUTES } from "../../lib/routes";
 import { Button } from "../primitives/Button";
+import buttonStyles from "../primitives/Button.module.css";
 import { Input } from "../primitives/Input";
 import { Panel } from "../primitives/Panel";
 import { CanvasNotice } from "../states/CanvasNotice";
@@ -182,7 +183,9 @@ function AdminPortalEntry() {
         <p className={styles.hint}>
           Manage invitations, workspace users, and production operations.
         </p>
-        <Link className={styles.adminLink} to={ROUTES.admin}>
+        {/* A real link (Cmd/middle-click works), wearing the shared secondary-button chrome so its
+            weight matches Sign out without re-declaring the button styles. */}
+        <Link className={`${buttonStyles.button} ${buttonStyles.secondary}`} to={ROUTES.admin}>
           Open Admin Portal
         </Link>
       </div>

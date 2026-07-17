@@ -99,31 +99,3 @@
     padding: var(--space-4);
   }
 }
-
-/* The Admin Portal entry link — a neutral secondary control styled as a button-height link so it
-   matches the Sign-out action's weight without borrowing the danger accent. */
-.adminLink {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  height: var(--space-8);
-  padding: 0 var(--space-4);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  color: var(--text);
-  text-decoration: none;
-  background: var(--surface);
-  border: var(--border-width) solid var(--border-strong);
-  border-radius: var(--radius-md);
-  transition:
-    background-color var(--dur-fast) var(--ease),
-    border-color var(--dur-fast) var(--ease);
-}
-.adminLink:hover {
-  background: var(--bg-muted);
-  border-color: var(--text-muted);
-}
-.adminLink:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--focus-ring);
-}
