@@ -7,6 +7,13 @@
   padding: var(--space-6);
 }
 
+/* The dashboard's readable column — capped and centred so the greeting, continue-learning hero and
+   recent grid don't stretch across a wide monitor. */
+.content {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
 .greeting {
   margin-bottom: var(--space-6);
 }

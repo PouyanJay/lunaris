@@ -120,10 +120,11 @@
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
-/* 16:9 like every other cover frame — a 7:5 box would letterbox the artwork on these small thumbs. */
+/* 16:9 like every other cover frame — a wide, legible thumbnail (not a postage stamp), sized as a
+   clear step down from the hero cover. */
 .rowCover {
   flex: none;
-  width: 64px;
+  width: 120px;
   aspect-ratio: var(--course-cover-aspect);
   border-radius: var(--radius-sm);
   overflow: hidden;
