@@ -5,43 +5,31 @@
   min-height: 0;
 }
 
-/* The collapse / expand toggle heads the rail: right-aligned in the rail's gutter when expanded. */
-.railHeader {
-  display: flex;
-  justify-content: flex-end;
-  padding: var(--space-2) var(--space-3) 0;
-  flex: none;
-}
-/* Collapsed: centre the toggle over the mini rail so it stays the affordance to grow the rail back. */
-.sidebar[data-collapsed] .railHeader {
-  justify-content: center;
-  padding: var(--space-2) 0 0;
-}
-/* On phones the rail is an off-canvas drawer, not a collapsible mini-rail — the toggle has no role
-   there (SidebarToggle hides itself), so drop its header row and let the drawer lead with actions. */
-@media (max-width: 768px) {
-  .railHeader {
-    display: none;
-  }
-}
-
-/* The rail's primary action (the brand lives in the top bar; the collapse toggle heads the rail
-   above). No dividing hairline below it — it flows straight into the nav. */
+/* The rail's primary-action row: "New course" grows to fill it and the collapse toggle sits at its
+   right end (the brand lives in the top bar). No dividing hairline below it — it flows into the nav.
+   On phones the toggle hides itself (the rail is a drawer), so New course simply fills the row. */
 .actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-3);
   flex: none;
 }
 
 .newCourse {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: var(--space-10);
 }
 
 /* ─── Collapsed mini rail ──────────────────────────────────────────────────
-   Actions and the bottom cluster stack centred as icons. */
+   Actions and the bottom cluster stack centred as icons. The action row becomes a centred column
+   with the collapse toggle on top (column-reverse keeps the DOM order: New course first, toggle
+   after) so there's always a visible affordance to grow the rail back. */
 .sidebar[data-collapsed] .actions {
-  display: flex;
-  justify-content: center;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-2) 0;
 }
 

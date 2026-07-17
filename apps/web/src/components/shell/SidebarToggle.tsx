@@ -8,9 +8,9 @@ interface SidebarToggleProps {
   onClick: () => void;
 }
 
-/** Icon-only control that collapses / expands the sidebar (the panel-rail glyph). Heads the rail it
- *  controls — right-aligned when expanded, centred over the mini rail when collapsed — so there's
- *  always an affordance to get the rail back. Labelled per direction for screen readers.
+/** Icon-only control that collapses / expands the sidebar (the panel-rail glyph). Rides the rail's
+ *  primary-action row — at the right of "New course" when expanded, above it when collapsed — so
+ *  there's always an affordance to get the rail back. Labelled per direction for screen readers.
  *  Ref-forwarding so focus can be managed by a caller that swaps the rail out from under it. */
 export const SidebarToggle = forwardRef<HTMLButtonElement, SidebarToggleProps>(
   function SidebarToggle({ collapsed, onClick }, ref) {
