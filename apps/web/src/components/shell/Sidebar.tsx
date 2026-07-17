@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router";
 
 import { Button } from "../primitives/Button";
+import { SidebarToggle } from "./SidebarToggle";
 import { MoonIcon, SunIcon } from "./themeIcons";
 import { useAuth } from "../../hooks/useAuth";
 import type { ThemeProps } from "../../hooks/useTheme";
@@ -13,19 +14,22 @@ interface SidebarProps extends ThemeProps {
   onNewCourse: () => void;
   /** Whether the rail is collapsed to the mini icon rail (labels drop away, actions become icons). */
   collapsed: boolean;
+  /** Collapse / expand the rail — the toggle lives at the head of the rail itself. */
+  onToggleCollapsed: () => void;
   /** Fired on any nav-link navigation (e.g. so the phone drawer dismisses). */
   onNavigate?: (() => void) | undefined;
 }
 
-/** The instrument rail: the "New course" action, the app's primary nav (Home / My courses /
- *  Activity / Bookmarks — real links, spine-marked when active), and a bottom cluster — theme,
- *  Settings, and the account row (a link to the Account page). Hairline-divided regions, not
- *  floating cards: the only rule down here is above the account. Collapses to a mini icon rail:
- *  labels drop away leaving the icons. The brand and the collapse toggle live in the top bar above
- *  the rail (see AgentShell), so the rail leads straight with its primary action. */
+/** The instrument rail: a collapse toggle at its head, the "New course" action, the app's primary
+ *  nav (Home / My courses / Activity / Bookmarks — real links, spine-marked when active), and a
+ *  bottom cluster — theme, Settings, and the account row (the signed-in identity, itself the link to
+ *  the Account page). Hairline-divided regions, not floating cards: the only rule down here is above
+ *  the account. Collapses to a mini icon rail: labels drop away leaving the icons. The brand lives in
+ *  the top bar above the rail (see AgentShell); the collapse toggle rides the rail it controls. */
 export function Sidebar({
   onNewCourse,
   collapsed,
+  onToggleCollapsed,
   onNavigate,
   theme,
   onToggleTheme,
@@ -37,6 +41,11 @@ export function Sidebar({
   const themeAction = `Switch to ${goingDark ? "dark" : "light"} mode`;
   return (
     <div className={styles.sidebar} data-collapsed={collapsed || undefined}>
+      {/* The collapse / expand toggle heads the rail it controls: right-aligned when expanded,
+          centred over the mini rail when collapsed so there's always an affordance to grow it back. */}
+      <div className={styles.railHeader}>
+        <SidebarToggle collapsed={collapsed} onClick={onToggleCollapsed} />
+      </div>
       <div className={styles.actions}>
         {collapsed ? (
           <button
@@ -121,24 +130,19 @@ export function Sidebar({
           collapsed={collapsed}
           onNavigate={onNavigate}
         />
-        <NavItem
-          to={ROUTES.account}
-          icon={<AccountIcon />}
-          label="Account"
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
       </nav>
 
-      {/* The identity row at the foot of the rail — who's signed in, and a shortcut to the Account
-          page. The active marker lives on the labeled "Account" nav entry above, so this row never
-          carries the accent spine (two selected rows would read as a bug). */}
+      {/* The identity row at the foot of the rail — who's signed in, and the way into the Account
+          page (there's no separate "Account" nav entry; this row is it). It carries the house accent
+          spine when the Account surface is active, like any other nav destination. */}
       {user &&
         (collapsed ? (
           <NavLink
             to={ROUTES.account}
             onClick={onNavigate}
-            className={() => styles.railAction}
+            className={({ isActive }) =>
+              `${styles.railAction} ${isActive ? styles.railActionActive : ""}`.trim()
+            }
             aria-label="Your account"
             title={displayName}
           >
@@ -147,7 +151,13 @@ export function Sidebar({
             </span>
           </NavLink>
         ) : (
-          <NavLink to={ROUTES.account} onClick={onNavigate} className={() => styles.account}>
+          <NavLink
+            to={ROUTES.account}
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              `${styles.account} ${isActive ? styles.accountActive : ""}`.trim()
+            }
+          >
             <span className={styles.avatar} aria-hidden="true">
               {displayName.charAt(0)}
             </span>
@@ -273,20 +283,6 @@ function PlusIcon() {
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function AccountIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M12 12.75a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5ZM4.5 19.5a7.5 7.5 0 0 1 15 0"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
       />
     </svg>
   );

@@ -1,7 +1,6 @@
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 
 import { BrandMark } from "./BrandMark";
-import { SidebarToggle } from "./SidebarToggle";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
 import {
   SIDEBAR_MAX_WIDTH,
@@ -66,7 +65,7 @@ export function AgentShell({
   onOpenMobileNav,
   onCloseMobileNav,
 }: AgentShellProps) {
-  const { collapsed, width, resizing, toggleCollapsed, startResize, nudgeWidth } = layout;
+  const { collapsed, width, resizing, startResize, nudgeWidth } = layout;
   const shellStyle = {
     "--sidebar-width": `${collapsed ? SIDEBAR_RAIL_WIDTH : width}px`,
   } as CSSProperties;
@@ -133,9 +132,6 @@ export function AgentShell({
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
-        {/* Collapse the rail — beside the brand it sits over the sidebar column it controls. Hides
-            itself on phones, where the rail is a drawer rather than a collapsible mini-rail. */}
-        <SidebarToggle collapsed={collapsed} onClick={toggleCollapsed} />
         {/* A blank title (e.g. the Account page, whose location is shown by the active sidebar
             entry) renders a spacer, not an empty heading — the surface supplies its own h1. */}
         {title ? (

@@ -499,6 +499,7 @@ function StudioApp({
       onNewCourse={startNewCourse}
       onNavigate={closeMobileNav}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
+      onToggleCollapsed={sidebarLayout.toggleCollapsed}
       theme={theme}
       onToggleTheme={onToggleTheme}
     />

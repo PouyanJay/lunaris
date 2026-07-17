@@ -1,13 +1,5 @@
-/* The profile column — mirrors the Settings surface: a centered, capped stack of hairline panels. */
-.center {
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: var(--space-8);
-  overflow-y: auto;
-}
-
+/* The profile column — a capped stack of hairline panels. The Account surface's content region
+   (SettingsLayout `.content`) owns the padding, centering, and scroll; this is just the width cap. */
 .stack {
   width: 100%;
   max-width: 560px;
@@ -92,10 +84,4 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-}
-
-@media (max-width: 768px) {
-  .center {
-    padding: var(--space-4);
-  }
 }

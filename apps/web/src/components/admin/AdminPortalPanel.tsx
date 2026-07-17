@@ -8,12 +8,10 @@ import styles from "./AdminPortal.module.css";
  *  each section owns its own data loading so one slow fetch never blocks the other. */
 export function AdminPortalPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
   return (
-    <div className={styles.center}>
-      <div className={styles.panel}>
-        <InviteGateSection apiBaseUrl={apiBaseUrl} />
-        <AdminUsersSection apiBaseUrl={apiBaseUrl} />
-        <ProdOpsSection apiBaseUrl={apiBaseUrl} />
-      </div>
+    <div className={styles.panel}>
+      <InviteGateSection apiBaseUrl={apiBaseUrl} />
+      <AdminUsersSection apiBaseUrl={apiBaseUrl} />
+      <ProdOpsSection apiBaseUrl={apiBaseUrl} />
     </div>
   );
 }

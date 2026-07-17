@@ -1,26 +1,11 @@
-/* The canvas content region has no padding of its own (every panel adds its own gutter), so this
-   insets + centers the panel — matching the Settings panel so the admin surfaces are siblings. */
-.center {
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: var(--space-8);
-  overflow-y: auto;
-}
-
+/* The Admin Portal's capped panel column. The Account surface's content region (SettingsLayout
+   `.content`) owns the padding, centering, and scroll; this is just the width cap + section rhythm. */
 .panel {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
   max-width: 720px;
-}
-
-@media (max-width: 768px) {
-  .center {
-    padding: var(--space-4);
-  }
 }
 
 /* ─── Sections ──────────────────────────────────────────────────────────────── */
