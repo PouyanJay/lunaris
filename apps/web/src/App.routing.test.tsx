@@ -43,13 +43,33 @@ describe("App — URL routing (live studio)", () => {
     expect(screen.getByRole("link", { name: /^llm$/i })).toHaveAttribute("aria-current", "page");
   });
 
+  it("the sidebar has a labeled Account entry that routes to /account with no top-bar title", async () => {
+    vi.stubGlobal("fetch", routedFetch());
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+    await screen.findByRole("heading", { name: /good (morning|afternoon|evening)/i });
+
+    // Account is a first-class, labeled left-nav entry (the reorg moved it off the top bar).
+    fireEvent.click(screen.getByRole("link", { name: "Account" }));
+    expect(window.location.pathname).toBe("/account");
+    // Its location is shown by the active sidebar entry — the top bar carries no "Account" title.
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Account", level: 1 })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("resolves the legacy /profile URL to the Account page", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/profile");
 
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+    // The Account page owns its heading now (the top bar shows no title for Account). With auth off
+    // in these tests it renders its no-session state — an AccountPage-specific surface, proving the
+    // legacy /profile URL routed to Account (not Home / not-found).
+    expect(await screen.findByRole("heading", { name: /not signed in/i })).toBeInTheDocument();
   });
 
   it("rail Settings navigation updates the URL; Done returns Home", async () => {

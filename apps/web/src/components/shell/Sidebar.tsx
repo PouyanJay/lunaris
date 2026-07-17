@@ -121,16 +121,24 @@ export function Sidebar({
           collapsed={collapsed}
           onNavigate={onNavigate}
         />
+        <NavItem
+          to={ROUTES.account}
+          icon={<AccountIcon />}
+          label="Account"
+          collapsed={collapsed}
+          onNavigate={onNavigate}
+        />
       </nav>
 
+      {/* The identity row at the foot of the rail — who's signed in, and a shortcut to the Account
+          page. The active marker lives on the labeled "Account" nav entry above, so this row never
+          carries the accent spine (two selected rows would read as a bug). */}
       {user &&
         (collapsed ? (
           <NavLink
             to={ROUTES.account}
             onClick={onNavigate}
-            className={({ isActive }) =>
-              `${styles.railAction} ${isActive ? styles.railActionActive : ""}`.trim()
-            }
+            className={() => styles.railAction}
             aria-label="Your account"
             title={displayName}
           >
@@ -139,13 +147,7 @@ export function Sidebar({
             </span>
           </NavLink>
         ) : (
-          <NavLink
-            to={ROUTES.account}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `${styles.account} ${isActive ? styles.accountActive : ""}`.trim()
-            }
-          >
+          <NavLink to={ROUTES.account} onClick={onNavigate} className={() => styles.account}>
             <span className={styles.avatar} aria-hidden="true">
               {displayName.charAt(0)}
             </span>
@@ -271,6 +273,20 @@ function PlusIcon() {
         stroke="currentColor"
         strokeWidth="1.4"
         strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function AccountIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 12.75a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5ZM4.5 19.5a7.5 7.5 0 0 1 15 0"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );

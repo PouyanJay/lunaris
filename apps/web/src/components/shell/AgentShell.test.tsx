@@ -30,6 +30,20 @@ function renderShell(overrides: Partial<React.ComponentProps<typeof AgentShell>>
   return { props, ...render(<AgentShell {...props} />) };
 }
 
+describe("AgentShell top-bar title", () => {
+  it("renders the title as the top-bar heading when set", () => {
+    renderShell({ title: "New course" });
+    expect(screen.getByRole("heading", { name: "New course", level: 1 })).toBeInTheDocument();
+  });
+
+  it("renders no heading when the title is blank (the surface owns its own h1)", () => {
+    // The Account page passes an empty title — its location is the active sidebar entry — so the top
+    // bar must not emit an empty <h1> (an a11y smell); it renders a spacer instead.
+    renderShell({ title: "" });
+    expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
+  });
+});
+
 describe("AgentShell mobile nav drawer", () => {
   it("opens the drawer from the header menu button", () => {
     const onOpenMobileNav = vi.fn();

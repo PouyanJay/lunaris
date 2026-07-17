@@ -48,6 +48,10 @@ export function AccountPage({ onGoHome, isAdmin }: AccountPageProps) {
   return (
     <div className={styles.center}>
       <div className={styles.stack}>
+        {/* The page's accessible h1 — the top bar shows no title for Account (its location is the
+            active sidebar entry), so the page owns its heading. Visually hidden to keep the surface
+            clean; screen readers and the document outline still get one h1. */}
+        <h1 className="sr-only">Account</h1>
         <IdentityPanel name={name} email={email} />
         <DisplayNameForm currentName={name} onSave={updateDisplayName} />
         <SessionPanel onSignOut={onSignOut} />
