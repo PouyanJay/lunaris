@@ -34,9 +34,8 @@ import { BuildingState } from "./components/states/BuildingState";
 import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
-import { AdminPortalPanel } from "./components/admin/AdminPortalPanel";
 import { SettingsLayout } from "./components/settings/SettingsLayout";
-import { AccountPage } from "./components/account/AccountPage";
+import { AccountLayout } from "./components/account/AccountLayout";
 import { CanvasNotice } from "./components/states/CanvasNotice";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
@@ -576,41 +575,22 @@ function StudioApp({
       return { title: "Settings", meta, body };
     }
     if (route.kind === "account") {
-      const body = <AccountPage onGoHome={() => navigate("/")} isAdmin={isAdmin} />;
+      const body = (
+        <AccountLayout
+          apiBaseUrl={apiBaseUrl}
+          section={route.section}
+          isAdmin={isAdmin}
+          onGoHome={() => navigate("/")}
+        />
+      );
       const meta = (
         <Button type="button" onClick={closeNavView}>
           Done
         </Button>
       );
-      // No top-bar title — the active "Account" sidebar entry marks the location; the page carries
-      // its own (visually-hidden) heading.
+      // No top-bar title — the active "Account" sidebar entry (and, for admins, the account sub-nav)
+      // marks the location; each section carries its own heading.
       return { title: "", meta, body };
-    }
-    if (route.kind === "admin") {
-      // Fail closed: until /api/me confirms the admin claim, the portal stays behind the notice
-      // (the API enforces admin on every call regardless — this is presentation, not security).
-      if (!isAdmin) {
-        return {
-          title: "Admin Portal",
-          meta: null,
-          body: (
-            <CanvasNotice
-              eyebrow="Restricted"
-              title="Admin access required"
-              body="This page is only available to workspace administrators."
-              actionLabel="Go home"
-              onAction={() => navigate("/")}
-            />
-          ),
-        };
-      }
-      const body = <AdminPortalPanel apiBaseUrl={apiBaseUrl} />;
-      const meta = (
-        <Button type="button" onClick={closeNavView}>
-          Done
-        </Button>
-      );
-      return { title: "Admin Portal", meta, body };
     }
     // This tab's live build canvases — rendered on the home route until the stream learns its
     // course id (the handoff effect then moves the URL), and on the routed course thereafter.

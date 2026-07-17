@@ -93,9 +93,9 @@ describe("ConfigPanel", () => {
     render(<ConfigPanel apiBaseUrl="http://test" />);
     await expandConfig();
 
-    fireEvent.change(await screen.findByLabelText("Worker model"), {
-      target: { value: "claude-sonnet-4-6" },
-    });
+    // The custom Select (a listbox, not a native <select>): open it, then pick the option.
+    fireEvent.click(await screen.findByRole("button", { name: /worker model/i }));
+    fireEvent.pointerDown(screen.getByRole("option", { name: "claude-sonnet-4-6" }));
 
     await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
     // A model save is per-build, not restart-required — no restart note.

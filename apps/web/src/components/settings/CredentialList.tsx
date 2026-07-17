@@ -52,11 +52,14 @@ export function CredentialList({
   surface,
   eyebrow = "Keys",
   title = "API keys",
+  defaultOpen = false,
 }: {
   section: SettingsSection;
   surface: SettingsSurface;
   eyebrow?: string;
   title?: string;
+  /** Whether the disclosure starts open — the first panel of a section does (see SettingsSections). */
+  defaultOpen?: boolean;
 }) {
   const visible = credentialsForSection(section).filter((spec) =>
     isSettable(spec, surface.byokEnabled),
@@ -64,7 +67,7 @@ export function CredentialList({
   if (visible.length === 0) return null;
 
   return (
-    <CollapsibleSection eyebrow={eyebrow} title={title} defaultOpen={false}>
+    <CollapsibleSection eyebrow={eyebrow} title={title} defaultOpen={defaultOpen}>
       <div className={styles.fields}>
         {visible.map((spec) => (
           <CredentialRow key={spec.key} spec={spec} surface={surface} />

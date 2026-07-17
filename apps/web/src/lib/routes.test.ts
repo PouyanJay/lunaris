@@ -10,8 +10,10 @@ describe("resolveRoute", () => {
     ["/settings/llm", "settings"],
     ["/settings/bogus", "not-found"],
     ["/account", "account"],
+    ["/account/admin-portal", "account"],
+    ["/account/bogus", "not-found"],
     ["/profile", "account"],
-    ["/admin", "admin"],
+    ["/admin", "account"],
     ["/courses", "library"],
     ["/activity", "activity"],
     ["/bookmarks", "bookmarks"],
@@ -32,9 +34,16 @@ describe("resolveRoute", () => {
     expect(resolveRoute("/settings/nope").kind).toBe("not-found");
   });
 
-  it("resolves the legacy /profile path to the Account page", () => {
-    expect(resolveRoute("/profile")).toEqual({ kind: "account" });
-    expect(resolveRoute("/account")).toEqual({ kind: "account" });
+  it("resolves the Account sections, the legacy /profile, and /admin folding into Admin Portal", () => {
+    expect(resolveRoute("/account")).toEqual({ kind: "account", section: "user-account" });
+    expect(resolveRoute("/profile")).toEqual({ kind: "account", section: "user-account" });
+    expect(resolveRoute("/account/admin-portal")).toEqual({
+      kind: "account",
+      section: "admin-portal",
+    });
+    // /admin is folded into the Account surface's Admin Portal section.
+    expect(resolveRoute("/admin")).toEqual({ kind: "account", section: "admin-portal" });
+    expect(resolveRoute("/account/nope").kind).toBe("not-found");
   });
 
   it("resolves a course path with the Overview default and explicit views", () => {

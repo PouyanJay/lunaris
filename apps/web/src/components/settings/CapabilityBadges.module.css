@@ -27,12 +27,16 @@
   margin-left: auto;
 }
 
-/* Uppercase mono status tag — the typographic signal (never colour alone). Fallback gets the accent
-   so it stands out as the thing to act on; live stays quiet. */
+/* Uppercase mono status tag — the typographic signal, reinforced by colour (never colour alone).
+   LIVE is green (the capability is keyed and running); FALLBACK gets the amber accent so it stands
+   out as the thing to act on. */
 .mode {
   font-size: 10px;
   letter-spacing: 0.08em;
   color: var(--text-muted);
+}
+.row[data-mode="live"] .mode {
+  color: var(--success);
 }
 .row[data-mode="fallback"] .mode {
   color: var(--accent-500);

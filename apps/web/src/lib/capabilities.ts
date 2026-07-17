@@ -20,6 +20,7 @@ export const CAPABILITY_LABELS: Record<CapabilityName, string> = {
   embeddings: "Embeddings",
   search: "Web search",
   video: "Video",
+  cover: "Image generation",
 };
 
 /** Fetch the per-capability live/fallback status. Best-effort: a failure resolves to an empty list

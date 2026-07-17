@@ -1,28 +1,22 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router";
 
 import { useAuth } from "../../hooks/useAuth";
 import { resolveDisplayName } from "../../lib/profile";
-import { ROUTES } from "../../lib/routes";
 import { Button } from "../primitives/Button";
-import buttonStyles from "../primitives/Button.module.css";
 import { Input } from "../primitives/Input";
 import { Panel } from "../primitives/Panel";
 import { CanvasNotice } from "../states/CanvasNotice";
 import styles from "./Account.module.css";
 
-interface AccountPageProps {
+interface UserAccountSectionProps {
   /** Return to the app after signing out (or when there's no session to show). */
   onGoHome: () => void;
-  /** Whether the signed-in user is a workspace admin — gates the Admin Portal entry. */
-  isAdmin: boolean;
 }
 
-/** The account page: the user's identity (display name, avatar, email), the sign-out control, and —
- *  for admins — an entry to the Admin Portal. Reached by clicking the user's name/avatar in the
- *  sidebar. Renders a designed notice — never a blank — when there's no session (auth disabled or
- *  already signed out). */
-export function AccountPage({ onGoHome, isAdmin }: AccountPageProps) {
+/** The "User account" section of the Account surface: the user's identity (display name, avatar,
+ *  email), the display-name edit, and the sign-out control. Renders a designed notice — never a
+ *  blank — when there's no session (auth disabled or already signed out). */
+export function UserAccountSection({ onGoHome }: UserAccountSectionProps) {
   const { user, updateDisplayName, signOut } = useAuth();
 
   if (!user) {
@@ -48,14 +42,9 @@ export function AccountPage({ onGoHome, isAdmin }: AccountPageProps) {
   return (
     <div className={styles.center}>
       <div className={styles.stack}>
-        {/* The page's accessible h1 — the top bar shows no title for Account (its location is the
-            active sidebar entry), so the page owns its heading. Visually hidden to keep the surface
-            clean; screen readers and the document outline still get one h1. */}
-        <h1 className="sr-only">Account</h1>
         <IdentityPanel name={name} email={email} />
         <DisplayNameForm currentName={name} onSave={updateDisplayName} />
         <SessionPanel onSignOut={onSignOut} />
-        {isAdmin && <AdminPortalEntry />}
       </div>
     </div>
   );
@@ -173,25 +162,6 @@ function SessionPanel({ onSignOut }: { onSignOut: () => Promise<void> }) {
         >
           {signingOut ? "Signing out…" : "Sign out"}
         </Button>
-      </div>
-    </Panel>
-  );
-}
-
-/** Admins only: a link into the Admin Portal (the portal itself keeps its own full-canvas route so
- *  its wide charts/tables aren't squeezed into this column). */
-function AdminPortalEntry() {
-  return (
-    <Panel heading="Admin Portal">
-      <div className={styles.session}>
-        <p className={styles.hint}>
-          Manage invitations, workspace users, and production operations.
-        </p>
-        {/* A real link (Cmd/middle-click works), wearing the shared secondary-button chrome so its
-            weight matches Sign out without re-declaring the button styles. */}
-        <Link className={`${buttonStyles.button} ${buttonStyles.secondary}`} to={ROUTES.admin}>
-          Open Admin Portal
-        </Link>
       </div>
     </Panel>
   );

@@ -12,6 +12,7 @@ import {
 } from "../../lib/config";
 import type { SecretStatus } from "../../lib/settings";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
+import { Select } from "../primitives/Select";
 import { Switch } from "../primitives/Switch";
 import { SaveResult } from "./SaveResult";
 import styles from "./Config.module.css";
@@ -176,23 +177,18 @@ function PresetRow({ setting, busy, feedback, onSave }: PresetRowProps) {
   return (
     <div className={styles.row}>
       <div className={styles.head}>
-        <label className={styles.label} htmlFor={controlId} id={labelId}>
-          Art-direction style
-        </label>
-        <select
+        <span className={styles.label} id={labelId}>
+          Style
+        </span>
+        <Select
           id={controlId}
-          className={styles.lengthSelect}
           value={setting.value}
+          options={options.map((value) => ({ value, label: PRESET_LABELS[value] ?? value }))}
+          onChange={onSave}
           disabled={busy}
           aria-labelledby={labelId}
-          onChange={(event) => onSave(event.target.value)}
-        >
-          {options.map((value) => (
-            <option key={value} value={value}>
-              {PRESET_LABELS[value] ?? value}
-            </option>
-          ))}
-        </select>
+          size="compact"
+        />
       </div>
       <SaveResult feedback={feedback} />
     </div>

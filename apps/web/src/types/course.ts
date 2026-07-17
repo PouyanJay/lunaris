@@ -375,7 +375,7 @@ export interface IngestResult {
 }
 
 /** A key-gated capability that degrades to a keyless local fallback (mirrors CapabilityName). */
-export type CapabilityName = "llm" | "embeddings" | "search" | "video";
+export type CapabilityName = "llm" | "embeddings" | "search" | "video" | "cover";
 
 /** Whether a capability ran on its keyed provider or its keyless fallback (mirrors CapabilityMode). */
 export type CapabilityMode = "live" | "fallback";

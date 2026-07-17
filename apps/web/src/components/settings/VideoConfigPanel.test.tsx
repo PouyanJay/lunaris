@@ -230,9 +230,9 @@ describe("VideoConfigPanel", () => {
     );
     await expandVideo();
 
-    fireEvent.change(await screen.findByLabelText("Lesson video length"), {
-      target: { value: "90" },
-    });
+    // The custom Select (a listbox, not a native <select>): open it, then pick the option (90s → 1:30).
+    fireEvent.click(await screen.findByRole("button", { name: /lesson video length/i }));
+    fireEvent.pointerDown(screen.getByRole("option", { name: "1:30" }));
 
     await waitFor(() => expect(screen.getByText("Saved")).toBeInTheDocument());
     const put = fetchMock.mock.calls.find(([url]) =>
@@ -261,9 +261,9 @@ describe("VideoConfigPanel", () => {
     );
     await expandVideo();
 
-    fireEvent.change(await screen.findByLabelText("Lesson video length"), {
-      target: { value: "90" },
-    });
+    // The custom Select (a listbox, not a native <select>): open it, then pick the option (90s → 1:30).
+    fireEvent.click(await screen.findByRole("button", { name: /lesson video length/i }));
+    fireEvent.pointerDown(screen.getByRole("option", { name: "1:30" }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/out of bounds/i));
   });

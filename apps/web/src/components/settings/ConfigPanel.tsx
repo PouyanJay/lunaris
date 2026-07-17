@@ -9,6 +9,7 @@ import {
   type ConfigSetting,
 } from "../../lib/config";
 import { Button } from "../primitives/Button";
+import { Select } from "../primitives/Select";
 import { CollapsibleSection } from "../primitives/CollapsibleSection";
 import { Switch } from "../primitives/Switch";
 import { SaveResult } from "./SaveResult";
@@ -183,24 +184,18 @@ interface ControlProps {
   onSave: (value: string) => void;
 }
 
-function ModelControl({ id, hintId, setting, busy, onSave }: ControlProps) {
+function ModelControl({ id, setting, busy, onSave }: ControlProps) {
   const options = [...new Set<string>([...KNOWN_MODELS, setting.value])];
   return (
     <div className={styles.control}>
-      <select
+      <Select
         id={id}
-        className={styles.select}
         value={setting.value}
+        options={options.map((model) => ({ value: model, label: model }))}
+        onChange={onSave}
         disabled={busy}
-        aria-describedby={hintId}
-        onChange={(event) => onSave(event.target.value)}
-      >
-        {options.map((model) => (
-          <option key={model} value={model}>
-            {model}
-          </option>
-        ))}
-      </select>
+        aria-labelledby={`${id}-label`}
+      />
     </div>
   );
 }
