@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { User } from "@supabase/supabase-js";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ProfileScreen } from "./ProfileScreen";
+import { AccountPage } from "./AccountPage";
 
-// The screen reads its account off useAuth; drive it through a mocked hook so each test can set the
+// The page reads its account off useAuth; drive it through a mocked hook so each test can set the
 // user + spy on the mutations without standing up a Supabase-backed AuthProvider.
 const auth = {
   user: null as User | null,
@@ -18,7 +19,16 @@ function makeUser(email: string, metadata: Record<string, unknown> = {}): User {
   return { email, user_metadata: metadata } as unknown as User;
 }
 
-describe("ProfileScreen", () => {
+/** Render inside a router — the admin entry is a real `<Link>`. */
+function renderAccount(props: { onGoHome?: () => void; isAdmin?: boolean } = {}) {
+  return render(
+    <MemoryRouter>
+      <AccountPage onGoHome={props.onGoHome ?? vi.fn()} isAdmin={props.isAdmin ?? false} />
+    </MemoryRouter>,
+  );
+}
+
+describe("AccountPage", () => {
   beforeEach(() => {
     auth.user = makeUser("pj.autech@gmail.com");
     auth.updateDisplayName = vi.fn().mockResolvedValue(undefined);
@@ -28,15 +38,15 @@ describe("ProfileScreen", () => {
   it("shows a designed notice, not a blank, when there's no session", () => {
     auth.user = null;
     const onGoHome = vi.fn();
-    render(<ProfileScreen onGoHome={onGoHome} />);
+    renderAccount({ onGoHome });
 
     expect(screen.getByRole("heading", { name: /not signed in/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /go home/i }));
     expect(onGoHome).toHaveBeenCalledOnce();
   });
 
-  it("seeds the name field from the email-derived display name and the email is shown", () => {
-    render(<ProfileScreen onGoHome={vi.fn()} />);
+  it("shows the identity: email-derived name + email", () => {
+    renderAccount();
 
     expect(screen.getByLabelText(/display name/i)).toHaveValue("Pj Autech");
     expect(screen.getByText("pj.autech@gmail.com")).toBeInTheDocument();
@@ -44,13 +54,13 @@ describe("ProfileScreen", () => {
 
   it("prefers a stored display_name over the email-derived one", () => {
     auth.user = makeUser("pj.autech@gmail.com", { display_name: "Pouyan" });
-    render(<ProfileScreen onGoHome={vi.fn()} />);
+    renderAccount();
 
     expect(screen.getByLabelText(/display name/i)).toHaveValue("Pouyan");
   });
 
   it("saves a trimmed display name and confirms with a Saved status", async () => {
-    render(<ProfileScreen onGoHome={vi.fn()} />);
+    renderAccount();
 
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: "  Ada  " } });
     fireEvent.click(screen.getByRole("button", { name: /save name/i }));
@@ -60,7 +70,7 @@ describe("ProfileScreen", () => {
   });
 
   it("rejects a blank name inline without calling the mutation", () => {
-    render(<ProfileScreen onGoHome={vi.fn()} />);
+    renderAccount();
 
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: /save name/i }));
@@ -71,7 +81,7 @@ describe("ProfileScreen", () => {
 
   it("surfaces a save failure as a recoverable message", async () => {
     auth.updateDisplayName = vi.fn().mockRejectedValue(new Error("Network down"));
-    render(<ProfileScreen onGoHome={vi.fn()} />);
+    renderAccount();
 
     fireEvent.click(screen.getByRole("button", { name: /save name/i }));
 
@@ -80,11 +90,24 @@ describe("ProfileScreen", () => {
 
   it("signs out and returns home", async () => {
     const onGoHome = vi.fn();
-    render(<ProfileScreen onGoHome={onGoHome} />);
+    renderAccount({ onGoHome });
 
     fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
 
     await waitFor(() => expect(onGoHome).toHaveBeenCalledOnce());
     expect(auth.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("shows the Admin Portal entry only for admins, linking to /admin", () => {
+    const { rerender } = renderAccount({ isAdmin: false });
+    expect(screen.queryByRole("link", { name: /admin portal/i })).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <AccountPage onGoHome={vi.fn()} isAdmin />
+      </MemoryRouter>,
+    );
+    const link = screen.getByRole("link", { name: /open admin portal/i });
+    expect(link).toHaveAttribute("href", "/admin");
   });
 });

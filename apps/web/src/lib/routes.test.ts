@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { coursePath, lessonPath, resolveRoute } from "./routes";
+import { coursePath, lessonPath, resolveRoute, settingsPath } from "./routes";
 
 describe("resolveRoute", () => {
   it.each([
     ["/", "home"],
     ["/new", "composer"],
     ["/settings", "settings"],
+    ["/settings/llm", "settings"],
+    ["/settings/bogus", "not-found"],
+    ["/account", "account"],
+    ["/profile", "account"],
     ["/admin", "admin"],
     ["/courses", "library"],
     ["/activity", "activity"],
@@ -16,6 +20,21 @@ describe("resolveRoute", () => {
     ["/courses/c1/map/extra", "not-found"],
   ])("resolves %s to %s", (pathname, kind) => {
     expect(resolveRoute(pathname).kind).toBe(kind);
+  });
+
+  it("defaults bare /settings to the System section and deep-links a named section", () => {
+    expect(resolveRoute("/settings")).toEqual({ kind: "settings", section: "system" });
+    expect(resolveRoute("/settings/llm")).toEqual({ kind: "settings", section: "llm" });
+    expect(resolveRoute("/settings/sources")).toEqual({ kind: "settings", section: "sources" });
+  });
+
+  it("treats an unknown settings section as not-found (never a silent default)", () => {
+    expect(resolveRoute("/settings/nope").kind).toBe("not-found");
+  });
+
+  it("resolves the legacy /profile path to the Account page", () => {
+    expect(resolveRoute("/profile")).toEqual({ kind: "account" });
+    expect(resolveRoute("/account")).toEqual({ kind: "account" });
   });
 
   it("resolves a course path with the Overview default and explicit views", () => {
@@ -82,5 +101,12 @@ describe("coursePath", () => {
 describe("lessonPath", () => {
   it("addresses a lesson inside the reader", () => {
     expect(lessonPath("c1", "l2")).toBe("/courses/c1/lessons/l2");
+  });
+});
+
+describe("settingsPath", () => {
+  it("builds the deep-link URL for a section", () => {
+    expect(settingsPath("system")).toBe("/settings/system");
+    expect(settingsPath("voice")).toBe("/settings/voice");
   });
 });

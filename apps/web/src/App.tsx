@@ -35,8 +35,8 @@ import { EmptyState } from "./components/states/EmptyState";
 import { ErrorState } from "./components/states/ErrorState";
 import { PreparingDeviceState } from "./components/states/PreparingDeviceState";
 import { AdminPortalPanel } from "./components/admin/AdminPortalPanel";
-import { SettingsPanel } from "./components/settings/SettingsPanel";
-import { ProfileScreen } from "./components/profile/ProfileScreen";
+import { SettingsLayout } from "./components/settings/SettingsLayout";
+import { AccountPage } from "./components/account/AccountPage";
 import { CanvasNotice } from "./components/states/CanvasNotice";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
@@ -44,7 +44,7 @@ import { useCourse } from "./hooks/useCourse";
 import { useCourseProgress } from "./hooks/useCourseProgress";
 import { useBeforeUnloadGuard } from "./hooks/useBeforeUnloadGuard";
 import { useCourseStream } from "./hooks/useCourseStream";
-import { useTheme, type ThemeProps } from "./hooks/useTheme";
+import { useTheme, type ThemePreference, type ThemeProps } from "./hooks/useTheme";
 import { useOpenedRun } from "./hooks/useOpenedRun";
 import { useBuildVideoProgress } from "./hooks/useBuildVideoProgress";
 import { useRuns } from "./hooks/useRuns";
@@ -166,7 +166,18 @@ function SeedApp({ theme, onToggleTheme }: ThemeProps) {
 
 /** Live surface: name a topic, watch the pipeline build it, then explore the result. The sidebar
  *  (run history + nav) persists across every state; only the canvas changes. */
-function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } & ThemeProps) {
+function StudioApp({
+  apiBaseUrl,
+  theme,
+  onToggleTheme,
+  preference,
+  onPreferenceChange,
+}: {
+  apiBaseUrl: string;
+  /** The theme preference + setter, threaded to the Settings → Appearance section. */
+  preference: ThemePreference;
+  onPreferenceChange: (preference: ThemePreference) => void;
+} & ThemeProps) {
   const { state: runsState, reload: reloadRuns } = useRuns(apiBaseUrl);
   const opened = useOpenedRun(apiBaseUrl);
   const sidebarLayout = useSidebarLayout();
@@ -487,7 +498,6 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
   const sidebar = (
     <Sidebar
       onNewCourse={startNewCourse}
-      showAdmin={isAdmin}
       onNavigate={closeMobileNav}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
       theme={theme}
@@ -550,7 +560,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       };
     }
     if (route.kind === "settings") {
-      const body = <SettingsPanel apiBaseUrl={apiBaseUrl} />;
+      const body = (
+        <SettingsLayout
+          apiBaseUrl={apiBaseUrl}
+          section={route.section}
+          preference={preference}
+          onPreferenceChange={onPreferenceChange}
+        />
+      );
       const meta = (
         <Button type="button" onClick={closeNavView}>
           Done
@@ -558,14 +575,14 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
       );
       return { title: "Settings", meta, body };
     }
-    if (route.kind === "profile") {
-      const body = <ProfileScreen onGoHome={() => navigate("/")} />;
+    if (route.kind === "account") {
+      const body = <AccountPage onGoHome={() => navigate("/")} isAdmin={isAdmin} />;
       const meta = (
         <Button type="button" onClick={closeNavView}>
           Done
         </Button>
       );
-      return { title: "Profile", meta, body };
+      return { title: "Account", meta, body };
     }
     if (route.kind === "admin") {
       // Fail closed: until /api/me confirms the admin claim, the portal stays behind the notice
@@ -840,7 +857,7 @@ function StudioApp({ apiBaseUrl, theme, onToggleTheme }: { apiBaseUrl: string } 
 export default function App() {
   const apiBaseUrl = import.meta.env.VITE_API_URL;
   // App-wide light/dark theme (default light), so both surfaces switch from the one toggle.
-  const { theme, toggle } = useTheme();
+  const { theme, preference, setPreference, toggle } = useTheme();
   // The studio (live API) is gated behind login when Supabase is configured; the offline seed is
   // always open. AuthProvider wraps both so the rail's account control can read the session.
   return (
@@ -854,7 +871,13 @@ export default function App() {
         // while useLocation never follows, stranding the canvas on the old route.
         <BrowserRouter useTransitions={false}>
           <AuthGate apiBaseUrl={apiBaseUrl}>
-            <StudioApp apiBaseUrl={apiBaseUrl} theme={theme} onToggleTheme={toggle} />
+            <StudioApp
+              apiBaseUrl={apiBaseUrl}
+              theme={theme}
+              onToggleTheme={toggle}
+              preference={preference}
+              onPreferenceChange={setPreference}
+            />
           </AuthGate>
         </BrowserRouter>
       ) : (

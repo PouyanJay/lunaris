@@ -28,6 +28,30 @@ describe("App — URL routing (live studio)", () => {
     expect(window.location.pathname).toBe("/settings");
   });
 
+  it("deep-links to a Settings section at /settings/:section, threading it into the surface", async () => {
+    // Proves App.tsx threads route.section (not just route.kind) into SettingsLayout: the LLM
+    // section renders its own keys, not another section's.
+    vi.stubGlobal("fetch", routedFetch());
+    window.history.pushState(null, "", "/settings/llm");
+
+    render(<App />);
+
+    // The LLM section owns the Anthropic key; the ElevenLabs key lives under Voice.
+    expect(await screen.findByText(/anthropic api key/i)).toBeInTheDocument();
+    expect(screen.queryByText(/elevenlabs api key/i)).not.toBeInTheDocument();
+    // The sub-nav marks LLM as the current page.
+    expect(screen.getByRole("link", { name: /^llm$/i })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("resolves the legacy /profile URL to the Account page", async () => {
+    vi.stubGlobal("fetch", routedFetch());
+    window.history.pushState(null, "", "/profile");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Account" })).toBeInTheDocument();
+  });
+
   it("rail Settings navigation updates the URL; Done returns Home", async () => {
     vi.stubGlobal("fetch", routedFetch());
     window.history.pushState(null, "", "/");
@@ -477,15 +501,11 @@ describe("App — URL routing (live studio)", () => {
     window.history.pushState(null, "", "/bookmarks");
 
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /open comparison on the map/i }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: /open comparison on the map/i }));
 
     expect(window.location.pathname).toBe("/courses/course-test/map");
     // The KC inspector opened on arrival (plain DOM, unaffected by the jsdom RF caveat).
-    expect(
-      await screen.findByRole("heading", { name: "Comparison" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Comparison" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("link", { name: "Home" }));
     expect(window.location.pathname).toBe("/");

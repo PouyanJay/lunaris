@@ -10,9 +10,37 @@ export const ROUTES = {
   activity: "/activity",
   bookmarks: "/bookmarks",
   settings: "/settings",
+  account: "/account",
+  /** Legacy — kept so old links/bookmarks still resolve; redirects to {@link ROUTES.account}. */
   profile: "/profile",
   admin: "/admin",
 } as const;
+
+/** The Settings surface's sub-sections, in nav order. One source of truth for the sub-nav, the
+ *  URL segment (`/settings/:section`), and the section renderer. */
+export const SETTINGS_SECTIONS = [
+  "system",
+  "appearance",
+  "llm",
+  "video",
+  "voice",
+  "tools",
+  "sources",
+] as const;
+
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+/** The default section for the bare `/settings` path. */
+export const DEFAULT_SETTINGS_SECTION: SettingsSection = "system";
+
+function isSettingsSection(value: string): value is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly string[]).includes(value);
+}
+
+/** The canonical URL for a settings section (Settings sub-nav + deep links). */
+export function settingsPath(section: SettingsSection): string {
+  return `${ROUTES.settings}/${section}`;
+}
 
 const COURSE_VIEWS: CourseView[] = ["overview", "lessons", "map", "build", "corpus"];
 
@@ -27,8 +55,8 @@ const LEGACY_READER_SEGMENT = "learn";
 export type ShellRoute =
   | { kind: "home" }
   | { kind: "composer" }
-  | { kind: "settings" }
-  | { kind: "profile" }
+  | { kind: "settings"; section: SettingsSection }
+  | { kind: "account" }
   | { kind: "admin" }
   | { kind: "library" }
   | { kind: "activity" }
@@ -40,8 +68,19 @@ export function resolveRoute(pathname: string): ShellRoute {
   if (pathname === ROUTES.home) return { kind: "home" };
   // The composer is its own place at /new; Home is the dashboard at /.
   if (pathname === ROUTES.composer) return { kind: "composer" };
-  if (pathname === ROUTES.settings) return { kind: "settings" };
-  if (pathname === ROUTES.profile) return { kind: "profile" };
+  // Bare /settings lands on the default section; /settings/:section deep-links a section (an
+  // unknown segment is a not-found URL, not a silent default).
+  if (pathname === ROUTES.settings) {
+    return { kind: "settings", section: DEFAULT_SETTINGS_SECTION };
+  }
+  const settings = matchPath(`${ROUTES.settings}/:section`, pathname);
+  if (settings?.params.section) {
+    return isSettingsSection(settings.params.section)
+      ? { kind: "settings", section: settings.params.section }
+      : { kind: "not-found" };
+  }
+  // /profile is legacy — old links resolve to the Account page.
+  if (pathname === ROUTES.account || pathname === ROUTES.profile) return { kind: "account" };
   if (pathname === ROUTES.admin) return { kind: "admin" };
   if (pathname === ROUTES.library) return { kind: "library" };
   if (pathname === ROUTES.activity) return { kind: "activity" };

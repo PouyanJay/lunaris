@@ -48,17 +48,19 @@ def test_every_byok_provider_has_a_known_secret_env_var() -> None:
     assert not missing, f"BYOK_PROVIDERS {sorted(missing)} missing from KNOWN_SECRETS"
 
 
-_CREDENTIALS_PANEL = (
+_CREDENTIAL_CATALOG = (
     Path(__file__).resolve().parents[3]
     / "apps"
     / "web"
     / "src"
     / "components"
     / "settings"
-    / "CredentialsPanel.tsx"
+    / "credentialCatalog.ts"
 )
-# `provider: "anthropic",` — one entry per key the Keys UI renders an input for.
-_WEB_PROVIDER = re.compile(r"provider:\s*[\"']([^\"']+)[\"']")
+# One catalog entry per key, e.g. `{ key: "anthropic", … byok: true, fileStore: true }`. A BYOK
+# provider is an entry whose `byok` flag is true — the `[^}]*` stays inside the one object (it never
+# crosses a closing brace), so this captures the key only when byok:true is set in the SAME entry.
+_WEB_BYOK_PROVIDER = re.compile(r"key:\s*[\"']([^\"']+)[\"'][^}]*?byok:\s*true", re.DOTALL)
 
 
 def test_every_byok_provider_is_offered_by_the_web_keys_ui() -> None:
@@ -66,13 +68,17 @@ def test_every_byok_provider_is_offered_by_the_web_keys_ui() -> None:
     for is a key the tenant can NEVER supply — silently un-storable.
 
     This is not hypothetical: ``openai`` was added to BYOK_PROVIDERS + the DB CHECK for AI course
-    covers, but never to the web PROVIDERS list, so the Keys UI offered no OpenAI field. With no way
-    to store the key, ``useOpenAiKeyPresent`` stayed false forever and the cover-images toggle was
+    covers, but never to the web keys list, so the Keys UI offered no OpenAI field. With no way to
+    store the key, its presence check stayed false forever and the cover-images toggle was
     permanently disabled — the feature was unreachable in the product despite shipping end to end.
+
+    Since the Settings reorganization the web source of truth is ``credentialCatalog.ts`` (each
+    key's section + its byok/fileStore availability), so this reads its ``byok: true`` entries.
     """
-    offered = set(_WEB_PROVIDER.findall(_CREDENTIALS_PANEL.read_text()))
+    offered = set(_WEB_BYOK_PROVIDER.findall(_CREDENTIAL_CATALOG.read_text()))
     missing = set(BYOK_PROVIDERS) - offered
     assert not missing, (
         f"BYOK_PROVIDERS {sorted(missing)} are not offered by the web Keys UI {sorted(offered)}"
-        f" — add an entry to PROVIDERS in {_CREDENTIALS_PANEL.name}, else it can never be set."
+        f" — add a `byok: true` entry to CREDENTIALS in {_CREDENTIAL_CATALOG.name}, else it can"
+        " never be set."
     )

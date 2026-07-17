@@ -29,6 +29,9 @@ interface VideoConfigPanelProps {
   /** Bumped by the Settings shell whenever a key is saved/removed, so a freshly-added ElevenLabs key
    *  unlocks the voice toggle immediately instead of only after a full page reload. */
   keysVersion?: number;
+  /** Whether to render the narration toggle here. The reorganized Settings owns narration under the
+   *  Voice section (see `VoiceConfigPanel`), so the Video section passes `false`. Defaults to true. */
+  showVoice?: boolean;
 }
 
 const LABELS: Record<string, string> = {
@@ -68,6 +71,7 @@ export function VideoConfigPanel({
   byokEnabled,
   secrets,
   keysVersion = 0,
+  showVoice = true,
 }: VideoConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
@@ -127,7 +131,7 @@ export function VideoConfigPanel({
                       onToggle={(on) => save(VIDEO_LESSONS_KEY, boolToConfigValue(on))}
                     />
                   )}
-                  {voice && (
+                  {showVoice && voice && (
                     <VoiceRow
                       setting={voice}
                       keyPresent={voiceKeyPresent}
@@ -309,4 +313,3 @@ function formatSeconds(seconds: number): string {
   const rest = seconds % 60;
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
-
