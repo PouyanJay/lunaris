@@ -582,7 +582,9 @@ function StudioApp({
           Done
         </Button>
       );
-      return { title: "Account", meta, body };
+      // No top-bar title — the active "Account" sidebar entry marks the location; the page carries
+      // its own (visually-hidden) heading.
+      return { title: "", meta, body };
     }
     if (route.kind === "admin") {
       // Fail closed: until /api/me confirms the admin claim, the portal stays behind the notice

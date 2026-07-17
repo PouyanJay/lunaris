@@ -136,9 +136,15 @@ export function AgentShell({
         {/* Collapse the rail — beside the brand it sits over the sidebar column it controls. Hides
             itself on phones, where the rail is a drawer rather than a collapsible mini-rail. */}
         <SidebarToggle collapsed={collapsed} onClick={toggleCollapsed} />
-        <h1 className={styles.title} title={title}>
-          {title}
-        </h1>
+        {/* A blank title (e.g. the Account page, whose location is shown by the active sidebar
+            entry) renders a spacer, not an empty heading — the surface supplies its own h1. */}
+        {title ? (
+          <h1 className={styles.title} title={title}>
+            {title}
+          </h1>
+        ) : (
+          <div className={styles.title} aria-hidden="true" />
+        )}
         {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
         {search && <div className={styles.search}>{search}</div>}
         {meta && <div className={styles.meta}>{meta}</div>}
