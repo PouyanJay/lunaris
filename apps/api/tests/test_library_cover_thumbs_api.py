@@ -28,6 +28,7 @@ from lunaris_runtime.persistence import (
     InMemoryCoverStorage,
     InMemoryRunStore,
     IRunStore,
+    PersistenceError,
 )
 from lunaris_runtime.schema import (
     CoverArtifact,
@@ -180,5 +181,34 @@ async def test_failed_cover_has_null_thumb_urls(client: httpx.AsyncClient, tmp_p
     summary = await _summary(client, course_id)
 
     # Assert — only a READY cover mints a thumb; a failed one stays null (Typographic fallback).
+    assert summary["thumbUrl"] is None
+    assert summary["thumbUrlLight"] is None
+
+
+class _NoResizeCoverStorage(InMemoryCoverStorage):
+    """Storage whose image-resize (a transformed sign) fails — models transformations disabled or a
+    transform quota/hiccup. The card thumb is a resized derivative, so this is the degrade path."""
+
+    async def signed_url(  # type: ignore[override]
+        self, *, path, expires_in_seconds=3600, transform=None
+    ):
+        if transform is not None:
+            raise PersistenceError("image transformations disabled")
+        return await super().signed_url(path=path, expires_in_seconds=expires_in_seconds)
+
+
+async def test_thumb_degrades_to_null_when_storage_cannot_resize(tmp_path: Path) -> None:
+    # Arrange — a READY cover, but the storage cannot mint the resized thumb.
+    run_store = InMemoryRunStore()
+    async with _build_client(tmp_path, run_store, _NoResizeCoverStorage()) as client:
+        course_id = await _build_course(client, "binary search")
+        _attach_cover(tmp_path, course_id, status=CoverJobStatus.READY)
+
+        # Act
+        summary = await _summary(client, course_id)
+
+    # Assert — the thumb degrades to null (the card falls back to the master via the handle or the
+    # Typographic cover), and — critically — the library read still succeeds with the course listed.
+    assert summary["id"] == course_id
     assert summary["thumbUrl"] is None
     assert summary["thumbUrlLight"] is None
