@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import type { Session, User } from "@supabase/supabase-js";
 
+import { clearLibraryCache } from "./libraryCache";
 import { supabase } from "../lib/supabase";
 
 /** Result of a sign-up: a session means immediate login; otherwise the user must confirm by email. */
@@ -50,6 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authListener.subscription.unsubscribe();
     };
   }, []);
+
+  // Drop the cross-navigation library cache whenever the account changes, so a sign-out / account
+  // switch never flashes the previous user's courses before their own library loads.
+  const userId = session?.user?.id ?? null;
+  useEffect(() => {
+    clearLibraryCache();
+  }, [userId]);
 
   const value = useMemo<AuthState>(
     () => ({
