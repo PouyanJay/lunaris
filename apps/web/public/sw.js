@@ -1,30 +1,35 @@
-// Course-cover image cache (library-instant-covers follow-up).
+// Signed-storage image cache (library-instant-covers follow-up).
 //
-// Course covers are CONSTANT — an artwork only changes when it's regenerated, which mints a new
-// job-id and therefore a new storage path. But each `/api/courses` read signs a fresh 1-hour token,
-// so the cover URL rotates and the browser's URL-keyed HTTP cache re-downloads identical bytes every
-// visit. This worker does cache-first for cover images keyed by the object PATH (token stripped), so
-// the same artwork is served instantly from Cache Storage across reloads and tabs regardless of the
-// token, and a regenerated cover (new path) naturally misses and re-fetches.
+// Course covers and video posters are CONSTANT — the artwork only changes when it's regenerated,
+// which mints a new job-id and therefore a new storage path. But each API read signs a fresh 1-hour
+// token, so the signed URL rotates and the browser's URL-keyed HTTP cache re-downloads identical
+// bytes every visit. This worker does cache-first for signed storage IMAGES (any private bucket)
+// keyed by the object PATH (token stripped), so the same artwork is served instantly from Cache
+// Storage across reloads and tabs regardless of the token, and a regenerated image (new path)
+// naturally misses and re-fetches.
 //
-// It only ever handles cover-image GETs; every other request falls straight through to the network,
-// so the app shell, API calls, and other assets are untouched. The URL logic mirrors the tested
-// `src/lib/coverCache.ts` — keep the two in sync.
+// It only ever handles signed-storage image GETs (covers, video posters, …) — non-image objects
+// (mp4 video, captions) and every other request fall straight through to the network, so the app
+// shell, API calls, and streamed media are untouched. The URL logic mirrors the tested
+// `src/lib/imageCache.ts` — keep the two in sync.
 
-const CACHE = "lunaris-covers-v1";
+const CACHE = "lunaris-images-v1";
 const STORAGE_MARKER = "/storage/v1/";
-const COVER_BUCKET_MARKER = "/course-covers/";
+const SIGNED_MARKER = "/sign/";
+const RENDER_MARKER = "/render/image/";
+const IMAGE_EXT = /\.(?:png|jpe?g|webp|avif|gif)$/i;
 
-function isCoverImageUrl(rawUrl) {
+function isSignedStorageImage(rawUrl) {
   try {
     const { pathname } = new URL(rawUrl);
-    return pathname.includes(STORAGE_MARKER) && pathname.includes(COVER_BUCKET_MARKER);
+    if (!pathname.includes(STORAGE_MARKER) || !pathname.includes(SIGNED_MARKER)) return false;
+    return pathname.includes(RENDER_MARKER) || IMAGE_EXT.test(pathname);
   } catch {
     return false;
   }
 }
 
-function coverCacheKey(rawUrl) {
+function storageImageCacheKey(rawUrl) {
   const url = new URL(rawUrl);
   url.searchParams.delete("token");
   return url.toString();
@@ -35,11 +40,12 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      // Drop any older cover-cache versions, then take control of open pages this activation.
+      // Drop any older image-cache versions (incl. the former `lunaris-covers-*`), then take
+      // control of open pages this activation.
       const names = await caches.keys();
       await Promise.all(
         names
-          .filter((name) => name.startsWith("lunaris-covers-") && name !== CACHE)
+          .filter((name) => name.startsWith("lunaris-") && name !== CACHE)
           .map((name) => caches.delete(name)),
       );
       await self.clients.claim();
@@ -49,12 +55,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  if (request.method !== "GET" || !isCoverImageUrl(request.url)) return; // fall through untouched
+  if (request.method !== "GET" || !isSignedStorageImage(request.url)) return; // fall through
 
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
-      const key = coverCacheKey(request.url);
+      const key = storageImageCacheKey(request.url);
       const hit = await cache.match(key);
       if (hit) return hit;
 
