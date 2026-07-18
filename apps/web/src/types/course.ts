@@ -603,9 +603,16 @@ export interface CourseSummary {
   courseStatus: CourseStatus;
   builtAt: string;
   lastOpenedAt: string | null;
-  /** The AI cover handle (course-cover-images) — the card mints its signed URL on demand, else
-   *  renders the Typographic fallback. Absent on a keyless / pre-covers / cover-less course. */
+  /** The AI cover handle (course-cover-images) — kept for the reader's regenerate + lightbox, and
+   *  the card's fallback path for a cover still generating. Absent on a keyless / pre-covers /
+   *  cover-less course. */
   cover?: CoverArtifact | null;
+  /** The READY cover's display-size thumb, PRE-SIGNED in the `/api/courses` payload
+   *  (library-instant-covers): the grid renders it straight, with no per-card signed-URL fetch.
+   *  `thumbUrlLight` is its dual-theme twin (null for a dark-only cover). Both absent/null when
+   *  there's nothing to sign — the card then uses the `cover` handle or the Typographic fallback. */
+  thumbUrl?: string | null;
+  thumbUrlLight?: string | null;
 }
 
 /** The kind of a fine-grained agent-transcript beat (mirrors AgentEventKind). */

@@ -18,6 +18,9 @@ interface SidebarProps extends ThemeProps {
   onToggleCollapsed: () => void;
   /** Fired on any nav-link navigation (e.g. so the phone drawer dismisses). */
   onNavigate?: (() => void) | undefined;
+  /** Warm the My-courses library on hover/focus of its nav entry, so the click lands on ready
+   *  data (library-instant-covers). */
+  onPrefetchLibrary?: (() => void) | undefined;
 }
 
 /** The instrument rail: a primary-action row ("New course" with the collapse toggle at its right
@@ -32,6 +35,7 @@ export function Sidebar({
   collapsed,
   onToggleCollapsed,
   onNavigate,
+  onPrefetchLibrary,
   theme,
   onToggleTheme,
 }: SidebarProps) {
@@ -81,6 +85,7 @@ export function Sidebar({
           label="My courses"
           collapsed={collapsed}
           onNavigate={onNavigate}
+          onPrefetch={onPrefetchLibrary}
         />
         <NavItem
           to={ROUTES.activity}
@@ -181,6 +186,7 @@ function NavItem({
   label,
   collapsed,
   onNavigate,
+  onPrefetch,
 }: {
   to: string;
   end?: boolean;
@@ -188,13 +194,20 @@ function NavItem({
   label: string;
   collapsed: boolean;
   onNavigate?: (() => void) | undefined;
+  /** Warm the destination's data on hover/focus (pointer + keyboard), so the click lands ready. */
+  onPrefetch?: (() => void) | undefined;
 }) {
+  // Prefetch on intent from either input — a pointer hover or keyboard focus reaching the entry.
+  const prefetch = onPrefetch
+    ? { onMouseEnter: onPrefetch, onFocus: onPrefetch }
+    : undefined;
   if (collapsed) {
     return (
       <NavLink
         to={to}
         end={end ?? false}
         onClick={onNavigate}
+        {...prefetch}
         className={({ isActive }) =>
           `${styles.railAction} ${isActive ? styles.railActionActive : ""}`.trim()
         }
@@ -210,6 +223,7 @@ function NavItem({
       to={to}
       end={end ?? false}
       onClick={onNavigate}
+      {...prefetch}
       className={({ isActive }) =>
         `${styles.navItem} ${isActive ? styles.navItemActive : ""}`.trim()
       }

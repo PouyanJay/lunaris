@@ -85,6 +85,22 @@ export type CourseCoverState =
       thumbUrlLight: string | null;
     };
 
+/** A resolved `image` state built from a summary's PRE-SIGNED thumb URLs (library-instant-covers).
+ *  The library/Home grid renders READY covers straight from the `/api/courses` payload with no
+ *  per-card signed-URL fetch: the thumb doubles as the master (a card never opens the full-size
+ *  lightbox), so `coverVariantForTheme`'s load ladder dedupes to the single thumb URL and still
+ *  falls back to the Typographic cover if the signed URL has expired. Theme selection is identical
+ *  to a hook-resolved cover — the light twin (when present) is shown in the app's dark theme. */
+export function coverStateFromThumb(thumbUrl: string, thumbUrlLight: string | null): CourseCoverState {
+  return {
+    phase: "image",
+    imageUrl: thumbUrl,
+    imageUrlLight: thumbUrlLight,
+    thumbUrl,
+    thumbUrlLight,
+  };
+}
+
 /** Resolve a course's cover to a renderable state, and let the reader regenerate it
  *  (course-cover-images T9 + T10).
  *

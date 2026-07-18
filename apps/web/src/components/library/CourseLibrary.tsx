@@ -41,6 +41,10 @@ const FILTER_EMPTY: Record<Exclude<LibraryFilter, "all">, string> = {
 
 const SKELETON_CARDS = 6;
 
+/** How many leading cards load their cover eagerly at high priority — the first two grid rows
+ *  (3-up desktop, 2-up mobile), which are above the fold; the rest stay lazy. */
+const EAGER_COVER_COUNT = 6;
+
 function countsLine(courses: CourseSummary[]): string {
   const counts = { in_progress: 0, completed: 0, not_started: 0 };
   for (const course of courses) counts[course.learnerStatus] += 1;
@@ -127,8 +131,15 @@ export function CourseLibrary({ apiBaseUrl, onNewCourse, runs = [] }: CourseLibr
         <p className={styles.filterEmpty}>{FILTER_EMPTY[filter]}</p>
       ) : (
         <ul className={styles.grid}>
-          {visible.map((course) => (
-            <CourseCard key={course.id} course={course} onRequestDelete={deletion.request} />
+          {visible.map((course, index) => (
+            <CourseCard
+              key={course.id}
+              course={course}
+              onRequestDelete={deletion.request}
+              // The first two rows (3-up desktop / 2-up mobile) load eagerly at high priority so the
+              // above-the-fold covers paint immediately; the rest stay lazy.
+              priority={index < EAGER_COVER_COUNT}
+            />
           ))}
         </ul>
       )}

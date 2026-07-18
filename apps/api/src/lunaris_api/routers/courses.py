@@ -15,7 +15,13 @@ from lunaris_runtime.schema import (
 )
 from pydantic import ValidationError
 
-from ..dependencies import CourseServiceDep, OptionalUserIdDep, ProgressStoreDep
+from ..cover_thumbs import CoverThumbs, sign_library_cover_thumbs
+from ..dependencies import (
+    CourseServiceDep,
+    CoverStorageDep,
+    OptionalUserIdDep,
+    ProgressStoreDep,
+)
 from ..draft_throttle import DraftBuildRefusedError
 from ..library import CourseSummary, LearnerSnapshot, assemble_course_summaries
 from ..progress import ProgressStoreUnavailableError
@@ -30,6 +36,10 @@ from ..service import (
 )
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+# The default for a course with no pre-signed cover thumb (keyless / non-READY / can't-resize) —
+# a single shared all-null instance, so the per-summary lookup miss allocates nothing.
+_EMPTY_THUMBS = CoverThumbs()
 
 
 def _refused(exc: DraftBuildRefusedError) -> HTTPException:
@@ -76,7 +86,7 @@ def _bind() -> str:
     return request_id
 
 
-def _summary_view(summary: CourseSummary) -> CourseSummaryView:
+def _summary_view(summary: CourseSummary, thumbs: CoverThumbs) -> CourseSummaryView:
     return CourseSummaryView(
         id=summary.course_id,
         topic=summary.topic,
@@ -90,6 +100,8 @@ def _summary_view(summary: CourseSummary) -> CourseSummaryView:
         built_at=summary.built_at,
         last_opened_at=summary.last_opened_at,
         cover=summary.cover,
+        thumb_url=thumbs.thumb_url,
+        thumb_url_light=thumbs.thumb_url_light,
     )
 
 
@@ -99,6 +111,7 @@ async def list_courses(
     progress: ProgressStoreDep,
     owner_id: OptionalUserIdDep,
     response: Response,
+    cover_storage: CoverStorageDep,
 ) -> list[CourseSummaryView]:
     """The caller's course library — one summary per built course, most-recently-opened first
     (a course never opened ranks by its build time).
@@ -124,7 +137,14 @@ async def list_courses(
             detail="The course library is temporarily unavailable",
         ) from exc
     snapshot = LearnerSnapshot(objectives=objectives, lessons=lessons, states=states)
-    return [_summary_view(summary) for summary in assemble_course_summaries(entries, snapshot)]
+    summaries = assemble_course_summaries(entries, snapshot)
+    # Pre-sign every READY cover's display-size thumb here, so the grid arrives cover-ready in one
+    # request instead of a per-card signed-URL exchange (the "covers pop in one by one" fix).
+    thumbs = await sign_library_cover_thumbs(cover_storage, owner_id, summaries)
+    return [
+        _summary_view(summary, thumbs.get(summary.course_id, _EMPTY_THUMBS))
+        for summary in summaries
+    ]
 
 
 @router.post("", response_model=Course, status_code=status.HTTP_201_CREATED)

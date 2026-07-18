@@ -22,8 +22,8 @@ from lunaris_runtime.schema import (
 from lunaris_runtime.schema.base import CourseModel
 from pydantic import ValidationError
 
-from ..cover_display_transform import COVER_DISPLAY_TRANSFORM
 from ..cover_enqueue import enqueue_cover_job
+from ..cover_thumbs import mint_cover_thumb
 from ..dependencies import (
     CourseStoreDep,
     CoverJobQueueDep,
@@ -309,7 +309,7 @@ async def _cover_job_view(job: CoverJob, storage: ICoverStorage) -> CoverJobView
     paths = CoverArtifactPaths.for_job(job)
     image_url, thumb_url, provenance = await asyncio.gather(
         storage.signed_url(path=paths.image),
-        _mint_thumb(storage, paths.image),
+        mint_cover_thumb(storage, paths.image),
         _read_provenance(storage, paths.provenance),
     )
     image_url_light: str | None = None
@@ -317,7 +317,7 @@ async def _cover_job_view(job: CoverJob, storage: ICoverStorage) -> CoverJobView
     if provenance is not None and provenance.has_light_variant:
         image_url_light, thumb_url_light = await asyncio.gather(
             storage.signed_url(path=paths.image_light),
-            _mint_thumb(storage, paths.image_light),
+            mint_cover_thumb(storage, paths.image_light),
         )
     return CoverJobView(
         job=job,
@@ -327,21 +327,6 @@ async def _cover_job_view(job: CoverJob, storage: ICoverStorage) -> CoverJobView
         thumb_url_light=thumb_url_light,
         provenance=provenance,
     )
-
-
-async def _mint_thumb(storage: ICoverStorage, path: str) -> str | None:
-    """The display-size derivative's signed URL — best effort.
-
-    The derivative is an OPTIMIZATION (a sharp, ~20x lighter card image), not the cover itself, so a
-    storage backend that cannot resize — image transformations disabled, a transform-specific quota
-    or hiccup — must not take down the whole view along with the master URL and provenance that
-    resolved fine beside it. Degrading to ``None`` is exactly what the reader's load ladder expects:
-    it falls back to the master, and the cover still renders (softer, not missing)."""
-    try:
-        return await storage.signed_url(path=path, transform=COVER_DISPLAY_TRANSFORM)
-    except PersistenceError as exc:
-        logger.warning("cover_thumb_unavailable", path=path, reason=type(exc).__name__)
-        return None
 
 
 async def _read_provenance(storage: ICoverStorage, path: str) -> CoverProvenance | None:

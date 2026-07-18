@@ -139,6 +139,9 @@ function HomeBody({
   );
 }
 
+/** The recent grid's first row (above the fold) loads its covers eagerly at high priority. */
+const EAGER_COVER_COUNT = 3;
+
 /** The recent grid: recently-opened courses that aren't already in the continue section, as cover
  *  cards. Capped by the caller; the "View all" hatch lives below in HomeBody. */
 function RecentCourses({
@@ -154,8 +157,13 @@ function RecentCourses({
         Recent courses
       </h2>
       <ul className={styles.grid}>
-        {courses.map((course) => (
-          <CourseCard key={course.id} course={course} onRequestDelete={onRequestDelete} />
+        {courses.map((course, index) => (
+          <CourseCard
+            key={course.id}
+            course={course}
+            onRequestDelete={onRequestDelete}
+            priority={index < EAGER_COVER_COUNT}
+          />
         ))}
       </ul>
     </section>

@@ -1,5 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 
+import { clearLibraryCache } from "../hooks/libraryCache";
+
 // React Flow measures node geometry with ResizeObserver, which jsdom lacks.
 class ResizeObserverStub {
   observe(): void {}
@@ -59,3 +61,7 @@ afterEach(() => localStorage.clear());
 // Routing tests (and any router-driven interaction) mutate the jsdom URL, which persists across
 // tests in a file — reset it so every test starts from "/" regardless of what ran before.
 afterEach(() => window.history.replaceState(null, "", "/"));
+
+// The library's stale-while-revalidate cache is module-scoped (survives navigation in the app), so
+// a grid loaded in one test must not carry into the next — reset it like the other shared stores.
+afterEach(() => clearLibraryCache());

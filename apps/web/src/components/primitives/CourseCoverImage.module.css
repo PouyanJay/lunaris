@@ -1,3 +1,17 @@
+/* The image sits over a constellation placeholder inside a frame that fills the aspect box, so the
+   card is composed from the first paint and the cover crossfades in rather than popping. */
+.frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* The seeded constellation, filling the frame behind the image as the instant load placeholder. */
+.placeholder {
+  position: absolute;
+  inset: 0;
+}
+
 /* The AI cover image fills its frame like the constellation it replaces — the frame owns the aspect
    ratio and the aria-hidden.
    `contain`, never `cover`: these covers are COMPOSED artworks that carry their own typography, so
@@ -7,11 +21,25 @@
    black ground only shows for a cover whose render is NOT 16:9 (an older one), which is letterboxed
    whole rather than cropped or stretched. */
 .image {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   background: var(--course-cover-letterbox);
+  /* Crossfade in over the placeholder once decoded (data-loaded). No layout impact — the frame is
+     already sized — so the grid never reflows as covers arrive. */
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.image[data-loaded] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .image {
+    transition: none;
+  }
 }
 
 /* The constellation loading state fills the frame identically, so swapping to the image is seamless
