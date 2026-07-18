@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CourseCover } from "./CourseCover";
 import { TypographicCover } from "./TypographicCover";
@@ -27,6 +27,9 @@ interface CourseCoverImageProps {
    *  button + the image share one source of truth), this component is purely presentational and does
    *  NOT run its own hook; card sites omit it and let the component resolve the state itself. */
   state?: CourseCoverState;
+  /** Above-the-fold priority — the first row of the grid loads its cover eagerly with a high fetch
+   *  priority so it paints without waiting for lazy intersection; below-the-fold covers stay lazy. */
+  priority?: boolean;
 }
 
 /** A course's cover, resolved to the right treatment (course-cover-images T9): the AI **image**
@@ -41,6 +44,7 @@ export function CourseCoverImage({
   cover,
   apiBaseUrl = import.meta.env.VITE_API_URL as string | undefined,
   state: providedState,
+  priority = false,
 }: CourseCoverImageProps) {
   // Own the hook only when no state is provided (card sites). The Overview passes its own hook's
   // state so the regenerate button and this image never diverge; calling the hook with a null
@@ -79,18 +83,41 @@ export function CourseCoverImage({
   useEffect(() => setRung(0), [thumb, master]);
   const src = rungs[rung];
 
+  // Crossfade the sharp cover in over the constellation placeholder: the image starts transparent
+  // and fades once it has decoded, so a card is never empty and covers don't pop in one by one.
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    setLoaded(false);
+    // A cached image can already be complete before onLoad attaches — reflect that so it never
+    // strands invisible behind a fade that will not fire.
+    if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) setLoaded(true);
+  }, [src]);
+
   if (src) {
     return (
-      <img
-        // Keyed on the src so a fall to the next rung remounts rather than reusing the errored node.
-        key={src}
-        className={styles.image}
-        src={src}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        onError={() => setRung((current) => current + 1)}
-      />
+      <div className={styles.frame}>
+        {/* The seeded constellation fills the frame instantly as the load placeholder, so the box is
+            composed from the first frame and the AI cover crossfades in over it (no empty→image
+            pop, no layout shift — the frame already owns the aspect ratio). */}
+        <div className={styles.placeholder}>
+          <CourseCover seed={seed} />
+        </div>
+        <img
+          // Keyed on the src so a fall to the next rung remounts rather than reusing the errored node.
+          key={src}
+          ref={imgRef}
+          className={styles.image}
+          data-loaded={loaded || undefined}
+          src={src}
+          alt=""
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => setRung((current) => current + 1)}
+        />
+      </div>
     );
   }
   if (state.phase === "generating") {

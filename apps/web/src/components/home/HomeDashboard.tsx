@@ -154,8 +154,14 @@ function RecentCourses({
         Recent courses
       </h2>
       <ul className={styles.grid}>
-        {courses.map((course) => (
-          <CourseCard key={course.id} course={course} onRequestDelete={onRequestDelete} />
+        {courses.map((course, index) => (
+          <CourseCard
+            key={course.id}
+            course={course}
+            onRequestDelete={onRequestDelete}
+            // The recent grid sits above the fold — its first row loads covers eagerly.
+            priority={index < 3}
+          />
         ))}
       </ul>
     </section>
