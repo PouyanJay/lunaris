@@ -14,6 +14,7 @@ from pathlib import Path
 import httpx
 import pytest
 from _auth import JWT_SECRET, USER_A, USER_B, auth_headers
+from _doubles import CannotResizeCoverStorage
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.cover_display_transform import COVER_DISPLAY_TRANSFORM
@@ -27,10 +28,8 @@ from lunaris_covers.models.rendered_cover import RenderedCover
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
-    CoverImageTransform,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
-    PersistenceError,
 )
 from lunaris_runtime.schema import Course, CoverJobStatus, CoverLightMode
 
@@ -292,22 +291,6 @@ async def test_ready_view_omits_the_light_thumb_for_a_dark_only_cover(
     assert body["thumbUrlLight"] is None
 
 
-class _CannotResizeStorage(InMemoryCoverStorage):
-    """Storage that can sign a master but not a derivative — image transformations disabled, or a
-    transform-specific quota / hiccup."""
-
-    async def signed_url(
-        self,
-        *,
-        path: str,
-        expires_in_seconds: int = 3600,
-        transform: CoverImageTransform | None = None,
-    ) -> str:
-        if transform is not None:
-            raise PersistenceError("transformations unavailable")
-        return await super().signed_url(path=path, expires_in_seconds=expires_in_seconds)
-
-
 async def test_ready_view_still_serves_the_master_when_the_thumb_cannot_be_minted(
     tmp_path: Path,
     queue: InMemoryCoverJobQueue,
@@ -318,7 +301,7 @@ async def test_ready_view_still_serves_the_master_when_the_thumb_cannot_be_minte
     # the whole view down with it: the master and provenance resolved fine beside it, and the reader
     # falls back to the master — so the cover renders softer, never missing (and never a 500).
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    storage = _CannotResizeStorage()
+    storage = CannotResizeCoverStorage()
     worker = CoverWorker(
         queue=queue,
         pipeline=StubCoverPipeline(),

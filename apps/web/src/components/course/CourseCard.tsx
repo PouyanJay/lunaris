@@ -38,24 +38,21 @@ export function CourseCard({ course, onRequestDelete, priority = false }: Course
       <Link className={styles.card} to={coursePath(course.id)}>
         <div className={styles.cover} aria-hidden="true">
           {/* A READY cover is pre-signed on the summary (library-instant-covers): render it straight
-              as a resolved state — no per-card signed-URL fetch. A cover still generating (no thumb
-              yet) keeps the polling handle path so it swaps in when it finishes; no cover → the
-              Typographic fallback. */}
-          {course.thumbUrl != null ? (
-            <CourseCoverImage
-              courseId={course.id}
-              topic={course.topic}
-              state={coverStateFromThumb(course.thumbUrl, course.thumbUrlLight ?? null)}
-              priority={priority}
-            />
-          ) : (
-            <CourseCoverImage
-              courseId={course.id}
-              topic={course.topic}
-              cover={course.cover}
-              priority={priority}
-            />
-          )}
+              as a resolved state — no per-card signed-URL fetch (CourseCoverImage prefers `state`
+              over the handle). A cover still generating (no thumb yet) leaves `state` undefined and
+              falls back to the `cover` handle's polling path so it swaps in when it finishes; no
+              cover → the Typographic fallback. */}
+          <CourseCoverImage
+            courseId={course.id}
+            topic={course.topic}
+            cover={course.cover}
+            state={
+              course.thumbUrl != null
+                ? coverStateFromThumb(course.thumbUrl, course.thumbUrlLight ?? null)
+                : undefined
+            }
+            priority={priority}
+          />
         </div>
         <span className={styles.cardBody}>
           <span className={styles.cardTitle}>{course.topic}</span>

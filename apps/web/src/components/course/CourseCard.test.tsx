@@ -101,17 +101,21 @@ describe("CourseCard cover reveal + priority", () => {
     expect(img.hasAttribute("data-loaded")).toBe(true);
   });
 
-  it("loads an above-the-fold cover eagerly at high fetch priority", () => {
+  it("loads a below-the-fold cover lazily by default", () => {
     const { container } = renderCard(makeCourseSummary({ thumbUrl: DARK_THUMB }));
-    // Default (below the fold) stays lazy.
-    expect(image(container).getAttribute("loading")).toBe("lazy");
-    cleanup();
 
+    const img = image(container);
+    expect(img.getAttribute("loading")).toBe("lazy");
+    expect(img.getAttribute("fetchpriority")).toBe("auto");
+  });
+
+  it("loads an above-the-fold cover eagerly at high fetch priority when marked priority", () => {
     render(
       <MemoryRouter>
         <CourseCard course={makeCourseSummary({ thumbUrl: DARK_THUMB })} priority />
       </MemoryRouter>,
     );
+
     const img = document.querySelector("img") as HTMLImageElement;
     expect(img.getAttribute("loading")).toBe("eager");
     expect(img.getAttribute("fetchpriority")).toBe("high");

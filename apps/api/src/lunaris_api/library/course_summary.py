@@ -24,6 +24,7 @@ class CourseSummary:
     built_at: datetime
     last_opened_at: datetime | None
     # The course's AI cover handle (course-cover-images), carried so the grid card can render the
-    # image or the Typographic fallback. Only the artifact (jobId + status) rides here — the signed
-    # URL is minted on demand client-side, never at list time (N courses ⇒ N signed-URL calls).
+    # image or the Typographic fallback, and so the reader can regenerate. Only the artifact
+    # (jobId + status + provenance) rides here; the router pre-signs the display-size thumb URL onto
+    # the wire `CourseSummaryView` at list time (see cover_thumbs.sign_library_cover_thumbs).
     cover: CoverArtifact | None = None

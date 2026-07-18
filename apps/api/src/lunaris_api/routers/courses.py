@@ -37,6 +37,10 @@ from ..service import (
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
+# The default for a course with no pre-signed cover thumb (keyless / non-READY / can't-resize) —
+# a single shared all-null instance, so the per-summary lookup miss allocates nothing.
+_EMPTY_THUMBS = CoverThumbs()
+
 
 def _refused(exc: DraftBuildRefusedError) -> HTTPException:
     """Map a refused keyless (Draft) build to its HTTP status + learner-facing detail (T6)."""
@@ -138,7 +142,7 @@ async def list_courses(
     # request instead of a per-card signed-URL exchange (the "covers pop in one by one" fix).
     thumbs = await sign_library_cover_thumbs(cover_storage, owner_id, summaries)
     return [
-        _summary_view(summary, thumbs.get(summary.course_id, CoverThumbs()))
+        _summary_view(summary, thumbs.get(summary.course_id, _EMPTY_THUMBS))
         for summary in summaries
     ]
 

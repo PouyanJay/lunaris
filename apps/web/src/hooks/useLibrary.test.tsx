@@ -22,12 +22,12 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe("useLibrary cross-navigation cache", () => {
-  it("cold load: loading, then ready", async () => {
+  it("cold load: loading, then ready with the loaded courses", async () => {
     fetchSummaries.mockResolvedValueOnce(ONE);
     const { result } = renderHook(() => useLibrary(API));
 
-    expect(result.current.state.status).toBe("loading");
-    await waitFor(() => expect(result.current.state.status).toBe("ready"));
+    expect(result.current.state).toEqual({ status: "loading" });
+    await waitFor(() => expect(result.current.state).toEqual({ status: "ready", courses: ONE }));
   });
 
   it("re-entry paints the cached grid instantly (no skeleton flash) and revalidates", async () => {
@@ -40,10 +40,13 @@ describe("useLibrary cross-navigation cache", () => {
     // Remount — as when the user navigates away from My-courses and back.
     const second = renderHook(() => useLibrary(API));
 
-    // No loading flash: the module cache is shown immediately...
-    expect(second.result.current.state.status).toBe("ready");
-    // ...and the grid still revalidates quietly in the background.
+    // No loading flash: the exact cached grid is shown immediately...
+    expect(second.result.current.state).toEqual({ status: "ready", courses: ONE });
+    // ...and the grid still revalidates quietly in the background, settling on the fresh data.
     expect(fetchSummaries).toHaveBeenCalledOnce();
+    await waitFor(() =>
+      expect(second.result.current.state).toEqual({ status: "ready", courses: ONE }),
+    );
   });
 
   it("clearLibraryCache (an account switch) forces a cold load again", async () => {
@@ -55,8 +58,10 @@ describe("useLibrary cross-navigation cache", () => {
     clearLibraryCache();
     const second = renderHook(() => useLibrary(API));
 
-    // The next account starts from the skeleton, never the previous user's cached grid.
-    expect(second.result.current.state.status).toBe("loading");
+    // The next account starts from the skeleton, never the previous user's cached grid...
+    expect(second.result.current.state).toEqual({ status: "loading" });
+    // ...then loads its own library (awaited so no state update dangles past the test).
+    await waitFor(() => expect(second.result.current.state).toEqual({ status: "ready", courses: ONE }));
   });
 
   it("keeps the cached cards when a background revalidation fails", async () => {

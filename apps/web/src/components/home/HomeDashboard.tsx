@@ -139,6 +139,9 @@ function HomeBody({
   );
 }
 
+/** The recent grid's first row (above the fold) loads its covers eagerly at high priority. */
+const EAGER_COVER_COUNT = 3;
+
 /** The recent grid: recently-opened courses that aren't already in the continue section, as cover
  *  cards. Capped by the caller; the "View all" hatch lives below in HomeBody. */
 function RecentCourses({
@@ -159,8 +162,7 @@ function RecentCourses({
             key={course.id}
             course={course}
             onRequestDelete={onRequestDelete}
-            // The recent grid sits above the fold — its first row loads covers eagerly.
-            priority={index < 3}
+            priority={index < EAGER_COVER_COUNT}
           />
         ))}
       </ul>
