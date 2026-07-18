@@ -49,7 +49,19 @@ class SupabaseCoverStorage:
 
         def _run() -> object:
             bucket = client.storage.from_(_BUCKET)  # type: ignore[attr-defined]
-            return bucket.upload(path, data, {"content-type": content_type, "upsert": "true"})
+            # A cover object is immutable: it lives under a per-job-id path, and a regenerate writes
+            # a NEW path, so its bytes never change in place. Stamp a long immutable Cache-Control
+            # so a client holding a valid signed URL serves it from cache (the service worker caches
+            # by path regardless, but this also helps plain browsers and any CDN in front).
+            return bucket.upload(
+                path,
+                data,
+                {
+                    "content-type": content_type,
+                    "cache-control": "public, max-age=31536000, immutable",
+                    "upsert": "true",
+                },
+            )
 
         await asyncio.to_thread(_run)
 

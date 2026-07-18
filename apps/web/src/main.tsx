@@ -11,6 +11,11 @@ import { createRoot } from "react-dom/client";
 
 import App from "./App";
 import { ErrorBoundary } from "./components/states/ErrorBoundary";
+import { registerCoverCache } from "./lib/coverCache";
+
+// Cache constant cover artwork by content path, so a rotating signed-URL token never re-downloads
+// identical images (production builds only; no-op in the dev server and where SWs are unavailable).
+registerCoverCache();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element #root not found");

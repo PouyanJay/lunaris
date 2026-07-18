@@ -4,9 +4,18 @@
     "rewrite": "/index.html",
     "exclude": [
       "/assets/*",
+      "/sw.js",
       "/*.{png,jpg,jpeg,gif,svg,ico,webp,avif}",
       "/*.{json,txt,xml,webmanifest,map}",
       "/*.{woff,woff2,ttf,otf,eot}"
     ]
-  }
+  },
+  "routes": [
+    {
+      "route": "/sw.js",
+      "headers": {
+        "cache-control": "no-cache"
+      }
+    }
+  ]
 }
