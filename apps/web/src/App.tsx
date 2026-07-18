@@ -24,6 +24,7 @@ import { Button } from "./components/primitives/Button";
 import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
+import { prefetchLibrary } from "./hooks/prefetchLibrary";
 import { BuildControlRoom } from "./components/controlroom/BuildControlRoom";
 import { BuildMetricBand } from "./components/controlroom/BuildMetricBand";
 import { BuildReplay } from "./components/transcript/BuildReplay";
@@ -500,6 +501,7 @@ function StudioApp({
       onNavigate={closeMobileNav}
       collapsed={isMobile ? false : sidebarLayout.collapsed}
       onToggleCollapsed={sidebarLayout.toggleCollapsed}
+      onPrefetchLibrary={() => prefetchLibrary(apiBaseUrl)}
       theme={theme}
       onToggleTheme={onToggleTheme}
     />
