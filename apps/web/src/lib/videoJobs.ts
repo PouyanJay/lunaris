@@ -61,11 +61,6 @@ export interface VideoJobWire {
   error?: string | null;
 }
 
-/** The wire shape of `GET /api/videos/{id}` / the enqueue response: the job row plus signed
- *  playback URLs once it is ready, the grounding provenance once ready (the API sends it on a READY
- *  job — it carries the degraded-scene flags the reader surfaces), and whether the lesson it was
- *  built from has since been revised (`stale` — the reader's outdated badge, V6-T3). `captionsUrl`
- *  is present only for a narrated video. */
 /** One navigable chapter of a ready video (Cinema): a scene with its span on the concatenated
  *  timeline, so a click can seek to exactly where the chapter begins. */
 export interface VideoChapter {
@@ -83,6 +78,11 @@ export interface TranscriptCue {
   text: string;
 }
 
+/** The wire shape of `GET /api/videos/{id}` / the enqueue response: the job row plus signed
+ *  playback URLs once it is ready, the grounding provenance once ready (the API sends it on a READY
+ *  job — it carries the degraded-scene flags the reader surfaces), and whether the lesson it was
+ *  built from has since been revised (`stale` — the reader's outdated badge, V6-T3). `captionsUrl`
+ *  is present only for a narrated video. */
 export interface VideoJobView {
   job: VideoJobWire;
   videoUrl: string | null;

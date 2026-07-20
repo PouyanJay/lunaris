@@ -26,9 +26,8 @@ from lunaris_runtime.video_build import (
     video_config_from_map,
     video_input_hash,
 )
-from lunaris_video.assembly.outline_builder import build_video_outline
-from lunaris_video.schemas import TimingManifest
-from lunaris_video.schemas.scene_contracts import SceneContracts
+from lunaris_video.assembly import build_video_outline
+from lunaris_video.schemas import SceneContracts, TimingManifest
 from pydantic import Field, ValidationError
 
 from ..config import Settings, get_settings
@@ -620,14 +619,20 @@ async def _read_outline(
 ) -> tuple[list[VideoChapterView], list[TranscriptCueView]]:
     """The Cinema outline (chapters + timed transcript), derived from the scene contracts + timing
     manifest the ready job persisted. Supplementary to playback, so a missing or malformed artifact
-    (a job rendered before this shipped, or schema drift) degrades to empty, never a 500."""
+    — absent (pre-Cinema render), schema drift, or a contracts/timing pair whose scene or beat ids
+    disagree (KeyError in the walk) — degrades to empty, never a 500."""
     try:
         contracts = SceneContracts.model_validate_json(await storage.download(path=paths.contracts))
         manifest = TimingManifest.model_validate_json(await storage.download(path=paths.timing))
-    except (PersistenceError, ValidationError) as exc:
-        logger.warning("video_outline_unavailable", path=paths.contracts, reason=type(exc).__name__)
+        outline = build_video_outline(contracts, manifest)
+    except (PersistenceError, ValidationError, KeyError) as exc:
+        logger.warning(
+            "video_outline_unavailable",
+            contracts_path=paths.contracts,
+            timing_path=paths.timing,
+            reason=type(exc).__name__,
+        )
         return [], []
-    outline = build_video_outline(contracts, manifest)
     chapters = [
         VideoChapterView(id=c.id, title=c.title, start_s=c.start_s, end_s=c.end_s)
         for c in outline.chapters

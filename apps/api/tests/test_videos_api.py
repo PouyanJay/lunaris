@@ -1133,6 +1133,32 @@ async def test_a_ready_job_without_outline_artifacts_degrades_to_empty(
     assert body["transcript"] == []
 
 
+async def test_a_ready_job_with_mismatched_outline_artifacts_degrades_to_empty(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — each artifact is individually valid, but the timing manifest is missing the scene
+    # the contracts reference (a KeyError in the timeline walk).
+    job = await _drive_to_ready(client, queue)
+    paths = VideoArtifactPaths.for_job(job)
+    await storage.upload(
+        path=paths.contracts,
+        data=_outline_contracts().model_dump_json(by_alias=True).encode(),
+        content_type="application/json",
+    )
+    await storage.upload(
+        path=paths.timing,
+        data=TimingManifest({}).model_dump_json().encode(),
+        content_type="application/json",
+    )
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — the inconsistency degrades to empty, never a 500 on this polled endpoint.
+    assert body["chapters"] == []
+    assert body["transcript"] == []
+
+
 def _timing(*, voiced: bool) -> TimingManifest:
     clip = "S1_intro_b1.mp3" if voiced else None
     return TimingManifest(
