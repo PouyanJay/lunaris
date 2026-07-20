@@ -4,6 +4,7 @@ import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
 import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { DegradedBadge } from "./DegradedBadge";
+import { CinemaPlayer } from "./CinemaPlayer";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
@@ -60,11 +61,7 @@ export function LessonVideoHero({
 
       {state.phase === "working" && (
         <div className={styles.stage}>
-          <VideoProgress
-            status={state.status}
-            label="Generating the lesson video"
-            onStop={stop}
-          />
+          <VideoProgress status={state.status} label="Generating the lesson video" onStop={stop} />
         </div>
       )}
 
@@ -85,14 +82,28 @@ export function LessonVideoHero({
           <span className="sr-only" role="status">
             Video ready
           </span>
-          <GeneratedVideoPlayer
-            videoUrl={state.videoUrl}
-            posterUrl={state.posterUrl}
-            captionsUrl={state.captionsUrl}
-            label="Play lesson video"
-            refreshPlayback={refresh}
-            overlayTitle={title}
-          />
+          {/* Cinema (phase 5): a ready video with a derived outline plays as a chaptered,
+              transcript-synced surface — the video-led front door. Videos with no chapters (a
+              pre-Cinema render) fall back to the plain player. */}
+          {state.chapters.length > 0 ? (
+            <CinemaPlayer
+              videoUrl={state.videoUrl}
+              posterUrl={state.posterUrl}
+              captionsUrl={state.captionsUrl}
+              chapters={state.chapters}
+              transcript={state.transcript}
+              label={title ? `${title} — lesson video` : "Lesson video"}
+            />
+          ) : (
+            <GeneratedVideoPlayer
+              videoUrl={state.videoUrl}
+              posterUrl={state.posterUrl}
+              captionsUrl={state.captionsUrl}
+              label="Play lesson video"
+              refreshPlayback={refresh}
+              overlayTitle={title}
+            />
+          )}
           <div className={styles.metaRow}>
             <span className={`mono ${styles.metaCaption}`}>
               Lesson video
