@@ -20,11 +20,18 @@ interface UseActivityResult {
  * after the component is gone or a newer load started. Stale-while-revalidate: a reload keeps the
  * loaded snapshot visible instead of blanking to the skeleton.
  */
-export function useActivity(apiBaseUrl: string): UseActivityResult {
+export function useActivity(apiBaseUrl: string, enabled = true): UseActivityResult {
   const [state, setState] = useState<ActivityState>({ status: "loading" });
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(() => {
+    // No origin (offline / no key), or the consumer doesn't need activity right now — settle
+    // without a wasted fetch. Consumers treat a non-ready snapshot as "no activity" (streak 0,
+    // the Trail band absent).
+    if (!apiBaseUrl || !enabled) {
+      setState({ status: "error", message: "Activity is unavailable." });
+      return;
+    }
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -41,7 +48,7 @@ export function useActivity(apiBaseUrl: string): UseActivityResult {
         // A background-refresh failure keeps the stale snapshot rather than blanking to an error.
         setState((prev) => (prev.status === "ready" ? prev : { status: "error", message }));
       });
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, enabled]);
 
   useEffect(() => {
     load();
