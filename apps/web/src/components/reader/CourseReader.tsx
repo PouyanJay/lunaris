@@ -29,6 +29,8 @@ import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
 import { estimateReadingMinutes } from "../../lib/readingTime";
 import { useReadingProgress } from "../../hooks/useReadingProgress";
+import { useSectionSpy } from "../../hooks/useSectionSpy";
+import type { LessonSectionEntry } from "./ReaderOutline";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
@@ -256,6 +258,19 @@ export function CourseReader({
     [current],
   );
   const readPercent = useReadingProgress(paneRef, currentLessonId);
+  // Which of the lesson's sections is under the reading line, and which are read past — drives
+  // the outline's nested section level.
+  const { activeSection, passedSections } = useSectionSpy(paneRef, currentLessonId);
+  // Jump the pane to a section chosen in the outline (and close the phone outline drawer so the
+  // destination isn't hidden behind it).
+  const selectSection = useCallback(
+    (id: string) => {
+      const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
+      scrollIntoViewSafe(target, reduceMotion, "start");
+      setOutlineOpen(false);
+    },
+    [reduceMotion],
+  );
   useEffect(() => {
     if (!progress || !currentLessonId) return;
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
@@ -376,6 +391,24 @@ export function CourseReader({
   // the render guard and the list below.
   const expects = current.lesson.expects ?? [];
   const selfCheck = current.lesson.selfCheck ?? [];
+  // The focused lesson's sections in reading order — the outline's nested level. Ids mirror the
+  // pane's data-section attributes; state comes from the scroll-spy (current wins over done).
+  const sectionEntries: LessonSectionEntry[] = [
+    ...(expects.length > 0 ? [{ id: "expects", label: "What this lesson expects" }] : []),
+    ...PHASES.map(({ key, label }) => ({ id: key as string, label })),
+    ...(selfCheck.length > 0 ? [{ id: "selfCheck", label: "Self-check" }] : []),
+    ...(current.assessment.length > 0
+      ? [{ id: "assessment", label: "Check your understanding" }]
+      : []),
+  ].map((entry) => ({
+    ...entry,
+    state:
+      entry.id === activeSection
+        ? ("current" as const)
+        : passedSections.has(entry.id)
+          ? ("done" as const)
+          : ("upcoming" as const),
+  }));
   const regenerate = async () => {
     if (!onRegenerate) return;
     setPending(true);
@@ -400,6 +433,8 @@ export function CourseReader({
         activeIndex={safeIndex}
         onSelect={selectLesson}
         stateFor={progress ? (lessonId) => lessonStateFor(progress, lessonId) : undefined}
+        sections={sectionEntries}
+        onSelectSection={selectSection}
         className={`${styles.outlineDrawer} ${outlineOpen ? styles.outlineDrawerOpen : ""}`.trim()}
       />
       <div
@@ -540,11 +575,13 @@ export function CourseReader({
           {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
               omitted for courses built before P7.3 (empty expects). */}
           {expects.length > 0 && (
-            <LessonScaffold
-              title="What this lesson expects"
-              cue="What to be comfortable with before you start"
-              items={expects}
-            />
+            <div data-section="expects" className={styles.sectionAnchor}>
+              <LessonScaffold
+                title="What this lesson expects"
+                cue="What to be comfortable with before you start"
+                items={expects}
+              />
+            </div>
           )}
 
           {PHASES.map(({ key, label, cue }) => {
@@ -554,9 +591,10 @@ export function CourseReader({
             return (
               <section
                 key={key}
-                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""}`}
+                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
                 aria-label={label}
                 data-phase={key}
+                data-section={key}
                 data-active={phaseHighlighted ? "true" : undefined}
               >
                 <div className={styles.phaseHead}>
@@ -584,14 +622,20 @@ export function CourseReader({
 
           {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
           {selfCheck.length > 0 && (
-            <LessonScaffold
-              title="Self-check"
-              cue="Confirm you’ve got it before moving on"
-              items={selfCheck}
-            />
+            <div data-section="selfCheck" className={styles.sectionAnchor}>
+              <LessonScaffold
+                title="Self-check"
+                cue="Confirm you’ve got it before moving on"
+                items={selfCheck}
+              />
+            </div>
           )}
 
-          {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
+          {current.assessment.length > 0 && (
+            <div data-section="assessment" className={styles.sectionAnchor}>
+              <LessonAssessment items={current.assessment} />
+            </div>
+          )}
 
           <footer className={styles.nav}>
             {onRegenerate ? (

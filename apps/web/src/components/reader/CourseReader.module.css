@@ -30,6 +30,11 @@
   gap: var(--space-8);
 }
 
+/* Sections the outline can jump to — breathing room under the pane's top edge on arrival. */
+.sectionAnchor {
+  scroll-margin-top: var(--space-6);
+}
+
 .lessonHead {
   display: flex;
   align-items: flex-end;
