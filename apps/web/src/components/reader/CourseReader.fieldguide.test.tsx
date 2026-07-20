@@ -155,6 +155,21 @@ describe("CourseReader — reading meta band", () => {
     expect(screen.queryByText("This lesson in 30 seconds")).not.toBeInTheDocument();
   });
 
+  it("marks a knowledge component's name in prose with its graph definition", async () => {
+    // Arrange — the fixture's demonstrate prose opens "Binary search halves…" and the graph
+    // defines the Binary Search KC. No :term directive is authored anywhere.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Act — focus the auto-marked term.
+    const term = screen.getByRole("button", { name: "Binary search" });
+    fireEvent.focus(term);
+
+    // Assert — the KC's own definition surfaces as the tooltip.
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "Halving a sorted range each step.",
+    );
+  });
+
   it("shows the remaining reading time once underway", async () => {
     // Arrange — a 3-minute lesson, half read → 2 minutes left (ceiling).
     const course = makeCourse({ modules: [makeModule({ lessons: [longLesson()] })] });

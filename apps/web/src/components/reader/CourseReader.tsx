@@ -27,6 +27,7 @@ import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
+import { buildGlossaryIndex } from "../../lib/glossaryIndex";
 import { deriveTldr } from "../../lib/lessonTldr";
 import { estimateReadingMinutes } from "../../lib/readingTime";
 import { useReadingProgress } from "../../hooks/useReadingProgress";
@@ -164,6 +165,9 @@ export function CourseReader({
     () => new Map(active.provenance.map((citation) => [citation.id, citation])),
     [active.provenance],
   );
+  // Course glossary (Field Guide): KC definitions from the graph + authored :term directives,
+  // auto-marked into every phase's prose. Memoised — the index is course-wide and stable.
+  const glossary = useMemo(() => buildGlossaryIndex(active), [active]);
   const [activeIndex, setActiveIndex] = useState(0);
   // A lesson navigation we've requested but whose URL hasn't come back around yet. The
   // canonicalise effect must stand down while one is in flight — its replace would otherwise
@@ -624,6 +628,7 @@ export function CourseReader({
                 <LessonProse
                   prose={segment.prose}
                   marks={marksByPhase.get(key) ?? []}
+                  glossary={glossary}
                   activeClaimId={activeClaimId}
                   onSelectClaim={selectClaim}
                 />
