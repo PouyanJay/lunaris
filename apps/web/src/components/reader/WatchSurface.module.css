@@ -1,0 +1,7 @@
+/* The Watch surface stacks the chaptered player and the docked lesson furniture (takeaways, and
+   resources next) with the reader's section rhythm between them. */
+.surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}

@@ -35,6 +35,17 @@
   scroll-margin-top: var(--space-6);
 }
 
+/* Read mode's cue into Watch when a chaptered video is ready — the video hero's idle affordance
+   grammar (reused via composes), keeping the video one click away without duplicating the player. */
+.watchCta {
+  composes: idle from "./LessonVideoHero.module.css";
+  margin-bottom: var(--space-6);
+}
+
+.watchCtaHint {
+  composes: idleHint from "./LessonVideoHero.module.css";
+}
+
 .lessonHead {
   display: flex;
   align-items: flex-end;

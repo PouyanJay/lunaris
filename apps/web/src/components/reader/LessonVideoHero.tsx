@@ -1,10 +1,9 @@
-import { useLessonVideo } from "../../hooks/useLessonVideo";
+import type { LessonVideoState } from "../../hooks/useLessonVideo";
 import { formatMediaDuration } from "../../lib/mediaDuration";
-import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
+import { FAILED_REGEN_MODES, readyRegenModes, type RegenerateMode } from "../../lib/videoJobs";
 import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { DegradedBadge } from "./DegradedBadge";
-import { CinemaPlayer } from "./CinemaPlayer";
 import { GeneratedVideoPlayer } from "./GeneratedVideoPlayer";
 import { OutdatedBadge } from "./OutdatedBadge";
 import { RegenerateMenu } from "./RegenerateMenu";
@@ -12,16 +11,18 @@ import { VideoProgress } from "./VideoProgress";
 import styles from "./LessonVideoHero.module.css";
 
 interface LessonVideoHeroProps {
-  apiBaseUrl: string;
-  courseId: string;
-  lessonId: string;
-  /** The build-time lesson video, if the course shipped one. Resolved + shown with an outdated
-   *  badge once the lesson is revised; absent ⇒ the on-demand generate affordance. */
-  video?: VideoArtifact | null;
+  /** The focused lesson's video state machine. The reader owns the single `useLessonVideo`
+   *  instance (so mode-independent readiness can drive the Watch mode) and passes it in. */
+  state: LessonVideoState;
+  generate: () => void;
+  regenerate: (mode: RegenerateMode) => void;
+  stop: () => void;
+  refresh: () => Promise<void>;
+  /** The build-time lesson video, if the course shipped one — for the honest built-duration + the
+   *  scene-QA line (only trustworthy while the built artifact is what's playing). */
+  video?: VideoArtifact | null | undefined;
   /** A title for the poster overlay (the owning module) — absent, the poster stays bare. */
   title?: string | undefined;
-  /** Poll cadence override for tests; defaults to the hook's production interval. */
-  pollIntervalMs?: number;
 }
 
 /** The lesson's video hero slot — the headline artifact above the prose (plan §0: hero slot).
@@ -29,23 +30,17 @@ interface LessonVideoHeroProps {
  *  One component, every state: a quiet generate affordance (idle), a 16:9 stage with a determinate
  *  progress bar + stage caption while the job works, the VideoFacade interaction once ready (poster
  *  → click → native player on the signed URL), a failed state with retry, the keyless refusal
- *  verbatim, and *nothing at all* when the operator kill-switch is off (no husk). */
+ *  verbatim, and *nothing at all* when the operator kill-switch is off (no husk). Presentational:
+ *  the reader drives the state machine and hands it in. */
 export function LessonVideoHero({
-  apiBaseUrl,
-  courseId,
-  lessonId,
+  state,
+  generate,
+  regenerate,
+  stop,
+  refresh,
   video,
   title,
-  pollIntervalMs,
 }: LessonVideoHeroProps) {
-  const { state, generate, regenerate, stop, refresh } = useLessonVideo(
-    apiBaseUrl,
-    courseId,
-    lessonId,
-    pollIntervalMs,
-    video,
-  );
-
   if (state.phase === "unavailable") return null;
 
   return (
@@ -82,28 +77,17 @@ export function LessonVideoHero({
           <span className="sr-only" role="status">
             Video ready
           </span>
-          {/* Cinema (phase 5): a ready video with a derived outline plays as a chaptered,
-              transcript-synced surface — the video-led front door. Videos with no chapters (a
-              pre-Cinema render) fall back to the plain player. */}
-          {state.chapters.length > 0 ? (
-            <CinemaPlayer
-              videoUrl={state.videoUrl}
-              posterUrl={state.posterUrl}
-              captionsUrl={state.captionsUrl}
-              chapters={state.chapters}
-              transcript={state.transcript}
-              label={title ? `${title} — lesson video` : "Lesson video"}
-            />
-          ) : (
-            <GeneratedVideoPlayer
-              videoUrl={state.videoUrl}
-              posterUrl={state.posterUrl}
-              captionsUrl={state.captionsUrl}
-              label="Play lesson video"
-              refreshPlayback={refresh}
-              overlayTitle={title}
-            />
-          )}
+          {/* The plain player. A ready video with a chapter outline is the Watch mode's surface
+              now (the reader mounts this hero only when there's no such outline — a not-yet-ready,
+              or a pre-Cinema un-chaptered, video), so this is always the plain player. */}
+          <GeneratedVideoPlayer
+            videoUrl={state.videoUrl}
+            posterUrl={state.posterUrl}
+            captionsUrl={state.captionsUrl}
+            label="Play lesson video"
+            refreshPlayback={refresh}
+            overlayTitle={title}
+          />
           <div className={styles.metaRow}>
             <span className={`mono ${styles.metaCaption}`}>
               Lesson video
