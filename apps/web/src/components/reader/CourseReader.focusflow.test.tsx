@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { makeCourse, makeLesson, routedFetch } from "../../test/fixtures";
-import { CourseReader } from "./CourseReader";
+import type { Visual } from "../../types/course";
+import { makeCourse, makeLesson, makeModule, routedFetch } from "../../test/fixtures";
+import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -184,6 +185,100 @@ describe("CourseReader — Learn mode", () => {
 
     // Assert
     expect(screen.getByRole("group", { name: "Step content" })).toHaveFocus();
+  });
+
+  it("offers the Read fallback for a lesson with nothing to step through", () => {
+    // Arrange — an entirely empty lesson.
+    const empty = { prose: "", visuals: [], claims: [], resources: [] };
+    const course = makeCourse({
+      modules: [
+        makeModule({
+          lessons: [
+            makeLesson({
+              segments: { activate: empty, demonstrate: empty, apply: empty, integrate: empty },
+              expects: [],
+              selfCheck: [],
+            }),
+          ],
+        }),
+      ],
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — an honest empty state, not a blank stage or a phantom step counter.
+    expect(screen.getByRole("status")).toHaveTextContent(/switch to read/i);
+    expect(screen.queryByText(/step 1 of/i)).not.toBeInTheDocument();
+  });
+
+  it("renders a visual step through the branded renderer", () => {
+    // Arrange — a demonstrate-phase flow visual becomes its own step (5 of 9 in this arc).
+    const base = makeLesson();
+    const visual: Visual = {
+      kind: "spec",
+      source: "",
+      rendered: null,
+      spec: { type: "flow", title: null, nodes: [{ id: "a", label: "Halve the range" }], edges: [] },
+      mayerChecks: {
+        coherence: true,
+        signaling: true,
+        spatialContiguity: true,
+        temporalContiguity: true,
+        redundancy: true,
+      },
+    };
+    const course = makeCourse();
+    course.modules[0]!.lessons = [
+      {
+        ...base,
+        segments: {
+          ...base.segments,
+          demonstrate: { ...base.segments.demonstrate, visuals: [visual] },
+        },
+      },
+    ];
+    render(<CourseReader course={course} />);
+
+    // Act — intro → warm-up → demonstrate content → visual step.
+    for (let i = 0; i < 3; i += 1) {
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    }
+
+    // Assert
+    expect(screen.getByText("Halve the range")).toBeInTheDocument();
+  });
+
+  it("returns to step one when the focused lesson changes", () => {
+    // Arrange — two lessons; walk into lesson 1.
+    const course = makeCourse();
+    course.modules[0]!.lessons = [makeLesson(), makeLesson({ id: "m-binary_search-l1" })];
+    render(<CourseReader course={course} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText(/step 2 of/i)).toBeInTheDocument();
+
+    // Act — jump to lesson 2 via the course outline.
+    const outline = screen.getByRole("navigation", { name: "Course outline" });
+    fireEvent.click(within(outline).getByRole("button", { name: /lesson 2/i }));
+
+    // Assert
+    expect(screen.getByText(/step 1 of/i)).toBeInTheDocument();
+  });
+
+  it("persists the chosen mode for the next visit", () => {
+    // Arrange — a stored Read preference wins on mount.
+    localStorage.setItem(READER_MODE_KEY, "read");
+    const { unmount } = render(<CourseReader course={makeCourse()} />);
+    expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
+
+    // Act — choose Learn; the preference is written back.
+    fireEvent.click(screen.getByRole("radio", { name: "Learn" }));
+    expect(localStorage.getItem(READER_MODE_KEY)).toBe("learn");
+    unmount();
+
+    // Assert — a fresh reader honours it.
+    render(<CourseReader course={makeCourse()} />);
+    expect(screen.getByRole("region", { name: /lesson steps/i })).toBeInTheDocument();
   });
 
   it("switches to the long-form Read mode from the toggle", () => {
