@@ -9,10 +9,12 @@ interface ReadingMetaProps {
   percent: number;
 }
 
-/** The Field Guide reading-meta band: estimated reading time, a hairline progress track, and the
- *  live percent read — the at-a-glance answer to "how big is this lesson and where am I in it". */
+/** The Field Guide reading-meta band: estimated reading time, a hairline progress track, the live
+ *  percent read, and — once underway — the minutes left. The at-a-glance answer to "how big is
+ *  this lesson and where am I in it". */
 export function ReadingMeta({ minutes, percent }: ReadingMetaProps) {
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const minutesLeft = Math.ceil(minutes * (1 - clamped / 100));
   return (
     <div
       className={styles.band}
@@ -25,6 +27,9 @@ export function ReadingMeta({ minutes, percent }: ReadingMetaProps) {
         <span className={styles.fill} />
       </span>
       <span className={styles.percent}>{clamped}% read</span>
+      {clamped > 0 && clamped < 100 && (
+        <span className={styles.metric}>≈ {minutesLeft} min left</span>
+      )}
     </div>
   );
 }

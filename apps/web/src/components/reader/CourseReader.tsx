@@ -27,6 +27,8 @@ import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
+import { estimateReadingMinutes } from "../../lib/readingTime";
+import { useReadingProgress } from "../../hooks/useReadingProgress";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
@@ -247,6 +249,13 @@ export function CourseReader({
   // First open of a lesson marks it in_progress — but never regresses a lesson already marked
   // (a revisited done lesson stays done). Waits for the snapshot so reloads don't re-mark.
   const currentLessonId = current?.lesson.id;
+  // Field Guide reading meta: the focused lesson's estimated minutes, and how far the pane has
+  // been scrolled through it (re-measured from the top on every lesson change).
+  const readingMinutes = useMemo(
+    () => (current ? estimateReadingMinutes(current.lesson) : 1),
+    [current],
+  );
+  const readPercent = useReadingProgress(paneRef, currentLessonId);
   useEffect(() => {
     if (!progress || !currentLessonId) return;
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
@@ -434,9 +443,9 @@ export function CourseReader({
           {safeIndex === 0 && course.buildCapabilities && (
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
-          {/* Field Guide reading-meta band (walking skeleton): stub values until the reading-time
-              derivation and scroll tracking land. */}
-          <ReadingMeta minutes={1} percent={0} />
+          {/* Field Guide reading-meta band: how big this lesson is and how far through it the
+              learner has scrolled. */}
+          <ReadingMeta minutes={readingMinutes} percent={readPercent} />
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
