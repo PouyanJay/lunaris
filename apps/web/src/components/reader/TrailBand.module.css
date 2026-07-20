@@ -1,0 +1,95 @@
+.band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-6);
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* Secondary, not muted: live metrics the learner reads (AA). */
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.value {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The streak is the single accent — the one "you're on a run" signal. */
+.streak .value {
+  color: var(--accent-600);
+}
+
+.streakDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+  align-self: center;
+}
+
+/* XP toward the day's goal: a mono metric + a thin meter, same language as the rest. */
+.xp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.meter {
+  position: relative;
+  width: 72px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  overflow: hidden;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-full);
+  background: var(--text-secondary);
+  width: var(--xp-fill, 0%);
+}
+
+.meterFill[data-reached="true"] {
+  background: var(--success);
+}
+
+/* Loading: a skeleton strip that mirrors the real band's height so nothing shifts. */
+.skeleton {
+  height: 17px;
+  width: 40%;
+  min-width: 160px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    animation: trailPulse 1.4s var(--ease) infinite;
+  }
+}
+
+@keyframes trailPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

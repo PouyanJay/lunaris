@@ -6,11 +6,13 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { useStudyHeartbeat } from "../../hooks/useStudyHeartbeat";
+import { useActivity } from "../../hooks/useActivity";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { SegmentedControl } from "../primitives/SegmentedControl";
 import { LearnMode } from "./LearnMode";
+import { TrailBand } from "./TrailBand";
 import { useLearnMode } from "./useLearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
@@ -202,6 +204,9 @@ export function CourseReader({
   );
   // Study-minutes heartbeat: an open, visible reader is "studying" (paused while backgrounded).
   useStudyHeartbeat(apiBaseUrl ?? "", true);
+  // The learner's activity snapshot (streak / event feed) — the Trail band's motivation source.
+  // Offline (no apiBaseUrl) keys an empty origin so the fetch self-skips; reloaded on completion.
+  const { state: activity, reload: reloadActivity } = useActivity(apiBaseUrl ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -324,8 +329,11 @@ export function CourseReader({
   // and IS Read mode's Next/Finish (the footer buttons call it too).
   const completeLesson = useCallback(() => {
     if (progress && currentLessonId) markLesson(currentLessonId, "done");
+    // The done mark emits a `completed` event server-side (P9); refresh the Trail band so it
+    // reflects the just-earned streak/XP. Best-effort — a stale snapshot is harmless.
+    reloadActivity();
     if (safeIndex < total - 1) goToLesson(safeIndex + 1);
-  }, [progress, currentLessonId, markLesson, safeIndex, total, goToLesson]);
+  }, [progress, currentLessonId, markLesson, reloadActivity, safeIndex, total, goToLesson]);
   // Jump to a section chosen in the outline — a step jump in Learn mode, a scroll in Read —
   // and close the phone outline drawer so the destination isn't hidden behind it.
   const selectSection = useCallback(
@@ -630,6 +638,12 @@ export function CourseReader({
               glossary={glossary}
               challenge={challengeContext}
             />
+          )}
+
+          {/* Trail (phase 4): the motivation band — streak, today's XP, course position. A
+              Learn-mode layer, and only where activity is reachable (best-effort). */}
+          {!reading && apiBaseUrl && (
+            <TrailBand activity={activity} lessonNumber={safeIndex + 1} lessonTotal={total} />
           )}
 
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
