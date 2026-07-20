@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 import type { ScoredResource } from "../../lib/chapterResources";
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
@@ -67,6 +67,15 @@ export function CinemaPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  // The furthest point reached this session — chapters whose end has been passed read as watched.
+  // Reset when the video changes so one lesson's progress never bleeds into the next.
+  const [maxWatched, setMaxWatched] = useState(0);
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+    setMaxWatched(0);
+  }, [videoUrl]);
   const activeChapter = activeSpanIndex(chapters, currentTime);
   const activeCue = activeSpanIndex(transcript, currentTime);
   const playedPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
@@ -125,7 +134,11 @@ export function CinemaPlayer({
             preload="metadata"
             aria-label={label}
             onClick={togglePlay}
-            onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+            onTimeUpdate={(event) => {
+              const time = event.currentTarget.currentTime;
+              setCurrentTime(time);
+              setMaxWatched((prev) => Math.max(prev, time));
+            }}
             onLoadedMetadata={(event) =>
               setDuration(
                 Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0,
@@ -219,16 +232,19 @@ export function CinemaPlayer({
         <nav aria-label="Video chapters">
           {chapters.map((chapter, index) => {
             const resources = chapterResources?.get(chapter.id) ?? [];
+            // Passed its end and not the one playing now — the current chapter stays highlighted.
+            const watched = index !== activeChapter && maxWatched >= chapter.endS;
             return (
               <div key={chapter.id} className={styles.chapterGroup}>
                 <button
                   type="button"
-                  className={`${styles.chapter} ${index === activeChapter ? styles.chapterActive : ""}`.trim()}
+                  className={`${styles.chapter} ${index === activeChapter ? styles.chapterActive : ""} ${watched ? styles.chapterDone : ""}`.trim()}
                   aria-current={index === activeChapter ? "true" : undefined}
                   onClick={() => seekTo(chapter.startS)}
                 >
                   <span className={styles.chapterTime}>{clock(chapter.startS)}</span>
                   <span>{chapter.title}</span>
+                  {watched && <span className="sr-only"> (watched)</span>}
                 </button>
                 {resources.map((scored) => (
                   <ChapterResourceCard key={scored.resource.url} scored={scored} />

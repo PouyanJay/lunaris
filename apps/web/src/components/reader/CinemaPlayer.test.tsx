@@ -73,6 +73,24 @@ describe("CinemaPlayer", () => {
     expect(screen.getByText(/parts resemble the whole/i)).toBeInTheDocument();
   });
 
+  it("marks a chapter watched once playback passes its end", () => {
+    // Arrange
+    renderPlayer();
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 74 });
+
+    // Act — playback moves into chapter 2, so chapter 1 (ends at 72) is now behind us.
+    fireEvent.timeUpdate(video);
+
+    // Assert — chapter 1 reads as watched; the current chapter does not.
+    expect(
+      screen.getByRole("button", { name: /the coastline puzzle \(watched\)/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /self-similarity \(watched\)/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("accents a chapter key term in the caption", () => {
     // Arrange / Act — a chapter whose key term appears in the current spoken line.
     render(

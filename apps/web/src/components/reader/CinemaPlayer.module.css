@@ -209,6 +209,12 @@
   color: var(--accent-600);
 }
 
+/* A chapter whose end the learner has already passed — struck through and quieter. */
+.chapterDone {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
 /* ── Overlaid caption ────────────────────────────────────────────────────── */
 
 /* The synced spoken line, floated over the foot of the video; the chapter's key terms are accented.
