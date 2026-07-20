@@ -86,4 +86,58 @@ describe("CinemaPlayer", () => {
     expect(screen.getByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
     expect(screen.queryByText(/^transcript$/i)).not.toBeInTheDocument();
   });
+
+  it("plays and pauses through the control-bar button", () => {
+    // Arrange
+    renderPlayer();
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    video.play = vi.fn().mockResolvedValue(undefined);
+    video.pause = vi.fn();
+    Object.defineProperty(video, "paused", { configurable: true, get: () => true });
+
+    // Act — the control-bar Play button starts the video…
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(video.play).toHaveBeenCalled();
+
+    // …and once the video reports playing, the button becomes Pause and the overlay is gone.
+    fireEvent.play(video);
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /play video/i })).not.toBeInTheDocument();
+  });
+
+  it("seeks with the scrubber via the keyboard", () => {
+    // Arrange — a known duration, and a captured seek surface.
+    renderPlayer();
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    const setCurrentTime = vi.fn();
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      set: setCurrentTime,
+      get: () => 0,
+    });
+    Object.defineProperty(video, "duration", { configurable: true, get: () => 158 });
+    fireEvent.loadedMetadata(video);
+    const slider = screen.getByRole("slider", { name: /seek/i });
+
+    // Act / Assert — ArrowRight steps forward 5s; End jumps to the duration.
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(setCurrentTime).toHaveBeenCalledWith(5);
+    fireEvent.keyDown(slider, { key: "End" });
+    expect(setCurrentTime).toHaveBeenLastCalledWith(158);
+  });
+
+  it("shows the current chapter in the readout", () => {
+    // Arrange
+    renderPlayer();
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    Object.defineProperty(video, "duration", { configurable: true, get: () => 158 });
+    fireEvent.loadedMetadata(video);
+    Object.defineProperty(video, "currentTime", { configurable: true, value: 74 });
+
+    // Act — playback advances into the second chapter.
+    fireEvent.timeUpdate(video);
+
+    // Assert — the readout names the current chapter.
+    expect(screen.getByText(/CH 2 .* SELF-SIMILARITY/)).toBeInTheDocument();
+  });
 });

@@ -20,6 +20,116 @@
   background: #000;
 }
 
+/* ── Custom transport ────────────────────────────────────────────────────── */
+
+.stage {
+  position: relative;
+  line-height: 0;
+  background: #000;
+}
+
+/* The big centred play affordance over a paused video. */
+.playOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #fff;
+}
+
+.playOverlayIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 18px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.playOverlay:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -4px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.playButton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.playButton:hover {
+  background: var(--bg-subtle);
+}
+
+.playButton:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The scrubber: a thin track carrying the played fill and a tick per chapter boundary. */
+.scrubber {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.scrubber:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.scrubberFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+}
+
+.tick {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 8px;
+  background: var(--surface);
+  transform: translateX(-50%);
+}
+
+.readout {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* ── Chapter + transcript rail ───────────────────────────────────────────── */
 
 .rail {
