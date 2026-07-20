@@ -1,3 +1,6 @@
+import { useMemo } from "react";
+
+import { matchResourcesToChapters } from "../../lib/chapterResources";
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
 import type { Resource } from "../../types/course";
 import { CinemaPlayer } from "./CinemaPlayer";
@@ -34,6 +37,13 @@ export function WatchSurface({
   takeaways,
   resources,
 }: WatchSurfaceProps) {
+  // Resources dock under the chapter whose key terms they best cover (deterministic overlap); any
+  // that match no chapter fall back to a lesson-level dock beneath the takeaways.
+  const { byChapter, unmatched } = useMemo(
+    () => matchResourcesToChapters(chapters, resources),
+    [chapters, resources],
+  );
+
   return (
     <div className={styles.surface}>
       <CinemaPlayer
@@ -43,11 +53,12 @@ export function WatchSurface({
         chapters={chapters}
         transcript={transcript}
         label={label}
+        chapterResources={byChapter}
       />
       {takeaways.length > 0 && (
         <LessonScaffold title="Key takeaways" cue="The gist of this lesson" items={takeaways} />
       )}
-      {resources.length > 0 && <LessonResources resources={resources} />}
+      {unmatched.length > 0 && <LessonResources resources={unmatched} />}
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 
+import type { ScoredResource } from "../../lib/chapterResources";
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
 import { activeSpanIndex } from "../../lib/videoOutline";
+import { ChapterResourceCard } from "./ChapterResourceCard";
 import styles from "./CinemaPlayer.module.css";
 
 interface CinemaPlayerProps {
@@ -12,6 +14,9 @@ interface CinemaPlayerProps {
   transcript: TranscriptCue[];
   /** Accessible label for the video (the lesson/module title). */
   label: string;
+  /** Curated resources docked under each chapter (by chapter id), most-relevant first. Absent hides
+   *  the per-chapter aids (e.g. Watch mode with docks off). */
+  chapterResources?: Map<string, ScoredResource[]>;
 }
 
 /** `M:SS` for a chapter's start — the video-timeline clock. */
@@ -33,6 +38,7 @@ export function CinemaPlayer({
   chapters,
   transcript,
   label,
+  chapterResources,
 }: CinemaPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -70,18 +76,25 @@ export function CinemaPlayer({
       <div className={styles.rail}>
         <p className={styles.railHead}>Chapters</p>
         <nav aria-label="Video chapters">
-          {chapters.map((chapter, index) => (
-            <button
-              key={chapter.id}
-              type="button"
-              className={`${styles.chapter} ${index === activeChapter ? styles.chapterActive : ""}`.trim()}
-              aria-current={index === activeChapter ? "true" : undefined}
-              onClick={() => seekTo(chapter.startS)}
-            >
-              <span className={styles.chapterTime}>{clock(chapter.startS)}</span>
-              <span>{chapter.title}</span>
-            </button>
-          ))}
+          {chapters.map((chapter, index) => {
+            const resources = chapterResources?.get(chapter.id) ?? [];
+            return (
+              <div key={chapter.id} className={styles.chapterGroup}>
+                <button
+                  type="button"
+                  className={`${styles.chapter} ${index === activeChapter ? styles.chapterActive : ""}`.trim()}
+                  aria-current={index === activeChapter ? "true" : undefined}
+                  onClick={() => seekTo(chapter.startS)}
+                >
+                  <span className={styles.chapterTime}>{clock(chapter.startS)}</span>
+                  <span>{chapter.title}</span>
+                </button>
+                {resources.map((scored) => (
+                  <ChapterResourceCard key={scored.resource.url} scored={scored} />
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
         {transcript.length > 0 && (

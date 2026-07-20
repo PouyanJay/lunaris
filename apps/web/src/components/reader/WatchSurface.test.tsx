@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { makeResource } from "../../test/fixtures";
@@ -66,6 +66,34 @@ describe("WatchSurface", () => {
     render(<WatchSurface {...VIDEO} takeaways={[]} resources={[]} />);
 
     // Assert
+    expect(screen.queryByRole("heading", { name: /resources/i })).not.toBeInTheDocument();
+  });
+
+  it("docks a matching resource under its chapter in the rail, with a relevance score", () => {
+    // Arrange — a chapter whose key terms the resource covers.
+    render(
+      <WatchSurface
+        {...VIDEO}
+        chapters={[
+          { id: "S2", title: "Self-similarity", startS: 0, endS: 10, keyTerms: ["koch curve"] },
+        ]}
+        takeaways={[]}
+        resources={[
+          makeResource({
+            title: "Koch curve explained",
+            why: "the koch curve fractal",
+            source: "youtube.com",
+            duration: "5:22",
+          }),
+        ]}
+      />,
+    );
+
+    // Assert — the resource is docked inside the chapters rail with a REL score, not in a separate
+    // lesson-level Resources block.
+    const rail = screen.getByRole("navigation", { name: /video chapters/i });
+    expect(within(rail).getByRole("link", { name: /koch curve explained/i })).toBeInTheDocument();
+    expect(within(rail).getByText(/REL \d+%/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /resources/i })).not.toBeInTheDocument();
   });
 });

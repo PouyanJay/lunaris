@@ -63,7 +63,14 @@
     color var(--dur) var(--ease);
 }
 
-.chapter:first-of-type {
+/* A chapter and the resources docked beneath it — the hairline divider rides the chapter button, so
+   only the first group drops its top border. */
+.chapterGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.chapterGroup:first-of-type .chapter {
   border-top: none;
 }
 

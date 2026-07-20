@@ -1,0 +1,39 @@
+/* A compact aid docked under a chapter in the Cinema rail — a hairline-quiet link that leads with
+   its title and carries a mono meta line (source · runtime · relevance). */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  margin-left: var(--space-4);
+  border-left: var(--border-width) solid var(--border);
+  text-decoration: none;
+  color: var(--text-secondary);
+}
+
+.card:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.card:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.title {
+  font-size: var(--text-sm);
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Relevance is the one accented datum — the "why this, here" signal. */
+.rel {
+  color: var(--accent-600);
+}
