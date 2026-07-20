@@ -158,6 +158,25 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
   });
 
+  it("in Read mode offers a Watch affordance instead of duplicating the player", async () => {
+    // Arrange — explicit Read; a ready chaptered video exists.
+    localStorage.setItem(READER_MODE_KEY, "read");
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+    const cta = await screen.findByRole("button", { name: /watch this lesson/i });
+
+    // Assert — the chaptered player is NOT duplicated into the reading column.
+    expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
+
+    // Act — the affordance switches into Watch, where the player lives.
+    fireEvent.click(cta);
+
+    // Assert
+    expect(screen.getByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
+  });
+
   it("falls back to Learn when a saved Watch preference meets a video-less lesson", async () => {
     // Arrange — a persisted Watch preference, but this lesson shipped no video.
     localStorage.setItem(READER_MODE_KEY, "watch");

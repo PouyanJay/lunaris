@@ -704,8 +704,11 @@ export function CourseReader({
           )}
 
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. The
-              reader owns the video state (above); the hero is the presentational surface. */}
-          {reading && apiBaseUrl && (
+              reader owns the video state (above); the hero is the presentational surface. In Read
+              mode it carries the generate/progress/failed affordances and any pre-Cinema (un-
+              chaptered) player — but once a chaptered video is ready, Watch owns the player, so Read
+              points to it rather than duplicating the full surface. */}
+          {reading && apiBaseUrl && !watchAvailable && (
             <LessonVideoHero
               state={lessonVideo.state}
               generate={lessonVideo.generate}
@@ -715,6 +718,17 @@ export function CourseReader({
               video={current.lesson.video ?? null}
               title={current.moduleTitle}
             />
+          )}
+
+          {/* Read mode, chaptered video ready: keep the video discoverable (the redesign's whole
+              point) without duplicating the player — a compact cue into Watch. */}
+          {reading && apiBaseUrl && watchAvailable && (
+            <div className={styles.watchCta}>
+              <span className={styles.watchCtaHint}>This lesson has a video walkthrough.</span>
+              <Button variant="accent" onClick={() => selectMode("watch")}>
+                Watch this lesson
+              </Button>
+            </div>
           )}
 
           {reading && current.objectives.length > 0 && (
