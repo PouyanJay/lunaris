@@ -45,15 +45,20 @@ describe("TrailBand", () => {
     expect(screen.getByText(/1 day\b/i)).toBeInTheDocument();
   });
 
-  it("marks the goal meter reached once XP meets the goal", () => {
-    // Three completed lessons today = 30 XP = the goal.
-    const feed = [0, 1, 2].map(() => ({
-      eventType: "completed" as const,
-      courseId: "c1",
-      occurredAt: "2026-07-20T09:00:00",
-    }));
-    render(<TrailBand activity={ready({ feed })} lessonNumber={1} lessonTotal={3} now={NOW} />);
-    const meter = screen.getByRole("progressbar", { name: /today's goal/i });
-    expect(meter).toHaveAttribute("aria-valuenow", "30");
+  it("shows the minutes studied today from the activity feed", () => {
+    render(
+      <TrailBand
+        activity={ready({
+          heat: [
+            { date: "2026-07-19", minutes: 10, active: true },
+            { date: "2026-07-20", minutes: 24, active: true },
+          ],
+        })}
+        lessonNumber={1}
+        lessonTotal={3}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText(/24 min/i)).toBeInTheDocument();
   });
 });

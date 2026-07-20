@@ -370,7 +370,7 @@ export function CourseReader({
   const completeLesson = useCallback(() => {
     if (progress && currentLessonId) markLesson(currentLessonId, "done");
     // The done mark emits a `completed` event server-side (P9); refresh the Trail band so it
-    // reflects the just-earned streak/XP. Best-effort — a stale snapshot is harmless.
+    // reflects the just-earned streak. Best-effort — a stale snapshot is harmless.
     reloadActivity();
     if (safeIndex < total - 1) goToLesson(safeIndex + 1);
   }, [progress, currentLessonId, markLesson, reloadActivity, safeIndex, total, goToLesson]);
@@ -679,8 +679,8 @@ export function CourseReader({
             />
           )}
 
-          {/* Trail (phase 4): the motivation band — streak, today's XP, course position. A
-              Learn-mode layer, and only where activity is reachable (best-effort). */}
+          {/* Trail (phase 4): the motivation band — streak, minutes studied today, course
+              position. A Learn-mode layer, and only where activity is reachable (best-effort). */}
           {effectiveMode === "learn" && apiBaseUrl && (
             <TrailBand activity={activity} lessonNumber={safeIndex + 1} lessonTotal={total} />
           )}

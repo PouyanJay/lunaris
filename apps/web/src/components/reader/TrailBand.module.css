@@ -36,34 +36,6 @@
   align-self: center;
 }
 
-/* XP toward the day's goal: a mono metric + a thin meter, same language as the rest. */
-.xp {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.meter {
-  position: relative;
-  width: 72px;
-  height: 3px;
-  border-radius: var(--radius-full);
-  background: var(--border-strong);
-  overflow: hidden;
-}
-
-.meterFill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: var(--radius-full);
-  background: var(--text-secondary);
-  width: var(--xp-fill, 0%);
-}
-
-.meterFill[data-reached="true"] {
-  background: var(--success);
-}
-
 /* Loading: a skeleton strip that mirrors the real band's height so nothing shifts. */
 .skeleton {
   height: 17px;

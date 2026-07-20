@@ -1,17 +1,12 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeCourse, makeLesson, routedFetch } from "../../test/fixtures";
 import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
-/** A frozen "now", so today-XP windowing is deterministic regardless of when the suite runs. */
+/** A frozen "now", so the today's-minutes lookup is deterministic regardless of when the suite
+ *  runs. Local (no trailing Z) so the frozen day is the same in every timezone. */
 const NOW = new Date("2026-07-20T18:00:00");
-/** A timestamp on the frozen day, for feed events that must count toward "today". */
-function todayAt(hour: number): string {
-  const d = new Date(NOW);
-  d.setHours(hour, 0, 0, 0);
-  return d.toISOString();
-}
 
 function activityView(overrides: Record<string, unknown> = {}) {
   return {
@@ -60,18 +55,13 @@ describe("CourseReader — Trail motivation band", () => {
     expect(band).toHaveTextContent(/lesson 1 of 1/i);
   });
 
-  it("derives today's XP toward the goal from the real event feed", async () => {
-    // Arrange — one completed lesson (10) + one mastered concept (5) today → 15 / 30.
+  it("shows the minutes studied today from the activity feed", async () => {
+    // Arrange — the feed's day bucket for today carries 24 recorded minutes.
     const fetchMock = routedFetch({
       activity: activityView({
-        feed: [
-          { eventType: "completed", courseId: "course-test", occurredAt: todayAt(9) },
-          {
-            eventType: "mastered",
-            courseId: "course-test",
-            kcId: "binary_search",
-            occurredAt: todayAt(10),
-          },
+        heat: [
+          { date: "2026-07-19", minutes: 10, active: true },
+          { date: "2026-07-20", minutes: 24, active: true },
         ],
       }),
     });
@@ -82,9 +72,7 @@ describe("CourseReader — Trail motivation band", () => {
 
     // Assert
     const band = await screen.findByRole("group", { name: /your progress/i });
-    expect(band).toHaveTextContent(/15 \/ 30 XP/i);
-    const meter = within(band).getByRole("progressbar", { name: /today's goal/i });
-    expect(meter).toHaveAttribute("aria-valuenow", "15");
+    expect(band).toHaveTextContent(/24 min/i);
   });
 
   it("reloads activity when a lesson is completed", async () => {
