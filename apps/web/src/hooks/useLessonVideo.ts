@@ -9,6 +9,8 @@ import {
   regenerateVideo,
   resolveJobId,
   type RegenerateMode,
+  type TranscriptCue,
+  type VideoChapter,
   type VideoJobStatus,
 } from "../lib/videoJobs";
 import type { DegradedScene, VideoArtifact } from "../types/course";
@@ -30,6 +32,9 @@ export type LessonVideoState =
       captionsUrl: string | null;
       stale: boolean;
       degradedScenes: DegradedScene[];
+      /** The Cinema outline: navigable chapters + a synced transcript (empty pre-Cinema). */
+      chapters: VideoChapter[];
+      transcript: TranscriptCue[];
     }
   | { phase: "failed"; jobId: string | null; error?: string | null }
   | { phase: "stopped" }
@@ -97,6 +102,8 @@ export function useLessonVideo(
               captionsUrl: view.captionsUrl,
               stale: view.stale ?? false,
               degradedScenes: view.provenance?.degradedScenes ?? [],
+              chapters: view.chapters ?? [],
+              transcript: view.transcript ?? [],
             });
           } else if (view.job.status === "cancelled") {
             settleStopped();

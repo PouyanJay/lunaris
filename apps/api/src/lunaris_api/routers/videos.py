@@ -26,8 +26,9 @@ from lunaris_runtime.video_build import (
     video_config_from_map,
     video_input_hash,
 )
-from lunaris_video.schemas import TimingManifest
-from pydantic import ValidationError
+from lunaris_video.assembly import build_video_outline
+from lunaris_video.schemas import SceneContracts, TimingManifest
+from pydantic import Field, ValidationError
 
 from ..config import Settings, get_settings
 from ..dependencies import (
@@ -64,10 +65,32 @@ async def caller_video_config(owner_id: CurrentUserIdDep, store: UserConfigStore
 VideoConfigDep = Annotated[VideoConfig, Depends(caller_video_config)]
 
 
+class VideoChapterView(CourseModel):
+    """One chapter of a ready video (Cinema): a scene surfaced as a navigable chapter with its
+    span on the concatenated timeline. ``start_s``/``end_s`` come from the timing manifest; the
+    title is the scene's authored title when present, else a derived label."""
+
+    id: str
+    title: str
+    start_s: float
+    end_s: float
+
+
+class TranscriptCueView(CourseModel):
+    """One transcript cue of a ready video (Cinema): a spoken beat with its timed span, so the web
+    can render a synced, click-to-seek transcript. Empty for a silent (un-narrated) video."""
+
+    start_s: float
+    end_s: float
+    text: str
+
+
 class VideoJobView(CourseModel):
     """The wire shape of one video job: the row itself, playback URLs, a captions URL (narrated
-    videos only), the grounding provenance once it is ready, and whether the lesson it was built
-    from has since been revised (``stale`` — the reader's "outdated" badge, V6-T3)."""
+    videos only), the grounding provenance once it is ready, whether the lesson it was built
+    from has since been revised (``stale`` — the reader's "outdated" badge, V6-T3), and — once
+    ready — the Cinema outline: navigable ``chapters`` and a timed ``transcript`` derived from the
+    video's scene contracts + timing manifest (empty on a job that isn't ready)."""
 
     job: VideoJob
     video_url: str | None = None
@@ -75,6 +98,8 @@ class VideoJobView(CourseModel):
     captions_url: str | None = None
     provenance: VideoProvenance | None = None
     stale: bool = False
+    chapters: list[VideoChapterView] = Field(default_factory=list)
+    transcript: list[TranscriptCueView] = Field(default_factory=list)
 
 
 class CourseVideoStatus(CourseModel):
@@ -568,13 +593,15 @@ async def get_video_job(
     # The reads are independent — gather them so a READY status poll is one round-trip's worth of
     # latency, not several sequential ones. Staleness re-loads the course to fingerprint the current
     # lesson, so it joins the gather rather than serialising behind the signed-URL reads.
-    video_url, poster_url, captions_url, provenance, stale = await asyncio.gather(
+    video_url, poster_url, captions_url, provenance, stale, outline = await asyncio.gather(
         storage.signed_url(path=paths.mp4),
         storage.signed_url(path=paths.poster),
         _captions_url_if_narrated(storage, paths),
         _read_provenance(storage, paths.provenance),
         _lesson_video_stale(store, job, video_config),
+        _read_outline(storage, paths),
     )
+    chapters, transcript = outline
     return VideoJobView(
         job=job,
         video_url=video_url,
@@ -582,7 +609,39 @@ async def get_video_job(
         captions_url=captions_url,
         provenance=provenance,
         stale=stale,
+        chapters=chapters,
+        transcript=transcript,
     )
+
+
+async def _read_outline(
+    storage: IVideoStorage, paths: VideoArtifactPaths
+) -> tuple[list[VideoChapterView], list[TranscriptCueView]]:
+    """The Cinema outline (chapters + timed transcript), derived from the scene contracts + timing
+    manifest the ready job persisted. Supplementary to playback, so a missing or malformed artifact
+    — absent (pre-Cinema render), schema drift, or a contracts/timing pair whose scene or beat ids
+    disagree (KeyError in the walk) — degrades to empty, never a 500."""
+    try:
+        contracts = SceneContracts.model_validate_json(await storage.download(path=paths.contracts))
+        manifest = TimingManifest.model_validate_json(await storage.download(path=paths.timing))
+        outline = build_video_outline(contracts, manifest)
+    except (PersistenceError, ValidationError, KeyError) as exc:
+        logger.warning(
+            "video_outline_unavailable",
+            contracts_path=paths.contracts,
+            timing_path=paths.timing,
+            reason=type(exc).__name__,
+        )
+        return [], []
+    chapters = [
+        VideoChapterView(id=c.id, title=c.title, start_s=c.start_s, end_s=c.end_s)
+        for c in outline.chapters
+    ]
+    transcript = [
+        TranscriptCueView(start_s=cue.start_s, end_s=cue.end_s, text=cue.text)
+        for cue in outline.transcript
+    ]
+    return chapters, transcript
 
 
 async def _read_provenance(storage: IVideoStorage, path: str) -> VideoProvenance | None:

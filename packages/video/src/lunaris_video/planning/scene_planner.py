@@ -85,7 +85,9 @@ OUTPUT
 Respond with ONLY one JSON object — no prose, no code fences — with EXACTLY these fields:
   "topic": string, "audience": string, "visual_archetypes_used": [strings],
   "asset_strategy": string (e.g. "tier-a procedural"), "scenes": [scene objects as specified:
-  id, archetype, narration (full spoken script, the beats' narrations joined), objects
+  id, archetype, title (a short 2-5 word chapter title naming what this scene covers, e.g.
+  "The coastline puzzle" — a learner scanning chapters should grasp the arc from the titles
+  alone), narration (full spoken script, the beats' narrations joined), objects
   (semantic on-screen object list), beats, sources, duration_s].
 Do NOT include global_style, voice, or verifier_gates — the system injects those."""
 

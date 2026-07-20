@@ -1,0 +1,135 @@
+.cinema {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.main {
+  border-right: var(--border-width) solid var(--border);
+  min-width: 0;
+}
+
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+/* ── Chapter + transcript rail ───────────────────────────────────────────── */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 520px;
+  overflow-y: auto;
+  background: var(--bg-subtle);
+}
+
+.railHead {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.chapter {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+  border-left: 2px solid transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.chapter:first-of-type {
+  border-top: none;
+}
+
+.chapter:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.chapterActive {
+  border-left-color: var(--accent-500);
+  color: var(--text);
+  font-weight: 500;
+  background: var(--surface-raised);
+}
+
+.chapterTime {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+  min-width: 40px;
+}
+
+.chapterActive .chapterTime {
+  color: var(--accent-600);
+}
+
+/* ── Transcript ──────────────────────────────────────────────────────────── */
+
+.transcript {
+  border-top: var(--border-width) solid var(--border);
+  padding: var(--space-2) 0;
+}
+
+.cue {
+  display: block;
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  transition: color var(--dur) var(--ease);
+}
+
+.cue:hover {
+  color: var(--text-secondary);
+}
+
+.cueActive {
+  color: var(--text);
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .cinema {
+    grid-template-columns: 1fr;
+  }
+  .main {
+    border-right: none;
+    border-bottom: var(--border-width) solid var(--border);
+  }
+}

@@ -61,6 +61,23 @@ export interface VideoJobWire {
   error?: string | null;
 }
 
+/** One navigable chapter of a ready video (Cinema): a scene with its span on the concatenated
+ *  timeline, so a click can seek to exactly where the chapter begins. */
+export interface VideoChapter {
+  id: string;
+  title: string;
+  startS: number;
+  endS: number;
+}
+
+/** One timed transcript cue of a ready video (Cinema): a spoken beat with its span, for a synced
+ *  click-to-seek transcript. Absent for a silent (un-narrated) video. */
+export interface TranscriptCue {
+  startS: number;
+  endS: number;
+  text: string;
+}
+
 /** The wire shape of `GET /api/videos/{id}` / the enqueue response: the job row plus signed
  *  playback URLs once it is ready, the grounding provenance once ready (the API sends it on a READY
  *  job — it carries the degraded-scene flags the reader surfaces), and whether the lesson it was
@@ -73,6 +90,10 @@ export interface VideoJobView {
   captionsUrl: string | null;
   provenance?: VideoProvenance | null;
   stale?: boolean;
+  /** The Cinema outline of a ready video: navigable chapters + a timed transcript. Empty on a
+   *  job that isn't ready or a video rendered before Cinema shipped. */
+  chapters?: VideoChapter[];
+  transcript?: TranscriptCue[];
 }
 
 /** How an enqueue attempt resolved — the three non-success shapes are product states, not

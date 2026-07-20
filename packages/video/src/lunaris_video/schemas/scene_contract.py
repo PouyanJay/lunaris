@@ -28,6 +28,10 @@ class SceneContract(ContractModel):
     beats: list[Beat] = Field(min_length=1)
     sources: list[str] = Field(min_length=1)
     duration_s: float = Field(gt=0)
+    # A short, human chapter title for the Cinema video-led reader (phase-5). Optional and
+    # back-compatible: courses built before the planner emitted it have none, and the reader
+    # derives a label from the scene id instead.
+    title: str | None = Field(default=None, max_length=80)
 
     @model_validator(mode="after")
     def _sources_are_claim_ids_or_framing_only(self) -> Self:

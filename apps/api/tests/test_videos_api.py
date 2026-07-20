@@ -44,6 +44,10 @@ from lunaris_runtime.schema import (
 from lunaris_runtime.video_build import lesson_video_input_hash
 from lunaris_video import StubVideoPipeline, VideoWorker
 from lunaris_video.schemas import BeatTiming, SceneTiming, TimingManifest
+from lunaris_video.schemas.beat import Beat
+from lunaris_video.schemas.scene_contract import SceneContract
+from lunaris_video.schemas.scene_contracts import SceneContracts
+from lunaris_video.style import video_global_style
 
 
 class _FakeCourseStore:
@@ -1031,6 +1035,128 @@ async def test_a_ready_job_surfaces_non_empty_claim_ids_on_the_wire(
 
     # Assert — the grounded claim ids reach the wire unchanged (a grounded video, not framing-only).
     assert body["provenance"]["claimIds"] == ["c1", "c3"]
+
+
+def _outline_contracts() -> SceneContracts:
+    """A two-scene contract with an authored title on the first scene, for the Cinema outline."""
+    return SceneContracts(
+        topic="Binary search",
+        audience="intermediate",
+        visual_archetypes_used=["number_line"],
+        asset_strategy="tier-a procedural",
+        global_style=video_global_style(),
+        scenes=[
+            SceneContract(
+                id="S1_intro",
+                archetype="number_line",
+                narration="Binary search halves the range.",
+                objects=["line"],
+                beats=[Beat(id="b1", action="draw", narration="Binary search halves the range.")],
+                sources=["framing only - no empirical claims"],
+                duration_s=3.0,
+                title="How halving works",
+            ),
+            SceneContract(
+                id="S2_cost",
+                archetype="number_line",
+                narration="So the cost is logarithmic.",
+                objects=["line"],
+                beats=[Beat(id="b1", action="label", narration="So the cost is logarithmic.")],
+                sources=["framing only - no empirical claims"],
+                duration_s=3.0,
+            ),
+        ],
+    )
+
+
+def _outline_timing() -> TimingManifest:
+    return TimingManifest(
+        {
+            "S1_intro": SceneTiming(
+                beats=[
+                    BeatTiming(id="b1", audio_s=2.0, anim_s=2.0, audio="a.mp3", estimated=False)
+                ],
+                total_s=2.0,
+            ),
+            "S2_cost": SceneTiming(
+                beats=[
+                    BeatTiming(id="b1", audio_s=1.5, anim_s=1.5, audio="b.mp3", estimated=False)
+                ],
+                total_s=1.5,
+            ),
+        }
+    )
+
+
+async def test_a_ready_job_carries_the_cinema_outline_to_the_wire(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — a READY job with its scene contracts + timing staged in storage.
+    job = await _drive_to_ready(client, queue)
+    paths = VideoArtifactPaths.for_job(job)
+    await storage.upload(
+        path=paths.contracts,
+        data=_outline_contracts().model_dump_json(by_alias=True).encode(),
+        content_type="application/json",
+    )
+    await storage.upload(
+        path=paths.timing,
+        data=_outline_timing().model_dump_json().encode(),
+        content_type="application/json",
+    )
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — chapters (authored + derived titles, contiguous) and the synced transcript both
+    # reach the wire, derived server-side from the artifacts the pipeline already ships.
+    assert [c["title"] for c in body["chapters"]] == ["How halving works", "Cost"]
+    assert body["chapters"][0]["startS"] == 0.0
+    assert body["chapters"][1]["startS"] == body["chapters"][0]["endS"]
+    assert [cue["text"] for cue in body["transcript"]] == [
+        "Binary search halves the range.",
+        "So the cost is logarithmic.",
+    ]
+
+
+async def test_a_ready_job_without_outline_artifacts_degrades_to_empty(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — a READY job whose contracts/timing were never staged (a pre-Cinema render).
+    job = await _drive_to_ready(client, queue)
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — no 500; the outline is simply empty (playback still works).
+    assert body["chapters"] == []
+    assert body["transcript"] == []
+
+
+async def test_a_ready_job_with_mismatched_outline_artifacts_degrades_to_empty(
+    client: httpx.AsyncClient, queue: InMemoryVideoJobQueue, storage: InMemoryVideoStorage
+) -> None:
+    # Arrange — each artifact is individually valid, but the timing manifest is missing the scene
+    # the contracts reference (a KeyError in the timeline walk).
+    job = await _drive_to_ready(client, queue)
+    paths = VideoArtifactPaths.for_job(job)
+    await storage.upload(
+        path=paths.contracts,
+        data=_outline_contracts().model_dump_json(by_alias=True).encode(),
+        content_type="application/json",
+    )
+    await storage.upload(
+        path=paths.timing,
+        data=TimingManifest({}).model_dump_json().encode(),
+        content_type="application/json",
+    )
+
+    # Act
+    body = (await client.get(f"/api/videos/{job.id}", headers=auth_headers(USER_A))).json()
+
+    # Assert — the inconsistency degrades to empty, never a 500 on this polled endpoint.
+    assert body["chapters"] == []
+    assert body["transcript"] == []
 
 
 def _timing(*, voiced: bool) -> TimingManifest:
