@@ -131,6 +131,18 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(screen.getByText(/locate a target with binary search/i)).toBeInTheDocument();
   });
 
+  it("docks the lesson's resources in the Watch surface", async () => {
+    // Arrange — front-door Watch; the default lesson carries one curated resource (demonstrate phase).
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+
+    // Assert — the curated resource is docked under the video.
+    expect(await screen.findByRole("heading", { name: /resources/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /binary search visualised/i })).toBeInTheDocument();
+  });
+
   it("respects a saved Learn preference over the front door", async () => {
     // Arrange — the learner has chosen Learn before; a ready video exists but must not hijack it.
     localStorage.setItem(READER_MODE_KEY, "learn");

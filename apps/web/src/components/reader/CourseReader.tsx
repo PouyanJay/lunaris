@@ -9,7 +9,7 @@ import { useStudyHeartbeat } from "../../hooks/useStudyHeartbeat";
 import { useActivity } from "../../hooks/useActivity";
 import { useLessonVideo } from "../../hooks/useLessonVideo";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
-import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
+import type { AssessmentItem, Course, Lesson, Objective, Resource } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { SegmentedControl, type Segment } from "../primitives/SegmentedControl";
 import { LearnMode } from "./LearnMode";
@@ -118,6 +118,23 @@ function buildReaderModel(course: Course): ReaderModel {
     groups[groups.length - 1]!.items.push({ index: flat.index, lessonId: flat.lesson.id, label });
   }
   return { lessons, groups, kcToLessonIndex };
+}
+
+/** The lesson's curated resources across every teaching phase, deduped by URL — the Watch surface
+ *  docks them under the video as lesson-level aids (Read mode shows them per phase instead). Phase
+ *  order (activate → integrate) is preserved so the dock reads in teaching order. */
+function lessonResourcesOf(lesson: Lesson): Resource[] {
+  const seen = new Set<string>();
+  const collected: Resource[] = [];
+  for (const segment of Object.values(lesson.segments)) {
+    for (const resource of segment.resources ?? []) {
+      if (!seen.has(resource.url)) {
+        seen.add(resource.url);
+        collected.push(resource);
+      }
+    }
+  }
+  return collected;
 }
 
 /** A drill-in into the reader: focus the lesson covering a concept (the Map's KC → lesson
@@ -469,6 +486,7 @@ export function CourseReader({
   // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
   // objective-less module (no-research path) hides the panel rather than inventing content.
   const tldr = deriveTldr(current.moduleObjectives);
+  const lessonResources = lessonResourcesOf(current.lesson);
   // Which of the module's objectives are marked understood — shared by the objectives panel
   // (Read) and the Try First challenge evidence (Learn). Undefined offline.
   const understoodObjectives = progress
@@ -681,6 +699,7 @@ export function CourseReader({
               transcript={lessonVideo.state.transcript}
               label={`${current.moduleTitle} — lesson video`}
               takeaways={tldr}
+              resources={lessonResources}
             />
           )}
 
