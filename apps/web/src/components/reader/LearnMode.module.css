@@ -4,9 +4,38 @@
   gap: var(--space-6);
 }
 
+/* ── Progress: segmented bar + mono metrics ──────────────────────────────── */
+
+.progressRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.segments {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.segment {
+  height: 3px;
+  flex: 1;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+}
+
+.segment[data-state="done"] {
+  background: var(--success);
+}
+
+.segment[data-state="current"] {
+  background: var(--accent-500);
+}
+
 .metrics {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-5);
 }
 
@@ -19,4 +48,104 @@
   /* Secondary, not muted: live metrics the learner reads (AA). */
   color: var(--text-secondary);
   white-space: nowrap;
+}
+
+/* ── The step card ───────────────────────────────────────────────────────── */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  /* Focused reading measure, centred in the pane like the mockup's stage. */
+  max-width: 620px;
+  width: 100%;
+  margin: 0 auto;
+  min-height: 220px;
+}
+
+.cardEyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--accent-600);
+  font-weight: 500;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  max-width: 620px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── Section map ─────────────────────────────────────────────────────────── */
+
+.map {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-5);
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.mapItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  /* Secondary for AA; state is carried by the dot + aria, never colour alone. */
+  color: var(--text-secondary);
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.mapItem:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.mapDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  flex: none;
+}
+
+.mapItem[data-state="done"] .mapDot {
+  background: var(--success);
+}
+
+.mapItem[data-state="current"] {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mapItem[data-state="current"] .mapDot {
+  background: var(--accent-500);
+}
+
+/* ── Empty lesson ────────────────────────────────────────────────────────── */
+
+.empty {
+  padding: var(--space-8) 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }

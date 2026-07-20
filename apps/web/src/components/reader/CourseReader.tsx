@@ -11,6 +11,7 @@ import type { AssessmentItem, Course, Lesson, Objective } from "../../types/cour
 import { Button } from "../primitives/Button";
 import { SegmentedControl } from "../primitives/SegmentedControl";
 import { LearnMode } from "./LearnMode";
+import { buildLessonSteps } from "./lessonSteps";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
@@ -225,6 +226,8 @@ export function CourseReader({
       // Storage unavailable — the choice still applies for this session.
     }
   }, []);
+  // The Learn mode's position in the focused lesson's step sequence (per-visit, like scroll).
+  const [stepIndex, setStepIndex] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -284,6 +287,7 @@ export function CourseReader({
     paneRef.current?.scrollTo?.({ top: 0 });
     setError(null);
     setActiveClaimId(null);
+    setStepIndex(0);
   }, [safeIndex]);
 
   // First open of a lesson marks it in_progress — but never regresses a lesson already marked
@@ -337,6 +341,23 @@ export function CourseReader({
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
     [current, citations],
   );
+  // The Learn mode's step sequence over the focused lesson (Focus Flow).
+  const steps = useMemo(
+    () =>
+      current
+        ? buildLessonSteps({
+            lesson: current.lesson,
+            phases: PHASES,
+            assessment: current.assessment,
+          })
+        : [],
+    [current],
+  );
+  // Continue past the final step completes the lesson exactly like Read mode's Next/Finish.
+  const completeLesson = useCallback(() => {
+    if (progress && currentLessonId) markLesson(currentLessonId, "done");
+    if (safeIndex < total - 1) goToLesson(safeIndex + 1);
+  }, [progress, currentLessonId, markLesson, safeIndex, total, goToLesson]);
   // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
   // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
   const marksByPhase = useMemo(() => {
@@ -596,7 +617,16 @@ export function CourseReader({
           )}
 
           {/* Focus Flow: the guided step surface replaces the long-form region below. */}
-          {!reading && <LearnMode />}
+          {!reading && (
+            <LearnMode
+              steps={steps}
+              index={stepIndex}
+              onNavigate={setStepIndex}
+              onComplete={completeLesson}
+              completeLabel={safeIndex >= total - 1 ? "Finish course" : "Next lesson"}
+              glossary={glossary}
+            />
+          )}
 
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
           {reading && apiBaseUrl && (
