@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 
+import { clearCoverViews } from "../hooks/coverViewCache";
 import { clearLibraryCache } from "../hooks/libraryCache";
+import { clearSeenImages } from "../lib/imageCache";
 
 // React Flow measures node geometry with ResizeObserver, which jsdom lacks.
 class ResizeObserverStub {
@@ -62,6 +64,11 @@ afterEach(() => localStorage.clear());
 // tests in a file — reset it so every test starts from "/" regardless of what ran before.
 afterEach(() => window.history.replaceState(null, "", "/"));
 
-// The library's stale-while-revalidate cache is module-scoped (survives navigation in the app), so
-// a grid loaded in one test must not carry into the next — reset it like the other shared stores.
-afterEach(() => clearLibraryCache());
+// The module-scoped caches survive navigation in the app by design, so state from one test must not
+// carry into the next — reset them like the other shared stores: the library's SWR cache, the
+// per-job cover-exchange cache, and the seen-images set that skips the cover crossfade.
+afterEach(() => {
+  clearLibraryCache();
+  clearCoverViews();
+  clearSeenImages();
+});

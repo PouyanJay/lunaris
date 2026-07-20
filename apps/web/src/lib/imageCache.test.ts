@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isSignedStorageImage, storageImageCacheKey } from "./imageCache";
+import {
+  clearSeenImages,
+  hasSeenImage,
+  isSignedStorageImage,
+  markImageSeen,
+  storageImageCacheKey,
+} from "./imageCache";
 
 const COVER =
   "https://ref.supabase.co/storage/v1/object/sign/course-covers/u1/c1/job1/cover.png?token=AAA";
@@ -55,5 +61,21 @@ describe("storageImageCacheKey", () => {
     const light = storageImageCacheKey(COVER.replace("cover.png", "cover-light.png"));
     expect(dark).not.toBe(light);
     expect(storageImageCacheKey(COVER)).not.toBe(storageImageCacheKey(VIDEO_POSTER));
+  });
+});
+
+describe("seen-images set (crossfade skip)", () => {
+  it("recognizes seen artwork across rotated tokens", () => {
+    markImageSeen(COVER);
+
+    expect(hasSeenImage(COVER.replace("token=AAA", "token=ZZZ"))).toBe(true);
+    expect(hasSeenImage(VIDEO_POSTER)).toBe(false); // different artwork stays unseen
+  });
+
+  it("clears (the per-test reset)", () => {
+    markImageSeen(COVER);
+    clearSeenImages();
+
+    expect(hasSeenImage(COVER)).toBe(false);
   });
 });

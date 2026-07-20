@@ -5,7 +5,7 @@ import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { StatusDot } from "../primitives/StatusDot";
 import { TrashIcon } from "../icons/TrashIcon";
-import { coverStateFromThumb } from "../../hooks/useCourseCover";
+import { summaryCoverState } from "../../hooks/useCourseCover";
 import { LEARNER_STATUS_META, LEVEL_LABELS } from "../../lib/courseLabels";
 import { coursePath } from "../../lib/routes";
 import type { CourseSummary } from "../../types/course";
@@ -46,11 +46,7 @@ export function CourseCard({ course, onRequestDelete, priority = false }: Course
             courseId={course.id}
             topic={course.topic}
             cover={course.cover}
-            state={
-              course.thumbUrl != null
-                ? coverStateFromThumb(course.thumbUrl, course.thumbUrlLight ?? null)
-                : undefined
-            }
+            state={summaryCoverState(course)}
             priority={priority}
           />
         </div>

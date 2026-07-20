@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 import type { Session, User } from "@supabase/supabase-js";
 
+import { clearCoverViews } from "./coverViewCache";
 import { clearLibraryCache } from "./libraryCache";
 import { supabase } from "../lib/supabase";
 
@@ -52,11 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Drop the cross-navigation library cache whenever the account changes, so a sign-out / account
-  // switch never flashes the previous user's courses before their own library loads.
+  // Drop the cross-navigation caches whenever the account changes, so a sign-out / account switch
+  // never flashes the previous user's courses (or serves their cover exchanges) before their own
+  // library loads.
   const userId = session?.user?.id ?? null;
   useEffect(() => {
     clearLibraryCache();
+    clearCoverViews();
   }, [userId]);
 
   const value = useMemo<AuthState>(
