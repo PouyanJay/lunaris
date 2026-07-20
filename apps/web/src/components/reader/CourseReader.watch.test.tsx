@@ -119,6 +119,18 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(screen.getByRole("radio", { name: /watch/i })).toBeChecked();
   });
 
+  it("docks the lesson's key takeaways in the Watch surface", async () => {
+    // Arrange — front-door Watch; the takeaways derive from the module's objective.
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+
+    // Assert — a Key takeaways dock, de-scaffolded from "Given a sorted array, locate a target…".
+    expect(await screen.findByRole("heading", { name: /key takeaways/i })).toBeInTheDocument();
+    expect(screen.getByText(/locate a target with binary search/i)).toBeInTheDocument();
+  });
+
   it("respects a saved Learn preference over the front door", async () => {
     // Arrange — the learner has chosen Learn before; a ready video exists but must not hijack it.
     localStorage.setItem(READER_MODE_KEY, "learn");

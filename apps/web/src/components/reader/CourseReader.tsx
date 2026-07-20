@@ -12,9 +12,9 @@ import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRa
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { SegmentedControl, type Segment } from "../primitives/SegmentedControl";
-import { CinemaPlayer } from "./CinemaPlayer";
 import { LearnMode } from "./LearnMode";
 import { TrailBand } from "./TrailBand";
+import { WatchSurface } from "./WatchSurface";
 import { useLearnMode, type ReaderMode } from "./useLearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
@@ -669,17 +669,18 @@ export function CourseReader({
             <TrailBand activity={activity} lessonNumber={safeIndex + 1} lessonTotal={total} />
           )}
 
-          {/* Cinema (Watch): the ready video as the lesson's front door — a chaptered player with a
-              synced, click-to-seek transcript. Rendered only where a ready chaptered video exists
-              (Watch is otherwise clamped away). Takeaways + resources dock here next. */}
+          {/* Cinema (Watch): the ready video as the lesson's front door — the chaptered,
+              transcript-synced player with the lesson's key takeaways docked beneath. Rendered only
+              where a ready chaptered video exists (Watch is otherwise clamped away). */}
           {effectiveMode === "watch" && lessonVideo.state.phase === "ready" && (
-            <CinemaPlayer
+            <WatchSurface
               videoUrl={lessonVideo.state.videoUrl}
               posterUrl={lessonVideo.state.posterUrl}
               captionsUrl={lessonVideo.state.captionsUrl}
               chapters={lessonVideo.state.chapters}
               transcript={lessonVideo.state.transcript}
               label={`${current.moduleTitle} — lesson video`}
+              takeaways={tldr}
             />
           )}
 
