@@ -62,7 +62,14 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # install resolved — which is how a fixed CRITICAL (CVE-2026-40393, libgbm1/libgl1-mesa-dri/
 # libglx-mesa0/mesa-libgallium) survived the Trivy gate. Upgrading last patches the transitive
 # closure too.
-RUN apt-get update \
+#
+# APT_SECURITY_EPOCH is a cache key, not used by apt: this RUN is otherwise byte-identical across
+# builds, so Docker/buildx reuse the cached layer indefinitely — meaning a Debian point-release
+# that fixes a HIGH/CRITICAL (e.g. CVE-2026-12912, libtiff6 → 4.7.0-3+deb13u3) never gets pulled
+# and Trivy keeps failing. Bump this date to bust the cache and force apt-get upgrade to re-run.
+ARG APT_SECURITY_EPOCH=2026-07-20
+RUN echo "apt security epoch: ${APT_SECURITY_EPOCH}" \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libglib2.0-0 ffmpeg \
     && apt-get upgrade -y \
