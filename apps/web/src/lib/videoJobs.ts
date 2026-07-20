@@ -66,6 +66,23 @@ export interface VideoJobWire {
  *  job — it carries the degraded-scene flags the reader surfaces), and whether the lesson it was
  *  built from has since been revised (`stale` — the reader's outdated badge, V6-T3). `captionsUrl`
  *  is present only for a narrated video. */
+/** One navigable chapter of a ready video (Cinema): a scene with its span on the concatenated
+ *  timeline, so a click can seek to exactly where the chapter begins. */
+export interface VideoChapter {
+  id: string;
+  title: string;
+  startS: number;
+  endS: number;
+}
+
+/** One timed transcript cue of a ready video (Cinema): a spoken beat with its span, for a synced
+ *  click-to-seek transcript. Absent for a silent (un-narrated) video. */
+export interface TranscriptCue {
+  startS: number;
+  endS: number;
+  text: string;
+}
+
 export interface VideoJobView {
   job: VideoJobWire;
   videoUrl: string | null;
@@ -73,6 +90,10 @@ export interface VideoJobView {
   captionsUrl: string | null;
   provenance?: VideoProvenance | null;
   stale?: boolean;
+  /** The Cinema outline of a ready video: navigable chapters + a timed transcript. Empty on a
+   *  job that isn't ready or a video rendered before Cinema shipped. */
+  chapters?: VideoChapter[];
+  transcript?: TranscriptCue[];
 }
 
 /** How an enqueue attempt resolved — the three non-success shapes are product states, not
