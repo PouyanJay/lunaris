@@ -74,6 +74,7 @@ class VideoChapterView(CourseModel):
     title: str
     start_s: float
     end_s: float
+    key_terms: list[str] = Field(default_factory=list)
 
 
 class TranscriptCueView(CourseModel):
@@ -634,7 +635,13 @@ async def _read_outline(
         )
         return [], []
     chapters = [
-        VideoChapterView(id=c.id, title=c.title, start_s=c.start_s, end_s=c.end_s)
+        VideoChapterView(
+            id=c.id,
+            title=c.title,
+            start_s=c.start_s,
+            end_s=c.end_s,
+            key_terms=list(c.key_terms),
+        )
         for c in outline.chapters
     ]
     transcript = [

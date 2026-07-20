@@ -1113,6 +1113,8 @@ async def test_a_ready_job_carries_the_cinema_outline_to_the_wire(
     assert [c["title"] for c in body["chapters"]] == ["How halving works", "Cost"]
     assert body["chapters"][0]["startS"] == 0.0
     assert body["chapters"][1]["startS"] == body["chapters"][0]["endS"]
+    # Each chapter carries its scene's on-screen key terms (for per-chapter resource matching).
+    assert [c["keyTerms"] for c in body["chapters"]] == [["line"], ["line"]]
     assert [cue["text"] for cue in body["transcript"]] == [
         "Binary search halves the range.",
         "So the cost is logarithmic.",

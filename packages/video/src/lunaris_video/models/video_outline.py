@@ -11,6 +11,10 @@ class OutlineChapter:
     title: str
     start_s: float
     end_s: float
+    # The scene's notable on-screen objects, surfaced as the chapter's key terms — the per-chapter
+    # signal the reader matches resources against and highlights in the transcript. Empty for a
+    # pre-Cinema scene contract that carried none.
+    key_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

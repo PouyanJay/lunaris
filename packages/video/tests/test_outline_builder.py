@@ -76,6 +76,16 @@ def test_chapters_span_contiguous_scene_windows() -> None:
     assert outline.chapters[0].end_s > 2.0  # includes the fade
 
 
+def test_chapters_carry_the_scenes_key_terms() -> None:
+    # Arrange / Act — each chapter surfaces its scene's notable on-screen objects as key terms,
+    # the per-chapter signal the reader matches resources against (deterministic overlap).
+    outline = build_video_outline(_contracts(), _timing(voiced=True))
+
+    # Assert
+    assert outline.chapters[0].key_terms == ("line",)
+    assert outline.chapters[1].key_terms == ("koch",)
+
+
 def test_transcript_has_one_cue_per_spoken_beat_when_voiced() -> None:
     # Arrange / Act
     outline = build_video_outline(_contracts(), _timing(voiced=True))
