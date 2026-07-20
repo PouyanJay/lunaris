@@ -17,7 +17,7 @@ interface CinemaPlayerProps {
   label: string;
   /** Curated resources docked under each chapter (by chapter id), most-relevant first. Absent hides
    *  the per-chapter aids (e.g. Watch mode with docks off). */
-  chapterResources?: Map<string, ScoredResource[]>;
+  chapterResources?: Map<string, ScoredResource[]> | undefined;
 }
 
 /** `M:SS` for a timeline position — the video-timeline clock. */
