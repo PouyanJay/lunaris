@@ -1,0 +1,9 @@
+.kicker {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--accent-600);
+  margin-right: var(--space-2);
+}

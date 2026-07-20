@@ -8,6 +8,7 @@ import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
 import { ExamplePanel } from "./ExamplePanel";
 import { GlossaryTerm } from "./GlossaryTerm";
+import { GoDeeper } from "./GoDeeper";
 import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { remarkAutoGlossary } from "./remarkAutoGlossary";
@@ -38,6 +39,7 @@ const baseComponents = {
   // Custom elements lowered from directives / prose structure by the remark pipeline.
   callout: Callout,
   glossary: GlossaryTerm,
+  godeeper: GoDeeper,
   steps: Stepper,
   step: StepItem,
   arrayviz: ArrayViz,
