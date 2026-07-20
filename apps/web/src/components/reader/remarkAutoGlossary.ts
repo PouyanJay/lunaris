@@ -36,6 +36,28 @@ function glossaryNode(text: string, definition: string): Node {
   };
 }
 
+/** Terms the author already marked with a `:term`/`:def` directive in this tree — each counts as
+ *  that term's one mark, so auto-marking never doubles up on authored glossary entries. */
+function collectAuthoredTerms(tree: Root): Set<string> {
+  const seen = new Set<string>();
+  visit(tree, (node) => {
+    const directive = node as unknown as Node;
+    if (
+      (directive.type === "textDirective" || directive.type === "leafDirective") &&
+      directive.name &&
+      GLOSSARY_DIRECTIVES.has(directive.name)
+    ) {
+      const text = (directive.children ?? [])
+        .map((child) => child.value ?? "")
+        .join("")
+        .trim()
+        .toLowerCase();
+      if (text) seen.add(text);
+    }
+  });
+  return seen;
+}
+
 function remarkAutoGlossary(options: { index: ReadonlyMap<string, string> }) {
   const { index } = options;
   return (tree: Root): void => {
@@ -43,24 +65,8 @@ function remarkAutoGlossary(options: { index: ReadonlyMap<string, string> }) {
     // Longest term first, so "binary search tree" beats "binary search" at the same position.
     const terms = [...index.keys()].sort((a, b) => b.length - a.length);
     const pattern = new RegExp(`\\b(?:${terms.map(escapeRegExp).join("|")})\\b`, "gi");
-
-    // One mark per term per tree — and an authored :term counts as that one mark.
-    const seen = new Set<string>();
-    visit(tree, (node) => {
-      const directive = node as unknown as Node;
-      if (
-        (directive.type === "textDirective" || directive.type === "leafDirective") &&
-        directive.name &&
-        GLOSSARY_DIRECTIVES.has(directive.name)
-      ) {
-        const text = (directive.children ?? [])
-          .map((child) => child.value ?? "")
-          .join("")
-          .trim()
-          .toLowerCase();
-        if (text) seen.add(text);
-      }
-    });
+    // One mark per term per tree — authored directives already count as theirs.
+    const seen = collectAuthoredTerms(tree);
 
     visit(tree, "text", (node, indexInParent, parent) => {
       if (indexInParent === undefined || !parent) return;

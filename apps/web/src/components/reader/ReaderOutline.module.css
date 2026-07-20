@@ -92,7 +92,9 @@
   font-family: var(--font-sans);
   font-size: var(--text-xs);
   line-height: var(--lh-xs);
-  color: var(--text-muted);
+  /* Secondary, not muted: section entries are interactive text and must clear AA contrast.
+     State is carried by the ✓ mark / accent spine, never colour alone. */
+  color: var(--text-secondary);
   padding: var(--space-1) var(--space-2);
   border-left: 2px solid transparent;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
@@ -104,10 +106,6 @@
 .section:hover {
   background: var(--bg-muted);
   color: var(--text);
-}
-
-.section[data-state="done"] {
-  color: var(--text-secondary);
 }
 
 .sectionCurrent {

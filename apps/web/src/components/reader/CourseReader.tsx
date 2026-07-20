@@ -32,7 +32,7 @@ import { deriveTldr } from "../../lib/lessonTldr";
 import { estimateReadingMinutes } from "../../lib/readingTime";
 import { useReadingProgress } from "../../hooks/useReadingProgress";
 import { useSectionSpy } from "../../hooks/useSectionSpy";
-import type { LessonSectionEntry } from "./ReaderOutline";
+import { buildSectionEntries } from "./readerSections";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
@@ -403,24 +403,15 @@ export function CourseReader({
   // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
   // objective-less module (no-research path) hides the panel rather than inventing content.
   const tldr = deriveTldr(current.moduleObjectives);
-  // The focused lesson's sections in reading order — the outline's nested level. Ids mirror the
-  // pane's data-section attributes; state comes from the scroll-spy (current wins over done).
-  const sectionEntries: LessonSectionEntry[] = [
-    ...(expects.length > 0 ? [{ id: "expects", label: "What this lesson expects" }] : []),
-    ...PHASES.map(({ key, label }) => ({ id: key as string, label })),
-    ...(selfCheck.length > 0 ? [{ id: "selfCheck", label: "Self-check" }] : []),
-    ...(current.assessment.length > 0
-      ? [{ id: "assessment", label: "Check your understanding" }]
-      : []),
-  ].map((entry) => ({
-    ...entry,
-    state:
-      entry.id === activeSection
-        ? ("current" as const)
-        : passedSections.has(entry.id)
-          ? ("done" as const)
-          : ("upcoming" as const),
-  }));
+  // The focused lesson's sections for the outline's nested level (Field Guide).
+  const sectionEntries = buildSectionEntries({
+    expects,
+    selfCheck,
+    assessmentCount: current.assessment.length,
+    phases: PHASES,
+    activeSection,
+    passedSections,
+  });
   const regenerate = async () => {
     if (!onRegenerate) return;
     setPending(true);

@@ -1,4 +1,6 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useState, type RefObject } from "react";
+
+import { usePaneObserver } from "./usePaneObserver";
 
 /** What the spy knows about the pane's `[data-section]` regions. */
 export interface SectionSpyState {
@@ -18,60 +20,41 @@ function sameState(a: SectionSpyState, b: SectionSpyState): boolean {
   return true;
 }
 
-/** Scroll-spy over the reading pane's `[data-section]` regions.
- *
- *  Measured on scroll (rAF-throttled) and window resize, re-measured when `resetKey` (the focused
- *  lesson id) changes. State only updates when the derived values move, so scrolling within a
- *  section costs nothing. An unlaid-out pane (jsdom, first paint) reports the first section
- *  active and nothing passed. */
+/** Measure the spy state off the pane's live geometry. An unlaid-out pane (jsdom, first paint)
+ *  reports the first section active and nothing passed. */
+function measureSections(pane: HTMLElement): SectionSpyState {
+  const els = Array.from(pane.querySelectorAll<HTMLElement>("[data-section]"));
+  const first = els[0]?.dataset["section"] ?? null;
+  const paneRect = pane.getBoundingClientRect();
+  if (els.length === 0 || paneRect.height <= 0) {
+    return { activeSection: first, passedSections: new Set() };
+  }
+  const readingLine = paneRect.top + paneRect.height * 0.4;
+  let active: string | null = null;
+  const passed = new Set<string>();
+  for (const el of els) {
+    const id = el.dataset["section"];
+    if (!id) continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom <= paneRect.top + 1) passed.add(id);
+    if (rect.top <= readingLine) active = id;
+  }
+  return { activeSection: active ?? first, passedSections: passed };
+}
+
+/** Scroll-spy over the reading pane's `[data-section]` regions, re-measured when `resetKey` (the
+ *  focused lesson id) changes. State only updates when the derived values move, so scrolling
+ *  within a section costs nothing. */
 export function useSectionSpy(
   paneRef: RefObject<HTMLElement | null>,
   resetKey: unknown,
 ): SectionSpyState {
   const [state, setState] = useState<SectionSpyState>(EMPTY);
 
-  useEffect(() => {
-    const pane = paneRef.current;
-    if (!pane) return;
-    let frame = 0;
-    const apply = (next: SectionSpyState) =>
-      setState((prev) => (sameState(prev, next) ? prev : next));
-    const measure = () => {
-      const els = Array.from(pane.querySelectorAll<HTMLElement>("[data-section]"));
-      const first = els[0]?.dataset["section"] ?? null;
-      const paneRect = pane.getBoundingClientRect();
-      if (els.length === 0 || paneRect.height <= 0) {
-        apply({ activeSection: first, passedSections: new Set() });
-        return;
-      }
-      const readingLine = paneRect.top + paneRect.height * 0.4;
-      let active: string | null = null;
-      const passed = new Set<string>();
-      for (const el of els) {
-        const id = el.dataset["section"];
-        if (!id) continue;
-        const rect = el.getBoundingClientRect();
-        if (rect.bottom <= paneRect.top + 1) passed.add(id);
-        if (rect.top <= readingLine) active = id;
-      }
-      apply({ activeSection: active ?? first, passedSections: passed });
-    };
-    const onScroll = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        measure();
-      });
-    };
-    measure();
-    pane.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      pane.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [paneRef, resetKey]);
+  usePaneObserver(paneRef, resetKey, (pane) => {
+    const next = measureSections(pane);
+    setState((prev) => (sameState(prev, next) ? prev : next));
+  });
 
   return state;
 }

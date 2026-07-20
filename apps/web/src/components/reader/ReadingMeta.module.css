@@ -12,7 +12,8 @@
   font-size: var(--eyebrow-size);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  /* Secondary, not muted: these are live metrics the learner reads, so they must clear AA. */
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 

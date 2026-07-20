@@ -170,6 +170,59 @@ describe("CourseReader — reading meta band", () => {
     );
   });
 
+  it("renders a bare-arc lesson with only the four phase sections", () => {
+    // Arrange — a pre-P7.3 lesson: no expects, no selfCheck, and a module without assessment.
+    const course = makeCourse({
+      modules: [
+        makeModule({
+          lessons: [makeLesson({ expects: [], selfCheck: [] })],
+        }),
+      ],
+    });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert — the section level holds exactly the phases; no bookend entries, no TL;DR, and
+    // the reader still shows the meta band.
+    const outline = screen.getByRole("navigation", { name: "Course outline" });
+    expect(within(outline).getByRole("button", { name: /warm-up/i })).toBeInTheDocument();
+    expect(within(outline).queryByRole("button", { name: /self-check/i })).not.toBeInTheDocument();
+    expect(
+      within(outline).queryByRole("button", { name: /check your understanding/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: /reading progress/i })).toBeInTheDocument();
+  });
+
+  it("survives a course whose graph defines no glossary terms", () => {
+    // Arrange — empty graph: no definitions to propagate.
+    const course = makeCourse();
+    course.graph.nodes = [];
+
+    // Act / Assert — prose renders untouched, nothing crashes.
+    render(<CourseReader course={course} />);
+    expect(screen.getByText(/binary search halves the candidate range/i)).toBeInTheDocument();
+  });
+
+  it("caps the read percent at 100 and drops the time-left metric at the end", async () => {
+    // Arrange — scrolled past the end (momentum overshoot).
+    render(<CourseReader course={makeCourse()} />);
+    const pane = screen.getByRole("region", { name: "Lesson reader" });
+    Object.defineProperty(pane, "scrollHeight", { configurable: true, value: 2000 });
+    Object.defineProperty(pane, "clientHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(pane, "scrollTop", { configurable: true, value: 1200, writable: true });
+
+    // Act
+    fireEvent.scroll(pane);
+
+    // Assert
+    await waitFor(() => {
+      const band = screen.getByRole("group", { name: /reading progress/i });
+      expect(band).toHaveTextContent(/100% read/i);
+      expect(band).not.toHaveTextContent(/min left/i);
+    });
+  });
+
   it("shows the remaining reading time once underway", async () => {
     // Arrange — a 3-minute lesson, half read → 2 minutes left (ceiling).
     const course = makeCourse({ modules: [makeModule({ lessons: [longLesson()] })] });
