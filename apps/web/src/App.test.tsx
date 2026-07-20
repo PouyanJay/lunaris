@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import { READER_MODE_KEY } from "./components/reader/CourseReader";
 import {
   agentFrame,
   courseFrame,
@@ -20,6 +21,12 @@ import {
 function stubFetchResolving(course = makeCourse()) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => course }));
 }
+
+// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
+// pin the persisted preference before each render.
+beforeEach(() => {
+  localStorage.setItem(READER_MODE_KEY, "read");
+});
 
 describe("App", () => {
   afterEach(() => vi.unstubAllGlobals());

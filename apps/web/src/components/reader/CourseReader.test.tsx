@@ -1,11 +1,11 @@
 import { StrictMode } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Claim, Lesson, Visual } from "../../types/course";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH } from "../../hooks/useRailLayout";
 import { makeCitation, makeCourse, makeLesson, makeModule } from "../../test/fixtures";
-import { CourseReader } from "./CourseReader";
+import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
 const NO_MAYER = {
   coherence: false,
@@ -46,6 +46,12 @@ function multiLessonCourse() {
     ],
   });
 }
+
+// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
+// pin the persisted preference before each render.
+beforeEach(() => {
+  localStorage.setItem(READER_MODE_KEY, "read");
+});
 
 describe("CourseReader", () => {
   it("lists every module and lesson in the course outline", () => {

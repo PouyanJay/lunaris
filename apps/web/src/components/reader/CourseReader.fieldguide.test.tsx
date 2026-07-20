@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Segment } from "../../types/course";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
-import { CourseReader } from "./CourseReader";
+import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
 function proseSegment(prose: string): Segment {
   return { prose, visuals: [], claims: [], resources: [] };
@@ -26,6 +26,12 @@ function longLesson() {
 }
 
 /** Field Guide (lesson-experience redesign phase 1): the reading-meta band. */
+// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
+// pin the persisted preference before each render.
+beforeEach(() => {
+  localStorage.setItem(READER_MODE_KEY, "read");
+});
+
 describe("CourseReader — reading meta band", () => {
   it("shows the focused lesson's estimated reading time derived from its prose", () => {
     // Arrange

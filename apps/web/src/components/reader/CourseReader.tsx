@@ -9,6 +9,8 @@ import { useStudyHeartbeat } from "../../hooks/useStudyHeartbeat";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
+import { SegmentedControl } from "../primitives/SegmentedControl";
+import { LearnMode } from "./LearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
@@ -39,6 +41,21 @@ import styles from "./CourseReader.module.css";
 /** Below this the annotation rail renders as an off-canvas drawer — must match the
  *  `@media (max-width: 1100px)` block in CourseReader.module.css. */
 const RAIL_DRAWER_QUERY = "(max-width: 1100px)";
+
+/** Where the Learn/Read mode preference persists (per-device, house `lunaris.reader.*` keys). */
+export const READER_MODE_KEY = "lunaris.reader.mode";
+
+type ReaderMode = "learn" | "read";
+
+/** The stored mode preference; guided Learn is the default (Focus Flow), and a storage-less
+ *  environment (SSR, blocked storage) falls back to it. */
+function storedReaderMode(): ReaderMode {
+  try {
+    return localStorage.getItem(READER_MODE_KEY) === "read" ? "read" : "learn";
+  } catch {
+    return "learn";
+  }
+}
 
 /** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
  *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
@@ -196,6 +213,18 @@ export function CourseReader({
   );
   // Study-minutes heartbeat: an open, visible reader is "studying" (paused while backgrounded).
   useStudyHeartbeat(apiBaseUrl ?? "", true);
+  // Focus Flow: the reader's consumption mode — guided steps (learn, the default) or the
+  // long-form Field Guide page (read). A per-device preference, like the theme.
+  const [mode, setMode] = useState<ReaderMode>(storedReaderMode);
+  const reading = mode === "read";
+  const selectMode = useCallback((next: ReaderMode) => {
+    setMode(next);
+    try {
+      localStorage.setItem(READER_MODE_KEY, next);
+    } catch {
+      // Storage unavailable — the choice still applies for this session.
+    }
+  }, []);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -482,8 +511,8 @@ export function CourseReader({
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
           {/* Field Guide reading-meta band: how big this lesson is and how far through it the
-              learner has scrolled. */}
-          <ReadingMeta minutes={readingMinutes} percent={readPercent} />
+              learner has scrolled. Read-mode furniture — Learn has step metrics instead. */}
+          {reading && <ReadingMeta minutes={readingMinutes} percent={readPercent} />}
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
@@ -498,6 +527,16 @@ export function CourseReader({
               <p className={`${styles.progress} mono`}>
                 Lesson {safeIndex + 1} of {total}
               </p>
+              {/* Focus Flow: guided steps vs the long-form page — one control, both modes. */}
+              <SegmentedControl
+                segments={[
+                  { value: "learn", label: "Learn" },
+                  { value: "read", label: "Read" },
+                ]}
+                value={mode}
+                onChange={selectMode}
+                label="Reading mode"
+              />
               <BookmarkToggle
                 subject={`${current.label} · ${current.moduleTitle}`}
                 draft={{
@@ -548,7 +587,7 @@ export function CourseReader({
               takeaway bullets, so the learner sizes up the lesson before committing to it. A
               module's FIRST lesson opens with the full objectives panel instead — showing both
               would say the same thing twice. */}
-          {current.objectives.length === 0 && tldr.length > 0 && (
+          {reading && current.objectives.length === 0 && tldr.length > 0 && (
             <LessonScaffold
               title="This lesson in 30 seconds"
               cue="The takeaways, before the reading"
@@ -556,8 +595,11 @@ export function CourseReader({
             />
           )}
 
+          {/* Focus Flow: the guided step surface replaces the long-form region below. */}
+          {!reading && <LearnMode />}
+
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
-          {apiBaseUrl && (
+          {reading && apiBaseUrl && (
             <LessonVideoHero
               apiBaseUrl={apiBaseUrl}
               courseId={active.id}
@@ -567,7 +609,7 @@ export function CourseReader({
             />
           )}
 
-          {current.objectives.length > 0 && (
+          {reading && current.objectives.length > 0 && (
             <LessonObjectives
               objectives={current.objectives}
               understoodIndexes={
@@ -589,7 +631,7 @@ export function CourseReader({
 
           {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
               omitted for courses built before P7.3 (empty expects). */}
-          {expects.length > 0 && (
+          {reading && expects.length > 0 && (
             <div data-section="expects" className={styles.sectionAnchor}>
               <LessonScaffold
                 title="What this lesson expects"
@@ -599,7 +641,8 @@ export function CourseReader({
             </div>
           )}
 
-          {PHASES.map(({ key, label, cue }) => {
+          {reading &&
+            PHASES.map(({ key, label, cue }) => {
             const segment = current.lesson.segments[key];
             const phaseHighlighted =
               activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
@@ -637,7 +680,7 @@ export function CourseReader({
           })}
 
           {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
-          {selfCheck.length > 0 && (
+          {reading && selfCheck.length > 0 && (
             <div data-section="selfCheck" className={styles.sectionAnchor}>
               <LessonScaffold
                 title="Self-check"
@@ -647,7 +690,7 @@ export function CourseReader({
             </div>
           )}
 
-          {current.assessment.length > 0 && (
+          {reading && current.assessment.length > 0 && (
             <div data-section="assessment" className={styles.sectionAnchor}>
               <LessonAssessment items={current.assessment} />
             </div>

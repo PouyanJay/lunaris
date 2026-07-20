@@ -1,0 +1,22 @@
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.metrics {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.metric {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* Secondary, not muted: live metrics the learner reads (AA). */
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
