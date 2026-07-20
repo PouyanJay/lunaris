@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 
 import { buildSections, sectionProgressAt, type LessonStep, type StepSection } from "./lessonSteps";
+import type { Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
-import { LessonAssessment } from "./LessonAssessment";
+import { ChallengeStep } from "./ChallengeStep";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { Markdown } from "./Markdown";
@@ -11,6 +12,13 @@ import styles from "./LearnMode.module.css";
 
 /** Reading speed the time-left metric assumes — matches the Read mode's estimate. */
 const WORDS_PER_MINUTE = 220;
+
+/** The objectives context a challenge step needs to evidence what it assesses (Try First). */
+interface ChallengeContext {
+  objectives: Objective[];
+  understoodObjectives: ReadonlySet<number>;
+  onEvidenceObjective?: ((objectiveIndex: number, understood: boolean) => void) | undefined;
+}
 
 interface LearnModeProps {
   steps: LessonStep[];
@@ -23,9 +31,19 @@ interface LearnModeProps {
   completeLabel: string;
   /** Course glossary, threaded into content steps' prose. */
   glossary?: ReadonlyMap<string, string> | undefined;
+  /** Objectives context for the Try First challenge steps. */
+  challenge: ChallengeContext;
 }
 
-function StepBody({ step, glossary }: { step: LessonStep; glossary?: LearnModeProps["glossary"] }) {
+function StepBody({
+  step,
+  glossary,
+  challenge,
+}: {
+  step: LessonStep;
+  glossary?: LearnModeProps["glossary"];
+  challenge: ChallengeContext;
+}) {
   switch (step.kind) {
     case "intro":
       return (
@@ -42,15 +60,16 @@ function StepBody({ step, glossary }: { step: LessonStep; glossary?: LearnModePr
     case "resources":
       return <LessonResources resources={step.resources ?? []} />;
     case "check":
+    case "assessment":
       return (
-        <LessonScaffold
-          title="Self-check"
-          cue="Confirm you’ve got it before moving on"
-          items={step.items ?? []}
+        <ChallengeStep
+          step={step}
+          glossary={glossary}
+          objectives={challenge.objectives}
+          understoodObjectives={challenge.understoodObjectives}
+          onEvidenceObjective={challenge.onEvidenceObjective}
         />
       );
-    case "assessment":
-      return <LessonAssessment items={step.assessment ?? []} />;
   }
 }
 
@@ -151,6 +170,7 @@ export function LearnMode({
   onComplete,
   completeLabel,
   glossary,
+  challenge,
 }: LearnModeProps) {
   const sections = useMemo(() => buildSections(steps), [steps]);
   const { activeSection, passedSections } = useMemo(
@@ -209,7 +229,7 @@ export function LearnMode({
             {step.cue} · {step.sectionLabel}
           </p>
         )}
-        <StepBody step={step} glossary={glossary} />
+        <StepBody step={step} glossary={glossary} challenge={challenge} />
       </div>
       <StepNav
         index={index}

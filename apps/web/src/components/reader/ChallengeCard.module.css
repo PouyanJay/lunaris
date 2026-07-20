@@ -1,0 +1,159 @@
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.prompt {
+  margin: 0;
+  font-size: var(--text-lg);
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: var(--space-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* ── The reveal (explanation into the gap) ───────────────────────────────── */
+
+.reveal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  /* One accent spine — this is the payoff the learner earned by committing. */
+  border-left: 3px solid var(--accent-500);
+  border-radius: var(--radius-md);
+}
+
+.revealHead {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--accent-600);
+  font-weight: 500;
+}
+
+.answerText {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.criterion {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--lh-sm);
+}
+
+.criterionLabel {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* A soft assistance line — never the grade (AD1). */
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hintMark {
+  color: var(--success);
+  font-weight: 600;
+}
+
+/* ── Self-grade ──────────────────────────────────────────────────────────── */
+
+.grade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.gradeCue {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.gradeButtons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.verdictDot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+}
+
+.verdict[data-grade="got-it"] .verdictDot {
+  background: var(--success);
+}
+
+.verdict[data-grade="not-yet"] .verdictDot {
+  background: var(--warning);
+}
