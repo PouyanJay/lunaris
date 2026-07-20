@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 
-import type { LessonStep } from "./lessonSteps";
+import { buildSections, sectionProgressAt, type LessonStep, type StepSection } from "./lessonSteps";
 import { Button } from "../primitives/Button";
 import { LessonAssessment } from "./LessonAssessment";
 import { LessonResources } from "./LessonResources";
@@ -11,12 +11,6 @@ import styles from "./LearnMode.module.css";
 
 /** Reading speed the time-left metric assumes — matches the Read mode's estimate. */
 const WORDS_PER_MINUTE = 220;
-
-interface SectionRef {
-  id: string;
-  label: string;
-  firstIndex: number;
-}
 
 interface LearnModeProps {
   steps: LessonStep[];
@@ -29,16 +23,6 @@ interface LearnModeProps {
   completeLabel: string;
   /** Course glossary, threaded into content steps' prose. */
   glossary?: ReadonlyMap<string, string> | undefined;
-}
-
-function sectionsOf(steps: LessonStep[]): SectionRef[] {
-  const sections: SectionRef[] = [];
-  steps.forEach((step, index) => {
-    if (sections[sections.length - 1]?.id !== step.sectionId) {
-      sections.push({ id: step.sectionId, label: step.sectionLabel, firstIndex: index });
-    }
-  });
-  return sections;
 }
 
 function StepBody({ step, glossary }: { step: LessonStep; glossary?: LearnModeProps["glossary"] }) {
@@ -70,6 +54,92 @@ function StepBody({ step, glossary }: { step: LessonStep; glossary?: LearnModePr
   }
 }
 
+function ProgressRow({ steps, index }: { steps: LessonStep[]; index: number }) {
+  const wordsLeft = steps.slice(index).reduce((sum, step) => sum + step.words, 0);
+  const minutesLeft = Math.ceil(wordsLeft / WORDS_PER_MINUTE);
+  return (
+    <div className={styles.progressRow}>
+      <div className={styles.segments} aria-hidden="true">
+        {steps.map((step, i) => (
+          <i
+            key={step.id}
+            className={styles.segment}
+            data-state={i < index ? "done" : i === index ? "current" : undefined}
+          />
+        ))}
+      </div>
+      <div className={styles.metrics}>
+        <p className={styles.metric} aria-live="polite">
+          Step {index + 1} of {steps.length}
+        </p>
+        {wordsLeft > 0 && <p className={styles.metric}>≈ {minutesLeft} min left</p>}
+      </div>
+    </div>
+  );
+}
+
+function StepNav({
+  index,
+  last,
+  onNavigate,
+  onComplete,
+  completeLabel,
+}: Pick<LearnModeProps, "onNavigate" | "onComplete" | "completeLabel"> & {
+  index: number;
+  last: boolean;
+}) {
+  return (
+    <div className={styles.nav}>
+      <Button disabled={index === 0} onClick={() => onNavigate(index - 1)}>
+        Back
+      </Button>
+      {last ? (
+        <Button variant="accent" onClick={onComplete}>
+          {completeLabel}
+        </Button>
+      ) : (
+        <Button variant="accent" onClick={() => onNavigate(index + 1)}>
+          Continue
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function SectionMap({
+  sections,
+  activeSection,
+  passedSections,
+  onNavigate,
+}: {
+  sections: StepSection[];
+  activeSection: string | null;
+  passedSections: ReadonlySet<string>;
+  onNavigate: (index: number) => void;
+}) {
+  const stateOf = (section: StepSection) => {
+    if (section.id === activeSection) return "current";
+    return passedSections.has(section.id) ? "done" : "upcoming";
+  };
+  return (
+    <nav className={styles.map} aria-label="Lesson sections">
+      {sections.map((section) => (
+        <button
+          key={section.id}
+          type="button"
+          className={styles.mapItem}
+          data-state={stateOf(section)}
+          aria-current={section.id === activeSection ? "step" : undefined}
+          onClick={() => onNavigate(section.firstIndex)}
+        >
+          <span className={styles.mapDot} aria-hidden="true" />
+          {section.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 /** The guided Learn mode (Focus Flow): one idea per screen with a visible finish line — a
  *  segmented per-step bar, mono position/time-left metrics, the step card, Continue/Back, and a
  *  section map for orientation and jumps. The final Continue is the lesson's completion signal
@@ -82,7 +152,11 @@ export function LearnMode({
   completeLabel,
   glossary,
 }: LearnModeProps) {
-  const sections = useMemo(() => sectionsOf(steps), [steps]);
+  const sections = useMemo(() => buildSections(steps), [steps]);
+  const { activeSection, passedSections } = useMemo(
+    () => sectionProgressAt(sections, index),
+    [sections, index],
+  );
   const step = steps[Math.min(index, Math.max(0, steps.length - 1))];
 
   // A step change moves focus to the fresh card so keyboard/AT users land on the new content;
@@ -119,36 +193,10 @@ export function LearnMode({
     );
   }
 
-  const last = index >= steps.length - 1;
-  const wordsLeft = steps.slice(index).reduce((sum, s) => sum + s.words, 0);
-  const minutesLeft = Math.ceil(wordsLeft / WORDS_PER_MINUTE);
-  const currentSectionId = step.sectionId;
-  const sectionState = (section: SectionRef, next: SectionRef | undefined) => {
-    if (section.id === currentSectionId) return "current";
-    return next && index >= next.firstIndex ? "done" : "upcoming";
-  };
-
   return (
     // The key handler is an enrichment over fully keyboard-operable buttons below.
     <section className={styles.stage} aria-label="Lesson steps" onKeyDown={onKeyDown}>
-      <div className={styles.progressRow}>
-        <div className={styles.segments} aria-hidden="true">
-          {steps.map((s, i) => (
-            <i
-              key={s.id}
-              className={styles.segment}
-              data-state={i < index ? "done" : i === index ? "current" : undefined}
-            />
-          ))}
-        </div>
-        <div className={styles.metrics}>
-          <p className={styles.metric} aria-live="polite">
-            Step {index + 1} of {steps.length}
-          </p>
-          {wordsLeft > 0 && <p className={styles.metric}>≈ {minutesLeft} min left</p>}
-        </div>
-      </div>
-
+      <ProgressRow steps={steps} index={index} />
       <div
         ref={cardRef}
         className={styles.card}
@@ -163,37 +211,19 @@ export function LearnMode({
         )}
         <StepBody step={step} glossary={glossary} />
       </div>
-
-      <div className={styles.nav}>
-        <Button disabled={index === 0} onClick={() => onNavigate(index - 1)}>
-          Back
-        </Button>
-        {last ? (
-          <Button variant="accent" onClick={onComplete}>
-            {completeLabel}
-          </Button>
-        ) : (
-          <Button variant="accent" onClick={() => onNavigate(index + 1)}>
-            Continue
-          </Button>
-        )}
-      </div>
-
-      <nav className={styles.map} aria-label="Lesson sections">
-        {sections.map((section, i) => (
-          <button
-            key={section.id}
-            type="button"
-            className={styles.mapItem}
-            data-state={sectionState(section, sections[i + 1])}
-            aria-current={section.id === currentSectionId ? "step" : undefined}
-            onClick={() => onNavigate(section.firstIndex)}
-          >
-            <span className={styles.mapDot} aria-hidden="true" />
-            {section.label}
-          </button>
-        ))}
-      </nav>
+      <StepNav
+        index={index}
+        last={index >= steps.length - 1}
+        onNavigate={onNavigate}
+        onComplete={onComplete}
+        completeLabel={completeLabel}
+      />
+      <SectionMap
+        sections={sections}
+        activeSection={activeSection}
+        passedSections={passedSections}
+        onNavigate={onNavigate}
+      />
     </section>
   );
 }

@@ -9,6 +9,13 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Walk the Learn mode forward: N clicks of the current advance button. */
+function clickContinue(times: number) {
+  for (let i = 0; i < times; i += 1) {
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  }
+}
+
 /** Focus Flow (lesson-experience redesign phase 2): the guided Learn mode. */
 describe("CourseReader — Learn mode", () => {
   it("opens in Learn mode by default with a step card and mode toggle", () => {
@@ -55,9 +62,10 @@ describe("CourseReader — Learn mode", () => {
     expect(screen.getByText(/min left/i)).toBeInTheDocument();
     const map = screen.getByRole("navigation", { name: /lesson sections/i });
     expect(within(map).getByRole("button", { name: /warm-up/i })).toBeInTheDocument();
-    expect(
-      within(map).getByRole("button", { name: /what this lesson expects/i }),
-    ).toHaveAttribute("aria-current", "step");
+    expect(within(map).getByRole("button", { name: /what this lesson expects/i })).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
   });
 
   it("jumps to a section's first step from the section map", () => {
@@ -74,25 +82,36 @@ describe("CourseReader — Learn mode", () => {
     expect(screen.getByText(/searching for 7/i)).toBeInTheDocument();
   });
 
-  it("renders resource, check, and assessment steps with the house components", () => {
+  it("renders the resources step through LessonResources", () => {
     // Arrange
     render(<CourseReader course={makeCourse()} />);
-    const continueButton = () => screen.getByRole("button", { name: "Continue" });
 
-    // Act / Assert — step 4 is the demonstrate phase's resources.
-    fireEvent.click(continueButton());
-    fireEvent.click(continueButton());
-    fireEvent.click(continueButton());
+    // Act — step 4 is the demonstrate phase's resources.
+    clickContinue(3);
+
+    // Assert
     expect(screen.getByText("Binary search visualised")).toBeInTheDocument();
+  });
 
-    // Steps 5–6 content; step 7 the self-check item.
-    fireEvent.click(continueButton());
-    fireEvent.click(continueButton());
-    fireEvent.click(continueButton());
+  it("renders the self-check step through LessonScaffold", () => {
+    // Arrange
+    render(<CourseReader course={makeCourse()} />);
+
+    // Act — step 7 is the closing self-check item.
+    clickContinue(6);
+
+    // Assert
     expect(screen.getByText(/locate 7 in a 9-element sorted array/i)).toBeInTheDocument();
+  });
 
-    // Step 8: the module assessment.
-    fireEvent.click(continueButton());
+  it("renders the assessment step through LessonAssessment", () => {
+    // Arrange
+    render(<CourseReader course={makeCourse()} />);
+
+    // Act — step 8, the module assessment finale.
+    clickContinue(7);
+
+    // Assert
     expect(screen.getByText(/worst-case time complexity/i)).toBeInTheDocument();
   });
 
@@ -144,9 +163,7 @@ describe("CourseReader — Learn mode", () => {
     });
 
     // Act — lesson 1 (first in module, no assessment) is 7 steps; walk to the end and complete.
-    for (let i = 0; i < 6; i += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    }
+    clickContinue(6);
     fireEvent.click(screen.getByRole("button", { name: "Next lesson" }));
 
     // Assert — the done mark was PUT for lesson 1 and the reader advanced to lesson 2.
@@ -213,20 +230,19 @@ describe("CourseReader — Learn mode", () => {
   });
 
   it("renders a visual step through the branded renderer", () => {
-    // Arrange — a demonstrate-phase flow visual becomes its own step (5 of 9 in this arc).
+    // Arrange — a demonstrate-phase flow visual becomes its own step (4 of 9 in this arc).
     const base = makeLesson();
     const visual: Visual = {
       kind: "spec",
       source: "",
       rendered: null,
-      spec: { type: "flow", title: null, nodes: [{ id: "a", label: "Halve the range" }], edges: [] },
-      mayerChecks: {
-        coherence: true,
-        signaling: true,
-        spatialContiguity: true,
-        temporalContiguity: true,
-        redundancy: true,
+      spec: {
+        type: "flow",
+        title: null,
+        nodes: [{ id: "a", label: "Halve the range" }],
+        edges: [],
       },
+      mayerChecks: { coherence: true, signaling: true, spatialContiguity: true, redundancy: true },
     };
     const course = makeCourse();
     course.modules[0]!.lessons = [
@@ -241,9 +257,7 @@ describe("CourseReader — Learn mode", () => {
     render(<CourseReader course={course} />);
 
     // Act — intro → warm-up → demonstrate content → visual step.
-    for (let i = 0; i < 3; i += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-    }
+    clickContinue(3);
 
     // Assert
     expect(screen.getByText("Halve the range")).toBeInTheDocument();

@@ -11,7 +11,7 @@ import type { AssessmentItem, Course, Lesson, Objective } from "../../types/cour
 import { Button } from "../primitives/Button";
 import { SegmentedControl } from "../primitives/SegmentedControl";
 import { LearnMode } from "./LearnMode";
-import { buildLessonSteps } from "./lessonSteps";
+import { useLearnMode } from "./useLearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
@@ -43,20 +43,8 @@ import styles from "./CourseReader.module.css";
  *  `@media (max-width: 1100px)` block in CourseReader.module.css. */
 const RAIL_DRAWER_QUERY = "(max-width: 1100px)";
 
-/** Where the Learn/Read mode preference persists (per-device, house `lunaris.reader.*` keys). */
-export const READER_MODE_KEY = "lunaris.reader.mode";
-
-type ReaderMode = "learn" | "read";
-
-/** The stored mode preference; guided Learn is the default (Focus Flow), and a storage-less
- *  environment (SSR, blocked storage) falls back to it. */
-function storedReaderMode(): ReaderMode {
-  try {
-    return localStorage.getItem(READER_MODE_KEY) === "read" ? "read" : "learn";
-  } catch {
-    return "learn";
-  }
-}
+// The mode preference key rides along for tests and callers that pin the mode.
+export { READER_MODE_KEY } from "./useLearnMode";
 
 /** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
  *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
@@ -214,20 +202,6 @@ export function CourseReader({
   );
   // Study-minutes heartbeat: an open, visible reader is "studying" (paused while backgrounded).
   useStudyHeartbeat(apiBaseUrl ?? "", true);
-  // Focus Flow: the reader's consumption mode — guided steps (learn, the default) or the
-  // long-form Field Guide page (read). A per-device preference, like the theme.
-  const [mode, setMode] = useState<ReaderMode>(storedReaderMode);
-  const reading = mode === "read";
-  const selectMode = useCallback((next: ReaderMode) => {
-    setMode(next);
-    try {
-      localStorage.setItem(READER_MODE_KEY, next);
-    } catch {
-      // Storage unavailable — the choice still applies for this session.
-    }
-  }, []);
-  // The Learn mode's position in the focused lesson's step sequence (per-visit, like scroll).
-  const [stepIndex, setStepIndex] = useState(0);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -287,7 +261,6 @@ export function CourseReader({
     paneRef.current?.scrollTo?.({ top: 0 });
     setError(null);
     setActiveClaimId(null);
-    setStepIndex(0);
   }, [safeIndex]);
 
   // First open of a lesson marks it in_progress — but never regresses a lesson already marked
@@ -331,46 +304,34 @@ export function CourseReader({
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
     [current, citations],
   );
-  // The Learn mode's step sequence over the focused lesson (Focus Flow).
-  const steps = useMemo(
-    () =>
-      current
-        ? buildLessonSteps({
-            lesson: current.lesson,
-            phases: PHASES,
-            assessment: current.assessment,
-          })
-        : [],
-    [current],
-  );
-  // Continue past the final step completes the lesson exactly like Read mode's Next/Finish.
+  // Focus Flow: the Learn/Read preference, step position, and step-derived structures.
+  const {
+    mode,
+    reading,
+    selectMode,
+    stepIndex,
+    setStepIndex,
+    steps,
+    sectionProgress,
+    firstStepOf,
+  } = useLearnMode({
+    lesson: current?.lesson ?? null,
+    lessonId: currentLessonId ?? null,
+    phases: PHASES,
+    assessment: current?.assessment ?? [],
+  });
+  // Continue past the final step completes the lesson exactly like Read mode's Next/Finish —
+  // and IS Read mode's Next/Finish (the footer buttons call it too).
   const completeLesson = useCallback(() => {
     if (progress && currentLessonId) markLesson(currentLessonId, "done");
     if (safeIndex < total - 1) goToLesson(safeIndex + 1);
   }, [progress, currentLessonId, markLesson, safeIndex, total, goToLesson]);
-  // Learn mode's section state for the outline: derived from the step position, not scroll —
-  // steps are contiguous per section, so a section is done once the position moves past it.
-  const learnSections = useMemo(() => {
-    const passed = new Set<string>();
-    for (let i = 0; i < stepIndex && i < steps.length; i += 1) passed.add(steps[i]!.sectionId);
-    const active = steps[Math.min(stepIndex, steps.length - 1)]?.sectionId ?? null;
-    if (active) passed.delete(active);
-    return { active, passed };
-  }, [steps, stepIndex]);
-  // Where each section's steps begin — the outline's jump targets in Learn mode.
-  const sectionFirstStep = useMemo(() => {
-    const first = new Map<string, number>();
-    steps.forEach((step, index) => {
-      if (!first.has(step.sectionId)) first.set(step.sectionId, index);
-    });
-    return first;
-  }, [steps]);
   // Jump to a section chosen in the outline — a step jump in Learn mode, a scroll in Read —
   // and close the phone outline drawer so the destination isn't hidden behind it.
   const selectSection = useCallback(
     (id: string) => {
       if (mode === "learn") {
-        const target = sectionFirstStep.get(id);
+        const target = firstStepOf(id);
         if (target !== undefined) setStepIndex(target);
       } else {
         const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
@@ -378,7 +339,7 @@ export function CourseReader({
       }
       setOutlineOpen(false);
     },
-    [mode, sectionFirstStep, reduceMotion],
+    [mode, firstStepOf, setStepIndex, reduceMotion],
   );
   // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
   // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
@@ -482,8 +443,8 @@ export function CourseReader({
     selfCheck,
     assessmentCount: current.assessment.length,
     phases: PHASES,
-    activeSection: reading ? activeSection : learnSections.active,
-    passedSections: reading ? passedSections : learnSections.passed,
+    activeSection: reading ? activeSection : sectionProgress.activeSection,
+    passedSections: reading ? passedSections : sectionProgress.passedSections,
   });
   const regenerate = async () => {
     if (!onRegenerate) return;
@@ -696,41 +657,41 @@ export function CourseReader({
 
           {reading &&
             PHASES.map(({ key, label, cue }) => {
-            const segment = current.lesson.segments[key];
-            const phaseHighlighted =
-              activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
-            return (
-              <section
-                key={key}
-                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
-                aria-label={label}
-                data-phase={key}
-                data-section={key}
-                data-active={phaseHighlighted ? "true" : undefined}
-              >
-                <div className={styles.phaseHead}>
-                  <p className="eyebrow">{cue}</p>
-                  <h3 className={styles.phaseLabel}>{label}</h3>
-                </div>
-                <LessonProse
-                  prose={segment.prose}
-                  marks={marksByPhase.get(key) ?? []}
-                  glossary={glossary}
-                  activeClaimId={activeClaimId}
-                  onSelectClaim={selectClaim}
-                />
-                {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
-                {segment.visuals.map((visual, visualIndex) => (
-                  <VisualRenderer key={visualIndex} visual={visual} />
-                ))}
-                {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
+              const segment = current.lesson.segments[key];
+              const phaseHighlighted =
+                activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
+              return (
+                <section
+                  key={key}
+                  className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
+                  aria-label={label}
+                  data-phase={key}
+                  data-section={key}
+                  data-active={phaseHighlighted ? "true" : undefined}
+                >
+                  <div className={styles.phaseHead}>
+                    <p className="eyebrow">{cue}</p>
+                    <h3 className={styles.phaseLabel}>{label}</h3>
+                  </div>
+                  <LessonProse
+                    prose={segment.prose}
+                    marks={marksByPhase.get(key) ?? []}
+                    glossary={glossary}
+                    activeClaimId={activeClaimId}
+                    onSelectClaim={selectClaim}
+                  />
+                  {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
+                  {segment.visuals.map((visual, visualIndex) => (
+                    <VisualRenderer key={visualIndex} visual={visual} />
+                  ))}
+                  {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
                     before P7.4 (no resources) renders nothing here. */}
-                {(segment.resources ?? []).length > 0 && (
-                  <LessonResources resources={segment.resources} />
-                )}
-              </section>
-            );
-          })}
+                  {(segment.resources ?? []).length > 0 && (
+                    <LessonResources resources={segment.resources} />
+                  )}
+                </section>
+              );
+            })}
 
           {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
           {reading && selfCheck.length > 0 && (
@@ -762,49 +723,39 @@ export function CourseReader({
             {!reading ? (
               <span />
             ) : (
-            <div className={styles.navButtons}>
-              {safeIndex === 0 && onExitToOverview ? (
-                // The design's prev-label rule: from lesson 1 the way back is the Overview, not
-                // a dead disabled button.
-                <Button aria-label="Back to overview" onClick={onExitToOverview}>
-                  <ChevronLeftIcon />
-                  Overview
-                </Button>
-              ) : (
-                <Button
-                  aria-label="Previous lesson"
-                  disabled={safeIndex === 0}
-                  onClick={() => goToLesson(Math.max(0, safeIndex - 1))}
-                >
-                  <ChevronLeftIcon />
-                  Previous
-                </Button>
-              )}
-              {safeIndex >= total - 1 ? (
-                <Button
-                  variant="accent"
-                  aria-label="Finish course"
-                  disabled={!progress}
-                  onClick={() => {
-                    if (currentLessonId) markLesson(currentLessonId, "done");
-                  }}
-                >
-                  Finish course
-                </Button>
-              ) : (
-                <Button
-                  variant="accent"
-                  aria-label="Next lesson"
-                  onClick={() => {
-                    // Advancing is the lesson's completion signal (plan Open Decision 2).
-                    if (progress && currentLessonId) markLesson(currentLessonId, "done");
-                    goToLesson(Math.min(total - 1, safeIndex + 1));
-                  }}
-                >
-                  Next lesson
-                </Button>
-              )}
-            </div>
+              <div className={styles.navButtons}>
+                {safeIndex === 0 && onExitToOverview ? (
+                  // The design's prev-label rule: from lesson 1 the way back is the Overview, not
+                  // a dead disabled button.
+                  <Button aria-label="Back to overview" onClick={onExitToOverview}>
+                    <ChevronLeftIcon />
+                    Overview
+                  </Button>
+                ) : (
+                  <Button
+                    aria-label="Previous lesson"
+                    disabled={safeIndex === 0}
+                    onClick={() => goToLesson(Math.max(0, safeIndex - 1))}
+                  >
+                    <ChevronLeftIcon />
+                    Previous
+                  </Button>
+                )}
+                {safeIndex >= total - 1 ? (
+                  <Button
+                    variant="accent"
+                    aria-label="Finish course"
+                    disabled={!progress}
+                    onClick={completeLesson}
+                  >
+                    Finish course
+                  </Button>
+                ) : (
+                  <Button variant="accent" aria-label="Next lesson" onClick={completeLesson}>
+                    Next lesson
+                  </Button>
+                )}
+              </div>
             )}
           </footer>
           {error && (

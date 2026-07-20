@@ -73,9 +73,7 @@ describe("CourseReader — learner progress", () => {
     await waitFor(() =>
       expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toBeInTheDocument(),
     );
-    expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toHaveTextContent(
-      "✓",
-    );
+    expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toHaveTextContent("✓");
     // The second lesson has no mark — its chip stays the plain number.
     expect(within(outline).getByRole("button", { name: /^lesson 2/i })).toHaveTextContent("2");
   });

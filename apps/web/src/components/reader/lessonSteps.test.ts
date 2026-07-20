@@ -53,8 +53,13 @@ describe("buildLessonSteps", () => {
 
   it("packs paragraphs greedily to ~120 words without splitting any block", () => {
     // Arrange — five 60-word paragraphs → 120 + 120 + 60.
-    const prose = [words(60, "a"), words(60, "b"), words(60, "c"), words(60, "d"), words(60, "e")]
-      .join("\n\n");
+    const prose = [
+      words(60, "a"),
+      words(60, "b"),
+      words(60, "c"),
+      words(60, "d"),
+      words(60, "e"),
+    ].join("\n\n");
     const lesson = makeLesson({ expects: [], selfCheck: [] });
     lesson.segments.activate.prose = prose;
     lesson.segments.demonstrate.prose = "";

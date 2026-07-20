@@ -124,9 +124,10 @@ describe("CourseReader — reading meta band", () => {
         "data-state",
         "done",
       );
-      expect(
-        within(outline).getByRole("button", { name: /worked example/i }),
-      ).toHaveAttribute("aria-current", "location");
+      expect(within(outline).getByRole("button", { name: /worked example/i })).toHaveAttribute(
+        "aria-current",
+        "location",
+      );
       expect(within(outline).getByRole("button", { name: /practice/i })).toHaveAttribute(
         "data-state",
         "upcoming",
