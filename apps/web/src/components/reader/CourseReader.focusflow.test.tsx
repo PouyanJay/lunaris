@@ -161,6 +161,31 @@ describe("CourseReader — Learn mode", () => {
     expect(screen.getByText(/step 1 of/i)).toBeInTheDocument();
   });
 
+  it("steps with the arrow keys inside the step surface", () => {
+    // Arrange
+    render(<CourseReader course={makeCourse()} />);
+    const stage = screen.getByRole("region", { name: /lesson steps/i });
+
+    // Act / Assert — right advances, left returns, left at the start stays put.
+    fireEvent.keyDown(stage, { key: "ArrowRight" });
+    expect(screen.getByText(/step 2 of 8/i)).toBeInTheDocument();
+    fireEvent.keyDown(stage, { key: "ArrowLeft" });
+    expect(screen.getByText(/step 1 of 8/i)).toBeInTheDocument();
+    fireEvent.keyDown(stage, { key: "ArrowLeft" });
+    expect(screen.getByText(/step 1 of 8/i)).toBeInTheDocument();
+  });
+
+  it("moves focus to the new step's card so the change is announced", () => {
+    // Arrange
+    render(<CourseReader course={makeCourse()} />);
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    // Assert
+    expect(screen.getByRole("group", { name: "Step content" })).toHaveFocus();
+  });
+
   it("switches to the long-form Read mode from the toggle", () => {
     // Arrange
     render(<CourseReader course={makeCourse()} />);

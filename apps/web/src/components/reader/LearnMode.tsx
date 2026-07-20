@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 
 import type { LessonStep } from "./lessonSteps";
 import { Button } from "../primitives/Button";
@@ -85,6 +85,30 @@ export function LearnMode({
   const sections = useMemo(() => sectionsOf(steps), [steps]);
   const step = steps[Math.min(index, Math.max(0, steps.length - 1))];
 
+  // A step change moves focus to the fresh card so keyboard/AT users land on the new content;
+  // never on first paint (the reader owns initial focus), so track the previous position.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const previousIndex = useRef<number | null>(null);
+  useEffect(() => {
+    if (previousIndex.current !== null && previousIndex.current !== index) {
+      cardRef.current?.focus();
+    }
+    previousIndex.current = index;
+  }, [index]);
+
+  // Left/Right walk the steps from anywhere inside the stage (the mode toggle lives outside it,
+  // so its own arrow-key behaviour is untouched). The last step's advance stays on Continue —
+  // completing a lesson is an explicit click, not an arrow slip.
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "ArrowRight" && index < steps.length - 1) {
+      event.preventDefault();
+      onNavigate(index + 1);
+    } else if (event.key === "ArrowLeft" && index > 0) {
+      event.preventDefault();
+      onNavigate(index - 1);
+    }
+  };
+
   if (!step) {
     return (
       <section className={styles.stage} aria-label="Lesson steps">
@@ -105,7 +129,8 @@ export function LearnMode({
   };
 
   return (
-    <section className={styles.stage} aria-label="Lesson steps">
+    // The key handler is an enrichment over fully keyboard-operable buttons below.
+    <section className={styles.stage} aria-label="Lesson steps" onKeyDown={onKeyDown}>
       <div className={styles.progressRow}>
         <div className={styles.segments} aria-hidden="true">
           {steps.map((s, i) => (
@@ -124,7 +149,13 @@ export function LearnMode({
         </div>
       </div>
 
-      <div className={styles.card}>
+      <div
+        ref={cardRef}
+        className={styles.card}
+        role="group"
+        aria-label="Step content"
+        tabIndex={-1}
+      >
         {step.cue && step.kind === "content" && (
           <p className={styles.cardEyebrow}>
             {step.cue} · {step.sectionLabel}
