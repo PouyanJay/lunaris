@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeCourse, routedFetch } from "../../test/fixtures";
 import type { VideoArtifact } from "../../types/course";
-import { CourseReader } from "./CourseReader";
+import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
 /** A build-time lesson video the course shipped (resolved ready via the video route below). */
 const READY_VIDEO: VideoArtifact = {
@@ -105,5 +105,47 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
 
     // Assert
     expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
+  });
+
+  it("opens in Watch (front door) when a video is ready and no mode was chosen", async () => {
+    // Arrange — no persisted preference; a ready chaptered video exists.
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act — no click: the front-door default should land the learner in Watch.
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+
+    // Assert — the Cinema surface is on screen unprompted, and Watch is the selected mode.
+    expect(await screen.findByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /watch/i })).toBeChecked();
+  });
+
+  it("respects a saved Learn preference over the front door", async () => {
+    // Arrange — the learner has chosen Learn before; a ready video exists but must not hijack it.
+    localStorage.setItem(READER_MODE_KEY, "learn");
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+    const watch = await screen.findByRole("radio", { name: /watch/i });
+
+    // Assert — Watch is offered but Learn stays selected (no Cinema surface unprompted).
+    expect(watch).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: /learn/i })).toBeChecked();
+    expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
+  });
+
+  it("falls back to Learn when a saved Watch preference meets a video-less lesson", async () => {
+    // Arrange — a persisted Watch preference, but this lesson shipped no video.
+    localStorage.setItem(READER_MODE_KEY, "watch");
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act
+    render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
+    const learn = await screen.findByRole("radio", { name: /learn/i });
+
+    // Assert — no Watch offered, Learn is what renders; the preference is not lost (untouched).
+    expect(learn).toBeChecked();
+    expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
+    expect(localStorage.getItem(READER_MODE_KEY)).toBe("watch");
   });
 });

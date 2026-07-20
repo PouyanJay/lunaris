@@ -14,18 +14,17 @@ export const READER_MODE_KEY = "lunaris.reader.mode";
 
 export type ReaderMode = "learn" | "read" | "watch";
 
-/** The stored mode preference; guided Learn is the default (Focus Flow), and a storage-less
- *  environment (SSR, blocked storage) falls back to it. `watch` (Cinema) is only ever *effective*
- *  where a ready chaptered video exists — the reader clamps it to Learn otherwise — but it persists
- *  here so the preference survives lessons that happen to have no video. */
-function storedReaderMode(): ReaderMode {
+/** The persisted mode preference, or `null` when the learner has made no explicit choice on this
+ *  device. The reader reads `null` as "apply the front-door default" — Watch when the lesson has a
+ *  ready chaptered video, else Learn (Focus Flow). `watch` persists even on lessons without a video
+ *  so the preference survives; the reader clamps it to Learn where Watch cannot apply. A
+ *  storage-less environment (SSR, blocked storage) reads as `null`. */
+function storedPreference(): ReaderMode | null {
   try {
     const stored = localStorage.getItem(READER_MODE_KEY);
-    if (stored === "read") return "read";
-    if (stored === "watch") return "watch";
-    return "learn";
+    return stored === "read" || stored === "watch" || stored === "learn" ? stored : null;
   } catch {
-    return "learn";
+    return null;
   }
 }
 
@@ -40,9 +39,9 @@ interface UseLearnModeInput {
 }
 
 interface UseLearnModeResult {
-  mode: ReaderMode;
-  /** Convenience for gating the long-form regions. */
-  reading: boolean;
+  /** The learner's explicit choice, or `null` if none yet — the reader resolves the effective mode
+   *  from this plus whether a chaptered video exists (the front-door default). */
+  preference: ReaderMode | null;
   /** Switch mode and persist the choice. */
   selectMode: (mode: ReaderMode) => void;
   stepIndex: number;
@@ -55,18 +54,18 @@ interface UseLearnModeResult {
   firstStepOf: (sectionId: string) => number | undefined;
 }
 
-/** Focus Flow's state: the Learn/Read preference (persisted per device), the step position in
- *  the focused lesson (per-visit, reset on lesson change), and the step-derived structures the
- *  reader composes — steps, sections, and section read-state. */
+/** Focus Flow's state: the Learn/Read/Watch preference (persisted per device, `null` until chosen),
+ *  the step position in the focused lesson (per-visit, reset on lesson change), and the
+ *  step-derived structures the reader composes — steps, sections, and section read-state. */
 export function useLearnMode({
   lesson,
   lessonId,
   phases,
   assessment,
 }: UseLearnModeInput): UseLearnModeResult {
-  const [mode, setMode] = useState<ReaderMode>(storedReaderMode);
+  const [preference, setPreference] = useState<ReaderMode | null>(storedPreference);
   const selectMode = useCallback((next: ReaderMode) => {
-    setMode(next);
+    setPreference(next);
     try {
       localStorage.setItem(READER_MODE_KEY, next);
     } catch {
@@ -94,8 +93,7 @@ export function useLearnMode({
   );
 
   return {
-    mode,
-    reading: mode === "read",
+    preference,
     selectMode,
     stepIndex,
     setStepIndex,

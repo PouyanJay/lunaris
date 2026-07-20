@@ -309,7 +309,7 @@ export function CourseReader({
     [current, citations],
   );
   // Focus Flow: the Learn/Read/Watch preference, step position, and step-derived structures.
-  const { mode, selectMode, stepIndex, setStepIndex, steps, sectionProgress, firstStepOf } =
+  const { preference, selectMode, stepIndex, setStepIndex, steps, sectionProgress, firstStepOf } =
     useLearnMode({
       lesson: current?.lesson ?? null,
       lessonId: currentLessonId ?? null,
@@ -327,11 +327,15 @@ export function CourseReader({
     apiBaseUrl ? (current?.lesson.video ?? null) : null,
   );
   // Cinema (Watch): the mode is only offered — and only effective — where a ready video carries a
-  // navigable chapter outline. A persisted `watch` on a lesson without one clamps to Learn, keeping
-  // the stored preference intact so Watch returns on the next lesson that does have a video.
+  // navigable chapter outline. The effective mode folds in the front-door default: an unset
+  // preference opens in Watch when such a video exists (else Learn); a stored `watch` clamps to
+  // Learn where no video exists, keeping the preference intact so Watch returns on a lesson that
+  // does have one; an explicit Learn/Read choice always wins.
   const watchAvailable =
     lessonVideo.state.phase === "ready" && lessonVideo.state.chapters.length > 0;
-  const effectiveMode: ReaderMode = mode === "watch" && !watchAvailable ? "learn" : mode;
+  const wantsWatch = preference === "watch" || preference === null;
+  const effectiveMode: ReaderMode =
+    preference === "read" ? "read" : wantsWatch && watchAvailable ? "watch" : "learn";
   const reading = effectiveMode === "read";
   // The mode toggle offers Watch only where a chaptered video exists (Cinema).
   const modeSegments: Segment<ReaderMode>[] = [
