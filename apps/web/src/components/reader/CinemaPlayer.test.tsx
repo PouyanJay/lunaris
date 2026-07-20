@@ -28,19 +28,17 @@ function renderPlayer(overrides: Partial<React.ComponentProps<typeof CinemaPlaye
 }
 
 describe("CinemaPlayer", () => {
-  it("renders the video with a chapter rail and transcript", () => {
+  it("renders the video with a chapter rail and the current caption", () => {
     // Arrange / Act
     renderPlayer();
 
-    // Assert
+    // Assert — the chapter rail, and (at t=0) the first spoken line captioned over the video.
     const chapters = screen.getByRole("navigation", { name: /video chapters/i });
     expect(
       within(chapters).getByRole("button", { name: /the coastline puzzle/i }),
     ).toBeInTheDocument();
     expect(within(chapters).getByRole("button", { name: /self-similarity/i })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /a coastline has no single length/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/a coastline has no single length/i)).toBeInTheDocument();
   });
 
   it("seeks the video when a chapter is clicked", () => {
@@ -58,7 +56,7 @@ describe("CinemaPlayer", () => {
     expect(setCurrentTime).toHaveBeenCalledWith(72);
   });
 
-  it("highlights the chapter and cue for the current playback time", () => {
+  it("advances the active chapter and caption with the playback time", () => {
     // Arrange
     renderPlayer();
     const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
@@ -67,15 +65,30 @@ describe("CinemaPlayer", () => {
     // Act — the video advances into the second chapter.
     fireEvent.timeUpdate(video);
 
-    // Assert — the second chapter and its cue read as current.
+    // Assert — the second chapter reads as current and its spoken line is captioned.
     expect(screen.getByRole("button", { name: /self-similarity/i })).toHaveAttribute(
       "aria-current",
       "true",
     );
-    expect(screen.getByRole("button", { name: /parts resemble the whole/i })).toHaveAttribute(
-      "aria-current",
-      "true",
+    expect(screen.getByText(/parts resemble the whole/i)).toBeInTheDocument();
+  });
+
+  it("accents a chapter key term in the caption", () => {
+    // Arrange / Act — a chapter whose key term appears in the current spoken line.
+    render(
+      <CinemaPlayer
+        videoUrl="memory://v.mp4"
+        posterUrl={null}
+        captionsUrl={null}
+        chapters={[{ id: "S1", title: "Coastlines", startS: 0, endS: 10, keyTerms: ["coastline"] }]}
+        transcript={[{ startS: 0, endS: 5, text: "A coastline has no single length." }]}
+        label="Fractals"
+      />,
     );
+
+    // Assert — the key term is wrapped in a <mark>; the rest of the line is not.
+    const term = screen.getByText("coastline", { selector: "mark" });
+    expect(term.tagName).toBe("MARK");
   });
 
   it("shows only the chapter rail for a silent video (no transcript)", () => {

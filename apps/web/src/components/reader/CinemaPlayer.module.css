@@ -209,36 +209,31 @@
   color: var(--accent-600);
 }
 
-/* ── Transcript ──────────────────────────────────────────────────────────── */
+/* ── Overlaid caption ────────────────────────────────────────────────────── */
 
-.transcript {
-  border-top: var(--border-width) solid var(--border);
-  padding: var(--space-2) 0;
+/* The synced spoken line, floated over the foot of the video; the chapter's key terms are accented.
+   Non-interactive (clicks fall through to the video to toggle play). */
+.caption {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  max-width: min(90%, 60ch);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  pointer-events: none;
 }
 
-.cue {
-  display: block;
-  width: 100%;
-  text-align: left;
-  appearance: none;
-  border: none;
+.captionTerm {
   background: transparent;
-  cursor: pointer;
-  padding: var(--space-2) var(--space-4);
-  color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
-  line-height: var(--lh-xs);
-  transition: color var(--dur) var(--ease);
-}
-
-.cue:hover {
-  color: var(--text-secondary);
-}
-
-.cueActive {
-  color: var(--text);
-  font-weight: 500;
+  color: var(--accent-500);
+  font-weight: 600;
 }
 
 @media (max-width: 720px) {

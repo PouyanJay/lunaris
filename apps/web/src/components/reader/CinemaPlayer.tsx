@@ -3,6 +3,7 @@ import { useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { ScoredResource } from "../../lib/chapterResources";
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
 import { activeSpanIndex } from "../../lib/videoOutline";
+import { highlightTerms } from "../../lib/transcriptHighlight";
 import { ChapterResourceCard } from "./ChapterResourceCard";
 import styles from "./CinemaPlayer.module.css";
 
@@ -70,6 +71,7 @@ export function CinemaPlayer({
   const activeCue = activeSpanIndex(transcript, currentTime);
   const playedPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const currentChapter = activeChapter >= 0 ? chapters[activeChapter] : undefined;
+  const currentCue = activeCue >= 0 ? transcript[activeCue] : undefined;
 
   const seekTo = (seconds: number) => {
     // Optimistically move the UI (the video's own `timeupdate` reconciles); clamp to the media when
@@ -147,6 +149,23 @@ export function CinemaPlayer({
               </span>
             </button>
           )}
+          {/* The current spoken line, synced over the video with the chapter's key terms accented.
+              Marked aria-hidden — the captions <track> serves assistive tech, and a live-updating
+              caption would otherwise spam a screen reader on every cue. */}
+          {currentCue && (
+            <p className={styles.caption} aria-hidden="true">
+              {highlightTerms(currentCue.text, currentChapter?.keyTerms ?? []).map(
+                (segment, index) =>
+                  segment.highlight ? (
+                    <mark key={index} className={styles.captionTerm}>
+                      {segment.text}
+                    </mark>
+                  ) : (
+                    <span key={index}>{segment.text}</span>
+                  ),
+              )}
+            </p>
+          )}
         </div>
 
         <div className={styles.controls}>
@@ -218,23 +237,6 @@ export function CinemaPlayer({
             );
           })}
         </nav>
-
-        {transcript.length > 0 && (
-          <div className={styles.transcript}>
-            <p className={styles.railHead}>Transcript</p>
-            {transcript.map((cue, index) => (
-              <button
-                key={`${cue.startS}-${index}`}
-                type="button"
-                className={`${styles.cue} ${index === activeCue ? styles.cueActive : ""}`.trim()}
-                aria-current={index === activeCue ? "true" : undefined}
-                onClick={() => seekTo(cue.startS)}
-              >
-                {cue.text}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
