@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "./App";
+import { READER_MODE_KEY } from "./components/reader/CourseReader";
 import {
   courseFrame,
   makeCourse,
@@ -10,6 +11,12 @@ import {
   routedFetch,
   sseStreamResponse,
 } from "./test/fixtures";
+
+// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
+// pin the persisted preference before each render.
+beforeEach(() => {
+  localStorage.setItem(READER_MODE_KEY, "read");
+});
 
 describe("App — URL routing (live studio)", () => {
   beforeEach(() => vi.stubEnv("VITE_API_URL", "http://test"));

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CourseReader } from "./CourseReader";
+import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 
 /** Two modules (one lesson each) so Prev/Next crosses a lesson boundary; the first carries
@@ -48,6 +48,12 @@ function progressFetch(
   return { mock, puts };
 }
 
+// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
+// pin the persisted preference before each render.
+beforeEach(() => {
+  localStorage.setItem(READER_MODE_KEY, "read");
+});
+
 describe("CourseReader — learner progress", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -67,9 +73,7 @@ describe("CourseReader — learner progress", () => {
     await waitFor(() =>
       expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toBeInTheDocument(),
     );
-    expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toHaveTextContent(
-      "✓",
-    );
+    expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toHaveTextContent("✓");
     // The second lesson has no mark — its chip stays the plain number.
     expect(within(outline).getByRole("button", { name: /^lesson 2/i })).toHaveTextContent("2");
   });

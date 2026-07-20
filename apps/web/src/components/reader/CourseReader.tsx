@@ -9,6 +9,9 @@ import { useStudyHeartbeat } from "../../hooks/useStudyHeartbeat";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
+import { SegmentedControl } from "../primitives/SegmentedControl";
+import { LearnMode } from "./LearnMode";
+import { useLearnMode } from "./useLearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
@@ -39,6 +42,9 @@ import styles from "./CourseReader.module.css";
 /** Below this the annotation rail renders as an off-canvas drawer — must match the
  *  `@media (max-width: 1100px)` block in CourseReader.module.css. */
 const RAIL_DRAWER_QUERY = "(max-width: 1100px)";
+
+// The mode preference key rides along for tests and callers that pin the mode.
+export { READER_MODE_KEY } from "./useLearnMode";
 
 /** The teaching phases (Merrill's First Principles, in order), relabelled to the lesson ARC the
  *  course is designed around (P7.3) so the learner reads a coherent rhythm — strategies → worked
@@ -268,18 +274,8 @@ export function CourseReader({
   );
   const readPercent = useReadingProgress(paneRef, currentLessonId);
   // Which of the lesson's sections is under the reading line, and which are read past — drives
-  // the outline's nested section level.
+  // the outline's nested section level in Read mode.
   const { activeSection, passedSections } = useSectionSpy(paneRef, currentLessonId);
-  // Jump the pane to a section chosen in the outline (and close the phone outline drawer so the
-  // destination isn't hidden behind it).
-  const selectSection = useCallback(
-    (id: string) => {
-      const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
-      scrollIntoViewSafe(target, reduceMotion, "start");
-      setOutlineOpen(false);
-    },
-    [reduceMotion],
-  );
   useEffect(() => {
     if (!progress || !currentLessonId) return;
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
@@ -307,6 +303,43 @@ export function CourseReader({
   const annotations = useMemo(
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
     [current, citations],
+  );
+  // Focus Flow: the Learn/Read preference, step position, and step-derived structures.
+  const {
+    mode,
+    reading,
+    selectMode,
+    stepIndex,
+    setStepIndex,
+    steps,
+    sectionProgress,
+    firstStepOf,
+  } = useLearnMode({
+    lesson: current?.lesson ?? null,
+    lessonId: currentLessonId ?? null,
+    phases: PHASES,
+    assessment: current?.assessment ?? [],
+  });
+  // Continue past the final step completes the lesson exactly like Read mode's Next/Finish —
+  // and IS Read mode's Next/Finish (the footer buttons call it too).
+  const completeLesson = useCallback(() => {
+    if (progress && currentLessonId) markLesson(currentLessonId, "done");
+    if (safeIndex < total - 1) goToLesson(safeIndex + 1);
+  }, [progress, currentLessonId, markLesson, safeIndex, total, goToLesson]);
+  // Jump to a section chosen in the outline — a step jump in Learn mode, a scroll in Read —
+  // and close the phone outline drawer so the destination isn't hidden behind it.
+  const selectSection = useCallback(
+    (id: string) => {
+      if (mode === "learn") {
+        const target = firstStepOf(id);
+        if (target !== undefined) setStepIndex(target);
+      } else {
+        const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
+        scrollIntoViewSafe(target, reduceMotion, "start");
+      }
+      setOutlineOpen(false);
+    },
+    [mode, firstStepOf, setStepIndex, reduceMotion],
   );
   // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
   // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
@@ -403,14 +436,15 @@ export function CourseReader({
   // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
   // objective-less module (no-research path) hides the panel rather than inventing content.
   const tldr = deriveTldr(current.moduleObjectives);
-  // The focused lesson's sections for the outline's nested level (Field Guide).
+  // The focused lesson's sections for the outline's nested level — state from the scroll spy in
+  // Read mode, from the step position in Learn mode.
   const sectionEntries = buildSectionEntries({
     expects,
     selfCheck,
     assessmentCount: current.assessment.length,
     phases: PHASES,
-    activeSection,
-    passedSections,
+    activeSection: reading ? activeSection : sectionProgress.activeSection,
+    passedSections: reading ? passedSections : sectionProgress.passedSections,
   });
   const regenerate = async () => {
     if (!onRegenerate) return;
@@ -482,8 +516,8 @@ export function CourseReader({
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
           {/* Field Guide reading-meta band: how big this lesson is and how far through it the
-              learner has scrolled. */}
-          <ReadingMeta minutes={readingMinutes} percent={readPercent} />
+              learner has scrolled. Read-mode furniture — Learn has step metrics instead. */}
+          {reading && <ReadingMeta minutes={readingMinutes} percent={readPercent} />}
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
@@ -498,6 +532,16 @@ export function CourseReader({
               <p className={`${styles.progress} mono`}>
                 Lesson {safeIndex + 1} of {total}
               </p>
+              {/* Focus Flow: guided steps vs the long-form page — one control, both modes. */}
+              <SegmentedControl
+                segments={[
+                  { value: "learn", label: "Learn" },
+                  { value: "read", label: "Read" },
+                ]}
+                value={mode}
+                onChange={selectMode}
+                label="Reading mode"
+              />
               <BookmarkToggle
                 subject={`${current.label} · ${current.moduleTitle}`}
                 draft={{
@@ -548,7 +592,7 @@ export function CourseReader({
               takeaway bullets, so the learner sizes up the lesson before committing to it. A
               module's FIRST lesson opens with the full objectives panel instead — showing both
               would say the same thing twice. */}
-          {current.objectives.length === 0 && tldr.length > 0 && (
+          {reading && current.objectives.length === 0 && tldr.length > 0 && (
             <LessonScaffold
               title="This lesson in 30 seconds"
               cue="The takeaways, before the reading"
@@ -556,8 +600,20 @@ export function CourseReader({
             />
           )}
 
+          {/* Focus Flow: the guided step surface replaces the long-form region below. */}
+          {!reading && (
+            <LearnMode
+              steps={steps}
+              index={stepIndex}
+              onNavigate={setStepIndex}
+              onComplete={completeLesson}
+              completeLabel={safeIndex >= total - 1 ? "Finish course" : "Next lesson"}
+              glossary={glossary}
+            />
+          )}
+
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
-          {apiBaseUrl && (
+          {reading && apiBaseUrl && (
             <LessonVideoHero
               apiBaseUrl={apiBaseUrl}
               courseId={active.id}
@@ -567,7 +623,7 @@ export function CourseReader({
             />
           )}
 
-          {current.objectives.length > 0 && (
+          {reading && current.objectives.length > 0 && (
             <LessonObjectives
               objectives={current.objectives}
               understoodIndexes={
@@ -589,7 +645,7 @@ export function CourseReader({
 
           {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
               omitted for courses built before P7.3 (empty expects). */}
-          {expects.length > 0 && (
+          {reading && expects.length > 0 && (
             <div data-section="expects" className={styles.sectionAnchor}>
               <LessonScaffold
                 title="What this lesson expects"
@@ -599,45 +655,46 @@ export function CourseReader({
             </div>
           )}
 
-          {PHASES.map(({ key, label, cue }) => {
-            const segment = current.lesson.segments[key];
-            const phaseHighlighted =
-              activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
-            return (
-              <section
-                key={key}
-                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
-                aria-label={label}
-                data-phase={key}
-                data-section={key}
-                data-active={phaseHighlighted ? "true" : undefined}
-              >
-                <div className={styles.phaseHead}>
-                  <p className="eyebrow">{cue}</p>
-                  <h3 className={styles.phaseLabel}>{label}</h3>
-                </div>
-                <LessonProse
-                  prose={segment.prose}
-                  marks={marksByPhase.get(key) ?? []}
-                  glossary={glossary}
-                  activeClaimId={activeClaimId}
-                  onSelectClaim={selectClaim}
-                />
-                {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
-                {segment.visuals.map((visual, visualIndex) => (
-                  <VisualRenderer key={visualIndex} visual={visual} />
-                ))}
-                {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
+          {reading &&
+            PHASES.map(({ key, label, cue }) => {
+              const segment = current.lesson.segments[key];
+              const phaseHighlighted =
+                activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
+              return (
+                <section
+                  key={key}
+                  className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
+                  aria-label={label}
+                  data-phase={key}
+                  data-section={key}
+                  data-active={phaseHighlighted ? "true" : undefined}
+                >
+                  <div className={styles.phaseHead}>
+                    <p className="eyebrow">{cue}</p>
+                    <h3 className={styles.phaseLabel}>{label}</h3>
+                  </div>
+                  <LessonProse
+                    prose={segment.prose}
+                    marks={marksByPhase.get(key) ?? []}
+                    glossary={glossary}
+                    activeClaimId={activeClaimId}
+                    onSelectClaim={selectClaim}
+                  />
+                  {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
+                  {segment.visuals.map((visual, visualIndex) => (
+                    <VisualRenderer key={visualIndex} visual={visual} />
+                  ))}
+                  {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
                     before P7.4 (no resources) renders nothing here. */}
-                {(segment.resources ?? []).length > 0 && (
-                  <LessonResources resources={segment.resources} />
-                )}
-              </section>
-            );
-          })}
+                  {(segment.resources ?? []).length > 0 && (
+                    <LessonResources resources={segment.resources} />
+                  )}
+                </section>
+              );
+            })}
 
           {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
-          {selfCheck.length > 0 && (
+          {reading && selfCheck.length > 0 && (
             <div data-section="selfCheck" className={styles.sectionAnchor}>
               <LessonScaffold
                 title="Self-check"
@@ -647,7 +704,7 @@ export function CourseReader({
             </div>
           )}
 
-          {current.assessment.length > 0 && (
+          {reading && current.assessment.length > 0 && (
             <div data-section="assessment" className={styles.sectionAnchor}>
               <LessonAssessment items={current.assessment} />
             </div>
@@ -661,49 +718,45 @@ export function CourseReader({
             ) : (
               <span />
             )}
-            <div className={styles.navButtons}>
-              {safeIndex === 0 && onExitToOverview ? (
-                // The design's prev-label rule: from lesson 1 the way back is the Overview, not
-                // a dead disabled button.
-                <Button aria-label="Back to overview" onClick={onExitToOverview}>
-                  <ChevronLeftIcon />
-                  Overview
-                </Button>
-              ) : (
-                <Button
-                  aria-label="Previous lesson"
-                  disabled={safeIndex === 0}
-                  onClick={() => goToLesson(Math.max(0, safeIndex - 1))}
-                >
-                  <ChevronLeftIcon />
-                  Previous
-                </Button>
-              )}
-              {safeIndex >= total - 1 ? (
-                <Button
-                  variant="accent"
-                  aria-label="Finish course"
-                  disabled={!progress}
-                  onClick={() => {
-                    if (currentLessonId) markLesson(currentLessonId, "done");
-                  }}
-                >
-                  Finish course
-                </Button>
-              ) : (
-                <Button
-                  variant="accent"
-                  aria-label="Next lesson"
-                  onClick={() => {
-                    // Advancing is the lesson's completion signal (plan Open Decision 2).
-                    if (progress && currentLessonId) markLesson(currentLessonId, "done");
-                    goToLesson(Math.min(total - 1, safeIndex + 1));
-                  }}
-                >
-                  Next lesson
-                </Button>
-              )}
-            </div>
+            {/* Lesson prev/next lives in the step surface's Continue in Learn mode — the footer
+                pair would be a second "Next lesson" saying the same thing. */}
+            {!reading ? (
+              <span />
+            ) : (
+              <div className={styles.navButtons}>
+                {safeIndex === 0 && onExitToOverview ? (
+                  // The design's prev-label rule: from lesson 1 the way back is the Overview, not
+                  // a dead disabled button.
+                  <Button aria-label="Back to overview" onClick={onExitToOverview}>
+                    <ChevronLeftIcon />
+                    Overview
+                  </Button>
+                ) : (
+                  <Button
+                    aria-label="Previous lesson"
+                    disabled={safeIndex === 0}
+                    onClick={() => goToLesson(Math.max(0, safeIndex - 1))}
+                  >
+                    <ChevronLeftIcon />
+                    Previous
+                  </Button>
+                )}
+                {safeIndex >= total - 1 ? (
+                  <Button
+                    variant="accent"
+                    aria-label="Finish course"
+                    disabled={!progress}
+                    onClick={completeLesson}
+                  >
+                    Finish course
+                  </Button>
+                ) : (
+                  <Button variant="accent" aria-label="Next lesson" onClick={completeLesson}>
+                    Next lesson
+                  </Button>
+                )}
+              </div>
+            )}
           </footer>
           {error && (
             <p className={styles.regenError} role="alert">
