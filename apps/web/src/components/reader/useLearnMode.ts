@@ -12,13 +12,18 @@ import {
 /** Where the Learn/Read mode preference persists (per-device, house `lunaris.reader.*` keys). */
 export const READER_MODE_KEY = "lunaris.reader.mode";
 
-export type ReaderMode = "learn" | "read";
+export type ReaderMode = "learn" | "read" | "watch";
 
 /** The stored mode preference; guided Learn is the default (Focus Flow), and a storage-less
- *  environment (SSR, blocked storage) falls back to it. */
+ *  environment (SSR, blocked storage) falls back to it. `watch` (Cinema) is only ever *effective*
+ *  where a ready chaptered video exists — the reader clamps it to Learn otherwise — but it persists
+ *  here so the preference survives lessons that happen to have no video. */
 function storedReaderMode(): ReaderMode {
   try {
-    return localStorage.getItem(READER_MODE_KEY) === "read" ? "read" : "learn";
+    const stored = localStorage.getItem(READER_MODE_KEY);
+    if (stored === "read") return "read";
+    if (stored === "watch") return "watch";
+    return "learn";
   } catch {
     return "learn";
   }

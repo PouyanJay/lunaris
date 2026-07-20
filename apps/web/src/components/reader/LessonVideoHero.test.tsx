@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { useLessonVideo } from "../../hooks/useLessonVideo";
 import type { VideoArtifact } from "../../types/course";
 import { LessonVideoHero } from "./LessonVideoHero";
 
@@ -11,6 +12,37 @@ const PROPS = {
   lessonId: "lesson-1",
   pollIntervalMs: 1,
 };
+
+/** Mounts the (now presentational) hero behind a live `useLessonVideo`, so these tests drive the
+ *  real state machine through fetch exactly as the reader does — the reader owns the hook in
+ *  production, this harness owns it for the unit tests. */
+function HeroHarness(props: {
+  apiBaseUrl: string;
+  courseId: string;
+  lessonId: string;
+  video?: VideoArtifact | null;
+  title?: string;
+  pollIntervalMs?: number;
+}) {
+  const { state, generate, regenerate, stop, refresh } = useLessonVideo(
+    props.apiBaseUrl,
+    props.courseId,
+    props.lessonId,
+    props.pollIntervalMs,
+    props.video,
+  );
+  return (
+    <LessonVideoHero
+      state={state}
+      generate={generate}
+      regenerate={regenerate}
+      stop={stop}
+      refresh={refresh}
+      video={props.video}
+      title={props.title}
+    />
+  );
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -77,7 +109,7 @@ afterEach(() => {
 
 describe("LessonVideoHero", () => {
   it("starts as a quiet generate affordance and calls nothing", () => {
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     expect(screen.getByRole("button", { name: /generate video/i })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -91,7 +123,7 @@ describe("LessonVideoHero", () => {
       .mockResolvedValueOnce(jsonResponse(202, queuedView()))
       .mockImplementationOnce(() => new Promise<Response>((resolve) => (releasePoll = resolve)))
       .mockResolvedValue(jsonResponse(200, readyView()));
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act — the user asks for the video.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -124,7 +156,7 @@ describe("LessonVideoHero", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(202, queuedView()))
       .mockResolvedValue(jsonResponse(200, readyView("job-1", captionsUrl)));
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act — generate, then play.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -149,7 +181,7 @@ describe("LessonVideoHero", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(403, { detail: "Video generation needs an Anthropic API key" }),
     );
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -164,7 +196,7 @@ describe("LessonVideoHero", () => {
   it("treats a server error on enqueue as a failed state with retry", async () => {
     // Arrange — the network itself fails; the slot must degrade to the recoverable state.
     fetchMock.mockRejectedValueOnce(new Error("network down"));
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -178,7 +210,7 @@ describe("LessonVideoHero", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(404, { detail: "Video generation is not enabled" }),
     );
-    const { container } = render(<LessonVideoHero {...PROPS} />);
+    const { container } = render(<HeroHarness {...PROPS} />);
 
     // Act
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -198,7 +230,7 @@ describe("LessonVideoHero", () => {
       .mockResolvedValueOnce(jsonResponse(202, queuedView())) // enqueue
       .mockImplementationOnce(() => new Promise<Response>(() => {})) // poll stays pending
       .mockResolvedValue(jsonResponse(200, cancelledView)); // the cancel POST + any further reads
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act — generate, then stop the in-flight render.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -241,7 +273,7 @@ describe("LessonVideoHero", () => {
       if (url.includes("/videos/regen-1")) return new Promise<Response>(() => {}); // poll pending
       return Promise.resolve(jsonResponse(200, readyView("built-1"))); // the built video resolves
     });
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
     await screen.findByRole("button", { name: /play lesson video/i });
 
     // Act — regenerate (Fresh take) → working, then stop the in-flight render.
@@ -278,7 +310,7 @@ describe("LessonVideoHero", () => {
       return Promise.resolve(jsonResponse(200, readyView("built-1")));
     });
 
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.getByText("Lesson video · 1:48")).toBeInTheDocument();
@@ -304,7 +336,7 @@ describe("LessonVideoHero", () => {
       );
     });
 
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.queryByText(/all scenes verified/i)).not.toBeInTheDocument();
@@ -325,7 +357,7 @@ describe("LessonVideoHero", () => {
       return Promise.resolve(jsonResponse(200, { ...readyView("built-1"), stale: true }));
     });
 
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.queryByText(/all scenes verified/i)).not.toBeInTheDocument();
@@ -340,7 +372,7 @@ describe("LessonVideoHero", () => {
       .mockResolvedValueOnce(jsonResponse(200, failedView())) // poll → failed
       .mockResolvedValueOnce(jsonResponse(202, queuedView("job-2"))) // regenerate
       .mockResolvedValue(jsonResponse(200, readyView("job-2"))); // poll → ready
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act — generate, watch it fail.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -363,7 +395,7 @@ describe("LessonVideoHero", () => {
       .mockResolvedValueOnce(jsonResponse(202, queuedView())) // enqueue
       .mockResolvedValueOnce(jsonResponse(200, failedView())) // poll → failed
       .mockResolvedValueOnce(jsonResponse(409, { detail: "hasn't finished" })); // regenerate
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
     const tryAgain = await screen.findByRole("button", { name: /try again/i });
 
@@ -381,7 +413,7 @@ describe("LessonVideoHero", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(202, queuedView()))
       .mockResolvedValue(jsonResponse(200, readyView("job-1", null)));
-    const { unmount } = render(<LessonVideoHero {...PROPS} />);
+    const { unmount } = render(<HeroHarness {...PROPS} />);
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
     await screen.findByRole("button", { name: /play lesson video/i });
 
@@ -394,7 +426,7 @@ describe("LessonVideoHero", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(202, queuedView()))
       .mockResolvedValue(jsonResponse(200, readyView("job-1", "https://signed/c.vtt")));
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
     await screen.findByRole("button", { name: /play lesson video/i });
 
@@ -421,7 +453,7 @@ describe("LessonVideoHero", () => {
     );
 
     // Act — no generate click: the built video resolves on its own.
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     // Assert — it resolved the BUILT job's url, then shows the outdated badge + the regenerate menu.
     await screen.findByRole("button", { name: /play lesson video/i });
@@ -463,7 +495,7 @@ describe("LessonVideoHero", () => {
     );
 
     // Act — no generate click: the built video resolves on its own.
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     // Assert — it plays, and the degraded badge names the count + lists the issues on hover.
     await screen.findByRole("button", { name: /play lesson video/i });
@@ -487,7 +519,7 @@ describe("LessonVideoHero", () => {
     );
 
     // Act
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     // Assert — the player resolves with no degraded badge in sight.
     await screen.findByRole("button", { name: /play lesson video/i });
@@ -514,7 +546,7 @@ describe("LessonVideoHero", () => {
         return Promise.resolve(jsonResponse(200, { ...readyView("built-1"), stale: true }));
       return Promise.resolve(jsonResponse(200, { ...readyView("job-2"), stale: false }));
     });
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.getByText("OUTDATED")).toBeInTheDocument();
 
@@ -543,7 +575,7 @@ describe("LessonVideoHero", () => {
       ),
     );
 
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     await screen.findByRole("button", { name: /play lesson video/i });
     expect(screen.queryByText("OUTDATED")).toBeNull();
@@ -573,7 +605,7 @@ describe("LessonVideoHero", () => {
     });
 
     // Act — the probe finds the live regenerate and watches it.
-    render(<LessonVideoHero {...PROPS} video={built} />);
+    render(<HeroHarness {...PROPS} video={built} />);
 
     // Assert — the slot recovers the running job and shows its progress bar (not the stale failed
     // state), keyed by the slot's coordinates (course, lesson, kind).
@@ -605,7 +637,7 @@ describe("LessonVideoHero", () => {
         }),
       );
     });
-    render(<LessonVideoHero {...PROPS} />);
+    render(<HeroHarness {...PROPS} />);
 
     // Act — generate, then play; the player mounts on the (now stale) signed URL.
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
@@ -628,12 +660,12 @@ describe("LessonVideoHero", () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(202, queuedView()))
       .mockResolvedValue(jsonResponse(200, readyView()));
-    const { rerender } = render(<LessonVideoHero {...PROPS} />);
+    const { rerender } = render(<HeroHarness {...PROPS} />);
     fireEvent.click(screen.getByRole("button", { name: /generate video/i }));
     await screen.findByRole("button", { name: /play lesson video/i });
 
     // Act — …then the reader navigates to lesson-2.
-    rerender(<LessonVideoHero {...PROPS} lessonId="lesson-2" />);
+    rerender(<HeroHarness {...PROPS} lessonId="lesson-2" />);
 
     // Assert — the slot belongs to the new lesson: back to the generate affordance.
     expect(screen.getByRole("button", { name: /generate video/i })).toBeInTheDocument();

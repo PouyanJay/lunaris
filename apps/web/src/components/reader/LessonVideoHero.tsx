@@ -1,6 +1,6 @@
-import { useLessonVideo } from "../../hooks/useLessonVideo";
+import type { LessonVideoState } from "../../hooks/useLessonVideo";
 import { formatMediaDuration } from "../../lib/mediaDuration";
-import { FAILED_REGEN_MODES, readyRegenModes } from "../../lib/videoJobs";
+import { FAILED_REGEN_MODES, readyRegenModes, type RegenerateMode } from "../../lib/videoJobs";
 import type { VideoArtifact } from "../../types/course";
 import { Button } from "../primitives/Button";
 import { DegradedBadge } from "./DegradedBadge";
@@ -12,16 +12,18 @@ import { VideoProgress } from "./VideoProgress";
 import styles from "./LessonVideoHero.module.css";
 
 interface LessonVideoHeroProps {
-  apiBaseUrl: string;
-  courseId: string;
-  lessonId: string;
-  /** The build-time lesson video, if the course shipped one. Resolved + shown with an outdated
-   *  badge once the lesson is revised; absent ⇒ the on-demand generate affordance. */
-  video?: VideoArtifact | null;
+  /** The focused lesson's video state machine. The reader owns the single `useLessonVideo`
+   *  instance (so mode-independent readiness can drive the Watch mode) and passes it in. */
+  state: LessonVideoState;
+  generate: () => void;
+  regenerate: (mode: RegenerateMode) => void;
+  stop: () => void;
+  refresh: () => Promise<void>;
+  /** The build-time lesson video, if the course shipped one — for the honest built-duration + the
+   *  scene-QA line (only trustworthy while the built artifact is what's playing). */
+  video?: VideoArtifact | null | undefined;
   /** A title for the poster overlay (the owning module) — absent, the poster stays bare. */
   title?: string | undefined;
-  /** Poll cadence override for tests; defaults to the hook's production interval. */
-  pollIntervalMs?: number;
 }
 
 /** The lesson's video hero slot — the headline artifact above the prose (plan §0: hero slot).
@@ -29,23 +31,17 @@ interface LessonVideoHeroProps {
  *  One component, every state: a quiet generate affordance (idle), a 16:9 stage with a determinate
  *  progress bar + stage caption while the job works, the VideoFacade interaction once ready (poster
  *  → click → native player on the signed URL), a failed state with retry, the keyless refusal
- *  verbatim, and *nothing at all* when the operator kill-switch is off (no husk). */
+ *  verbatim, and *nothing at all* when the operator kill-switch is off (no husk). Presentational:
+ *  the reader drives the state machine and hands it in. */
 export function LessonVideoHero({
-  apiBaseUrl,
-  courseId,
-  lessonId,
+  state,
+  generate,
+  regenerate,
+  stop,
+  refresh,
   video,
   title,
-  pollIntervalMs,
 }: LessonVideoHeroProps) {
-  const { state, generate, regenerate, stop, refresh } = useLessonVideo(
-    apiBaseUrl,
-    courseId,
-    lessonId,
-    pollIntervalMs,
-    video,
-  );
-
   if (state.phase === "unavailable") return null;
 
   return (

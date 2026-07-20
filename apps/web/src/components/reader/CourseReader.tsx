@@ -7,13 +7,15 @@ import { usePrefersReducedMotion } from "../../hooks/usePrefersReducedMotion";
 import { useCourseProgress } from "../../hooks/useCourseProgress";
 import { useStudyHeartbeat } from "../../hooks/useStudyHeartbeat";
 import { useActivity } from "../../hooks/useActivity";
+import { useLessonVideo } from "../../hooks/useLessonVideo";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import type { AssessmentItem, Course, Lesson, Objective } from "../../types/course";
 import { Button } from "../primitives/Button";
-import { SegmentedControl } from "../primitives/SegmentedControl";
+import { SegmentedControl, type Segment } from "../primitives/SegmentedControl";
+import { CinemaPlayer } from "./CinemaPlayer";
 import { LearnMode } from "./LearnMode";
 import { TrailBand } from "./TrailBand";
-import { useLearnMode } from "./useLearnMode";
+import { useLearnMode, type ReaderMode } from "./useLearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
@@ -306,26 +308,44 @@ export function CourseReader({
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
     [current, citations],
   );
-  // Focus Flow: the Learn/Read preference, step position, and step-derived structures.
-  const {
-    mode,
-    reading,
-    selectMode,
-    stepIndex,
-    setStepIndex,
-    steps,
-    sectionProgress,
-    firstStepOf,
-  } = useLearnMode({
-    lesson: current?.lesson ?? null,
-    lessonId: currentLessonId ?? null,
-    phases: PHASES,
-    assessment: current?.assessment ?? [],
-  });
+  // Focus Flow: the Learn/Read/Watch preference, step position, and step-derived structures.
+  const { mode, selectMode, stepIndex, setStepIndex, steps, sectionProgress, firstStepOf } =
+    useLearnMode({
+      lesson: current?.lesson ?? null,
+      lessonId: currentLessonId ?? null,
+      phases: PHASES,
+      assessment: current?.assessment ?? [],
+    });
+  // The focused lesson's video — one `useLessonVideo` owned HERE (not inside the hero) so a ready,
+  // chaptered video can light up the Watch mode regardless of the current reading mode. Idle and
+  // unfetched for a lesson the build shipped no video for, or offline (no apiBaseUrl).
+  const lessonVideo = useLessonVideo(
+    apiBaseUrl ?? "",
+    active.id,
+    current?.lesson.id ?? "",
+    undefined,
+    apiBaseUrl ? (current?.lesson.video ?? null) : null,
+  );
+  // Cinema (Watch): the mode is only offered — and only effective — where a ready video carries a
+  // navigable chapter outline. A persisted `watch` on a lesson without one clamps to Learn, keeping
+  // the stored preference intact so Watch returns on the next lesson that does have a video.
+  const watchAvailable =
+    lessonVideo.state.phase === "ready" && lessonVideo.state.chapters.length > 0;
+  const effectiveMode: ReaderMode = mode === "watch" && !watchAvailable ? "learn" : mode;
+  const reading = effectiveMode === "read";
+  // The mode toggle offers Watch only where a chaptered video exists (Cinema).
+  const modeSegments: Segment<ReaderMode>[] = [
+    { value: "learn", label: "Learn" },
+    { value: "read", label: "Read" },
+    ...(watchAvailable ? [{ value: "watch" as const, label: "Watch" }] : []),
+  ];
   // The learner's activity snapshot (streak / event feed) — the Trail band's motivation source.
-  // Fetched only in Learn mode (where the band shows) and online; Read mode / offline settle
+  // Fetched only in Learn mode (where the band shows) and online; Read/Watch / offline settle
   // without a fetch. Reloaded on lesson completion so it reflects the just-earned event.
-  const { state: activity, reload: reloadActivity } = useActivity(apiBaseUrl ?? "", !reading);
+  const { state: activity, reload: reloadActivity } = useActivity(
+    apiBaseUrl ?? "",
+    effectiveMode === "learn",
+  );
   // Continue past the final step completes the lesson exactly like Read mode's Next/Finish —
   // and IS Read mode's Next/Finish (the footer buttons call it too).
   const completeLesson = useCallback(() => {
@@ -339,7 +359,7 @@ export function CourseReader({
   // and close the phone outline drawer so the destination isn't hidden behind it.
   const selectSection = useCallback(
     (id: string) => {
-      if (mode === "learn") {
+      if (effectiveMode === "learn") {
         const target = firstStepOf(id);
         if (target !== undefined) setStepIndex(target);
       } else {
@@ -348,7 +368,7 @@ export function CourseReader({
       }
       setOutlineOpen(false);
     },
-    [mode, firstStepOf, setStepIndex, reduceMotion],
+    [effectiveMode, firstStepOf, setStepIndex, reduceMotion],
   );
   // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
   // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
@@ -560,13 +580,11 @@ export function CourseReader({
               <p className={`${styles.progress} mono`}>
                 Lesson {safeIndex + 1} of {total}
               </p>
-              {/* Focus Flow: guided steps vs the long-form page — one control, both modes. */}
+              {/* Focus Flow: guided steps vs the long-form page vs the video (Cinema) — one control,
+                  every mode. Watch appears only where a ready chaptered video exists. */}
               <SegmentedControl
-                segments={[
-                  { value: "learn", label: "Learn" },
-                  { value: "read", label: "Read" },
-                ]}
-                value={mode}
+                segments={modeSegments}
+                value={effectiveMode}
                 onChange={selectMode}
                 label="Reading mode"
               />
@@ -629,7 +647,7 @@ export function CourseReader({
           )}
 
           {/* Focus Flow: the guided step surface replaces the long-form region below. */}
-          {!reading && (
+          {effectiveMode === "learn" && (
             <LearnMode
               steps={steps}
               index={stepIndex}
@@ -643,16 +661,33 @@ export function CourseReader({
 
           {/* Trail (phase 4): the motivation band — streak, today's XP, course position. A
               Learn-mode layer, and only where activity is reachable (best-effort). */}
-          {!reading && apiBaseUrl && (
+          {effectiveMode === "learn" && apiBaseUrl && (
             <TrailBand activity={activity} lessonNumber={safeIndex + 1} lessonTotal={total} />
           )}
 
-          {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
+          {/* Cinema (Watch): the ready video as the lesson's front door — a chaptered player with a
+              synced, click-to-seek transcript. Rendered only where a ready chaptered video exists
+              (Watch is otherwise clamped away). Takeaways + resources dock here next. */}
+          {effectiveMode === "watch" && lessonVideo.state.phase === "ready" && (
+            <CinemaPlayer
+              videoUrl={lessonVideo.state.videoUrl}
+              posterUrl={lessonVideo.state.posterUrl}
+              captionsUrl={lessonVideo.state.captionsUrl}
+              chapters={lessonVideo.state.chapters}
+              transcript={lessonVideo.state.transcript}
+              label={`${current.moduleTitle} — lesson video`}
+            />
+          )}
+
+          {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. The
+              reader owns the video state (above); the hero is the presentational surface. */}
           {reading && apiBaseUrl && (
             <LessonVideoHero
-              apiBaseUrl={apiBaseUrl}
-              courseId={active.id}
-              lessonId={current.lesson.id}
+              state={lessonVideo.state}
+              generate={lessonVideo.generate}
+              regenerate={lessonVideo.regenerate}
+              stop={lessonVideo.stop}
+              refresh={lessonVideo.refresh}
               video={current.lesson.video ?? null}
               title={current.moduleTitle}
             />
