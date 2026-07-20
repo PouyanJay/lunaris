@@ -24,11 +24,37 @@ export function isSignedStorageImage(rawUrl: string): boolean {
 /** The content-stable cache key for a signed storage image: the URL minus its rotating `token`. The
  *  object is immutable per its path (a regenerate writes a new path) and the size/transform params
  *  stay on the key, so identical artwork maps to ONE cache entry no matter which short-lived token
- *  fetched it — the whole point of caching a constant image that hides behind a rotating signed URL. */
+ *  fetched it — the whole point of caching a constant image that hides behind a rotating signed URL.
+ *  A non-URL string is returned as-is (it identifies only itself). */
 export function storageImageCacheKey(rawUrl: string): string {
-  const url = new URL(rawUrl);
-  url.searchParams.delete("token");
-  return url.toString();
+  try {
+    const url = new URL(rawUrl);
+    url.searchParams.delete("token");
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
+// Images this session has already painted, by content key — so a remount (navigating back to a
+// grid) renders them at full opacity instead of re-running the crossfade. The crossfade exists to
+// soften a genuinely-loading image over its placeholder; replaying it on artwork the user has
+// already seen (served instantly by the service worker) just reads as "the images load every time".
+const seenImages = new Set<string>();
+
+/** Whether this artwork was already shown this session (token-independent). */
+export function hasSeenImage(url: string): boolean {
+  return seenImages.has(storageImageCacheKey(url));
+}
+
+/** Record that this artwork has painted, so later mounts skip the crossfade. */
+export function markImageSeen(url: string): void {
+  seenImages.add(storageImageCacheKey(url));
+}
+
+/** Reset the seen set (the test harness — mirrors the other module-scoped stores). */
+export function clearSeenImages(): void {
+  seenImages.clear();
 }
 
 /** Register the image-cache service worker. Production builds only — a local Vite dev server needs

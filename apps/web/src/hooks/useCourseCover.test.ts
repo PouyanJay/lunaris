@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setCoverView } from "./coverViewCache";
 import type { CoverArtifact } from "../types/course";
 import {
   coverImageUrlForTheme,
@@ -276,4 +277,49 @@ describe("coverThumbUrlForTheme (the derivative the card + Overview frames load)
       expect(coverThumbUrlForTheme({ phase: "generating", status: "rendering" }, theme)).toBeNull();
     },
   );
+});
+
+describe("useCourseCover exchange cache (stale-while-revalidate)", () => {
+  it("renders a previously-exchanged READY cover's image immediately — no constellation flash", async () => {
+    // Arrange — a prior visit resolved this job (the module cache holds the view).
+    setCoverView("job-1", readyView("job-1"));
+    fetchJob.mockResolvedValue(readyView("job-1"));
+
+    // Act
+    const { result } = renderHook(() => useCourseCover(API, artifact("ready")));
+
+    // Assert — the image is there from the FIRST render (the service worker serves its bytes);
+    // the exchange still revalidates in the background.
+    expect(result.current.state.phase).toBe("image");
+    await waitFor(() => expect(fetchJob).toHaveBeenCalledOnce());
+  });
+
+  it("keeps the cached image when the background revalidation fails", async () => {
+    // Arrange — a cached view, but the refresh comes back null (fetchCoverJob never throws).
+    setCoverView("job-1", readyView("job-1"));
+    fetchJob.mockResolvedValue(null);
+
+    // Act
+    const { result } = renderHook(() => useCourseCover(API, artifact("ready")));
+    await waitFor(() => expect(fetchJob).toHaveBeenCalledOnce());
+
+    // Assert — a working cover is never blanked to the fallback by a failed refresh.
+    expect(result.current.state.phase).toBe("image");
+  });
+
+  it("caches a cold exchange so the NEXT mount renders the image instantly", async () => {
+    // Arrange — first-ever visit: cold cache, the exchange resolves.
+    fetchJob.mockResolvedValue(readyView("job-1"));
+    const first = renderHook(() => useCourseCover(API, artifact("ready")));
+    await waitFor(() => expect(first.result.current.state.phase).toBe("image"));
+    first.unmount();
+
+    // Act — navigate away and back (a fresh mount of the surface).
+    const second = renderHook(() => useCourseCover(API, artifact("ready")));
+
+    // Assert — no constellation on the revisit: the cached exchange renders from the first paint
+    // (and the background revalidation is awaited so no state update dangles past the test).
+    expect(second.result.current.state.phase).toBe("image");
+    await waitFor(() => expect(fetchJob).toHaveBeenCalledTimes(2));
+  });
 });

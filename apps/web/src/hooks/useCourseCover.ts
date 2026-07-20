@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { getCoverView, setCoverView } from "./coverViewCache";
 import {
   fetchCoverJob,
   isCoverTerminal,
@@ -9,7 +10,7 @@ import {
   type CoverJobStatus,
   type CoverJobView,
 } from "../lib/coverJobs";
-import type { CoverArtifact } from "../types/course";
+import type { CoverArtifact, CourseSummary } from "../types/course";
 import type { Theme } from "./useTheme";
 
 export const COURSE_COVER_POLL_INTERVAL_MS = 3000;
@@ -101,6 +102,32 @@ export function coverStateFromThumb(thumbUrl: string, thumbUrlLight: string | nu
   };
 }
 
+/** The pre-resolved cover state a library summary carries, or undefined when it has none (a cover
+ *  still generating, keyless, none) — undefined lets the surface fall back to the `cover` handle.
+ *  One helper so every summary-fed frame (the card, Home's continue hero + rows) resolves the
+ *  pre-signed thumb identically and never runs a per-card signed-URL exchange for a READY cover. */
+export function summaryCoverState(
+  summary: Pick<CourseSummary, "thumbUrl" | "thumbUrlLight">,
+): CourseCoverState | undefined {
+  return summary.thumbUrl != null
+    ? coverStateFromThumb(summary.thumbUrl, summary.thumbUrlLight ?? null)
+    : undefined;
+}
+
+/** Map an exchanged view to its renderable state: a READY view with an image → the image (all four
+ *  URLs), anything else → the Typographic fallback. */
+function stateFromView(view: CoverJobView | null): CourseCoverState {
+  return view?.job.status === "ready" && view.imageUrl
+    ? {
+        phase: "image",
+        imageUrl: view.imageUrl,
+        imageUrlLight: view.imageUrlLight ?? null,
+        thumbUrl: view.thumbUrl ?? null,
+        thumbUrlLight: view.thumbUrlLight ?? null,
+      }
+    : { phase: "fallback" };
+}
+
 /** Resolve a course's cover to a renderable state, and let the reader regenerate it
  *  (course-cover-images T9 + T10).
  *
@@ -118,24 +145,19 @@ export function useCourseCover(
 ): { state: CourseCoverState; regenerate: () => void; regenerating: boolean } {
   const status = artifact?.status ?? null;
   const jobId = resolveCoverJobId(artifact);
-  const [state, setState] = useState<CourseCoverState>({ phase: "fallback" });
+  // A READY cover whose exchange this session already resolved renders its image from the very
+  // first paint (the service worker serves the bytes) — no constellation flash, no waiting on the
+  // GET /api/covers/{jobId} round trip. The exchange still revalidates in the background below.
+  const [state, setState] = useState<CourseCoverState>(() =>
+    status === "ready" && jobId ? stateFromView(getCoverView(jobId)) : { phase: "fallback" },
+  );
   const [regenerating, setRegenerating] = useState(false);
   // The controller for an in-flight regenerate poll — aborted on a new regenerate or on unmount, so
   // a stale poll never writes state after the component is gone (or a second regenerate started).
   const regenController = useRef<AbortController | null>(null);
 
   const applyView = useCallback((view: CoverJobView | null) => {
-    setState(
-      view?.job.status === "ready" && view.imageUrl
-        ? {
-            phase: "image",
-            imageUrl: view.imageUrl,
-            imageUrlLight: view.imageUrlLight ?? null,
-            thumbUrl: view.thumbUrl ?? null,
-            thumbUrlLight: view.thumbUrlLight ?? null,
-          }
-        : { phase: "fallback" },
-    );
+    setState(stateFromView(view));
   }, []);
 
   useEffect(() => {
@@ -147,10 +169,20 @@ export function useCourseCover(
     const controller = new AbortController();
 
     if (status === "ready") {
-      setState({ phase: "generating", status });
+      // Stale-while-revalidate: render the cached exchange instantly when one exists (only the
+      // first-ever visit shows the constellation while the API resolves), then refresh it.
+      const cached = getCoverView(jobId);
+      setState(cached ? stateFromView(cached) : { phase: "generating", status });
       void fetchCoverJob(apiBaseUrl, jobId, controller.signal).then((view) => {
         if (controller.signal.aborted) return;
-        applyView(view); // READY → image (both URLs), else fallback — one mapping, shared
+        if (view) {
+          setCoverView(jobId, view);
+          applyView(view);
+          return;
+        }
+        // A null revalidation is ANY failure (network blip included, fetchCoverJob never throws) —
+        // keep a cached image rather than blanking a working cover; fall back only when cold.
+        if (!cached) applyView(null);
       });
       return () => controller.abort();
     }
@@ -164,7 +196,9 @@ export function useCourseCover(
         if (!controller.signal.aborted) setState({ phase: "generating", status: working });
       },
       onSettled: (view) => {
-        if (!controller.signal.aborted) applyView(view);
+        if (controller.signal.aborted) return;
+        if (view) setCoverView(jobId, view); // a cover that finished while watched: exchange cached
+        applyView(view);
       },
     });
     return () => controller.abort();
@@ -195,6 +229,9 @@ export function useCourseCover(
         },
         onSettled: (settled) => {
           if (controller.signal.aborted) return;
+          // Seed the exchange cache with the fresh job's view, so the next surface to show this
+          // cover (a navigation right after regenerating) renders it without a cold exchange.
+          if (settled) setCoverView(newJobId, settled);
           applyView(settled);
           setRegenerating(false);
         },

@@ -224,3 +224,63 @@ describe("CourseCoverImage load ladder (derivative → master → Typographic)",
     await waitFor(() => expect(srcOf(container)).toBe(LIGHT_THUMB));
   });
 });
+
+describe("CourseCoverImage stable artwork across token rotation", () => {
+  const tokened = (token: string): import("../../hooks/useCourseCover").CourseCoverState => ({
+    phase: "image",
+    imageUrl: `https://ref.supabase.co/storage/v1/object/sign/course-covers/c/j/cover.png?token=${token}`,
+    imageUrlLight: null,
+    thumbUrl: `https://ref.supabase.co/storage/v1/render/image/sign/course-covers/c/j/cover.png?width=1280&token=${token}`,
+    thumbUrlLight: null,
+  });
+
+  it("keeps the held src (no remount, no re-fade) when only the signed token rotates", () => {
+    // Arrange — the cover painted once.
+    const { container, rerender } = render(
+      <CourseCoverImage courseId="c1" topic="t" state={tokened("AAA")} />,
+    );
+    const first = imageIn(container);
+    const firstSrc = first.getAttribute("src");
+    fireEvent.load(first);
+    expect(first.hasAttribute("data-loaded")).toBe(true);
+
+    // Act — a background revalidation re-signed the SAME artwork with a new token.
+    rerender(<CourseCoverImage courseId="c1" topic="t" state={tokened("ZZZ")} />);
+
+    // Assert — the img kept its src (same element, no reload) and stayed visible (no re-fade).
+    const after = imageIn(container);
+    expect(after.getAttribute("src")).toBe(firstSrc);
+    expect(after.hasAttribute("data-loaded")).toBe(true);
+  });
+
+  it("adopts a genuinely NEW artwork (a regenerate: different object path)", () => {
+    const { container, rerender } = render(
+      <CourseCoverImage courseId="c1" topic="t" state={tokened("AAA")} />,
+    );
+    const regenerated: import("../../hooks/useCourseCover").CourseCoverState = {
+      phase: "image",
+      imageUrl: "https://ref.supabase.co/storage/v1/object/sign/course-covers/c/j2/cover.png?token=B",
+      imageUrlLight: null,
+      thumbUrl:
+        "https://ref.supabase.co/storage/v1/render/image/sign/course-covers/c/j2/cover.png?width=1280&token=B",
+      thumbUrlLight: null,
+    };
+
+    rerender(<CourseCoverImage courseId="c1" topic="t" state={regenerated} />);
+
+    expect(imageIn(container).getAttribute("src")).toContain("/c/j2/");
+  });
+
+  it("mounts already-seen artwork at full opacity (no crossfade replay on a revisit)", () => {
+    // Arrange — the artwork painted once this session (any token).
+    const first = render(<CourseCoverImage courseId="c1" topic="t" state={tokened("AAA")} />);
+    fireEvent.load(imageIn(first.container));
+    first.unmount();
+
+    // Act — a later mount of the same artwork under a rotated token (navigating back to the grid).
+    const second = render(<CourseCoverImage courseId="c1" topic="t" state={tokened("ZZZ")} />);
+
+    // Assert — no fade-from-transparent: the image is visible from the first frame.
+    expect(imageIn(second.container).hasAttribute("data-loaded")).toBe(true);
+  });
+});

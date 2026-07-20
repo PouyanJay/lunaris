@@ -11,6 +11,7 @@ import {
 import type { Theme } from "../../hooks/useTheme";
 import { useThemeValue } from "../../hooks/useThemeValue";
 import { coverSeed } from "../../lib/coverSeed";
+import { hasSeenImage, markImageSeen, storageImageCacheKey } from "../../lib/imageCache";
 import type { CoverArtifact } from "../../types/course";
 
 interface CourseCoverImageProps {
@@ -98,6 +99,15 @@ export function CourseCoverImage({
   return <TypographicCover topic={topic} seed={seed} />;
 }
 
+/** Whether two rung lists show the same ARTWORK — equal token-stripped cache keys, in order. A
+ *  revalidation that only re-signed the same objects (rotated tokens) compares equal. */
+function sameArtwork(a: string[], b: string[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((url, i) => storageImageCacheKey(url) === storageImageCacheKey(b[i] as string))
+  );
+}
+
 /** The cover URL to display for the theme's variant, plus the error handler that walks the load
  *  ladder. The ladder tries, sharpest-and-lightest first:
  *    1. the storage-RESIZED derivative — what a card or the Overview should show. A cover master is
@@ -108,7 +118,15 @@ export function CourseCoverImage({
  *       image. Each rung is tried on the previous one's error. The rungs are DEDUPED: a cover with no
  *  derivative has thumb === master, and a repeated URL would re-render the identical key/src, so
  *  React would never remount the <img>, the browser would never retry, and the frame would sit on a
- *  broken image forever instead of reaching the fallback. */
+ *  broken image forever instead of reaching the fallback.
+ *
+ *  The src is STABLE across token rotation: every list revalidation re-signs the same objects with a
+ *  fresh token, and adopting each new URL would remount the <img> (it is keyed on src) and replay
+ *  the whole load ladder + crossfade on artwork that hasn't changed — the "covers reload on every
+ *  visit" bug. So new URLs are adopted only when they show DIFFERENT artwork (a regenerate, a theme
+ *  flip to the other variant); a rotated token keeps the held URLs. If a held URL errors (its token
+ *  expired AND the service worker has no cached bytes), the error handler first retries the same
+ *  artwork at its freshest URL, and only then walks down the ladder. */
 function useCoverImageSource(
   state: CourseCoverState,
   theme: Theme,
@@ -116,31 +134,59 @@ function useCoverImageSource(
   const variant = coverVariantForTheme(state, theme);
   const master = variant?.master ?? null;
   const thumb = variant?.thumb ?? null;
-  const rungs = useMemo(
+  const incoming = useMemo(
     () => [...new Set([thumb, master].filter((url): url is string => url !== null))],
     [thumb, master],
   );
+  const [adopted, setAdopted] = useState(incoming);
   const [rung, setRung] = useState(0);
-  // Re-enter at the top when the displayed cover changes (a theme toggle picks the other variant, a
-  // regenerate lands a new one), so a transient failure never strands the surface on a lower rung.
-  useEffect(() => setRung(0), [thumb, master]);
-  return { src: rungs[rung], onError: () => setRung((current) => current + 1) };
+  const incomingRef = useRef(incoming);
+  incomingRef.current = incoming;
+  useEffect(() => {
+    setAdopted((held) => {
+      if (sameArtwork(held, incoming)) return held; // a rotated token — keep the held src
+      setRung(0); // genuinely new artwork — re-enter the ladder at the top
+      return incoming;
+    });
+  }, [incoming]);
+  const onError = () => {
+    // A held URL whose token expired (and missed the cache): retry the SAME artwork at its freshest
+    // signing before giving the rung up entirely.
+    setAdopted((held) => {
+      const current = held[rung];
+      const fresh = incomingRef.current.find(
+        (url) => current !== undefined && storageImageCacheKey(url) === storageImageCacheKey(current),
+      );
+      if (fresh !== undefined && fresh !== current) {
+        return held.map((url, i) => (i === rung ? fresh : url));
+      }
+      setRung((r) => r + 1);
+      return held;
+    });
+  };
+  return { src: adopted[rung], onError };
 }
 
 /** Crossfade bookkeeping for one image src: the image starts transparent and `loaded` flips true
- *  once it has decoded, so a card is never empty and covers don't pop in one by one. A cached image
- *  can already be `complete` before `onLoad` attaches, so that is reflected on mount — otherwise the
- *  image would strand invisible behind a fade that will never fire. */
+ *  once it has decoded, so a card is never empty and covers don't pop in one by one. Artwork the
+ *  session has ALREADY painted (see markImageSeen) mounts pre-loaded — the crossfade softens a
+ *  first, genuinely-loading render, not a service-worker-served repeat. A cached image can also be
+ *  `complete` before `onLoad` attaches, so that is reflected on mount — otherwise the image would
+ *  strand invisible behind a fade that will never fire. */
 function useImageLoaded(src: string | undefined): {
   imgRef: React.RefObject<HTMLImageElement | null>;
   loaded: boolean;
   onLoad: () => void;
 } {
   const imgRef = useRef<HTMLImageElement>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [loaded, setLoaded] = useState(() => (src !== undefined ? hasSeenImage(src) : false));
   useEffect(() => {
-    setLoaded(false);
+    setLoaded(src !== undefined && hasSeenImage(src));
     if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) setLoaded(true);
   }, [src]);
-  return { imgRef, loaded, onLoad: () => setLoaded(true) };
+  const onLoad = () => {
+    if (src !== undefined) markImageSeen(src);
+    setLoaded(true);
+  };
+  return { imgRef, loaded, onLoad };
 }

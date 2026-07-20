@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { Button } from "../primitives/Button";
 import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
+import { summaryCoverState } from "../../hooks/useCourseCover";
 import { useContinueLearning, type ContinueState } from "../../hooks/useContinueLearning";
 import { CONTINUE_ROW_LIMIT } from "../../lib/homeCourses";
 import { coursePath } from "../../lib/routes";
@@ -66,7 +67,15 @@ function ContinueHero({
         {/* The inner box holds the cover's 16:9; the outer cell centers it on the letterbox ground,
             since the grid stretches this column to the (taller) body's height. */}
         <div className={styles.coverInner}>
-          <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
+          {/* The summary already carries the pre-signed thumb — render it straight (no per-card
+              signed-URL exchange); the `cover` handle is only the fallback for a cover mid-generate. */}
+          <CourseCoverImage
+            courseId={course.id}
+            topic={course.topic}
+            cover={course.cover}
+            state={summaryCoverState(course)}
+            priority
+          />
         </div>
       </div>
       <div className={styles.heroBody}>
@@ -103,7 +112,12 @@ function InProgressRow({ course }: { course: CourseSummary }) {
     <li>
       <Link className={styles.row} to={coursePath(course.id)}>
         <div className={styles.rowCover} aria-hidden="true">
-          <CourseCoverImage courseId={course.id} topic={course.topic} cover={course.cover} />
+          <CourseCoverImage
+            courseId={course.id}
+            topic={course.topic}
+            cover={course.cover}
+            state={summaryCoverState(course)}
+          />
         </div>
         <span className={styles.rowBody}>
           <span className={styles.rowTitle}>{course.topic}</span>
