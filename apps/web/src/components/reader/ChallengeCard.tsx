@@ -82,7 +82,7 @@ export function ChallengeCard({
       ) : (
         <>
           {hasExplanation && (
-            <div className={styles.reveal}>
+            <div className={styles.reveal} role="region" aria-label="The answer" aria-live="polite">
               <p className={styles.revealHead}>The answer</p>
               {answer && (
                 <div className={styles.answerText}>

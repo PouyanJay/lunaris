@@ -94,6 +94,20 @@ describe("ChallengeCard — assessment", () => {
     expect(screen.queryByRole("button", { name: "I got it" })).not.toBeInTheDocument();
   });
 
+  it("announces the revealed answer through a live region", () => {
+    // Arrange
+    render(
+      <ChallengeCard prompt={ITEM.prompt} answer={ITEM.answer} criterion={ITEM.passCriterion} />,
+    );
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
+
+    // Assert — the reveal is a polite live region so AT users hear the answer appear.
+    const reveal = screen.getByRole("region", { name: /the answer/i });
+    expect(reveal).toHaveAttribute("aria-live", "polite");
+  });
+
   it("omits the answer block for a bare self-check reflection", () => {
     // Arrange / Act — no answer/criterion (a self-check string); the commit control adapts.
     render(<ChallengeCard prompt="Can you locate 7 in at most 4 comparisons?" onGrade={vi.fn()} />);
@@ -102,5 +116,41 @@ describe("ChallengeCard — assessment", () => {
     // Assert — reflection reveals no model answer, but still lets the learner self-report.
     expect(screen.queryByText(/passes when/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "I got it" })).toBeInTheDocument();
+  });
+
+  it("hides the self-grade step when no grader is wired (read-only context)", () => {
+    // Arrange / Act — no onGrade (offline / no progress).
+    render(<ChallengeCard prompt={ITEM.prompt} answer={ITEM.answer} />);
+    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
+
+    // Assert — the answer reveals, but there is nothing to self-report into.
+    expect(screen.getByText("O(log n)")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "I got it" })).not.toBeInTheDocument();
+  });
+
+  it("shows an answer with no pass criterion cleanly", () => {
+    // Arrange / Act — a pre-P4 item: answer present, criterion empty.
+    render(<ChallengeCard prompt={ITEM.prompt} answer="42" criterion="" />);
+    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
+
+    // Assert
+    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.queryByText(/passes when/i)).not.toBeInTheDocument();
+  });
+
+  it("does not falsely hint when the attempt shares no distinctive word", () => {
+    // Arrange
+    render(
+      <ChallengeCard prompt={ITEM.prompt} answer={ITEM.answer} criterion={ITEM.passCriterion} />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /your answer/i }), {
+      target: { value: "I have no idea." },
+    });
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
+
+    // Assert
+    expect(screen.queryByText(/your answer mentions/i)).not.toBeInTheDocument();
   });
 });
