@@ -93,26 +93,59 @@ describe("CourseReader — Learn mode", () => {
     expect(screen.getByText("Binary search visualised")).toBeInTheDocument();
   });
 
-  it("renders the self-check step through LessonScaffold", () => {
+  it("renders the self-check step as a Try First challenge", () => {
     // Arrange
     render(<CourseReader course={makeCourse()} />);
 
-    // Act — step 7 is the closing self-check item.
+    // Act — step 7 is the closing self-check item, now a challenge.
     clickContinue(6);
 
-    // Assert
+    // Assert — the prompt leads with an attempt input (question before explanation).
     expect(screen.getByText(/locate 7 in a 9-element sorted array/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /your answer/i })).toBeInTheDocument();
   });
 
-  it("renders the assessment step through LessonAssessment", () => {
+  it("renders the assessment step as a Try First challenge, answer hidden", () => {
     // Arrange
     render(<CourseReader course={makeCourse()} />);
 
     // Act — step 8, the module assessment finale.
     clickContinue(7);
 
-    // Assert
+    // Assert — the prompt is shown; the model answer stays hidden until revealed.
     expect(screen.getByText(/worst-case time complexity/i)).toBeInTheDocument();
+    expect(screen.queryByText("O(log n)")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reveal answer/i })).toBeInTheDocument();
+  });
+
+  it("evidences the assessed objective when the learner self-grades 'I got it'", async () => {
+    // Arrange — a live progress store so the evidence write hits the real endpoint.
+    const fetchMock = routedFetch({
+      progress: { courseId: "course-test", objectives: [], lessons: [] },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((call) => String(call[0]).includes("/progress/lesson")),
+      ).toBe(true);
+    });
+
+    // Act — reach the assessment challenge, reveal, and self-grade "I got it".
+    clickContinue(7);
+    fireEvent.click(screen.getByRole("button", { name: /reveal answer/i }));
+    fireEvent.click(screen.getByRole("button", { name: "I got it" }));
+
+    // Assert — the fixture item assesses objective binary_search (index 0); a PUT marks it
+    // understood through the existing objective-progress endpoint (AD2, no new persistence).
+    await waitFor(() => {
+      const evidence = fetchMock.mock.calls.find(
+        (call) =>
+          String(call[0]).includes("/progress/objective") &&
+          String((call[1] as RequestInit | undefined)?.body ?? "").includes('"understood":true'),
+      );
+      expect(evidence).toBeDefined();
+    });
   });
 
   it("drives the outline's section entries from the step position", () => {

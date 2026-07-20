@@ -436,6 +436,25 @@ export function CourseReader({
   // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
   // objective-less module (no-research path) hides the panel rather than inventing content.
   const tldr = deriveTldr(current.moduleObjectives);
+  // Which of the module's objectives are marked understood — shared by the objectives panel
+  // (Read) and the Try First challenge evidence (Learn). Undefined offline.
+  const understoodObjectives = progress
+    ? new Set(
+        progress.objectives
+          .filter((mark) => mark.moduleId === current.moduleId)
+          .map((mark) => mark.objectiveIndex),
+      )
+    : undefined;
+  // Try First: a self-graded "I got it" on a challenge evidences the objective it assesses,
+  // through the existing objective-understood channel (AD2). The challenge's own assessment
+  // items live on the module (shown once, on its last lesson); its objectives are module-wide.
+  const challengeContext = {
+    objectives: current.moduleObjectives,
+    understoodObjectives: understoodObjectives ?? new Set<number>(),
+    onEvidenceObjective: progress
+      ? (index: number, understood: boolean) => markObjective(current.moduleId, index, understood)
+      : undefined,
+  };
   // The focused lesson's sections for the outline's nested level — state from the scroll spy in
   // Read mode, from the step position in Learn mode.
   const sectionEntries = buildSectionEntries({
@@ -609,6 +628,7 @@ export function CourseReader({
               onComplete={completeLesson}
               completeLabel={safeIndex >= total - 1 ? "Finish course" : "Next lesson"}
               glossary={glossary}
+              challenge={challengeContext}
             />
           )}
 
@@ -626,15 +646,7 @@ export function CourseReader({
           {reading && current.objectives.length > 0 && (
             <LessonObjectives
               objectives={current.objectives}
-              understoodIndexes={
-                progress
-                  ? new Set(
-                      progress.objectives
-                        .filter((mark) => mark.moduleId === current.moduleId)
-                        .map((mark) => mark.objectiveIndex),
-                    )
-                  : undefined
-              }
+              understoodIndexes={understoodObjectives}
               onToggleObjective={
                 progress
                   ? (index, understood) => markObjective(current.moduleId, index, understood)
