@@ -46,8 +46,8 @@ function ChallengeReveal({
   hint,
   glossary,
 }: {
-  answer?: string | null;
-  criterion?: string;
+  answer?: string | null | undefined;
+  criterion?: string | undefined;
   hint: string | null;
   glossary?: ReadonlyMap<string, string> | undefined;
 }) {
