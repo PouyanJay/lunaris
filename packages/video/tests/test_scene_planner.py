@@ -464,3 +464,39 @@ async def test_empty_packet_rejects_a_scene_that_cites_a_claim(
     assert len(stub.prompts) == 2
     assert "c1" in stub.prompts[1]
     assert all(scene.sources == [FRAMING_ONLY_SENTINEL] for scene in contract.scenes)
+
+
+async def test_plan_prompt_asks_for_a_chapter_title_per_scene(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — the Cinema reader surfaces each scene as a navigable chapter, so the planner must
+    # author a short title per scene (a learner scans the arc from titles alone).
+    payload = _draft_payload(make_lesson_contract)
+    stub = StubInvokeModel([json.dumps(payload)])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    await planner.plan(_lesson())
+
+    # Assert
+    prompt = stub.prompts[0].lower()
+    assert "title" in prompt
+    assert "chapter title" in prompt
+
+
+async def test_planner_authored_scene_title_survives_into_the_contract(
+    make_lesson_contract: Callable[..., SceneContracts],
+) -> None:
+    # Arrange — a draft whose first scene carries an authored title.
+    payload = _draft_payload(make_lesson_contract)
+    scenes = payload["scenes"]
+    assert isinstance(scenes, list)
+    scenes[0]["title"] = "The coastline puzzle"
+    stub = StubInvokeModel([json.dumps(payload)])
+    planner = ScenePlanner(invoke=stub)
+
+    # Act
+    contract = await planner.plan(_lesson())
+
+    # Assert — the title round-trips (Cinema chapters prefer it over a derived label).
+    assert contract.scenes[0].title == "The coastline puzzle"
