@@ -301,18 +301,8 @@ export function CourseReader({
   );
   const readPercent = useReadingProgress(paneRef, currentLessonId);
   // Which of the lesson's sections is under the reading line, and which are read past — drives
-  // the outline's nested section level.
+  // the outline's nested section level in Read mode.
   const { activeSection, passedSections } = useSectionSpy(paneRef, currentLessonId);
-  // Jump the pane to a section chosen in the outline (and close the phone outline drawer so the
-  // destination isn't hidden behind it).
-  const selectSection = useCallback(
-    (id: string) => {
-      const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
-      scrollIntoViewSafe(target, reduceMotion, "start");
-      setOutlineOpen(false);
-    },
-    [reduceMotion],
-  );
   useEffect(() => {
     if (!progress || !currentLessonId) return;
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
@@ -358,6 +348,38 @@ export function CourseReader({
     if (progress && currentLessonId) markLesson(currentLessonId, "done");
     if (safeIndex < total - 1) goToLesson(safeIndex + 1);
   }, [progress, currentLessonId, markLesson, safeIndex, total, goToLesson]);
+  // Learn mode's section state for the outline: derived from the step position, not scroll —
+  // steps are contiguous per section, so a section is done once the position moves past it.
+  const learnSections = useMemo(() => {
+    const passed = new Set<string>();
+    for (let i = 0; i < stepIndex && i < steps.length; i += 1) passed.add(steps[i]!.sectionId);
+    const active = steps[Math.min(stepIndex, steps.length - 1)]?.sectionId ?? null;
+    if (active) passed.delete(active);
+    return { active, passed };
+  }, [steps, stepIndex]);
+  // Where each section's steps begin — the outline's jump targets in Learn mode.
+  const sectionFirstStep = useMemo(() => {
+    const first = new Map<string, number>();
+    steps.forEach((step, index) => {
+      if (!first.has(step.sectionId)) first.set(step.sectionId, index);
+    });
+    return first;
+  }, [steps]);
+  // Jump to a section chosen in the outline — a step jump in Learn mode, a scroll in Read —
+  // and close the phone outline drawer so the destination isn't hidden behind it.
+  const selectSection = useCallback(
+    (id: string) => {
+      if (mode === "learn") {
+        const target = sectionFirstStep.get(id);
+        if (target !== undefined) setStepIndex(target);
+      } else {
+        const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
+        scrollIntoViewSafe(target, reduceMotion, "start");
+      }
+      setOutlineOpen(false);
+    },
+    [mode, sectionFirstStep, reduceMotion],
+  );
   // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
   // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
   const marksByPhase = useMemo(() => {
@@ -453,14 +475,15 @@ export function CourseReader({
   // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
   // objective-less module (no-research path) hides the panel rather than inventing content.
   const tldr = deriveTldr(current.moduleObjectives);
-  // The focused lesson's sections for the outline's nested level (Field Guide).
+  // The focused lesson's sections for the outline's nested level — state from the scroll spy in
+  // Read mode, from the step position in Learn mode.
   const sectionEntries = buildSectionEntries({
     expects,
     selfCheck,
     assessmentCount: current.assessment.length,
     phases: PHASES,
-    activeSection,
-    passedSections,
+    activeSection: reading ? activeSection : learnSections.active,
+    passedSections: reading ? passedSections : learnSections.passed,
   });
   const regenerate = async () => {
     if (!onRegenerate) return;
@@ -734,6 +757,11 @@ export function CourseReader({
             ) : (
               <span />
             )}
+            {/* Lesson prev/next lives in the step surface's Continue in Learn mode — the footer
+                pair would be a second "Next lesson" saying the same thing. */}
+            {!reading ? (
+              <span />
+            ) : (
             <div className={styles.navButtons}>
               {safeIndex === 0 && onExitToOverview ? (
                 // The design's prev-label rule: from lesson 1 the way back is the Overview, not
@@ -777,6 +805,7 @@ export function CourseReader({
                 </Button>
               )}
             </div>
+            )}
           </footer>
           {error && (
             <p className={styles.regenError} role="alert">
