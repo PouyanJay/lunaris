@@ -512,12 +512,11 @@ describe("CourseReader — lesson body", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("apply")).toBeInTheDocument();
 
-    // Act — move off the first lesson; objectives no longer show.
+    // Act — move off the first lesson; the objectives PANEL no longer shows (its statements may
+    // still appear de-scaffolded in the Field Guide TL;DR, which takes the panel's place).
     fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
     expect(screen.queryByText(/learning objectives/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByText("Locate a target in a sorted array with binary search."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("apply")).not.toBeInTheDocument();
   });
 
   it("renders the lesson arc: what it expects, the module competency, and a self-check (P7.3)", () => {

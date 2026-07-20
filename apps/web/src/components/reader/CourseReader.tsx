@@ -27,6 +27,7 @@ import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
+import { deriveTldr } from "../../lib/lessonTldr";
 import { estimateReadingMinutes } from "../../lib/readingTime";
 import { useReadingProgress } from "../../hooks/useReadingProgress";
 import { useSectionSpy } from "../../hooks/useSectionSpy";
@@ -65,6 +66,9 @@ interface ReaderLesson {
   competency: string | null;
   label: string;
   objectives: Objective[];
+  /** The owning module's full objective list regardless of position — objectives render once (on
+   *  the module's first lesson, `objectives` above) but the TL;DR summarises them on EVERY lesson. */
+  moduleObjectives: Objective[];
   assessment: AssessmentItem[];
 }
 
@@ -91,6 +95,7 @@ function buildReaderModel(course: Course): ReaderModel {
       competency: flat.module.competency,
       label,
       objectives: flat.isFirstInModule ? flat.module.objectives : [],
+      moduleObjectives: flat.module.objectives,
       assessment: flat.isLastInModule ? flat.module.assessment.items : [],
     });
     if (flat.isFirstInModule) {
@@ -391,6 +396,9 @@ export function CourseReader({
   // the render guard and the list below.
   const expects = current.lesson.expects ?? [];
   const selfCheck = current.lesson.selfCheck ?? [];
+  // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
+  // objective-less module (no-research path) hides the panel rather than inventing content.
+  const tldr = deriveTldr(current.moduleObjectives);
   // The focused lesson's sections in reading order — the outline's nested level. Ids mirror the
   // pane's data-section attributes; state comes from the scroll-spy (current wins over done).
   const sectionEntries: LessonSectionEntry[] = [
@@ -540,6 +548,18 @@ export function CourseReader({
               )}
             </div>
           </header>
+
+          {/* The lesson in 30 seconds (Field Guide): the module's objectives de-scaffolded into
+              takeaway bullets, so the learner sizes up the lesson before committing to it. A
+              module's FIRST lesson opens with the full objectives panel instead — showing both
+              would say the same thing twice. */}
+          {current.objectives.length === 0 && tldr.length > 0 && (
+            <LessonScaffold
+              title="This lesson in 30 seconds"
+              cue="The takeaways, before the reading"
+              items={tldr}
+            />
+          )}
 
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
           {apiBaseUrl && (

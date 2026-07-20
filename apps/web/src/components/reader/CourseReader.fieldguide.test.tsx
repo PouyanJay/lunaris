@@ -128,6 +128,33 @@ describe("CourseReader — reading meta band", () => {
     });
   });
 
+  it("summarises later module lessons with the 30-second TL;DR, not the first", () => {
+    // Arrange — two lessons in the one module. The first lesson carries the full objectives
+    // panel, so it must NOT also show the TL;DR; the second gets the module-wide summary.
+    const course = makeCourse();
+    course.modules[0]!.lessons = [makeLesson(), makeLesson({ id: "m-binary_search-l1" })];
+    render(<CourseReader course={course} />);
+    expect(screen.queryByText("This lesson in 30 seconds")).not.toBeInTheDocument();
+
+    // Act — open the module's SECOND lesson.
+    fireEvent.click(screen.getByRole("button", { name: "Next lesson" }));
+
+    // Assert — the summary panel is present with the de-scaffolded objective.
+    expect(screen.getByText("This lesson in 30 seconds")).toBeInTheDocument();
+    expect(screen.getByText("Locate a target with binary search.")).toBeInTheDocument();
+  });
+
+  it("hides the TL;DR when the module has no objectives", () => {
+    // Arrange — makeModule defaults to zero objectives.
+    const course = makeCourse({ modules: [makeModule()] });
+
+    // Act
+    render(<CourseReader course={course} />);
+
+    // Assert
+    expect(screen.queryByText("This lesson in 30 seconds")).not.toBeInTheDocument();
+  });
+
   it("shows the remaining reading time once underway", async () => {
     // Arrange — a 3-minute lesson, half read → 2 minutes left (ceiling).
     const course = makeCourse({ modules: [makeModule({ lessons: [longLesson()] })] });
