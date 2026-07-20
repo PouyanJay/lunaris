@@ -204,10 +204,6 @@ export function CourseReader({
   );
   // Study-minutes heartbeat: an open, visible reader is "studying" (paused while backgrounded).
   useStudyHeartbeat(apiBaseUrl ?? "", true);
-  // The learner's activity snapshot (streak / event feed) — the Trail band's motivation source.
-  // Offline (no apiBaseUrl) the hook settles to error without fetching, so the band stays absent;
-  // reloaded on lesson completion so it reflects the just-earned event.
-  const { state: activity, reload: reloadActivity } = useActivity(apiBaseUrl ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
@@ -326,6 +322,10 @@ export function CourseReader({
     phases: PHASES,
     assessment: current?.assessment ?? [],
   });
+  // The learner's activity snapshot (streak / event feed) — the Trail band's motivation source.
+  // Fetched only in Learn mode (where the band shows) and online; Read mode / offline settle
+  // without a fetch. Reloaded on lesson completion so it reflects the just-earned event.
+  const { state: activity, reload: reloadActivity } = useActivity(apiBaseUrl ?? "", !reading);
   // Continue past the final step completes the lesson exactly like Read mode's Next/Finish —
   // and IS Read mode's Next/Finish (the footer buttons call it too).
   const completeLesson = useCallback(() => {
