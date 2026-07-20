@@ -79,6 +79,19 @@ describe("matchResourcesToChapters", () => {
     expect(byChapter.get("S2") ?? []).toEqual([]);
   });
 
+  it("matches on the chapter title when a chapter carries no key terms", () => {
+    // Arrange — a pre-Cinema-style chapter with an empty key-term list still matches on its title.
+    const chapters = [chapter("S1", "Binary search", [])];
+    const resources = [resource("Binary search visualised", "how binary search works")];
+
+    // Act
+    const { byChapter, unmatched } = matchResourcesToChapters(chapters, resources);
+
+    // Assert
+    expect(byChapter.get("S1")?.map((s) => s.resource.title)).toEqual(["Binary search visualised"]);
+    expect(unmatched).toEqual([]);
+  });
+
   it("orders a chapter's resources most-relevant first", () => {
     // Arrange — one resource fully covers the chapter's terms, one only partially.
     const chapters = [chapter("S1", "Fractal dimension", ["fractal", "dimension"])];

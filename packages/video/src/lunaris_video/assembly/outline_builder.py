@@ -43,11 +43,11 @@ def build_video_outline(contracts: SceneContracts, manifest: TimingManifest) -> 
     for span in walk_scene_timeline(contracts.scenes, manifest):
         chapters.append(
             OutlineChapter(
-                span.scene.id,
-                _chapter_title(span.scene),
-                span.start_s,
-                span.end_s,
-                _chapter_key_terms(span.scene),
+                id=span.scene.id,
+                title=_chapter_title(span.scene),
+                start_s=span.start_s,
+                end_s=span.end_s,
+                key_terms=_chapter_key_terms(span.scene),
             )
         )
         for beat_span in span.beats:

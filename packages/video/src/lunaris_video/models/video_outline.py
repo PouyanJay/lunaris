@@ -12,8 +12,9 @@ class OutlineChapter:
     start_s: float
     end_s: float
     # The scene's notable on-screen objects, surfaced as the chapter's key terms — the per-chapter
-    # signal the reader matches resources against and highlights in the transcript. Empty for a
-    # pre-Cinema scene contract that carried none.
+    # signal the reader matches resources against and highlights in the transcript. Empty only if
+    # every object was blank after cleaning (`objects` is otherwise non-empty by schema); a scene
+    # that fails to deserialize degrades the whole outline upstream.
     key_terms: tuple[str, ...] = ()
 
 

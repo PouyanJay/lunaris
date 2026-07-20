@@ -35,6 +35,17 @@ const CONSUMPTION_SEGMENTS: Segment<Consumption>[] = [
   { value: "read", label: "Read" },
 ];
 
+/** The lesson-level docks shown in Both: the key-takeaways grid and any resources that matched no
+ *  chapter. Each is omitted when empty. */
+function WatchDocks({ takeaways, unmatched }: { takeaways: string[]; unmatched: Resource[] }) {
+  return (
+    <>
+      {takeaways.length > 0 && <TakeawaysGrid takeaways={takeaways} />}
+      {unmatched.length > 0 && <LessonResources resources={unmatched} />}
+    </>
+  );
+}
+
 /** The Watch surface (Cinema fuller mode): the ready lesson video as the lesson's front door — the
  *  chaptered, transcript-synced player — with a Watch/Both/Read consumption control. `Both` (the
  *  default) docks the lesson's per-chapter resources, key takeaways, and any unmatched resources
@@ -67,6 +78,8 @@ export function WatchSurface({
       <div className={styles.modeRow}>
         <SegmentedControl
           segments={CONSUMPTION_SEGMENTS}
+          // `consumption` only ever rests at watch/both (Read hands off), but the control's value
+          // must be one of its segments — so map the never-resting `read` back to `both` here.
           value={consumption === "read" ? "both" : consumption}
           onChange={(next) => (next === "read" ? onExitToRead() : setConsumption(next))}
           label="How to take this lesson"
@@ -81,8 +94,7 @@ export function WatchSurface({
         label={label}
         chapterResources={showDocks ? byChapter : undefined}
       />
-      {showDocks && takeaways.length > 0 && <TakeawaysGrid takeaways={takeaways} />}
-      {showDocks && unmatched.length > 0 && <LessonResources resources={unmatched} />}
+      {showDocks && <WatchDocks takeaways={takeaways} unmatched={unmatched} />}
     </div>
   );
 }

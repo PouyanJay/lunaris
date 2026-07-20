@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
@@ -47,7 +47,6 @@ describe("CinemaPlayer", () => {
     const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
     const setCurrentTime = vi.fn();
     Object.defineProperty(video, "currentTime", { set: setCurrentTime, get: () => 0 });
-    video.play = vi.fn().mockResolvedValue(undefined);
 
     // Act
     fireEvent.click(screen.getByRole("button", { name: /self-similarity/i }));
@@ -113,9 +112,9 @@ describe("CinemaPlayer", () => {
     // Arrange / Act
     renderPlayer({ transcript: [] });
 
-    // Assert
+    // Assert — the rail is present; with no transcript there is no synced caption line.
     expect(screen.getByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
-    expect(screen.queryByText(/^transcript$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/a coastline has no single length/i)).not.toBeInTheDocument();
   });
 
   it("plays and pauses through the control-bar button", () => {
@@ -150,11 +149,44 @@ describe("CinemaPlayer", () => {
     fireEvent.loadedMetadata(video);
     const slider = screen.getByRole("slider", { name: /seek/i });
 
-    // Act / Assert — ArrowRight steps forward 5s; End jumps to the duration.
+    // Act / Assert — ArrowRight steps forward 5s and the slider's accessible state tracks it…
     fireEvent.keyDown(slider, { key: "ArrowRight" });
     expect(setCurrentTime).toHaveBeenCalledWith(5);
+    expect(slider).toHaveAttribute("aria-valuenow", "5");
+    expect(slider).toHaveAttribute("aria-valuetext", "0:05 of 2:38");
+
+    // …End jumps to the duration.
     fireEvent.keyDown(slider, { key: "End" });
     expect(setCurrentTime).toHaveBeenLastCalledWith(158);
+  });
+
+  it("seeks the video when the scrubber track is clicked", () => {
+    // Arrange — a known duration and track geometry (jsdom lays nothing out).
+    renderPlayer();
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    const setCurrentTime = vi.fn();
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      set: setCurrentTime,
+      get: () => 0,
+    });
+    Object.defineProperty(video, "duration", { configurable: true, get: () => 158 });
+    fireEvent.loadedMetadata(video);
+    const slider = screen.getByRole("slider", { name: /seek/i });
+    // jsdom lays nothing out, so the scrubber's geometry (read off event.currentTarget) is stubbed.
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ left: 0, width: 200 } as DOMRect);
+
+    // Act — click a quarter of the way along the 200px track. jsdom's PointerEvent drops clientX
+    // from its init, so set it on the native event directly.
+    const event = createEvent.pointerDown(slider);
+    Object.defineProperty(event, "clientX", { value: 50 });
+    fireEvent(slider, event);
+
+    // Assert — seeks to 25% of the duration.
+    expect(setCurrentTime).toHaveBeenCalledWith(158 * 0.25);
+    rectSpy.mockRestore();
   });
 
   it("shows the current chapter in the readout", () => {

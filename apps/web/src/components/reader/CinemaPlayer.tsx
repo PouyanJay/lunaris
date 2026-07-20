@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 
 import type { ScoredResource } from "../../lib/chapterResources";
+import { formatMediaDuration } from "../../lib/mediaDuration";
+import { highlightTerms } from "../../lib/transcriptHighlight";
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
 import { activeSpanIndex } from "../../lib/videoOutline";
-import { highlightTerms } from "../../lib/transcriptHighlight";
 import { ChapterResourceCard } from "./ChapterResourceCard";
 import styles from "./CinemaPlayer.module.css";
 
@@ -18,14 +19,6 @@ interface CinemaPlayerProps {
   /** Curated resources docked under each chapter (by chapter id), most-relevant first. Absent hides
    *  the per-chapter aids (e.g. Watch mode with docks off). */
   chapterResources?: Map<string, ScoredResource[]> | undefined;
-}
-
-/** `M:SS` for a timeline position — the video-timeline clock. */
-function clock(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds));
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
 function PlayGlyph() {
@@ -44,15 +37,161 @@ function PauseGlyph() {
   );
 }
 
-/** Arrow-key / scrubber-drag seek granularity. */
+/** Arrow-key seek granularity. */
 const SEEK_STEP_S = 5;
+
+/** The current spoken line overlaid on the video, with the chapter's key terms accented. Marked
+ *  aria-hidden — the captions `<track>` serves assistive tech, and a live-updating caption would
+ *  otherwise spam a screen reader on every cue. */
+function CaptionOverlay({ cue, keyTerms }: { cue: TranscriptCue; keyTerms: string[] }) {
+  return (
+    <p className={styles.caption} aria-hidden="true">
+      {highlightTerms(cue.text, keyTerms).map((segment, index) =>
+        segment.highlight ? (
+          <mark key={index} className={styles.captionTerm}>
+            {segment.text}
+          </mark>
+        ) : (
+          <span key={index}>{segment.text}</span>
+        ),
+      )}
+    </p>
+  );
+}
+
+interface TransportProps {
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  playedPercent: number;
+  chapters: VideoChapter[];
+  activeChapter: number;
+  currentChapter: VideoChapter | undefined;
+  onToggle: () => void;
+  onSeekPointer: (event: PointerEvent<HTMLDivElement>) => void;
+  onSeekKey: (event: KeyboardEvent<HTMLDivElement>) => void;
+}
+
+/** The transport row: play/pause, a chapter-tick scrubber (click + keyboard seek, `role="slider"`),
+ *  and a time + current-chapter readout. */
+function TransportControls({
+  isPlaying,
+  currentTime,
+  duration,
+  playedPercent,
+  chapters,
+  activeChapter,
+  currentChapter,
+  onToggle,
+  onSeekPointer,
+  onSeekKey,
+}: TransportProps) {
+  return (
+    <div className={styles.controls}>
+      <button
+        type="button"
+        className={styles.playButton}
+        onClick={onToggle}
+        aria-label={isPlaying ? "Pause" : "Play"}
+      >
+        {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
+      </button>
+
+      <div
+        className={styles.scrubber}
+        role="slider"
+        tabIndex={0}
+        aria-label="Seek"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        aria-valuenow={Math.round(currentTime)}
+        aria-valuetext={`${formatMediaDuration(currentTime)} of ${formatMediaDuration(duration)}`}
+        onPointerDown={onSeekPointer}
+        onKeyDown={onSeekKey}
+      >
+        <span className={styles.scrubberFill} style={{ width: `${playedPercent}%` }} />
+        {duration > 0 &&
+          chapters.map((chapter, index) =>
+            index === 0 ? null : (
+              <span
+                key={chapter.id}
+                className={styles.tick}
+                style={{ left: `${(chapter.startS / duration) * 100}%` }}
+                aria-hidden="true"
+              />
+            ),
+          )}
+      </div>
+
+      <span className={`mono ${styles.readout}`}>
+        {formatMediaDuration(currentTime)} / {formatMediaDuration(duration)}
+        {currentChapter ? ` · CH ${activeChapter + 1} — ${currentChapter.title.toUpperCase()}` : ""}
+      </span>
+    </div>
+  );
+}
+
+interface ChapterRailProps {
+  chapters: VideoChapter[];
+  activeChapter: number;
+  maxWatched: number;
+  chapterResources: Map<string, ScoredResource[]> | undefined;
+  onSeek: (seconds: number) => void;
+}
+
+/** The chapter rail: each chapter (watched ones struck through) with its docked resources. */
+function ChapterRail({
+  chapters,
+  activeChapter,
+  maxWatched,
+  chapterResources,
+  onSeek,
+}: ChapterRailProps) {
+  return (
+    <div className={styles.rail}>
+      <p className={styles.railHead}>Chapters</p>
+      <nav aria-label="Video chapters">
+        {chapters.map((chapter, index) => {
+          const resources = chapterResources?.get(chapter.id) ?? [];
+          // Passed its end and not the one playing now — the current chapter stays highlighted.
+          const watched = index !== activeChapter && maxWatched >= chapter.endS;
+          const className = [
+            styles.chapter,
+            index === activeChapter && styles.chapterActive,
+            watched && styles.chapterDone,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div key={chapter.id} className={styles.chapterGroup}>
+              <button
+                type="button"
+                className={className}
+                aria-current={index === activeChapter ? "true" : undefined}
+                onClick={() => onSeek(chapter.startS)}
+              >
+                <span className={styles.chapterTime}>{formatMediaDuration(chapter.startS)}</span>
+                <span>{chapter.title}</span>
+                {watched && <span className="sr-only"> (watched)</span>}
+              </button>
+              {resources.map((scored) => (
+                <ChapterResourceCard key={scored.resource.url} scored={scored} />
+              ))}
+            </div>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
 
 /** The Cinema player (cinematic upgrade): the generated lesson video with a purpose-built,
  *  keyboard-operable transport — a play/pause overlay, a chapter-tick scrubber that seeks on click
- *  and arrow keys, and a time + current-chapter readout — plus a chapter rail with per-chapter
- *  resources. Chapters and the current cue track playback via `timeupdate`. The captions `<track>`
- *  is kept for assistive tech even though native controls are replaced. A silent video (no
- *  transcript) shows the chapter rail alone. */
+ *  and arrow keys, and a time + current-chapter readout — plus an overlaid synced caption and a
+ *  chapter rail with per-chapter resources. Chapters and the current cue track playback via
+ *  `timeupdate`; watched chapters (this session) read as struck through. The captions `<track>` is
+ *  kept for assistive tech even though native controls are replaced. A silent video (no transcript)
+ *  shows no caption. */
 export function CinemaPlayer({
   videoUrl,
   posterUrl,
@@ -63,7 +202,6 @@ export function CinemaPlayer({
   chapterResources,
 }: CinemaPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -76,6 +214,7 @@ export function CinemaPlayer({
     setIsPlaying(false);
     setMaxWatched(0);
   }, [videoUrl]);
+
   const activeChapter = activeSpanIndex(chapters, currentTime);
   const activeCue = activeSpanIndex(transcript, currentTime);
   const playedPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
@@ -98,16 +237,15 @@ export function CinemaPlayer({
     else video.pause?.();
   };
 
-  const onScrubberPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const track = trackRef.current;
-    if (!track || duration <= 0) return;
-    const rect = track.getBoundingClientRect();
+  const onSeekPointer = (event: PointerEvent<HTMLDivElement>) => {
+    if (duration <= 0) return;
+    const rect = event.currentTarget.getBoundingClientRect();
     if (rect.width <= 0) return;
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
     seekTo(fraction * duration);
   };
 
-  const onScrubberKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const onSeekKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (duration <= 0) return;
     let next: number | null = null;
     if (event.key === "ArrowRight" || event.key === "ArrowUp") next = currentTime + SEEK_STEP_S;
@@ -162,98 +300,32 @@ export function CinemaPlayer({
               </span>
             </button>
           )}
-          {/* The current spoken line, synced over the video with the chapter's key terms accented.
-              Marked aria-hidden — the captions <track> serves assistive tech, and a live-updating
-              caption would otherwise spam a screen reader on every cue. */}
           {currentCue && (
-            <p className={styles.caption} aria-hidden="true">
-              {highlightTerms(currentCue.text, currentChapter?.keyTerms ?? []).map(
-                (segment, index) =>
-                  segment.highlight ? (
-                    <mark key={index} className={styles.captionTerm}>
-                      {segment.text}
-                    </mark>
-                  ) : (
-                    <span key={index}>{segment.text}</span>
-                  ),
-              )}
-            </p>
+            <CaptionOverlay cue={currentCue} keyTerms={currentChapter?.keyTerms ?? []} />
           )}
         </div>
 
-        <div className={styles.controls}>
-          <button
-            type="button"
-            className={styles.playButton}
-            onClick={togglePlay}
-            aria-label={isPlaying ? "Pause" : "Play"}
-          >
-            {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
-          </button>
-
-          <div
-            ref={trackRef}
-            className={styles.scrubber}
-            role="slider"
-            tabIndex={0}
-            aria-label="Seek"
-            aria-valuemin={0}
-            aria-valuemax={Math.round(duration)}
-            aria-valuenow={Math.round(currentTime)}
-            aria-valuetext={`${clock(currentTime)} of ${clock(duration)}`}
-            onPointerDown={onScrubberPointerDown}
-            onKeyDown={onScrubberKeyDown}
-          >
-            <span className={styles.scrubberFill} style={{ width: `${playedPercent}%` }} />
-            {duration > 0 &&
-              chapters.map((chapter, index) =>
-                index === 0 ? null : (
-                  <span
-                    key={chapter.id}
-                    className={styles.tick}
-                    style={{ left: `${(chapter.startS / duration) * 100}%` }}
-                    aria-hidden="true"
-                  />
-                ),
-              )}
-          </div>
-
-          <span className={`mono ${styles.readout}`}>
-            {clock(currentTime)} / {clock(duration)}
-            {currentChapter
-              ? ` · CH ${activeChapter + 1} — ${currentChapter.title.toUpperCase()}`
-              : ""}
-          </span>
-        </div>
+        <TransportControls
+          isPlaying={isPlaying}
+          currentTime={currentTime}
+          duration={duration}
+          playedPercent={playedPercent}
+          chapters={chapters}
+          activeChapter={activeChapter}
+          currentChapter={currentChapter}
+          onToggle={togglePlay}
+          onSeekPointer={onSeekPointer}
+          onSeekKey={onSeekKey}
+        />
       </div>
 
-      <div className={styles.rail}>
-        <p className={styles.railHead}>Chapters</p>
-        <nav aria-label="Video chapters">
-          {chapters.map((chapter, index) => {
-            const resources = chapterResources?.get(chapter.id) ?? [];
-            // Passed its end and not the one playing now — the current chapter stays highlighted.
-            const watched = index !== activeChapter && maxWatched >= chapter.endS;
-            return (
-              <div key={chapter.id} className={styles.chapterGroup}>
-                <button
-                  type="button"
-                  className={`${styles.chapter} ${index === activeChapter ? styles.chapterActive : ""} ${watched ? styles.chapterDone : ""}`.trim()}
-                  aria-current={index === activeChapter ? "true" : undefined}
-                  onClick={() => seekTo(chapter.startS)}
-                >
-                  <span className={styles.chapterTime}>{clock(chapter.startS)}</span>
-                  <span>{chapter.title}</span>
-                  {watched && <span className="sr-only"> (watched)</span>}
-                </button>
-                {resources.map((scored) => (
-                  <ChapterResourceCard key={scored.resource.url} scored={scored} />
-                ))}
-              </div>
-            );
-          })}
-        </nav>
-      </div>
+      <ChapterRail
+        chapters={chapters}
+        activeChapter={activeChapter}
+        maxWatched={maxWatched}
+        chapterResources={chapterResources}
+        onSeek={seekTo}
+      />
     </div>
   );
 }

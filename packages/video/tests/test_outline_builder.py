@@ -86,6 +86,18 @@ def test_chapters_carry_the_scenes_key_terms() -> None:
     assert outline.chapters[1].key_terms == ("koch",)
 
 
+def test_chapter_key_terms_are_cleaned_deduped_and_capped() -> None:
+    # Arrange — blanks, a whitespace duplicate, and more distinct terms than the cap.
+    contracts = _contracts()
+    contracts.scenes[0].objects = ["line", " line ", "", "a", "b", "c", "d", "e", "f", "g", "h"]
+
+    # Act
+    outline = build_video_outline(contracts, _timing(voiced=True))
+
+    # Assert — cleaned, deduped (order-preserving), capped at eight.
+    assert outline.chapters[0].key_terms == ("line", "a", "b", "c", "d", "e", "f", "g")
+
+
 def test_transcript_has_one_cue_per_spoken_beat_when_voiced() -> None:
     # Arrange / Act
     outline = build_video_outline(_contracts(), _timing(voiced=True))
