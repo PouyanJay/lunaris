@@ -25,12 +25,24 @@ const STATE_TEXT: Record<Exclude<LessonState, "up_next">, string> = {
   in_progress: "In progress",
 };
 
+/** One section of the focused lesson, nested under its outline entry (Field Guide): the arc's
+ *  bookends and phases with their live read state from the reader's scroll-spy. */
+export interface LessonSectionEntry {
+  id: string;
+  label: string;
+  state: "done" | "current" | "upcoming";
+}
+
 interface ReaderOutlineProps {
   groups: OutlineGroup[];
   activeIndex: number;
   onSelect: (index: number) => void;
   /** A lesson's progress state for its chip; absent (offline) every chip is the plain number. */
   stateFor?: ((lessonId: string) => LessonState) | undefined;
+  /** The focused lesson's sections, nested under its entry; absent hides the section level. */
+  sections?: LessonSectionEntry[] | undefined;
+  /** Jump the reading pane to a section (its `data-section` id). */
+  onSelectSection?: ((id: string) => void) | undefined;
   /** Extra classes for the outline root — the reader uses this to turn it into a drawer on phones. */
   className?: string | undefined;
 }
@@ -44,6 +56,8 @@ export function ReaderOutline({
   activeIndex,
   onSelect,
   stateFor,
+  sections,
+  onSelectSection,
   className,
 }: ReaderOutlineProps) {
   const outlineRef = useRef<HTMLElement>(null);
@@ -74,6 +88,31 @@ export function ReaderOutline({
                     <span className={styles.itemLabel}>{item.label}</span>
                     {state !== "up_next" && <span className="sr-only">{STATE_TEXT[state]}</span>}
                   </button>
+                  {/* The focused lesson unfolds its sections (Field Guide): where the learner is
+                      in the arc, what's read past (✓), and one-click jumps to each region. */}
+                  {active && onSelectSection && sections && sections.length > 0 && (
+                    <ul className={styles.sections} aria-label="Lesson sections">
+                      {sections.map((section) => (
+                        <li key={section.id}>
+                          <button
+                            type="button"
+                            className={`${styles.section} ${
+                              section.state === "current" ? styles.sectionCurrent : ""
+                            }`.trim()}
+                            data-state={section.state}
+                            aria-current={section.state === "current" ? "location" : undefined}
+                            onClick={() => onSelectSection(section.id)}
+                          >
+                            <span className={styles.sectionMark} aria-hidden="true">
+                              {section.state === "done" ? "✓" : ""}
+                            </span>
+                            <span className={styles.itemLabel}>{section.label}</span>
+                            {section.state === "done" && <span className="sr-only">Read</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}

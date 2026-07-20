@@ -1,14 +1,17 @@
 import "katex/dist/katex.min.css";
 
 import ReactMarkdown, { type Components } from "react-markdown";
+import type { PluggableList } from "unified";
 
 import { ArrayViz } from "./ArrayViz";
 import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
 import { ExamplePanel } from "./ExamplePanel";
 import { GlossaryTerm } from "./GlossaryTerm";
+import { GoDeeper } from "./GoDeeper";
 import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
+import { remarkAutoGlossary } from "./remarkAutoGlossary";
 import { StepItem } from "./StepItem";
 import { Stepper } from "./Stepper";
 import { WorkedExampleBlock } from "./WorkedExampleBlock";
@@ -36,6 +39,7 @@ const baseComponents = {
   // Custom elements lowered from directives / prose structure by the remark pipeline.
   callout: Callout,
   glossary: GlossaryTerm,
+  godeeper: GoDeeper,
   steps: Stepper,
   step: StepItem,
   arrayviz: ArrayViz,
@@ -48,15 +52,22 @@ interface MarkdownProps {
   children: string;
   /** Element overrides merged over the safe defaults (e.g. the cross-highlight block tagging). */
   components?: Components;
+  /** Course glossary (term → definition): indexed terms in plain prose become hoverable glossary
+   *  tooltips (first occurrence per render). Absent → prose renders untouched. */
+  glossary?: ReadonlyMap<string, string> | undefined;
   /** Extra class on the wrapper (e.g. to scope nothing — defaults to the tokened prose styling). */
   className?: string;
 }
 
-export function Markdown({ children, components, className }: MarkdownProps) {
+export function Markdown({ children, components, glossary, className }: MarkdownProps) {
+  const plugins: PluggableList =
+    glossary && glossary.size > 0
+      ? [...remarkPlugins, [remarkAutoGlossary, { index: glossary }]]
+      : remarkPlugins;
   return (
     <div className={`${styles.markdown} ${className ?? ""}`}>
       <ReactMarkdown
-        remarkPlugins={remarkPlugins}
+        remarkPlugins={plugins}
         rehypePlugins={rehypePlugins}
         components={{ ...baseComponents, ...components }}
       >

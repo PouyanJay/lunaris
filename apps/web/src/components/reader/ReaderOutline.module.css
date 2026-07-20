@@ -66,3 +66,57 @@
   /* Accent as a selection scalpel — the one sanctioned accent use. */
   box-shadow: inset 2px 0 0 var(--accent-500);
 }
+
+/* ── The focused lesson's section level (Field Guide) ─────────────────────── */
+
+.sections {
+  list-style: none;
+  margin: 1px 0 var(--space-1);
+  /* Indented past the lesson chip so sections read as the lesson's children. */
+  padding: 0 0 0 var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.section {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  /* Secondary, not muted: section entries are interactive text and must clear AA contrast.
+     State is carried by the ✓ mark / accent spine, never colour alone. */
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid transparent;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.section:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.sectionCurrent {
+  border-left-color: var(--accent-500);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.sectionMark {
+  flex: none;
+  width: 10px;
+  font-size: var(--text-xs);
+  color: var(--success);
+}

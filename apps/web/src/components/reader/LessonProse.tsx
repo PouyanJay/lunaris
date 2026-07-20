@@ -9,6 +9,8 @@ interface LessonProseProps {
   prose: string;
   /** Matched-claim sentence texts for this phase; the containing block is tagged as a cross-link. */
   marks: PhraseMark[];
+  /** Course glossary for auto-marking terms in this phase's prose (Field Guide). */
+  glossary?: ReadonlyMap<string, string> | undefined;
   activeClaimId: string | null;
   onSelectClaim: (id: string) => void;
 }
@@ -40,7 +42,13 @@ function nodeText(node: unknown): string {
  *
  *  The parsed Markdown is memoised and the active highlight is applied imperatively, so selecting a
  *  claim never re-parses the prose or remounts its (future) stateful children (video, collapsibles). */
-export function LessonProse({ prose, marks, activeClaimId, onSelectClaim }: LessonProseProps) {
+export function LessonProse({
+  prose,
+  marks,
+  glossary,
+  activeClaimId,
+  onSelectClaim,
+}: LessonProseProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const components = useMemo<Components>(() => {
@@ -75,8 +83,12 @@ export function LessonProse({ prose, marks, activeClaimId, onSelectClaim }: Less
 
   // Memoised so an activeClaimId change doesn't re-parse the Markdown or remount its children.
   const markdown = useMemo(
-    () => <Markdown components={components}>{prose}</Markdown>,
-    [components, prose],
+    () => (
+      <Markdown components={components} glossary={glossary}>
+        {prose}
+      </Markdown>
+    ),
+    [components, glossary, prose],
   );
 
   // Apply the active highlight imperatively (the DOM node persists, so cross-highlight state and any

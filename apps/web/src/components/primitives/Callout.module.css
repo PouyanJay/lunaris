@@ -16,10 +16,13 @@
   align-items: center;
   gap: var(--space-2);
   margin: 0;
-  font-size: var(--text-xs);
-  font-weight: 600;
+  /* The house eyebrow motif (Field Guide): callout labels read as mono micro-labels, so "KEY
+     TAKEAWAY" / "INSIGHT" carry the same typographic signature as every other data label. */
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--eyebrow-tracking);
   color: var(--spine, var(--text-secondary));
 }
 

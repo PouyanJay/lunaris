@@ -22,10 +22,17 @@ import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
+import { ReadingMeta } from "./ReadingMeta";
 import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
+import { buildGlossaryIndex } from "../../lib/glossaryIndex";
+import { deriveTldr } from "../../lib/lessonTldr";
+import { estimateReadingMinutes } from "../../lib/readingTime";
+import { useReadingProgress } from "../../hooks/useReadingProgress";
+import { useSectionSpy } from "../../hooks/useSectionSpy";
+import { buildSectionEntries } from "./readerSections";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
@@ -60,6 +67,9 @@ interface ReaderLesson {
   competency: string | null;
   label: string;
   objectives: Objective[];
+  /** The owning module's full objective list regardless of position — objectives render once (on
+   *  the module's first lesson, `objectives` above) but the TL;DR summarises them on EVERY lesson. */
+  moduleObjectives: Objective[];
   assessment: AssessmentItem[];
 }
 
@@ -86,6 +96,7 @@ function buildReaderModel(course: Course): ReaderModel {
       competency: flat.module.competency,
       label,
       objectives: flat.isFirstInModule ? flat.module.objectives : [],
+      moduleObjectives: flat.module.objectives,
       assessment: flat.isLastInModule ? flat.module.assessment.items : [],
     });
     if (flat.isFirstInModule) {
@@ -154,6 +165,9 @@ export function CourseReader({
     () => new Map(active.provenance.map((citation) => [citation.id, citation])),
     [active.provenance],
   );
+  // Course glossary (Field Guide): KC definitions from the graph + authored :term directives,
+  // auto-marked into every phase's prose. Memoised — the index is course-wide and stable.
+  const glossary = useMemo(() => buildGlossaryIndex(active), [active]);
   const [activeIndex, setActiveIndex] = useState(0);
   // A lesson navigation we've requested but whose URL hasn't come back around yet. The
   // canonicalise effect must stand down while one is in flight — its replace would otherwise
@@ -246,6 +260,26 @@ export function CourseReader({
   // First open of a lesson marks it in_progress — but never regresses a lesson already marked
   // (a revisited done lesson stays done). Waits for the snapshot so reloads don't re-mark.
   const currentLessonId = current?.lesson.id;
+  // Field Guide reading meta: the focused lesson's estimated minutes, and how far the pane has
+  // been scrolled through it (re-measured from the top on every lesson change).
+  const readingMinutes = useMemo(
+    () => (current ? estimateReadingMinutes(current.lesson) : 1),
+    [current],
+  );
+  const readPercent = useReadingProgress(paneRef, currentLessonId);
+  // Which of the lesson's sections is under the reading line, and which are read past — drives
+  // the outline's nested section level.
+  const { activeSection, passedSections } = useSectionSpy(paneRef, currentLessonId);
+  // Jump the pane to a section chosen in the outline (and close the phone outline drawer so the
+  // destination isn't hidden behind it).
+  const selectSection = useCallback(
+    (id: string) => {
+      const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
+      scrollIntoViewSafe(target, reduceMotion, "start");
+      setOutlineOpen(false);
+    },
+    [reduceMotion],
+  );
   useEffect(() => {
     if (!progress || !currentLessonId) return;
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
@@ -366,6 +400,18 @@ export function CourseReader({
   // the render guard and the list below.
   const expects = current.lesson.expects ?? [];
   const selfCheck = current.lesson.selfCheck ?? [];
+  // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
+  // objective-less module (no-research path) hides the panel rather than inventing content.
+  const tldr = deriveTldr(current.moduleObjectives);
+  // The focused lesson's sections for the outline's nested level (Field Guide).
+  const sectionEntries = buildSectionEntries({
+    expects,
+    selfCheck,
+    assessmentCount: current.assessment.length,
+    phases: PHASES,
+    activeSection,
+    passedSections,
+  });
   const regenerate = async () => {
     if (!onRegenerate) return;
     setPending(true);
@@ -390,6 +436,8 @@ export function CourseReader({
         activeIndex={safeIndex}
         onSelect={selectLesson}
         stateFor={progress ? (lessonId) => lessonStateFor(progress, lessonId) : undefined}
+        sections={sectionEntries}
+        onSelectSection={selectSection}
         className={`${styles.outlineDrawer} ${outlineOpen ? styles.outlineDrawerOpen : ""}`.trim()}
       />
       <div
@@ -433,6 +481,9 @@ export function CourseReader({
           {safeIndex === 0 && course.buildCapabilities && (
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
+          {/* Field Guide reading-meta band: how big this lesson is and how far through it the
+              learner has scrolled. */}
+          <ReadingMeta minutes={readingMinutes} percent={readPercent} />
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
@@ -493,6 +544,18 @@ export function CourseReader({
             </div>
           </header>
 
+          {/* The lesson in 30 seconds (Field Guide): the module's objectives de-scaffolded into
+              takeaway bullets, so the learner sizes up the lesson before committing to it. A
+              module's FIRST lesson opens with the full objectives panel instead — showing both
+              would say the same thing twice. */}
+          {current.objectives.length === 0 && tldr.length > 0 && (
+            <LessonScaffold
+              title="This lesson in 30 seconds"
+              cue="The takeaways, before the reading"
+              items={tldr}
+            />
+          )}
+
           {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. */}
           {apiBaseUrl && (
             <LessonVideoHero
@@ -527,11 +590,13 @@ export function CourseReader({
           {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
               omitted for courses built before P7.3 (empty expects). */}
           {expects.length > 0 && (
-            <LessonScaffold
-              title="What this lesson expects"
-              cue="What to be comfortable with before you start"
-              items={expects}
-            />
+            <div data-section="expects" className={styles.sectionAnchor}>
+              <LessonScaffold
+                title="What this lesson expects"
+                cue="What to be comfortable with before you start"
+                items={expects}
+              />
+            </div>
           )}
 
           {PHASES.map(({ key, label, cue }) => {
@@ -541,9 +606,10 @@ export function CourseReader({
             return (
               <section
                 key={key}
-                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""}`}
+                className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
                 aria-label={label}
                 data-phase={key}
+                data-section={key}
                 data-active={phaseHighlighted ? "true" : undefined}
               >
                 <div className={styles.phaseHead}>
@@ -553,6 +619,7 @@ export function CourseReader({
                 <LessonProse
                   prose={segment.prose}
                   marks={marksByPhase.get(key) ?? []}
+                  glossary={glossary}
                   activeClaimId={activeClaimId}
                   onSelectClaim={selectClaim}
                 />
@@ -571,14 +638,20 @@ export function CourseReader({
 
           {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
           {selfCheck.length > 0 && (
-            <LessonScaffold
-              title="Self-check"
-              cue="Confirm you’ve got it before moving on"
-              items={selfCheck}
-            />
+            <div data-section="selfCheck" className={styles.sectionAnchor}>
+              <LessonScaffold
+                title="Self-check"
+                cue="Confirm you’ve got it before moving on"
+                items={selfCheck}
+              />
+            </div>
           )}
 
-          {current.assessment.length > 0 && <LessonAssessment items={current.assessment} />}
+          {current.assessment.length > 0 && (
+            <div data-section="assessment" className={styles.sectionAnchor}>
+              <LessonAssessment items={current.assessment} />
+            </div>
+          )}
 
           <footer className={styles.nav}>
             {onRegenerate ? (

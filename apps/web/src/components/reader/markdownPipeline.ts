@@ -47,12 +47,25 @@ const GLOSSARY_DIRECTIVES = new Set(["term", "def"]);
 
 const LEAD_IN_PATTERN = /^(note|tip|insight|warning|example|key takeaway):\s+/i;
 
+interface DirectiveChild {
+  type: string;
+  value?: string;
+  children?: DirectiveChild[];
+  data?: Record<string, unknown>;
+}
+
 interface DirectiveNode {
   type: string;
   name?: string;
   attributes?: Record<string, string | null | undefined> | null;
-  children?: Array<{ type: string; value?: string; data?: Record<string, unknown> }>;
+  children?: DirectiveChild[];
   data?: Record<string, unknown>;
+}
+
+/** The plain text of a directive child tree (a `:::deeper[label]`'s label paragraph). */
+function directiveText(child: DirectiveChild): string {
+  if (typeof child.value === "string") return child.value;
+  return (child.children ?? []).map(directiveText).join("");
 }
 
 /** Lower a directive node onto a hast element name + properties so react-markdown can map it to a
@@ -72,6 +85,18 @@ function lowerDirective(node: DirectiveNode): void {
   if (node.type === "containerDirective" && node.name && CALLOUT_DIRECTIVES.has(node.name)) {
     data.hName = "callout";
     data.hProperties = { variant: node.name };
+    return;
+  }
+
+  // Depth fold (Field Guide): `:::deeper[label]` collapses rigor off the main reading path. The
+  // label paragraph becomes an attribute (the GoDeeper component owns the summary), not body text.
+  if (node.type === "containerDirective" && node.name === "deeper") {
+    data.hName = "godeeper";
+    const label = node.children?.find((child) => child.data?.directiveLabel);
+    data.hProperties = label ? { label: directiveText(label) } : {};
+    if (label && node.children) {
+      node.children = node.children.filter((child) => child !== label);
+    }
     return;
   }
 
@@ -128,6 +153,7 @@ const schema: Schema = {
     ...(defaultSchema.tagNames ?? []),
     "callout",
     "glossary",
+    "godeeper",
     "steps",
     "step",
     "arrayviz",
@@ -140,6 +166,7 @@ const schema: Schema = {
     ...defaultSchema.attributes,
     callout: ["variant"],
     glossary: ["definition"],
+    godeeper: ["label"],
     step: ["number", "heading"],
     arrayviz: ["values"],
     keyword: ["category"],
