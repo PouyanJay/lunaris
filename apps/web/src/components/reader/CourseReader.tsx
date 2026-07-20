@@ -22,6 +22,7 @@ import { LessonProse } from "./LessonProse";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
+import { ReadingMeta } from "./ReadingMeta";
 import { ScopeBand } from "./ScopeBand";
 import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
@@ -433,6 +434,9 @@ export function CourseReader({
           {safeIndex === 0 && course.buildCapabilities && (
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
+          {/* Field Guide reading-meta band (walking skeleton): stub values until the reading-time
+              derivation and scroll tracking land. */}
+          <ReadingMeta minutes={1} percent={0} />
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
