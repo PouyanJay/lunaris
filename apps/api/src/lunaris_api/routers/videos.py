@@ -64,10 +64,32 @@ async def caller_video_config(owner_id: CurrentUserIdDep, store: UserConfigStore
 VideoConfigDep = Annotated[VideoConfig, Depends(caller_video_config)]
 
 
+class VideoChapterView(CourseModel):
+    """One chapter of a ready video (Cinema): a scene surfaced as a navigable chapter with its
+    span on the concatenated timeline. ``start_s``/``end_s`` come from the timing manifest; the
+    title is the scene's authored title when present, else a derived label."""
+
+    id: str
+    title: str
+    start_s: float
+    end_s: float
+
+
+class TranscriptCueView(CourseModel):
+    """One transcript cue of a ready video (Cinema): a spoken beat with its timed span, so the web
+    can render a synced, click-to-seek transcript. Empty for a silent (un-narrated) video."""
+
+    start_s: float
+    end_s: float
+    text: str
+
+
 class VideoJobView(CourseModel):
     """The wire shape of one video job: the row itself, playback URLs, a captions URL (narrated
-    videos only), the grounding provenance once it is ready, and whether the lesson it was built
-    from has since been revised (``stale`` — the reader's "outdated" badge, V6-T3)."""
+    videos only), the grounding provenance once it is ready, whether the lesson it was built
+    from has since been revised (``stale`` — the reader's "outdated" badge, V6-T3), and — once
+    ready — the Cinema outline: navigable ``chapters`` and a timed ``transcript`` derived from the
+    video's scene contracts + timing manifest (empty on a job that isn't ready)."""
 
     job: VideoJob
     video_url: str | None = None
@@ -75,6 +97,8 @@ class VideoJobView(CourseModel):
     captions_url: str | None = None
     provenance: VideoProvenance | None = None
     stale: bool = False
+    chapters: list[VideoChapterView] = []
+    transcript: list[TranscriptCueView] = []
 
 
 class CourseVideoStatus(CourseModel):
