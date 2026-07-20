@@ -15,7 +15,7 @@ import { SegmentedControl, type Segment } from "../primitives/SegmentedControl";
 import { LearnMode } from "./LearnMode";
 import { TrailBand } from "./TrailBand";
 import { WatchSurface } from "./WatchSurface";
-import { useLearnMode, type ReaderMode } from "./useLearnMode";
+import { deriveEffectiveMode, useLearnMode, type ReaderMode } from "./useLearnMode";
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
@@ -350,9 +350,7 @@ export function CourseReader({
   // does have one; an explicit Learn/Read choice always wins.
   const watchAvailable =
     lessonVideo.state.phase === "ready" && lessonVideo.state.chapters.length > 0;
-  const wantsWatch = preference === "watch" || preference === null;
-  const effectiveMode: ReaderMode =
-    preference === "read" ? "read" : wantsWatch && watchAvailable ? "watch" : "learn";
+  const effectiveMode = deriveEffectiveMode(preference, watchAvailable);
   const reading = effectiveMode === "read";
   // The mode toggle offers Watch only where a chaptered video exists (Cinema).
   const modeSegments: Segment<ReaderMode>[] = [

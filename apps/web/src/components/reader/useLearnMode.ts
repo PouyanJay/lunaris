@@ -28,6 +28,20 @@ function storedPreference(): ReaderMode | null {
   }
 }
 
+/** The mode actually shown, resolved from the learner's `preference` and whether the focused lesson
+ *  has a ready chaptered video (`watchAvailable`). The front-door default: no explicit choice opens
+ *  in Watch when such a video exists (else Learn); an explicit Read or Learn always wins; a stored
+ *  `watch` clamps to Learn where no video exists — the preference itself is left untouched, so Watch
+ *  returns on the next lesson that has one. */
+export function deriveEffectiveMode(
+  preference: ReaderMode | null,
+  watchAvailable: boolean,
+): ReaderMode {
+  if (preference === "read") return "read";
+  const wantsWatch = preference === "watch" || preference === null;
+  return wantsWatch && watchAvailable ? "watch" : "learn";
+}
+
 interface UseLearnModeInput {
   /** The focused lesson (null before the reader has one). */
   lesson: Lesson | null;

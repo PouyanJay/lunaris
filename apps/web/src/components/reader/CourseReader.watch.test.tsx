@@ -40,6 +40,16 @@ function chapteredVideoView() {
   };
 }
 
+/** A ready but un-narrated video: chapters navigate, but there is no transcript. */
+function silentVideoView() {
+  return { ...chapteredVideoView(), transcript: [] };
+}
+
+/** A ready video rendered before Cinema shipped: no chapter outline at all. */
+function preCinemaVideoView() {
+  return { ...chapteredVideoView(), chapters: [], transcript: [] };
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -190,5 +200,45 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(learn).toBeChecked();
     expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
     expect(localStorage.getItem(READER_MODE_KEY)).toBe("watch");
+  });
+
+  it("a silent video shows chapters + docks but no transcript", async () => {
+    // Arrange — a ready, un-narrated video (front-door → Watch).
+    vi.stubGlobal("fetch", videoFetch(silentVideoView()));
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+
+    // Assert — chapters navigate and the docks render, but the transcript region is absent.
+    expect(await screen.findByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /key takeaways/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /resources/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^transcript$/i)).not.toBeInTheDocument();
+  });
+
+  it("a pre-Cinema video (no chapters) offers no Watch; Read keeps the plain player", async () => {
+    // Arrange — explicit Read; a ready video that predates Cinema (no chapter outline).
+    localStorage.setItem(READER_MODE_KEY, "read");
+    vi.stubGlobal("fetch", videoFetch(preCinemaVideoView()));
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+
+    // Assert — the plain player resolves in Read; no Watch mode and no duplicate cue.
+    expect(await screen.findByRole("button", { name: /play lesson video/i })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /watch this lesson/i })).not.toBeInTheDocument();
+  });
+
+  it("offers no Watch offline (no apiBaseUrl), even with a lesson video", async () => {
+    // Arrange — an offline reader never reaches the video service, so Watch can't light up.
+    vi.stubGlobal("fetch", videoFetch());
+
+    // Act
+    render(<CourseReader course={courseWithVideo()} />);
+    await screen.findByRole("radio", { name: /learn/i });
+
+    // Assert
+    expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
   });
 });

@@ -35,23 +35,15 @@
   scroll-margin-top: var(--space-6);
 }
 
-/* Read mode's cue into Watch when a chaptered video is ready — a hairline row, same grammar as the
-   video hero's idle affordance, keeping the video one click away without duplicating the player. */
+/* Read mode's cue into Watch when a chaptered video is ready — the video hero's idle affordance
+   grammar (reused via composes), keeping the video one click away without duplicating the player. */
 .watchCta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
+  composes: idle from "./LessonVideoHero.module.css";
   margin-bottom: var(--space-6);
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-subtle);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
 }
 
 .watchCtaHint {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
+  composes: idleHint from "./LessonVideoHero.module.css";
 }
 
 .lessonHead {
