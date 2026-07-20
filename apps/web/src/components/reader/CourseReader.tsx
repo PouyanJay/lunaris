@@ -205,7 +205,8 @@ export function CourseReader({
   // Study-minutes heartbeat: an open, visible reader is "studying" (paused while backgrounded).
   useStudyHeartbeat(apiBaseUrl ?? "", true);
   // The learner's activity snapshot (streak / event feed) — the Trail band's motivation source.
-  // Offline (no apiBaseUrl) keys an empty origin so the fetch self-skips; reloaded on completion.
+  // Offline (no apiBaseUrl) the hook settles to error without fetching, so the band stays absent;
+  // reloaded on lesson completion so it reflects the just-earned event.
   const { state: activity, reload: reloadActivity } = useActivity(apiBaseUrl ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

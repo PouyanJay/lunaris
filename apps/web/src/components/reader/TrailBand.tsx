@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import type { ActivityState } from "../../hooks/useActivity";
 import { deriveTodayXp } from "../../lib/trailXp";
@@ -11,6 +11,27 @@ interface TrailBandProps {
   lessonTotal: number;
   /** Now, for the today-XP window; injectable for deterministic tests. */
   now?: Date;
+}
+
+/** One labelled mono metric of the band (uppercase label + tabular value), with room for an
+ *  adornment (the streak dot, the XP meter). */
+function Metric({
+  label,
+  value,
+  variant,
+  children,
+}: {
+  label: string;
+  value: ReactNode;
+  variant?: "streak" | "xp";
+  children?: ReactNode;
+}) {
+  return (
+    <span className={`${styles.metric} ${variant ? styles[variant] : ""}`.trim()}>
+      {label} <span className={styles.value}>{value}</span>
+      {children}
+    </span>
+  );
 }
 
 /** The Trail motivation band (Focus Flow phase 4): the stakes of learning, made visible while you
@@ -31,25 +52,19 @@ export function TrailBand({ activity, lessonNumber, lessonTotal, now }: TrailBan
   const { currentStreak } = activity.view.stats;
   const { earned, goal } = deriveTodayXp(activity.view.feed, now ?? new Date());
   const percent = Math.min(100, goal > 0 ? Math.round((earned / goal) * 100) : 0);
-  const reached = earned >= goal;
+  const isGoalReached = earned >= goal;
 
   return (
     <div className={styles.band} role="group" aria-label="Your progress">
-      <span className={`${styles.metric} ${styles.streak}`}>
-        Streak
-        <span className={styles.value}>
-          {currentStreak} {currentStreak === 1 ? "day" : "days"}
-        </span>
+      <Metric
+        label="Streak"
+        variant="streak"
+        value={`${currentStreak} ${currentStreak === 1 ? "day" : "days"}`}
+      >
         {currentStreak > 0 && <span className={styles.streakDot} aria-hidden="true" />}
-      </span>
+      </Metric>
 
-      <span className={`${styles.metric} ${styles.xp}`}>
-        <span>
-          Today{" "}
-          <span className={styles.value}>
-            {earned} / {goal} XP
-          </span>
-        </span>
+      <Metric label="Today" variant="xp" value={`${earned} / ${goal} XP`}>
         <span
           className={styles.meter}
           role="progressbar"
@@ -59,16 +74,11 @@ export function TrailBand({ activity, lessonNumber, lessonTotal, now }: TrailBan
           aria-valuenow={Math.min(earned, goal)}
           style={{ "--xp-fill": `${percent}%` } as CSSProperties}
         >
-          <span className={styles.meterFill} data-reached={reached || undefined} />
+          <span className={styles.meterFill} data-reached={isGoalReached || undefined} />
         </span>
-      </span>
+      </Metric>
 
-      <span className={styles.metric}>
-        Lesson{" "}
-        <span className={styles.value}>
-          {lessonNumber} of {lessonTotal}
-        </span>
-      </span>
+      <Metric label="Lesson" value={`${lessonNumber} of ${lessonTotal}`} />
     </div>
   );
 }

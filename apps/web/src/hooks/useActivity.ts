@@ -25,6 +25,12 @@ export function useActivity(apiBaseUrl: string): UseActivityResult {
   const controllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(() => {
+    // No origin to read from (offline / no key) — settle without a wasted relative fetch. Consumers
+    // treat a non-ready snapshot as "no activity" (streak 0, the Trail band absent).
+    if (!apiBaseUrl) {
+      setState({ status: "error", message: "Activity is unavailable offline." });
+      return;
+    }
     controllerRef.current?.abort();
     const controller = new AbortController();
     controllerRef.current = controller;

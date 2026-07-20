@@ -22,9 +22,12 @@ const NOW = new Date("2026-07-20T18:00:00");
 
 describe("TrailBand", () => {
   it("renders nothing on error", () => {
+    // Arrange / Act
     const { container } = render(
       <TrailBand activity={{ status: "error", message: "x" }} lessonNumber={1} lessonTotal={5} />,
     );
+
+    // Assert
     expect(container).toBeEmptyDOMElement();
   });
 

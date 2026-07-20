@@ -8,16 +8,11 @@
 }
 
 .metric {
+  /* One mono-metric treatment across the reader — shared with the Read mode's meta band. */
+  composes: metric from "./ReadingMeta.module.css";
   display: inline-flex;
   align-items: baseline;
   gap: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--eyebrow-size);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  /* Secondary, not muted: live metrics the learner reads (AA). */
-  color: var(--text-secondary);
-  white-space: nowrap;
 }
 
 .value {

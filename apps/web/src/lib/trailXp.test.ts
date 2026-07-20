@@ -47,6 +47,7 @@ describe("deriveTodayXp", () => {
   });
 
   it("carries the daily goal", () => {
+    // Arrange / Act / Assert
     expect(deriveTodayXp([], NOW).goal).toBe(XP_DAILY_GOAL);
   });
 });

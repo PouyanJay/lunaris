@@ -1,17 +1,45 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeCourse, makeLesson, routedFetch } from "../../test/fixtures";
 import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
-/** Today's ISO timestamp, so feed events land in the current local day for the XP window. */
+/** A frozen "now", so today-XP windowing is deterministic regardless of when the suite runs. */
+const NOW = new Date("2026-07-20T18:00:00");
+/** A timestamp on the frozen day, for feed events that must count toward "today". */
 function todayAt(hour: number): string {
-  const d = new Date();
+  const d = new Date(NOW);
   d.setHours(hour, 0, 0, 0);
   return d.toISOString();
 }
 
+function activityView(overrides: Record<string, unknown> = {}) {
+  return {
+    stats: { currentStreak: 6, longestStreak: 9, minutesThisWeek: 40, conceptsThisWeek: 3 },
+    heat: [],
+    week: [],
+    feed: [],
+    ...overrides,
+  };
+}
+
+/** routedFetch with a well-formed progress snapshot, then override just the /api/activity route. */
+function trailFetch(activityRoute: (input: unknown) => Promise<unknown>) {
+  const base = routedFetch({ progress: { courseId: "course-test", objectives: [], lessons: [] } });
+  return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    /\/api\/activity(\?|$)/.test(String(input))
+      ? activityRoute(input)
+      : base(input as never, init as never),
+  );
+}
+
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(NOW);
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
 });
@@ -19,15 +47,8 @@ afterEach(() => {
 /** Trail (lesson-experience redesign phase 4): the motivation band. */
 describe("CourseReader — Trail motivation band", () => {
   it("shows the streak and lesson position in Learn mode with a reachable API", async () => {
-    // Arrange — a reachable activity snapshot with a live streak.
-    const fetchMock = routedFetch({
-      activity: {
-        stats: { currentStreak: 6, longestStreak: 9, minutesThisWeek: 40, conceptsThisWeek: 3 },
-        heat: [],
-        week: [],
-        feed: [],
-      },
-    });
+    // Arrange
+    const fetchMock = routedFetch({ activity: activityView() });
     vi.stubGlobal("fetch", fetchMock);
 
     // Act
@@ -42,10 +63,7 @@ describe("CourseReader — Trail motivation band", () => {
   it("derives today's XP toward the goal from the real event feed", async () => {
     // Arrange — one completed lesson (10) + one mastered concept (5) today → 15 / 30.
     const fetchMock = routedFetch({
-      activity: {
-        stats: { currentStreak: 2, longestStreak: 4, minutesThisWeek: 12, conceptsThisWeek: 1 },
-        heat: [],
-        week: [],
+      activity: activityView({
         feed: [
           { eventType: "completed", courseId: "course-test", occurredAt: todayAt(9) },
           {
@@ -55,7 +73,7 @@ describe("CourseReader — Trail motivation band", () => {
             occurredAt: todayAt(10),
           },
         ],
-      },
+      }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -73,12 +91,9 @@ describe("CourseReader — Trail motivation band", () => {
     // Arrange — two lessons; count the activity fetches.
     const fetchMock = routedFetch({
       progress: { courseId: "course-test", objectives: [], lessons: [] },
-      activity: {
+      activity: activityView({
         stats: { currentStreak: 1, longestStreak: 1, minutesThisWeek: 5, conceptsThisWeek: 0 },
-        heat: [],
-        week: [],
-        feed: [],
-      },
+      }),
     });
     vi.stubGlobal("fetch", fetchMock);
     const course = makeCourse();
@@ -101,39 +116,26 @@ describe("CourseReader — Trail motivation band", () => {
     });
   });
 
-  it("shows no band offline (no apiBaseUrl)", () => {
-    // Arrange / Act — Learn mode, but no API to read activity from.
-    render(<CourseReader course={makeCourse()} />);
-
-    // Assert
-    expect(screen.queryByRole("group", { name: /your progress/i })).not.toBeInTheDocument();
-  });
-
-  it("shows a skeleton band while activity is loading", () => {
-    // Arrange — a fetch that never resolves keeps activity in the loading state.
-    const fetchMock = routedFetch({ activity: { stats: {}, heat: [], week: [], feed: [] } });
-    fetchMock.mockImplementation((input: Parameters<typeof fetch>[0]) => {
-      if (/\/api\/activity(\?|$)/.test(String(input))) return new Promise(() => {});
-      return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
-    });
+  it("shows a skeleton band while activity is loading", async () => {
+    // Arrange — the activity route never settles; other routes resolve normally.
+    const fetchMock = trailFetch(() => new Promise(() => {}));
     vi.stubGlobal("fetch", fetchMock);
 
     // Act
     render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
 
     // Assert — the band is present and marked busy, with no metrics yet.
+    await waitFor(() => {
+      expect(screen.getByText(/step 1 of/i)).toBeInTheDocument();
+    });
     const band = screen.getByRole("group", { name: /your progress/i });
     expect(band).toHaveAttribute("aria-busy", "true");
     expect(band).not.toHaveTextContent(/streak/i);
   });
 
   it("hides the band when the activity load errors", async () => {
-    // Arrange — a rejected activity fetch.
-    const fetchMock = routedFetch({ activity: { stats: {}, heat: [], week: [], feed: [] } });
-    fetchMock.mockImplementation((input: Parameters<typeof fetch>[0]) => {
-      if (/\/api\/activity(\?|$)/.test(String(input))) return Promise.reject(new Error("down"));
-      return Promise.resolve({ ok: true, status: 204, json: async () => ({}) });
-    });
+    // Arrange — the activity route rejects; other routes resolve normally.
+    const fetchMock = trailFetch(() => Promise.reject(new Error("down")));
     vi.stubGlobal("fetch", fetchMock);
 
     // Act
@@ -146,17 +148,21 @@ describe("CourseReader — Trail motivation band", () => {
     expect(screen.queryByRole("group", { name: /your progress/i })).not.toBeInTheDocument();
   });
 
+  it("shows no band offline (no apiBaseUrl)", async () => {
+    // Arrange / Act — Learn mode, but no API: useActivity settles to error without fetching.
+    render(<CourseReader course={makeCourse()} />);
+
+    // Assert
+    await waitFor(() => {
+      expect(screen.getByText(/step 1 of/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("group", { name: /your progress/i })).not.toBeInTheDocument();
+  });
+
   it("shows no band in Read mode", async () => {
     // Arrange — pin Read; activity is reachable but the band is a Learn-mode layer.
     localStorage.setItem(READER_MODE_KEY, "read");
-    const fetchMock = routedFetch({
-      activity: {
-        stats: { currentStreak: 6, longestStreak: 9, minutesThisWeek: 40, conceptsThisWeek: 3 },
-        heat: [],
-        week: [],
-        feed: [],
-      },
-    });
+    const fetchMock = routedFetch({ activity: activityView() });
     vi.stubGlobal("fetch", fetchMock);
 
     // Act

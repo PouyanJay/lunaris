@@ -24,7 +24,7 @@ export interface TrailXp {
 }
 
 /** Whether two instants fall on the same local calendar day. */
-function sameLocalDay(a: Date, b: Date): boolean {
+function isSameLocalDay(a: Date, b: Date): boolean {
   return (
     a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
@@ -38,7 +38,7 @@ function sameLocalDay(a: Date, b: Date): boolean {
 export function deriveTodayXp(feed: ActivityFeedItem[], now: Date): TrailXp {
   const earned = feed.reduce((sum, item) => {
     const occurred = new Date(item.occurredAt);
-    if (Number.isNaN(occurred.getTime()) || !sameLocalDay(occurred, now)) return sum;
+    if (Number.isNaN(occurred.getTime()) || !isSameLocalDay(occurred, now)) return sum;
     return sum + XP_PER_EVENT[item.eventType];
   }, 0);
   return { earned, goal: XP_DAILY_GOAL };
