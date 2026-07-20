@@ -23,14 +23,85 @@ interface ChallengeCardProps {
 }
 
 /** A word from the model answer the learner echoed — surfaced as SOFT assistance, never as the
- *  grade (AD1). Only fires on distinctive tokens (≥3 chars, alphanumeric) to avoid matching "the". */
-function echoedTerm(attempt: string, answer: string): string | null {
-  const haystack = attempt.toLowerCase();
-  const terms = answer
+ *  grade (AD1). Whole-word match on distinctive tokens (≥3 chars) so "log" doesn't fire on
+ *  "catalog". */
+function findEchoedTerm(attempt: string, answer: string): string | null {
+  const attemptWords = new Set(
+    attempt
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean),
+  );
+  const answerTerms = answer
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((term) => term.length >= 3);
-  return terms.find((term) => haystack.includes(term)) ?? null;
+  return answerTerms.find((term) => attemptWords.has(term)) ?? null;
+}
+
+/** The explanation into the gap: the model answer, its pass criterion, and the soft echo hint. */
+function ChallengeReveal({
+  answer,
+  criterion,
+  hint,
+  glossary,
+}: {
+  answer?: string | null;
+  criterion?: string;
+  hint: string | null;
+  glossary?: ReadonlyMap<string, string> | undefined;
+}) {
+  return (
+    <div className={styles.reveal} role="region" aria-label="The answer" aria-live="polite">
+      <p className={styles.revealHead}>The answer</p>
+      {answer && (
+        <div className={styles.answerText}>
+          <Markdown glossary={glossary}>{answer}</Markdown>
+        </div>
+      )}
+      {criterion && (
+        <p className={styles.criterion}>
+          <span className={styles.criterionLabel}>Passes when</span> {criterion}
+        </p>
+      )}
+      {hint && (
+        <span className={styles.hint}>
+          <span className={styles.hintMark} aria-hidden="true">
+            ✓
+          </span>
+          Your answer mentions “{hint}”.
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Honest self-assessment: the grade buttons, or the recorded verdict once given. */
+function ChallengeGradeControl({
+  grade,
+  onGrade,
+}: {
+  grade?: ChallengeGrade | undefined;
+  onGrade: (grade: ChallengeGrade) => void;
+}) {
+  return (
+    <div className={styles.grade} role="group" aria-label="How did you do?">
+      <span className={styles.gradeCue}>Compare honestly with the answer — did you have it?</span>
+      {grade ? (
+        <span className={styles.verdict} data-grade={grade}>
+          <span className={styles.verdictDot} aria-hidden="true" />
+          {grade === "got-it" ? "You marked: got it" : "You marked: not yet"}
+        </span>
+      ) : (
+        <div className={styles.gradeButtons}>
+          <Button variant="accent" onClick={() => onGrade("got-it")}>
+            I got it
+          </Button>
+          <Button onClick={() => onGrade("not-yet")}>Not yet</Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** A Try First challenge (Focus Flow phase 3): the prompt leads, the learner commits an attempt,
@@ -46,11 +117,13 @@ export function ChallengeCard({
   glossary,
 }: ChallengeCardProps) {
   const [attempt, setAttempt] = useState("");
-  const [revealed, setRevealed] = useState(false);
+  // A challenge revisited after it was already self-graded opens revealed, showing the verdict —
+  // the grade prop is the persisted memory of "I saw this and committed".
+  const [revealed, setRevealed] = useState(() => Boolean(grade));
   const fieldId = useId();
-  const hint = revealed && answer ? echoedTerm(attempt, answer) : null;
-  // A bare self-check carries no answer or criterion — there is nothing to "reveal", so the
-  // commit step leads straight to honest self-assessment.
+  const hint = revealed && answer ? findEchoedTerm(attempt, answer) : null;
+  // A bare self-check carries no answer or criterion — nothing to "reveal", so the commit step
+  // leads straight to honest self-assessment.
   const hasExplanation = Boolean(answer || criterion);
 
   return (
@@ -82,49 +155,14 @@ export function ChallengeCard({
       ) : (
         <>
           {hasExplanation && (
-            <div className={styles.reveal} role="region" aria-label="The answer" aria-live="polite">
-              <p className={styles.revealHead}>The answer</p>
-              {answer && (
-                <div className={styles.answerText}>
-                  <Markdown glossary={glossary}>{answer}</Markdown>
-                </div>
-              )}
-              {criterion && (
-                <p className={styles.criterion}>
-                  <span className={styles.criterionLabel}>Passes when</span> {criterion}
-                </p>
-              )}
-              {hint && (
-                <span className={styles.hint}>
-                  <span className={styles.hintMark} aria-hidden="true">
-                    ✓
-                  </span>
-                  Your answer mentions “{hint}”.
-                </span>
-              )}
-            </div>
+            <ChallengeReveal
+              answer={answer}
+              criterion={criterion}
+              hint={hint}
+              glossary={glossary}
+            />
           )}
-
-          {onGrade && (
-            <div className={styles.grade} role="group" aria-label="How did you do?">
-              <span className={styles.gradeCue}>
-                Compare honestly with the answer — did you have it?
-              </span>
-              {grade ? (
-                <span className={styles.verdict} data-grade={grade}>
-                  <span className={styles.verdictDot} aria-hidden="true" />
-                  {grade === "got-it" ? "You marked: got it" : "You marked: not yet"}
-                </span>
-              ) : (
-                <div className={styles.gradeButtons}>
-                  <Button variant="accent" onClick={() => onGrade("got-it")}>
-                    I got it
-                  </Button>
-                  <Button onClick={() => onGrade("not-yet")}>Not yet</Button>
-                </div>
-              )}
-            </div>
-          )}
+          {onGrade && <ChallengeGradeControl grade={grade} onGrade={onGrade} />}
         </>
       )}
     </div>

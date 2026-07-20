@@ -46,14 +46,49 @@ describe("ChallengeCard — assessment", () => {
       <ChallengeCard prompt={ITEM.prompt} answer={ITEM.answer} criterion={ITEM.passCriterion} />,
     );
 
-    // Act — commit an attempt that echoes "log", then reveal.
+    // Arrange — commit an attempt that echoes "log".
     fireEvent.change(screen.getByRole("textbox", { name: /your answer/i }), {
       target: { value: "It runs in log n time." },
     });
+
+    // Act
     fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
 
     // Assert — assistance, phrased as a hint (never a verdict).
     expect(screen.getByText(/your answer mentions/i)).toHaveTextContent("log");
+  });
+
+  it("opens already-revealed showing the verdict when revisited with a prior grade", () => {
+    // Arrange / Act — a returning learner whose grade is remembered (objective evidenced).
+    render(
+      <ChallengeCard
+        prompt={ITEM.prompt}
+        answer={ITEM.answer}
+        criterion={ITEM.passCriterion}
+        onGrade={vi.fn()}
+        grade="got-it"
+      />,
+    );
+
+    // Assert — the verdict shows WITHOUT clicking Reveal again (revealed seeds from grade).
+    expect(screen.getByText(/you marked: got it/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reveal/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the 'not yet' verdict copy for a prior not-yet grade", () => {
+    // Arrange / Act — a prior grade opens the card revealed.
+    render(
+      <ChallengeCard
+        prompt={ITEM.prompt}
+        answer={ITEM.answer}
+        criterion={ITEM.passCriterion}
+        onGrade={vi.fn()}
+        grade="not-yet"
+      />,
+    );
+
+    // Assert — the negative branch renders its own verdict copy.
+    expect(screen.getByText(/you marked: not yet/i)).toBeInTheDocument();
   });
 
   it("records the learner's self-grade through onGrade", () => {
@@ -77,7 +112,7 @@ describe("ChallengeCard — assessment", () => {
   });
 
   it("shows the prior verdict instead of the grade buttons on a revisited challenge", () => {
-    // Arrange / Act
+    // Arrange / Act — a prior grade opens the card revealed (see seed test above).
     render(
       <ChallengeCard
         prompt={ITEM.prompt}
@@ -87,7 +122,6 @@ describe("ChallengeCard — assessment", () => {
         grade="got-it"
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
 
     // Assert
     expect(screen.getByText(/you marked: got it/i)).toBeInTheDocument();

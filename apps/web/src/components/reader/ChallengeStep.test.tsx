@@ -54,8 +54,28 @@ describe("ChallengeStep — objective evidence", () => {
     expect(onEvidence).toHaveBeenCalledWith(0, true);
   });
 
-  it("un-evidences on 'Not yet'", () => {
-    // Arrange
+  it("un-evidences the objective when the learner marks 'Not yet'", () => {
+    // Arrange — not yet understood, so the grade buttons show.
+    const onEvidence = vi.fn();
+    render(
+      <ChallengeStep
+        step={assessmentStep([ITEM])}
+        objectives={OBJECTIVES}
+        understoodObjectives={new Set()}
+        onEvidenceObjective={onEvidence}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: "Not yet" }));
+
+    // Assert — objective index 0 explicitly marked NOT understood (AD2 un-marks).
+    expect(onEvidence).toHaveBeenCalledWith(0, false);
+  });
+
+  it("shows the persisted verdict, not the buttons, for an already-understood objective", () => {
+    // Arrange / Act — the objective is already understood.
     const onEvidence = vi.fn();
     render(
       <ChallengeStep
@@ -66,10 +86,8 @@ describe("ChallengeStep — objective evidence", () => {
       />,
     );
 
-    // Act
-    fireEvent.click(screen.getByRole("button", { name: /reveal/i }));
-
-    // A prior "got it" (understood) shows the verdict, not the buttons.
+    // Assert — a persisted understood objective opens the challenge revealed with its verdict;
+    // no re-write on mere revisit.
     expect(screen.getByText(/you marked: got it/i)).toBeInTheDocument();
     expect(onEvidence).not.toHaveBeenCalled();
   });

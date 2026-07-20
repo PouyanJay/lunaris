@@ -5,6 +5,8 @@ import { ChallengeCard, type ChallengeGrade } from "./ChallengeCard";
 import type { LessonStep } from "./lessonSteps";
 import styles from "./ChallengeStep.module.css";
 
+type GradeMap = Record<string, ChallengeGrade>;
+
 interface ChallengeStepProps {
   step: LessonStep;
   glossary?: ReadonlyMap<string, string> | undefined;
@@ -18,44 +20,50 @@ interface ChallengeStepProps {
 
 /** The module-objective index an assessment item assesses (`item.objective` is the objective's
  *  KC), or -1 when the item maps to none. */
-function objectiveIndexFor(item: AssessmentItem, objectives: Objective[]): number {
+function findObjectiveIndex(item: AssessmentItem, objectives: Objective[]): number {
   return objectives.findIndex((objective) => objective.kc === item.objective);
 }
 
-/** A challenge step (Try First): renders the step's prompts as attempt-before-explanation
- *  challenges. An `assessment` step maps each `AssessmentItem` to a card and, where the item
- *  assesses a module objective, a self-graded "I got it" evidences that objective through the
- *  existing progress channel (AD2). A `check` step is a single bare self-check reflection with no
- *  answer and no objective link. Local grade state seeds from persisted objective-understood so a
- *  revisited challenge shows its verdict; it also holds self-check verdicts for the visit. */
-export function ChallengeStep({
+/** A bare self-check reflection: one challenge, no answer and no objective to evidence. */
+function CheckChallenge({
   step,
   glossary,
+}: {
+  step: LessonStep;
+  glossary?: ReadonlyMap<string, string> | undefined;
+}) {
+  const [grade, setGrade] = useState<ChallengeGrade>();
+  return (
+    <ChallengeCard
+      prompt={step.items?.[0] ?? ""}
+      onGrade={setGrade}
+      grade={grade}
+      glossary={glossary}
+    />
+  );
+}
+
+/** The module assessment as challenges: each item's self-graded "I got it" evidences the objective
+ *  it assesses through the existing progress channel (AD2). Local grade state seeds from persisted
+ *  objective-understood, so a revisited challenge shows its verdict. */
+function AssessmentChallenges({
+  items,
   objectives,
   understoodObjectives,
   onEvidenceObjective,
-}: ChallengeStepProps) {
-  const [grades, setGrades] = useState<Record<string, ChallengeGrade>>({});
-
-  if (step.kind === "check") {
-    const prompt = step.items?.[0] ?? "";
-    return (
-      <div className={styles.stack}>
-        <ChallengeCard
-          prompt={prompt}
-          onGrade={(grade) => setGrades((prev) => ({ ...prev, [step.id]: grade }))}
-          grade={grades[step.id]}
-          glossary={glossary}
-        />
-      </div>
-    );
-  }
-
-  const items = step.assessment ?? [];
+  glossary,
+}: {
+  items: AssessmentItem[];
+  objectives: Objective[];
+  understoodObjectives: ReadonlySet<number>;
+  onEvidenceObjective?: ((objectiveIndex: number, understood: boolean) => void) | undefined;
+  glossary?: ReadonlyMap<string, string> | undefined;
+}) {
+  const [grades, setGrades] = useState<GradeMap>({});
   return (
-    <div className={styles.stack}>
+    <>
       {items.map((item) => {
-        const objectiveIndex = objectiveIndexFor(item, objectives);
+        const objectiveIndex = findObjectiveIndex(item, objectives);
         const evidenced = objectiveIndex >= 0 && understoodObjectives.has(objectiveIndex);
         const grade = grades[item.id] ?? (evidenced ? "got-it" : undefined);
         return (
@@ -73,6 +81,32 @@ export function ChallengeStep({
           />
         );
       })}
+    </>
+  );
+}
+
+/** A challenge step (Try First): a `check` step renders a single reflection; an `assessment` step
+ *  renders each item as an attempt-before-explanation challenge wired to objective evidence. */
+export function ChallengeStep({
+  step,
+  glossary,
+  objectives,
+  understoodObjectives,
+  onEvidenceObjective,
+}: ChallengeStepProps) {
+  return (
+    <div className={styles.stack}>
+      {step.kind === "check" ? (
+        <CheckChallenge step={step} glossary={glossary} />
+      ) : (
+        <AssessmentChallenges
+          items={step.assessment ?? []}
+          objectives={objectives}
+          understoodObjectives={understoodObjectives}
+          onEvidenceObjective={onEvidenceObjective}
+          glossary={glossary}
+        />
+      )}
     </div>
   );
 }
