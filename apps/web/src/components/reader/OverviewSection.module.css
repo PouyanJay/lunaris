@@ -1,10 +1,12 @@
 /* The course Overview section: the trailer + topic-intro videos the course opens with. A region of
-   stacked slots (eyebrow + title + 16:9 stage) — one border level per region (the stage), no panel
-   wrapping the bordered stages (avoids cards-in-cards). */
+   side-by-side slots (eyebrow + title + 16:9 stage) — one border level per region (the stage), no
+   panel wrapping the bordered stages (avoids cards-in-cards). auto-fit collapses to one column on
+   narrow viewports, and expands the surviving slot to full width when only one video is present. */
 
 .overview {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
   gap: var(--space-6);
   margin-bottom: var(--space-8);
 }
