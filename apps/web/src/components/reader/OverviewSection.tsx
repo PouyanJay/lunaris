@@ -19,7 +19,8 @@ interface OverviewSectionProps {
  *  trailer ("what this course covers, module by module") comes first, then the OVERVIEW intro ("what
  *  this topic is and why it matters"). Each is a build-time artifact whose signed URL is resolved
  *  on view; an absent kind renders no slot, and a degraded one shows an honest "couldn't generate"
- *  rather than a broken player. With neither built, the whole section is absent. */
+ *  rather than a broken player. With neither built, the whole section is absent. Docked on the
+ *  Overview tab below the scope band (CourseOverview). */
 export function OverviewSection({ videos, apiBaseUrl, courseId }: OverviewSectionProps) {
   if (!videos.summary && !videos.overview) return null;
 
@@ -68,9 +69,9 @@ function CourseVideoSlot({
   return (
     <div className={styles.slot}>
       <p className="eyebrow">{eyebrow}</p>
-      {/* h2: a peer of the lesson title under the course h1 — the Overview renders before the lesson,
-          so an h3 here would skip a level (a11y heading hierarchy). */}
-      <h2 className={styles.slotTitle}>{title}</h2>
+      {/* h3: a subsection under the Overview page's course-title h2 (CourseOverview), the only place
+          this section renders — one level below that title, no skip (a11y heading hierarchy). */}
+      <h3 className={styles.slotTitle}>{title}</h3>
       {state.phase === "loading" && (
         <div className={styles.stage} role="status" aria-label={`Loading ${title}`}>
           <span className={styles.shimmer} aria-hidden="true" />

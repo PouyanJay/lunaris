@@ -22,7 +22,6 @@ import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
 import { LessonVideoHero } from "./LessonVideoHero";
-import { OverviewSection } from "./OverviewSection";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { ScopeBand } from "./ScopeBand";
 import { flattenLessons } from "../../lib/flattenLessons";
@@ -500,12 +499,9 @@ export function CourseReader({
           </div>
           {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so. */}
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
-          {/* The course opens with video (explainer-video V5): the trailer + topic intro, pinned at
-              the top of the course (entry only). Absent on a pre-V5 / video-off course. */}
-          {safeIndex === 0 && apiBaseUrl && course.videos && (
-            <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} courseId={course.id} />
-          )}
-          {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
+          {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry.
+              (The course trailer + topic-overview videos live on the Overview tab, below this band —
+              see CourseOverview — not in the reading column.) */}
           {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
           {/* Per-course build tag (keyless-fallbacks T5): the persistent record of which keyless
               fallbacks produced this course, shown once at entry. Renders nothing for a fully-live
