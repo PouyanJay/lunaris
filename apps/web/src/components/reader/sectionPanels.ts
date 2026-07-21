@@ -4,8 +4,8 @@ import type { Root } from "mdast";
  *  explanation. This remark transform — run AFTER the section labels (R1) and their body lifts (R3/R4)
  *  — gathers a section whose eyebrow is WORKED EXAMPLE / WORKED ATTRIBUTION and wraps the label plus
  *  its following blocks (up to the next section) in a bordered panel (`sectionpanel`). Presentation-
- *  only. Bare "Example:" is left to the callout system (it never becomes a section label), so this
- *  only ever fires on the multi-word worked-* labels. */
+ *  only. Scoped to exactly the "WORKED EXAMPLE" / "WORKED ATTRIBUTION" labels (AD1) — bare "Example:"
+ *  is left to the callout system, and other sections are never panelled. */
 
 interface Node {
   type: string;
@@ -13,7 +13,7 @@ interface Node {
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
-const PANEL_HEADING = /\b(?:WORKED|ATTRIBUTION|EXAMPLE)\b/i;
+const PANEL_HEADING = /^WORKED\s+(?:EXAMPLE|ATTRIBUTION)$/i;
 
 function isSectionLabel(node: Node): boolean {
   return node.data?.hName === "seclabel";

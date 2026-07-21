@@ -31,11 +31,15 @@ describe("paragraph rhythm (R6)", () => {
     expect(container.querySelectorAll("p")).toHaveLength(1);
   });
 
-  it("never splits a single long sentence mid-way", () => {
+  it("never splits a single long sentence mid-way (over the word budget, no sentence break)", () => {
+    // 58 words, one sentence — pushes past the 55-word threshold so the single-sentence guard, not
+    // the word-count short-circuit, is what keeps it whole.
     const oneSentence =
       "This is a single sustained sentence that runs on with clause after clause about the " +
       "structure and the feedback and the slow evolution and the strong attractor and the partial " +
-      "information right up until it finally stops.";
+      "information and the layered mechanism and the residual signal and the historical trend and " +
+      "the compounding drift and the settling behaviour right up until it finally stops for good.";
+    expect(oneSentence.trim().split(/\s+/).length).toBeGreaterThan(55);
     const { container } = render(<Markdown>{oneSentence}</Markdown>);
     expect(container.querySelectorAll("p")).toHaveLength(1);
   });

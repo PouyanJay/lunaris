@@ -29,6 +29,7 @@ describe("prose formatting — variant coverage", () => {
       "A: this single capital is not a label at all.",
       "NOTE: this is a callout, not a section label.",
       "It costs 5: that colon is not a label boundary.",
+      "ALPHA BETA GAMMA DELTA EPSILON: five words exceed the label bound.",
     ])("leaves %j", (prose) => {
       render(<Markdown>{prose}</Markdown>);
       expect(hasHeading()).toBe(false);
@@ -78,6 +79,10 @@ describe("prose formatting — variant coverage", () => {
     });
     it("leaves a cueless series with a trailing clause inline (ambiguous to bound)", () => {
       const { container } = render(<Markdown>{"The parts are red, green, and blue in order."}</Markdown>);
+      expect(container.querySelector("ul")).toBeNull();
+    });
+    it("does not lift a 2-item cued series (below the 3-item threshold)", () => {
+      const { container } = render(<Markdown>{"It comes in two colors: red, and blue."}</Markdown>);
       expect(container.querySelector("ul")).toBeNull();
     });
   });

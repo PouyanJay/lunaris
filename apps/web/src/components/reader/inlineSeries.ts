@@ -1,5 +1,8 @@
 import type { Root } from "mdast";
 
+import { plainText, splitAtSentenceBoundaries } from "./proseText";
+import { STOP_TOKENS, TOKEN_ID } from "./tokenShapes";
+
 /** Authored prose often hides a list inside a sentence — "three core cytokines—IL-4, IL-5, and
  *  IL-13", or a run of parallel "IL-4 drives…", "IL-5 recruits…" sentences. This remark transform
  *  lifts the two shapes:
@@ -17,45 +20,26 @@ interface Node {
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
 
-/** The flat string of a paragraph iff every child is a plain text node (the authored norm). */
-function plainText(children: Node[]): string | null {
-  let out = "";
-  for (const child of children) {
-    if (child.type !== "text") return null;
-    out += child.value ?? "";
-  }
-  return out;
-}
-
 // ─── R4b: keyed list (token-led sentences) ──────────────────────────────────────────────────────
 
-/** A leading data-token key: an internal-digit id, an all-caps acronym, or a mixed-case token. */
-const KEY = "[A-Z][A-Za-z]*-?\\d[\\dA-Za-z]*|[A-Z]{2,6}|[A-Za-z]*[a-z][A-Z][A-Za-z0-9]*";
-/** A sentence keyed by a token then a lowercase predicate ("IL-5 recruits …"). */
-const KEYED_SENTENCE = new RegExp(`^(${KEY})\\s+([a-z][\\s\\S]*)$`);
-
-/** Split flat text into sentences at "… . Next" boundaries (terminator + space + capital/digit). */
-function splitSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+(?=["'“(]?[A-Z0-9])/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
+/** A sentence keyed by a data token then a lowercase predicate ("IL-5 recruits …"). */
+const KEYED_SENTENCE = new RegExp(`^(${TOKEN_ID})\\s+([a-z][\\s\\S]*)$`);
 
 interface KeyedRow {
   term: string;
   def: string;
 }
 
-/** Parse a paragraph into keyed rows, or null unless it is ≥2 sentences that are ALL token-led. */
+/** Parse a paragraph into keyed rows, or null unless it is ≥2 sentences that are ALL keyed by a real
+ *  token — an all-caps emphasis word (NEVER/ALWAYS/ONLY) is rejected so imperative prose isn't lifted. */
 function detectKeyedList(text: string): KeyedRow[] | null {
-  const sentences = splitSentences(text);
+  const sentences = splitAtSentenceBoundaries(text);
   if (sentences.length < 2) return null;
 
   const rows: KeyedRow[] = [];
   for (const sentence of sentences) {
     const match = sentence.match(KEYED_SENTENCE);
-    if (!match) return null;
+    if (!match || STOP_TOKENS.has(match[1]!.toUpperCase())) return null;
     rows.push({ term: match[1]!.trim(), def: match[2]!.trim() });
   }
   return rows;

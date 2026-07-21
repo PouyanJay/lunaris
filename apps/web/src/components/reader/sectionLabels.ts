@@ -1,5 +1,7 @@
 import type { Root } from "mdast";
 
+import { plainText } from "./proseText";
+
 /** Authored lesson prose often runs a whole passage as one flowing paragraph, marking its structure
  *  only with ALL-CAPS lead-in labels — "STRATEGY:", "UPSTREAM LAYER (alarmins):", "CANONICAL
  *  CYTOKINES:" — that recur mid-paragraph after each sentence. This remark transform lifts every such
@@ -35,17 +37,6 @@ interface Section {
   heading?: string;
   qual?: string;
   text: string;
-}
-
-/** The flat string of a paragraph iff every child is a plain text node (the common authored case);
- *  null when inline formatting (em/strong/links) is present, so we fall back to leaving it be. */
-function plainText(children: Node[]): string | null {
-  let out = "";
-  for (const child of children) {
-    if (child.type !== "text") return null;
-    out += child.value ?? "";
-  }
-  return out;
 }
 
 /** Split a paragraph's flat text into a lead-in (index 0, no heading) plus one section per label. */

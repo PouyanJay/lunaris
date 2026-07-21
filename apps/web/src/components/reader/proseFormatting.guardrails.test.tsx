@@ -13,24 +13,44 @@ const words = (text: string): string[] => text.toLowerCase().match(/[a-z0-9]+(?:
 describe("prose formatting — guardrails (R8)", () => {
   it("adds no words and drops only list conjunctions (presentation-only)", () => {
     const { container } = render(<Markdown>{ASTHMA_PROSE}</Markdown>);
-    const original = new Set(words(ASTHMA_PROSE));
-    const rendered = words(container.textContent ?? "");
-    const renderedSet = new Set(rendered);
+    const originalSet = new Set(words(ASTHMA_PROSE));
 
-    // No word is invented. A token missing from the original is only allowed if it is two original
-    // words glued at an element boundary (e.g. a keyed row's "IL-4" + "drives" → "il-4drives" in
-    // textContent — real browsers space these on copy / for screen readers); never new content.
-    const isGlueOfTwoOriginals = (word: string): boolean => {
+    // Element boundaries glue two adjacent words in textContent (a keyed row's "IL-4" + "drives" →
+    // "il-4drives"; real browsers space these on copy / for screen readers). Un-glue each rendered
+    // token into its constituent original words so the count comparison below is faithful.
+    const isGlueOfTwoOriginals = (word: string): string[] | null => {
       for (let i = 1; i < word.length; i += 1) {
-        if (original.has(word.slice(0, i)) && original.has(word.slice(i))) return true;
+        if (originalSet.has(word.slice(0, i)) && originalSet.has(word.slice(i))) {
+          return [word.slice(0, i), word.slice(i)];
+        }
       }
-      return false;
+      return null;
     };
-    const invented = rendered.filter((word) => !original.has(word) && !isGlueOfTwoOriginals(word));
-    expect(invented).toEqual([]);
-    // The only words that may disappear are the "and"/"or" consumed when a series becomes a list.
-    const dropped = [...original].filter((word) => !renderedSet.has(word));
-    expect(dropped.every((word) => word === "and" || word === "or")).toBe(true);
+    const rendered = words(container.textContent ?? "").flatMap(
+      (word) => isGlueOfTwoOriginals(word) ?? [word],
+    );
+
+    // No word is invented (nothing paraphrased or added).
+    expect(rendered.filter((word) => !originalSet.has(word))).toEqual([]);
+
+    // Multiset (occurrence-count) comparison — a Set would hide a single dropped instance of a word
+    // that recurs elsewhere ("airway" appears 13×). Every word must survive with the SAME count,
+    // except "and"/"or", which are consumed when an inline series becomes a list.
+    const counts = (list: string[]): Map<string, number> => {
+      const map = new Map<string, number>();
+      for (const word of list) map.set(word, (map.get(word) ?? 0) + 1);
+      return map;
+    };
+    const originalCounts = counts(words(ASTHMA_PROSE));
+    const renderedCounts = counts(rendered);
+    for (const [word, originalCount] of originalCounts) {
+      const renderedCount = renderedCounts.get(word) ?? 0;
+      if (word === "and" || word === "or") {
+        expect(renderedCount).toBeLessThanOrEqual(originalCount);
+      } else {
+        expect(renderedCount, `count changed for "${word}"`).toBe(originalCount);
+      }
+    }
   });
 
   it("is deterministic — the same prose renders identical markup twice", () => {

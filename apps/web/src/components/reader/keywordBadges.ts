@@ -2,6 +2,7 @@ import type { Root } from "mdast";
 import { SKIP, visit } from "unist-util-visit";
 
 import { KEYWORD_META } from "./keywordMeta";
+import { STOP_TOKENS, TOKEN_ID } from "./tokenShapes";
 
 /** Render-side rule that visualises attention-worthy inline tokens as labelled chips:
  *  - recognised domain keywords (today: HTTP request methods) → a category-toned badge,
@@ -25,21 +26,9 @@ interface Node {
 
 const KEYWORDS = Object.keys(KEYWORD_META);
 
-/** Data-token shapes (see the module doc). Ordered so an identifier-with-digit wins over the bare
- *  acronym rule (`ILC2` chips whole, not `ILC` + stray `2`). */
-const DATA_TOKEN =
-  "[A-Z][A-Za-z]*-?\\d[\\dA-Za-z]*" + // internal-digit id: IL-4, IL-33, Th2, ILC2, CO2, T2
-  "|[A-Z]{3,5}" + // all-caps acronym: TSLP, DNA, ICS (≤5 so English words like GETTING don't chip)
-  "|[A-Za-z]*[a-z][A-Z][A-Za-z0-9]*" + // mixed-case token: IgE, mRNA, pH, IPv4
-  "|\\d+-[a-z][a-z-]{2,}"; // hyphenated number-unit: 600-eosinophil, 5-year
-
-/** All-caps English words that read as emphasis, not acronyms — excluded from the acronym shape. */
-const STOP_TOKENS = new Set([
-  "THE", "AND", "BUT", "FOR", "NOT", "YOU", "ARE", "ALL", "ANY", "CAN", "HAS", "HOW", "WHY", "WHO",
-  "WAS", "USE", "NOW", "OUR", "OUT", "ONE", "TWO", "VERY", "MUST", "ONLY", "ALSO", "THIS", "THAT",
-  "WITH", "FROM", "INTO", "THAN", "THEN", "THEY", "WHEN", "EACH", "MORE", "SOME", "WHAT", "YES",
-  "REALLY", "NEVER", "ALWAYS", "HERE", "THERE", "THESE", "THOSE", "WILL", "WOULD", "SHOULD",
-]);
+/** Data-token shapes: the shared identifier shapes (see `tokenShapes.ts`) plus a hyphenated
+ *  number-unit (`600-eosinophil`), which is a valid inline chip but not a sentence-leading key. */
+const DATA_TOKEN = `${TOKEN_ID}|\\d+-[a-z][a-z-]{2,}`;
 
 // A keyword (group 1) OR a slash-delimited symbol of 1–2 non-digit chars bounded by space/punctuation
 // (group 2) OR a shape-recognised data token (group 3). The symbol guard excludes paths and dates.
@@ -55,6 +44,18 @@ function badge(text: string, category: string): Node {
     data: { hName: "keyword", hProperties: { category } },
     children: [{ type: "text", value: text }],
   };
+}
+
+/** Resolve one regex match to its chip — a toned keyword, a neutral data chip, or a symbol chip —
+ *  or, for a data token that is really an all-caps emphasis word, back to plain text. */
+function chipFor(match: RegExpMatchArray): Node {
+  if (match[1] !== undefined) return badge(match[1], KEYWORD_META[match[1]]!.category);
+  if (match[3] !== undefined) {
+    return STOP_TOKENS.has(match[3].toUpperCase())
+      ? { type: "text", value: match[0] }
+      : badge(match[3], "data");
+  }
+  return badge(match[0], "symbol");
 }
 
 function remarkKeywordBadges() {
@@ -74,19 +75,7 @@ function remarkKeywordBadges() {
       for (const match of matches) {
         const at = match.index ?? 0;
         if (at > last) replacement.push({ type: "text", value: value.slice(last, at) });
-        if (match[1] !== undefined) {
-          replacement.push(badge(match[1], KEYWORD_META[match[1]]!.category));
-        } else if (match[3] !== undefined) {
-          // A shape-recognised data token — unless it's a common all-caps word (emphasis, not an
-          // acronym), in which case it stays plain text.
-          if (STOP_TOKENS.has(match[3].toUpperCase())) {
-            replacement.push({ type: "text", value: match[0] });
-          } else {
-            replacement.push(badge(match[3], "data"));
-          }
-        } else {
-          replacement.push(badge(match[0], "symbol"));
-        }
+        replacement.push(chipFor(match));
         last = at + match[0].length;
       }
       if (last < value.length) replacement.push({ type: "text", value: value.slice(last) });

@@ -1,5 +1,7 @@
 import type { Root } from "mdast";
 
+import { plainText, splitAtSentenceBoundaries } from "./proseText";
+
 /** A single over-long paragraph reads as a wall. This remark transform breaks a plain-text paragraph
  *  that exceeds a word budget into smaller paragraphs AT SENTENCE BOUNDARIES only — never mid-sentence
  *  — so the reader gets air without any wording change (it only inserts paragraph breaks). Runs after
@@ -20,33 +22,15 @@ const TARGET = 45;
 /** A trailing group smaller than this is merged back so we never orphan a stray clause. */
 const MIN_TAIL = 12;
 
-/** The flat string of a paragraph iff every child is a plain text node. */
-function plainText(children: Node[]): string | null {
-  let out = "";
-  for (const child of children) {
-    if (child.type !== "text") return null;
-    out += child.value ?? "";
-  }
-  return out;
-}
-
 function wordCount(text: string): number {
   const trimmed = text.trim();
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-/** Split text at "… . Next" boundaries (terminator + space + capital/digit/quote). */
-function splitSentences(text: string): string[] {
-  return text
-    .split(/(?<=[.!?])\s+(?=["'“(]?[A-Z0-9])/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
 /** Group sentences greedily into paragraphs of ~TARGET words, or null when nothing should split. */
 function regroup(text: string): string[] | null {
   if (wordCount(text) <= THRESHOLD) return null;
-  const sentences = splitSentences(text);
+  const sentences = splitAtSentenceBoundaries(text);
   if (sentences.length < 2) return null;
 
   const groups: string[] = [];

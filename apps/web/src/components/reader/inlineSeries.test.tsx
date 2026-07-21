@@ -77,4 +77,12 @@ describe("token-led sentences → keyed list (R4b)", () => {
     );
     expect(container.querySelector("dl")).toBeNull();
   });
+
+  it("does not mistake all-caps emphasis prose for a keyed list", () => {
+    // NEVER/ALWAYS/ONLY read as emphasis, not tokens — a "guidelines" paragraph must stay prose.
+    const { container } = render(
+      <Markdown>{"NEVER skip the warmup. ALWAYS stretch first. ONLY then begin the set."}</Markdown>,
+    );
+    expect(container.querySelector("dl")).toBeNull();
+  });
 });

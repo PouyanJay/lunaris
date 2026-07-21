@@ -28,7 +28,13 @@ import { remarkSectionPanels } from "./sectionPanels";
  *  small set of custom elements, math/highlight markup is generated from text (never passed through),
  *  and `rehype-sanitize` runs as the gate. Sanitisation runs BEFORE KaTeX/highlight so their trusted,
  *  generated output is inserted after the gate — the schema only has to permit the handful of class
- *  names the math lowering needs as input, plus our directive elements. */
+ *  names the math lowering needs as input, plus our directive elements.
+ *
+ *  It also orchestrates the prose-formatting layer — conservative transforms that reformat plain
+ *  authored prose at render time: section labels (`sectionLabels.ts`), arrow-chain flows
+ *  (`arrowFlow.ts`), inline series → lists (`inlineSeries.ts`), paragraph rhythm (`paragraphRhythm.ts`),
+ *  key-term emphasis (`keyTerms.ts`), worked-example panels (`sectionPanels.ts`), and data-token chips
+ *  (`keywordBadges.ts`). Each new custom element is allow-listed in the sanitize schema below. */
 
 /** Paragraph lead-ins ("Note: …") that become callouts, mapped to a callout variant. */
 const LEAD_IN_VARIANTS: Record<string, string> = {

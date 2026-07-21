@@ -1,5 +1,7 @@
 import type { Root } from "mdast";
 
+import { plainText } from "./proseText";
+
 /** Authored prose sometimes buries a process chain in a sentence — "the chain is trigger → epithelial
  *  TSLP/IL-33 → ILC2/Th2 activation → … → hyperresponsiveness." This remark transform lifts a run of
  *  ≥2 arrows (≥3 nodes) into a numbered flow (`chainflow` → an ordered list), keeping the lead-in and
@@ -23,16 +25,6 @@ const ARROW = /\s*(?:→|->)\s*/g;
 const LEAD_BOUNDARY =
   /[.!?:]\s+|\b(?:is|are|follows|chain|sequence|pathway|route|flow|steps)\b\s+/gi;
 
-/** The flat string of a paragraph iff every child is a plain text node (the authored norm). */
-function plainText(children: Node[]): string | null {
-  let out = "";
-  for (const child of children) {
-    if (child.type !== "text") return null;
-    out += child.value ?? "";
-  }
-  return out;
-}
-
 interface Chain {
   lead: string;
   nodes: string[];
@@ -54,7 +46,6 @@ function detectChain(text: string): Chain | null {
   }
 
   // Last node ends at the first sentence terminator after the final arrow.
-  ARROW.lastIndex = 0;
   let afterLastArrow = firstArrow;
   for (const match of text.matchAll(ARROW)) {
     afterLastArrow = (match.index ?? 0) + match[0].length;
