@@ -4,25 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 
-/** Two modules (one lesson each) so Prev/Next crosses a lesson boundary; the first carries
- *  objectives so the understanding toggles render. */
+/** Two modules (one lesson each) so the footer's Next/Previous cross a module boundary. */
 function twoLessonCourse() {
   return makeCourse({
     modules: [
-      makeModule({
-        id: "m-one",
-        title: "Module one",
-        lessons: [makeLesson({ id: "m-one-l0" })],
-        objectives: [
-          {
-            statement: "Explain the halving step.",
-            bloomLevel: "understand",
-            kc: "kc-1",
-            assessedBy: [],
-          },
-          { statement: "Trace a full search.", bloomLevel: "apply", kc: "kc-2", assessedBy: [] },
-        ],
-      }),
+      makeModule({ id: "m-one", title: "Module one", lessons: [makeLesson({ id: "m-one-l0" })] }),
       makeModule({ id: "m-two", title: "Module two", lessons: [makeLesson({ id: "m-two-l0" })] }),
     ],
   });
@@ -48,10 +34,11 @@ function progressFetch(
   return { mock, puts };
 }
 
-// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
-// pin the persisted preference before each render.
+// Progress persistence is mode-independent, but per-lesson footer paging (Next / Finish) lives in
+// Watch mode now that Read is retired — pin Watch so those actions are on screen. The lessons ship
+// no video, so Watch opens on the generate affordance with the footer beneath it.
 beforeEach(() => {
-  localStorage.setItem(READER_MODE_KEY, "read");
+  localStorage.setItem(READER_MODE_KEY, "watch");
 });
 
 describe("CourseReader — learner progress", () => {
@@ -102,10 +89,13 @@ describe("CourseReader — learner progress", () => {
 
     render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
 
-    // The snapshot must have loaded (counter visible) without any LESSON-state PUT firing —
-    // the open-recency touch (…/progress/opened) is expected on every visit and asserted in
-    // its own tests below.
-    expect(await screen.findByText(/of \d+ understood/)).toBeInTheDocument();
+    // The snapshot must have loaded (the outline chip reflects the done state) without any
+    // LESSON-state PUT firing — the open-recency touch (…/progress/opened) is expected on every
+    // visit and asserted in its own tests below.
+    const outline = await screen.findByRole("navigation", { name: /course outline/i });
+    await waitFor(() =>
+      expect(within(outline).getByRole("button", { name: /lesson 1.*done/i })).toBeInTheDocument(),
+    );
     expect(puts.filter((put) => put.url.endsWith("/progress/lesson"))).toEqual([]);
   });
 
@@ -190,23 +180,10 @@ describe("CourseReader — learner progress", () => {
     );
   });
 
-  it("toggling an objective updates the counter optimistically and persists it", async () => {
-    const { mock, puts } = progressFetch();
-    vi.stubGlobal("fetch", mock);
-
-    render(<CourseReader course={twoLessonCourse()} apiBaseUrl="http://test" />);
-    const toggle = (await screen.findAllByRole("button", { name: /mark understood/i }))[0]!;
-
-    fireEvent.click(toggle);
-
-    expect(await screen.findByText(/1 of \d+ understood/)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(puts).toContainEqual({
-        url: "http://test/api/courses/course-test/progress/objective",
-        body: { moduleId: "m-one", objectiveIndex: 0, understood: true },
-      }),
-    );
-  });
+  // Objective-understanding persistence (markObjective → …/progress/objective) is now evidenced
+  // through the Learn-mode Try First challenge rather than a Read-mode objectives panel; the
+  // full-stack PUT assertion lives in CourseReader.focusflow.test.tsx ("evidences the assessed
+  // objective…"). The reader integration for lesson marks / recency / heartbeat stays here.
 
   it("beats the study-minutes heartbeat while mounted", async () => {
     // An open reader is a study session: the mount must fire the first heartbeat (the per-minute

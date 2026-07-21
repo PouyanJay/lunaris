@@ -1,29 +1,26 @@
 import { StrictMode } from "react";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Claim, Lesson, Visual } from "../../types/course";
+import type { Claim } from "../../types/course";
 import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH } from "../../hooks/useRailLayout";
-import { makeCitation, makeCourse, makeLesson, makeModule } from "../../test/fixtures";
+import { makeCitation, makeCourse, makeLesson, makeModule, routedFetch } from "../../test/fixtures";
 import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
-const NO_MAYER = {
-  coherence: false,
-  signaling: false,
-  spatialContiguity: false,
-  redundancy: false,
-};
+const API = "http://api.test";
 
-/** A lesson identifiable in the reader by its activate-phase prose — enough for navigation asserts. */
-function lessonWith(id: string, activateProse: string): Lesson {
-  const base = makeLesson({ id });
-  return {
-    ...base,
-    segments: {
-      ...base.segments,
-      activate: { prose: activateProse, visuals: [], claims: [], resources: [] },
-    },
-  };
+/** routedFetch with a settled (empty) progress snapshot — enough for the online Watch-mode tests
+ *  (which need a reachable video service for Watch to be offered). No lesson ships a video, so the
+ *  video hook stays idle and never fetches; the footer's lesson paging is what we exercise. */
+function readerFetch() {
+  return routedFetch({ progress: { courseId: "course-test", objectives: [], lessons: [] } });
+}
+
+/** A distinctly-id'd lesson. Lessons no longer identify by their prose (Learn steps through it and
+ *  Watch plays the video), so the reader's tests key off position ("Lesson N of M") and the outline
+ *  instead — this keeps the ids/module grouping the navigation tests rely on. */
+function lessonWith(id: string): ReturnType<typeof makeLesson> {
+  return makeLesson({ id });
 }
 
 /** Two modules, three lessons total — enough to exercise outline grouping and Prev/Next bounds. */
@@ -33,26 +30,24 @@ function multiLessonCourse() {
       makeModule({
         id: "m1",
         title: "Foundations",
-        lessons: [
-          lessonWith("l1", "Prose for lesson one."),
-          lessonWith("l2", "Prose for lesson two."),
-        ],
+        lessons: [lessonWith("l1"), lessonWith("l2")],
       }),
       makeModule({
         id: "m2",
         title: "Search",
-        lessons: [lessonWith("l3", "Prose for lesson three.")],
+        lessons: [lessonWith("l3")],
       }),
     ],
   });
 }
 
-// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
-// pin the persisted preference before each render.
-beforeEach(() => {
-  localStorage.setItem(READER_MODE_KEY, "read");
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
+// Offline reader (no apiBaseUrl) → Learn is the only mode; these cover the mode-independent shell:
+// the outline, scope furniture, the empty state, and outline-driven lesson navigation.
 describe("CourseReader", () => {
   it("lists every module and lesson in the course outline", () => {
     // Arrange / Act
@@ -72,7 +67,6 @@ describe("CourseReader", () => {
     render(<CourseReader course={multiLessonCourse()} />);
 
     // Assert — lesson one is in focus, marked current in the outline, with a position indicator.
-    expect(screen.getByText("Prose for lesson one.")).toBeInTheDocument();
     expect(screen.getByText(/lesson 1 of 3/i)).toBeInTheDocument();
     const outline = screen.getByRole("navigation", { name: /course outline/i });
     expect(within(outline).getByRole("button", { name: /lesson 1/i })).toHaveAttribute(
@@ -90,80 +84,11 @@ describe("CourseReader", () => {
     fireEvent.click(within(outline).getByRole("button", { name: /lesson 3/i }));
 
     // Assert
-    expect(screen.getByText("Prose for lesson three.")).toBeInTheDocument();
-    expect(screen.queryByText("Prose for lesson one.")).not.toBeInTheDocument();
     expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
-  });
-
-  it("renders the design's footer: worded labels with the advance as the accent CTA", () => {
-    // The advancing action is the reader's one amber CTA (P6); Previous stays neutral.
-    render(<CourseReader course={multiLessonCourse()} />);
-
-    const next = screen.getByRole("button", { name: /next lesson/i });
-    expect(next).toHaveTextContent("Next lesson");
-    expect(next.className).toMatch(/accent/);
-    expect(screen.getByRole("button", { name: /previous lesson/i })).toHaveTextContent("Previous");
-
-    // On the last lesson the advance becomes Finish course — still the accent CTA.
-    fireEvent.click(next);
-    fireEvent.click(next);
-    const finish = screen.getByRole("button", { name: /finish course/i });
-    expect(finish.className).toMatch(/accent/);
-  });
-
-  it("steps forward with Next and disables it on the last lesson", () => {
-    // Arrange
-    render(<CourseReader course={multiLessonCourse()} />);
-    const next = screen.getByRole("button", { name: /next lesson/i });
-
-    // Act — advance through every lesson.
-    fireEvent.click(next);
-    expect(screen.getByText("Prose for lesson two.")).toBeInTheDocument();
-    fireEvent.click(next);
-
-    // Assert — the last lesson is focused and Next is disabled.
-    expect(screen.getByText("Prose for lesson three.")).toBeInTheDocument();
-    expect(next).toBeDisabled();
-  });
-
-  it("steps back with Previous and disables it on the first lesson", () => {
-    // Arrange — start on the last lesson.
-    render(<CourseReader course={multiLessonCourse()} />);
-    const outline = screen.getByRole("navigation", { name: /course outline/i });
-    fireEvent.click(within(outline).getByRole("button", { name: /lesson 3/i }));
-    const prev = screen.getByRole("button", { name: /previous lesson/i });
-
-    // Act — step back one lesson.
-    fireEvent.click(prev);
-    expect(screen.getByText("Prose for lesson two.")).toBeInTheDocument();
-
-    // Act / Assert — stepping back to the first lesson disables Previous.
-    fireEvent.click(prev);
-    expect(screen.getByText("Prose for lesson one.")).toBeInTheDocument();
-    expect(prev).toBeDisabled();
-  });
-
-  it("regenerates the focused lesson and shows the updated content", async () => {
-    // Arrange — a handler that returns a course with rewritten activate prose.
-    const updated = makeCourse();
-    updated.modules[0]!.lessons[0]!.segments.activate = {
-      prose: "Regenerated prose.",
-      visuals: [],
-      claims: [],
-      resources: [],
-    };
-    const onRegenerate = vi.fn().mockResolvedValue(updated);
-    const course = makeCourse();
-    const originalProse = course.modules[0]!.lessons[0]!.segments.activate.prose;
-    render(<CourseReader course={course} onRegenerate={onRegenerate} />);
-
-    // Act
-    fireEvent.click(screen.getByRole("button", { name: /regenerate/i }));
-
-    // Assert — the handler gets the focused lesson id, and the updated prose replaces the old.
-    expect(onRegenerate).toHaveBeenCalledWith(course.modules[0]!.lessons[0]!.id);
-    expect(await screen.findByText("Regenerated prose.")).toBeInTheDocument();
-    expect(screen.queryByText(originalProse)).not.toBeInTheDocument();
+    expect(within(outline).getByRole("button", { name: /lesson 3/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("hides the regenerate action when no handler is provided", () => {
@@ -238,8 +163,9 @@ describe("CourseReader", () => {
     // Assert (precondition) — the band is visible on the entry lesson.
     expect(screen.getByRole("region", { name: /course scope/i })).toBeInTheDocument();
 
-    // Act — advance to the next lesson.
-    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+    // Act — advance to a later lesson (via the outline — the mode-independent navigation door).
+    const outline = screen.getByRole("navigation", { name: /course outline/i });
+    fireEvent.click(within(outline).getByRole("button", { name: /lesson 2/i }));
 
     // Assert — the orientation band is an entry header, not repeated on every lesson.
     expect(screen.queryByRole("region", { name: /course scope/i })).not.toBeInTheDocument();
@@ -251,44 +177,6 @@ describe("CourseReader", () => {
 
     // Assert
     expect(screen.getByRole("status")).toHaveTextContent(/no lessons/i);
-  });
-
-  it("renders a segment's branded visual inside the reader", () => {
-    // Arrange — a lesson whose demonstrate phase carries a flow-spec visual.
-    const base = makeLesson();
-    const visual: Visual = {
-      kind: "spec",
-      source: "",
-      rendered: null,
-      spec: {
-        type: "flow",
-        title: null,
-        nodes: [{ id: "a", label: "Halve the range" }],
-        edges: [],
-      },
-      mayerChecks: NO_MAYER,
-    };
-    const course = makeCourse({
-      modules: [
-        makeModule({
-          lessons: [
-            {
-              ...base,
-              segments: {
-                ...base.segments,
-                demonstrate: { prose: "Demo.", visuals: [visual], claims: [], resources: [] },
-              },
-            },
-          ],
-        }),
-      ],
-    });
-
-    // Act
-    render(<CourseReader course={course} />);
-
-    // Assert — the branded renderer drew the spec's node.
-    expect(screen.getByText("Halve the range")).toBeInTheDocument();
   });
 
   it("skips a module with no authored lessons in the outline", () => {
@@ -316,24 +204,23 @@ describe("CourseReader", () => {
         makeModule({
           id: "m1",
           title: "Foundations",
-          lessons: [lessonWith("l1", "Prose one."), lessonWith("l2", "Prose two.")],
+          lessons: [lessonWith("l1"), lessonWith("l2")],
         }),
         makeModule({
           id: "m2",
           title: "Search",
           kcs: ["binary_search"],
-          lessons: [lessonWith("l3", "Prose three.")],
+          lessons: [lessonWith("l3")],
         }),
       ],
     });
     const { rerender } = render(<CourseReader course={course} />);
-    expect(screen.getByText("Prose one.")).toBeInTheDocument();
+    expect(screen.getByText(/lesson 1 of 3/i)).toBeInTheDocument();
 
     // Act — a drill-in request targeting binary_search.
     rerender(<CourseReader course={course} focusRequest={{ kc: "binary_search", seq: 1 }} />);
 
     // Assert — the reader jumps to that module's lesson.
-    expect(screen.getByText("Prose three.")).toBeInTheDocument();
     expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
   });
 
@@ -346,13 +233,13 @@ describe("CourseReader", () => {
         makeModule({
           id: "m1",
           title: "Foundations",
-          lessons: [lessonWith("l1", "Prose one.")],
+          lessons: [lessonWith("l1")],
         }),
         makeModule({
           id: "m2",
           title: "Search",
           kcs: ["binary_search"],
-          lessons: [lessonWith("l2", "Prose two.")],
+          lessons: [lessonWith("l2")],
         }),
       ],
     });
@@ -363,27 +250,113 @@ describe("CourseReader", () => {
       </StrictMode>,
     );
 
-    expect(screen.getByText("Prose two.")).toBeInTheDocument();
     expect(screen.getByText(/lesson 2 of 2/i)).toBeInTheDocument();
   });
+});
 
-  it("offers an Overview exit instead of a dead Prev on the first lesson", () => {
+describe("CourseReader — regenerate", () => {
+  it("regenerates the focused lesson and swaps in the returned course", async () => {
+    // Arrange — a handler returning a course whose module competency changed (a signal visible in
+    // the lesson header regardless of mode).
+    const updated = makeCourse();
+    updated.modules[0]!.competency = "Reason about logarithmic search precisely.";
+    const onRegenerate = vi.fn().mockResolvedValue(updated);
+    const course = makeCourse();
+    const originalCompetency = course.modules[0]!.competency!;
+    render(<CourseReader course={course} onRegenerate={onRegenerate} />);
+    expect(screen.getByText(new RegExp(originalCompetency))).toBeInTheDocument();
+
+    // Act
+    fireEvent.click(screen.getByRole("button", { name: /regenerate/i }));
+
+    // Assert — the handler gets the focused lesson id, and the updated course replaces the old.
+    expect(onRegenerate).toHaveBeenCalledWith(course.modules[0]!.lessons[0]!.id);
+    expect(
+      await screen.findByText(/Reason about logarithmic search precisely\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(originalCompetency))).not.toBeInTheDocument();
+  });
+});
+
+// Watch is where the lesson video lives — and, with Read retired, where per-lesson footer paging and
+// the Overview exit now live. These need an online reader (apiBaseUrl) so Watch is offered.
+describe("CourseReader — Watch-mode footer navigation", () => {
+  function renderWatch(course = multiLessonCourse(), props = {}) {
+    localStorage.setItem(READER_MODE_KEY, "watch");
+    vi.stubGlobal("fetch", readerFetch());
+    return render(<CourseReader course={course} apiBaseUrl={API} {...props} />);
+  }
+
+  it("renders the footer: worded labels with the advance as the accent CTA", async () => {
+    // The advancing action is the reader's one amber CTA (P6); Previous stays neutral.
+    renderWatch();
+    await screen.findByRole("radio", { name: /watch/i });
+
+    const next = screen.getByRole("button", { name: /next lesson/i });
+    expect(next).toHaveTextContent("Next lesson");
+    expect(next.className).toMatch(/accent/);
+    expect(screen.getByRole("button", { name: /previous lesson/i })).toHaveTextContent("Previous");
+
+    // On the last lesson the advance becomes Finish course — still the accent CTA.
+    fireEvent.click(next);
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+    const finish = screen.getByRole("button", { name: /finish course/i });
+    expect(finish.className).toMatch(/accent/);
+  });
+
+  it("steps forward with Next and swaps in Finish on the last lesson", async () => {
+    // Arrange
+    renderWatch();
+    await screen.findByRole("radio", { name: /watch/i });
+
+    // Act — advance through every lesson.
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+    expect(screen.getByText(/lesson 2 of 3/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
+
+    // Assert — the last lesson is focused; Next has given way to Finish course.
+    expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /next lesson/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /finish course/i })).toBeInTheDocument();
+  });
+
+  it("steps back with Previous and disables it on the first lesson", async () => {
+    // Arrange — start on the last lesson.
+    renderWatch();
+    await screen.findByRole("radio", { name: /watch/i });
+    const outline = screen.getByRole("navigation", { name: /course outline/i });
+    fireEvent.click(within(outline).getByRole("button", { name: /lesson 3/i }));
+    const prev = screen.getByRole("button", { name: /previous lesson/i });
+
+    // Act — step back one lesson.
+    fireEvent.click(prev);
+    expect(screen.getByText(/lesson 2 of 3/i)).toBeInTheDocument();
+
+    // Act / Assert — stepping back to the first lesson disables Previous.
+    fireEvent.click(prev);
+    expect(screen.getByText(/lesson 1 of 3/i)).toBeInTheDocument();
+    expect(prev).toBeDisabled();
+  });
+
+  it("offers an Overview exit instead of a dead Prev on the first lesson", async () => {
     // Arrange
     const onExitToOverview = vi.fn();
-    render(<CourseReader course={multiLessonCourse()} onExitToOverview={onExitToOverview} />);
+    renderWatch(multiLessonCourse(), { onExitToOverview });
+    await screen.findByRole("radio", { name: /watch/i });
 
-    // Act — on lesson 1 the back affordance leads out to the Overview (the design's
-    // prev-label rule) rather than sitting disabled.
+    // Act — on lesson 1 the back affordance leads out to the Overview (the design's prev-label
+    // rule) rather than sitting disabled.
     fireEvent.click(screen.getByRole("button", { name: /back to overview/i }));
 
     // Assert
     expect(onExitToOverview).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps Prev as lesson navigation past the first lesson", () => {
+  it("keeps Prev as lesson navigation past the first lesson", async () => {
     // Arrange
     const onExitToOverview = vi.fn();
-    render(<CourseReader course={multiLessonCourse()} onExitToOverview={onExitToOverview} />);
+    renderWatch(multiLessonCourse(), { onExitToOverview });
+    await screen.findByRole("radio", { name: /watch/i });
     fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
 
     // Act
@@ -394,39 +367,6 @@ describe("CourseReader", () => {
     expect(screen.getByText(/lesson 1 of/i)).toBeInTheDocument();
   });
 });
-
-/** One module, two lessons, with objectives (module-start) and an assessment (module-end). */
-function moduleWithObjectivesAndAssessment() {
-  return makeCourse({
-    modules: [
-      makeModule({
-        id: "m1",
-        title: "Foundations",
-        objectives: [
-          {
-            statement: "Locate a target in a sorted array with binary search.",
-            bloomLevel: "apply",
-            kc: "binary_search",
-            assessedBy: ["i1"],
-          },
-        ],
-        lessons: [lessonWith("l1", "Lesson one prose."), lessonWith("l2", "Lesson two prose.")],
-        assessment: {
-          items: [
-            {
-              id: "i1",
-              prompt: "What is the worst-case time complexity?",
-              objective: "binary_search",
-              answer: "O(log n)",
-              // Required by the type; its rendering is asserted in T5 (LessonAssessment).
-              passCriterion: "States O(log n).",
-            },
-          ],
-        },
-      }),
-    ],
-  });
-}
 
 /** Single-lesson course whose demonstrate phase carries `claim`; default provenance includes src-1. */
 function courseWithDemonstrateClaim(claim: Claim, provenance = makeCourse().provenance) {
@@ -457,7 +397,8 @@ describe("CourseReader — claims & provenance", () => {
     // Act
     render(<CourseReader course={course} />);
 
-    // Assert — the claim, its status, and the resolved citation (a real outbound link) all show.
+    // Assert — the claim, its status, and the resolved citation (a real outbound link) all show in
+    // the Sources & checks rail.
     expect(screen.getByText("Comparison reduces the problem size each step.")).toBeInTheDocument();
     expect(screen.getByText("SUPPORTED")).toBeInTheDocument();
     const link = screen.getByRole("link", { name: "CLRS" });
@@ -493,150 +434,7 @@ describe("CourseReader — claims & provenance", () => {
   });
 });
 
-describe("CourseReader — lesson body", () => {
-  it("renders the four teaching phases, relabelled to the lesson arc (P7.3)", () => {
-    // Arrange / Act
-    render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
-
-    // Assert — the Merrill phases now read as the arc's teaching rhythm.
-    expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Strategies & worked example" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Practice" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Make it your own" })).toBeInTheDocument();
-  });
-
-  it("shows the module's Bloom-tagged objectives on its first lesson only", () => {
-    // Arrange / Act — the first lesson is focused by default.
-    render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
-
-    // Assert — objectives + Bloom level are present on the module's opening lesson.
-    expect(screen.getByText(/learning objectives/i)).toBeInTheDocument();
-    expect(
-      screen.getByText("Locate a target in a sorted array with binary search."),
-    ).toBeInTheDocument();
-    expect(screen.getByText("apply")).toBeInTheDocument();
-
-    // Act — move off the first lesson; the objectives PANEL no longer shows (its statements may
-    // still appear de-scaffolded in the Field Guide TL;DR, which takes the panel's place).
-    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
-    expect(screen.queryByText(/learning objectives/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("apply")).not.toBeInTheDocument();
-  });
-
-  it("renders the lesson arc: what it expects, the module competency, and a self-check (P7.3)", () => {
-    // Arrange / Act — the default course carries the arc compartments + module competency.
-    render(<CourseReader course={makeCourse()} />);
-
-    // Assert — the arc opens with entry expectations and closes with a self-check, and the lesson
-    // shows the competency its module builds toward.
-    expect(screen.getByRole("heading", { name: "What this lesson expects" })).toBeInTheDocument();
-    expect(
-      screen.getByText("You can compare two numbers and recognise a sorted list."),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Self-check" })).toBeInTheDocument();
-    expect(
-      screen.getByText("Can you locate 7 in a 9-element sorted array in at most 4 comparisons?"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Locate an element in a sorted collection efficiently\./),
-    ).toBeInTheDocument();
-  });
-
-  it("renders a phase's curated resources as out-bound links with source + trust (P7.4)", () => {
-    // Arrange / Act — the default lesson carries a video resource on its demonstrate phase.
-    render(<CourseReader course={makeCourse()} />);
-
-    // Assert — the resource shows as a new-tab link, with its source domain and trust tier.
-    const link = screen.getByRole("link", { name: "Binary search visualised" });
-    expect(link).toHaveAttribute("href", "https://www.youtube.com/watch?v=demo");
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link).toHaveAttribute("rel", expect.stringContaining("noopener"));
-    expect(screen.getByText("youtube.com")).toBeInTheDocument();
-    // Trust tier shows in the word, not colour alone (WCAG: never colour as the sole signal).
-    expect(screen.getByText("open")).toBeInTheDocument();
-    expect(screen.getByText("A 6-min animation of halving the search range.")).toBeInTheDocument();
-  });
-
-  it("omits the arc compartments for a course built before P7.3 (no expects / self-check)", () => {
-    // Arrange — a pre-P7.3 lesson with empty arc fields and a module with no competency.
-    const bare = makeCourse({
-      modules: [
-        makeModule({ lessons: [makeLesson({ expects: [], selfCheck: [] })], competency: null }),
-      ],
-    });
-
-    // Act
-    render(<CourseReader course={bare} />);
-
-    // Assert — the arc sections simply do not render (no empty headings), and no competency line.
-    expect(
-      screen.queryByRole("heading", { name: "What this lesson expects" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Self-check" })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Builds toward/)).not.toBeInTheDocument();
-  });
-
-  it("shows the assessment on the module's last lesson, with answers revealable", () => {
-    // Arrange
-    render(<CourseReader course={moduleWithObjectivesAndAssessment()} />);
-
-    // Assert — assessment is hidden on the first (non-final) lesson.
-    expect(screen.queryByText("What is the worst-case time complexity?")).not.toBeInTheDocument();
-
-    // Act — go to the last lesson.
-    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
-
-    // Assert — the assessment prompt shows; the answer is hidden until revealed.
-    expect(screen.getByText("What is the worst-case time complexity?")).toBeInTheDocument();
-    expect(screen.queryByText("O(log n)")).not.toBeInTheDocument();
-
-    // Act — reveal the answer.
-    fireEvent.click(screen.getByRole("button", { name: /show answer/i }));
-    expect(screen.getByText("O(log n)")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /hide answer/i })).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-  });
-});
-
-/** A single-lesson course whose demonstrate prose contains a sentence the claim text overlaps, so
- *  the best-effort matcher links the claim to that exact sentence (the precise-highlight path). */
-function courseWithMatchingSentence() {
-  const base = makeLesson();
-  return makeCourse({
-    modules: [
-      makeModule({
-        lessons: [
-          {
-            ...base,
-            segments: {
-              ...base.segments,
-              demonstrate: {
-                prose:
-                  "Subordinate clauses name the logical relationship between ideas. " +
-                  "Then you revise your own paragraph carefully.",
-                visuals: [],
-                claims: [
-                  {
-                    text: "Subordinate clauses name the logical relationship clearly.",
-                    supportedBy: "src-1",
-                    verifierStatus: "supported",
-                  },
-                ],
-                resources: [],
-              },
-            },
-          },
-        ],
-      }),
-    ],
-  });
-}
-
-describe("CourseReader — annotation rail & cross-highlight", () => {
+describe("CourseReader — annotation rail", () => {
   it("lifts claims into the Sources & checks rail, out of the reading column", () => {
     // Arrange / Act — the default course has a demonstrate claim.
     render(<CourseReader course={makeCourse()} />);
@@ -648,7 +446,7 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     ).toBeInTheDocument();
     expect(within(rail).getByText("SUPPORTED")).toBeInTheDocument();
 
-    // …and NOT inline in the reading column (the contract is "moved out of the prose").
+    // …and NOT inline in the reading column (the contract is "moved out of the lesson body").
     const column = screen.getByRole("region", { name: /lesson reader/i });
     expect(
       within(column).queryByText("Comparison reduces the problem size each step."),
@@ -671,63 +469,6 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     expect(within(rail).getByText("91%")).toBeInTheDocument();
   });
 
-  it("clears the active cross-highlight when navigating to another lesson", () => {
-    // Arrange — lesson 1 has a matchable claim; lesson 2 has none.
-    const matching = courseWithMatchingSentence();
-    const course = makeCourse({
-      modules: [
-        { ...matching.modules[0]!, id: "m1", title: "One" },
-        makeModule({ id: "m2", title: "Two", lessons: [lessonWith("l2", "Second lesson prose.")] }),
-      ],
-    });
-    render(<CourseReader course={course} />);
-    fireEvent.click(screen.getByRole("button", { name: /locate in the lesson/i }));
-    expect(screen.getByRole("button", { name: /show the source note for/i })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-
-    // Act — advance to the next lesson.
-    fireEvent.click(screen.getByRole("button", { name: /next lesson/i }));
-
-    // Assert — the stale highlight is cleared (no marked sentence remains pressed).
-    expect(
-      screen.queryByRole("button", { name: /show the source note for/i }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("Second lesson prose.")).toBeInTheDocument();
-  });
-
-  it("cross-highlights between a matched prose sentence and its rail entry (both directions)", () => {
-    // Arrange — a course where the claim matches a demonstrate sentence.
-    render(<CourseReader course={courseWithMatchingSentence()} />);
-    const railEntry = screen.getByRole("button", { name: /locate in the lesson/i });
-    const proseMark = screen.getByRole("button", { name: /show the source note for/i });
-    expect(railEntry).toHaveAttribute("aria-pressed", "false");
-    expect(proseMark).toHaveAttribute("aria-pressed", "false");
-
-    // Act / Assert — selecting the rail entry highlights the matched sentence.
-    fireEvent.click(railEntry);
-    expect(proseMark).toHaveAttribute("aria-pressed", "true");
-
-    // Act / Assert — selecting the prose sentence highlights the rail entry.
-    fireEvent.click(proseMark);
-    expect(railEntry).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("falls back to highlighting the whole phase when a claim has no sentence match", () => {
-    // Arrange — the default claim does not overlap its prose, so it links to the phase.
-    render(<CourseReader course={makeCourse()} />);
-
-    // Act — select the (fallback) rail entry.
-    fireEvent.click(screen.getByRole("button", { name: /locate in the lesson/i }));
-
-    // Assert — the demonstrate phase is marked active for the highlight.
-    expect(document.querySelector('[data-phase="demonstrate"]')).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-  });
-
   it("the header Sources toggle collapses and restores the rail on wide screens", () => {
     // Arrange — jsdom's matchMedia reports wide, where the rail is a visible column.
     const { container } = render(<CourseReader course={makeCourse()} />);
@@ -745,10 +486,6 @@ describe("CourseReader — annotation rail & cross-highlight", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(container.querySelector('[data-rail-collapsed="true"]')).toBeNull();
   });
-
-  // The narrow-breakpoint test below stubs matchMedia; scoped cleanup so a failing assertion
-  // can't leak the stub into later tests (FIRST: Independent).
-  afterEach(() => vi.unstubAllGlobals());
 
   it("toggles the annotation drawer and closes it on Escape below the rail breakpoint", () => {
     // Arrange — simulate the narrow layout, where the rail is an off-canvas drawer.
@@ -830,7 +567,7 @@ describe("CourseReader — outline drawer (mobile)", () => {
     fireEvent.click(within(outline).getByRole("button", { name: /lesson 3/i }));
 
     // Assert — the chosen lesson shows and the drawer has closed behind it.
-    expect(screen.getByText("Prose for lesson three.")).toBeInTheDocument();
+    expect(screen.getByText(/lesson 3 of 3/i)).toBeInTheDocument();
     expect(lessonsToggle()).toHaveAttribute("aria-expanded", "false");
   });
 

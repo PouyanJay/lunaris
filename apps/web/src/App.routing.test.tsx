@@ -12,10 +12,10 @@ import {
   sseStreamResponse,
 } from "./test/fixtures";
 
-// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
-// pin the persisted preference before each render.
+// The reader's per-lesson footer paging (Next / Previous / Overview exit) lives in Watch mode now
+// that Read is retired — pin Watch before each render so those controls are on screen.
 beforeEach(() => {
-  localStorage.setItem(READER_MODE_KEY, "read");
+  localStorage.setItem(READER_MODE_KEY, "watch");
 });
 
 describe("App — URL routing (live studio)", () => {
@@ -254,7 +254,7 @@ describe("App — URL routing (live studio)", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: /continue learning/i }));
-    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: /reading mode/i })).toBeInTheDocument();
     // Continue lands on the reader; the URL canonicalises to the focused lesson (P6).
     await waitFor(() =>
       expect(window.location.pathname).toBe("/courses/course-test/lessons/m-binary_search-l0"),

@@ -11,7 +11,7 @@ import type {
 export interface LessonStep {
   /** Stable within a lesson: `${sectionId}:${ordinal}`. */
   id: string;
-  /** Mirrors the Read mode's section ids (expects / phase keys / selfCheck / assessment). */
+  /** The outline's section ids (expects / phase keys / selfCheck / assessment). */
   sectionId: string;
   sectionLabel: string;
   /** The phase's arc cue, for the card eyebrow (content/visual/resources steps). */

@@ -207,7 +207,7 @@ export function LearnMode({
     return (
       <section className={styles.stage} aria-label="Lesson steps">
         <p className={styles.empty} role="status">
-          This lesson has no content to step through — switch to Read for the full page.
+          This lesson has no content to step through yet.
         </p>
       </section>
     );

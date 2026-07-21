@@ -19,28 +19,17 @@ import { deriveEffectiveMode, useLearnMode, type ReaderMode } from "./useLearnMo
 import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
-import { buildAnnotations, type PhaseRef, phraseMarksFor } from "./annotations";
+import { buildAnnotations, type PhaseRef } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
-import { LessonAssessment } from "./LessonAssessment";
 import { LessonVideoHero } from "./LessonVideoHero";
 import { OverviewSection } from "./OverviewSection";
-import { LessonObjectives } from "./LessonObjectives";
-import { LessonProse } from "./LessonProse";
-import { LessonResources } from "./LessonResources";
-import { LessonScaffold } from "./LessonScaffold";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
-import { ReadingMeta } from "./ReadingMeta";
 import { ScopeBand } from "./ScopeBand";
-import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
 import { buildGlossaryIndex } from "../../lib/glossaryIndex";
 import { deriveTldr } from "../../lib/lessonTldr";
-import { estimateReadingMinutes } from "../../lib/readingTime";
-import { useReadingProgress } from "../../hooks/useReadingProgress";
-import { useSectionSpy } from "../../hooks/useSectionSpy";
 import { buildSectionEntries } from "./readerSections";
-import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./CourseReader.module.css";
 
 /** Below this the annotation rail renders as an off-canvas drawer — must match the
@@ -65,8 +54,8 @@ const PHASES: (PhaseRef & { cue: string })[] = [
 ];
 
 /** A lesson in course-wide reading order, carrying its owning module's title for context (lessons
- *  have no title of their own in the schema) and a display label. Module-level objectives and
- *  assessment are attached to the module's first / last lesson respectively, so each shows once. */
+ *  have no title of their own in the schema) and a display label. The module's assessment is
+ *  attached to its last lesson so it shows once (as the Learn arc's closing step). */
 interface ReaderLesson {
   lesson: Lesson;
   /** The owning module's id — the key objective progress is stored under. */
@@ -76,9 +65,8 @@ interface ReaderLesson {
    *  what the lesson earns; null on the no-research path. */
   competency: string | null;
   label: string;
-  objectives: Objective[];
-  /** The owning module's full objective list regardless of position — objectives render once (on
-   *  the module's first lesson, `objectives` above) but the TL;DR summarises them on EVERY lesson. */
+  /** The owning module's full objective list — feeds the lesson's TL;DR takeaways (docked in Watch)
+   *  and the Try First challenge evidence (Learn). Carried on EVERY lesson of the module. */
   moduleObjectives: Objective[];
   assessment: AssessmentItem[];
 }
@@ -105,7 +93,6 @@ function buildReaderModel(course: Course): ReaderModel {
       moduleTitle: flat.module.title,
       competency: flat.module.competency,
       label,
-      objectives: flat.isFirstInModule ? flat.module.objectives : [],
       moduleObjectives: flat.module.objectives,
       assessment: flat.isLastInModule ? flat.module.assessment.items : [],
     });
@@ -121,8 +108,8 @@ function buildReaderModel(course: Course): ReaderModel {
 }
 
 /** The lesson's curated resources across every teaching phase, deduped by URL — the Watch surface
- *  docks them under the video as lesson-level aids (Read mode shows them per phase instead). Phase
- *  order (activate → integrate) is preserved so the dock reads in teaching order. */
+ *  docks them under the video as lesson-level aids (Learn mode surfaces them per phase, as steps).
+ *  Phase order (activate → integrate) is preserved so the dock reads in teaching order. */
 function lessonResourcesOf(lesson: Lesson): Resource[] {
   const seen = new Set<string>();
   const collected: Resource[] = [];
@@ -168,13 +155,13 @@ interface CourseReaderProps {
   onExitToOverview?: (() => void) | undefined;
 }
 
-/** The lesson reader (Lessons view): a persistent course outline, a clean reading column, and a
- *  parallel "Sources & checks" rail that lifts the verifier's claims out of the prose (req 1). The
- *  reading column renders the focused lesson as its arc (P7.3) — competency, the "expects" bookend,
- *  the teaching phases, objectives, branded visuals, curated resources, and the closing self-check.
- *  Selecting a rail entry highlights the place it refers to in the prose (its matched sentence, or
- *  its phase); a prose cross-link highlights the rail entry. On narrow screens the rail collapses
- *  behind a "Sources & checks" toggle that opens it as a drawer. */
+/** The lesson reader (Lessons view): a persistent course outline, the focused lesson's surface, and
+ *  a parallel "Sources & checks" rail that lifts the verifier's claims out of the lesson (req 1). One
+ *  control switches the surface between **Learn** (Focus Flow — the lesson's arc walked one guided
+ *  step at a time: expects, each teaching phase's prose/visuals/resources, self-check, assessment) and
+ *  **Watch** (Cinema — the lesson's explainer video, generated on demand where none exists yet).
+ *  Selecting a rail entry highlights it. On narrow screens the rail collapses behind a "Sources &
+ *  checks" toggle that opens it as a drawer. */
 export function CourseReader({
   course,
   activeLessonId,
@@ -287,16 +274,6 @@ export function CourseReader({
   // First open of a lesson marks it in_progress — but never regresses a lesson already marked
   // (a revisited done lesson stays done). Waits for the snapshot so reloads don't re-mark.
   const currentLessonId = current?.lesson.id;
-  // Field Guide reading meta: the focused lesson's estimated minutes, and how far the pane has
-  // been scrolled through it (re-measured from the top on every lesson change).
-  const readingMinutes = useMemo(
-    () => (current ? estimateReadingMinutes(current.lesson) : 1),
-    [current],
-  );
-  const readPercent = useReadingProgress(paneRef, currentLessonId);
-  // Which of the lesson's sections is under the reading line, and which are read past — drives
-  // the outline's nested section level in Read mode.
-  const { activeSection, passedSections } = useSectionSpy(paneRef, currentLessonId);
   useEffect(() => {
     if (!progress || !currentLessonId) return;
     const known = progress.lessons.some((mark) => mark.lessonId === currentLessonId);
@@ -325,7 +302,7 @@ export function CourseReader({
     () => (current ? buildAnnotations(current.lesson.segments, PHASES, citations) : []),
     [current, citations],
   );
-  // Focus Flow: the Learn/Read/Watch preference, step position, and step-derived structures.
+  // Focus Flow: the Learn/Watch preference, step position, and step-derived structures.
   const { preference, selectMode, stepIndex, setStepIndex, steps, sectionProgress, firstStepOf } =
     useLearnMode({
       lesson: current?.lesson ?? null,
@@ -343,30 +320,30 @@ export function CourseReader({
     undefined,
     apiBaseUrl ? (current?.lesson.video ?? null) : null,
   );
-  // Cinema (Watch): the mode is only offered — and only effective — where a ready video carries a
-  // navigable chapter outline. The effective mode folds in the front-door default: an unset
-  // preference opens in Watch when such a video exists (else Learn); a stored `watch` clamps to
-  // Learn where no video exists, keeping the preference intact so Watch returns on a lesson that
-  // does have one; an explicit Learn/Read choice always wins.
+  // Cinema (Watch): the mode is always offered online (Watch is where a video is generated when the
+  // lesson has none yet); `watchAvailable` is narrower — a ready video that carries a navigable
+  // chapter outline, which drives the front-door default. The effective mode folds that in: an unset
+  // preference opens in Watch when such a video exists (else Learn); a stored `watch` sticks even on a
+  // video-less lesson (Watch then shows the generate affordance); an explicit Learn choice always
+  // wins; offline (Watch not offered) resolves to Learn.
+  const watchOffered = Boolean(apiBaseUrl);
   const watchAvailable =
     lessonVideo.state.phase === "ready" && lessonVideo.state.chapters.length > 0;
-  const effectiveMode = deriveEffectiveMode(preference, watchAvailable);
-  const reading = effectiveMode === "read";
-  // The mode toggle offers Watch only where a chaptered video exists (Cinema).
+  const effectiveMode = deriveEffectiveMode(preference, watchAvailable, watchOffered);
+  // The mode toggle: Learn always, Watch whenever a video is reachable (online).
   const modeSegments: Segment<ReaderMode>[] = [
     { value: "learn", label: "Learn" },
-    { value: "read", label: "Read" },
-    ...(watchAvailable ? [{ value: "watch" as const, label: "Watch" }] : []),
+    ...(watchOffered ? [{ value: "watch" as const, label: "Watch" }] : []),
   ];
   // The learner's activity snapshot (streak / event feed) — the Trail band's motivation source.
-  // Fetched only in Learn mode (where the band shows) and online; Read/Watch / offline settle
-  // without a fetch. Reloaded on lesson completion so it reflects the just-earned event.
+  // Fetched only in Learn mode (where the band shows) and online; Watch / offline settle without a
+  // fetch. Reloaded on lesson completion so it reflects the just-earned event.
   const { state: activity, reload: reloadActivity } = useActivity(
     apiBaseUrl ?? "",
     effectiveMode === "learn",
   );
-  // Continue past the final step completes the lesson exactly like Read mode's Next/Finish —
-  // and IS Read mode's Next/Finish (the footer buttons call it too).
+  // Complete the lesson: mark done and advance. Learn's final Continue and Watch's footer Next both
+  // call it.
   const completeLesson = useCallback(() => {
     if (progress && currentLessonId) markLesson(currentLessonId, "done");
     // The done mark emits a `completed` event server-side (P9); refresh the Trail band so it
@@ -374,65 +351,18 @@ export function CourseReader({
     reloadActivity();
     if (safeIndex < total - 1) goToLesson(safeIndex + 1);
   }, [progress, currentLessonId, markLesson, reloadActivity, safeIndex, total, goToLesson]);
-  // Jump to a section chosen in the outline — a step jump in Learn mode, a scroll in Read —
-  // and close the phone outline drawer so the destination isn't hidden behind it.
+  // Jump to a section chosen in the outline — a step jump in Learn mode — and close the phone
+  // outline drawer so the destination isn't hidden behind it. (Watch has no in-page sections.)
   const selectSection = useCallback(
     (id: string) => {
       if (effectiveMode === "learn") {
         const target = firstStepOf(id);
         if (target !== undefined) setStepIndex(target);
-      } else {
-        const target = paneRef.current?.querySelector(`[data-section="${id}"]`);
-        scrollIntoViewSafe(target, reduceMotion, "start");
       }
       setOutlineOpen(false);
     },
-    [effectiveMode, firstStepOf, setStepIndex, reduceMotion],
+    [effectiveMode, firstStepOf, setStepIndex],
   );
-  // Per-phase cross-link marks, memoised (stable across an activeClaimId change) so selecting a
-  // claim never re-parses a phase's Markdown — the prose's stateful children stay mounted.
-  const marksByPhase = useMemo(() => {
-    const byPhase = new Map<string, ReturnType<typeof phraseMarksFor>>();
-    if (current) {
-      for (const phase of PHASES) {
-        byPhase.set(
-          phase.key,
-          phraseMarksFor(annotations, phase.key, current.lesson.segments[phase.key].prose),
-        );
-      }
-    }
-    return byPhase;
-  }, [annotations, current]);
-  const activeAnnotation =
-    annotations.find((annotation) => annotation.id === activeClaimId) ?? null;
-
-  // Selecting a claim reveals the rail wherever it's hidden — the drawer on narrow screens, the
-  // collapsed column on wide — and highlights the entry. The breakpoint rides a ref so this stays
-  // stable and doesn't churn the memoised prose.
-  const railDrawerRef = useRef(railDrawer);
-  railDrawerRef.current = railDrawer;
-  const expandRail = rail.expand;
-  const selectClaim = useCallback(
-    (id: string) => {
-      setActiveClaimId(id);
-      if (railDrawerRef.current) setRailOpen(true);
-      else expandRail();
-    },
-    [expandRail],
-  );
-
-  // Selecting a claim (from the rail or a prose cross-link) brings the place it refers to into view:
-  // its matched sentence when there is one, else its whole phase (the best-effort fallback).
-  useEffect(() => {
-    if (!activeAnnotation) return;
-    const pane = paneRef.current;
-    if (!pane) return;
-    const target =
-      activeAnnotation.matchedSentence !== null
-        ? pane.querySelector(`[data-claim-id="${activeAnnotation.id}"]`)
-        : pane.querySelector(`[data-phase="${activeAnnotation.phaseKey}"]`);
-    scrollIntoViewSafe(target, reduceMotion);
-  }, [activeAnnotation, reduceMotion]);
 
   // The narrow-screen drawer: Esc closes it and returns focus to the toggle.
   const closeRail = useCallback(() => {
@@ -481,12 +411,12 @@ export function CourseReader({
   // the render guard and the list below.
   const expects = current.lesson.expects ?? [];
   const selfCheck = current.lesson.selfCheck ?? [];
-  // The lesson's 30-second summary, derived from its module's own objectives (Field Guide). An
-  // objective-less module (no-research path) hides the panel rather than inventing content.
+  // The lesson's key takeaways, de-scaffolded from its module's objectives — docked beneath the
+  // Watch video. An objective-less module (no-research path) yields none (the dock is omitted).
   const tldr = deriveTldr(current.moduleObjectives);
   const lessonResources = lessonResourcesOf(current.lesson);
-  // Which of the module's objectives are marked understood — shared by the objectives panel
-  // (Read) and the Try First challenge evidence (Learn). Undefined offline.
+  // Which of the module's objectives are marked understood — feeds the Try First challenge evidence
+  // (Learn). Undefined offline.
   const understoodObjectives = progress
     ? new Set(
         progress.objectives
@@ -504,15 +434,15 @@ export function CourseReader({
       ? (index: number, understood: boolean) => markObjective(current.moduleId, index, understood)
       : undefined,
   };
-  // The focused lesson's sections for the outline's nested level — state from the scroll spy in
-  // Read mode, from the step position in Learn mode.
+  // The focused lesson's sections for the outline's nested level — read-state from the Learn step
+  // position (Watch has no in-page sections; the level simply reflects the last Learn position).
   const sectionEntries = buildSectionEntries({
     expects,
     selfCheck,
     assessmentCount: current.assessment.length,
     phases: PHASES,
-    activeSection: reading ? activeSection : sectionProgress.activeSection,
-    passedSections: reading ? passedSections : sectionProgress.passedSections,
+    activeSection: sectionProgress.activeSection,
+    passedSections: sectionProgress.passedSections,
   });
   const regenerate = async () => {
     if (!onRegenerate) return;
@@ -583,9 +513,6 @@ export function CourseReader({
           {safeIndex === 0 && course.buildCapabilities && (
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
-          {/* Field Guide reading-meta band: how big this lesson is and how far through it the
-              learner has scrolled. Read-mode furniture — Learn has step metrics instead. */}
-          {reading && <ReadingMeta minutes={readingMinutes} percent={readPercent} />}
           <header className={styles.lessonHead}>
             <div className={styles.lessonHeading}>
               <p className="eyebrow">{current.moduleTitle}</p>
@@ -600,8 +527,9 @@ export function CourseReader({
               <p className={`${styles.progress} mono`}>
                 Lesson {safeIndex + 1} of {total}
               </p>
-              {/* Focus Flow: guided steps vs the long-form page vs the video (Cinema) — one control,
-                  every mode. Watch appears only where a ready chaptered video exists. */}
+              {/* Focus Flow: guided steps (Learn) vs the video (Watch) — one control. Watch is
+                  offered wherever a video is reachable (online), generating one on demand if none
+                  exists yet. */}
               <SegmentedControl
                 segments={modeSegments}
                 value={effectiveMode}
@@ -654,19 +582,8 @@ export function CourseReader({
             </div>
           </header>
 
-          {/* The lesson in 30 seconds (Field Guide): the module's objectives de-scaffolded into
-              takeaway bullets, so the learner sizes up the lesson before committing to it. A
-              module's FIRST lesson opens with the full objectives panel instead — showing both
-              would say the same thing twice. */}
-          {reading && current.objectives.length === 0 && tldr.length > 0 && (
-            <LessonScaffold
-              title="This lesson in 30 seconds"
-              cue="The takeaways, before the reading"
-              items={tldr}
-            />
-          )}
-
-          {/* Focus Flow: the guided step surface replaces the long-form region below. */}
+          {/* Focus Flow (Learn): the guided step surface — every piece of the lesson (expects, each
+              phase's prose/visuals/resources, self-check, assessment) walked one idea at a time. */}
           {effectiveMode === "learn" && (
             <LearnMode
               steps={steps}
@@ -685,129 +602,35 @@ export function CourseReader({
             <TrailBand activity={activity} lessonNumber={safeIndex + 1} lessonTotal={total} />
           )}
 
-          {/* Cinema (Watch): the ready video as the lesson's front door — the chaptered,
-              transcript-synced player with the lesson's key takeaways docked beneath. Rendered only
-              where a ready chaptered video exists (Watch is otherwise clamped away). */}
-          {effectiveMode === "watch" && lessonVideo.state.phase === "ready" && (
-            <WatchSurface
-              videoUrl={lessonVideo.state.videoUrl}
-              posterUrl={lessonVideo.state.posterUrl}
-              captionsUrl={lessonVideo.state.captionsUrl}
-              chapters={lessonVideo.state.chapters}
-              transcript={lessonVideo.state.transcript}
-              label={`${current.moduleTitle} — lesson video`}
-              takeaways={tldr}
-              resources={lessonResources}
-              onExitToRead={() => selectMode("read")}
-            />
-          )}
-
-          {/* The lesson's headline artifact (explainer-video V0): generate → watch, in place. The
-              reader owns the video state (above); the hero is the presentational surface. In Read
-              mode it carries the generate/progress/failed affordances and any pre-Cinema (un-
-              chaptered) player — but once a chaptered video is ready, Watch owns the player, so Read
-              points to it rather than duplicating the full surface. */}
-          {reading && apiBaseUrl && !watchAvailable && (
-            <LessonVideoHero
-              state={lessonVideo.state}
-              generate={lessonVideo.generate}
-              regenerate={lessonVideo.regenerate}
-              stop={lessonVideo.stop}
-              refresh={lessonVideo.refresh}
-              video={current.lesson.video ?? null}
-              title={current.moduleTitle}
-            />
-          )}
-
-          {/* Read mode, chaptered video ready: keep the video discoverable (the redesign's whole
-              point) without duplicating the player — a compact cue into Watch. */}
-          {reading && apiBaseUrl && watchAvailable && (
-            <div className={styles.watchCta}>
-              <span className={styles.watchCtaHint}>This lesson has a video walkthrough.</span>
-              <Button variant="accent" onClick={() => selectMode("watch")}>
-                Watch this lesson
-              </Button>
-            </div>
-          )}
-
-          {reading && current.objectives.length > 0 && (
-            <LessonObjectives
-              objectives={current.objectives}
-              understoodIndexes={understoodObjectives}
-              onToggleObjective={
-                progress
-                  ? (index, understood) => markObjective(current.moduleId, index, understood)
-                  : undefined
-              }
-            />
-          )}
-
-          {/* The arc opens by stating what the lesson assumes the learner already brings (P7.3);
-              omitted for courses built before P7.3 (empty expects). */}
-          {reading && expects.length > 0 && (
-            <div data-section="expects" className={styles.sectionAnchor}>
-              <LessonScaffold
-                title="What this lesson expects"
-                cue="What to be comfortable with before you start"
-                items={expects}
+          {/* Cinema (Watch): the lesson's video front door. A ready chaptered video is the full
+              Watch surface — the transcript-synced player with navigable chapters and per-chapter
+              resources on the right, key takeaways docked beneath. Otherwise the hero carries the
+              lesson's video lifecycle: generate it on demand (idle), progress while it builds, retry
+              on failure, or the plain player for a pre-Cinema (un-chaptered) video. Watch is only
+              reachable online, so `apiBaseUrl` is present here. */}
+          {effectiveMode === "watch" &&
+            (lessonVideo.state.phase === "ready" && lessonVideo.state.chapters.length > 0 ? (
+              <WatchSurface
+                videoUrl={lessonVideo.state.videoUrl}
+                posterUrl={lessonVideo.state.posterUrl}
+                captionsUrl={lessonVideo.state.captionsUrl}
+                chapters={lessonVideo.state.chapters}
+                transcript={lessonVideo.state.transcript}
+                label={`${current.moduleTitle} — lesson video`}
+                takeaways={tldr}
+                resources={lessonResources}
               />
-            </div>
-          )}
-
-          {reading &&
-            PHASES.map(({ key, label, cue }) => {
-              const segment = current.lesson.segments[key];
-              const phaseHighlighted =
-                activeAnnotation?.phaseKey === key && activeAnnotation.matchedSentence === null;
-              return (
-                <section
-                  key={key}
-                  className={`${styles.phase} ${phaseHighlighted ? styles.phaseActive : ""} ${styles.sectionAnchor}`}
-                  aria-label={label}
-                  data-phase={key}
-                  data-section={key}
-                  data-active={phaseHighlighted ? "true" : undefined}
-                >
-                  <div className={styles.phaseHead}>
-                    <p className="eyebrow">{cue}</p>
-                    <h3 className={styles.phaseLabel}>{label}</h3>
-                  </div>
-                  <LessonProse
-                    prose={segment.prose}
-                    marks={marksByPhase.get(key) ?? []}
-                    glossary={glossary}
-                    activeClaimId={activeClaimId}
-                    onSelectClaim={selectClaim}
-                  />
-                  {/* Index keys are safe: a segment's visuals are a fixed, non-reordered array. */}
-                  {segment.visuals.map((visual, visualIndex) => (
-                    <VisualRenderer key={visualIndex} visual={visual} />
-                  ))}
-                  {/* Curated external aids for this phase (P7.4); guarded with ?? [] so a course built
-                    before P7.4 (no resources) renders nothing here. */}
-                  {(segment.resources ?? []).length > 0 && (
-                    <LessonResources resources={segment.resources} />
-                  )}
-                </section>
-              );
-            })}
-
-          {/* The arc closes with a self-check the learner runs to confirm the competency (P7.3). */}
-          {reading && selfCheck.length > 0 && (
-            <div data-section="selfCheck" className={styles.sectionAnchor}>
-              <LessonScaffold
-                title="Self-check"
-                cue="Confirm you’ve got it before moving on"
-                items={selfCheck}
+            ) : (
+              <LessonVideoHero
+                state={lessonVideo.state}
+                generate={lessonVideo.generate}
+                regenerate={lessonVideo.regenerate}
+                stop={lessonVideo.stop}
+                refresh={lessonVideo.refresh}
+                video={current.lesson.video ?? null}
+                title={current.moduleTitle}
               />
-            </div>
-          )}
-
-          {reading && current.assessment.length > 0 && (
-            <div data-section="assessment" className={styles.sectionAnchor}>
-              <LessonAssessment items={current.assessment} />
-            </div>
-          )}
+            ))}
 
           <footer className={styles.nav}>
             {onRegenerate ? (
@@ -817,9 +640,10 @@ export function CourseReader({
             ) : (
               <span />
             )}
-            {/* Lesson prev/next lives in the step surface's Continue in Learn mode — the footer
-                pair would be a second "Next lesson" saying the same thing. */}
-            {!reading ? (
+            {/* Lesson prev/next lives in the step surface's Continue in Learn mode — the footer pair
+                would be a second "Next lesson" saying the same thing. Watch has no such control, so
+                the footer carries lesson paging (and the Overview exit) there. */}
+            {effectiveMode !== "watch" ? (
               <span />
             ) : (
               <div className={styles.navButtons}>

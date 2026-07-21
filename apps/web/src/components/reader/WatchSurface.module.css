@@ -1,13 +1,7 @@
-/* The Watch surface stacks the consumption control, the chaptered player, and the docked lesson
-   furniture (takeaways, resources) with the reader's section rhythm between them. */
+/* The Watch surface stacks the chaptered player and the docked lesson furniture (takeaways,
+   resources) with the reader's section rhythm between them. */
 .surface {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
-}
-
-/* The Watch/Both/Read control sits above the player, trailing to the right. */
-.modeRow {
-  display: flex;
-  justify-content: flex-end;
 }

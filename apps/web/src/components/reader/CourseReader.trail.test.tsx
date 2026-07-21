@@ -147,19 +147,17 @@ describe("CourseReader — Trail motivation band", () => {
     expect(screen.queryByRole("group", { name: /your progress/i })).not.toBeInTheDocument();
   });
 
-  it("shows no band in Read mode", async () => {
-    // Arrange — pin Read; activity is reachable but the band is a Learn-mode layer.
-    localStorage.setItem(READER_MODE_KEY, "read");
+  it("shows no band in Watch mode", async () => {
+    // Arrange — pin Watch; activity is reachable but the band is a Learn-mode layer.
+    localStorage.setItem(READER_MODE_KEY, "watch");
     const fetchMock = routedFetch({ activity: activityView() });
     vi.stubGlobal("fetch", fetchMock);
 
     // Act
     render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
 
-    // Assert
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
-    });
+    // Assert — the Watch surface is on screen (its generate affordance), and the band is not.
+    expect(await screen.findByRole("button", { name: /generate video/i })).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: /your progress/i })).not.toBeInTheDocument();
   });
 });

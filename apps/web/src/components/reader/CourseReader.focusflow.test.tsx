@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Visual } from "../../types/course";
 import { makeCourse, makeLesson, makeModule, routedFetch } from "../../test/fixtures";
-import { CourseReader, READER_MODE_KEY } from "./CourseReader";
+import { CourseReader } from "./CourseReader";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -237,7 +237,7 @@ describe("CourseReader — Learn mode", () => {
     expect(screen.getByRole("group", { name: "Step content" })).toHaveFocus();
   });
 
-  it("offers the Read fallback for a lesson with nothing to step through", () => {
+  it("shows an honest empty state for a lesson with nothing to step through", () => {
     // Arrange — an entirely empty lesson.
     const empty = { prose: "", visuals: [], claims: [], resources: [] };
     const course = makeCourse({
@@ -258,7 +258,7 @@ describe("CourseReader — Learn mode", () => {
     render(<CourseReader course={course} />);
 
     // Assert — an honest empty state, not a blank stage or a phantom step counter.
-    expect(screen.getByRole("status")).toHaveTextContent(/switch to read/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/no content to step through/i);
     expect(screen.queryByText(/step 1 of/i)).not.toBeInTheDocument();
   });
 
@@ -312,31 +312,6 @@ describe("CourseReader — Learn mode", () => {
     expect(screen.getByText(/step 1 of/i)).toBeInTheDocument();
   });
 
-  it("persists the chosen mode for the next visit", () => {
-    // Arrange — a stored Read preference wins on mount.
-    localStorage.setItem(READER_MODE_KEY, "read");
-    const { unmount } = render(<CourseReader course={makeCourse()} />);
-    expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
-
-    // Act — choose Learn; the preference is written back.
-    fireEvent.click(screen.getByRole("radio", { name: "Learn" }));
-    expect(localStorage.getItem(READER_MODE_KEY)).toBe("learn");
-    unmount();
-
-    // Assert — a fresh reader honours it.
-    render(<CourseReader course={makeCourse()} />);
-    expect(screen.getByRole("region", { name: /lesson steps/i })).toBeInTheDocument();
-  });
-
-  it("switches to the long-form Read mode from the toggle", () => {
-    // Arrange
-    render(<CourseReader course={makeCourse()} />);
-
-    // Act
-    fireEvent.click(screen.getByRole("radio", { name: "Read" }));
-
-    // Assert — the Field Guide page is back.
-    expect(screen.getByRole("heading", { name: "Warm-up" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: /lesson steps/i })).not.toBeInTheDocument();
-  });
+  // Mode persistence and the front-door default now live in CourseReader.watch.test.tsx (they need
+  // an online reader where Watch is offered — offline, Learn is the only mode). Read is retired.
 });
