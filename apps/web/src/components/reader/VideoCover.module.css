@@ -1,0 +1,36 @@
+/* Shared video cover — a solid black title card over the poster frame until first play. Black by
+   request and by nature (it sits over media, so it uses a literal #000, not a theme surface token,
+   and stays black in both themes — the CourseCover fixed-art exception). Top-aligned so the title
+   clears a centred play button and any bottom-centred caption. Non-interactive. */
+.cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  pointer-events: none;
+  background: #000000;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--accent-500);
+  line-height: 1;
+}
+
+.title {
+  margin: 0;
+  max-width: 20ch;
+  font-family: var(--font-sans);
+  font-size: clamp(var(--text-lg), 3.4vw, var(--text-2xl));
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  color: #ffffff;
+}

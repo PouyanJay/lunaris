@@ -30,6 +30,12 @@
   gap: var(--space-8);
 }
 
+/* Watch mode wants room for the video + chapter rail, so it takes the wider Overview-style measure
+   (Learn keeps the 720px reading measure). */
+.page.pageWide {
+  max-width: 1080px;
+}
+
 /* The lesson header band, as three stacked rows: where you are (module · position), the title
    paired with the controls that act on it, then the promise line. The controls ride the title's
    row so they stay anchored to what they act on — bottom-aligning them against the heading block

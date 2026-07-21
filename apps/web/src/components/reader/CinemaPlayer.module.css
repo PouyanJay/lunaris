@@ -1,6 +1,8 @@
 .cinema {
   display: grid;
-  grid-template-columns: 1fr 260px;
+  /* 300px rail (up from 260) gives the chapter list + docked resource cards more room in the wider
+     Watch layout. */
+  grid-template-columns: 1fr 300px;
   gap: 0;
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-lg);
@@ -260,49 +262,6 @@
   background: transparent;
   color: var(--accent-500);
   font-weight: 600;
-}
-
-/* ── Title-card cover (before first play) ────────────────────────────────── */
-
-/* A designed cover over the (often black) poster frame so every video reads as having a cover. Brand
-   art: it sits over a video and must stay dark in BOTH themes, so it uses literal dark hues + the
-   accent glow rather than the surface tokens (which flip to light) — the CourseCover fixed-art
-   exception. Non-interactive: clicks fall through to the play overlay above it. */
-.cover {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  /* Top-aligned: the eyebrow + title sit at the top-left, clear of the centred play button and the
-     bottom-centred preview caption (which is intentionally kept). */
-  justify-content: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-5);
-  pointer-events: none;
-  background:
-    radial-gradient(115% 130% at 12% 0%, rgba(224, 162, 60, 0.22), transparent 55%),
-    linear-gradient(158deg, #161a23 0%, #0a0c10 72%);
-}
-
-.coverEyebrow {
-  font-family: var(--font-mono);
-  font-size: var(--eyebrow-size);
-  letter-spacing: var(--eyebrow-tracking);
-  text-transform: uppercase;
-  color: var(--accent-500);
-  line-height: 1;
-}
-
-.coverTitle {
-  margin: 0;
-  max-width: 20ch;
-  font-family: var(--font-sans);
-  font-size: clamp(var(--text-lg), 3.4vw, var(--text-2xl));
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-  text-wrap: balance;
-  color: #fff;
 }
 
 /* ── Fullscreen (the .main column is the fullscreen target, keeping the transport visible) ── */

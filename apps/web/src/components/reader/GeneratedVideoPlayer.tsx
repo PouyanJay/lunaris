@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { VideoCover } from "./VideoCover";
 import styles from "./GeneratedVideoPlayer.module.css";
 
 interface GeneratedVideoPlayerProps {
@@ -12,8 +13,8 @@ interface GeneratedVideoPlayerProps {
    *  Should re-fetch the job and update `videoUrl` so the player remounts on a live URL. Omit where
    *  there is nothing to re-mint (the standalone unit tests). */
   refreshPlayback?: () => void | Promise<void>;
-  /** A title drawn over the poster (the design's title-over-poster treatment) — decorative, gone
-   *  once the native player owns the stage. The play `label` stays the accessible name. */
+  /** A title drawn on the cover over the poster — decorative, gone once the native player owns the
+   *  stage. Omit for a text-free black cover (the play `label` stays the accessible name). */
   overlayTitle?: string | undefined;
 }
 
@@ -81,6 +82,9 @@ export function GeneratedVideoPlayer({
           aria-label={label}
           onClick={() => setPlaying(true)}
         >
+          {/* The VideoCover below sits over this opaquely, so the poster frame isn't shown here — it
+              is kept to prime the browser cache for the identical `posterUrl` the native <video
+              poster> uses once playing, and as a graceful fallback if the cover's CSS fails to load. */}
           {posterUrl ? (
             <img className={styles.posterImage} src={posterUrl} alt="" loading="lazy" />
           ) : (
@@ -88,12 +92,9 @@ export function GeneratedVideoPlayer({
               VIDEO
             </span>
           )}
-          {overlayTitle && (
-            <span className={styles.overlayTitle} aria-hidden="true">
-              {overlayTitle}
-              <span className={styles.overlayRule} />
-            </span>
-          )}
+          {/* A solid black cover over the poster (a title card when a title is given) — consistent
+              with the Watch player and the requested black background. */}
+          <VideoCover title={overlayTitle} />
           <span className={styles.play} aria-hidden="true">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
               <path d="M8 5v14l11-7z" />
