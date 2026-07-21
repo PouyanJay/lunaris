@@ -37,6 +37,70 @@ def test_course_json_round_trip_is_camel_case() -> None:
     assert reloaded == course
 
 
+def test_course_strips_legacy_coverage_gap_sentence_from_scope_note() -> None:
+    # Arrange — a course persisted before the coverage-gap disclosure moved off the top warning
+    # (pre-#179) baked the sentence into scope_note. The screenshot case has no grounding caveat, so
+    # the old ``f"{scope_note} {note}".strip()`` left scope_note as nothing but that sentence.
+    payload = {
+        "id": "c1",
+        "topic": "HTTPS",
+        "scopeNote": (
+            "It does not fully build some promised competencies: Distinguish HTTPS from HTTP, "
+            "Explain how HTTPS protects against MITM, and 1 more."
+        ),
+    }
+
+    # Act
+    course = Course.model_validate(payload)
+
+    # Assert — the alarming top warning is gone; the reader shows no scope-note callout.
+    assert course.scope_note == ""
+
+
+def test_course_keeps_legitimate_caveat_when_stripping_legacy_coverage_gap_sentence() -> None:
+    # Arrange — a grounding caveat is a legitimate scope_note; only the appended coverage-gap
+    # sentence is legacy. The disclosure still lives in the scope band, which must survive intact.
+    band_line = "Does not fully build: Distinguish HTTPS from HTTP, and 2 more."
+    payload = {
+        "id": "c1",
+        "topic": "HTTPS",
+        "scopeNote": (
+            "This is a general primer, not an authoritative guide to the standard. "
+            "It does not fully build some promised competencies: Distinguish HTTPS from HTTP, "
+            "and 2 more."
+        ),
+        "scope": {
+            "effort": "A weekend",
+            "delivers": ["Read a certificate chain"],
+            "excludes": [band_line],
+        },
+    }
+
+    # Act
+    course = Course.model_validate(payload)
+
+    # Assert — the real caveat stays; the legacy sentence is gone; the band keeps the disclosure.
+    caveat = "This is a general primer, not an authoritative guide to the standard."
+    assert course.scope_note == caveat
+    assert "does not fully build some promised competencies" not in course.scope_note.lower()
+    assert course.scope is not None
+    assert course.scope.excludes == [band_line]
+
+
+def test_course_leaves_scope_note_unchanged_when_no_legacy_coverage_gap_sentence() -> None:
+    # Arrange — the common post-#179 path: a legitimate grounding caveat with no legacy sentence.
+    # The sanitizer must pass it through byte-for-byte (also proves idempotency on an already-clean
+    # note, since a stripped note re-validated is indistinguishable from this one).
+    caveat = "This is a general primer, not an authoritative guide to the standard."
+    payload = {"id": "c1", "topic": "HTTPS", "scopeNote": caveat}
+
+    # Act
+    course = Course.model_validate(payload)
+
+    # Assert — untouched.
+    assert course.scope_note == caveat
+
+
 def test_knowledge_component_difficulty_is_bounded() -> None:
     # Arrange / Act
     kc = KnowledgeComponent(

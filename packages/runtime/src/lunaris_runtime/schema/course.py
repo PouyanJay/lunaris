@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .base import CourseModel
 from .build_provenance import CapabilityBuildTag
@@ -10,6 +10,23 @@ from .instruction import Module
 from .knowledge import Citation, PrerequisiteGraph
 from .learner import LearnerModel
 from .settings import BudgetLedger, CourseSettings, RiskProfile
+
+# Courses persisted before the coverage-gap disclosure moved off the top warning (PR #179) appended
+# a competency sentence to scope_note, which the reader surfaced as an alarming amber banner. That
+# disclosure now lives only in the scope band ("Does not fully build: …"); a course built before the
+# move still carries the sentence at the tail of its stored scope_note. Strip it on read so every
+# existing course reflects current behavior without a rebuild — the sentence was always appended
+# last, so it runs from this marker to the end of the note. Idempotent: post-move notes lack it.
+# A read-time shim, deletable once every pre-#179 row has been rebuilt or backfilled; until then it
+# is the only thing that removes the sentence, since nothing recomputes scope_note on load.
+_LEGACY_COVERAGE_GAP_MARKER = "It does not fully build some promised competencies:"
+
+
+def _without_legacy_coverage_gap_sentence(scope_note: str) -> str:
+    marker_at = scope_note.find(_LEGACY_COVERAGE_GAP_MARKER)
+    if marker_at == -1:
+        return scope_note
+    return scope_note[:marker_at].rstrip()
 
 
 class Course(CourseModel):
@@ -46,3 +63,9 @@ class Course(CourseModel):
     # a keyless account, which never enqueues one — the reader shows the Typographic cover instead).
     # Keeps a job_id handle only; the API resolves a fresh signed URL on demand.
     cover: CoverArtifact | None = None
+
+    @field_validator("scope_note")
+    @classmethod
+    def _drop_legacy_coverage_gap_sentence(cls, value: str) -> str:
+        """Strip the pre-#179 coverage-gap sentence on read (see _LEGACY_COVERAGE_GAP_MARKER)."""
+        return _without_legacy_coverage_gap_sentence(value)
