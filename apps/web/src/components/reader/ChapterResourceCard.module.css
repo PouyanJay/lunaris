@@ -1,9 +1,9 @@
-/* A compact aid docked under a chapter in the Cinema rail — a hairline-quiet link that leads with
-   its title and carries a mono meta line (source · runtime · relevance). */
+/* A compact aid docked under a chapter in the Cinema rail — a hairline-quiet link: a leading kind
+   glyph, then a title over a mono meta line (source · runtime · relevance). */
 .card {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  align-items: flex-start;
   padding: var(--space-2) var(--space-3);
   margin-left: var(--space-4);
   border-left: var(--border-width) solid var(--border);
@@ -21,6 +21,28 @@
   outline-offset: -2px;
 }
 
+/* Kind marker — a small neutral mono tile so a resource reads AS a resource and its type is legible
+   at a glance. Neutral by design: the accent stays a scalpel, and it distinguishes by shape+label. */
+.glyph {
+  flex: none;
+  min-width: 3.2em;
+  text-align: center;
+  padding: 0.1em 0.3em;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--eyebrow-size);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .title {
   font-size: var(--text-sm);
   color: var(--text);
@@ -33,7 +55,8 @@
   letter-spacing: 0.02em;
 }
 
-/* Relevance is the one accented datum — the "why this, here" signal. */
+/* Relevance is a quiet datum — softened from the accent so the row reads calm; the kind glyph now
+   carries the "this is a resource" signal. */
 .rel {
-  color: var(--accent-600);
+  color: var(--text-secondary);
 }

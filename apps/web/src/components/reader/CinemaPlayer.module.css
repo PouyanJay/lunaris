@@ -66,7 +66,8 @@
   border-top: var(--border-width) solid var(--border);
 }
 
-.playButton {
+/* Shared transport icon button — play/pause, captions, fullscreen. */
+.ctrlButton {
   flex: none;
   display: flex;
   align-items: center;
@@ -78,17 +79,27 @@
   border: none;
   background: transparent;
   border-radius: var(--radius-md);
-  color: var(--text);
+  color: var(--text-secondary);
   cursor: pointer;
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease);
 }
 
-.playButton:hover {
+.ctrlButton:hover {
   background: var(--bg-subtle);
+  color: var(--text);
 }
 
-.playButton:focus-visible {
+.ctrlButton:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* Captions ON — the accent marks the single active toggle (scalpel). */
+.ctrlButtonOn {
+  color: var(--accent-600);
+}
+.ctrlButtonOn:hover {
+  color: var(--accent-700);
 }
 
 /* The scrubber: a thin track carrying the played fill and a tick per chapter boundary. */
@@ -132,13 +143,22 @@
 
 /* ── Chapter + transcript rail ───────────────────────────────────────────── */
 
+/* The rail's own intrinsic height is 0 (its content is taken out of flow by .railScroll), so the grid
+   row is sized by the video column, not the chapter list. Grid `align-items: stretch` (default) then
+   stretches the rail to the video's height and .railScroll scrolls within it — no empty band beside a
+   short video, however long the chapter list. */
 .rail {
+  position: relative;
+  min-height: 0;
+  background: var(--bg-subtle);
+}
+
+.railScroll {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  max-height: 520px;
   overflow-y: auto;
-  background: var(--bg-subtle);
 }
 
 .railHead {
@@ -242,6 +262,65 @@
   font-weight: 600;
 }
 
+/* ── Title-card cover (before first play) ────────────────────────────────── */
+
+/* A designed cover over the (often black) poster frame so every video reads as having a cover. Brand
+   art: it sits over a video and must stay dark in BOTH themes, so it uses literal dark hues + the
+   accent glow rather than the surface tokens (which flip to light) — the CourseCover fixed-art
+   exception. Non-interactive: clicks fall through to the play overlay above it. */
+.cover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  /* Top-aligned: the eyebrow + title sit at the top-left, clear of the centred play button and the
+     bottom-centred preview caption (which is intentionally kept). */
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  pointer-events: none;
+  background:
+    radial-gradient(115% 130% at 12% 0%, rgba(224, 162, 60, 0.22), transparent 55%),
+    linear-gradient(158deg, #161a23 0%, #0a0c10 72%);
+}
+
+.coverEyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--accent-500);
+  line-height: 1;
+}
+
+.coverTitle {
+  margin: 0;
+  max-width: 20ch;
+  font-family: var(--font-sans);
+  font-size: clamp(var(--text-lg), 3.4vw, var(--text-2xl));
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+  color: #fff;
+}
+
+/* ── Fullscreen (the .main column is the fullscreen target, keeping the transport visible) ── */
+.main:fullscreen {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: #000;
+}
+.main:fullscreen .video {
+  width: auto;
+  max-width: 100%;
+  /* Leave room under the video for the transport row (~.controls height: space-3 padding ×2 + a 32px
+     button) so it stays visible in fullscreen rather than being pushed off-screen. */
+  max-height: calc(100dvh - 52px);
+  margin: 0 auto;
+}
+
 @media (max-width: 720px) {
   .cinema {
     grid-template-columns: 1fr;
@@ -249,5 +328,14 @@
   .main {
     border-right: none;
     border-bottom: var(--border-width) solid var(--border);
+  }
+  /* Single column: the rail flows under the video with its own capped scroll, so it isn't collapsed
+     by the out-of-flow trick used for the two-column layout. */
+  .rail {
+    position: static;
+  }
+  .railScroll {
+    position: static;
+    max-height: 60vh;
   }
 }

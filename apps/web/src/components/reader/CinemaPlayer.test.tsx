@@ -1,5 +1,5 @@
 import { createEvent, fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
 import { CinemaPlayer } from "./CinemaPlayer";
@@ -28,6 +28,15 @@ function renderPlayer(overrides: Partial<React.ComponentProps<typeof CinemaPlaye
 }
 
 describe("CinemaPlayer", () => {
+  // The Fullscreen API is stubbed onto jsdom globals in a couple of tests — clear it after every test
+  // (even on failure) so it can't leak into an unrelated one.
+  afterEach(() => {
+    delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+    if (Object.getOwnPropertyDescriptor(document, "fullscreenElement")) {
+      delete (document as { fullscreenElement?: unknown }).fullscreenElement;
+    }
+  });
+
   it("renders the video with a chapter rail and the current caption", () => {
     // Arrange / Act
     renderPlayer();
@@ -202,5 +211,68 @@ describe("CinemaPlayer", () => {
 
     // Assert — the readout names the current chapter.
     expect(screen.getByText(/CH 2 .* SELF-SIMILARITY/)).toBeInTheDocument();
+  });
+
+  it("shows a title-card cover before first play and drops it once playing", () => {
+    // Arrange / Act
+    renderPlayer();
+
+    // Assert — the cover carries the video title and a chapter-count meta before play…
+    expect(screen.getByText("Fractals · Lesson 1")).toBeInTheDocument();
+    expect(screen.getByText(/2 chapters/i)).toBeInTheDocument();
+
+    // …and once the video reports playing, the cover is gone (the real frame shows through).
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    fireEvent.play(video);
+    expect(screen.queryByText("Fractals · Lesson 1")).not.toBeInTheDocument();
+
+    // A later pause shows the real frame, not the cover — it does not come back.
+    fireEvent.pause(video);
+    expect(screen.queryByText("Fractals · Lesson 1")).not.toBeInTheDocument();
+  });
+
+  it("toggles the synced caption with the captions button", () => {
+    // Arrange — at t=0 the first spoken line is captioned.
+    renderPlayer();
+    expect(screen.getByText(/a coastline has no single length/i)).toBeInTheDocument();
+
+    // Act / Assert — the captions toggle hides it, then shows it again.
+    fireEvent.click(screen.getByRole("button", { name: /hide captions/i }));
+    expect(screen.queryByText(/a coastline has no single length/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /show captions/i }));
+    expect(screen.getByText(/a coastline has no single length/i)).toBeInTheDocument();
+  });
+
+  it("offers no captions toggle for a silent video", () => {
+    renderPlayer({ transcript: [] });
+    expect(screen.queryByRole("button", { name: /captions/i })).not.toBeInTheDocument();
+  });
+
+  it("requests fullscreen from the fullscreen button", () => {
+    // Arrange — jsdom lacks the Fullscreen API; provide the request on the element prototype.
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: requestFullscreen,
+    });
+    renderPlayer();
+
+    // Act / Assert — the fullscreen button asks the player to go fullscreen.
+    fireEvent.click(screen.getByRole("button", { name: /enter fullscreen/i }));
+    expect(requestFullscreen).toHaveBeenCalled();
+  });
+
+  it("flips the fullscreen button to Exit while this player is fullscreen", () => {
+    // Arrange
+    renderPlayer();
+    const video = screen.getByLabelText("Fractals · Lesson 1") as HTMLVideoElement;
+    const main = video.parentElement?.parentElement; // video → .stage → .main (the fullscreen target)
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => main });
+
+    // Act — the document reports this player's element is now fullscreen.
+    fireEvent(document, new Event("fullscreenchange"));
+
+    // Assert — the button offers to exit.
+    expect(screen.getByRole("button", { name: /exit fullscreen/i })).toBeInTheDocument();
   });
 });
