@@ -34,3 +34,13 @@
 .badge[data-category="symbol"] {
   --tone: var(--accent-600);
 }
+
+/* Domain/data token ("IL-5", "TSLP") — the neutral data layer: mono ink on a hairline chip, NO
+   accent (the accent stays a scalpel for labels/markers/arrows). Lighter weight than a keyword so a
+   dense run of tokens reads as calm data, not shouting. */
+.badge[data-category="data"] {
+  --tone: var(--border-strong);
+  color: var(--text);
+  font-weight: 500;
+  letter-spacing: 0;
+}
