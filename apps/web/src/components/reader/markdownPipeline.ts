@@ -17,6 +17,7 @@ import { remarkKeyTerms } from "./keyTerms";
 import { remarkParagraphRhythm } from "./paragraphRhythm";
 import { remarkProseStructure } from "./proseStructure";
 import { remarkSectionLabels } from "./sectionLabels";
+import { remarkSectionPanels } from "./sectionPanels";
 
 /** The lesson prose is authored as Markdown and may now carry rich blocks: admonition callouts
  *  (`:::note` … or a "Note:" lead-in), `:::details` collapsibles, `:term[word]{title="…"}` glossary
@@ -171,6 +172,7 @@ const schema: Schema = {
     "chainnode",
     "keyedlist",
     "keyedrow",
+    "sectionpanel",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -200,6 +202,7 @@ export const remarkPlugins: PluggableList = [
   remarkInlineSeries,
   remarkParagraphRhythm,
   remarkKeyTerms,
+  remarkSectionPanels,
   remarkRichDirectives,
   remarkKeywordBadges,
   remarkHighlight,

@@ -1,0 +1,17 @@
+/* Worked-example / attribution panel — a single hairline-bordered region on a subtle wash that sets
+   the concrete instance apart from the explanation. One border level (a panel, not a floating card);
+   the eyebrow label inside keeps its accent. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Hold the reading measure for prose inside the panel, matching the top-level rhythm. */
+.panel > p {
+  max-width: 66ch;
+}

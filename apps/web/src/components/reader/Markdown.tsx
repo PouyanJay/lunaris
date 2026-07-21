@@ -15,6 +15,7 @@ import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { remarkAutoGlossary } from "./remarkAutoGlossary";
 import { SectionLabel } from "./SectionLabel";
+import { SectionPanel } from "./SectionPanel";
 import { StepItem } from "./StepItem";
 import { Stepper } from "./Stepper";
 import { WorkedExampleBlock } from "./WorkedExampleBlock";
@@ -54,6 +55,7 @@ const baseComponents = {
   chainnode: ChainNode,
   keyedlist: KeyedList,
   keyedrow: KeyedRow,
+  sectionpanel: SectionPanel,
 } as Components;
 
 interface MarkdownProps {
