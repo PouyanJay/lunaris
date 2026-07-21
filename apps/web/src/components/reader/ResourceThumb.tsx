@@ -1,19 +1,9 @@
 import { useState } from "react";
 
 import type { ResourceKind } from "../../types/course";
+import { KIND_GLYPH } from "./resourceKind";
 import { youTubeId, youTubeThumbnail } from "./youtube";
 import styles from "./ResourceThumb.module.css";
-
-/** Short mono glyph per resource kind — the fallback tile when there's no real image (and the label
- *  under every video's frame). */
-const KIND_GLYPH: Record<ResourceKind, string> = {
-  video: "VIDEO",
-  article: "READ",
-  docs: "DOCS",
-  practice: "TRY",
-  tool: "TOOL",
-  reference: "REF",
-};
 
 interface ResourceThumbProps {
   kind: ResourceKind;

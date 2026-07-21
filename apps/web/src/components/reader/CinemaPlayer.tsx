@@ -14,7 +14,7 @@ interface CinemaPlayerProps {
   captionsUrl: string | null;
   chapters: VideoChapter[];
   transcript: TranscriptCue[];
-  /** Accessible label for the video (the lesson/module title). */
+  /** Accessible label for the video (the lesson/module title). Also the title on the cover card. */
   label: string;
   /** Curated resources docked under each chapter (by chapter id), most-relevant first. Absent hides
    *  the per-chapter aids (e.g. Watch mode with docks off). */
@@ -33,6 +33,30 @@ function PauseGlyph() {
   return (
     <svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" aria-hidden="true">
       <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+    </svg>
+  );
+}
+
+function CaptionGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" aria-hidden="true">
+      <path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zm4 5.5a1.5 1.5 0 0 0 0 3h1.5V12H8a.5.5 0 0 1 0-1h1.5V9.5H8zm7 0a1.5 1.5 0 0 0 0 3h1.5V12H15a.5.5 0 0 1 0-1h1.5V9.5H15z" />
+    </svg>
+  );
+}
+
+function EnterFullscreenGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" aria-hidden="true">
+      <path d="M7 3H3v4h2V5h2V3zm10 0v2h2v2h2V3h-4zM5 17H3v4h4v-2H5v-2zm14 0v2h-2v2h4v-4h-2z" />
+    </svg>
+  );
+}
+
+function ExitFullscreenGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="100%" height="100%" fill="currentColor" aria-hidden="true">
+      <path d="M8 8H5V6h1V4h2v4zm8 0V4h2v2h1v2h-3zM5 16h3v4H6v-2H5v-2zm11 0h3v2h-1v2h-2v-4z" />
     </svg>
   );
 }
@@ -59,21 +83,115 @@ function CaptionOverlay({ cue, keyTerms }: { cue: TranscriptCue; keyTerms: strin
   );
 }
 
-interface TransportProps {
-  isPlaying: boolean;
+/** The designed title card shown over the (often dark) poster frame before the video has started, so
+ *  every video reads as having a real cover. Decorative (aria-hidden) — the video already carries its
+ *  title as an accessible label and the play button is the action; clicks fall through to that. */
+function VideoCover({ title, meta }: { title: string; meta: string }) {
+  return (
+    <div className={styles.cover} aria-hidden="true">
+      <span className={styles.coverEyebrow}>{meta}</span>
+      <h3 className={styles.coverTitle}>{title}</h3>
+    </div>
+  );
+}
+
+interface ScrubberProps {
   currentTime: number;
   duration: number;
   playedPercent: number;
   chapters: VideoChapter[];
-  activeChapter: number;
-  currentChapter: VideoChapter | undefined;
-  onToggle: () => void;
   onSeekPointer: (event: PointerEvent<HTMLDivElement>) => void;
   onSeekKey: (event: KeyboardEvent<HTMLDivElement>) => void;
 }
 
-/** The transport row: play/pause, a chapter-tick scrubber (click + keyboard seek, `role="slider"`),
- *  and a time + current-chapter readout. */
+/** The seek track: played fill + a tick per chapter boundary, seekable by click and arrow keys. */
+function Scrubber({
+  currentTime,
+  duration,
+  playedPercent,
+  chapters,
+  onSeekPointer,
+  onSeekKey,
+}: ScrubberProps) {
+  return (
+    <div
+      className={styles.scrubber}
+      role="slider"
+      tabIndex={0}
+      aria-label="Seek"
+      aria-valuemin={0}
+      aria-valuemax={Math.round(duration)}
+      aria-valuenow={Math.round(currentTime)}
+      aria-valuetext={`${formatMediaDuration(currentTime)} of ${formatMediaDuration(duration)}`}
+      onPointerDown={onSeekPointer}
+      onKeyDown={onSeekKey}
+    >
+      <span className={styles.scrubberFill} style={{ width: `${playedPercent}%` }} />
+      {duration > 0 &&
+        chapters.map((chapter, index) =>
+          index === 0 ? null : (
+            <span
+              key={chapter.id}
+              className={styles.tick}
+              style={{ left: `${(chapter.startS / duration) * 100}%` }}
+              aria-hidden="true"
+            />
+          ),
+        )}
+    </div>
+  );
+}
+
+interface TransportExtrasProps {
+  captionsAvailable: boolean;
+  captionsOn: boolean;
+  isFullscreen: boolean;
+  onToggleCaptions: () => void;
+  onToggleFullscreen: () => void;
+}
+
+/** The right-aligned toggles: captions (when the video has any) and fullscreen. */
+function TransportExtras({
+  captionsAvailable,
+  captionsOn,
+  isFullscreen,
+  onToggleCaptions,
+  onToggleFullscreen,
+}: TransportExtrasProps) {
+  return (
+    <>
+      {captionsAvailable && (
+        <button
+          type="button"
+          className={`${styles.ctrlButton} ${captionsOn ? styles.ctrlButtonOn : ""}`}
+          onClick={onToggleCaptions}
+          aria-pressed={captionsOn}
+          aria-label={captionsOn ? "Hide captions" : "Show captions"}
+        >
+          <CaptionGlyph />
+        </button>
+      )}
+      <button
+        type="button"
+        className={styles.ctrlButton}
+        onClick={onToggleFullscreen}
+        aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+      >
+        {isFullscreen ? <ExitFullscreenGlyph /> : <EnterFullscreenGlyph />}
+      </button>
+    </>
+  );
+}
+
+interface TransportProps extends ScrubberProps, TransportExtrasProps {
+  isPlaying: boolean;
+  activeChapter: number;
+  currentChapter: VideoChapter | undefined;
+  onToggle: () => void;
+}
+
+/** The transport row: play/pause, the chapter-tick scrubber, a time + current-chapter readout, and
+ *  the captions/fullscreen toggles. */
 function TransportControls({
   isPlaying,
   currentTime,
@@ -82,51 +200,47 @@ function TransportControls({
   chapters,
   activeChapter,
   currentChapter,
+  captionsAvailable,
+  captionsOn,
+  isFullscreen,
   onToggle,
   onSeekPointer,
   onSeekKey,
+  onToggleCaptions,
+  onToggleFullscreen,
 }: TransportProps) {
   return (
     <div className={styles.controls}>
       <button
         type="button"
-        className={styles.playButton}
+        className={styles.ctrlButton}
         onClick={onToggle}
         aria-label={isPlaying ? "Pause" : "Play"}
       >
         {isPlaying ? <PauseGlyph /> : <PlayGlyph />}
       </button>
 
-      <div
-        className={styles.scrubber}
-        role="slider"
-        tabIndex={0}
-        aria-label="Seek"
-        aria-valuemin={0}
-        aria-valuemax={Math.round(duration)}
-        aria-valuenow={Math.round(currentTime)}
-        aria-valuetext={`${formatMediaDuration(currentTime)} of ${formatMediaDuration(duration)}`}
-        onPointerDown={onSeekPointer}
-        onKeyDown={onSeekKey}
-      >
-        <span className={styles.scrubberFill} style={{ width: `${playedPercent}%` }} />
-        {duration > 0 &&
-          chapters.map((chapter, index) =>
-            index === 0 ? null : (
-              <span
-                key={chapter.id}
-                className={styles.tick}
-                style={{ left: `${(chapter.startS / duration) * 100}%` }}
-                aria-hidden="true"
-              />
-            ),
-          )}
-      </div>
+      <Scrubber
+        currentTime={currentTime}
+        duration={duration}
+        playedPercent={playedPercent}
+        chapters={chapters}
+        onSeekPointer={onSeekPointer}
+        onSeekKey={onSeekKey}
+      />
 
       <span className={`mono ${styles.readout}`}>
         {formatMediaDuration(currentTime)} / {formatMediaDuration(duration)}
         {currentChapter ? ` · CH ${activeChapter + 1} — ${currentChapter.title.toUpperCase()}` : ""}
       </span>
+
+      <TransportExtras
+        captionsAvailable={captionsAvailable}
+        captionsOn={captionsOn}
+        isFullscreen={isFullscreen}
+        onToggleCaptions={onToggleCaptions}
+        onToggleFullscreen={onToggleFullscreen}
+      />
     </div>
   );
 }
@@ -139,7 +253,9 @@ interface ChapterRailProps {
   onSeek: (seconds: number) => void;
 }
 
-/** The chapter rail: each chapter (watched ones struck through) with its docked resources. */
+/** The chapter rail: each chapter (watched ones struck through) with its docked resources. The inner
+ *  scroll container is what fills — and scrolls within — the player's height, so a long chapter list
+ *  never stretches the layout into an empty band beside a shorter video. */
 function ChapterRail({
   chapters,
   activeChapter,
@@ -149,49 +265,51 @@ function ChapterRail({
 }: ChapterRailProps) {
   return (
     <div className={styles.rail}>
-      <p className={styles.railHead}>Chapters</p>
-      <nav aria-label="Video chapters">
-        {chapters.map((chapter, index) => {
-          const resources = chapterResources?.get(chapter.id) ?? [];
-          // Passed its end and not the one playing now — the current chapter stays highlighted.
-          const watched = index !== activeChapter && maxWatched >= chapter.endS;
-          const className = [
-            styles.chapter,
-            index === activeChapter && styles.chapterActive,
-            watched && styles.chapterDone,
-          ]
-            .filter(Boolean)
-            .join(" ");
-          return (
-            <div key={chapter.id} className={styles.chapterGroup}>
-              <button
-                type="button"
-                className={className}
-                aria-current={index === activeChapter ? "true" : undefined}
-                onClick={() => onSeek(chapter.startS)}
-              >
-                <span className={styles.chapterTime}>{formatMediaDuration(chapter.startS)}</span>
-                <span>{chapter.title}</span>
-                {watched && <span className="sr-only"> (watched)</span>}
-              </button>
-              {resources.map((scored) => (
-                <ChapterResourceCard key={scored.resource.url} scored={scored} />
-              ))}
-            </div>
-          );
-        })}
-      </nav>
+      <div className={`scroller ${styles.railScroll}`}>
+        <p className={styles.railHead}>Chapters</p>
+        <nav aria-label="Video chapters">
+          {chapters.map((chapter, index) => {
+            const resources = chapterResources?.get(chapter.id) ?? [];
+            // Passed its end and not the one playing now — the current chapter stays highlighted.
+            const watched = index !== activeChapter && maxWatched >= chapter.endS;
+            const className = [
+              styles.chapter,
+              index === activeChapter && styles.chapterActive,
+              watched && styles.chapterDone,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <div key={chapter.id} className={styles.chapterGroup}>
+                <button
+                  type="button"
+                  className={className}
+                  aria-current={index === activeChapter ? "true" : undefined}
+                  onClick={() => onSeek(chapter.startS)}
+                >
+                  <span className={styles.chapterTime}>{formatMediaDuration(chapter.startS)}</span>
+                  <span>{chapter.title}</span>
+                  {watched && <span className="sr-only"> (watched)</span>}
+                </button>
+                {resources.map((scored) => (
+                  <ChapterResourceCard key={scored.resource.url} scored={scored} />
+                ))}
+              </div>
+            );
+          })}
+        </nav>
+      </div>
     </div>
   );
 }
 
 /** The Cinema player (cinematic upgrade): the generated lesson video with a purpose-built,
  *  keyboard-operable transport — a play/pause overlay, a chapter-tick scrubber that seeks on click
- *  and arrow keys, and a time + current-chapter readout — plus an overlaid synced caption and a
- *  chapter rail with per-chapter resources. Chapters and the current cue track playback via
- *  `timeupdate`; watched chapters (this session) read as struck through. The captions `<track>` is
- *  kept for assistive tech even though native controls are replaced. A silent video (no transcript)
- *  shows no caption. */
+ *  and arrow keys, a time + current-chapter readout, and captions + fullscreen toggles — plus an
+ *  overlaid synced caption, a designed title-card cover before first play, and a chapter rail with
+ *  per-chapter resources. Chapters and the current cue track playback via `timeupdate`; watched
+ *  chapters (this session) read as struck through. The captions `<track>` is kept for assistive tech
+ *  even though native controls are replaced. A silent video (no transcript) shows no caption. */
 export function CinemaPlayer({
   videoUrl,
   posterUrl,
@@ -202,9 +320,15 @@ export function CinemaPlayer({
   chapterResources,
 }: CinemaPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  // The cover card shows until the video first plays (then never again for this video — a mid-video
+  // pause shows the real frame, not the cover).
+  const [hasStarted, setHasStarted] = useState(false);
+  const [captionsOn, setCaptionsOn] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   // The furthest point reached this session — chapters whose end has been passed read as watched.
   // Reset when the video changes so one lesson's progress never bleeds into the next.
   const [maxWatched, setMaxWatched] = useState(0);
@@ -212,14 +336,32 @@ export function CinemaPlayer({
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(false);
+    setHasStarted(false);
     setMaxWatched(0);
   }, [videoUrl]);
 
+  // Reflect THIS player's fullscreen state from the document, so the button icon/label stay correct
+  // even when the user exits via Esc or browser chrome (and are unaffected by any other fullscreen
+  // element on the page).
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === mainRef.current);
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  const captionsAvailable = transcript.length > 0;
   const activeChapter = activeSpanIndex(chapters, currentTime);
   const activeCue = activeSpanIndex(transcript, currentTime);
   const playedPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
   const currentChapter = activeChapter >= 0 ? chapters[activeChapter] : undefined;
   const currentCue = activeCue >= 0 ? transcript[activeCue] : undefined;
+  const coverMeta =
+    [
+      chapters.length > 0 ? `${chapters.length} chapter${chapters.length === 1 ? "" : "s"}` : null,
+      duration > 0 ? formatMediaDuration(duration) : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "Video";
 
   const seekTo = (seconds: number) => {
     // Optimistically move the UI (the video's own `timeupdate` reconciles); clamp to the media when
@@ -235,6 +377,22 @@ export function CinemaPlayer({
     if (!video) return;
     if (video.paused) void video.play?.().catch(() => {});
     else video.pause?.();
+  };
+
+  const toggleFullscreen = () => {
+    const main = mainRef.current;
+    if (document.fullscreenElement === main) {
+      void document.exitFullscreen?.();
+      return;
+    }
+    if (main?.requestFullscreen) {
+      void main.requestFullscreen().catch(() => {});
+      return;
+    }
+    // iOS Safari has no element Fullscreen API — only the <video> can go fullscreen (native controls
+    // take over there), so fall back to that rather than silently no-op.
+    const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    video?.webkitEnterFullscreen?.();
   };
 
   const onSeekPointer = (event: PointerEvent<HTMLDivElement>) => {
@@ -260,10 +418,13 @@ export function CinemaPlayer({
 
   return (
     <div className={styles.cinema}>
-      <div className={styles.main}>
+      <div className={styles.main} ref={mainRef}>
         <div className={styles.stage}>
           {/* Native controls are replaced by the custom transport below; the caption <track> stays
-              for assistive tech (a silent video has none to add). */}
+              for assistive tech (a silent video has none to add) but is not UA-rendered (no `default`)
+              — the styled CaptionOverlay is the visible caption, gated by the captions toggle. The
+              `poster` (often a dark first frame) is deliberately overlaid by VideoCover pre-play; it
+              stays as the native no-JS/pre-hydration fallback. */}
           <video
             ref={videoRef}
             className={styles.video}
@@ -282,12 +443,16 @@ export function CinemaPlayer({
                 Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0,
               )
             }
-            onPlay={() => setIsPlaying(true)}
+            onPlay={() => {
+              setIsPlaying(true);
+              setHasStarted(true);
+            }}
             onPause={() => setIsPlaying(false)}
             onEnded={() => setIsPlaying(false)}
           >
-            {captionsUrl && <track kind="captions" src={captionsUrl} default />}
+            {captionsUrl && <track kind="captions" src={captionsUrl} />}
           </video>
+          {!hasStarted && <VideoCover title={label} meta={coverMeta} />}
           {!isPlaying && (
             <button
               type="button"
@@ -300,7 +465,7 @@ export function CinemaPlayer({
               </span>
             </button>
           )}
-          {currentCue && (
+          {currentCue && captionsOn && (
             <CaptionOverlay cue={currentCue} keyTerms={currentChapter?.keyTerms ?? []} />
           )}
         </div>
@@ -313,9 +478,14 @@ export function CinemaPlayer({
           chapters={chapters}
           activeChapter={activeChapter}
           currentChapter={currentChapter}
+          captionsAvailable={captionsAvailable}
+          captionsOn={captionsOn}
+          isFullscreen={isFullscreen}
           onToggle={togglePlay}
           onSeekPointer={onSeekPointer}
           onSeekKey={onSeekKey}
+          onToggleCaptions={() => setCaptionsOn((on) => !on)}
+          onToggleFullscreen={toggleFullscreen}
         />
       </div>
 
