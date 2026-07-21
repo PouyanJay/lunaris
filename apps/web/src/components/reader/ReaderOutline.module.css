@@ -63,8 +63,9 @@
   background: var(--surface-raised);
   color: var(--text);
   font-weight: 500;
-  /* Accent as a selection scalpel — the one sanctioned accent use. */
-  box-shadow: inset 2px 0 0 var(--accent-500);
+  /* Selection reads as a raised, hairline-framed chip — no accent spine. State is still carried
+     structurally (aria-current + the lesson chip + weight), never by colour alone. */
+  box-shadow: inset 0 0 0 var(--border-width) var(--border-strong);
 }
 
 /* ── The focused lesson's section level (Field Guide) ─────────────────────── */
@@ -93,7 +94,7 @@
   font-size: var(--text-xs);
   line-height: var(--lh-xs);
   /* Secondary, not muted: section entries are interactive text and must clear AA contrast.
-     State is carried by the ✓ mark / accent spine, never colour alone. */
+     State is carried by the ✓ mark / neutral spine, never colour alone. */
   color: var(--text-secondary);
   padding: var(--space-1) var(--space-2);
   border-left: 2px solid transparent;
@@ -109,7 +110,7 @@
 }
 
 .sectionCurrent {
-  border-left-color: var(--accent-500);
+  border-left-color: var(--text-secondary);
   color: var(--text);
   font-weight: 500;
 }
