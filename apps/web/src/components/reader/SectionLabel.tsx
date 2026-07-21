@@ -16,7 +16,12 @@ export function SectionLabel({ heading, qual }: SectionLabelProps) {
   return (
     <p className={styles.label} role="heading" aria-level={4}>
       <span className={styles.eyebrow}>{heading}</span>
-      {qual ? <span className={styles.qual}>{qual}</span> : null}
+      {qual ? (
+        <>
+          {" "}
+          <span className={styles.qual}>({qual})</span>
+        </>
+      ) : null}
     </p>
   );
 }

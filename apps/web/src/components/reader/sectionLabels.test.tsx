@@ -22,7 +22,7 @@ describe("section labels (R1)", () => {
     render(<Markdown>{"UPSTREAM LAYER (alarmins): epithelial cells release alarmins."}</Markdown>);
 
     const label = screen.getByRole("heading", { name: /upstream layer/i });
-    expect(within(label).getByText("alarmins")).toBeInTheDocument();
+    expect(within(label).getByText(/alarmins/)).toBeInTheDocument();
     expect(label.textContent).toContain("UPSTREAM LAYER");
   });
 
