@@ -13,6 +13,7 @@ import { remarkHighlight } from "./remarkHighlight";
 import { remarkKeywordBadges } from "./keywordBadges";
 import { remarkArrowFlow } from "./arrowFlow";
 import { remarkInlineSeries } from "./inlineSeries";
+import { remarkKeyTerms } from "./keyTerms";
 import { remarkProseStructure } from "./proseStructure";
 import { remarkSectionLabels } from "./sectionLabels";
 
@@ -196,6 +197,7 @@ export const remarkPlugins: PluggableList = [
   remarkSectionLabels,
   remarkArrowFlow,
   remarkInlineSeries,
+  remarkKeyTerms,
   remarkRichDirectives,
   remarkKeywordBadges,
   remarkHighlight,
