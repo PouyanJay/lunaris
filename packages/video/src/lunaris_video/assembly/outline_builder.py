@@ -4,6 +4,8 @@ from lunaris_video.schemas.scene_contract import SceneContract
 from lunaris_video.schemas.scene_contracts import SceneContracts
 from lunaris_video.schemas.timing_manifest import TimingManifest
 
+_MAX_CHAPTER_KEY_TERMS = 8
+
 
 def _chapter_title(scene: SceneContract) -> str:
     """The scene's authored title, else a readable label from its id slug (``S3_self_similarity``
@@ -12,6 +14,19 @@ def _chapter_title(scene: SceneContract) -> str:
         return scene.title
     _, _, slug = scene.id.partition("_")
     return slug.replace("_", " ").capitalize() if slug else scene.id
+
+
+def _chapter_key_terms(scene: SceneContract) -> tuple[str, ...]:
+    """The scene's notable on-screen objects, cleaned, deduped (order-preserving) and capped — the
+    per-chapter key-term signal the reader matches resources against and highlights."""
+    terms: list[str] = []
+    for obj in scene.objects:
+        term = obj.strip()
+        if term and term not in terms:
+            terms.append(term)
+        if len(terms) >= _MAX_CHAPTER_KEY_TERMS:
+            break
+    return tuple(terms)
 
 
 def build_video_outline(contracts: SceneContracts, manifest: TimingManifest) -> VideoOutline:
@@ -27,7 +42,13 @@ def build_video_outline(contracts: SceneContracts, manifest: TimingManifest) -> 
     transcript: list[TranscriptCue] = []
     for span in walk_scene_timeline(contracts.scenes, manifest):
         chapters.append(
-            OutlineChapter(span.scene.id, _chapter_title(span.scene), span.start_s, span.end_s)
+            OutlineChapter(
+                id=span.scene.id,
+                title=_chapter_title(span.scene),
+                start_s=span.start_s,
+                end_s=span.end_s,
+                key_terms=_chapter_key_terms(span.scene),
+            )
         )
         for beat_span in span.beats:
             if beat_span.spoken:

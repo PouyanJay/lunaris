@@ -698,6 +698,7 @@ export function CourseReader({
               label={`${current.moduleTitle} — lesson video`}
               takeaways={tldr}
               resources={lessonResources}
+              onExitToRead={() => selectMode("read")}
             />
           )}
 

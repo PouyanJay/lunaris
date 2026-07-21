@@ -68,6 +68,9 @@ export interface VideoChapter {
   title: string;
   startS: number;
   endS: number;
+  /** The chapter's on-screen key terms (from the scene's objects) — drives per-chapter resource
+   *  matching and transcript key-term highlighting. Absent/empty for a pre-Cinema video. */
+  keyTerms?: string[];
 }
 
 /** One timed transcript cue of a ready video (Cinema): a spoken beat with its span, for a synced

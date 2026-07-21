@@ -20,6 +20,116 @@
   background: #000;
 }
 
+/* ── Custom transport ────────────────────────────────────────────────────── */
+
+.stage {
+  position: relative;
+  line-height: 0;
+  background: #000;
+}
+
+/* The big centred play affordance over a paused video. */
+.playOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #fff;
+}
+
+.playOverlayIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  padding: 18px;
+  border-radius: var(--radius-full);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.playOverlay:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -4px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.playButton {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.playButton:hover {
+  background: var(--bg-subtle);
+}
+
+.playButton:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The scrubber: a thin track carrying the played fill and a tick per chapter boundary. */
+.scrubber {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.scrubber:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.scrubberFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-500);
+}
+
+.tick {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 8px;
+  background: var(--surface);
+  transform: translateX(-50%);
+}
+
+.readout {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* ── Chapter + transcript rail ───────────────────────────────────────────── */
 
 .rail {
@@ -63,7 +173,14 @@
     color var(--dur) var(--ease);
 }
 
-.chapter:first-of-type {
+/* A chapter and the resources docked beneath it — the hairline divider rides the chapter button, so
+   only the first group drops its top border. */
+.chapterGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.chapterGroup:first-of-type .chapter {
   border-top: none;
 }
 
@@ -92,36 +209,37 @@
   color: var(--accent-600);
 }
 
-/* ── Transcript ──────────────────────────────────────────────────────────── */
-
-.transcript {
-  border-top: var(--border-width) solid var(--border);
-  padding: var(--space-2) 0;
-}
-
-.cue {
-  display: block;
-  width: 100%;
-  text-align: left;
-  appearance: none;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  padding: var(--space-2) var(--space-4);
+/* A chapter whose end the learner has already passed — struck through and quieter. */
+.chapterDone {
   color: var(--text-muted);
-  font-family: var(--font-sans);
-  font-size: var(--text-xs);
-  line-height: var(--lh-xs);
-  transition: color var(--dur) var(--ease);
+  text-decoration: line-through;
 }
 
-.cue:hover {
-  color: var(--text-secondary);
+/* ── Overlaid caption ────────────────────────────────────────────────────── */
+
+/* The synced spoken line, floated over the foot of the video; the chapter's key terms are accented.
+   Non-interactive (clicks fall through to the video to toggle play). */
+.caption {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+  max-width: min(90%, 60ch);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  pointer-events: none;
 }
 
-.cueActive {
-  color: var(--text);
-  font-weight: 500;
+.captionTerm {
+  background: transparent;
+  color: var(--accent-500);
+  font-weight: 600;
 }
 
 @media (max-width: 720px) {

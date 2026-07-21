@@ -1,9 +1,15 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeCourse, routedFetch } from "../../test/fixtures";
 import type { VideoArtifact } from "../../types/course";
 import { CourseReader, READER_MODE_KEY } from "./CourseReader";
+
+/** The top-level reader-mode toggle (Learn/Read/Watch), scoped away from the in-Watch
+ *  Watch/Both/Read consumption sub-control (which repeats "Watch"/"Read"). */
+function readerModeToggle() {
+  return within(screen.getByRole("radiogroup", { name: /reading mode/i }));
+}
 
 /** A build-time lesson video the course shipped (resolved ready via the video route below). */
 const READY_VIDEO: VideoArtifact = {
@@ -93,14 +99,10 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     // Act
     render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
 
-    // Assert — the mode toggle grows a Watch option once the video resolves ready + chaptered.
-    const watch = await screen.findByRole("radio", { name: /watch/i });
-
-    // Act — enter Watch: the Cinema surface (player + chapter rail) takes over.
-    fireEvent.click(watch);
-
-    // Assert — the chaptered player is on screen.
-    expect(screen.getByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
+    // Assert — once the video resolves, the top toggle grows a Watch option and (front-door) the
+    // chaptered player is on screen.
+    await screen.findByRole("navigation", { name: /video chapters/i });
+    expect(readerModeToggle().getByRole("radio", { name: /watch/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /how it halves/i })).toBeInTheDocument();
     expect(document.querySelector("video")).not.toBeNull();
   });
@@ -124,9 +126,9 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     // Act — no click: the front-door default should land the learner in Watch.
     render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
 
-    // Assert — the Cinema surface is on screen unprompted, and Watch is the selected mode.
+    // Assert — the Cinema surface is on screen unprompted, and Watch is the selected top-level mode.
     expect(await screen.findByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /watch/i })).toBeChecked();
+    expect(readerModeToggle().getByRole("radio", { name: /watch/i })).toBeChecked();
   });
 
   it("docks the lesson's key takeaways in the Watch surface", async () => {
@@ -136,9 +138,9 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     // Act
     render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
 
-    // Assert — a Key takeaways dock, de-scaffolded from "Given a sorted array, locate a target…".
-    expect(await screen.findByRole("heading", { name: /key takeaways/i })).toBeInTheDocument();
-    expect(screen.getByText(/locate a target with binary search/i)).toBeInTheDocument();
+    // Assert — the takeaways grid, de-scaffolded from "Given a sorted array, locate a target…".
+    expect(await screen.findByText(/locate a target with binary search/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Takeaway 1$/i)).toBeInTheDocument();
   });
 
   it("docks the lesson's resources in the Watch surface", async () => {
@@ -209,9 +211,9 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     // Act
     render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
 
-    // Assert — chapters navigate and the docks render, but the transcript region is absent.
+    // Assert — chapters navigate and the docks render, but there is no synced caption overlay.
     expect(await screen.findByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /key takeaways/i })).toBeInTheDocument();
+    expect(screen.getByText(/^Takeaway 1$/i)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /resources/i })).toBeInTheDocument();
     expect(screen.queryByText(/^transcript$/i)).not.toBeInTheDocument();
   });
