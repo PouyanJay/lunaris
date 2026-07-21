@@ -10,6 +10,7 @@ import { CodeBlock } from "./CodeBlock";
 import { ExamplePanel } from "./ExamplePanel";
 import { GlossaryTerm } from "./GlossaryTerm";
 import { GoDeeper } from "./GoDeeper";
+import { KeyedList, KeyedRow } from "./KeyedList";
 import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { remarkAutoGlossary } from "./remarkAutoGlossary";
@@ -51,6 +52,8 @@ const baseComponents = {
   seclabel: SectionLabel,
   chainflow: ChainFlow,
   chainnode: ChainNode,
+  keyedlist: KeyedList,
+  keyedrow: KeyedRow,
 } as Components;
 
 interface MarkdownProps {

@@ -12,6 +12,7 @@ import { visit } from "unist-util-visit";
 import { remarkHighlight } from "./remarkHighlight";
 import { remarkKeywordBadges } from "./keywordBadges";
 import { remarkArrowFlow } from "./arrowFlow";
+import { remarkInlineSeries } from "./inlineSeries";
 import { remarkProseStructure } from "./proseStructure";
 import { remarkSectionLabels } from "./sectionLabels";
 
@@ -166,6 +167,8 @@ const schema: Schema = {
     "seclabel",
     "chainflow",
     "chainnode",
+    "keyedlist",
+    "keyedrow",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -178,6 +181,7 @@ const schema: Schema = {
     workedexample: ["literallabel", "literal", "improvedlabel", "improved", "note"],
     seclabel: ["heading", "qual"],
     chainflow: ["count"],
+    keyedrow: ["term"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],
@@ -191,6 +195,7 @@ export const remarkPlugins: PluggableList = [
   remarkProseStructure,
   remarkSectionLabels,
   remarkArrowFlow,
+  remarkInlineSeries,
   remarkRichDirectives,
   remarkKeywordBadges,
   remarkHighlight,

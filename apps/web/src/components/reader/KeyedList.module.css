@@ -1,0 +1,57 @@
+/* Keyed definition list — a token key paired with its definition, hairline-divided rows (a panel,
+   not floating cards). The key is a neutral mono chip; the accent stays a scalpel elsewhere. */
+.list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0 var(--space-4);
+  margin: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.term {
+  display: flex;
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.def {
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) 0;
+  border-bottom: var(--border-width) solid var(--border);
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* The last row carries no divider. In a two-column grid the final dt and dd are the last two cells. */
+.term:last-of-type,
+.def:last-of-type {
+  border-bottom: 0;
+}
+
+.key {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 0.05em 0.4em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  /* Stack key above definition on narrow screens. */
+  .list {
+    grid-template-columns: 1fr;
+  }
+  .term {
+    padding-bottom: var(--space-1);
+    border-bottom: 0;
+  }
+  .def {
+    padding: 0 var(--space-4) var(--space-3);
+  }
+}
