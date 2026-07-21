@@ -1,12 +1,6 @@
-.band {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-  padding: var(--space-3) 0;
-  border-top: var(--border-width) solid var(--border);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
+/* The mono metric style — small, uppercase, letter-spaced — shared via `composes` by LearnMode's
+   step metrics and the TrailBand. (The Read-mode ReadingMeta band that originally owned this file is
+   retired; this class remains the canonical metric token those two surfaces build on.) */
 .metric {
   font-family: var(--font-mono);
   font-size: var(--eyebrow-size);
@@ -15,26 +9,4 @@
   /* Secondary, not muted: these are live metrics the learner reads, so they must clear AA. */
   color: var(--text-secondary);
   white-space: nowrap;
-}
-
-.track {
-  position: relative;
-  flex: 1;
-  height: 2px;
-  border-radius: var(--radius-full);
-  background: var(--border);
-}
-
-.fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: var(--radius-full);
-  background: var(--accent-500);
-  /* Width rides an inline custom property so the bar never animates layout. */
-  width: var(--reading-percent, 0%);
-}
-
-.percent {
-  composes: metric;
-  color: var(--accent-600);
 }

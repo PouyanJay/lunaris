@@ -1,6 +1,6 @@
 import type { Citation, Claim, MerrillSegments, VerifierStatus } from "../../types/course";
 import type { StatusTone } from "../primitives/StatusDot";
-import { matchClaimToSentence, splitSentences } from "./claimMatch";
+import { matchClaimToSentence } from "./claimMatch";
 
 export interface PhaseRef {
   key: keyof MerrillSegments;
@@ -78,30 +78,4 @@ export function groupByPhase(annotations: Annotation[]): AnnotationGroup[] {
     group.items.push(annotation);
   }
   return groups;
-}
-
-/** A claim's matched sentence text + its annotation id — used by the Markdown prose renderer to
- *  find and tag the *block* (paragraph/list-item) that contains the sentence, since rich Markdown
- *  can't carry an exact-span wrapper. */
-export interface PhraseMark {
-  claimId: string;
-  text: string;
-}
-
-/** For one phase, the matched-sentence text of each annotation that linked to a sentence (the rest
- *  fall back to phase-level highlight). The renderer matches these against rendered block text. */
-export function phraseMarksFor(
-  annotations: Annotation[],
-  phaseKey: keyof MerrillSegments,
-  prose: string,
-): PhraseMark[] {
-  const sentences = splitSentences(prose);
-  const marks: PhraseMark[] = [];
-  for (const annotation of annotations) {
-    if (annotation.phaseKey === phaseKey && annotation.matchedSentence !== null) {
-      const text = sentences[annotation.matchedSentence];
-      if (text) marks.push({ claimId: annotation.id, text });
-    }
-  }
-  return marks;
 }

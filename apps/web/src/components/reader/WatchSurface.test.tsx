@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { makeResource } from "../../test/fixtures";
 import { WatchSurface } from "./WatchSurface";
@@ -15,15 +15,7 @@ const VIDEO = {
 };
 
 function renderSurface(overrides: Partial<ComponentProps<typeof WatchSurface>> = {}) {
-  return render(
-    <WatchSurface
-      {...VIDEO}
-      takeaways={[]}
-      resources={[]}
-      onExitToRead={() => {}}
-      {...overrides}
-    />,
-  );
+  return render(<WatchSurface {...VIDEO} takeaways={[]} resources={[]} {...overrides} />);
 }
 
 describe("WatchSurface", () => {
@@ -94,37 +86,18 @@ describe("WatchSurface", () => {
     expect(screen.queryByRole("heading", { name: /resources/i })).not.toBeInTheDocument();
   });
 
-  it("hides the docks in Watch and shows them in Both", () => {
-    // Arrange — Both is the default; the takeaways dock is visible.
+  it("shows the docks unconditionally — there is no Watch/Both/Read sub-control", () => {
+    // Arrange / Act — the player, its chapter rail, and the lesson docks are all present at once.
     renderSurface({
       takeaways: ["Locate a target with binary search."],
       resources: [makeResource({ title: "Binary search visualised" })],
     });
+
+    // Assert — docks show, and no consumption radiogroup toggles them.
     expect(screen.getByText(/^Takeaway 1$/i)).toBeInTheDocument();
-
-    // Act — switch to the immersive Watch view.
-    fireEvent.click(screen.getByRole("radio", { name: "Watch" }));
-
-    // Assert — the docks are hidden.
-    expect(screen.queryByText(/^Takeaway 1$/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /resources/i })).not.toBeInTheDocument();
-
-    // Act — back to Both.
-    fireEvent.click(screen.getByRole("radio", { name: "Both" }));
-
-    // Assert
-    expect(screen.getByText(/^Takeaway 1$/i)).toBeInTheDocument();
-  });
-
-  it("hands off to the written lesson via Read", () => {
-    // Arrange
-    const onExitToRead = vi.fn();
-    renderSurface({ onExitToRead });
-
-    // Act
-    fireEvent.click(screen.getByRole("radio", { name: "Read" }));
-
-    // Assert
-    expect(onExitToRead).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: /resources/i })).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Both" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Read" })).not.toBeInTheDocument();
   });
 });

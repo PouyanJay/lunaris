@@ -22,10 +22,10 @@ function stubFetchResolving(course = makeCourse()) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => course }));
 }
 
-// These suites exercise the long-form Read mode (Focus Flow's Learn mode is the default) —
-// pin the persisted preference before each render.
+// The reader's per-lesson footer paging lives in Watch mode now that Read is retired — pin Watch so
+// those controls (and a stable non-prose reader surface) are on screen for the canvas tests.
 beforeEach(() => {
-  localStorage.setItem(READER_MODE_KEY, "read");
+  localStorage.setItem(READER_MODE_KEY, "watch");
 });
 
 describe("App", () => {
@@ -580,7 +580,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     await screen.findByRole("heading", { name: "queues", level: 1 });
     // Enter the reader — asserting absence on the Overview tab would be vacuous.
     fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
-    await screen.findByText(/find a word in a dictionary/i);
+    await screen.findByRole("radiogroup", { name: /reading mode/i });
 
     // waitFor drains the capability-fetch microtask, so the absence reflects
     // supportsLessonRegeneration === false — not merely an unresolved fetch (canRegenerate
@@ -717,7 +717,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // Assert — Overview is the landing tab: the Continue CTA renders, the reader prose and the
     // graph stay absent until chosen…
     expect(await screen.findByRole("button", { name: /continue learning/i })).toBeInTheDocument();
-    expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /reading mode/i })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("application", { name: /prerequisite graph/i }),
     ).not.toBeInTheDocument();
@@ -739,18 +739,18 @@ describe("App — live studio (VITE_API_URL set)", () => {
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
     fireEvent.click(await screen.findByRole("radio", { name: /lessons/i }));
-    await screen.findByText(/find a word in a dictionary/i);
+    await screen.findByRole("radiogroup", { name: /reading mode/i });
 
     // Act — switch to Map. Assert — the graph canvas shows, the prose is gone.
     fireEvent.click(screen.getByRole("radio", { name: /map/i }));
     expect(
       await screen.findByRole("application", { name: /prerequisite graph/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/find a word in a dictionary/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup", { name: /reading mode/i })).not.toBeInTheDocument();
 
     // Act — switch back to Lessons. Assert — the reader returns.
     fireEvent.click(screen.getByRole("radio", { name: /lessons/i }));
-    expect(await screen.findByText(/find a word in a dictionary/i)).toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: /reading mode/i })).toBeInTheDocument();
   });
 
   it("deletes the course you're viewing from its Overview danger zone, then returns Home", async () => {

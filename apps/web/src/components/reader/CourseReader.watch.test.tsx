@@ -5,8 +5,8 @@ import { makeCourse, routedFetch } from "../../test/fixtures";
 import type { VideoArtifact } from "../../types/course";
 import { CourseReader, READER_MODE_KEY } from "./CourseReader";
 
-/** The top-level reader-mode toggle (Learn/Read/Watch), scoped away from the in-Watch
- *  Watch/Both/Read consumption sub-control (which repeats "Watch"/"Read"). */
+/** The reader-mode toggle — now just Learn/Watch (Read is retired, and the in-Watch consumption
+ *  sub-control is gone). */
 function readerModeToggle() {
   return within(screen.getByRole("radiogroup", { name: /reading mode/i }));
 }
@@ -63,12 +63,17 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-/** routedFetch for the reader's other routes, with the two video routes (the ready-job poll and the
- *  coordinate re-attach probe) intercepted to serve the ready chaptered video. */
+/** routedFetch for the reader's other routes, with the video routes intercepted to serve the given
+ *  view: the ready-job poll and the coordinate re-attach probe (GET), plus an on-demand generate
+ *  enqueue (POST /lessons/{id}/video) that is accepted and resolves to the same view. */
 function videoFetch(view: unknown = chapteredVideoView()) {
   const base = routedFetch({ progress: { courseId: "course-test", objectives: [], lessons: [] } });
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (/\/lessons\/[^/?]+\/video$/.test(url) && method === "POST") {
+      return Promise.resolve(jsonResponse(200, view)); // enqueue accepted → the view's job
+    }
     if (url.split("?")[0]!.endsWith("/videos/active")) {
       return Promise.resolve(new Response(null, { status: 204 })); // nothing newer in flight
     }
@@ -91,7 +96,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
+describe("CourseReader — Watch mode (Cinema)", () => {
   it("offers a Watch mode when the lesson has a ready chaptered video, and plays it", async () => {
     // Arrange
     vi.stubGlobal("fetch", videoFetch());
@@ -107,16 +112,25 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(document.querySelector("video")).not.toBeNull();
   });
 
-  it("offers no Watch mode when the lesson has no video", async () => {
-    // Arrange — the default course ships no lesson video → the lifted hook stays idle (no fetch).
+  it("offers Watch even with no video, opening on the generate affordance that builds one in place", async () => {
+    // Arrange — the default course ships no lesson video → the lifted hook stays idle.
     vi.stubGlobal("fetch", videoFetch());
 
-    // Act
+    // Act — Watch is offered online; the front-door default is Learn (no ready video).
     render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
-    await screen.findByRole("radio", { name: /learn/i });
+    const watch = await readerModeToggle().findByRole("radio", { name: /watch/i });
+    expect(readerModeToggle().getByRole("radio", { name: /learn/i })).toBeChecked();
+
+    // Act — enter Watch: with no video, the surface is the generate affordance.
+    fireEvent.click(watch);
+    const generate = screen.getByRole("button", { name: /generate video/i });
+    expect(generate).toBeInTheDocument();
+
+    // Act — generate: the enqueue is accepted and the built chaptered player takes over in place.
+    fireEvent.click(generate);
 
     // Assert
-    expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
   });
 
   it("opens in Watch (front door) when a video is ready and no mode was chosen", async () => {
@@ -170,38 +184,55 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
   });
 
-  it("in Read mode offers a Watch affordance instead of duplicating the player", async () => {
-    // Arrange — explicit Read; a ready chaptered video exists.
+  it("migrates a legacy stored Read preference to the front-door default", async () => {
+    // Arrange — a browser that persisted the retired "read" mode before this change.
     localStorage.setItem(READER_MODE_KEY, "read");
     vi.stubGlobal("fetch", videoFetch());
 
-    // Act
-    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
-    const cta = await screen.findByRole("button", { name: /watch this lesson/i });
+    // Act — a video-less lesson: the stale value must degrade to the default, not stick or crash.
+    render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
+    const learn = await readerModeToggle().findByRole("radio", { name: /learn/i });
 
-    // Assert — the chaptered player is NOT duplicated into the reading column.
-    expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
-
-    // Act — the affordance switches into Watch, where the player lives.
-    fireEvent.click(cta);
-
-    // Assert
-    expect(screen.getByRole("navigation", { name: /video chapters/i })).toBeInTheDocument();
+    // Assert — the front-door default (Learn) is selected; the toggle offers only Learn and Watch.
+    expect(learn).toBeChecked();
+    expect(readerModeToggle().getByRole("radio", { name: /watch/i })).not.toBeChecked();
+    expect(readerModeToggle().getAllByRole("radio")).toHaveLength(2);
   });
 
-  it("falls back to Learn when a saved Watch preference meets a video-less lesson", async () => {
+  it("keeps a saved Watch preference on a video-less lesson, showing the generate affordance", async () => {
     // Arrange — a persisted Watch preference, but this lesson shipped no video.
     localStorage.setItem(READER_MODE_KEY, "watch");
     vi.stubGlobal("fetch", videoFetch());
 
     // Act
     render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
-    const learn = await screen.findByRole("radio", { name: /learn/i });
+    const watch = await readerModeToggle().findByRole("radio", { name: /watch/i });
 
-    // Assert — no Watch offered, Learn is what renders; the preference is not lost (untouched).
-    expect(learn).toBeChecked();
-    expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
+    // Assert — Watch stays selected (it no longer clamps to Learn) and shows the generate CTA; the
+    // preference is intact.
+    expect(watch).toBeChecked();
+    expect(screen.getByRole("button", { name: /generate video/i })).toBeInTheDocument();
     expect(localStorage.getItem(READER_MODE_KEY)).toBe("watch");
+  });
+
+  it("persists a Learn choice made from Watch, and honours it on the next visit", async () => {
+    // Arrange — front-door Watch (a ready chaptered video exists).
+    vi.stubGlobal("fetch", videoFetch());
+    const { unmount } = render(
+      <CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />,
+    );
+    await screen.findByRole("navigation", { name: /video chapters/i });
+
+    // Act — choose Learn; the preference is written back.
+    fireEvent.click(readerModeToggle().getByRole("radio", { name: /learn/i }));
+    expect(localStorage.getItem(READER_MODE_KEY)).toBe("learn");
+    unmount();
+
+    // Assert — a fresh reader honours it over the front door, even though the video is ready.
+    render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+    const learn = await readerModeToggle().findByRole("radio", { name: /learn/i });
+    expect(learn).toBeChecked();
+    expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
   });
 
   it("a silent video shows chapters + docks but no transcript", async () => {
@@ -218,18 +249,17 @@ describe("CourseReader — Watch mode (Cinema fuller mode)", () => {
     expect(screen.queryByText(/^transcript$/i)).not.toBeInTheDocument();
   });
 
-  it("a pre-Cinema video (no chapters) offers no Watch; Read keeps the plain player", async () => {
-    // Arrange — explicit Read; a ready video that predates Cinema (no chapter outline).
-    localStorage.setItem(READER_MODE_KEY, "read");
+  it("plays a pre-Cinema video (no chapters) inside Watch as the plain player", async () => {
+    // Arrange — a ready video that predates Cinema (no chapter outline).
     vi.stubGlobal("fetch", videoFetch(preCinemaVideoView()));
 
-    // Act
+    // Act — Watch is offered; the front door stays Learn (no chaptered video), so enter Watch.
     render(<CourseReader course={courseWithVideo()} apiBaseUrl="http://api.test" />);
+    fireEvent.click(await readerModeToggle().findByRole("radio", { name: /watch/i }));
 
-    // Assert — the plain player resolves in Read; no Watch mode and no duplicate cue.
+    // Assert — the plain player resolves in Watch; there is no chapter rail (no Cinema surface).
     expect(await screen.findByRole("button", { name: /play lesson video/i })).toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: /watch/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /watch this lesson/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: /video chapters/i })).not.toBeInTheDocument();
   });
 
   it("offers no Watch offline (no apiBaseUrl), even with a lesson video", async () => {

@@ -30,22 +30,6 @@
   gap: var(--space-8);
 }
 
-/* Sections the outline can jump to — breathing room under the pane's top edge on arrival. */
-.sectionAnchor {
-  scroll-margin-top: var(--space-6);
-}
-
-/* Read mode's cue into Watch when a chaptered video is ready — the video hero's idle affordance
-   grammar (reused via composes), keeping the video one click away without duplicating the player. */
-.watchCta {
-  composes: idle from "./LessonVideoHero.module.css";
-  margin-bottom: var(--space-6);
-}
-
-.watchCtaHint {
-  composes: idleHint from "./LessonVideoHero.module.css";
-}
-
 .lessonHead {
   display: flex;
   align-items: flex-end;
@@ -142,35 +126,6 @@
 .competencyName {
   color: var(--text);
   font-weight: 500;
-}
-
-.phase {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  scroll-margin-block: var(--space-12);
-  border-radius: var(--radius-md);
-  transition: background-color var(--dur) var(--ease);
-}
-
-/* Phase-level highlight: the fallback target when a claim has no confident sentence match. */
-.phaseActive {
-  background: var(--accent-soft);
-  box-shadow: -3px 0 0 var(--accent-500);
-  margin-left: -3px;
-  padding-left: var(--space-3);
-}
-
-.phaseHead {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.phaseLabel {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text);
 }
 
 .nav {
