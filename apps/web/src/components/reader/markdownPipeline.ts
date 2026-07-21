@@ -11,7 +11,13 @@ import { visit } from "unist-util-visit";
 
 import { remarkHighlight } from "./remarkHighlight";
 import { remarkKeywordBadges } from "./keywordBadges";
+import { remarkArrowFlow } from "./arrowFlow";
+import { remarkInlineSeries } from "./inlineSeries";
+import { remarkKeyTerms } from "./keyTerms";
+import { remarkParagraphRhythm } from "./paragraphRhythm";
 import { remarkProseStructure } from "./proseStructure";
+import { remarkSectionLabels } from "./sectionLabels";
+import { remarkSectionPanels } from "./sectionPanels";
 
 /** The lesson prose is authored as Markdown and may now carry rich blocks: admonition callouts
  *  (`:::note` … or a "Note:" lead-in), `:::details` collapsibles, `:term[word]{title="…"}` glossary
@@ -22,7 +28,13 @@ import { remarkProseStructure } from "./proseStructure";
  *  small set of custom elements, math/highlight markup is generated from text (never passed through),
  *  and `rehype-sanitize` runs as the gate. Sanitisation runs BEFORE KaTeX/highlight so their trusted,
  *  generated output is inserted after the gate — the schema only has to permit the handful of class
- *  names the math lowering needs as input, plus our directive elements. */
+ *  names the math lowering needs as input, plus our directive elements.
+ *
+ *  It also orchestrates the prose-formatting layer — conservative transforms that reformat plain
+ *  authored prose at render time: section labels (`sectionLabels.ts`), arrow-chain flows
+ *  (`arrowFlow.ts`), inline series → lists (`inlineSeries.ts`), paragraph rhythm (`paragraphRhythm.ts`),
+ *  key-term emphasis (`keyTerms.ts`), worked-example panels (`sectionPanels.ts`), and data-token chips
+ *  (`keywordBadges.ts`). Each new custom element is allow-listed in the sanitize schema below. */
 
 /** Paragraph lead-ins ("Note: …") that become callouts, mapped to a callout variant. */
 const LEAD_IN_VARIANTS: Record<string, string> = {
@@ -161,6 +173,12 @@ const schema: Schema = {
     "mark",
     "examplepanel",
     "workedexample",
+    "seclabel",
+    "chainflow",
+    "chainnode",
+    "keyedlist",
+    "keyedrow",
+    "sectionpanel",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -171,6 +189,9 @@ const schema: Schema = {
     arrayviz: ["values"],
     keyword: ["category"],
     workedexample: ["literallabel", "literal", "improvedlabel", "improved", "note"],
+    seclabel: ["heading", "qual"],
+    chainflow: ["count"],
+    keyedrow: ["term"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],
@@ -182,6 +203,12 @@ export const remarkPlugins: PluggableList = [
   remarkMath,
   remarkDirective,
   remarkProseStructure,
+  remarkSectionLabels,
+  remarkArrowFlow,
+  remarkInlineSeries,
+  remarkParagraphRhythm,
+  remarkKeyTerms,
+  remarkSectionPanels,
   remarkRichDirectives,
   remarkKeywordBadges,
   remarkHighlight,

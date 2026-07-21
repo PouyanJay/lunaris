@@ -1,0 +1,89 @@
+/* A lifted arrow chain: hairline node chips joined by accent arrows, numbered by a CSS counter. The
+   accent is a scalpel here — only the step number ring and the connector arrows wear it; the chips
+   themselves are neutral. Wraps on wide screens, stacks vertically (arrows point down) on narrow. */
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  counter-reset: chain;
+}
+
+.node {
+  position: relative; /* anchor for the connector arrow (::after) */
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  counter-increment: chain;
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin-right: var(--space-4); /* room for the connector; cleared on the last node below */
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--text);
+  max-width: 24ch;
+}
+
+/* The step number — a small mono ring in the accent (the one place the chip touches accent). */
+.node::before {
+  content: counter(chain);
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-600);
+  border: var(--border-width) solid var(--accent-600);
+  border-radius: var(--radius-full);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Connector arrow between chips (decorative; the <ol> already carries order for AT). */
+.node:not(:last-child)::after {
+  content: "→";
+  position: absolute;
+  color: var(--accent-600);
+  font-size: var(--text-lg);
+  line-height: 1;
+  /* Sit in the flex gap to the right of the chip. */
+  margin-left: calc(100% + var(--space-1));
+}
+
+.body {
+  min-width: 0;
+}
+
+.node:last-child {
+  margin-right: 0;
+}
+
+@media (max-width: 560px) {
+  .flow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .node {
+    max-width: 100%;
+    margin-right: 0;
+    margin-bottom: var(--space-4);
+  }
+  .node:last-child {
+    margin-bottom: 0;
+  }
+  .node:not(:last-child)::after {
+    /* Point down, centred under the chip. */
+    content: "↓";
+    margin-left: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(100% - var(--space-1));
+  }
+}
