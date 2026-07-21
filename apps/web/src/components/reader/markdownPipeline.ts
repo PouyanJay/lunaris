@@ -12,6 +12,7 @@ import { visit } from "unist-util-visit";
 import { remarkHighlight } from "./remarkHighlight";
 import { remarkKeywordBadges } from "./keywordBadges";
 import { remarkProseStructure } from "./proseStructure";
+import { remarkSectionLabels } from "./sectionLabels";
 
 /** The lesson prose is authored as Markdown and may now carry rich blocks: admonition callouts
  *  (`:::note` … or a "Note:" lead-in), `:::details` collapsibles, `:term[word]{title="…"}` glossary
@@ -161,6 +162,7 @@ const schema: Schema = {
     "mark",
     "examplepanel",
     "workedexample",
+    "seclabel",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -171,6 +173,7 @@ const schema: Schema = {
     arrayviz: ["values"],
     keyword: ["category"],
     workedexample: ["literallabel", "literal", "improvedlabel", "improved", "note"],
+    seclabel: ["heading", "qual"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],
@@ -182,6 +185,7 @@ export const remarkPlugins: PluggableList = [
   remarkMath,
   remarkDirective,
   remarkProseStructure,
+  remarkSectionLabels,
   remarkRichDirectives,
   remarkKeywordBadges,
   remarkHighlight,

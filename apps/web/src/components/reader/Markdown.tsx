@@ -12,6 +12,7 @@ import { GoDeeper } from "./GoDeeper";
 import { KeywordBadge } from "./KeywordBadge";
 import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { remarkAutoGlossary } from "./remarkAutoGlossary";
+import { SectionLabel } from "./SectionLabel";
 import { StepItem } from "./StepItem";
 import { Stepper } from "./Stepper";
 import { WorkedExampleBlock } from "./WorkedExampleBlock";
@@ -46,6 +47,7 @@ const baseComponents = {
   keyword: KeywordBadge,
   examplepanel: ExamplePanel,
   workedexample: WorkedExampleBlock,
+  seclabel: SectionLabel,
 } as Components;
 
 interface MarkdownProps {
