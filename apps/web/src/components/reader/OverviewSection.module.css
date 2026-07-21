@@ -8,7 +8,9 @@
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   align-items: start;
   gap: var(--space-6);
-  margin-bottom: var(--space-8);
+  /* No outer margin: the section sits in the Overview page's flex-gap stack (CourseOverview
+     `.content`, gap var(--space-8)), which owns the spacing to the scope band above and lessons
+     below. A margin here would double that gap. */
 }
 
 .slot {

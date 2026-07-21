@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CourseOverview } from "./CourseOverview";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
-import type { Course } from "../../types/course";
+import type { Course, VideoArtifact } from "../../types/course";
 
 /** Two modules / three lessons; module one carries one objective (shown on its first lesson). */
 function threeLessonCourse(): Course {
@@ -42,6 +42,63 @@ function progressFetch(snapshot: unknown) {
       return Promise.resolve({ ok: true, json: async () => snapshot });
     }
     return Promise.reject(new Error(`unhandled ${String(input)}`));
+  });
+}
+
+/** A ready, build-time course video artifact (trailer or topic overview). */
+function readyArtifact(kind: VideoArtifact["kind"], jobId: string): VideoArtifact {
+  return {
+    kind,
+    status: "ready",
+    provenance: {
+      jobId,
+      courseId: "course-test",
+      lessonId: null,
+      kind,
+      model: "m",
+      contractHash: "h",
+      inputHash: "h",
+      claimIds: [],
+      generatedAt: "2026-01-01T00:00:00+00:00",
+    },
+    narrated: false,
+    durationS: 80,
+  };
+}
+
+/** progressFetch, plus the two video routes the Overview videos resolve through (the coordinate
+ *  re-attach probe → nothing in flight, and the per-job signed-URL fetch). */
+function overviewVideoFetch(snapshot: unknown) {
+  return vi.fn((input: Parameters<typeof fetch>[0]) => {
+    const url = String(input);
+    if (/\/progress$/.test(url)) return Promise.resolve({ ok: true, json: async () => snapshot });
+    if (url.split("?")[0]!.endsWith("/videos/active")) {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    if (/\/videos\//.test(url)) {
+      const jobId = url.split("/videos/")[1] ?? "job";
+      const body = {
+        job: {
+          id: jobId,
+          userId: "u",
+          courseId: "course-test",
+          lessonId: null,
+          kind: "summary",
+          status: "ready",
+          error: null,
+        },
+        videoUrl: `https://signed.example/${jobId}/final.mp4?token=t`,
+        posterUrl: `https://signed.example/${jobId}/poster.jpg?token=t`,
+        captionsUrl: null,
+      };
+      return Promise.resolve(
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    return Promise.reject(new Error(`unhandled ${url}`));
   });
 }
 
@@ -254,6 +311,48 @@ describe("CourseOverview", () => {
     // Assert — the band's facts render; the default fixture (no scope) never shows them.
     expect(await screen.findByText(/~2 weeks, self-paced/)).toBeInTheDocument();
     expect(screen.getByText("Search fluency")).toBeInTheDocument();
+  });
+
+  it("docks the course trailer + topic-overview videos on the Overview tab, below the scope band", async () => {
+    // Arrange — a course carrying both a scope band and the two built overview videos.
+    vi.stubGlobal("fetch", overviewVideoFetch(SNAPSHOT));
+    const withVideos: Course = {
+      ...threeLessonCourse(),
+      scope: { effort: "~2 weeks, self-paced", delivers: ["Search fluency"], excludes: [] },
+      videos: {
+        summary: readyArtifact("summary", "sum-1"),
+        overview: readyArtifact("overview", "ovr-1"),
+      },
+    };
+    render(
+      <CourseOverview
+        course={withVideos}
+        apiBaseUrl="http://test"
+        onContinue={vi.fn()}
+        onViewMap={vi.fn()}
+        onOpenLesson={vi.fn()}
+      />,
+    );
+
+    // Assert — the videos section renders on the Overview page, after the scope band in document
+    // order (the placement the reader used to own).
+    const scope = await screen.findByRole("region", { name: /course scope/i });
+    const videos = screen.getByRole("region", { name: /course overview videos/i });
+    expect(within(videos).getByText("What this course covers")).toBeInTheDocument();
+    expect(within(videos).getByText("What this topic is and why it matters")).toBeInTheDocument();
+    expect(scope.compareDocumentPosition(videos) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows no overview-videos section when the course shipped none", async () => {
+    // Arrange / Act — the default fixture has no `videos`.
+    vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
+    renderOverview();
+
+    // Assert — await the progress read so the absence is asserted after the fetch settles.
+    await screen.findByText("1 of 3 lessons · 33%");
+    expect(
+      screen.queryByRole("region", { name: /course overview videos/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("fires the View-the-map action", () => {

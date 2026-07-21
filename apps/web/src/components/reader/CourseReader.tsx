@@ -22,7 +22,6 @@ import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
 import { LessonVideoHero } from "./LessonVideoHero";
-import { OverviewSection } from "./OverviewSection";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
@@ -499,11 +498,8 @@ export function CourseReader({
           </div>
           {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so. */}
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
-          {/* The course opens with video (explainer-video V5): the trailer + topic intro, pinned at
-              the top of the course (entry only). Absent on a pre-V5 / video-off course. */}
-          {safeIndex === 0 && apiBaseUrl && course.videos && (
-            <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} courseId={course.id} />
-          )}
+          {/* The scope band and the course trailer + topic-overview videos both live on the Overview
+              tab (CourseOverview) now — the Lessons reader carries neither. */}
           {/* Per-course build tag (keyless-fallbacks T5): the persistent record of which keyless
               fallbacks produced this course, shown once at entry. Renders nothing for a fully-live
               build, and unlike the live badge never flips — it only changes on rebuild. */}

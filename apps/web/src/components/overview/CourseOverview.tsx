@@ -14,6 +14,7 @@ import { Button } from "../primitives/Button";
 import { CourseCoverImage } from "../primitives/CourseCoverImage";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
+import { OverviewSection } from "../reader/OverviewSection";
 import { ScopeBand } from "../reader/ScopeBand";
 import styles from "./CourseOverview.module.css";
 
@@ -228,6 +229,12 @@ export function CourseOverview({
           onViewMap={onViewMap}
         />
         {course.scope && <ScopeBand scope={course.scope} />}
+        {/* The course opens with video (explainer-video V5): the trailer + topic-overview intro,
+            docked on the Overview tab just below the scope band. Absent on a pre-V5 / video-off
+            course, and only online (a signed playback URL needs the API). */}
+        {apiBaseUrl && course.videos && (
+          <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} courseId={course.id} />
+        )}
         <section aria-label="Lessons">
           <p className={`eyebrow ${styles.lessonsEyebrow}`}>Lessons</p>
           <ul className={styles.rows}>
