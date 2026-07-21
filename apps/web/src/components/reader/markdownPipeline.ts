@@ -11,6 +11,7 @@ import { visit } from "unist-util-visit";
 
 import { remarkHighlight } from "./remarkHighlight";
 import { remarkKeywordBadges } from "./keywordBadges";
+import { remarkArrowFlow } from "./arrowFlow";
 import { remarkProseStructure } from "./proseStructure";
 import { remarkSectionLabels } from "./sectionLabels";
 
@@ -163,6 +164,8 @@ const schema: Schema = {
     "examplepanel",
     "workedexample",
     "seclabel",
+    "chainflow",
+    "chainnode",
   ],
   attributes: {
     ...defaultSchema.attributes,
@@ -174,6 +177,7 @@ const schema: Schema = {
     keyword: ["category"],
     workedexample: ["literallabel", "literal", "improvedlabel", "improved", "note"],
     seclabel: ["heading", "qual"],
+    chainflow: ["count"],
     code: [["className", /^language-./, "math-inline", "math-display"]],
     // Alpha enumerations lifted from prose render as <ol type="a">.
     ol: ["type", "start"],
@@ -186,6 +190,7 @@ export const remarkPlugins: PluggableList = [
   remarkDirective,
   remarkProseStructure,
   remarkSectionLabels,
+  remarkArrowFlow,
   remarkRichDirectives,
   remarkKeywordBadges,
   remarkHighlight,

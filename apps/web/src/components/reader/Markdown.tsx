@@ -5,6 +5,7 @@ import type { PluggableList } from "unified";
 
 import { ArrayViz } from "./ArrayViz";
 import { Callout } from "./Callout";
+import { ChainFlow, ChainNode } from "./ChainFlow";
 import { CodeBlock } from "./CodeBlock";
 import { ExamplePanel } from "./ExamplePanel";
 import { GlossaryTerm } from "./GlossaryTerm";
@@ -48,6 +49,8 @@ const baseComponents = {
   examplepanel: ExamplePanel,
   workedexample: WorkedExampleBlock,
   seclabel: SectionLabel,
+  chainflow: ChainFlow,
+  chainnode: ChainNode,
 } as Components;
 
 interface MarkdownProps {
