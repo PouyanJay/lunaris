@@ -30,20 +30,41 @@
   gap: var(--space-8);
 }
 
+/* The lesson header band, as three stacked rows: where you are (module · position), the title
+   paired with the controls that act on it, then the promise line. The controls ride the title's
+   row so they stay anchored to what they act on — bottom-aligning them against the heading block
+   made their position depend on how long the competency sentence happened to wrap. */
 .lessonHead {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-2);
   padding-bottom: var(--space-4);
   border-bottom: var(--border-width) solid var(--border);
 }
 
-.lessonHeading {
+/* Where this lesson sits: module (left) and position (right) pair on one metadata line, which
+   keeps the cluster below purely interactive. */
+.headLocation {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+/* A long module title truncates rather than shoving the position counter off the row. */
+.moduleEyebrow {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
 }
 
 .lessonTitle {
@@ -52,14 +73,18 @@
   color: var(--text);
 }
 
-.headMeta {
+/* One horizontal cluster rather than a right-aligned column — stacking controls of differing
+   widths left a ragged edge and orphaned the bookmark glyph on a row of its own. Ordered by
+   prominence: mode switch, then the rail disclosure, then the bookmark as a trailing utility. */
+.headActions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
+  flex: none;
   gap: var(--space-2);
 }
 
 .progress {
+  flex: none;
   font-size: var(--text-xs);
   color: var(--text-muted);
   white-space: nowrap;
