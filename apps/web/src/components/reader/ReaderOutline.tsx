@@ -49,7 +49,8 @@ interface ReaderOutlineProps {
 
 /** The course outline (TOC): lessons grouped under their module titles, each with the shared
  *  numbered progress chip (✓ done / amber in-progress). The active lesson is marked `aria-current`
- *  and carries the accent spine; each entry is a button so the outline is fully keyboard-operable.
+ *  and reads as a raised, hairline-framed chip; each entry is a button so the outline is fully
+ *  keyboard-operable.
  *  Progress state is also written into the entry's text (visually hidden) — never color alone. */
 export function ReaderOutline({
   groups,

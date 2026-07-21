@@ -11,6 +11,7 @@ Hermetic (HS256 tokens, in-memory stores, probe pipelines) — no live services.
 """
 
 import asyncio
+import time
 from pathlib import Path
 
 import httpx
@@ -95,11 +96,7 @@ async def test_an_out_of_bounds_result_is_rejected(
         stream_task = asyncio.create_task(
             client.get("/api/courses/stream", params={"topic": "x", "compute": "device"})
         )
-        for _ in range(200):
-            if _registry_run_ids(registry):
-                break
-            await asyncio.sleep(0)
-        run_ids = _registry_run_ids(registry)
+        run_ids = await _await_bridges(registry, 1, stream_task)
         assert run_ids, "the device build never registered a bridge"
         run_id = run_ids[0]
 
@@ -118,6 +115,27 @@ async def test_an_out_of_bounds_result_is_rejected(
             )
             assert answered.status_code == 204, answered.text
         await stream_task
+
+
+async def _await_bridges(
+    registry: DeviceBridgeRegistry, count: int, *builds: asyncio.Task
+) -> list[str]:
+    """Wait for ``count`` builds to register their bridges, bounded by wall-clock, not by a fixed
+    number of loop yields — on a loaded runner a build needs more turns than any spin budget
+    guesses, which is exactly how this read went flaky in CI. A build that dies first re-raises
+    here rather than surfacing as a bare "no bridge" a step later."""
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        run_ids = _registry_run_ids(registry)
+        if len(run_ids) >= count:
+            return run_ids
+        for build in builds:
+            if build.done():
+                build.result()  # a crashed build: re-raise its error instead of timing out on it
+        if builds and all(build.done() for build in builds):
+            break  # every build finished without a bridge — waiting longer can't change that
+        await asyncio.sleep(0.01)
+    return _registry_run_ids(registry)
 
 
 def _registry_run_ids(registry: DeviceBridgeRegistry) -> list[str]:
@@ -223,11 +241,7 @@ async def test_concurrent_device_builds_each_get_their_own_tabs_answers(
         second = asyncio.create_task(
             client.get("/api/courses/stream", params={"topic": "beta", "compute": "device"})
         )
-        for _ in range(500):
-            if len(_registry_run_ids(registry)) == 2:
-                break
-            await asyncio.sleep(0)
-        run_ids = _registry_run_ids(registry)
+        run_ids = await _await_bridges(registry, 2, first, second)
         assert len(run_ids) == 2, "both device builds should have live bridges"
         await asyncio.gather(*(serve_run(client, run_id) for run_id in run_ids))
         await asyncio.gather(first, second)

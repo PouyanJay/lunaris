@@ -23,7 +23,6 @@ import { buildAnnotations, type PhaseRef } from "./annotations";
 import { BuildProvenance } from "./BuildProvenance";
 import { LessonVideoHero } from "./LessonVideoHero";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
-import { ScopeBand } from "./ScopeBand";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
 import { buildGlossaryIndex } from "../../lib/glossaryIndex";
@@ -499,10 +498,8 @@ export function CourseReader({
           </div>
           {/* Honesty caveat (CQ Phase 1.6): an ungrounded research-needing course says so. */}
           {course.scopeNote && <Callout variant="warning">{course.scopeNote}</Callout>}
-          {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry.
-              (The course trailer + topic-overview videos live on the Overview tab, below this band —
-              see CourseOverview — not in the reading column.) */}
-          {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
+          {/* The scope band and the course trailer + topic-overview videos both live on the Overview
+              tab (CourseOverview) now — the Lessons reader carries neither. */}
           {/* Per-course build tag (keyless-fallbacks T5): the persistent record of which keyless
               fallbacks produced this course, shown once at entry. Renders nothing for a fully-live
               build, and unlike the live badge never flips — it only changes on rebuild. */}
@@ -510,72 +507,78 @@ export function CourseReader({
             <BuildProvenance buildCapabilities={course.buildCapabilities} />
           )}
           <header className={styles.lessonHead}>
-            <div className={styles.lessonHeading}>
-              <p className="eyebrow">{current.moduleTitle}</p>
-              <h2 className={styles.lessonTitle}>{current.label}</h2>
-              {current.competency && (
-                <p className={styles.competency}>
-                  Builds toward <span className={styles.competencyName}>{current.competency}</span>
-                </p>
-              )}
-            </div>
-            <div className={styles.headMeta}>
+            {/* Where this lesson sits — the module it belongs to and its position in the course.
+                Both are orienting facts, so they share one metadata line. */}
+            <div className={styles.headLocation}>
+              <p className={`eyebrow ${styles.moduleEyebrow}`}>{current.moduleTitle}</p>
               <p className={`${styles.progress} mono`}>
                 Lesson {safeIndex + 1} of {total}
               </p>
-              {/* Focus Flow: guided steps (Learn) vs the video (Watch) — one control. Watch is
-                  offered wherever a video is reachable (online), generating one on demand if none
-                  exists yet. */}
-              <SegmentedControl
-                segments={modeSegments}
-                value={effectiveMode}
-                onChange={selectMode}
-                label="Reading mode"
-              />
-              <BookmarkToggle
-                subject={`${current.label} · ${current.moduleTitle}`}
-                draft={{
-                  kind: "lesson",
-                  courseId: course.id,
-                  targetId: current.lesson.id,
-                  courseTitle: course.topic,
-                  title: `${current.label} · ${current.moduleTitle}`,
-                  lessonId: current.lesson.id,
-                }}
-              />
-              {annotations.length > 0 && (
-                <button
-                  ref={railToggleRef}
-                  type="button"
-                  className={styles.railToggle}
-                  aria-expanded={railVisible}
-                  data-open={railVisible || undefined}
-                  aria-controls="annotation-rail"
-                  aria-label={`Sources & checks, ${annotations.length}`}
-                  onClick={toggleRail}
-                >
-                  {/* On phones the words collapse to this verification glyph (see CSS); the count
-                      stays as the at-a-glance signal. */}
-                  <svg
-                    className={styles.railToggleIcon}
-                    viewBox="0 0 24 24"
-                    width="16"
-                    height="16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6l7-3z" />
-                    <path d="M9 12l2 2 4-4" />
-                  </svg>
-                  <span className={styles.railToggleLabel}>Sources &amp; checks</span>{" "}
-                  <span className={`mono ${styles.railCount}`}>{annotations.length}</span>
-                </button>
-              )}
             </div>
+            {/* The title and the controls that act on it share a row, which keeps the controls
+                pinned to the lesson rather than drifting down beside the competency line. */}
+            <div className={styles.titleRow}>
+              <h2 className={styles.lessonTitle}>{current.label}</h2>
+              <div className={styles.headActions}>
+                {/* Focus Flow: guided steps (Learn) vs the video (Watch) — one control. Watch is
+                    offered wherever a video is reachable (online), generating one on demand if none
+                    exists yet. */}
+                <SegmentedControl
+                  segments={modeSegments}
+                  value={effectiveMode}
+                  onChange={selectMode}
+                  label="Reading mode"
+                />
+                {annotations.length > 0 && (
+                  <button
+                    ref={railToggleRef}
+                    type="button"
+                    className={styles.railToggle}
+                    aria-expanded={railVisible}
+                    data-open={railVisible || undefined}
+                    aria-controls="annotation-rail"
+                    aria-label={`Sources & checks, ${annotations.length}`}
+                    onClick={toggleRail}
+                  >
+                    {/* On phones the words collapse to this verification glyph (see CSS); the count
+                        stays as the at-a-glance signal. */}
+                    <svg
+                      className={styles.railToggleIcon}
+                      viewBox="0 0 24 24"
+                      width="16"
+                      height="16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6l7-3z" />
+                      <path d="M9 12l2 2 4-4" />
+                    </svg>
+                    <span className={styles.railToggleLabel}>Sources &amp; checks</span>{" "}
+                    <span className={`mono ${styles.railCount}`}>{annotations.length}</span>
+                  </button>
+                )}
+                <BookmarkToggle
+                  subject={`${current.label} · ${current.moduleTitle}`}
+                  draft={{
+                    kind: "lesson",
+                    courseId: course.id,
+                    targetId: current.lesson.id,
+                    courseTitle: course.topic,
+                    title: `${current.label} · ${current.moduleTitle}`,
+                    lessonId: current.lesson.id,
+                  }}
+                />
+              </div>
+            </div>
+            {current.competency && (
+              <p className={styles.competency}>
+                Builds toward <span className={styles.competencyName}>{current.competency}</span>
+              </p>
+            )}
           </header>
 
           {/* Focus Flow (Learn): the guided step surface — every piece of the lesson (expects, each
