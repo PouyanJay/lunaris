@@ -668,6 +668,9 @@ describe("App — URL routing (live studio)", () => {
     expect(
       await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
     ).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/courses/course-test");
+    // The URL handoff is a separate effect from the course render, so await it rather than assert
+    // synchronously (the heading can paint a tick before the history replace flushes — a race that
+    // only surfaces under CI load).
+    await waitFor(() => expect(window.location.pathname).toBe("/courses/course-test"));
   });
 });
