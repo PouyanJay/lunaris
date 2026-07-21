@@ -25,9 +25,10 @@ class CoverageGap:
 class CoverageReport:
     """Which promised competencies the course materially builds — empty ``gaps`` == every one built.
 
-    A non-empty ``gaps`` is folded into the course's honest scope (excludes + scope_note) AND flags
-    the course for review (owner Q3): "promised but not built" becomes an honest scope cut, never a
-    silent omission. A clean report (the all-built happy path) leaves the course untouched.
+    A non-empty ``gaps`` is folded into the course's honest scope band (an excludes line) and
+    recorded in the finalize build log, AND flags the course for review (owner Q3): "promised but
+    not built" becomes an honest scope cut, never a silent omission. A clean report (the all-built
+    happy path) leaves the course untouched.
     """
 
     gaps: list[CoverageGap] = field(default_factory=list)

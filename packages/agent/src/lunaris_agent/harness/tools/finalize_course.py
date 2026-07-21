@@ -81,36 +81,37 @@ def _uncovered_names(report: CoverageReport, limit: int = _MAX_UNCOVERED_NAMES_L
 
 
 def _scope_out_uncovered_competencies(course: Course, report: CoverageReport) -> None:
-    """Fold the coverage gaps into the honest scope (CQ Phase 4.2, owner Q3): a scope_note sentence
-    + an excludes line naming the promised competencies the course does not fully build, so a gap
-    becomes an honest scope cut the reader sees rather than a silent omission. No-op when clean.
+    """Fold the coverage gaps into the honest scope BAND (CQ Phase 4.2, owner Q3): an excludes line
+    naming the promised competencies the course does not fully build, so a gap becomes an honest
+    scope cut the reader meets in the calm does/doesn't band — never a silent omission. No-op when
+    clean.
 
-    ``scope_note`` is the pinned honesty guarantee — it always carries the verbatim names. The
-    excludes line is reader copy the key-gated scope polisher may later reword (it preserves the
-    line count, not its wording), so the named disclosure lives in scope_note regardless.
+    The disclosure lives in ``scope.excludes`` (the scope band), deliberately NOT in ``scope_note``:
+    ``scope_note`` drives the reader's top-of-course *warning* callout, reserved for grounding /
+    resource caveats, and a competency gap reads as an alarm there rather than honest framing. The
+    verbatim names are instead recorded durably in the finalize build log
+    (``coverage_gaps_scoped_out``) — a polish-proof record, since the key-gated scope polisher may
+    reword this excludes line (it preserves the line count, not its wording).
     """
-    if report.is_clean:
+    if report.is_clean or course.scope is None:
         return
-    listed = _uncovered_names(report)
-    note = f"It does not fully build some promised competencies: {listed}."
-    course.scope_note = f"{course.scope_note} {note}".strip()
-    if course.scope is not None:
-        line = f"Does not fully build: {listed}."
-        course.scope = course.scope.model_copy(update={"excludes": [*course.scope.excludes, line]})
+    line = f"Does not fully build: {_uncovered_names(report)}."
+    course.scope = course.scope.model_copy(update={"excludes": [*course.scope.excludes, line]})
 
 
 def _apply_quality_gates(
     course: Course, issues: list[str], draft: CourseDraft, coverage_report: CoverageReport
 ) -> None:
-    """Set the course's scope_note + publish status from the critic, honesty, and coverage gates.
+    """Set the course's honest scope (``scope_note`` caveat + scope band) and publish status
+    from the critic, honesty, and coverage gates.
 
     Honesty gate (CQ Phase 1.6): an ungrounded research-needing goal carries an honest caveat and is
     withheld; a PARTIAL one still carries its caveat to the learner but may publish — so scope_note
     is set unconditionally (plus any resource gap, T5); only ``needs_review`` gates publication.
     The authoring loop's triage (``draft.needs_review``) withholds PUBLISHED even when the critic is
     clean. Coverage gate (CQ Phase 4.2): any promised competency the course does not build is folded
-    into the honest scope AND withholds publication. The course arrives in REVIEW; this promotes it
-    to PUBLISHED only when every gate passes.
+    into the scope band's excludes (not the top-warning scope_note) AND withholds publication. The
+    course arrives in REVIEW; this promotes it to PUBLISHED only when every gate passes.
     """
     honesty = assess_grounding_honesty(draft.brief)
     course.scope_note = _append_coverage_caveat(honesty.caveat, draft.resource_coverage_gaps)
@@ -398,6 +399,18 @@ def make_finalize_course_tool(
             _coverage_message(report),
             gap_count=len(report.gaps),
         )
+        if report.gaps:
+            # The verbatim scoped-out competencies, recorded durably in the build log. They surface
+            # to the learner only in the calm scope band (whose excludes copy the key-gated polisher
+            # may reword), so this run_id-correlated record is the polish-proof source of truth — a
+            # gap stays triangulable from the logs even though it never shows as a top warning.
+            logger.info(
+                "coverage_gaps_scoped_out",
+                run_id=draft.run_id,
+                course_id=course.id,
+                gap_count=len(report.gaps),
+                uncovered_competencies=[gap.competency for gap in report.gaps],
+            )
         # Optional key-gated wording polish of the deterministic scope band (CQ Phase 3.1): refines
         # only the delivers/excludes copy, never the effort or the line counts (reconcile enforces
         # it). None (the no-key path) ships the deterministic band unchanged.

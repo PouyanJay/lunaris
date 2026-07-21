@@ -6,14 +6,32 @@ start/stop actions) and parses the responses. The live behaviour is validated at
 """
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 
 import httpx
 import pytest
 from lunaris_api.prod_ops import ArmClient, AzureProdOpsProvider
 
-_TODAY = datetime.now(UTC).date()
+# A fixed anchor day (mid-month, no boundary); the adapter's clock is frozen to it below so the
+# cost/metrics date windows match the fake responses regardless of when the suite runs. Previously
+# `_TODAY = now()` at import time diverged from the adapter's call-time `now()` when a run straddled
+# UTC midnight — the assertions then looked up a stale day not in the series (KeyError).
+_TODAY = date(2026, 1, 15)
 _YESTERDAY = _TODAY - timedelta(days=1)
+
+
+@pytest.fixture(autouse=True)
+def _freeze_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the Azure adapter's ``datetime.now`` to the fixed anchor day, so its date math lines up
+    with the fake responses' `_TODAY`/`_YESTERDAY` deterministically."""
+    frozen = datetime(_TODAY.year, _TODAY.month, _TODAY.day, 12, 0, tzinfo=UTC)
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            return frozen if tz is None else frozen.astimezone(tz)
+
+    monkeypatch.setattr("lunaris_api.prod_ops.azure_provider.datetime", _FrozenDateTime)
 
 
 def _arm_handler(request: httpx.Request) -> httpx.Response:

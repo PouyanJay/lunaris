@@ -1225,9 +1225,11 @@ async def test_an_unbuilt_competency_is_scoped_out_and_withheld_for_review(
     tmp_path: Path,
 ) -> None:
     # Coverage gate (CQ Phase 4.2, owner Q3): a competency the standard promised but no module
-    # builds is folded into the honest scope (excludes + scope_note) AND withholds publication
-    # (REVIEW), rather than shipping a course that silently drops part of the standard. The research
-    # stage grounds the competency; the stub plan tags no module with it, so the critic flags it.
+    # builds is folded into the honest scope BAND (an excludes line) AND withholds publication
+    # (REVIEW), rather than shipping a course that silently drops part of the standard. It is kept
+    # OFF the reader's top-warning ``scope_note`` — the calm does/doesn't band is its home, not an
+    # alarming banner. The research stage grounds the competency; the stub plan tags no module with
+    # it, so the critic flags it.
     # Arrange
     store = CourseStore(tmp_path)
     research = StandardResearch(
@@ -1247,11 +1249,15 @@ async def test_an_unbuilt_competency_is_scoped_out_and_withheld_for_review(
         "demo", course_id="course-gap", run_id="run-gap", progress=progress_sink
     )
 
-    # Assert — the unbuilt competency is named in the honest scope (note + an excludes line), the
-    # course is withheld for review, the stage reported one gap (run_id-correlated), round-tripped.
+    # Assert — the unbuilt competency is named in the scope band's excludes (the calm does/doesn't
+    # list) and kept OFF the reader's top-warning scope_note; the course is withheld for review, the
+    # stage reported one gap (run_id-correlated), round-tripped.
     assert course.scope is not None
-    assert "adapt register live in speech" in course.scope_note
-    assert any("adapt register live in speech" in line for line in course.scope.excludes)
+    assert any(
+        line.startswith("Does not fully build:") and "adapt register live in speech" in line
+        for line in course.scope.excludes
+    )
+    assert "adapt register live in speech" not in course.scope_note
     assert course.status == CourseStatus.REVIEW
     verified = next(e for e in progress_sink.events if e.stage is ProgressStage.COVERAGE_VERIFIED)
     assert verified.run_id == "run-gap"
@@ -1259,6 +1265,50 @@ async def test_an_unbuilt_competency_is_scoped_out_and_withheld_for_review(
     reloaded = store.load("course-gap")
     assert reloaded.status == CourseStatus.REVIEW
     assert reloaded.scope == course.scope
+
+
+async def test_a_scoped_out_competency_is_recorded_in_the_build_log(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # The scoped-out competency moved off the reader's top warning into the calm scope band, whose
+    # excludes copy the key-gated polisher may reword — so finalize records the verbatim names in a
+    # durable, run_id-correlated build log (``coverage_gaps_scoped_out``). This is the polish-proof
+    # "kept in the course logs" record, independent of what the learner-facing UI shows.
+    # Arrange
+    store = CourseStore(tmp_path)
+    research = StandardResearch(
+        status=ResearchStatus.COMPLETE,
+        competencies=["adapt register live in speech"],
+        sources=[ResearchSource(url="https://www.canada.ca/clb-10", trust_tier=TrustTier.OFFICIAL)],
+    )
+    builder = _builder(
+        _delegating_script(scripted_model),
+        store,
+        researcher=StubStandardResearcher(research),
+        coverage_critic=DeterministicCoverageCritic(),
+    )
+
+    # Act — include merge_contextvars so the capture reflects the bound run_id real sinks see.
+    with structlog.testing.capture_logs(
+        processors=[structlog.contextvars.merge_contextvars]
+    ) as logs:
+        await builder.run("demo", course_id="course-gaplog", run_id="run-gaplog")
+
+    # Assert — a single finalize log names the verbatim uncovered competencies, run_id-correlated.
+    # Default to None (not a bare next()) so an absent log fails as a clear assertion, not an opaque
+    # StopIteration surfacing as "coroutine raised StopIteration".
+    gap_log = next(
+        (event for event in logs if event.get("event") == "coverage_gaps_scoped_out"), None
+    )
+    assert gap_log is not None, (
+        "expected a 'coverage_gaps_scoped_out' log at finalize; "
+        f"saw events: {[event.get('event') for event in logs]}"
+    )
+    assert gap_log["run_id"] == "run-gaplog"
+    assert gap_log["course_id"] == "course-gaplog"
+    assert gap_log["gap_count"] == 1
+    assert gap_log["uncovered_competencies"] == ["adapt register live in speech"]
 
 
 async def test_finalize_before_graph_is_rejected_gracefully(tmp_path: Path) -> None:
