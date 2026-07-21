@@ -24,7 +24,6 @@ import { BuildProvenance } from "./BuildProvenance";
 import { LessonVideoHero } from "./LessonVideoHero";
 import { OverviewSection } from "./OverviewSection";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
-import { ScopeBand } from "./ScopeBand";
 import { flattenLessons } from "../../lib/flattenLessons";
 import { lessonStateFor } from "../../lib/lessonState";
 import { buildGlossaryIndex } from "../../lib/glossaryIndex";
@@ -505,8 +504,6 @@ export function CourseReader({
           {safeIndex === 0 && apiBaseUrl && course.videos && (
             <OverviewSection videos={course.videos} apiBaseUrl={apiBaseUrl} courseId={course.id} />
           )}
-          {/* Scope-realism band (CQ Phase 3.1): the effort/does-n't framing, shown once at entry. */}
-          {safeIndex === 0 && course.scope && <ScopeBand scope={course.scope} />}
           {/* Per-course build tag (keyless-fallbacks T5): the persistent record of which keyless
               fallbacks produced this course, shown once at entry. Renders nothing for a fully-live
               build, and unlike the live badge never flips — it only changes on rebuild. */}
