@@ -3,3 +3,6 @@ dist
 coverage
 *.local
 .vite
+
+# TypeScript incremental build cache (must not be committed)
+*.tsbuildinfo
