@@ -16,12 +16,13 @@ import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
 import { HomeDashboard } from "./components/home/HomeDashboard";
 import { DeleteCourseDialog } from "./components/course/DeleteCourseDialog";
+import { CourseStatusMeta } from "./components/course/CourseStatusMeta";
 import { CourseOverview } from "./components/overview/CourseOverview";
 import { PrereqGraphExplorer, type MapFocusRequest } from "./components/graph/PrereqGraphExplorer";
 import { CourseReader, type LessonFocusRequest } from "./components/reader/CourseReader";
 import { ViewToggle, type CourseView } from "./components/reader/ViewToggle";
 import { Button } from "./components/primitives/Button";
-import { StatusDot, type StatusTone } from "./components/primitives/StatusDot";
+import { StatusDot } from "./components/primitives/StatusDot";
 import { AgentShell } from "./components/shell/AgentShell";
 import { Sidebar } from "./components/shell/Sidebar";
 import { prefetchLibrary } from "./hooks/prefetchLibrary";
@@ -66,9 +67,7 @@ import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
 import { useCourseDeletion } from "./hooks/useCourseDeletion";
 import { useTerminateBuild } from "./hooks/useTerminateBuild";
-import type { Course, CourseStatus } from "./types/course";
-
-const RUNNING: CourseStatus[] = ["diagnosing", "mapping", "sequencing", "authoring", "verifying"];
+import type { Course } from "./types/course";
 
 /** The designed full-canvas notice for the one navigation destination with no data: the 404. */
 function placeholderCanvas(
@@ -99,20 +98,6 @@ function placeholderCanvas(
 function courseHasVideos(course: Course): boolean {
   if (course.videos?.summary || course.videos?.overview) return true;
   return course.modules.some((module) => module.lessons.some((lesson) => lesson.video));
-}
-
-function statusTone(status: CourseStatus): { tone: StatusTone; live: boolean } {
-  if (status === "published") return { tone: "success", live: false };
-  if (status === "review") return { tone: "warning", live: false };
-  if (RUNNING.includes(status)) return { tone: "accent", live: true };
-  return { tone: "neutral", live: false };
-}
-
-/** The course canvas's status pill (REVIEW / PUBLISHED / building…) — the graph metrics that used
- *  to sit here were noise in the title row and now live on the Map view where they belong. */
-function HeaderMeta({ course }: { course: Course }) {
-  const { tone, live } = statusTone(course.status);
-  return <StatusDot label={course.status} tone={tone} live={live} />;
 }
 
 /** A loaded course's graph, or its empty state when no concepts were mapped. */
@@ -153,7 +138,7 @@ function SeedApp({ theme, onToggleTheme }: ThemeProps) {
   return (
     <AppFrame
       title={course ? course.topic : "Loading course…"}
-      meta={course ? <HeaderMeta course={course} /> : undefined}
+      meta={course ? <CourseStatusMeta course={course} /> : undefined}
       theme={theme}
       onToggleTheme={onToggleTheme}
     >
@@ -490,7 +475,9 @@ function StudioApp({
       toolbar: (
         <ViewToggle value={viewMode} onChange={(view) => navigate(coursePath(course.id, view))} />
       ),
-      meta: <HeaderMeta course={course} />,
+      meta: (
+        <CourseStatusMeta course={course} apiBaseUrl={apiBaseUrl} onPublished={onReload} />
+      ),
       body: bodies[viewMode](),
     };
   };

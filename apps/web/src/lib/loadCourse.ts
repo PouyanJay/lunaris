@@ -140,6 +140,34 @@ export async function regenerateLesson(
   return parseResponse(response);
 }
 
+/** Approve a review-held course (POST /api/courses/:id/publish) and return the now-published
+ *  course (course-review-publish). Owner override — the server flips status without re-running the
+ *  gates. Network / HTTP / malformed failures surface as CourseLoadError; a 409 (still building) and
+ *  404 (unknown / another owner's) carry their status so the caller can message them distinctly. */
+export async function publishCourse(
+  apiBaseUrl: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<Course> {
+  let response: Response;
+  try {
+    response = await authedFetch(`${apiBaseUrl}/api/courses/${encodeURIComponent(id)}/publish`, {
+      method: "POST",
+      ...(signal ? { signal } : {}),
+    });
+  } catch (cause) {
+    throw new CourseLoadError("Could not reach the course service.", { cause });
+  }
+  if (!response.ok) {
+    const message =
+      response.status === 409
+        ? "This course is still building — it can't be published yet."
+        : `Couldn't publish this course (HTTP ${response.status}).`;
+    throw new CourseLoadError(message, { status: response.status });
+  }
+  return parseResponse(response);
+}
+
 /** Delete a course and its assets (DELETE /api/courses/:id). Resolves on success (204); rejects
  *  with CourseLoadError (carrying the HTTP status) on failure, so the caller can message a 409
  *  (run still building) differently from a transport error. */

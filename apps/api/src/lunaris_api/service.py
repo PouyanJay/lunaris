@@ -32,6 +32,7 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseRun,
+    CourseStatus,
     DiscoveryDepth,
     ProgressEvent,
     RunEvent,
@@ -144,6 +145,11 @@ class CourseDeletionConflictError(CourseServiceError):
 
 class CourseNotFoundError(CourseServiceError):
     """Raised when deleting a course with no stored file and no run-history row. Router → 404."""
+
+
+class CoursePublishConflictError(CourseServiceError):
+    """Raised when publishing a course that isn't awaiting review — it's still building. The status
+    it carried is the error's argument. Router → 409."""
 
 
 class RunNotCancellableError(CourseServiceError):
@@ -744,6 +750,49 @@ class CourseService:
             return self._store.load(course_id, owner_id=owner_id)
         except FileNotFoundError:
             return None
+
+    async def publish(self, course_id: str, *, owner_id: str | None = None) -> Course | None:
+        """Approve a review-held course: flip its status to PUBLISHED and persist it.
+
+        Owner override (course-review-publish): publishing does NOT re-run the publish gates — the
+        owner accepts the disclosed caveats, which stay on the course (``scope_note`` /
+        ``scope.excludes`` are untouched). Returns the updated course, or ``None`` when it's unknown
+        (or owned by another user), which the router maps to a 404. Idempotent for an
+        already-published course; a course still building raises ``CoursePublishConflictError``
+        (router → 409). The save is offloaded so the event loop isn't blocked on the store write.
+        """
+        course = self.get(course_id, owner_id=owner_id)
+        if course is None:
+            return None
+        if course.status is CourseStatus.PUBLISHED:
+            return course  # idempotent — already approved
+        # A rebuild reuses the course id and only persists its new status at its own finalize, so
+        # the on-disk status stays stale (the PREVIOUS build's REVIEW) for the whole rebuild.
+        # Publishing into that window would flip to PUBLISHED, then the rebuild's finalize save
+        # would silently overwrite it — the approval lost with a 200. Guard on the live run like
+        # delete does, so an in-flight build is a 409, not a lost publish.
+        await self._ensure_not_publishing_a_live_build(course_id, owner_id=owner_id)
+        if course.status is not CourseStatus.REVIEW:
+            raise CoursePublishConflictError(course.status.value)
+        course.status = CourseStatus.PUBLISHED
+        await asyncio.to_thread(self._store_for(owner_id).save, course)
+        logger.info(
+            "course_published",
+            course_id=course.id,
+            gate_count=len(course.review_gates),
+        )
+        return course
+
+    async def _ensure_not_publishing_a_live_build(
+        self, course_id: str, *, owner_id: str | None = None
+    ) -> None:
+        """Refuse to publish a course whose build is still running (the persisted status is stale
+        mid-rebuild). No run store wired = no live build to protect, so the guard is skipped."""
+        if self._run_store is None:
+            return
+        run = await self._run_store.get(course_id=course_id, owner_id=owner_id)
+        if run is not None and run.status == RunStatus.RUNNING:
+            raise CoursePublishConflictError(course_id)
 
     async def regenerate_lesson(
         self, course_id: str, lesson_id: str, *, run_id: str, owner_id: str | None = None

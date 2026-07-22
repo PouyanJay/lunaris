@@ -9,6 +9,7 @@ from .enums import CourseStatus, GoalType
 from .instruction import Module
 from .knowledge import Citation, PrerequisiteGraph
 from .learner import LearnerModel
+from .review_gate import ReviewGate
 from .settings import BudgetLedger, CourseSettings, RiskProfile
 
 # Courses persisted before the coverage-gap disclosure moved off the top warning (PR #179) appended
@@ -63,6 +64,10 @@ class Course(CourseModel):
     # a keyless account, which never enqueues one — the reader shows the Typographic cover instead).
     # Keeps a job_id handle only; the API resolves a fresh signed URL on demand.
     cover: CoverArtifact | None = None
+    # The publish gates captured at finalize (course-review-publish): why a course landed in review,
+    # so the owner's review drawer can show it. Empty on a course built before this feature or via a
+    # direct-assembly path that doesn't run the gates. Rides in the course JSONB payload (no table).
+    review_gates: list[ReviewGate] = Field(default_factory=list)
 
     @field_validator("scope_note")
     @classmethod

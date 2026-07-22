@@ -54,6 +54,28 @@ class CourseStatus(StrEnum):
     PUBLISHED = "published"
 
 
+class ReviewGateKey(StrEnum):
+    """Identifies which publish gate a `ReviewGate` records (course-review-publish). A closed set —
+    the four gates finalize runs — so a typo in a key can't slip through as a bare string."""
+
+    STRUCTURE = "structure"
+    COVERAGE = "coverage"
+    GROUNDING = "grounding"
+    AUTHORING = "authoring"
+
+
+class ReviewGateStatus(StrEnum):
+    """A publish gate's verdict on a finished course (course-review-publish).
+
+    ``WARNING`` = an overridable defect (structure, coverage); ``CAVEAT`` = a disclosed limitation
+    the learner still sees (grounding honesty); ``PASSED`` = the gate is clean.
+    """
+
+    PASSED = "passed"
+    WARNING = "warning"
+    CAVEAT = "caveat"
+
+
 class ProgressStage(StrEnum):
     """A boundary in the course-build pipeline, emitted as a ProgressEvent.
 

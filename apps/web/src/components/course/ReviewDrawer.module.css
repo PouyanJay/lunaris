@@ -1,0 +1,185 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  justify-content: flex-end;
+  background: var(--scrim);
+}
+
+.drawer {
+  z-index: var(--z-modal);
+  width: min(420px, 92vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border-left: var(--border-width) solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 640;
+  color: var(--text);
+}
+
+.close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out);
+}
+
+.close:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+}
+
+.topic {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-wrap: balance;
+}
+
+.lede {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.gates {
+  list-style: none;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.gate {
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-md);
+}
+
+.gatePass {
+  border-left-color: var(--success);
+}
+
+.gateWarn {
+  border-left-color: var(--warning);
+}
+
+.gateCaution {
+  border-left-color: var(--border-strong);
+}
+
+.gateHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.gateName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* House status convention: an UPPERCASE MONO label in NEUTRAL text (passes 4.5:1 in both themes);
+ * the verdict's color is carried by the row's left stripe + the wording, never by the label color
+ * (a saturated warning/amber on the surface fails small-text contrast in the light theme). */
+.gateChip {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.gateDetail {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .drawer {
+    animation: drawerIn var(--dur) var(--ease-out);
+  }
+}
+
+@keyframes drawerIn {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
