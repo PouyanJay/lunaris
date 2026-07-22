@@ -22,6 +22,22 @@ export type CourseStatus =
   | "review"
   | "published";
 
+/** A publish gate's verdict on a finished course (course-review-publish). `warning` = a defect the
+ *  owner can override (structure, coverage); `caveat` = a disclosed limitation (grounding honesty);
+ *  `passed` = the gate is clean. */
+export type ReviewGateStatus = "passed" | "warning" | "caveat";
+
+/** One publish gate captured at finalize, so the review drawer can show WHY a course is held. */
+export interface ReviewGate {
+  /** Stable key for the gate: `structure` | `coverage` | `grounding` | `authoring`. */
+  key: string;
+  /** Human label, e.g. "Structure". */
+  label: string;
+  status: ReviewGateStatus;
+  /** One-sentence, learner-facing reason for the verdict. */
+  detail: string;
+}
+
 /** The atomic teachable unit (KC). */
 export interface KnowledgeComponent {
   id: string;
@@ -506,6 +522,9 @@ export interface Course {
    *  on a keyless account that never enqueues one → the reader shows the Typographic cover. */
   cover?: CoverArtifact | null;
   status: CourseStatus;
+  /** The publish gates captured at finalize (course-review-publish); drives the review drawer.
+   *  Absent/empty on pre-feature courses → the drawer shows a neutral "no gates recorded" note. */
+  reviewGates?: ReviewGate[];
 }
 
 /** A pipeline stage boundary, streamed live while a course builds (mirrors ProgressStage). */

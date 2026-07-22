@@ -38,6 +38,7 @@ from .enums import (
     RegenerateMode,
     ResearchStatus,
     ResourceKind,
+    ReviewGateStatus,
     RiskCategory,
     RiskOverride,
     RiskTier,
@@ -69,6 +70,7 @@ from .knowledge import Citation, Edge, KnowledgeComponent, PrerequisiteGraph
 from .learner import LearnerModel, MasteryHistoryEntry, MasteryState, Prefs, Probe
 from .progress import CurriculumModuleMap, ProgressEvent
 from .resource import Resource
+from .review_gate import ReviewGate
 from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
@@ -173,6 +175,8 @@ __all__ = [
     "ResearchStatus",
     "Resource",
     "ResourceKind",
+    "ReviewGate",
+    "ReviewGateStatus",
     "RiskCategory",
     "RiskOverride",
     "RiskProfile",

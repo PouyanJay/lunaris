@@ -32,6 +32,7 @@ from lunaris_runtime.schema import (
     Clarification,
     Course,
     CourseRun,
+    CourseStatus,
     DiscoveryDepth,
     ProgressEvent,
     RunEvent,
@@ -144,6 +145,11 @@ class CourseDeletionConflictError(CourseServiceError):
 
 class CourseNotFoundError(CourseServiceError):
     """Raised when deleting a course with no stored file and no run-history row. Router → 404."""
+
+
+class CoursePublishConflictError(CourseServiceError):
+    """Raised when publishing a course that isn't awaiting review — it's still building. The status
+    it carried is the error's argument. Router → 409."""
 
 
 class RunNotCancellableError(CourseServiceError):
@@ -744,6 +750,32 @@ class CourseService:
             return self._store.load(course_id, owner_id=owner_id)
         except FileNotFoundError:
             return None
+
+    async def publish(self, course_id: str, *, owner_id: str | None = None) -> Course | None:
+        """Approve a review-held course: flip its status to PUBLISHED and persist it.
+
+        Owner override (course-review-publish): publishing does NOT re-run the publish gates — the
+        owner accepts the disclosed caveats, which stay on the course (``scope_note`` /
+        ``scope.excludes`` are untouched). Returns the updated course, or ``None`` when it's unknown
+        (or owned by another user), which the router maps to a 404. Idempotent for an
+        already-published course; a course still building raises ``CoursePublishConflictError``
+        (router → 409). The save is offloaded so the event loop isn't blocked on the store write.
+        """
+        course = self.get(course_id, owner_id=owner_id)
+        if course is None:
+            return None
+        if course.status is CourseStatus.PUBLISHED:
+            return course  # idempotent — already approved
+        if course.status is not CourseStatus.REVIEW:
+            raise CoursePublishConflictError(course.status.value)
+        course.status = CourseStatus.PUBLISHED
+        await asyncio.to_thread(self._store_for(owner_id).save, course)
+        logger.info(
+            "course_published",
+            course_id=course.id,
+            gate_count=len(course.review_gates),
+        )
+        return course
 
     async def regenerate_lesson(
         self, course_id: str, lesson_id: str, *, run_id: str, owner_id: str | None = None

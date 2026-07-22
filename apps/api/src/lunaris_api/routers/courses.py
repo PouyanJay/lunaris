@@ -30,6 +30,7 @@ from ..service import (
     CourseBuildCancelledError,
     CourseDeletionConflictError,
     CourseNotFoundError,
+    CoursePublishConflictError,
     InvalidCourseIdError,
     LessonRegenerationUnsupportedError,
     RunHistoryUnavailableError,
@@ -252,6 +253,35 @@ async def get_course(
     course = service.get(course_id, owner_id=owner_id)
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
+    return course
+
+
+@router.post("/{course_id}/publish", response_model=Course)
+async def publish_course(
+    course_id: str, service: CourseServiceDep, response: Response, owner_id: OptionalUserIdDep
+) -> Course:
+    """Approve a review-held course — flip it to published and return it (course-review-publish).
+
+    Owner override: publishing does NOT re-run the publish gates; the disclosed caveats stay on the
+    course. 404 if the course is unknown (or owned by another user); 409 if it's still building. A
+    ``request_id`` is bound + returned in ``X-Request-Id`` (on the success and both error paths) for
+    cross-layer log triangulation."""
+    request_id = _bind()
+    response.headers["X-Request-Id"] = request_id
+    try:
+        course = await service.publish(course_id, owner_id=owner_id)
+    except CoursePublishConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This course is still building; it can't be published yet.",
+            headers={"X-Request-Id": request_id},
+        ) from exc
+    if course is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Course not found",
+            headers={"X-Request-Id": request_id},
+        )
     return course
 
 

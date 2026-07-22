@@ -54,6 +54,18 @@ class CourseStatus(StrEnum):
     PUBLISHED = "published"
 
 
+class ReviewGateStatus(StrEnum):
+    """A publish gate's verdict on a finished course (course-review-publish).
+
+    ``WARNING`` = an overridable defect (structure, coverage); ``CAVEAT`` = a disclosed limitation
+    the learner still sees (grounding honesty); ``PASSED`` = the gate is clean.
+    """
+
+    PASSED = "passed"
+    WARNING = "warning"
+    CAVEAT = "caveat"
+
+
 class ProgressStage(StrEnum):
     """A boundary in the course-build pipeline, emitted as a ProgressEvent.
 
