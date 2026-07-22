@@ -766,6 +766,12 @@ class CourseService:
             return None
         if course.status is CourseStatus.PUBLISHED:
             return course  # idempotent — already approved
+        # A rebuild reuses the course id and only persists its new status at its own finalize, so
+        # the on-disk status stays stale (the PREVIOUS build's REVIEW) for the whole rebuild.
+        # Publishing into that window would flip to PUBLISHED, then the rebuild's finalize save
+        # would silently overwrite it — the approval lost with a 200. Guard on the live run like
+        # delete does, so an in-flight build is a 409, not a lost publish.
+        await self._ensure_not_publishing_a_live_build(course_id, owner_id=owner_id)
         if course.status is not CourseStatus.REVIEW:
             raise CoursePublishConflictError(course.status.value)
         course.status = CourseStatus.PUBLISHED
@@ -776,6 +782,17 @@ class CourseService:
             gate_count=len(course.review_gates),
         )
         return course
+
+    async def _ensure_not_publishing_a_live_build(
+        self, course_id: str, *, owner_id: str | None = None
+    ) -> None:
+        """Refuse to publish a course whose build is still running (the persisted status is stale
+        mid-rebuild). No run store wired = no live build to protect, so the guard is skipped."""
+        if self._run_store is None:
+            return
+        run = await self._run_store.get(course_id=course_id, owner_id=owner_id)
+        if run is not None and run.status == RunStatus.RUNNING:
+            raise CoursePublishConflictError(course_id)
 
     async def regenerate_lesson(
         self, course_id: str, lesson_id: str, *, run_id: str, owner_id: str | None = None

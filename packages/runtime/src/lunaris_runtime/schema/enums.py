@@ -54,6 +54,16 @@ class CourseStatus(StrEnum):
     PUBLISHED = "published"
 
 
+class ReviewGateKey(StrEnum):
+    """Identifies which publish gate a `ReviewGate` records (course-review-publish). A closed set —
+    the four gates finalize runs — so a typo in a key can't slip through as a bare string."""
+
+    STRUCTURE = "structure"
+    COVERAGE = "coverage"
+    GROUNDING = "grounding"
+    AUTHORING = "authoring"
+
+
 class ReviewGateStatus(StrEnum):
     """A publish gate's verdict on a finished course (course-review-publish).
 

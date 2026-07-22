@@ -139,7 +139,7 @@
 .gateChip {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   font-weight: 600;

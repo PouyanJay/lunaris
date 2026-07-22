@@ -27,10 +27,12 @@ export type CourseStatus =
  *  `passed` = the gate is clean. */
 export type ReviewGateStatus = "passed" | "warning" | "caveat";
 
+/** Which publish gate a `ReviewGate` records — the closed set finalize runs. */
+export type ReviewGateKey = "structure" | "coverage" | "grounding" | "authoring";
+
 /** One publish gate captured at finalize, so the review drawer can show WHY a course is held. */
 export interface ReviewGate {
-  /** Stable key for the gate: `structure` | `coverage` | `grounding` | `authoring`. */
-  key: string;
+  key: ReviewGateKey;
   /** Human label, e.g. "Structure". */
   label: string;
   status: ReviewGateStatus;

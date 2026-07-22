@@ -136,7 +136,7 @@ export function ReviewDrawer({
           <p id={descId} className={styles.lede}>
             {gates.length > 0
               ? "You’re the owner — you can publish anyway. Every caveat below stays visible to learners."
-              : "No blocking gates were recorded for this course. You can publish it now; any caveats stay visible to learners."}
+              : "No blocking gates were recorded. You can publish now; any caveats stay visible to learners."}
           </p>
 
           {gates.length > 0 && (

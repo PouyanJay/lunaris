@@ -76,12 +76,18 @@ describe("ReviewDrawer", () => {
     expect(screen.getByText(/no blocking gates were recorded/i)).toBeInTheDocument();
   });
 
-  it("approves and keeps-in-review from the footer actions", () => {
+  it("calls onApprove from the Approve & publish button", () => {
     const { props } = renderDrawer();
     fireEvent.click(screen.getByRole("button", { name: "Approve & publish" }));
-    fireEvent.click(screen.getByRole("button", { name: "Keep in review" }));
     expect(props.onApprove).toHaveBeenCalledOnce();
+    expect(props.onClose).not.toHaveBeenCalled();
+  });
+
+  it("calls onClose from the Keep in review button", () => {
+    const { props } = renderDrawer();
+    fireEvent.click(screen.getByRole("button", { name: "Keep in review" }));
     expect(props.onClose).toHaveBeenCalledOnce();
+    expect(props.onApprove).not.toHaveBeenCalled();
   });
 
   it("closes on Escape", () => {

@@ -151,6 +151,20 @@ async def test_user_cannot_delete_another_users_course(client: httpx.AsyncClient
     assert (await client.get(f"/api/courses/{a_course}", headers=_auth(_USER_A))).status_code == 200
 
 
+async def test_user_cannot_publish_another_users_course(client: httpx.AsyncClient) -> None:
+    # Arrange — A builds a course (course-review-publish: publishing is owner-scoped too).
+    a_course, _ = await _build_as(client, _USER_A, "A's publishable course")
+
+    # Act — B tries to approve/publish it.
+    b_publish = await client.post(f"/api/courses/{a_course}/publish", headers=_auth(_USER_B))
+
+    # Assert — B is denied (404: the owner-scoped lookup found nothing to publish); A can (the stub
+    # build already published it, so A's own approve is an idempotent 200).
+    assert b_publish.status_code == 404
+    a_publish = await client.post(f"/api/courses/{a_course}/publish", headers=_auth(_USER_A))
+    assert a_publish.status_code == 200
+
+
 async def test_user_cannot_replay_another_users_run_events(client: httpx.AsyncClient) -> None:
     # Arrange — A builds a course via the streaming endpoint, which records a replayable event log
     # (the await-full POST path records only the run row, not the transcript).

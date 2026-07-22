@@ -9,10 +9,12 @@ from pathlib import Path
 
 import httpx
 import pytest
+from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
+from lunaris_api.service import CoursePublishConflictError, CourseService
 from lunaris_runtime.logging import clear_correlation
-from lunaris_runtime.persistence import CourseStore
+from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
 from lunaris_runtime.schema import Course, CourseStatus, ReviewGate, ReviewGateStatus
 
 
@@ -139,3 +141,20 @@ async def test_publish_rejects_an_unsafe_id_as_not_found(client: httpx.AsyncClie
 
     assert response.status_code == 404
     assert response.headers["x-request-id"]
+
+
+async def test_publish_is_a_conflict_while_a_rebuild_is_in_flight(tmp_path: Path) -> None:
+    # The rebuild race: a rebuild reuses the id and only persists its new status at its own
+    # finalize, so mid-rebuild the on-disk status is the PREVIOUS build's REVIEW. Publishing into
+    # that window would flip to PUBLISHED, then the rebuild's finalize save would clobber it — the
+    # approval lost. Guarding on the live run makes it a conflict instead.
+    run_store = InMemoryRunStore()
+    service = CourseService(CourseStore(tmp_path), build_stub_orchestrator, run_store)
+    _seed_course(tmp_path, status=CourseStatus.REVIEW, course_id="c-rebuild")
+    await run_store.start(run_id="r-1", course_id="c-rebuild", topic="t")  # a build in flight
+
+    with pytest.raises(CoursePublishConflictError):
+        await service.publish("c-rebuild")
+
+    # The publish never advanced the status — the rebuild still owns the course.
+    assert CourseStore(tmp_path).load("c-rebuild").status is CourseStatus.REVIEW

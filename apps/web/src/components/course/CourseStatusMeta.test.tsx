@@ -47,6 +47,21 @@ describe("CourseStatusMeta (review → publish trigger)", () => {
     expect(dialog).toHaveAccessibleName("Review & publish");
   });
 
+  it("moves focus into the drawer on open and restores it to the trigger on close", async () => {
+    render(<CourseStatusMeta course={makeCourse({ status: "review" })} apiBaseUrl={API} />);
+    const trigger = screen.getByRole("button", { name: "Review and publish this course" });
+    trigger.focus();
+
+    fireEvent.click(trigger);
+    // Focus lands on the close button — never the destructive-adjacent publish primary.
+    expect(screen.getByRole("button", { name: "Close review panel" })).toHaveFocus();
+
+    // Esc closes and returns focus to the trigger, so the keyboard user isn't dropped to the body.
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+  });
+
   it("approves: POSTs to /publish and hands the published course to onPublished", async () => {
     const course = makeCourse({ id: "c-rev", status: "review" });
     const published = { ...course, status: "published" as const };
@@ -79,5 +94,33 @@ describe("CourseStatusMeta (review → publish trigger)", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/still building/i);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("re-enables approve after a failure so the owner can retry", async () => {
+    const course = makeCourse({ id: "c-rev", status: "review" });
+    const published = { ...course, status: "published" as const };
+    let call = 0;
+    vi.spyOn(globalThis, "fetch").mockImplementation(() => {
+      call += 1;
+      return Promise.resolve(
+        call === 1
+          ? new Response(null, { status: 409 })
+          : new Response(JSON.stringify(published), { status: 200 }),
+      );
+    });
+    const onPublished = vi.fn();
+    render(<CourseStatusMeta course={course} apiBaseUrl={API} onPublished={onPublished} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review and publish this course" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve & publish" }));
+
+    // First attempt failed → the alert shows and the button is enabled again for a retry.
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    const approve = screen.getByRole("button", { name: "Approve & publish" });
+    expect(approve).toBeEnabled();
+
+    // Retry succeeds.
+    fireEvent.click(approve);
+    await waitFor(() => expect(onPublished).toHaveBeenCalledTimes(1));
   });
 });

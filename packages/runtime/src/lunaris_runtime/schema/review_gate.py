@@ -1,5 +1,5 @@
 from .base import CourseModel
-from .enums import ReviewGateStatus
+from .enums import ReviewGateKey, ReviewGateStatus
 
 
 class ReviewGate(CourseModel):
@@ -12,8 +12,7 @@ class ReviewGate(CourseModel):
     empty on a course built before this feature.
     """
 
-    # Stable gate key: ``structure`` | ``coverage`` | ``grounding`` | ``authoring``.
-    key: str
+    key: ReviewGateKey
     # Human label, e.g. "Structure".
     label: str
     status: ReviewGateStatus
