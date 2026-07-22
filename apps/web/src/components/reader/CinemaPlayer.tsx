@@ -6,6 +6,7 @@ import { highlightTerms } from "../../lib/transcriptHighlight";
 import type { TranscriptCue, VideoChapter } from "../../lib/videoJobs";
 import { activeSpanIndex } from "../../lib/videoOutline";
 import { ChapterResourceCard } from "./ChapterResourceCard";
+import { VideoCover } from "./VideoCover";
 import styles from "./CinemaPlayer.module.css";
 
 interface CinemaPlayerProps {
@@ -80,18 +81,6 @@ function CaptionOverlay({ cue, keyTerms }: { cue: TranscriptCue; keyTerms: strin
         ),
       )}
     </p>
-  );
-}
-
-/** The designed title card shown over the (often dark) poster frame before the video has started, so
- *  every video reads as having a real cover. Decorative (aria-hidden) — the video already carries its
- *  title as an accessible label and the play button is the action; clicks fall through to that. */
-function VideoCover({ title, meta }: { title: string; meta: string }) {
-  return (
-    <div className={styles.cover} aria-hidden="true">
-      <span className={styles.coverEyebrow}>{meta}</span>
-      <h3 className={styles.coverTitle}>{title}</h3>
-    </div>
   );
 }
 

@@ -21,7 +21,7 @@ interface LessonVideoHeroProps {
   /** The build-time lesson video, if the course shipped one — for the honest built-duration + the
    *  scene-QA line (only trustworthy while the built artifact is what's playing). */
   video?: VideoArtifact | null | undefined;
-  /** A title for the poster overlay (the owning module) — absent, the poster stays bare. */
+  /** A title for the cover over the poster (the owning module) — absent, the cover shows no text. */
   title?: string | undefined;
 }
 

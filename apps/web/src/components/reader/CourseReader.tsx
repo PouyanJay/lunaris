@@ -477,7 +477,9 @@ export function CourseReader({
         aria-label="Lesson reader"
         tabIndex={0}
       >
-        <article className={styles.page}>
+        <article
+          className={`${styles.page} ${effectiveMode === "watch" ? styles.pageWide : ""}`.trim()}
+        >
           {/* Phone-only reader bar: opens the lesson outline (a drawer on small screens) and shows
               the reading position. Hidden on desktop where the outline is a static column. */}
           <div className={styles.readerBar}>
