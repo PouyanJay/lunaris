@@ -91,6 +91,7 @@ from lunaris_runtime.schema import (
     ResearchStatus,
     Resource,
     ResourceKind,
+    ReviewGateStatus,
     StandardResearch,
     TargetStandard,
     TrustTier,
@@ -561,6 +562,54 @@ async def test_research_needing_goal_without_grounding_is_scoped_and_withheld(
     assert "CLB 10" in course.scope_note
     assert course.status == CourseStatus.REVIEW
     assert store.load("course-honest").scope_note == course.scope_note
+
+
+async def test_finalize_captures_the_four_review_gates_on_a_clean_build(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # course-review-publish T2: finalize records WHY a course is (or isn't) held — the four gate
+    # results, previously dropped — so the owner's review drawer can show them. A clean build
+    # publishes, so all four are captured PASSED and ride the persisted course.
+    store = CourseStore(tmp_path)
+    builder = _builder(_delegating_script(scripted_model), store)
+
+    course = await builder.run("demo", course_id="course-gates", run_id="run-gates")
+
+    assert course.status == CourseStatus.PUBLISHED
+    assert [gate.key for gate in course.review_gates] == [
+        "structure",
+        "coverage",
+        "grounding",
+        "authoring",
+    ]
+    assert all(gate.status is ReviewGateStatus.PASSED for gate in course.review_gates)
+    # Persisted with the course (the drawer reads them back on a later open).
+    assert store.load("course-gates").review_gates == course.review_gates
+
+
+async def test_review_gates_record_a_grounding_caveat_on_a_withheld_course(
+    scripted_model: Callable[[Sequence[BaseMessage]], object],
+    tmp_path: Path,
+) -> None:
+    # A research-needing goal that came back UNAVAILABLE is withheld for review; the grounding gate
+    # records the honest caveat the learner still sees, so the drawer explains the hold.
+    store = CourseStore(tmp_path)
+    brief = CourseBrief(
+        subject="English language proficiency",
+        goal="reach CLB 10",
+        needs_research=True,
+        target_standard=TargetStandard(name="CLB 10"),
+    )
+    builder = _builder(_delegating_script(scripted_model), store, brief=brief)
+
+    course = await builder.run("demo", course_id="course-held", run_id="run-held")
+
+    assert course.status == CourseStatus.REVIEW
+    grounding = next(gate for gate in course.review_gates if gate.key == "grounding")
+    assert grounding.status is ReviewGateStatus.CAVEAT
+    assert "CLB 10" in grounding.detail
+    assert store.load("course-held").review_gates == course.review_gates
 
 
 async def test_agent_builds_and_persists_a_course_without_a_key(

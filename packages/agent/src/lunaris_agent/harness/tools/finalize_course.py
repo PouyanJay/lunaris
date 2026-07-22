@@ -33,6 +33,7 @@ from lunaris_runtime.video_build import lesson_content_fingerprint
 from ...coverage_critic import CoverageReport, ICoverageCritic
 from ...critic import ICritic
 from ...honesty import assess_grounding_honesty
+from ...review_gates import build_review_gates
 from ...scope import estimate_scope
 from ...subagents.scope_polisher import IScopePolisher
 from ...subagents.visual_agent import VisualEngine
@@ -119,6 +120,16 @@ def _apply_quality_gates(
     # computed from the brief's abstractions so the reader can set expectations up front.
     course.scope = estimate_scope(course, draft.brief)
     _scope_out_uncovered_competencies(course, coverage_report)
+    # Capture WHY the course is (or isn't) held, so the owner's review drawer can show it — the same
+    # four gate results that drive the publish decision below, recorded rather than dropped
+    # (course-review-publish T2). Owner override at publish never re-runs these; it accepts them.
+    course.review_gates = build_review_gates(
+        issues=issues,
+        authoring_needs_review=draft.needs_review,
+        honesty_caveat=honesty.caveat,
+        honesty_needs_review=honesty.needs_review,
+        coverage_competencies=[gap.competency for gap in coverage_report.gaps],
+    )
     if (
         not issues
         and not draft.needs_review
