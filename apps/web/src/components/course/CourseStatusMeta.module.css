@@ -18,8 +18,4 @@
   background: var(--bg-muted);
   border-color: var(--border);
 }
-
-.reviewTrigger:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
+/* Focus ring comes from the global :focus-visible box-shadow rule (index.css). */

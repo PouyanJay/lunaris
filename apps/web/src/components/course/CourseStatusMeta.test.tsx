@@ -65,6 +65,8 @@ describe("CourseStatusMeta (review → publish trigger)", () => {
     // The drawer closed on success.
     expect(onPublished.mock.calls[0]![0]).toMatchObject({ status: "published" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // The result is announced to assistive tech (the pill also turns green PUBLISHED visually).
+    expect(screen.getByRole("status")).toHaveTextContent(/course published/i);
   });
 
   it("keeps the drawer open on a failed publish, showing a recovery message", async () => {

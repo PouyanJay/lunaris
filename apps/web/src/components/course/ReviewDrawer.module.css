@@ -133,6 +133,9 @@
   color: var(--text);
 }
 
+/* House status convention: an UPPERCASE MONO label in NEUTRAL text (passes 4.5:1 in both themes);
+ * the verdict's color is carried by the row's left stripe + the wording, never by the label color
+ * (a saturated warning/amber on the surface fails small-text contrast in the light theme). */
 .gateChip {
   flex: none;
   font-family: var(--font-mono);
@@ -141,14 +144,6 @@
   text-transform: uppercase;
   font-weight: 600;
   color: var(--text-secondary);
-}
-
-.gatePass .gateChip {
-  color: var(--success);
-}
-
-.gateWarn .gateChip {
-  color: var(--warning);
 }
 
 .gateDetail {

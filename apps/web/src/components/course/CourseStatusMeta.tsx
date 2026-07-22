@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useCoursePublish } from "../../hooks/useCoursePublish";
+import { clearLibraryCache } from "../../hooks/libraryCache";
 import type { Course, CourseStatus } from "../../types/course";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
 import styles from "./CourseStatusMeta.module.css";
@@ -32,16 +33,43 @@ interface CourseStatusMetaProps {
 export function CourseStatusMeta({ course, apiBaseUrl, onPublished }: CourseStatusMetaProps) {
   const { tone, live } = statusTone(course.status);
   const [open, setOpen] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
   const { isPublishing, error, publish, reset } = useCoursePublish(
     apiBaseUrl ?? "",
     (published) => {
+      // Publishing is verification-gated, so the flow is never optimistic: the drawer closes only
+      // on the confirmed result. Announce it (the pill turns green PUBLISHED visually) and drop the
+      // library cache so the grid's REVIEW badge clears on its next read.
       setOpen(false);
+      setAnnouncement("Course published. The disclosed caveats stay visible to learners.");
+      clearLibraryCache();
       onPublished?.(published);
     },
   );
 
+  // Let the polite announcement clear itself so it isn't re-read on an unrelated re-render.
+  useEffect(() => {
+    if (!announcement) return;
+    const timer = setTimeout(() => setAnnouncement(""), 5000);
+    return () => clearTimeout(timer);
+  }, [announcement]);
+
+  // Always mounted, outside the status branch below, so the live region is registered before the
+  // status flips and the success message is actually announced.
+  const liveRegion = (
+    <span className="sr-only" role="status" aria-live="polite">
+      {announcement}
+    </span>
+  );
   const dot = <StatusDot label={course.status} tone={tone} live={live} />;
-  if (course.status !== "review" || !apiBaseUrl) return dot;
+  if (course.status !== "review" || !apiBaseUrl) {
+    return (
+      <>
+        {dot}
+        {liveRegion}
+      </>
+    );
+  }
 
   const close = () => {
     if (isPublishing) return;
@@ -68,6 +96,7 @@ export function CourseStatusMeta({ course, apiBaseUrl, onPublished }: CourseStat
         onApprove={() => publish(course.id)}
         onClose={close}
       />
+      {liveRegion}
     </>
   );
 }
