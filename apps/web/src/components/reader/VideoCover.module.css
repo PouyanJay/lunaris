@@ -27,7 +27,9 @@
   margin: 0;
   max-width: 20ch;
   font-family: var(--font-sans);
-  font-size: clamp(var(--text-lg), 3.4vw, var(--text-2xl));
+  /* Sized up so a short cover word ("What?" / "Why?") reads as a hero; long lesson titles still wrap
+     within the measure above. */
+  font-size: clamp(var(--text-xl), 4.5vw, 2.5rem);
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.01em;
