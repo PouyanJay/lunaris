@@ -56,6 +56,24 @@
   width: 100%;
   margin: 0 auto;
   min-height: 220px;
+  border-radius: var(--radius-lg);
+  transition:
+    background var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
+}
+
+/* A claim located from the Sources & checks rail flashes its target step so the eye lands where the
+ * claim lives (accent tint + ring, cleared after ~1.5s). Under reduced-motion the cue still shows,
+ * just without the fade. The ring is a box-shadow (outside the box) so nothing reflows. */
+.card[data-located="true"] {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-500);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
 }
 
 .cardEyebrow {

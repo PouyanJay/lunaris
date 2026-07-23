@@ -1,8 +1,28 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { makeCourse } from "../../test/fixtures";
-import { CourseReader } from "./CourseReader";
+import { makeCourse, routedFetch } from "../../test/fixtures";
+import { CourseReader, READER_MODE_KEY } from "./CourseReader";
+
+const CLAIM = "Locate in the lesson: Comparison reduces the problem size each step.";
+
+/** Fetch stub for Watch mode: the video routes answer "nothing" (204), so the Watch surface renders
+ *  its idle generate affordance without a real video — enough to exercise the mode. */
+function quietVideoFetch() {
+  const base = routedFetch();
+  return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = String(input).split("?")[0]!;
+    if (/\/api\/videos\//.test(url) || url.endsWith("/videos/active")) {
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+    return base(input as never, init as never);
+  });
+}
+
+afterEach(() => {
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
 
 /** Claim → lesson backlink (claim-lesson-backlink): clicking a claim in the Sources & checks rail
  *  jumps the Learn Focus-Flow to where that claim lives in the lesson. The rail is a static column,
@@ -66,5 +86,36 @@ describe("CourseReader — claim → lesson backlink", () => {
     // Assert — it jumped past the phase's first step to chunk 2 (sentence precision, not the
     // phase-first fallback, which would have stayed on step 1).
     expect(screen.getByText(/step 2 of 2/i)).toBeInTheDocument();
+  });
+
+  it("flashes the target step when a claim is located", () => {
+    render(<CourseReader course={makeCourse()} />);
+    expect(screen.getByRole("group", { name: "Step content" })).not.toHaveAttribute("data-located");
+
+    fireEvent.click(screen.getByRole("button", { name: CLAIM }));
+
+    // The step card is lit so the eye lands on where the claim lives.
+    expect(screen.getByRole("group", { name: "Step content" })).toHaveAttribute(
+      "data-located",
+      "true",
+    );
+  });
+
+  it("switches from Watch to Learn and jumps when a claim is located", () => {
+    // Arrange — an explicit Watch preference + a reachable video service opens the reader in Watch.
+    localStorage.setItem(READER_MODE_KEY, "watch");
+    vi.stubGlobal("fetch", quietVideoFetch());
+    render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
+    expect(screen.getByRole("radio", { name: "Watch" })).toBeChecked();
+    expect(screen.queryByRole("region", { name: /lesson steps/i })).not.toBeInTheDocument();
+
+    // Act — the claim lives in the lesson prose, so locating it from the (always-present) rail must
+    // bring the reader to Learn.
+    fireEvent.click(screen.getByRole("button", { name: CLAIM }));
+
+    // Assert — now in Learn, on the claim's step.
+    expect(screen.getByRole("radio", { name: "Learn" })).toBeChecked();
+    const card = screen.getByRole("group", { name: "Step content" });
+    expect(within(card).getByText(/Strategies & worked example/)).toBeInTheDocument();
   });
 });

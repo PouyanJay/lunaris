@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import { buildSections, sectionProgressAt, type LessonStep, type StepSection } from "./lessonSteps";
 import type { Objective } from "../../types/course";
@@ -7,8 +7,12 @@ import { ChallengeStep } from "./ChallengeStep";
 import { LessonResources } from "./LessonResources";
 import { LessonScaffold } from "./LessonScaffold";
 import { Markdown } from "./Markdown";
+import { scrollIntoViewSafe } from "./scrollIntoViewSafe";
 import { VisualRenderer } from "./visuals/VisualRenderer";
 import styles from "./LearnMode.module.css";
+
+/** How long the located step stays lit — long enough to draw the eye, gone before it nags. */
+const LOCATE_FLASH_MS = 1500;
 
 /** Reading speed the time-left metric assumes — matches the Read mode's estimate. */
 const WORDS_PER_MINUTE = 220;
@@ -33,6 +37,10 @@ interface LearnModeProps {
   glossary?: ReadonlyMap<string, string> | undefined;
   /** Objectives context for the Try First challenge steps. */
   challenge: ChallengeContext;
+  /** A monotonic counter bumped when a claim in the rail is located here — each change flashes the
+   *  step card + scrolls it into view, even if the step index didn't change. */
+  locateSignal?: number | undefined;
+  reduceMotion?: boolean | undefined;
 }
 
 function StepBody({
@@ -171,6 +179,8 @@ export function LearnMode({
   completeLabel,
   glossary,
   challenge,
+  locateSignal,
+  reduceMotion = false,
 }: LearnModeProps) {
   const sections = useMemo(() => buildSections(steps), [steps]);
   const { activeSection, passedSections } = useMemo(
@@ -189,6 +199,24 @@ export function LearnMode({
     }
     previousIndex.current = index;
   }, [index]);
+
+  // Locating a claim from the rail brings the reader here: scroll the target step into view and
+  // flash it, so the eye lands on where the claim lives — reliable even when the step index didn't
+  // change. The first signal is the mount value (no flash on first paint).
+  const [located, setLocated] = useState(false);
+  const seenLocate = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (locateSignal === undefined) return;
+    if (seenLocate.current === undefined || locateSignal === seenLocate.current) {
+      seenLocate.current = locateSignal;
+      return;
+    }
+    seenLocate.current = locateSignal;
+    scrollIntoViewSafe(cardRef.current, reduceMotion);
+    setLocated(true);
+    const timer = setTimeout(() => setLocated(false), LOCATE_FLASH_MS);
+    return () => clearTimeout(timer);
+  }, [locateSignal, reduceMotion]);
 
   // Left/Right walk the steps from anywhere inside the stage (the mode toggle lives outside it,
   // so its own arrow-key behaviour is untouched). The last step's advance stays on Continue —
@@ -223,6 +251,7 @@ export function LearnMode({
         role="group"
         aria-label="Step content"
         tabIndex={-1}
+        data-located={located ? "true" : undefined}
       >
         {step.cue && step.kind === "content" && (
           <p className={styles.cardEyebrow}>

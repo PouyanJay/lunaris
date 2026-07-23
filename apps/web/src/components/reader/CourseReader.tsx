@@ -212,6 +212,9 @@ export function CourseReader({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeClaimId, setActiveClaimId] = useState<string | null>(null);
+  // Bumped each time a claim is located, so the Focus Flow flashes the target step even when the
+  // step index doesn't change (re-locating the same claim). See `locateClaim`.
+  const [locateNonce, setLocateNonce] = useState(0);
   const [railOpen, setRailOpen] = useState(false);
   // The course outline is a static left column on desktop; on phones it opens as a left drawer.
   const [outlineOpen, setOutlineOpen] = useState(false);
@@ -365,17 +368,20 @@ export function CourseReader({
 
   // A claim in the Sources & checks rail links back to where it lives in the lesson
   // (claim-lesson-backlink): jump the Focus Flow to the step that carries the claim — the content
-  // chunk holding its matched sentence, else the phase's first step — and keep the rail entry
-  // selected. The Watch→Learn switch + the arrival flash land in the next task.
+  // chunk holding its matched sentence, else the phase's first step — keep the rail entry selected,
+  // and flash the target step on arrival. The claim lives in the lesson prose, so from Watch we
+  // switch to Learn first.
   const locateClaim = useCallback(
     (id: string) => {
       setActiveClaimId(id);
       const annotation = annotations.find((entry) => entry.id === id);
       if (!annotation) return;
+      if (effectiveMode !== "learn") selectMode("learn");
       const target = stepIndexForClaim(steps, annotation.phaseKey, annotation.matchedSentence);
       if (target !== undefined) setStepIndex(target);
+      setLocateNonce((nonce) => nonce + 1);
     },
-    [annotations, steps, setStepIndex],
+    [annotations, steps, effectiveMode, selectMode, setStepIndex],
   );
 
   // The narrow-screen drawer: Esc closes it and returns focus to the toggle.
@@ -610,6 +616,8 @@ export function CourseReader({
               completeLabel={safeIndex >= total - 1 ? "Finish course" : "Next lesson"}
               glossary={glossary}
               challenge={challengeContext}
+              locateSignal={locateNonce}
+              reduceMotion={reduceMotion}
             />
           )}
 
