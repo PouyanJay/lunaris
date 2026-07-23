@@ -118,4 +118,42 @@ describe("CourseReader — claim → lesson backlink", () => {
     const card = screen.getByRole("group", { name: "Step content" });
     expect(within(card).getByText(/Strategies & worked example/)).toBeInTheDocument();
   });
+
+  // Variant coverage: a claim in any teaching phase locates to that phase's step (demonstrate is
+  // covered above; here the other three).
+  it.each([
+    { phase: "activate" as const, label: "Warm-up" },
+    { phase: "apply" as const, label: "Practice" },
+    { phase: "integrate" as const, label: "Make it your own" },
+  ])("locates a claim in the $phase phase to its “$label” step", ({ phase, label }) => {
+    const text = `A distinctive ${phase} claim about zephyrs`;
+    const course = makeCourse();
+    course.modules[0]!.lessons[0]!.segments[phase].claims = [
+      { text, supportedBy: null, verifierStatus: "cut" },
+    ];
+    render(<CourseReader course={course} />);
+
+    fireEvent.click(screen.getByRole("button", { name: `Locate in the lesson: ${text}` }));
+
+    const card = screen.getByRole("group", { name: "Step content" });
+    expect(within(card).getByText(new RegExp(label))).toBeInTheDocument();
+  });
+
+  it("flashes even when the located claim already lives on the current step", () => {
+    render(<CourseReader course={makeCourse()} />);
+    // Walk to the demonstrate step (where the fixture claim lives) the normal way — no flash.
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const card = screen.getByRole("group", { name: "Step content" });
+    expect(within(card).getByText(/Strategies & worked example/)).toBeInTheDocument();
+    expect(card).not.toHaveAttribute("data-located");
+
+    // Locating the claim that lives on this very step still flashes (nonce-driven, not step-change).
+    fireEvent.click(screen.getByRole("button", { name: CLAIM }));
+
+    expect(screen.getByRole("group", { name: "Step content" })).toHaveAttribute(
+      "data-located",
+      "true",
+    );
+  });
 });
