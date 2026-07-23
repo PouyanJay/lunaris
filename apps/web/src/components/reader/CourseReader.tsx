@@ -362,6 +362,21 @@ export function CourseReader({
     [effectiveMode, firstStepOf, setStepIndex],
   );
 
+  // A claim in the Sources & checks rail links back to where it lives in the lesson
+  // (claim-lesson-backlink): jump the Focus Flow to the claim's phase step and keep the rail entry
+  // selected. Sentence-precise step targeting + the Watch→Learn switch + the arrival flash land in
+  // later tasks; the skeleton jumps to the phase's first step.
+  const locateClaim = useCallback(
+    (id: string) => {
+      setActiveClaimId(id);
+      const annotation = annotations.find((entry) => entry.id === id);
+      if (!annotation) return;
+      const target = firstStepOf(annotation.phaseKey);
+      if (target !== undefined) setStepIndex(target);
+    },
+    [annotations, firstStepOf, setStepIndex],
+  );
+
   // The narrow-screen drawer: Esc closes it and returns focus to the toggle.
   const closeRail = useCallback(() => {
     setRailOpen(false);
@@ -716,7 +731,7 @@ export function CourseReader({
         <AnnotationRail
           annotations={annotations}
           activeClaimId={activeClaimId}
-          onSelect={setActiveClaimId}
+          onSelect={locateClaim}
           onClose={() => setRailOpen(false)}
           onCollapse={rail.toggleCollapsed}
           reduceMotion={reduceMotion}
