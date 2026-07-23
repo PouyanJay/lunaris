@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { makeCourse, makeLesson } from "../../test/fixtures";
-import { buildLessonSteps } from "./lessonSteps";
+import { buildLessonSteps, stepIndexForClaim, type LessonStep } from "./lessonSteps";
 
 const PHASES = [
   { key: "activate", label: "Warm-up", cue: "Reconnect with what you already know" },
@@ -142,5 +142,57 @@ describe("buildLessonSteps", () => {
     // Assert
     const content = steps.filter((step) => step.kind === "content");
     expect(content.every((step) => step.words > 0)).toBe(true);
+  });
+});
+
+describe("stepIndexForClaim", () => {
+  // A phase that spans two content chunks plus a resources step, framed by other sections — so the
+  // returned index is an index into the FULL step list, not the phase.
+  const steps: LessonStep[] = [
+    { id: "expects:0", sectionId: "expects", sectionLabel: "Expects", kind: "intro", words: 3 },
+    {
+      id: "demonstrate:0",
+      sectionId: "demonstrate",
+      sectionLabel: "Strategies",
+      kind: "content",
+      markdown: "First, the setup. HTTP moves data across the web.",
+      words: 9,
+    },
+    {
+      id: "demonstrate:1",
+      sectionId: "demonstrate",
+      sectionLabel: "Strategies",
+      kind: "content",
+      markdown: "HTTPS is the secure version of HTTP. It adds a TLS layer.",
+      words: 12,
+    },
+    {
+      id: "demonstrate:2",
+      sectionId: "demonstrate",
+      sectionLabel: "Strategies",
+      kind: "resources",
+      words: 0,
+    },
+    { id: "apply:0", sectionId: "apply", sectionLabel: "Practice", kind: "content", markdown: "Try it.", words: 2 },
+  ];
+
+  it("targets the content step whose chunk contains the matched sentence", () => {
+    expect(stepIndexForClaim(steps, "demonstrate", "HTTPS is the secure version of HTTP.")).toBe(2);
+  });
+
+  it("tolerates whitespace and case differences when matching the sentence", () => {
+    expect(stepIndexForClaim(steps, "demonstrate", "https is   the SECURE version of http.")).toBe(2);
+  });
+
+  it("falls back to the phase's first step when there is no matched sentence", () => {
+    expect(stepIndexForClaim(steps, "demonstrate", null)).toBe(1);
+  });
+
+  it("falls back to the phase's first step when the sentence isn't found in any chunk", () => {
+    expect(stepIndexForClaim(steps, "demonstrate", "An unrelated sentence about cats.")).toBe(1);
+  });
+
+  it("returns undefined for a phase with no steps", () => {
+    expect(stepIndexForClaim(steps, "integrate", null)).toBeUndefined();
   });
 });

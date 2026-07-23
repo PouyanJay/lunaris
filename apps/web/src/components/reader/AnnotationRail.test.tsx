@@ -16,7 +16,7 @@ function annotation(overrides: Partial<Annotation> = {}): Annotation {
       verifierStatus: "supported",
     },
     citation: makeCitation(),
-    matchedSentence: 2,
+    matchedSentence: "Comparison reduces the problem size each step.",
     ...overrides,
   };
 }

@@ -32,4 +32,39 @@ describe("CourseReader — claim → lesson backlink", () => {
       }),
     ).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("jumps to the exact chunk that holds the claim's sentence, not just the phase", () => {
+    // Arrange — a lesson whose demonstrate phase spans TWO content chunks: a ~130-word filler
+    // (chunk 1) then a short paragraph carrying the claim's sentence (chunk 2). Every other section
+    // is emptied so the flow is exactly [chunk1, chunk2] — step 1 and step 2.
+    const filler = `${Array.from({ length: 130 }, (_, i) => `w${i}`).join(" ")}.`;
+    const course = makeCourse();
+    const lesson = course.modules[0]!.lessons[0]!;
+    lesson.segments.activate.prose = "";
+    lesson.segments.apply.prose = "";
+    lesson.segments.integrate.prose = "";
+    lesson.segments.demonstrate.prose = `${filler}\n\nThe zephyr protocol encrypts the quokka channel.`;
+    lesson.segments.demonstrate.resources = [];
+    lesson.segments.demonstrate.claims = [
+      { text: "Zephyr protocol encrypts the quokka channel", supportedBy: null, verifierStatus: "cut" },
+    ];
+    lesson.expects = [];
+    lesson.selfCheck = [];
+    course.modules[0]!.assessment.items = [];
+
+    render(<CourseReader course={course} />);
+    // The flow opens on chunk 1 (the filler).
+    expect(screen.getByText(/step 1 of 2/i)).toBeInTheDocument();
+
+    // Act — locate the claim whose sentence lives in chunk 2.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Locate in the lesson: Zephyr protocol encrypts the quokka channel",
+      }),
+    );
+
+    // Assert — it jumped past the phase's first step to chunk 2 (sentence precision, not the
+    // phase-first fallback, which would have stayed on step 1).
+    expect(screen.getByText(/step 2 of 2/i)).toBeInTheDocument();
+  });
 });

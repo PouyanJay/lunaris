@@ -20,6 +20,7 @@ import { AnnotationRail } from "./AnnotationRail";
 import { BookmarkToggle } from "../bookmarks/BookmarkToggle";
 import { Callout } from "./Callout";
 import { buildAnnotations, type PhaseRef } from "./annotations";
+import { stepIndexForClaim } from "./lessonSteps";
 import { BuildProvenance } from "./BuildProvenance";
 import { LessonVideoHero } from "./LessonVideoHero";
 import { ReaderOutline, type OutlineGroup } from "./ReaderOutline";
@@ -363,18 +364,18 @@ export function CourseReader({
   );
 
   // A claim in the Sources & checks rail links back to where it lives in the lesson
-  // (claim-lesson-backlink): jump the Focus Flow to the claim's phase step and keep the rail entry
-  // selected. Sentence-precise step targeting + the Watch→Learn switch + the arrival flash land in
-  // later tasks; the skeleton jumps to the phase's first step.
+  // (claim-lesson-backlink): jump the Focus Flow to the step that carries the claim — the content
+  // chunk holding its matched sentence, else the phase's first step — and keep the rail entry
+  // selected. The Watch→Learn switch + the arrival flash land in the next task.
   const locateClaim = useCallback(
     (id: string) => {
       setActiveClaimId(id);
       const annotation = annotations.find((entry) => entry.id === id);
       if (!annotation) return;
-      const target = firstStepOf(annotation.phaseKey);
+      const target = stepIndexForClaim(steps, annotation.phaseKey, annotation.matchedSentence);
       if (target !== undefined) setStepIndex(target);
     },
-    [annotations, firstStepOf, setStepIndex],
+    [annotations, steps, setStepIndex],
   );
 
   // The narrow-screen drawer: Esc closes it and returns focus to the toggle.

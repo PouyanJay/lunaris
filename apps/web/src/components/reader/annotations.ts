@@ -21,15 +21,16 @@ export function verifierStatusTone(status: VerifierStatus): StatusTone {
 
 /** One verifier annotation lifted out of the reading flow into the rail: a claim, its grounding
  *  citation (if any), the phase it belongs to, and — best-effort — the prose sentence it most likely
- *  refers to (`matchedSentence`), or null when no sentence is a confident match and the link falls
- *  back to the whole phase. */
+ *  refers to (`matchedSentence` — the verbatim sentence text), or null when no sentence is a
+ *  confident match and the link falls back to the whole phase. The text drives the rail's
+ *  "locate in the lesson" jump to the exact step; its null-ness drives the fallback caption. */
 export interface Annotation {
   id: string;
   phaseKey: keyof MerrillSegments;
   phaseLabel: string;
   claim: Claim;
   citation: Citation | undefined;
-  matchedSentence: number | null;
+  matchedSentence: string | null;
 }
 
 /** Build the annotation list for one lesson — every phase's claims, each linked to its best-match
@@ -51,7 +52,7 @@ export function buildAnnotations(
         phaseLabel: phase.label,
         claim,
         citation: claim.supportedBy ? citations.get(claim.supportedBy) : undefined,
-        matchedSentence: match ? match.index : null,
+        matchedSentence: match ? match.sentence : null,
       });
     });
   }

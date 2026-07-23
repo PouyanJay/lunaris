@@ -177,6 +177,39 @@ export function buildLessonSteps({ lesson, phases, assessment }: LessonStepsInpu
   ];
 }
 
+/** Collapse whitespace + lowercase so a matched sentence lines up with its chunk despite the
+ *  block-join newlines and any casing drift. */
+function normalizeProse(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** The step a "locate in the lesson" click on a claim should land on (claim-lesson-backlink). When
+ *  the claim confidently matched a prose sentence (`matchedSentence`), the content step whose
+ *  ~120-word chunk contains that sentence; otherwise the phase's first step, so a click is never a
+ *  dead end. `undefined` when the phase has no steps. Indices are into the full `steps` list. */
+export function stepIndexForClaim(
+  steps: LessonStep[],
+  phaseKey: string,
+  matchedSentence: string | null,
+): number | undefined {
+  const needle = matchedSentence ? normalizeProse(matchedSentence) : null;
+  let firstOfPhase: number | undefined;
+  let sentenceHit: number | undefined;
+  steps.forEach((step, index) => {
+    if (step.sectionId !== phaseKey) return;
+    if (firstOfPhase === undefined) firstOfPhase = index;
+    if (
+      sentenceHit === undefined &&
+      needle &&
+      step.kind === "content" &&
+      normalizeProse(step.markdown ?? "").includes(needle)
+    ) {
+      sentenceHit = index;
+    }
+  });
+  return sentenceHit ?? firstOfPhase;
+}
+
 /** A section of the step sequence (steps are contiguous per section by construction). */
 export interface StepSection {
   id: string;
