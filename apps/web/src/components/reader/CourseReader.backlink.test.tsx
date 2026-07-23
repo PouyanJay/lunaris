@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeCourse, routedFetch } from "../../test/fixtures";
@@ -35,22 +35,14 @@ describe("CourseReader — claim → lesson backlink", () => {
     expect(screen.getByText(/you can compare two numbers/i)).toBeInTheDocument(); // intro step
 
     // Act — click the claim in the rail (its button is labelled "Locate in the lesson: <claim>").
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Locate in the lesson: Comparison reduces the problem size each step.",
-      }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: CLAIM }));
 
     // Assert — the flow moved to the demonstrate content step (the step card's eyebrow names its
     // section), and we've left the intro. The rail entry is now the active/pressed one.
     const card = screen.getByRole("group", { name: "Step content" });
     expect(within(card).getByText(/Strategies & worked example/)).toBeInTheDocument();
     expect(screen.queryByText(/you can compare two numbers/i)).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: "Locate in the lesson: Comparison reduces the problem size each step.",
-      }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: CLAIM })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("jumps to the exact chunk that holds the claim's sentence, not just the phase", () => {
@@ -63,11 +55,10 @@ describe("CourseReader — claim → lesson backlink", () => {
     lesson.segments.activate.prose = "";
     lesson.segments.apply.prose = "";
     lesson.segments.integrate.prose = "";
-    lesson.segments.demonstrate.prose = `${filler}\n\nThe zephyr protocol encrypts the quokka channel.`;
+    const claimText = "Zephyr protocol encrypts the quokka channel";
+    lesson.segments.demonstrate.prose = `${filler}\n\n${claimText}.`;
     lesson.segments.demonstrate.resources = [];
-    lesson.segments.demonstrate.claims = [
-      { text: "Zephyr protocol encrypts the quokka channel", supportedBy: null, verifierStatus: "cut" },
-    ];
+    lesson.segments.demonstrate.claims = [{ text: claimText, supportedBy: null, verifierStatus: "cut" }];
     lesson.expects = [];
     lesson.selfCheck = [];
     course.modules[0]!.assessment.items = [];
@@ -77,11 +68,7 @@ describe("CourseReader — claim → lesson backlink", () => {
     expect(screen.getByText(/step 1 of 2/i)).toBeInTheDocument();
 
     // Act — locate the claim whose sentence lives in chunk 2.
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Locate in the lesson: Zephyr protocol encrypts the quokka channel",
-      }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: `Locate in the lesson: ${claimText}` }));
 
     // Assert — it jumped past the phase's first step to chunk 2 (sentence precision, not the
     // phase-first fallback, which would have stayed on step 1).
@@ -101,22 +88,49 @@ describe("CourseReader — claim → lesson backlink", () => {
     );
   });
 
-  it("switches from Watch to Learn and jumps when a claim is located", () => {
+  it("clears the flash after it has drawn the eye", () => {
+    vi.useFakeTimers();
+    try {
+      render(<CourseReader course={makeCourse()} />);
+      fireEvent.click(screen.getByRole("button", { name: CLAIM }));
+      expect(screen.getByRole("group", { name: "Step content" })).toHaveAttribute(
+        "data-located",
+        "true",
+      );
+
+      // The flash is transient — it lifts once it's done its job (no permanent highlight).
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
+
+      expect(screen.getByRole("group", { name: "Step content" })).not.toHaveAttribute(
+        "data-located",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("switches from Watch to Learn and jumps when a claim is located", async () => {
     // Arrange — an explicit Watch preference + a reachable video service opens the reader in Watch.
     localStorage.setItem(READER_MODE_KEY, "watch");
     vi.stubGlobal("fetch", quietVideoFetch());
     render(<CourseReader course={makeCourse()} apiBaseUrl="http://api.test" />);
-    expect(screen.getByRole("radio", { name: "Watch" })).toBeChecked();
+    // findBy flushes the Watch surface's async video-active settle inside act (no dangling update).
+    expect(await screen.findByRole("radio", { name: "Watch" })).toBeChecked();
     expect(screen.queryByRole("region", { name: /lesson steps/i })).not.toBeInTheDocument();
 
     // Act — the claim lives in the lesson prose, so locating it from the (always-present) rail must
     // bring the reader to Learn.
     fireEvent.click(screen.getByRole("button", { name: CLAIM }));
 
-    // Assert — now in Learn, on the claim's step.
-    expect(screen.getByRole("radio", { name: "Learn" })).toBeChecked();
+    // Assert — now in Learn, on the claim's step (findBy flushes the mode-switch settle in act).
+    expect(await screen.findByRole("radio", { name: "Learn" })).toBeChecked();
     const card = screen.getByRole("group", { name: "Step content" });
     expect(within(card).getByText(/Strategies & worked example/)).toBeInTheDocument();
+    // The flash is intentionally NOT fired on a Watch→Learn jump: LearnMode mounts fresh, so its
+    // first locate signal is its baseline — the mode switch itself is the cue (see LearnMode).
+    expect(card).not.toHaveAttribute("data-located");
   });
 
   // Variant coverage: a claim in any teaching phase locates to that phase's step (demonstrate is

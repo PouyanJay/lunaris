@@ -202,7 +202,10 @@ export function LearnMode({
 
   // Locating a claim from the rail brings the reader here: scroll the target step into view and
   // flash it, so the eye lands on where the claim lives — reliable even when the step index didn't
-  // change. The first signal is the mount value (no flash on first paint).
+  // change. The first signal is the mount value (no flash on first paint). A claim located from
+  // Watch is one such mount: CourseReader renders LearnMode only in Learn, so the Watch→Learn switch
+  // remounts this with the already-bumped nonce as its baseline — that jump doesn't flash by design;
+  // the mode switch (video → steps) is itself the cue.
   const [located, setLocated] = useState(false);
   const seenLocate = useRef<number | undefined>(undefined);
   useEffect(() => {
