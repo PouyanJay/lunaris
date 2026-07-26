@@ -1,6 +1,18 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// The Overview now hosts the build-cost panel, which fetches on mount. Stub it as "not metered" so
+// these Overview tests stay about the Overview itself — the panel has its own suite
+// (CourseCostPanel.test.tsx). Returning null settles it to a stable, network-free note.
+vi.mock("../../lib/cost", async (importActual) => {
+  const actual = await importActual<typeof import("../../lib/cost")>();
+  return {
+    ...actual,
+    fetchCourseCost: vi.fn().mockResolvedValue(null),
+    fetchCourseCostEvents: vi.fn().mockResolvedValue([]),
+  };
+});
+
 import { CourseOverview } from "./CourseOverview";
 import { makeCourse, makeLesson, makeModule } from "../../test/fixtures";
 import type { Course, VideoArtifact } from "../../types/course";
@@ -151,7 +163,7 @@ function renderOverview(
 describe("CourseOverview", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("asks to delete the course from its danger-zone action", () => {
+  it("asks to delete the course from its danger-zone action", async () => {
     // Arrange
     vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
     const onRequestDelete = vi.fn();
@@ -162,18 +174,20 @@ describe("CourseOverview", () => {
 
     // Assert
     expect(onRequestDelete).toHaveBeenCalledTimes(1);
+    await screen.findByText(/not metered/i); // let the cost panel's mount fetch settle
   });
 
-  it("omits the delete affordance when the course can't be deleted here", () => {
+  it("omits the delete affordance when the course can't be deleted here", async () => {
     // Arrange / Act — no onDelete (e.g. the offline sample course).
     vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
     renderOverview();
 
     // Assert
     expect(screen.queryByRole("button", { name: /delete course/i })).not.toBeInTheDocument();
+    await screen.findByText(/not metered/i); // let the cost panel's mount fetch settle
   });
 
-  it("renders the hero facts: counts, a real level pill, and the course title", () => {
+  it("renders the hero facts: counts, a real level pill, and the course title", async () => {
     // Arrange / Act — the fixture graph's mean difficulty (0.1+0.45+0.75)/3 ≈ 0.43.
     vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
     renderOverview();
@@ -182,6 +196,7 @@ describe("CourseOverview", () => {
     expect(screen.getByText("3 lessons · 3 concepts")).toBeInTheDocument();
     expect(screen.getByText("INTERMEDIATE")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "How binary search works" })).toBeInTheDocument();
+    await screen.findByText(/not metered/i); // let the cost panel's mount fetch settle
   });
 
   it("shows the learner's progress as a bar and an x-of-y line", async () => {
@@ -355,7 +370,7 @@ describe("CourseOverview", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("fires the View-the-map action", () => {
+  it("fires the View-the-map action", async () => {
     // Arrange
     vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
     const { onViewMap } = renderOverview();
@@ -365,5 +380,29 @@ describe("CourseOverview", () => {
 
     // Assert
     expect(onViewMap).toHaveBeenCalledTimes(1);
+    await screen.findByText(/not metered/i); // let the cost panel's mount fetch settle
+  });
+
+  it("mounts the build-cost panel when the API is reachable", async () => {
+    // The Overview hosts the cost panel (its own suite is CourseCostPanel.test.tsx). Here we only
+    // prove the integration point — that CourseOverview actually renders it with the API on.
+    vi.stubGlobal("fetch", progressFetch(SNAPSHOT));
+    renderOverview();
+
+    expect(await screen.findByRole("region", { name: /build cost/i })).toBeInTheDocument();
+  });
+
+  it("omits the build-cost panel offline (no API origin)", async () => {
+    // Dropped when there's no API origin, like the video section above it.
+    render(
+      <CourseOverview
+        course={threeLessonCourse()}
+        onContinue={vi.fn()}
+        onViewMap={vi.fn()}
+        onOpenLesson={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("region", { name: /build cost/i })).not.toBeInTheDocument();
   });
 });
