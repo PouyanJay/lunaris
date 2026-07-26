@@ -47,6 +47,26 @@ class CostPocket(StrEnum):
     PLATFORM = "platform"
 
 
+class CostUnit(StrEnum):
+    """The billing unit a cost rate is charged per (course-cost-metering price book).
+
+    The measured usage on a ``CostEvent`` is a count of these units; a rate is ``amount_per_unit``
+    of one of them, so ``amount = count x rate``. Token units are split so a Claude call can price
+    fresh input, cached-read input, cache-write input, and output at their (very different) rates
+    separately. ``compute_seconds`` is vCPU-seconds of render compute; ``search`` is one web query;
+    ``images`` is one generated image; ``chars`` is one voiced character.
+    """
+
+    INPUT_TOKENS = "input_tokens"
+    CACHE_READ_TOKENS = "cache_read_tokens"
+    CACHE_WRITE_TOKENS = "cache_write_tokens"
+    OUTPUT_TOKENS = "output_tokens"
+    CHARS = "chars"
+    IMAGES = "images"
+    SEARCH = "search"
+    COMPUTE_SECONDS = "compute_seconds"
+
+
 class CostProvider(StrEnum):
     """The paid (or free-but-metered) external service a cost event was billed by.
 
