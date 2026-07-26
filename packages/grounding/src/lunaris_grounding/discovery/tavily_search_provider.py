@@ -2,6 +2,8 @@ import asyncio
 
 import structlog
 from lunaris_runtime.credentials import resolve_secret
+from lunaris_runtime.metering import record_cost
+from lunaris_runtime.schema import CostProvider, CostUnit
 
 from .search_result import SearchResult
 
@@ -54,6 +56,14 @@ class TavilySearchProvider:
         except Exception:
             logger.warning("tavily_search_failed", query=query, exc_info=True)
             return []
+        # One billable Tavily request (metered only on a successful call — a failed search returned
+        # [] above and cost nothing). Pocket is derived from SEARCH_API_KEY in the run scope.
+        record_cost(
+            component="search",
+            provider=CostProvider.TAVILY,
+            model=None,
+            usage={CostUnit.SEARCH: 1},
+        )
         return _to_results(response)
 
     def _ensure_client(self) -> object:
