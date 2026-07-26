@@ -34,9 +34,11 @@ class _MeteringStubPipeline:
         self._inner = build_stub_orchestrator(store)  # type: ignore[arg-type]
 
     async def run(self, topic: str, *, course_id: str, run_id: str, **kwargs: object) -> Course:
-        # A "deep" paid call during the build — lands in the run's cost_scope (entered by create()).
+        # A "deep" paid call during the build — lands in the run's cost_scope. component="llm"
+        # matches what real Claude seams record today (per-subagent labels are a documented
+        # follow-up); the metering vertical this exercises is provider/pocket/total, not the label.
         record_cost(
-            component="module_author",
+            component="llm",
             provider=CostProvider.ANTHROPIC,
             model=_OPUS,
             usage={CostUnit.INPUT_TOKENS: 1_000_000, CostUnit.OUTPUT_TOKENS: 1_000_000},  # $5 + $25
@@ -78,8 +80,26 @@ async def test_build_records_claude_cost_through_the_scope(tmp_path: Path) -> No
     # Auth off → the unscoped single-user path bills the platform pocket (no tenant key in scope).
     assert rollup.breakdown["byPocket"]["platform"] == pytest.approx(30.0)
     ledger = await event_store.list_for_course(course_id=course.id)
-    assert [e.component for e in ledger] == ["module_author"]
+    assert [e.component for e in ledger] == ["llm"]
     assert ledger[0].pocket is CostPocket.PLATFORM
+
+
+async def test_stream_build_records_claude_cost_through_the_durable_task(tmp_path: Path) -> None:
+    # The SSE build path enters the cost_scope around the DURABLE task (_run_recording_status) and
+    # drains from its finally — so a build recorded over the stream still rolls its cost up, even
+    # though the drain lives on a different task than create()'s.
+    clear_correlation()
+    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    service = _service(tmp_path, event_store=event_store, cost_store=cost_store)
+
+    # Drain the whole stream so the durable build task runs to completion (and its finally drains).
+    async for _item in service.stream("graphs", course_id="c-stream", run_id="run-stream"):
+        pass
+
+    rollup = await cost_store.get(course_id="c-stream")
+    assert rollup is not None
+    assert rollup.total_amount == pytest.approx(30.0)
+    assert rollup.breakdown["byProvider"]["anthropic"] == pytest.approx(30.0)
 
 
 async def test_build_without_cost_stores_records_nothing(tmp_path: Path) -> None:

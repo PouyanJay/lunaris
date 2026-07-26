@@ -87,8 +87,8 @@ def test_callback_is_a_noop_without_a_scope() -> None:
     handler.on_llm_end(_result({"input_tokens": 100, "output_tokens": 50}))  # must not raise
 
 
-def test_callback_ignores_a_completion_with_no_usage() -> None:
-    # A chunk/response carrying no usage_metadata records nothing (no zero-cost noise entry).
+def test_keyed_completion_with_no_usage_records_nothing() -> None:
+    # A keyed (Claude) chunk/response carrying no usage_metadata records nothing (no $0 noise).
     scope = _scope()
     message = AIMessage(content="hi")  # usage_metadata is None
     result = LLMResult(generations=[[ChatGeneration(message=message)]])
@@ -96,3 +96,17 @@ def test_callback_ignores_a_completion_with_no_usage() -> None:
     with cost_scope(scope):
         handler.on_llm_end(result)
     assert scope.entries == []
+
+
+def test_local_completion_with_no_usage_still_records_zero() -> None:
+    # The device bridge reports no usage, but a LOCAL completion must still record a $0 entry so a
+    # keyless "This device" build reads "~$0 with an event count", not "no data".
+    scope = _scope()
+    message = AIMessage(content="hi")  # usage_metadata is None (the bridge path)
+    result = LLMResult(generations=[[ChatGeneration(message=message)]])
+    handler = MeteringCallbackHandler(provider=CostProvider.LOCAL, model=None, component="llm")
+    with cost_scope(scope):
+        handler.on_llm_end(result)
+    assert len(scope.entries) == 1
+    assert scope.entries[0].provider is CostProvider.LOCAL
+    assert scope.entries[0].amount == pytest.approx(0.0)

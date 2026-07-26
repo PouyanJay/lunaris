@@ -12,12 +12,15 @@ handler stays fully synchronous (no ``await``), honouring ``record_cost``'s no-y
 
 from typing import Any
 
+import structlog
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
 from lunaris_runtime.schema import CostProvider, CostUnit
 
 from .record_cost import record_cost
+
+logger = structlog.get_logger()
 
 
 def _extract_usage(response: LLMResult) -> dict[CostUnit, float]:
@@ -36,11 +39,16 @@ def _extract_usage(response: LLMResult) -> dict[CostUnit, float]:
             details = usage.get("input_token_details") or {}
             read = details.get("cache_read") or 0
             # Prefer the explicit 5m+1h split; fall back to the generic cache_creation total.
-            write = (details.get("ephemeral_5m_input_tokens") or 0) + (
-                details.get("ephemeral_1h_input_tokens") or 0
-            )
+            ttl_1h = details.get("ephemeral_1h_input_tokens") or 0
+            write = (details.get("ephemeral_5m_input_tokens") or 0) + ttl_1h
             if write == 0:
                 write = details.get("cache_creation") or 0
+            if ttl_1h:
+                # The price book models only the 5-minute cache-write rate (1.25x); a 1-hour TTL
+                # write costs ~2x, so this under-prices it. Nothing in the harness requests a 1h
+                # TTL today (verified), so this is a drift alarm, not a live bug — surface it loudly
+                # if a future cache-control change trips it. (Follow-up: a distinct 1h CostUnit.)
+                logger.warning("cost_cache_1h_ttl_priced_as_5m", tokens=ttl_1h)
             total_input = usage.get("input_tokens") or 0
             fresh += max(0, total_input - read - write)
             cache_read += read
@@ -73,8 +81,11 @@ class MeteringCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         usage = _extract_usage(response)
-        if not usage:
-            return  # a completion with no reported usage records nothing (no $0 noise entry)
+        # A keyed (Claude) completion with no reported usage records nothing (no $0 noise). But a
+        # LOCAL completion always records — even usage-less (the device bridge reports none) — so a
+        # keyless build honestly reads "~$0 with an event count", not "no data".
+        if not usage and self._provider is not CostProvider.LOCAL:
+            return
         record_cost(
             component=self._component,
             provider=self._provider,
