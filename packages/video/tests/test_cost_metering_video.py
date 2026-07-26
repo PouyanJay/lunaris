@@ -74,4 +74,39 @@ async def test_scene_render_records_compute_seconds(monkeypatch, tmp_path: Path)
     assert entry.provider is CostProvider.MANIM
     assert entry.component == "render"
     assert list(entry.usage) == ["compute_seconds"]
-    assert entry.usage["compute_seconds"] >= 0.0
+    # A real (tiny) wall-clock elapsed around the instant fake sandbox — positive and bounded, not
+    # a 0.0 short-circuit or a wildly-wrong value.
+    assert 0.0 < entry.usage["compute_seconds"] < 5.0
+
+
+async def test_partial_voice_synthesis_still_bills_the_chars_already_spoken(
+    make_lesson_contract: Callable[..., SceneContracts], tmp_path: Path
+) -> None:
+    # ElevenLabs already billed the beats spoken before a mid-synthesis failure — so they must still
+    # be metered (not lost), the same honesty the render seam has on a failed render.
+    contract = make_lesson_contract()
+    narrated = [b.narration for s in contract.scenes for b in s.beats if b.narration]
+    assert len(narrated) >= 2, "precondition: need >= 2 narrated beats to fail partway"
+
+    calls = 0
+
+    async def flaky_speak(text: str, previous: str, following: str) -> bytes:
+        nonlocal calls
+        calls += 1
+        if calls == 2:  # the second narrated beat fails
+            raise RuntimeError("elevenlabs down mid-synthesis")
+        return b"MP3"
+
+    async def fake_measure(path: Path) -> float:
+        return 1.0
+
+    synth = ElevenLabsSpeechSynthesizer(api_key="k", tts_client=flaky_speak, measure=fake_measure)
+    scope = _scope()
+
+    with cost_scope(scope), pytest.raises(RuntimeError):
+        await synth.synthesize(contract, voice=_VOICE, audio_dir=tmp_path)
+
+    # The first beat spoke before the failure — its chars are billed, not lost.
+    voice_entries = [e for e in scope.entries if e.provider is CostProvider.ELEVENLABS]
+    assert len(voice_entries) == 1
+    assert voice_entries[0].usage == {"chars": len(narrated[0])}

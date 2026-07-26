@@ -4,6 +4,7 @@ from .cost_scope import CostScope, cost_scope, current_cost_scope
 from .credential_pocket import credential_pocket
 from .drain import drain_cost_scope
 from .record_cost import record_cost
+from .scope_setup import enter_cost_scope, make_cost_scope
 
 __all__ = [
     "CostEntry",
@@ -13,5 +14,7 @@ __all__ = [
     "credential_pocket",
     "current_cost_scope",
     "drain_cost_scope",
+    "enter_cost_scope",
+    "make_cost_scope",
     "record_cost",
 ]
