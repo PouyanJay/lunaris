@@ -16,6 +16,7 @@ import { ProgressBar } from "../primitives/ProgressBar";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
 import { OverviewSection } from "../reader/OverviewSection";
 import { ScopeBand } from "../reader/ScopeBand";
+import { CourseCostPanel } from "./CourseCostPanel";
 import styles from "./CourseOverview.module.css";
 
 interface CourseOverviewProps {
@@ -248,6 +249,10 @@ export function CourseOverview({
             ))}
           </ul>
         </section>
+        {/* What this course cost to build — the calculated total + drill-through (course-cost-
+            metering T8). Needs the API (an owner-scoped, signed read), so it's gated like the
+            video section above; absent offline or on a course built before metering. */}
+        {apiBaseUrl && <CourseCostPanel apiBaseUrl={apiBaseUrl} courseId={course.id} />}
         {onRequestDelete && (
           <section className={styles.danger} aria-label="Delete course">
             <div className={styles.dangerText}>

@@ -9,6 +9,7 @@ from lunaris_runtime.logging import bind_request_id
 from lunaris_runtime.schema import (
     AgentEvent,
     Clarification,
+    CostEvent,
     Course,
     CourseCost,
     DiscoveryDepth,
@@ -18,6 +19,7 @@ from pydantic import ValidationError
 
 from ..cover_thumbs import CoverThumbs, sign_library_cover_thumbs
 from ..dependencies import (
+    CostEventStoreDep,
     CourseCostStoreDep,
     CourseServiceDep,
     CoverStorageDep,
@@ -274,6 +276,26 @@ async def get_course_cost(
     """
     response.headers["X-Request-Id"] = _bind()
     return await cost_store.get(course_id=course_id, owner_id=owner_id)
+
+
+@router.get("/{course_id}/cost/events", response_model=list[CostEvent])
+async def get_course_cost_events(
+    course_id: str,
+    event_store: CostEventStoreDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> list[CostEvent]:
+    """The append-only cost ledger for a course — the drill-through behind the Overview total.
+
+    Every metered call (Claude completion, embedding, search, cover image, voiceover, render) is its
+    own row, in emission order (``seq``), each carrying the measured ``usage`` and calculated
+    ``amount`` — the auditable transcript of "usage times the price-book rate". An unmetered course
+    (pre-feature, still building, or another owner's — the store is owner-scoped) returns an empty
+    list, not a 404, so the panel has nothing to expand. ``X-Request-Id`` is bound + returned for
+    cross-layer log triangulation.
+    """
+    response.headers["X-Request-Id"] = _bind()
+    return await event_store.list_for_course(course_id=course_id, owner_id=owner_id)
 
 
 @router.post("/{course_id}/publish", response_model=Course)

@@ -276,10 +276,11 @@ def get_course_cost_store(settings: Annotated[Settings, Depends(get_settings)]) 
     return _in_memory_course_cost_store
 
 
-# The rollup store is read by the cost endpoint (below); the ledger store's getter is consumed at
-# the composition root when T3 wires CostEventRecorder into a build (mirroring get_run_event_store,
-# which likewise has no FastAPI Dep alias — no route reads the raw ledger yet).
+# The rollup store is read by the cost endpoint for the Overview total; the ledger store is read by
+# the cost-events endpoint for the drill-through (T8) and is also wired into a build's
+# CostEventRecorder at the composition root.
 CourseCostStoreDep = Annotated[ICourseCostStore, Depends(get_course_cost_store)]
+CostEventStoreDep = Annotated[ICostEventStore, Depends(get_cost_event_store)]
 
 
 # The video-job queue + artifact storage (explainer-video V0), one per process — same singleton /
@@ -1058,7 +1059,7 @@ def get_course_service(
     bookmark_store: BookmarkStoreDep,
     activity_store: ActivityStoreDep,
     corpus_store: CorpusStoreDep,
-    cost_event_store: Annotated[ICostEventStore, Depends(get_cost_event_store)],
+    cost_event_store: CostEventStoreDep,
     course_cost_store: CourseCostStoreDep,
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
