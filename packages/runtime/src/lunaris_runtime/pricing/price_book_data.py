@@ -20,9 +20,6 @@ from lunaris_runtime.schema import CostProvider, CostUnit
 
 from .rate import Rate
 
-# Bump whenever any rate below changes (a build stamps this onto every cost row).
-PRICE_BOOK_VERSION = "2026-07-25"
-
 _USD = "USD"
 
 

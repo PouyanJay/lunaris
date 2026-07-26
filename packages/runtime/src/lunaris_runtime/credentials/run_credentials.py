@@ -46,6 +46,17 @@ def resolve_secret(env_var: str) -> str | None:
     return os.environ.get(env_var) or None
 
 
+def has_scoped_secret(env_var: str) -> bool:
+    """Whether an active run scope carries a key for ``env_var`` — the BYOK/platform discriminator.
+
+    ``True`` only inside a run scope that holds the key (a tenant build on its own key); ``False``
+    with no scope (the platform ``os.environ`` path) or a scope that lacks the key. This is what
+    lets cost metering attribute a paid call to the ``user_key`` vs ``platform`` pocket: the scope
+    holding the key is exactly the condition under which the tenant, not the platform, is billed."""
+    scope = _run_secrets.get()
+    return scope is not None and bool(scope.get(env_var))
+
+
 @contextmanager
 def run_credentials(secrets: Mapping[str, str]) -> Iterator[None]:
     """Bind ``secrets`` (env-var name → key) as the current run's credentials for the block.

@@ -15,9 +15,10 @@ class CostEvent(CourseModel):
     main build run *and* the separate video-job / cover-job runs, so this is keyed by course, not
     run. ``run_id`` is provenance (which run/job produced it); ``seq`` is the run-scoped emission
     index (mirrors ``RunEvent`` — ordering survives without a wall clock). ``usage`` is the raw
-    measured units (e.g. ``{"inputTokens": …, "cacheReadTokens": …, "outputTokens": …}`` for Claude,
-    or ``{"chars": …}`` / ``{"images": …}`` / ``{"searches": …}`` / ``{"computeSeconds": …}``) —
-    stored as-is so the calculation is auditable against the rate. ``pocket`` separates tenant BYOK
+    measured units keyed by ``CostUnit`` value (e.g. ``{"input_tokens": …, "cache_read_tokens": …,
+    "output_tokens": …}`` for Claude, or ``{"chars": …}`` / ``{"images": …}`` / ``{"search": …}`` /
+    ``{"compute_seconds": …}``) — stored as-is so the calculation is auditable against the rate,
+    which is priced per the same ``CostUnit``. ``pocket`` separates tenant BYOK
     spend from platform spend. The DB owns ``id`` and ``created_at`` for ops; neither is part of
     this contract (``seq`` is the order).
     """

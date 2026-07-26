@@ -60,7 +60,7 @@ class CostEventRecorder:
         component: str,
         provider: CostProvider,
         model: str | None,
-        usage: dict[str, object],
+        usage: dict[str, float],
         amount: float,
         pocket: CostPocket,
     ) -> None:

@@ -63,11 +63,12 @@ def test_provider_flat_rate_falls_back_across_models() -> None:
     assert with_model.amount_per_unit > 0
 
 
-def test_keyless_local_prices_every_unit_to_zero() -> None:
-    # A keyless build (Qwen/bge/DuckDuckGo) must read ~$0, so every local unit prices to 0.
+@pytest.mark.parametrize("unit", list(CostUnit))
+def test_keyless_local_prices_every_unit_to_zero(unit: CostUnit) -> None:
+    # A keyless build (Qwen/bge/DuckDuckGo) must read ~$0, so every local unit prices to 0
+    # (parametrized so a regression names the offending unit, not one generic failure).
     book = PriceBook.current()
-    for unit in CostUnit:
-        assert book.cost(provider=CostProvider.LOCAL, model=None, unit=unit, count=1_000) == 0.0
+    assert book.cost(provider=CostProvider.LOCAL, model=None, unit=unit, count=1_000) == 0.0
 
 
 def test_unknown_rate_raises_rather_than_silently_zero() -> None:

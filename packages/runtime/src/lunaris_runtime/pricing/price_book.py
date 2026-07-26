@@ -2,17 +2,10 @@ from collections.abc import Iterable
 
 from lunaris_runtime.schema import CostProvider, CostUnit
 
-from .price_book_data import PRICE_BOOK_VERSION, RATES
+from .price_book_data import RATES
+from .price_book_version import PRICE_BOOK_VERSION
 from .rate import Rate
-
-
-class UnknownRateError(LookupError):
-    """No rate for a (provider, model, unit) — the price book is missing an entry.
-
-    Raised by ``PriceBook.rate``. The metering seam catches it, records the usage with ``amount``
-    0, and logs the miss — so an un-priced call (a new model, a provider the book hasn't caught up
-    to) never crashes a build; it just under-reports until the price book is extended.
-    """
+from .unknown_rate_error import UnknownRateError
 
 
 class PriceBook:
@@ -27,9 +20,15 @@ class PriceBook:
 
     def __init__(self, *, version: str, rates: Iterable[Rate]) -> None:
         self._version = version
-        self._by_key: dict[tuple[CostProvider, str | None, CostUnit], Rate] = {
-            (rate.provider, rate.model, rate.unit): rate for rate in rates
-        }
+        self._by_key: dict[tuple[CostProvider, str | None, CostUnit], Rate] = {}
+        for rate in rates:
+            key = (rate.provider, rate.model, rate.unit)
+            # Fail loud on a duplicate (provider, model, unit) — a copy-paste in the rate table must
+            # surface, not silently let the last entry win (the same "no silent wrong number" bar
+            # the unknown-rate path holds).
+            if key in self._by_key:
+                raise ValueError(f"duplicate price-book rate for {key}")
+            self._by_key[key] = rate
 
     @classmethod
     def current(cls) -> "PriceBook":
