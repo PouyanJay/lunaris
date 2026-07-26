@@ -3,7 +3,9 @@ from typing import ClassVar
 import langchain_anthropic
 import pytest
 from lunaris_runtime.credentials import run_credentials
+from lunaris_runtime.metering.metering_callback import MeteringCallbackHandler
 from lunaris_runtime.resilience import build_chat_model, llm_client, repaired_chat_model
+from lunaris_runtime.schema import CostProvider
 
 
 class _SpyChatAnthropic:
@@ -29,6 +31,35 @@ def _reset_spies() -> None:
     """Clear the shared capture state so a test can never read kwargs left by an earlier one."""
     _SpyChatAnthropic.last_kwargs = {}
     _SpyChatOpenAI.last_kwargs = {}
+
+
+def _metering_handler(model: object) -> MeteringCallbackHandler:
+    handlers = [h for h in (model.callbacks or []) if isinstance(h, MeteringCallbackHandler)]  # type: ignore[attr-defined]
+    assert len(handlers) == 1, "expected exactly one metering callback attached"
+    return handlers[0]
+
+
+def test_live_model_gets_a_metering_callback_tagged_anthropic(monkeypatch) -> None:
+    monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "platform-key")
+
+    model = build_chat_model("claude-opus-4-8", component="module_author")
+
+    handler = _metering_handler(model)
+    assert handler._provider is CostProvider.ANTHROPIC
+    assert handler._model == "claude-opus-4-8"
+    assert handler._component == "module_author"
+
+
+def test_keyless_model_gets_a_metering_callback_tagged_local(monkeypatch) -> None:
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    model = build_chat_model("claude-opus-4-8", component="module_author")
+
+    handler = _metering_handler(model)
+    assert handler._provider is CostProvider.LOCAL
+    assert handler._model is None  # keyless: the Claude id doesn't apply
 
 
 def test_builder_injects_the_scoped_tenant_key(monkeypatch) -> None:

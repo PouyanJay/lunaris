@@ -22,6 +22,10 @@ _PROVIDER_ENV: dict[CostProvider, str] = {
     CostProvider.ELEVENLABS: "ELEVENLABS_API_KEY",
 }
 
+# Soft cap on the in-memory scope buffer — mirrors CostEventRecorder.CAP_PER_RUN (the persisted cap
+# applied at drain), so a runaway/looping build can't grow the buffer past what would ever persist.
+_MAX_SCOPE_ENTRIES = 5000
+
 
 def _price_usage(
     price_book: PriceBook,
@@ -67,6 +71,8 @@ def record_cost(
     scope = current_cost_scope()
     if scope is None:
         return  # metering is off — no run scope
+    if len(scope.entries) >= _MAX_SCOPE_ENTRIES:
+        return  # runaway guard: past the cap the drain wouldn't persist it anyway
     amount, wire_usage = _price_usage(scope.price_book, provider, model, usage)
     env_var = _PROVIDER_ENV.get(provider)
     pocket = credential_pocket(env_var) if env_var is not None else CostPocket.PLATFORM

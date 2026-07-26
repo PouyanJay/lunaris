@@ -35,8 +35,8 @@ class CostScope:
     owner_id: str | None = None
     currency: str = "USD"
     # Grows for the build's lifetime; the drain caps what's *persisted* at CostEventRecorder's
-    # CAP_PER_RUN. A soft buffer cap belongs here once the recorder is wired into a real build (T4)
-    # — a runaway build could otherwise grow this in memory before the drain trims it.
+    # CAP_PER_RUN, and record_cost applies a matching soft cap (_MAX_SCOPE_ENTRIES) so this buffer
+    # can't grow past what would ever persist even on a runaway build.
     entries: list[CostEntry] = field(default_factory=list)
 
 
