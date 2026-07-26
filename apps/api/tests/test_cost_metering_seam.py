@@ -9,9 +9,14 @@ the call is exercised directly to prove the seam prices, attributes, and persist
 """
 
 import pytest
-from lunaris_api.cost_drain import drain_cost_scope
 from lunaris_runtime.credentials import run_credentials
-from lunaris_runtime.metering import CostScope, cost_scope, current_cost_scope, record_cost
+from lunaris_runtime.metering import (
+    CostScope,
+    cost_scope,
+    current_cost_scope,
+    drain_cost_scope,
+    record_cost,
+)
 from lunaris_runtime.persistence import InMemoryCostEventStore, InMemoryCourseCostStore
 from lunaris_runtime.pricing import PriceBook
 from lunaris_runtime.schema import CostPocket, CostProvider, CostUnit

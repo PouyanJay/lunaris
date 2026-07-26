@@ -27,6 +27,8 @@ from lunaris_runtime.logging import configure_logging
 
 from .config import get_settings
 from .dependencies import (
+    get_cost_event_store,
+    get_course_cost_store,
     get_course_store,
     get_cover_credential_resolver,
     get_cover_job_queue,
@@ -60,6 +62,8 @@ async def _run() -> None:
         poll_interval_seconds=settings.cover_worker_poll_seconds,
         worker_id_prefix=f"cover-{os.getpid()}",
         credential_resolver=get_cover_credential_resolver(settings),
+        cost_event_store=get_cost_event_store(settings),
+        course_cost_store=get_course_cost_store(settings),
         lease_seconds=settings.cover_lease_seconds,
         stop=stop,
     )

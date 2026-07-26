@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import structlog
+
 from lunaris_runtime.persistence import (
     ICostEventStore,
     ICourseCostStore,

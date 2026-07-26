@@ -12,7 +12,7 @@ from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.cover_build import cover_config_from_map
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
-from lunaris_runtime.metering import CostScope, cost_scope
+from lunaris_runtime.metering import CostScope, cost_scope, drain_cost_scope
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
     ICostEventStore,
@@ -51,7 +51,6 @@ from lunaris_runtime.video_build import (
 
 from .activity import ActivityStoreUnavailableError, IActivityStore
 from .bookmarks import BookmarkStoreUnavailableError, IBookmarkStore
-from .cost_drain import drain_cost_scope
 from .cover_enqueue import enqueue_cover_job
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle

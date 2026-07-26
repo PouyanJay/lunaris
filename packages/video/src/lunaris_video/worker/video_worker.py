@@ -5,13 +5,17 @@ from contextlib import AbstractContextManager, nullcontext, suppress
 import structlog
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.logging.correlation import bind_run_id, clear_correlation
+from lunaris_runtime.metering import CostScope, cost_scope, drain_cost_scope
 from lunaris_runtime.persistence import (
+    ICostEventStore,
+    ICourseCostStore,
     IRunEventStore,
     IVideoJobQueue,
     IVideoStorage,
     PersistenceError,
     VideoArtifactPaths,
 )
+from lunaris_runtime.pricing import PriceBook
 from lunaris_runtime.schema import (
     RunEvent,
     RunEventKind,
@@ -91,6 +95,8 @@ class VideoWorker:
         events: IRunEventStore,
         worker_id: str,
         credential_resolver: CredentialResolver | None = None,
+        cost_event_store: ICostEventStore | None = None,
+        course_cost_store: ICourseCostStore | None = None,
         heartbeat_interval_s: float = 60.0,
         cancel_poll_interval_s: float = 5.0,
     ) -> None:
@@ -100,10 +106,36 @@ class VideoWorker:
         self._events = events
         self._worker_id = worker_id
         self._credential_resolver = credential_resolver
+        # Per-course cost metering (course-cost-metering T6/T7): the video render's Claude scene
+        # planning/QA + ElevenLabs voiceover + Manim render compute record into a cost_scope
+        # (entered in _render) and drain into the same course rollup (by course_id) the build feeds.
+        self._cost_event_store = cost_event_store
+        self._course_cost_store = course_cost_store
         self._heartbeat_interval_s = heartbeat_interval_s
         # Tighter than the heartbeat so a stopped render is aborted promptly — the cloud worker has
         # no direct channel from the API; this DB poll IS the cancellation signal.
         self._cancel_poll_interval_s = cancel_poll_interval_s
+
+    def _cost_scope_for(self, job: VideoJob) -> CostScope | None:
+        """The job's cost scope (course-cost-metering), or ``None`` when metering is off."""
+        if self._cost_event_store is None or self._course_cost_store is None:
+            return None
+        return CostScope(
+            run_id=job.id,
+            course_id=job.course_id,
+            owner_id=job.user_id,
+            price_book=PriceBook.current(),
+        )
+
+    @staticmethod
+    def _cost_scope_cm(cost: CostScope | None) -> AbstractContextManager[CostScope | None]:
+        """Enter the cost scope so the render's deep ``record_cost`` calls buffer into ``cost``."""
+        return cost_scope(cost) if cost is not None else nullcontext()
+
+    async def _drain_cost(self, cost: CostScope | None) -> None:
+        """Persist the video cost (ledger + rollup) into the course total. Best-effort/off-safe."""
+        if cost is not None:
+            await drain_cost_scope(cost, self._cost_event_store, self._course_cost_store)
 
     async def run_forever(self, *, poll_interval_seconds: float = 2.0) -> None:
         """Drain the queue forever; idle-poll when empty. Cancellation is the stop signal."""
@@ -138,40 +170,50 @@ class VideoWorker:
         await sequence.emit(VideoJobStatus.PLANNING, _STAGE_LABELS[VideoJobStatus.PLANNING])
         _logger.info("video_worker.job_claimed", kind=job.kind.value, attempts=job.attempts)
 
+        # Record the video's cost (Claude planning/QA + ElevenLabs voice + Manim render) into the
+        # course rollup; drained in a finally so a cancelled/failed video still records its spend.
+        cost = self._cost_scope_for(job)
         try:
-            rendered = await self._produce(job, sequence)
-            artifact = _build_artifact(job, rendered)
-            await self._upload_artifacts(job, rendered, artifact)
-        except _VideoCancelledError:
-            # The owner stopped this job mid-render: the row is already CANCELLED and the render
-            # subprocess has been killed (no more compute). Do NOT settle (complete/fail would be a
-            # sticky no-op anyway) and do NOT upload — just record the stop on the transcript.
-            _logger.info("video_worker.job_cancelled", job_id=job.id)
-            await sequence.emit(VideoJobStatus.CANCELLED, _STAGE_LABELS[VideoJobStatus.CANCELLED])
-            return
-        except Exception as exc:
-            # Full detail to the logs; only an owner-safe reason to the job row (the reader shows
-            # it) — an actionable user_detail when the failure has one, else just the class name.
-            # The structured failure taxonomy (E1) rides on the log event so a failed build is a
-            # first-class query (failure_kind) without leaking internals to the owner-readable row.
-            _logger.exception(
-                "video_worker.job_failed",
-                failure_kind=VideoFailureKind.classify(exc).value,
-                failure_class=type(exc).__name__,
-                scene_id=getattr(exc, "scene_id", None),
-            )
-            await self._queue.fail(job_id=job.id, error=_user_error(exc))
-            await sequence.emit(VideoJobStatus.FAILED, _STAGE_LABELS[VideoJobStatus.FAILED])
-            return
+            try:
+                rendered = await self._produce(job, sequence, cost)
+                artifact = _build_artifact(job, rendered)
+                await self._upload_artifacts(job, rendered, artifact)
+            except _VideoCancelledError:
+                # The owner stopped this job mid-render: the row is already CANCELLED and the render
+                # subprocess has been killed (no more compute). Do NOT settle (complete/fail would
+                # be a sticky no-op anyway) and do NOT upload — just record the stop on the log.
+                _logger.info("video_worker.job_cancelled", job_id=job.id)
+                await sequence.emit(
+                    VideoJobStatus.CANCELLED, _STAGE_LABELS[VideoJobStatus.CANCELLED]
+                )
+                return
+            except Exception as exc:
+                # Full detail to the logs; only an owner-safe reason to the job row (the reader
+                # shows it) — an actionable user_detail when the failure has one, else the class
+                # name. The structured failure taxonomy (E1) rides on the log event so a failed
+                # build is a first-class query (failure_kind) without leaking internals to the row.
+                _logger.exception(
+                    "video_worker.job_failed",
+                    failure_kind=VideoFailureKind.classify(exc).value,
+                    failure_class=type(exc).__name__,
+                    scene_id=getattr(exc, "scene_id", None),
+                )
+                await self._queue.fail(job_id=job.id, error=_user_error(exc))
+                await sequence.emit(VideoJobStatus.FAILED, _STAGE_LABELS[VideoJobStatus.FAILED])
+                return
 
-        # Write the planned contract fingerprint back onto the job row — the durable cross-process
-        # regeneration cache key (V4-T1; V1 deferred it). None when the producer built none.
-        contract_hash = artifact.provenance.contract_hash if artifact.provenance else None
-        await self._queue.complete(job_id=job.id, contract_hash=contract_hash)
-        await sequence.emit(VideoJobStatus.READY, _STAGE_LABELS[VideoJobStatus.READY])
-        _logger.info("video_worker.job_ready", job_id=job.id)
+            # Write the planned contract fingerprint back onto the job row — the durable
+            # cross-process regeneration cache key (V4-T1; V1 deferred it). None when none built.
+            contract_hash = artifact.provenance.contract_hash if artifact.provenance else None
+            await self._queue.complete(job_id=job.id, contract_hash=contract_hash)
+            await sequence.emit(VideoJobStatus.READY, _STAGE_LABELS[VideoJobStatus.READY])
+            _logger.info("video_worker.job_ready", job_id=job.id)
+        finally:
+            await self._drain_cost(cost)
 
-    async def _produce(self, job: VideoJob, sequence: "_EventSequence") -> RenderedVideo:
+    async def _produce(
+        self, job: VideoJob, sequence: "_EventSequence", cost: CostScope | None
+    ) -> RenderedVideo:
         """Render the job inside its owner's credential scope (V7-T1), with a heartbeat (V7-T4) and
         a cancel-watcher (the stop feature).
 
@@ -185,7 +227,7 @@ class VideoWorker:
         without settling; an ``asyncio.CancelledError`` the watcher did NOT cause (a worker
         shutdown) is left untouched so the supervisor can still drain."""
         heartbeat = asyncio.create_task(self._heartbeat(job.id))
-        render = asyncio.create_task(self._render(job, sequence))
+        render = asyncio.create_task(self._render(job, sequence, cost))
         # The watcher sets this BEFORE cancelling the render (synchronously, no await between), so
         # by the time the render task's CancelledError reaches the except below the flag is already
         # set — that is how an owner stop is told apart from a shutdown cancel.
@@ -205,14 +247,16 @@ class VideoWorker:
             with suppress(asyncio.CancelledError):
                 await heartbeat
 
-    async def _render(self, job: VideoJob, sequence: "_EventSequence") -> RenderedVideo:
+    async def _render(
+        self, job: VideoJob, sequence: "_EventSequence", cost: CostScope | None
+    ) -> RenderedVideo:
         """The pipeline render itself, inside the owner's credential scope. Only the pipeline's
         provider calls (Claude / ElevenLabs) are scoped — infrastructure work (queue, storage,
         events) reads the process env and must never enter a tenant-only scope, so upload + settle
-        stay outside it. ``on_stage`` lets the pipeline report its render stages (voicing/rendering/
-        assembling) for the reader's progress bar."""
+        stay outside it. The cost scope wraps the same provider + render calls so their record_cost
+        lands in this job's buffer. ``on_stage`` reports render stages for the progress bar."""
         credentials = await self._resolve_credentials(job)
-        with self._credential_scope(credentials):
+        with self._credential_scope(credentials), self._cost_scope_cm(cost):
             return await self._pipeline.produce(job, on_stage=self._stage_reporter(job, sequence))
 
     async def _watch_for_cancel(

@@ -3,6 +3,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import structlog
+from lunaris_runtime.metering import record_cost
+from lunaris_runtime.schema import CostProvider, CostUnit
 
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.rendering.sandbox import run_sandboxed
@@ -78,6 +80,21 @@ class ElevenLabsSpeechSynthesizer:
                 )
                 total += anim_s
             scenes[scene.id] = SceneTiming(beats=beats, total_s=round(total, 2))
+        # ElevenLabs bills per character; record the whole video's narration as one cost. Metered
+        # only when there was narration (a silent video spends nothing); pocket from the run scope.
+        total_chars = sum(
+            len(beat.narration)
+            for scene in contract.scenes
+            for beat in scene.beats
+            if beat.narration
+        )
+        if total_chars:
+            record_cost(
+                component="voice",
+                provider=CostProvider.ELEVENLABS,
+                model=None,
+                usage={CostUnit.CHARS: total_chars},
+            )
         _logger.info("speech_synth.synthesized", scenes=len(scenes), voice_id=voice.voice_id)
         return TimingManifest(scenes)
 

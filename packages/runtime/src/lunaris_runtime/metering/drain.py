@@ -1,8 +1,9 @@
 import structlog
-from lunaris_runtime.metering import CostScope
+
 from lunaris_runtime.persistence import ICostEventStore, ICourseCostStore
 
 from .cost_recorder import CostEventRecorder
+from .cost_scope import CostScope
 
 logger = structlog.get_logger()
 

@@ -5,13 +5,17 @@ from contextlib import AbstractContextManager, nullcontext, suppress
 import structlog
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.logging.correlation import bind_run_id, clear_correlation
+from lunaris_runtime.metering import CostScope, cost_scope, drain_cost_scope
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
+    ICostEventStore,
+    ICourseCostStore,
     ICourseStore,
     ICoverJobQueue,
     ICoverStorage,
     PersistenceError,
 )
+from lunaris_runtime.pricing import PriceBook
 from lunaris_runtime.schema import CoverArtifact, CoverJob, CoverJobStatus, CoverProvenance
 
 from lunaris_covers.errors import CoverPipelineError
@@ -64,6 +68,8 @@ class CoverWorker:
         course_store: ICourseStore,
         worker_id: str,
         credential_resolver: CredentialResolver | None = None,
+        cost_event_store: ICostEventStore | None = None,
+        course_cost_store: ICourseCostStore | None = None,
         heartbeat_interval_s: float = 60.0,
         cancel_poll_interval_s: float = 5.0,
     ) -> None:
@@ -73,10 +79,36 @@ class CoverWorker:
         self._course_store = course_store
         self._worker_id = worker_id
         self._credential_resolver = credential_resolver
+        # Per-course cost metering (course-cost-metering T6): the cover render's Claude
+        # art-direction + GPT-Image calls record into a cost_scope (entered in _render beside the
+        # credential scope) and drain here into the same course rollup (by course_id) as the build.
+        self._cost_event_store = cost_event_store
+        self._course_cost_store = course_cost_store
         self._heartbeat_interval_s = heartbeat_interval_s
         # Tighter than the heartbeat so a stopped render aborts promptly — the cloud worker has no
         # direct channel from the API; this DB poll IS the cancellation signal.
         self._cancel_poll_interval_s = cancel_poll_interval_s
+
+    def _cost_scope_for(self, job: CoverJob) -> CostScope | None:
+        """The job's cost scope (course-cost-metering), or ``None`` when metering is off."""
+        if self._cost_event_store is None or self._course_cost_store is None:
+            return None
+        return CostScope(
+            run_id=job.id,
+            course_id=job.course_id,
+            owner_id=job.user_id,
+            price_book=PriceBook.current(),
+        )
+
+    @staticmethod
+    def _cost_scope_cm(cost: CostScope | None) -> AbstractContextManager[CostScope | None]:
+        """Enter the cost scope so the render's deep ``record_cost`` calls buffer into ``cost``."""
+        return cost_scope(cost) if cost is not None else nullcontext()
+
+    async def _drain_cost(self, cost: CostScope | None) -> None:
+        """Persist the cover cost (ledger + rollup) into the course total. Best-effort/off-safe."""
+        if cost is not None:
+            await drain_cost_scope(cost, self._cost_event_store, self._course_cost_store)
 
     async def run_forever(self, *, poll_interval_seconds: float = 2.0) -> None:
         """Drain the queue forever; idle-poll when empty. Cancellation is the stop signal."""
@@ -110,33 +142,42 @@ class CoverWorker:
         _logger.info(
             "cover_worker.job_claimed", style=job.style_preset.value, attempts=job.attempts
         )
+        # Record the cover's cost (Claude art-direction + GPT-Image) into the course's rollup. The
+        # scope is entered in _render (around the provider calls) and drained here in a finally, so
+        # even a cancelled/failed cover records the partial compute it already spent.
+        cost = self._cost_scope_for(job)
         try:
-            rendered = await self._produce(job)
-            provenance = await self._upload(job, rendered)
-        except _CoverCancelledError:
-            # The owner stopped this job mid-render: the row is already CANCELLED and the render was
-            # aborted (no more compute, nothing uploaded). Do NOT settle (complete/fail would be a
-            # sticky no-op anyway) — just stop.
-            _logger.info("cover_worker.job_cancelled", job_id=job.id)
-            return
-        except Exception as exc:
-            # A render/upload failure is the job's own fault → settle FAILED (no retry of a bad
-            # render). CANCELLED settles stick (the queue guards it), so an owner stop still wins.
-            _logger.exception("cover_worker.job_failed", failure_class=type(exc).__name__)
-            await self._queue.fail(job_id=job.id, error=_user_error(exc))
-            return
+            try:
+                rendered = await self._produce(job, cost)
+                provenance = await self._upload(job, rendered)
+            except _CoverCancelledError:
+                # The owner stopped this job mid-render: the row is already CANCELLED and the render
+                # was aborted (no more compute, nothing uploaded). Do NOT settle (complete/fail
+                # would be a sticky no-op anyway) — just stop.
+                _logger.info("cover_worker.job_cancelled", job_id=job.id)
+                return
+            except Exception as exc:
+                # A render/upload failure is the job's own fault → settle FAILED (no retry of a bad
+                # render). CANCELLED settles stick (the queue guards it), so an owner stop wins.
+                _logger.exception("cover_worker.job_failed", failure_class=type(exc).__name__)
+                await self._queue.fail(job_id=job.id, error=_user_error(exc))
+                return
 
-        # Produce + upload succeeded. Fold the cover onto the course payload, then settle READY. An
-        # infrastructure failure here (course store / queue backend down) is NOT a render failure:
-        # it propagates out to run_once, which leaves the job in-flight so the lease sweep requeues
-        # it — rather than marking a job READY whose Course.cover never got written (the queue's
-        # "job state must never be silently wrong" invariant). At-least-once: a requeue re-produces.
-        artifact = CoverArtifact(status=CoverJobStatus.READY, job_id=job.id, provenance=provenance)
-        await self._attach_to_course(job, artifact)
-        await self._queue.complete(job_id=job.id)
-        _logger.info("cover_worker.job_ready", job_id=job.id)
+            # Produce + upload succeeded. Fold the cover onto the course payload, then settle READY.
+            # An infrastructure failure here (course store / queue backend down) is NOT a render
+            # failure: it propagates out to run_once, which leaves the job in-flight so the lease
+            # sweep requeues it — rather than marking a job READY whose Course.cover never got
+            # written (the queue's "job state must never be silently wrong" invariant).
+            artifact = CoverArtifact(
+                status=CoverJobStatus.READY, job_id=job.id, provenance=provenance
+            )
+            await self._attach_to_course(job, artifact)
+            await self._queue.complete(job_id=job.id)
+            _logger.info("cover_worker.job_ready", job_id=job.id)
+        finally:
+            await self._drain_cost(cost)
 
-    async def _produce(self, job: CoverJob) -> RenderedCover:
+    async def _produce(self, job: CoverJob, cost: CostScope | None) -> RenderedCover:
         """Render the job with a lease heartbeat and a cancel-watcher running alongside (T6).
 
         The render runs as its own task so the watcher can cancel it the moment the owner stops the
@@ -148,7 +189,7 @@ class CoverWorker:
         without settling; an ``asyncio.CancelledError`` the watcher did NOT cause (a worker
         shutdown) is left untouched so the supervisor can still drain."""
         heartbeat = asyncio.create_task(self._heartbeat(job.id))
-        render = asyncio.create_task(self._render(job))
+        render = asyncio.create_task(self._render(job, cost))
         # The watcher sets this BEFORE cancelling the render (synchronously, no await between), so
         # by the time the render task's CancelledError reaches the except below the flag is already
         # set — that is how an owner stop is told apart from a shutdown cancel.
@@ -168,12 +209,13 @@ class CoverWorker:
             with suppress(asyncio.CancelledError):
                 await heartbeat
 
-    async def _render(self, job: CoverJob) -> RenderedCover:
+    async def _render(self, job: CoverJob, cost: CostScope | None) -> RenderedCover:
         """The pipeline render itself, inside the owner's credential scope. Only the pipeline's
         provider calls (Claude / OpenAI) are scoped; infrastructure work (queue/storage/course
-        store) stays on the worker's own env, so upload + settle stay outside it."""
+        store) stays on the worker's own env, so upload + settle stay outside it. The cost scope
+        wraps the same provider calls so their record_cost lands in this job's buffer."""
         credentials = await self._resolve_credentials(job)
-        with self._credential_scope(credentials):
+        with self._credential_scope(credentials), self._cost_scope_cm(cost):
             return await self._pipeline.produce(job, on_stage=self._stage_reporter(job))
 
     async def _watch_for_cancel(

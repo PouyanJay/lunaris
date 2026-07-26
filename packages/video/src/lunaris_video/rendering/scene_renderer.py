@@ -1,7 +1,10 @@
 import sys
+import time
 from pathlib import Path
 
 import structlog
+from lunaris_runtime.metering import record_cost
+from lunaris_runtime.schema import CostProvider, CostUnit
 
 from lunaris_video.models.render_result import RenderResult
 from lunaris_video.models.sandbox_result import SandboxResult
@@ -42,7 +45,17 @@ class SceneRenderer:
             scene_file.name,
             scene_class_name,
         ]
+        started = time.monotonic()
         result = await run_sandboxed(argv, cwd=workdir, timeout_s=self._timeout_s)
+        # Record the render's wall-clock compute (priced per vCPU-second — a proxy: wall-clock ~=
+        # vCPU-seconds for the single-vCPU render container). Metered even on a failed/timed-out
+        # render, which still spent the compute. Pocket is platform (render has no BYOK key).
+        record_cost(
+            component="render",
+            provider=CostProvider.MANIM,
+            model=None,
+            usage={CostUnit.COMPUTE_SECONDS: time.monotonic() - started},
+        )
         mp4_path = expected_scene_mp4(scene_file, scene_class_name)
         if result.succeeded and mp4_path.is_file():
             _logger.info("scene_renderer.rendered", scene_class=scene_class_name)
