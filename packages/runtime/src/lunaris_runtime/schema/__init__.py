@@ -2,8 +2,10 @@ from .agent_event import AgentEvent
 from .base import CourseModel
 from .build_provenance import CapabilityBuildTag
 from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuestion
+from .cost_event import CostEvent
 from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
+from .course_cost import CourseCost
 from .course_run import CourseRun
 from .course_scope import CourseScope
 from .course_videos import CourseVideos
@@ -19,6 +21,9 @@ from .enums import (
     CapabilityName,
     ClarifierKind,
     ComputeKind,
+    CostPocket,
+    CostProvider,
+    CostUnit,
     CourseStatus,
     CoverJobStatus,
     CoverLightMode,
@@ -121,8 +126,13 @@ __all__ = [
     "ComparisonSpec",
     "CompetencyArea",
     "ComputeKind",
+    "CostEvent",
+    "CostPocket",
+    "CostProvider",
+    "CostUnit",
     "Course",
     "CourseBrief",
+    "CourseCost",
     "CourseModel",
     "CourseRun",
     "CourseScope",

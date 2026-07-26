@@ -10,6 +10,7 @@ from lunaris_runtime.schema import (
     AgentEvent,
     Clarification,
     Course,
+    CourseCost,
     DiscoveryDepth,
     ProgressEvent,
 )
@@ -17,6 +18,7 @@ from pydantic import ValidationError
 
 from ..cover_thumbs import CoverThumbs, sign_library_cover_thumbs
 from ..dependencies import (
+    CourseCostStoreDep,
     CourseServiceDep,
     CoverStorageDep,
     OptionalUserIdDep,
@@ -254,6 +256,24 @@ async def get_course(
     if course is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found")
     return course
+
+
+@router.get("/{course_id}/cost", response_model=CourseCost | None)
+async def get_course_cost(
+    course_id: str,
+    cost_store: CourseCostStoreDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> CourseCost | None:
+    """The metered build cost of a course — the total + breakdown the Overview reads.
+
+    ``null`` (200, not 404) when the course has no metered cost: a course built before metering
+    shipped, one still building, or another user's course (the store is owner-scoped, so a
+    cross-owner read reads as absent — no leak). The web renders ``null`` as a "not metered" state.
+    A ``request_id`` is bound + returned in ``X-Request-Id`` for cross-layer log triangulation.
+    """
+    response.headers["X-Request-Id"] = _bind()
+    return await cost_store.get(course_id=course_id, owner_id=owner_id)
 
 
 @router.post("/{course_id}/publish", response_model=Course)
