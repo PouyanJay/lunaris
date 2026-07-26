@@ -46,9 +46,13 @@ from lunaris_grounding import (
 from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.persistence import (
     CourseStore,
+    ICostEventStore,
+    ICourseCostStore,
     ICourseStore,
     ICoverJobQueue,
     ICoverStorage,
+    InMemoryCostEventStore,
+    InMemoryCourseCostStore,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
     InMemoryRunEventStore,
@@ -59,6 +63,8 @@ from lunaris_runtime.persistence import (
     IRunStore,
     IVideoJobQueue,
     IVideoStorage,
+    SupabaseCostEventStore,
+    SupabaseCourseCostStore,
     SupabaseCourseStore,
     SupabaseCoverJobQueue,
     SupabaseCoverStorage,
@@ -245,6 +251,35 @@ def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) ->
     if settings.has_supabase:
         return _supabase_run_event_store
     return _in_memory_run_event_store
+
+
+# The per-course cost meter (course-cost-metering): the append-only ledger + the one-row rollup, one
+# each per process (same lazy-client / shared-instance posture as the run stores — a build's cost
+# writes and a later `GET .../cost` read must see the same in-memory instances).
+_in_memory_cost_event_store = InMemoryCostEventStore()
+_supabase_cost_event_store = SupabaseCostEventStore()
+_in_memory_course_cost_store = InMemoryCourseCostStore()
+_supabase_course_cost_store = SupabaseCourseCostStore()
+
+
+def get_cost_event_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICostEventStore:
+    """The build-cost ledger (drill-through): Supabase when keyed, else the in-process store."""
+    if settings.has_supabase:
+        return _supabase_cost_event_store
+    return _in_memory_cost_event_store
+
+
+def get_course_cost_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICourseCostStore:
+    """The per-course cost rollup (the Overview total): Supabase when keyed, else in-process."""
+    if settings.has_supabase:
+        return _supabase_course_cost_store
+    return _in_memory_course_cost_store
+
+
+# The rollup store is read by the cost endpoint (below); the ledger store's getter is consumed at
+# the composition root when T3 wires CostEventRecorder into a build (mirroring get_run_event_store,
+# which likewise has no FastAPI Dep alias — no route reads the raw ledger yet).
+CourseCostStoreDep = Annotated[ICourseCostStore, Depends(get_course_cost_store)]
 
 
 # The video-job queue + artifact storage (explainer-video V0), one per process — same singleton /

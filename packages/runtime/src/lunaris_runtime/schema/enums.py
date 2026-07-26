@@ -33,6 +33,37 @@ class CapabilityMode(StrEnum):
     FALLBACK = "fallback"
 
 
+class CostPocket(StrEnum):
+    """Whose money a metered build cost came out of (course-cost-metering).
+
+    Every paid call is attributed to a pocket so a per-course cost separates what the *tenant* paid
+    on their own BYOK key from what the *platform* paid on the process environment / its own infra.
+    ``USER_KEY`` = the per-run credential scope carried the provider's key (a tenant build on their
+    own key); ``PLATFORM`` = it fell through to the process env, or is an unattributable infra cost
+    (render compute). The discriminator is whether ``resolve_secret`` returned a scoped key vs env.
+    """
+
+    USER_KEY = "user_key"
+    PLATFORM = "platform"
+
+
+class CostProvider(StrEnum):
+    """The paid (or free-but-metered) external service a cost event was billed by.
+
+    A closed set so a typo can't slip through as a bare provider string. ``LOCAL`` is the
+    keyless/self-hosted fallbacks (Qwen, bge, DuckDuckGo, the device bridge): metered at
+    ``amount`` 0 so a keyless build honestly reads ~$0 rather than "no data".
+    """
+
+    ANTHROPIC = "anthropic"
+    VOYAGE = "voyage"
+    TAVILY = "tavily"
+    OPENAI = "openai"
+    ELEVENLABS = "elevenlabs"
+    MANIM = "manim"
+    LOCAL = "local"
+
+
 class ComputeKind(StrEnum):
     """Where the keyless local inference runs — CPU by default, GPU when one is available.
 

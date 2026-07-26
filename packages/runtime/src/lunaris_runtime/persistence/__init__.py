@@ -1,3 +1,5 @@
+from .cost_event_store_protocol import ICostEventStore
+from .course_cost_store_protocol import ICourseCostStore
 from .course_store import CourseStore
 from .course_store_protocol import ICourseStore
 from .cover_artifact_paths import CoverArtifactPaths
@@ -5,6 +7,8 @@ from .cover_image_transform import CoverImageTransform
 from .cover_job_queue_protocol import ICoverJobQueue
 from .cover_storage_protocol import ICoverStorage
 from .lease_sweep_result import LeaseSweepResult
+from .memory_cost_event_store import InMemoryCostEventStore
+from .memory_course_cost_store import InMemoryCourseCostStore
 from .memory_cover_job_queue import InMemoryCoverJobQueue
 from .memory_cover_storage import InMemoryCoverStorage
 from .memory_run_event_store import InMemoryRunEventStore
@@ -15,6 +19,8 @@ from .owner_scoped_course_store import OwnerScopedCourseStore
 from .persistence_error import PersistenceError
 from .run_event_store_protocol import IRunEventStore
 from .run_store_protocol import IRunStore
+from .supabase_cost_event_store import SupabaseCostEventStore
+from .supabase_course_cost_store import SupabaseCourseCostStore
 from .supabase_course_store import SupabaseCourseStore
 from .supabase_cover_job_queue import SupabaseCoverJobQueue
 from .supabase_cover_storage import SupabaseCoverStorage
@@ -30,6 +36,8 @@ __all__ = [
     "CourseStore",
     "CoverArtifactPaths",
     "CoverImageTransform",
+    "ICostEventStore",
+    "ICourseCostStore",
     "ICourseStore",
     "ICoverJobQueue",
     "ICoverStorage",
@@ -37,6 +45,8 @@ __all__ = [
     "IRunStore",
     "IVideoJobQueue",
     "IVideoStorage",
+    "InMemoryCostEventStore",
+    "InMemoryCourseCostStore",
     "InMemoryCoverJobQueue",
     "InMemoryCoverStorage",
     "InMemoryRunEventStore",
@@ -46,6 +56,8 @@ __all__ = [
     "LeaseSweepResult",
     "OwnerScopedCourseStore",
     "PersistenceError",
+    "SupabaseCostEventStore",
+    "SupabaseCourseCostStore",
     "SupabaseCourseStore",
     "SupabaseCoverJobQueue",
     "SupabaseCoverStorage",
