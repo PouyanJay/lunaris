@@ -12,7 +12,12 @@ from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.cover_build import cover_config_from_map
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
-from lunaris_runtime.metering import CostScope, cost_scope
+from lunaris_runtime.metering import (
+    CostScope,
+    drain_cost_scope,
+    enter_cost_scope,
+    make_cost_scope,
+)
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
     ICostEventStore,
@@ -28,7 +33,6 @@ from lunaris_runtime.persistence import (
     PersistenceError,
     VideoArtifactPaths,
 )
-from lunaris_runtime.pricing import PriceBook
 from lunaris_runtime.run_config import run_config
 from lunaris_runtime.schema import (
     AgentEvent,
@@ -51,7 +55,6 @@ from lunaris_runtime.video_build import (
 
 from .activity import ActivityStoreUnavailableError, IActivityStore
 from .bookmarks import BookmarkStoreUnavailableError, IBookmarkStore
-from .cost_drain import drain_cost_scope
 from .cover_enqueue import enqueue_cover_job
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
@@ -481,39 +484,24 @@ class CourseService:
             return nullcontext()
         return run_device_bridge(bridge)
 
-    def _cost_scope_for(
+    def _make_cost_scope(
         self, *, run_id: str, course_id: str, owner_id: str | None
     ) -> CostScope | None:
-        """The run's cost scope (course-cost-metering), or ``None`` when metering is off.
-
-        ``None`` when the cost stores aren't wired (batch / tests). Otherwise a fresh ``CostScope``
-        the deep pipeline's ``record_cost`` calls buffer into; the build boundary drains it to the
-        ledger + rollup. Priced against the current checked-in price book."""
-        if self._cost_event_store is None or self._course_cost_store is None:
-            return None
-        return CostScope(
+        """The run's cost scope (course-cost-metering), or ``None`` when metering is off — a thin
+        adapter over the shared ``make_cost_scope`` that pulls this service's cost stores."""
+        return make_cost_scope(
+            self._cost_event_store,
+            self._course_cost_store,
             run_id=run_id,
             course_id=course_id,
-            price_book=PriceBook.current(),
             owner_id=owner_id,
         )
 
-    @staticmethod
-    def _cost_scope_cm(cost: CostScope | None) -> AbstractContextManager[CostScope | None]:
-        """Enter the cost scope around the factory + create_task (like the credential scope) so the
-        run task inherits it and deep ``record_cost`` calls buffer into ``cost``; no-op when off."""
-        if cost is None:
-            return nullcontext()
-        return cost_scope(cost)
-
     async def _drain_cost(self, cost: CostScope | None) -> None:
-        """Persist the run's buffered costs — ledger rows + the course rollup — after the build.
+        """Persist the run's buffered costs — ledger + rollup — after the build (best-effort).
 
-        Best-effort (``drain_cost_scope`` swallows metering failures); a no-op when metering is off.
         Drained in the build's ``finally`` so a failed/cancelled build still records the partial
         cost it already spent."""
-        if cost is None:
-            return
         await drain_cost_scope(cost, self._cost_event_store, self._course_cost_store)
 
     def _close_bridge(self, run_id: str, bridge: DeviceBridge | None) -> None:
@@ -554,12 +542,12 @@ class CourseService:
         # the tenant's keys + model choices + video coordinator (a context copy); the harness then
         # reads them, not the env. No bridge scope here: device compute is stream-only (admit_build
         # above gets no compute / run_id), so an await-full build always runs server-side.
-        cost = self._cost_scope_for(run_id=run_id, course_id=course_id, owner_id=owner_id)
+        cost = self._make_cost_scope(run_id=run_id, course_id=course_id, owner_id=owner_id)
         with (
             self._credential_scope(credentials),
             self._config_scope(config),
             self._video_scope(video_coordinator),
-            self._cost_scope_cm(cost),
+            enter_cost_scope(cost),
         ):
             pipeline = self._factory(self._store_for(owner_id))
             task = asyncio.create_task(
@@ -653,13 +641,13 @@ class CourseService:
         # coordinator + device bridge as a context copy while the generator's own context — the one
         # live across each yield — never retains them. The terminal status is recorded by the task
         # itself (_run_recording_status), disconnect-proof.
-        cost = self._cost_scope_for(run_id=run_id, course_id=course_id, owner_id=owner_id)
+        cost = self._make_cost_scope(run_id=run_id, course_id=course_id, owner_id=owner_id)
         with (
             self._credential_scope(credentials),
             self._config_scope(config),
             self._video_scope(video_coordinator),
             self._bridge_scope(admission.device_bridge),
-            self._cost_scope_cm(cost),
+            enter_cost_scope(cost),
         ):
             pipeline = self._factory(self._store_for(owner_id))
             run_task = asyncio.create_task(

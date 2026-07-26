@@ -3,6 +3,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import structlog
+from lunaris_runtime.metering import record_cost
+from lunaris_runtime.schema import CostProvider, CostUnit
 
 from lunaris_video.errors import VideoPipelineError
 from lunaris_video.rendering.sandbox import run_sandboxed
@@ -57,27 +59,42 @@ class ElevenLabsSpeechSynthesizer:
         speak = self._tts_client or _elevenlabs_tts(self._api_key, voice)
         neighbours = _prosody_neighbours(contract)
         scenes: dict[str, SceneTiming] = {}
-        for scene in contract.scenes:
-            beats: list[BeatTiming] = []
-            total = 0.0
-            for beat in scene.beats:
-                if beat.narration:
-                    previous, following = neighbours[(scene.id, beat.id)]
-                    audio_bytes = await speak(beat.narration, previous, following)
-                    clip = f"{scene.id}_{beat.id}.mp3"
-                    await asyncio.to_thread((audio_dir / clip).write_bytes, audio_bytes)
-                    audio_s = round(await self._measure(audio_dir / clip), 2)
-                else:
-                    audio_s, clip = 0.0, None
-                floor = beat.min_visual_s if beat.min_visual_s is not None else _MIN_BEAT_S
-                anim_s = round(max(audio_s + (_PAD_S if beat.narration else 0.0), floor), 2)
-                beats.append(
-                    BeatTiming(
-                        id=beat.id, audio_s=audio_s, anim_s=anim_s, audio=clip, estimated=False
+        # ElevenLabs bills per character. Count as each beat is actually spoken (not from the
+        # contract up front) and record in a finally — so a mid-synthesis failure still bills the
+        # chars already spent, honestly, rather than losing them (the render seam is metered the
+        # same way, on failure too). Pocket is derived from ELEVENLABS_API_KEY in the run scope.
+        spoken_chars = 0
+        try:
+            for scene in contract.scenes:
+                beats: list[BeatTiming] = []
+                total = 0.0
+                for beat in scene.beats:
+                    if beat.narration:
+                        previous, following = neighbours[(scene.id, beat.id)]
+                        audio_bytes = await speak(beat.narration, previous, following)
+                        spoken_chars += len(beat.narration)  # counted only after a successful speak
+                        clip = f"{scene.id}_{beat.id}.mp3"
+                        await asyncio.to_thread((audio_dir / clip).write_bytes, audio_bytes)
+                        audio_s = round(await self._measure(audio_dir / clip), 2)
+                    else:
+                        audio_s, clip = 0.0, None
+                    floor = beat.min_visual_s if beat.min_visual_s is not None else _MIN_BEAT_S
+                    anim_s = round(max(audio_s + (_PAD_S if beat.narration else 0.0), floor), 2)
+                    beats.append(
+                        BeatTiming(
+                            id=beat.id, audio_s=audio_s, anim_s=anim_s, audio=clip, estimated=False
+                        )
                     )
+                    total += anim_s
+                scenes[scene.id] = SceneTiming(beats=beats, total_s=round(total, 2))
+        finally:
+            if spoken_chars:
+                record_cost(
+                    component="voice",
+                    provider=CostProvider.ELEVENLABS,
+                    model=None,
+                    usage={CostUnit.CHARS: spoken_chars},
                 )
-                total += anim_s
-            scenes[scene.id] = SceneTiming(beats=beats, total_s=round(total, 2))
         _logger.info("speech_synth.synthesized", scenes=len(scenes), voice_id=voice.voice_id)
         return TimingManifest(scenes)
 

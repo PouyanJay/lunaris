@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING
 
 import structlog
 from lunaris_runtime.credentials import resolve_secret
+from lunaris_runtime.metering import record_cost
 from lunaris_runtime.resilience import retry_on_rate_limit
+from lunaris_runtime.schema import CostProvider, CostUnit
 
 from lunaris_covers.errors import CoverPipelineError
 
@@ -124,6 +126,14 @@ class OpenAiImageRenderer:
                 user_detail=f"the image provider could not {action} this cover",
             ) from exc
         image = _decode(response)
+        # One billed image (generate or edit) — metered only on success. Pocket is derived from
+        # OPENAI_API_KEY in the run scope; a no-op outside a build's cost scope.
+        record_cost(
+            component="cover_image",
+            provider=CostProvider.OPENAI,
+            model=self._model,
+            usage={CostUnit.IMAGES: 1},
+        )
         _logger.info(event, model=self._model, image_bytes=len(image))
         return image
 

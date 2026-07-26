@@ -10,16 +10,27 @@ lease sweep to requeue, never marking it READY with an unwritten Course.cover.
 
 import asyncio
 
+import pytest
 import structlog
 from lunaris_covers import CoverWorker, StubCoverPipeline
 from lunaris_covers.models.rendered_cover import RenderedCover
+from lunaris_runtime.metering import record_cost
 from lunaris_runtime.persistence import (
     CoverImageTransform,
+    InMemoryCostEventStore,
+    InMemoryCourseCostStore,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
     PersistenceError,
 )
-from lunaris_runtime.schema import Course, CoverJob, CoverJobStatus, CoverLightMode
+from lunaris_runtime.schema import (
+    CostProvider,
+    CostUnit,
+    Course,
+    CoverJob,
+    CoverJobStatus,
+    CoverLightMode,
+)
 
 _OWNER = "u1"
 
@@ -298,3 +309,39 @@ def _store_that_fails_save() -> _FakeCourseStore:
     store = _FakeCourseStore(fail_save=True)
     store.seed(Course(id="course-1", topic="How HTTP works"), owner_id=_OWNER)
     return store
+
+
+async def test_cover_worker_records_cost_into_the_course_rollup() -> None:
+    # A cover job whose render spends on GPT-Image records that cost into the SAME course rollup the
+    # main build feeds (by course_id) — proving the worker enters a cost_scope and drains it (T6).
+    queue, storage, course_store = InMemoryCoverJobQueue(), InMemoryCoverStorage(), _store()
+    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+
+    class _MeteringPipeline:
+        async def produce(self, job: CoverJob, *, on_stage) -> RenderedCover:  # type: ignore[no-untyped-def]
+            record_cost(
+                component="cover_image",
+                provider=CostProvider.OPENAI,
+                model="gpt-image-2",
+                usage={CostUnit.IMAGES: 1},
+            )
+            return await StubCoverPipeline().produce(job, on_stage=on_stage)
+
+    worker = CoverWorker(
+        queue=queue,
+        pipeline=_MeteringPipeline(),
+        storage=storage,
+        course_store=course_store,  # type: ignore[arg-type]
+        worker_id="worker-test",
+        cost_event_store=event_store,
+        course_cost_store=cost_store,
+    )
+    await queue.enqueue(_job())
+
+    assert await worker.run_once() is True
+
+    rollup = await cost_store.get(course_id="course-1", owner_id=_OWNER)
+    assert rollup is not None
+    assert rollup.breakdown["byProvider"]["openai"] == pytest.approx(0.30)
+    ledger = await event_store.list_for_course(course_id="course-1", owner_id=_OWNER)
+    assert [e.component for e in ledger] == ["cover_image"]

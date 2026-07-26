@@ -12,9 +12,9 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 from lunaris_api.app import create_app
-from lunaris_api.cost_recorder import CostEventRecorder
 from lunaris_api.dependencies import get_course_cost_store
 from lunaris_runtime.logging import clear_correlation
+from lunaris_runtime.metering import CostEventRecorder
 from lunaris_runtime.persistence import InMemoryCostEventStore, InMemoryCourseCostStore
 from lunaris_runtime.schema import CostPocket, CostProvider
 

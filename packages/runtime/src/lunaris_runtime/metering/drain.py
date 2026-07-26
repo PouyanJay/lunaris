@@ -1,31 +1,32 @@
 import structlog
-from lunaris_runtime.metering import CostScope
+
 from lunaris_runtime.persistence import ICostEventStore, ICourseCostStore
 
 from .cost_recorder import CostEventRecorder
+from .cost_scope import CostScope
 
 logger = structlog.get_logger()
 
 
 async def drain_cost_scope(
-    scope: CostScope,
+    scope: CostScope | None,
     event_store: ICostEventStore | None,
     cost_store: ICourseCostStore | None,
 ) -> None:
-    """Persist a finished build's buffered cost entries — ledger rows + the course rollup.
+    """Persist a finished run's buffered cost entries — ledger rows + the course rollup.
 
-    The build boundary calls this once after the build completes (best-effort): it feeds each
-    ``CostEntry`` the deep pipeline priced into a ``CostEventRecorder`` (which assigns ``seq``,
-    batches to the append-only ledger, and recomputes the ``course_costs`` rollup from the whole
-    ledger on ``finalize``). Draining at the boundary keeps the deep ``record_cost`` calls
-    synchronous and store-free; the async store I/O happens here, once. A ``None`` store pair makes
-    it a no-op.
+    The boundary calls this once after the run completes (best-effort): it feeds each ``CostEntry``
+    the deep pipeline priced into a ``CostEventRecorder`` (which assigns ``seq``, batches to the
+    append-only ledger, and recomputes the ``course_costs`` rollup from the whole ledger on
+    ``finalize``). Draining at the boundary keeps the deep ``record_cost`` calls synchronous and
+    store-free; the async store I/O happens here, once. A ``None`` scope (metering off) or ``None``
+    store pair makes it a no-op — so callers can drain unconditionally.
 
     Best-effort: the recorder already swallows ``PersistenceError`` per write, and any *other*
     metering-side failure is caught and logged here — a cost bug must never fail an otherwise-good
     build (metering is an observability concern, not part of the build's success contract).
     """
-    if event_store is None or cost_store is None:
+    if scope is None or event_store is None or cost_store is None:
         return
     try:
         recorder = CostEventRecorder(
