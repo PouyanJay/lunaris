@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 
 from lunaris_runtime.credentials import resolve_secret
 from lunaris_runtime.device_bridge import resolve_device_bridge
+from lunaris_runtime.schema import CostProvider
 
 if TYPE_CHECKING:
     from langchain_core.language_models import BaseChatModel
@@ -132,7 +133,31 @@ def get_llm_rate_limiter() -> "BaseRateLimiter":
     return _rate_limiter
 
 
-def build_chat_model(model_id: str, *, max_tokens: int | None = None) -> "BaseChatModel":
+def _metered(
+    model: "BaseChatModel",
+    *,
+    provider: CostProvider,
+    model_id: str | None,
+    component: str,
+) -> "BaseChatModel":
+    """Attach the cost-metering callback so every completion from ``model`` is recorded.
+
+    One handler per built model; it fires on each invocation wherever the pipeline calls the model
+    and calls ``record_cost`` (a no-op outside a build). ``langchain``/the handler are imported here
+    so only a built model pays for them."""
+    from lunaris_runtime.metering.metering_callback import MeteringCallbackHandler
+
+    handler = MeteringCallbackHandler(provider=provider, model=model_id, component=component)
+    # getattr default so a test double without a `callbacks` field still accepts the handler; every
+    # real langchain BaseChatModel has the field, and instance-level callbacks fire on invocation.
+    existing = getattr(model, "callbacks", None) or []
+    model.callbacks = [*existing, handler]
+    return model
+
+
+def build_chat_model(
+    model_id: str, *, max_tokens: int | None = None, component: str = "llm"
+) -> "BaseChatModel":
     """The hardened chat model for a run — the one place the LLM provider is chosen.
 
     Two paths, both wired with the same timeout + bounded retries + shared rate limiter:
@@ -158,12 +183,16 @@ def build_chat_model(model_id: str, *, max_tokens: int | None = None) -> "BaseCh
     """
     anthropic_key = resolve_secret("ANTHROPIC_API_KEY")
     if not anthropic_key:  # None or "" → no live key → the keyless fallback, not a blank-key Claude
+        # Keyless/bridge completions are free to the platform (provider LOCAL prices to $0) but are
+        # still metered, so a keyless build honestly reads ~$0 with an event count, not "no data".
         bridge = resolve_device_bridge()
         if bridge is not None:
             from lunaris_runtime.device_bridge.chat_model import BridgeChatModel
 
-            return BridgeChatModel(bridge=bridge)
-        return build_keyless_chat_model()
+            model: BaseChatModel = BridgeChatModel(bridge=bridge)
+        else:
+            model = build_keyless_chat_model()
+        return _metered(model, provider=CostProvider.LOCAL, model_id=None, component=component)
 
     from langchain_anthropic import ChatAnthropic
 
@@ -176,7 +205,12 @@ def build_chat_model(model_id: str, *, max_tokens: int | None = None) -> "BaseCh
     }
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
-    return ChatAnthropic(**kwargs)
+    return _metered(
+        ChatAnthropic(**kwargs),
+        provider=CostProvider.ANTHROPIC,
+        model_id=model_id,
+        component=component,
+    )
 
 
 def build_keyless_chat_model() -> "BaseChatModel":

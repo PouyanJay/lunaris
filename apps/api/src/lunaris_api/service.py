@@ -12,8 +12,11 @@ from lunaris_runtime.capabilities import CAPABILITY_SPECS
 from lunaris_runtime.cover_build import cover_config_from_map
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
 from lunaris_runtime.device_bridge import BridgeLimits, DeviceBridge, run_device_bridge
+from lunaris_runtime.metering import CostScope, cost_scope
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
+    ICostEventStore,
+    ICourseCostStore,
     ICourseStore,
     ICoverJobQueue,
     ICoverStorage,
@@ -25,6 +28,7 @@ from lunaris_runtime.persistence import (
     PersistenceError,
     VideoArtifactPaths,
 )
+from lunaris_runtime.pricing import PriceBook
 from lunaris_runtime.run_config import run_config
 from lunaris_runtime.schema import (
     AgentEvent,
@@ -47,6 +51,7 @@ from lunaris_runtime.video_build import (
 
 from .activity import ActivityStoreUnavailableError, IActivityStore
 from .bookmarks import BookmarkStoreUnavailableError, IBookmarkStore
+from .cost_drain import drain_cost_scope
 from .cover_enqueue import enqueue_cover_job
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
@@ -199,6 +204,8 @@ class CourseService:
         bookmark_store: IBookmarkStore | None = None,
         activity_store: IActivityStore | None = None,
         corpus_store: ICorpusStore | None = None,
+        cost_event_store: ICostEventStore | None = None,
+        course_cost_store: ICourseCostStore | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -248,6 +255,12 @@ class CourseService:
         # The replayable build-event log (build-timeline Phase B). Best-effort like the run store;
         # None for callers that don't persist a transcript (batch / tests that don't replay).
         self._event_store = event_store
+        # Per-course cost metering (course-cost-metering): the ledger + rollup stores. A cost_scope
+        # is entered around the build task so the deep pipeline's record_cost calls buffer here, and
+        # the buffer is drained to these stores when the build finishes. Best-effort; None (the
+        # default) → metering off (no scope entered, nothing drained) for batch / tests.
+        self._cost_event_store = cost_event_store
+        self._course_cost_store = course_cost_store
         # In-flight task registry for cancellation. In production a process-wide singleton is
         # injected (so the cancel request and the build request share it). The lone-instance default
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
@@ -468,6 +481,41 @@ class CourseService:
             return nullcontext()
         return run_device_bridge(bridge)
 
+    def _cost_scope_for(
+        self, *, run_id: str, course_id: str, owner_id: str | None
+    ) -> CostScope | None:
+        """The run's cost scope (course-cost-metering), or ``None`` when metering is off.
+
+        ``None`` when the cost stores aren't wired (batch / tests). Otherwise a fresh ``CostScope``
+        the deep pipeline's ``record_cost`` calls buffer into; the build boundary drains it to the
+        ledger + rollup. Priced against the current checked-in price book."""
+        if self._cost_event_store is None or self._course_cost_store is None:
+            return None
+        return CostScope(
+            run_id=run_id,
+            course_id=course_id,
+            price_book=PriceBook.current(),
+            owner_id=owner_id,
+        )
+
+    @staticmethod
+    def _cost_scope_cm(cost: CostScope | None) -> AbstractContextManager[CostScope | None]:
+        """Enter the cost scope around the factory + create_task (like the credential scope) so the
+        run task inherits it and deep ``record_cost`` calls buffer into ``cost``; no-op when off."""
+        if cost is None:
+            return nullcontext()
+        return cost_scope(cost)
+
+    async def _drain_cost(self, cost: CostScope | None) -> None:
+        """Persist the run's buffered costs — ledger rows + the course rollup — after the build.
+
+        Best-effort (``drain_cost_scope`` swallows metering failures); a no-op when metering is off.
+        Drained in the build's ``finally`` so a failed/cancelled build still records the partial
+        cost it already spent."""
+        if cost is None:
+            return
+        await drain_cost_scope(cost, self._cost_event_store, self._course_cost_store)
+
     def _close_bridge(self, run_id: str, bridge: DeviceBridge | None) -> None:
         """Remove the bridge once the run task ends, so the tab's next poll 404s (its stop signal)
         regardless of whether any client is still connected. Must run in the task's done-callback,
@@ -506,10 +554,12 @@ class CourseService:
         # the tenant's keys + model choices + video coordinator (a context copy); the harness then
         # reads them, not the env. No bridge scope here: device compute is stream-only (admit_build
         # above gets no compute / run_id), so an await-full build always runs server-side.
+        cost = self._cost_scope_for(run_id=run_id, course_id=course_id, owner_id=owner_id)
         with (
             self._credential_scope(credentials),
             self._config_scope(config),
             self._video_scope(video_coordinator),
+            self._cost_scope_cm(cost),
         ):
             pipeline = self._factory(self._store_for(owner_id))
             task = asyncio.create_task(
@@ -541,6 +591,9 @@ class CourseService:
             self._registry.discard(run_id)
             # The await-full build's task has ended here (awaited above) — free its Draft slot.
             self._release(admission.reservation)
+            # Persist whatever the build spent (ledger + rollup) — even on failure/cancel, the
+            # partial cost was already incurred. Best-effort; never breaks the build.
+            await self._drain_cost(cost)
         await self._record_finish(course, owner_id=owner_id)
         # Auto-enqueue the course's AI cover (best-effort, gated + deduped). The await-full path is
         # already outside the run's credential/config scope, so ``credentials`` + ``config`` are
@@ -600,11 +653,13 @@ class CourseService:
         # coordinator + device bridge as a context copy while the generator's own context — the one
         # live across each yield — never retains them. The terminal status is recorded by the task
         # itself (_run_recording_status), disconnect-proof.
+        cost = self._cost_scope_for(run_id=run_id, course_id=course_id, owner_id=owner_id)
         with (
             self._credential_scope(credentials),
             self._config_scope(config),
             self._video_scope(video_coordinator),
             self._bridge_scope(admission.device_bridge),
+            self._cost_scope_cm(cost),
         ):
             pipeline = self._factory(self._store_for(owner_id))
             run_task = asyncio.create_task(
@@ -625,6 +680,7 @@ class CourseService:
                     credentials=credentials,
                     config=config,
                     recorder=recorder,
+                    cost=cost,
                 )
             )
             self._registry.register(
@@ -696,6 +752,7 @@ class CourseService:
         credentials: Mapping[str, str] | None,
         config: Mapping[str, str] | None,
         recorder: RunEventRecorder,
+        cost: CostScope | None,
     ) -> Course:
         """Run a build to completion and record its terminal status — disconnect-proof.
 
@@ -737,6 +794,10 @@ class CourseService:
             # CancelledError is NOT an Exception, so cancellation still propagates and is honoured.
             with suppress(Exception):
                 await recorder.flush()
+            # Persist the build's cost (ledger + rollup) from the DURABLE task — so a course built
+            # while the client had navigated away still records its cost, and a failed/cancelled
+            # build still records the partial cost it spent. Best-effort; never masks the outcome.
+            await self._drain_cost(cost)
             # Discard here (not in the generator) so a background build stays cancellable until it
             # actually ends; the was_cancelled read above runs first, before this clears it.
             self._registry.discard(run_id)

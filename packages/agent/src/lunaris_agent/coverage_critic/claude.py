@@ -9,12 +9,7 @@ assessor-with-fail-safe shape: the model judges, code guarantees the build still
 
 import structlog
 from langchain_core.language_models import BaseChatModel
-from lunaris_runtime.resilience import (
-    LLM_MAX_RETRIES,
-    LLM_REQUEST_TIMEOUT_S,
-    get_llm_rate_limiter,
-    retry_on_rate_limit,
-)
+from lunaris_runtime.resilience import build_chat_model, retry_on_rate_limit
 from lunaris_runtime.schema import Course, CourseBrief
 
 from .deterministic import DeterministicCoverageCritic
@@ -68,12 +63,7 @@ class ClaudeCoverageCritic:
         if not isinstance(self._model, str):
             return self._model
         if self._client is None:
-            from langchain_anthropic import ChatAnthropic
-
-            self._client = ChatAnthropic(
-                model=self._model,
-                default_request_timeout=LLM_REQUEST_TIMEOUT_S,
-                max_retries=LLM_MAX_RETRIES,
-                rate_limiter=get_llm_rate_limiter(),
-            )
+            # Route through build_chat_model (not a bare ChatAnthropic) so this call runs on the
+            # run's BYOK key and is cost-metered, like every other Claude seam.
+            self._client = build_chat_model(self._model, component="coverage_critic")
         return self._client

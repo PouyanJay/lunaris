@@ -14,6 +14,8 @@ from lunaris_api.user_config import InMemoryUserConfigStore
 from lunaris_grounding import InMemoryCorpusStore
 from lunaris_runtime.persistence import (
     CourseStore,
+    InMemoryCostEventStore,
+    InMemoryCourseCostStore,
     InMemoryRunEventStore,
     InMemoryRunStore,
     SupabaseCourseStore,
@@ -42,6 +44,8 @@ def _service_for(settings: Settings) -> CourseService:
         bookmark_store=InMemoryBookmarkStore(),
         activity_store=InMemoryActivityStore(),
         corpus_store=InMemoryCorpusStore(),
+        cost_event_store=InMemoryCostEventStore(),
+        course_cost_store=InMemoryCourseCostStore(),
     )
 
 

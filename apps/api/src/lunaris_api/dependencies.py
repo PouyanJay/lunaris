@@ -1058,6 +1058,8 @@ def get_course_service(
     bookmark_store: BookmarkStoreDep,
     activity_store: ActivityStoreDep,
     corpus_store: CorpusStoreDep,
+    cost_event_store: Annotated[ICostEventStore, Depends(get_cost_event_store)],
+    course_cost_store: CourseCostStoreDep,
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
@@ -1112,6 +1114,10 @@ def get_course_service(
         bookmark_store=bookmark_store,
         activity_store=activity_store,
         corpus_store=corpus_store,
+        # Per-course cost metering (course-cost-metering T4): the build enters a cost_scope so the
+        # deep pipeline's record_cost calls buffer, then drains to these stores at the boundary.
+        cost_event_store=cost_event_store,
+        course_cost_store=course_cost_store,
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
         bridge_limits=BridgeLimits(
