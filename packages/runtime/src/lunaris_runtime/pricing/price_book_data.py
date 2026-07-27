@@ -4,10 +4,16 @@ This is *reference data*, edited here (not in code) when a provider changes pric
 cost stamps ``PRICE_BOOK_VERSION`` so old costs stay pinned to the rates they were priced under —
 bump the version whenever a rate below changes.
 
+Every Claude model the pipeline can be switched to is priced, so changing the worker/strong tier to
+any current model still calculates cost correctly (a missing model would silently price to $0). A
+dated snapshot (`-YYYYMMDD`) or 1M-context (`[1m]`) suffix on a configured id resolves to its base
+model here via PriceBook's suffix normalization, so only the base id needs a row.
+
 Rate provenance:
-  * Anthropic (exact, first-party API $/MTok): Opus 4.8/4.7 $5/$25 in/out; Sonnet 5 $3/$15 (intro
-    $2/$10 through 2026-08-31 — using the standard rate here, trued at invoice); Haiku 4.5 $1/$5.
-    Cache read ~= 0.1x input; cache write (5-minute TTL, the default) ~= 1.25x input.
+  * Anthropic (exact, first-party API $/MTok): Fable 5 $10/$50 in/out; Opus 4.8/4.7/4.6 $5/$25;
+    Sonnet 5 / Sonnet 4.6 $3/$15 (Sonnet 5 intro $2/$10 through 2026-08-31 — using the standard rate
+    here, trued at invoice); Haiku 4.5 $1/$5. Cache read ~= 0.1x input; cache write (5-minute TTL,
+    the default) ~= 1.25x input.
   * Voyage / Tavily / OpenAI GPT Image / ElevenLabs / Azure ACA: APPROXIMATE public rates — verify
     against the current provider pricing page and true up against a real invoice before these totals
     are trusted beyond an order-of-magnitude. Tier-dependent rates (ElevenLabs per-char, ACA
@@ -57,8 +63,13 @@ def _anthropic(model: str, *, mtok_in: float, mtok_out: float) -> list[Rate]:
 
 RATES: tuple[Rate, ...] = (
     # --- Anthropic / Claude (exact first-party $/MTok) -----------------------------------------
+    # The full current lineup, so switching the worker/strong tier to any of these prices correctly.
+    # A dated snapshot (`-YYYYMMDD`) or 1M-context (`[1m]`) suffix resolves to its base entry via
+    # PriceBook's suffix normalization, so only the base model id needs a row here.
+    *_anthropic("claude-fable-5", mtok_in=10.0, mtok_out=50.0),
     *_anthropic("claude-opus-4-8", mtok_in=5.0, mtok_out=25.0),
     *_anthropic("claude-opus-4-7", mtok_in=5.0, mtok_out=25.0),
+    *_anthropic("claude-opus-4-6", mtok_in=5.0, mtok_out=25.0),
     *_anthropic("claude-sonnet-5", mtok_in=3.0, mtok_out=15.0),
     *_anthropic("claude-sonnet-4-6", mtok_in=3.0, mtok_out=15.0),
     *_anthropic("claude-haiku-4-5", mtok_in=1.0, mtok_out=5.0),

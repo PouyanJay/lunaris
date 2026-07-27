@@ -13,7 +13,14 @@ from lunaris_api.bookmarks import Bookmark, InMemoryBookmarkStore
 from lunaris_api.progress import InMemoryProgressStore
 from lunaris_api.service import CourseService
 from lunaris_grounding import GroundingDocument, InMemoryCorpusStore
-from lunaris_runtime.persistence import CourseStore, InMemoryRunStore
+from lunaris_runtime.metering import CostEventRecorder
+from lunaris_runtime.persistence import (
+    CourseStore,
+    InMemoryCostEventStore,
+    InMemoryCourseCostStore,
+    InMemoryRunStore,
+)
+from lunaris_runtime.schema import CostPocket, CostProvider
 
 _OWNER = "00000000-0000-0000-0000-00000000000a"
 _OTHER = "00000000-0000-0000-0000-00000000000b"
@@ -62,6 +69,8 @@ class _Stores:
         self.bookmarks = InMemoryBookmarkStore()
         self.activity = InMemoryActivityStore()
         self.corpus = InMemoryCorpusStore()
+        self.cost_events = InMemoryCostEventStore()
+        self.course_costs = InMemoryCourseCostStore()
 
     async def seed(self, owner: str, course_id: str) -> None:
         await self.progress.set_lesson(
@@ -71,6 +80,24 @@ class _Stores:
         await self.bookmarks.save(user_id=owner, bookmark=_bookmark(course_id))
         await self.activity.record_event(user_id=owner, event=_event(course_id))
         await self.corpus.upsert([_doc(f"{owner}-{course_id}", course_id)])
+        # A metered build's ledger + rollup for the course, so the delete cascade has cost to purge.
+        recorder = CostEventRecorder(
+            self.cost_events,
+            self.course_costs,
+            run_id=f"run-{course_id}",
+            course_id=course_id,
+            price_book_version="test",
+            owner_id=owner,
+        )
+        await recorder.record(
+            component="planner",
+            provider=CostProvider.ANTHROPIC,
+            model="claude-opus-4-8",
+            usage={"input_tokens": 1000},
+            amount=0.01,
+            pocket=CostPocket.PLATFORM,
+        )
+        await recorder.finalize()
 
     async def footprint(self, owner: str, course_id: str) -> dict[str, int]:
         objectives, lessons = await self.progress.snapshot(user_id=owner, course_id=course_id)
@@ -78,11 +105,14 @@ class _Stores:
         marks = [b for b in await self.bookmarks.list(user_id=owner) if b.course_id == course_id]
         events = [e for e in await self.activity.events(user_id=owner) if e.course_id == course_id]
         chunks = await self.corpus.match([0.1], k=100, min_score=0.0, course_id=course_id)
+        ledger = await self.cost_events.list_for_course(course_id=course_id, owner_id=owner)
+        rollup = await self.course_costs.get(course_id=course_id, owner_id=owner)
         return {
             "progress": len(objectives) + len(lessons) + (1 if state else 0),
             "bookmarks": len(marks),
             "activity": len(events),
             "corpus": len(chunks),
+            "cost": len(ledger) + (1 if rollup is not None else 0),
         }
 
 
@@ -95,6 +125,8 @@ def _service(tmp_path: Path, stores: _Stores) -> CourseService:
         bookmark_store=stores.bookmarks,
         activity_store=stores.activity,
         corpus_store=stores.corpus,
+        cost_event_store=stores.cost_events,
+        course_cost_store=stores.course_costs,
     )
 
 
@@ -120,6 +152,7 @@ async def test_delete_course_purges_every_asset_type_and_only_the_target(tmp_pat
         "bookmarks": 0,
         "activity": 0,
         "corpus": 0,
+        "cost": 0,
     }
     assert not (tmp_path / "c1.json").exists()
     # ...while the owner's other course and the other owner's course are fully intact...
@@ -127,3 +160,27 @@ async def test_delete_course_purges_every_asset_type_and_only_the_target(tmp_pat
     assert all(count > 0 for count in (await stores.footprint(_OTHER, "c3")).values())
     # ...and study minutes (no course dimension) are never touched by a course delete (AD2).
     assert await stores.activity.minutes(user_id=_OWNER) == [_WHEN]
+
+
+async def test_delete_course_without_cost_stores_wired_is_a_noop_not_an_error(
+    tmp_path: Path,
+) -> None:
+    # The cost purge arm is best-effort: a service built without the metering stores (metering off)
+    # must still delete cleanly — the cascade skips the cost arm rather than raising.
+    stores = _Stores()
+    await stores.seed(_OWNER, "c1")
+    (tmp_path / "c1.json").write_text("{}")
+    service = CourseService(
+        CourseStore(tmp_path),
+        build_stub_orchestrator,
+        InMemoryRunStore(),
+        progress_store=stores.progress,
+        bookmark_store=stores.bookmarks,
+        activity_store=stores.activity,
+        corpus_store=stores.corpus,
+        # cost stores intentionally omitted → _purge_course_cost is a no-op
+    )
+
+    # Act / Assert — deletes without error even though the cost arm has no stores to purge.
+    await service.delete_course("c1", owner_id=_OWNER)
+    assert not (tmp_path / "c1.json").exists()
