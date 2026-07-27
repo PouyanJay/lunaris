@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 
 from lunaris_runtime.schema import CostProvider, CostUnit
@@ -6,6 +7,18 @@ from .price_book_data import RATES
 from .price_book_version import PRICE_BOOK_VERSION
 from .rate import Rate
 from .unknown_rate_error import UnknownRateError
+
+# A model id may carry a snapshot-date suffix (`-20251001`) or a context-window marker (`[1m]`) that
+# the price book keys by base model. Strip both so a pinned/long-context variant prices as its base
+# rather than missing and silently pricing to $0. Order: drop the bracket marker, then a trailing
+# 8-digit date.
+_CONTEXT_SUFFIX = re.compile(r"\[[^\]]*\]$")
+_SNAPSHOT_SUFFIX = re.compile(r"-\d{8}$")
+
+
+def _base_model(model: str) -> str:
+    """The base model id: any ``[1m]`` context marker and trailing ``-YYYYMMDD`` date dropped."""
+    return _SNAPSHOT_SUFFIX.sub("", _CONTEXT_SUFFIX.sub("", model))
 
 
 class PriceBook:
@@ -41,16 +54,30 @@ class PriceBook:
 
     def rate(self, *, provider: CostProvider, model: str | None, unit: CostUnit) -> Rate:
         """The per-unit rate for a metered call. Exact ``(provider, model, unit)`` wins; else the
-        provider-flat ``(provider, None, unit)``; else ``UnknownRateError``."""
+        same model with any snapshot/context suffix stripped; else the provider-flat
+        ``(provider, None, unit)``; else ``UnknownRateError``."""
         exact = self._by_key.get((provider, model, unit))
         if exact is not None:
             return exact
+        if model is not None:
+            normalized = self._normalized_rate(provider, model, unit)
+            if normalized is not None:
+                return normalized
         flat = self._by_key.get((provider, None, unit))
         if flat is not None:
             return flat
         raise UnknownRateError(
             f"no rate for provider={provider.value} model={model} unit={unit.value}"
         )
+
+    def _normalized_rate(self, provider: CostProvider, model: str, unit: CostUnit) -> Rate | None:
+        """The rate for the model's base id (snapshot/context suffix stripped), or ``None`` when the
+        id has no suffix or its base isn't priced — so a pinned/long-context variant prices as its
+        base model rather than silently missing to $0."""
+        base = _base_model(model)
+        if base == model:
+            return None
+        return self._by_key.get((provider, base, unit))
 
     def cost(
         self, *, provider: CostProvider, model: str | None, unit: CostUnit, count: float

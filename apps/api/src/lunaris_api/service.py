@@ -928,6 +928,7 @@ class CourseService:
             "bookmarks_purged": await self._purge_course_bookmarks(course_id, owner_id=owner_id),
             "activity_purged": await self._purge_course_activity(course_id, owner_id=owner_id),
             "grounding_purged": await self._purge_course_grounding(course_id),
+            "cost_purged": await self._purge_course_cost(course_id, owner_id=owner_id),
         }
 
     async def _purge_event_log(self, course_id: str, *, owner_id: str | None = None) -> int:
@@ -1050,6 +1051,23 @@ class CourseService:
             return await self._corpus_store.delete_for_course(course_id)
         except PersistenceError:
             logger.warning("course_grounding_purge_failed", course_id=course_id, exc_info=True)
+            return 0
+
+    async def _purge_course_cost(self, course_id: str, *, owner_id: str | None = None) -> int:
+        """Cost cascade (course-cost-metering): remove the course's cost ledger + rollup so a delete
+        leaves no orphaned cost rows. Best-effort and owner-scoped — a purge failure logs and is
+        swallowed (cost data is non-authoritative observability, never blocks the delete). A no-op
+        when metering is unwired. Returns the number of ledger rows purged."""
+        if self._cost_event_store is None or self._course_cost_store is None:
+            return 0
+        try:
+            purged = await self._cost_event_store.delete_for_course(
+                course_id=course_id, owner_id=owner_id
+            )
+            await self._course_cost_store.delete_for_course(course_id=course_id, owner_id=owner_id)
+            return purged
+        except PersistenceError:
+            logger.warning("course_cost_purge_failed", course_id=course_id, exc_info=True)
             return 0
 
     async def list_runs(
