@@ -176,6 +176,35 @@ describe("App — live studio (VITE_API_URL set)", () => {
     });
   });
 
+  it("collapses the sidebar to a mini icon rail and expands it again", async () => {
+    // Asserts on DOM presence: the collapsed rail drops the resize splitter from the tree
+    // (conditional render), not via CSS — jsdom doesn't apply CSS, so absence here is real absence.
+    // The brand ("Lunaris") lives in the always-present top bar, so it stays through collapse.
+    const fetchMock = routedFetch({ runs: [] });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText("Lunaris");
+
+    // Expanded: the brand wordmark shows and the resize splitter is present; the toggle collapses.
+    expect(screen.getByText("Lunaris")).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: /resize sidebar/i })).toBeInTheDocument();
+
+    // Collapse → mini rail: the splitter is gone, the toggle now expands, the brand persists in the
+    // top bar, and the rail actions stay as icons.
+    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
+    expect(screen.getByText("Lunaris")).toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: /resize sidebar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
+    // Navigation entries are real links (they route to /settings), not buttons.
+    expect(screen.getByRole("link", { name: /^settings$/i })).toBeInTheDocument();
+
+    // Expand → the splitter returns.
+    fireEvent.click(screen.getByRole("button", { name: /expand sidebar/i }));
+    expect(screen.getByText("Lunaris")).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: /resize sidebar/i })).toBeInTheDocument();
+  });
+
   it("streams the agent transcript, lands on the ready reader, and Map shows the graph", async () => {
     vi.stubGlobal(
       "fetch",

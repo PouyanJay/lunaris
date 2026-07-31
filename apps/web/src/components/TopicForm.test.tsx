@@ -84,7 +84,7 @@ describe("TopicForm", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("submits on Enter (the single-field keyboard path)", () => {
+  it("submits when the form is submitted by any means", () => {
     const onSubmit = vi.fn();
     render(
       <TopicForm
@@ -119,5 +119,43 @@ describe("TopicForm", () => {
     // The chip pre-fills the field and builds in one click.
     expect(onChange).toHaveBeenCalledWith("How merge sort works");
     expect(onSubmit).toHaveBeenCalledWith("How merge sort works");
+  });
+
+  // The field is a textarea, so Enter would insert a newline by default. The composer inverts that
+  // deliberately, and the inversion has to be verified in BOTH directions or it is not verified at
+  // all: a test that only fires the form's submit event never touches the key handler.
+
+  it("submits on Enter, because a topic is one line of intent", () => {
+    const onSubmit = vi.fn();
+    render(
+      <TopicForm
+        value="graphs"
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText("Topic"), { key: "Enter" });
+
+    expect(onSubmit).toHaveBeenCalledWith("graphs");
+  });
+
+  it("does not submit on Shift+Enter, which breaks the line instead", () => {
+    const onSubmit = vi.fn();
+    render(
+      <TopicForm
+        value="graphs"
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText("Topic"), { key: "Enter", shiftKey: true });
+
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

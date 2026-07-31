@@ -129,6 +129,42 @@ describe("IdleCourseSetup", () => {
     expect(screen.queryByRole("button", { name: /^personalize$/i })).not.toBeInTheDocument();
   });
 
+  it("does not offer to personalize before there is a topic to read", () => {
+    // The brief is interpreted FROM the topic, so offering to read one with the field empty would
+    // promise something the system cannot do.
+    renderSetup();
+
+    openPersonalize();
+
+    expect(screen.getByText(/name a topic first/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /personalize this topic/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("threads a CHANGED clarifier answer into the build, not just the inferred one", async () => {
+    // The inferred answers are covered by the variant suite. This covers the other half: actually
+    // editing an answer and having the edit reach the build. Without it, gutting the change handler
+    // is invisible, because every test would still pass on the pre-picked values.
+    stubFetch({ ok: true, json: async () => makeBriefResponse() });
+    const onGenerate = vi.fn();
+    renderSetup({ onGenerate });
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
+    readBrief();
+    await screen.findByText(/reach CLB 10/i);
+
+    // The fixture pre-picks "Pass a credential"; choose a different outcome.
+    fireEvent.click(screen.getByRole("radio", { name: "Build a skill" }));
+    fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
+
+    expect(onGenerate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clarification: expect.objectContaining({ goalType: "skill" }),
+      }),
+    );
+  });
+
   it("leaves Level out of the panel, because the Level chip owns it", async () => {
     // Two level pickers is a bug rather than a convenience: they would disagree.
     stubFetch({ ok: true, json: async () => makeBriefResponse() });

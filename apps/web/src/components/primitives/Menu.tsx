@@ -97,6 +97,11 @@ export function Menu<T extends string>({ label, value, options, onChange, footer
         event.preventDefault();
         focusAt(options.length - 1);
         break;
+      case "Tab":
+        // Do NOT preventDefault: focus should move on naturally. The panel must not be left open
+        // behind it, which is what a menu with native tab stops on every row would do.
+        close(false);
+        break;
       case "Enter":
       case " ":
         event.preventDefault();
@@ -156,6 +161,8 @@ export function Menu<T extends string>({ label, value, options, onChange, footer
               type="button"
               role="menuitemradio"
               aria-checked={option.value === value}
+              // Roving tabindex: the menu is arrow-navigated, so only one row is ever a tab stop.
+              tabIndex={option.value === value ? 0 : -1}
               className={styles.item}
               onClick={() => {
                 onChange(option.value);

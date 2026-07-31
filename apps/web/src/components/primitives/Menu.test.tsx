@@ -227,4 +227,24 @@ describe("Menu", () => {
 
     expect(screen.getByRole("button", { name: /trusted domains/i })).toBeInTheDocument();
   });
+
+  it("closes on Tab and lets focus move on, rather than trapping it in an open panel", () => {
+    render(<Harness />);
+    const trigger = screen.getByRole("button", { name: /depth/i });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+
+    fireEvent.keyDown(row(0), { key: "Tab" });
+
+    // A menu whose rows are native tab stops would leave the panel open while focus walked away.
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("makes only the chosen option a tab stop", () => {
+    render(<Harness />);
+    openMenu();
+
+    expect(row(0)).toHaveAttribute("tabindex", "0");
+    expect(row(1)).toHaveAttribute("tabindex", "-1");
+  });
 });

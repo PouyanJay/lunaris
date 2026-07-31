@@ -32,14 +32,15 @@ interface IdleCourseSetupProps {
 }
 
 /**
- * The idle "new course" surface: a topic-entry column welded to a persistent, resizable, collapsible
- * course-setup rail. The rail is the editable projection of the brief + build settings (see
- * {@link ConfigRail}); this owns the topic, the chosen depth, and the learner-tier brief lifecycle so
- * the confirmed values thread straight into the build. Replaces the buried Personalize modal: the
- * default path is still one click (Generate), personalization is always one glance away in the rail.
+ * The idle "new course" surface: a single centred column holding the composer.
  *
- * collapse to an edge tab on wide screens, a focus-trapped drawer on narrow). A topic edit
- * invalidates any brief read for the previous topic, so a stale clarifier can never build.
+ * Every build setting lives inside the composer's box now, docked in a bar at its foot, so there is
+ * no rail beside it and nothing to resize, collapse or turn into a drawer. This owns the topic, the
+ * chosen mode, the build settings and the learner-tier brief lifecycle, so the confirmed values
+ * thread straight into the build.
+ *
+ * A topic edit invalidates any brief read for the previous topic, so a stale clarifier can never
+ * build.
  */
 export function IdleCourseSetup({
   apiBaseUrl,
