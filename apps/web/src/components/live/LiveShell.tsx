@@ -1,3 +1,6 @@
+import { Link } from "react-router";
+
+import { ROUTES } from "../../lib/routes";
 import { Badge } from "../primitives/Badge";
 import { BrandMark } from "../shell/BrandMark";
 import styles from "./LiveShell.module.css";
@@ -25,13 +28,18 @@ export default function LiveShell() {
       </header>
       <main className={styles.canvas}>
         <div className={styles.empty}>
-          <p className={styles.eyebrow}>Coming soon</p>
+          <p className={`eyebrow ${styles.eyebrow}`}>Coming soon</p>
           <h1 className={styles.title}>Lunaris Live</h1>
           <p className={styles.body}>
             Live teaches through sessions: a tutor that watches what you do, breaks things with you,
             and remembers what you know. The session runtime is still being built — there is nothing
             to join yet.
           </p>
+          {/* No dead ends: an empty state has to offer somewhere to go, and until Live has
+              sessions the only honest next step is the product that does. */}
+          <Link to={ROUTES.home} className={styles.action}>
+            Go to Lunaris Studio
+          </Link>
         </div>
       </main>
     </div>

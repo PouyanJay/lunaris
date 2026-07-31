@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useId, type MouseEvent } from "react";
 import { Link } from "react-router";
 
 import type { Product } from "../../lib/product";
@@ -27,42 +27,65 @@ function navigatesThisTab(event: MouseEvent): boolean {
  *  never has to know a fork exists. Shown only when the account has no usable remembered product,
  *  so it is a first-run and fallback surface rather than a daily toll booth.
  *
- *  Both choices are real links, not buttons — they navigate, so they must be openable in a new tab
- *  and announced as links. */
+ *  Composed as ONE hairline-divided instrument rather than two floating cards: the products are
+ *  halves of a single choice, and the house idiom welds regions together with rules instead of
+ *  scattering bordered cards on a ground.
+ *
+ *  Both choices are real links, not buttons — they navigate, so cmd-click, middle-click and "open
+ *  in new tab" all have to work. */
 export function ProductGateway({ onChoose }: ProductGatewayProps) {
+  const titleId = useId();
+
   return (
-    <div className={styles.screen}>
-      <div className={styles.brand}>
-        <BrandMark size={28} />
-        <span className={styles.wordmark}>Lunaris</span>
-      </div>
-      <p className={styles.lede}>Two ways to work. Pick one — you can switch any time.</p>
-      <section className={styles.panels} aria-label="Choose a product">
-        <Link
-          to={ROUTES.home}
-          className={`${styles.panel} ${styles.studio}`}
-          onClick={(event) => navigatesThisTab(event) && onChoose("studio")}
-        >
-          <span className={styles.eyebrow}>Create</span>
-          <span className={styles.name}>Lunaris Studio</span>
-          <span className={styles.blurb}>
-            Compile a topic into a publishable course — validated curriculum, written lessons,
-            narrated videos.
-          </span>
-        </Link>
-        <Link
-          to={PRODUCT_ROUTES.live}
-          className={`${styles.panel} ${styles.live}`}
-          onClick={(event) => navigatesThisTab(event) && onChoose("live")}
-        >
-          <span className={styles.eyebrow}>Learn</span>
-          <span className={styles.name}>Lunaris Live</span>
-          <span className={styles.blurb}>
-            Sit down with a tutor that teaches in real time, watches what you do, and remembers what
-            you know.
-          </span>
-        </Link>
+    <main className={styles.screen}>
+      <section className={styles.gateway} aria-labelledby={titleId}>
+        <div className={styles.masthead}>
+          <div className={styles.brand}>
+            <BrandMark size={26} />
+            <span className={styles.wordmark}>Lunaris</span>
+          </div>
+          <h1 id={titleId} className={styles.title}>
+            Choose a product
+          </h1>
+          <p className={styles.lede}>You can switch any time — we&rsquo;ll remember this one.</p>
+        </div>
+
+        <div className={styles.panels}>
+          <Link
+            to={ROUTES.home}
+            className={`${styles.panel} ${styles.studio}`}
+            onClick={(event) => navigatesThisTab(event) && onChoose("studio")}
+          >
+            <span className={`eyebrow ${styles.eyebrow}`}>Create</span>
+            <h2 className={styles.name}>Lunaris Studio</h2>
+            <span className={styles.blurb}>
+              Compile a topic into a publishable course — validated curriculum, written lessons, and
+              narrated videos you can share.
+            </span>
+          </Link>
+
+          <Link
+            to={PRODUCT_ROUTES.live}
+            className={`${styles.panel} ${styles.live}`}
+            onClick={(event) => navigatesThisTab(event) && onChoose("live")}
+          >
+            <span className={`eyebrow ${styles.eyebrow}`}>
+              {/* Live is the product that runs in real time, and this is the one live signal on the
+                  screen. Not StatusDot: that primitive is a status *readout* (RUNNING / FAILED)
+                  with its own typographic contract, and this is a product-identity mark sitting in
+                  an eyebrow. It borrows StatusDot's halo motion so the app keeps one live-motion
+                  language. Decorative — the word beside it carries the meaning. */}
+              <span className={styles.pulse} aria-hidden="true" />
+              Learn
+            </span>
+            <h2 className={styles.name}>Lunaris Live</h2>
+            <span className={styles.blurb}>
+              Sit down with a tutor that teaches in real time, watches what you do, and remembers
+              what you know.
+            </span>
+          </Link>
+        </div>
       </section>
-    </div>
+    </main>
   );
 }

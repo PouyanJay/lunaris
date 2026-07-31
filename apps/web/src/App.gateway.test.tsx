@@ -135,6 +135,34 @@ describe("App — the product gateway and fork", () => {
     expect(auth.updateLastProduct).not.toHaveBeenCalled();
   });
 
+  // ─── Structure and accessibility ─────────────────────────────────────────────────────────────
+
+  it("gives the gateway one h1 and a heading per product", async () => {
+    useAuthMock.mockReturnValue(signedIn());
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    await screen.findByRole("region", { name: /choose a product/i });
+    // Exactly one h1 on the page, and it names the screen's job.
+    const h1s = screen.getAllByRole("heading", { level: 1 });
+    expect(h1s).toHaveLength(1);
+    expect(h1s[0]).toHaveTextContent(/choose a product/i);
+    // Each product is a real heading, not a styled span.
+    expect(screen.getByRole("heading", { level: 2, name: "Lunaris Studio" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Lunaris Live" })).toBeInTheDocument();
+  });
+
+  it("gives the Live empty state a way onward rather than a dead end", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "live" }));
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Lunaris Live", level: 1 });
+    expect(screen.getByRole("link", { name: /go to lunaris studio/i })).toBeInTheDocument();
+  });
+
   // ─── Deep links never see the gateway ────────────────────────────────────────────────────────
   // The guarantee is structural: only the bare root is redirect-eligible, so no deeper path can
   // reach the gateway. These pin that down at the surface a user would actually hit.
