@@ -421,7 +421,7 @@ export function CourseReader({
   if (!current) {
     return (
       <div className={styles.empty} role="status">
-        No lessons yet — this course hasn’t been authored.
+        No lessons yet. This course hasn’t been authored.
       </div>
     );
   }
@@ -641,7 +641,7 @@ export function CourseReader({
                 captionsUrl={lessonVideo.state.captionsUrl}
                 chapters={lessonVideo.state.chapters}
                 transcript={lessonVideo.state.transcript}
-                label={`${current.moduleTitle} — lesson video`}
+                label={`${current.moduleTitle}: lesson video`}
                 takeaways={tldr}
                 resources={lessonResources}
               />

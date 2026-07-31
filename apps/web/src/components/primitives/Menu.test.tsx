@@ -163,4 +163,68 @@ describe("Menu", () => {
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
+
+  // ─── Variants ────────────────────────────────────────────────────────────────────────────────
+
+  it("falls back to the first option when the value is not one of them", () => {
+    // A stored preference can outlive the option that produced it. Showing a blank chip would be
+    // worse than showing the default it will actually build with.
+    render(<Menu label="Depth" value="retired" options={OPTIONS} onChange={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: /depth/i })).toHaveTextContent("Standard");
+  });
+
+  it("still opens and chooses when there is only one option", () => {
+    const onChange = vi.fn();
+    const single = [OPTIONS[0]!];
+    render(<Menu label="Depth" value="standard" options={single} onChange={onChange} />);
+
+    const trigger = screen.getByRole("button", { name: /depth/i });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+
+    // A one-item ring wraps onto itself rather than dividing by zero or losing focus.
+    const only = within(screen.getByRole("menu")).getByRole("menuitemradio");
+    expect(only).toHaveFocus();
+    fireEvent.keyDown(only, { key: "ArrowDown" });
+    expect(only).toHaveFocus();
+
+    fireEvent.keyDown(only, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("standard");
+  });
+
+  it("closes one menu when another opens, so two panels never overlap", () => {
+    render(
+      <>
+        <Menu label="Depth" value="standard" options={OPTIONS} onChange={vi.fn()} />
+        <Menu label="Level" value="standard" options={OPTIONS} onChange={vi.fn()} />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    expect(screen.getByRole("menu", { name: "Depth" })).toBeInTheDocument();
+
+    // Pressing the second trigger dismisses the first through the outside-press path.
+    fireEvent.mouseDown(screen.getByRole("button", { name: /level/i }));
+    fireEvent.click(screen.getByRole("button", { name: /level/i }));
+
+    expect(screen.queryByRole("menu", { name: "Depth" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "Level" })).toBeInTheDocument();
+  });
+
+  it("renders a footer group below a separator when one is given", () => {
+    render(
+      <Menu
+        label="Depth"
+        value="standard"
+        options={OPTIONS}
+        onChange={vi.fn()}
+        footer={<button type="button">Trusted domains</button>}
+      />,
+    );
+
+    openMenu();
+
+    expect(screen.getByRole("button", { name: /trusted domains/i })).toBeInTheDocument();
+  });
 });

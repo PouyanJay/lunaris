@@ -39,7 +39,7 @@ export function VideoProgress({ status, label, onStop }: VideoProgressProps) {
       </div>
       {onStop && (
         <div className={styles.actions}>
-          <Button variant="secondary" onClick={onStop} aria-label={`Stop — ${label}`}>
+          <Button variant="secondary" onClick={onStop} aria-label={`Stop ${label}`}>
             Stop
           </Button>
         </div>

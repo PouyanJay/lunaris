@@ -8,7 +8,7 @@ export function OutdatedBadge() {
     <span className={styles.badge} role="status">
       <span className={styles.dot} aria-hidden="true" />
       <span className={styles.label}>OUTDATED</span>
-      <span className={styles.hint}>the lesson changed — regenerate to update</span>
+      <span className={styles.hint}>the lesson changed, regenerate to update</span>
     </span>
   );
 }

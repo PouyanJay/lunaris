@@ -220,7 +220,7 @@ function TransportControls({
 
       <span className={`mono ${styles.readout}`}>
         {formatMediaDuration(currentTime)} / {formatMediaDuration(duration)}
-        {currentChapter ? ` · CH ${activeChapter + 1} — ${currentChapter.title.toUpperCase()}` : ""}
+        {currentChapter ? ` · CH ${activeChapter + 1} · ${currentChapter.title.toUpperCase()}` : ""}
       </span>
 
       <TransportExtras
