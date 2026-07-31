@@ -133,4 +133,92 @@ describe("Composer — the Studio | Live fork", () => {
     expect(await screen.findByRole("button", { name: /generate course/i })).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "Live" })).not.toBeInTheDocument();
   });
+
+  // ─── Variants ────────────────────────────────────────────────────────────────────────────────
+
+  it.each([
+    ["a topic with punctuation", "What's a B-tree? (and why)"],
+    ["a topic with a slash", "TCP/IP layering"],
+    ["a topic with an ampersand", "Merge & quick sort"],
+    ["a unicode topic", "Qué es un árbol B"],
+  ])("round-trips %s through the URL without mangling it", async (_case, topic) => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: topic } });
+    fireEvent.click(screen.getByRole("button", { name: /start session/i }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/live"));
+    // Encoded on the way out, decoded on the way in — the learner sees exactly what they typed.
+    expect(new URLSearchParams(window.location.search).get("topic")).toBe(topic);
+    expect(await screen.findByText(topic, { exact: false })).toBeInTheDocument();
+  });
+
+  it("refuses to start a session with an empty topic", async () => {
+    // Live must not skip the validation Studio applies: submitting nothing should surface the
+    // error, not navigate to a session about nothing.
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(screen.getByRole("button", { name: /start session/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/enter a topic/i);
+    expect(window.location.pathname).toBe("/new");
+  });
+
+  it("trims a whitespace-only topic rather than starting a session on it", async () => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: /start session/i }));
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/new");
+  });
+
+  it("keeps the chosen mode while the topic is edited", async () => {
+    // Editing the topic invalidates the brief; it must not silently drop the learner back to a
+    // Studio build they did not ask for.
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: "How HTTPS works" } });
+    fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: "How TLS works" } });
+
+    expect(screen.getByRole("radio", { name: "Live" })).toBeChecked();
+    expect(screen.getByRole("button", { name: /start session/i })).toBeInTheDocument();
+  });
+
+  it("restores the Studio-only settings when switching back from Live", async () => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Studio" }));
+
+    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
+  });
+
+  it("ignores a blank topic param on Live's surface", async () => {
+    window.history.pushState(null, "", "/live?topic=%20%20");
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Lunaris Live", level: 1 });
+    // A whitespace-only param must not render "You asked to learn ." with nothing in it.
+    expect(screen.queryByText(/you asked to learn/i)).not.toBeInTheDocument();
+  });
 });
