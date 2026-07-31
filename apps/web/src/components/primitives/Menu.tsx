@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import styles from "./Menu.module.css";
+import { useDismissable } from "./useDismissable";
 
 export interface MenuOption<T extends string> {
   value: T;
@@ -33,30 +34,13 @@ export function Menu<T extends string>({ label, value, options, onChange, footer
   const [focusOnOpen, setFocusOnOpen] = useState<number | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const menuId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
   const current = options.find((option) => option.value === value) ?? options[0];
 
   const close = useCallback((returnFocus: boolean) => {
     setOpen(false);
     if (returnFocus) triggerRef.current?.focus();
   }, []);
-
-  // Pointer anywhere else dismisses. mousedown rather than click so a press outside closes before
-  // the click lands on whatever is underneath.
-  useEffect(() => {
-    if (!open) return;
-    function onDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (
-        itemRefs.current.some((item) => item?.closest(`[data-menu="${menuId}"]`)?.contains(target))
-      )
-        return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open, menuId]);
 
   // Land focus once the panel is actually in the DOM. An effect, not requestAnimationFrame: rAF
   // never flushes in the test environment, and in a browser it would race a fast keypress.
@@ -65,6 +49,8 @@ export function Menu<T extends string>({ label, value, options, onChange, footer
     itemRefs.current[focusOnOpen]?.focus();
     setFocusOnOpen(null);
   }, [open, focusOnOpen]);
+
+  useDismissable(open, () => setOpen(false), triggerRef, panelRef);
 
   /** Focus an option by index, wrapping at both ends so the list is a ring, not a dead end. */
   const focusAt = useCallback(
@@ -151,10 +137,10 @@ export function Menu<T extends string>({ label, value, options, onChange, footer
 
       {open && (
         <div
+          ref={panelRef}
           className={styles.menu}
           role="menu"
           aria-label={label}
-          data-menu={menuId}
           onKeyDown={(event) => {
             if (event.key !== "Escape") return;
             event.preventDefault();

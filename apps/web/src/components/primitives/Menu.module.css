@@ -191,3 +191,28 @@
   color: var(--text-muted);
   opacity: 0.7;
 }
+
+/* ─── Panel ────────────────────────────────────────────────────────────────────
+   The same elevated surface as the option menu, but holding arbitrary content rather than a list.
+   Wider, because a form needs room a list does not. */
+.panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-popover);
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 16px 40px rgb(0 0 0 / 28%),
+    0 2px 6px rgb(0 0 0 / 12%);
+  overflow: hidden;
+}
+
+/* Hung from the chip's right edge, for a wide panel on a chip that sits well along the bar. */
+.panelRight {
+  left: auto;
+  right: 0;
+}

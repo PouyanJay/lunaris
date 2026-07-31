@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { Menu, type MenuOption } from "../primitives/Menu";
 import { menuRowCaretClass, menuRowClass } from "../primitives/menuRow";
 import type { ComposerLevel } from "../../lib/composerLevel";
@@ -15,6 +17,9 @@ interface ComposerOptionsProps {
   onLevelChange: (level: ComposerLevel) => void;
   officialOnly: boolean;
   onOfficialOnlyChange: (value: boolean) => void;
+  /** Personalization, rendered as the last chip in the bar. Supplied by the parent, which owns the
+   *  brief lifecycle. */
+  personalize?: ReactNode;
   /** Opens the Settings panel, where the trusted-domain list actually lives. A callback rather than
    *  a Link: this component stays presentational and free of router context, which is the same rule
    *  that keeps it free of auth context. */
@@ -61,6 +66,7 @@ export function ComposerOptions({
   onLevelChange,
   officialOnly,
   onOfficialOnlyChange,
+  personalize,
   onOpenTrustedSources,
 }: ComposerOptionsProps) {
   if (mode === "live") return null;
@@ -98,6 +104,7 @@ export function ComposerOptions({
           ) : undefined
         }
       />
+      {personalize}
     </div>
   );
 }

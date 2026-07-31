@@ -1,0 +1,75 @@
+/* The personalization panel, opened from the composer's settings bar. Shares the menu panel's
+   surface; these rules only lay out the content inside it. */
+.head {
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.sub {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4) var(--space-4);
+  /* Opening downward makes the viewport bottom the constraint, so a long clarifier scrolls inside
+     the panel rather than running past the fold. */
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.muted {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--danger);
+}
+
+/* The interpreter's reading, set apart so it reads as something the system inferred rather than
+   another field to fill in. */
+.read {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.read strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.questions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}

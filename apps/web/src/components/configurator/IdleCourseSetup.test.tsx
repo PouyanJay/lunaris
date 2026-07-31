@@ -5,6 +5,22 @@ import { makeBriefResponse } from "../../test/fixtures";
 import type { BriefResponse, GoalType } from "../../types/clarifier";
 import { IdleCourseSetup } from "./IdleCourseSetup";
 
+/** Open the composer's Personalize panel. The brief used to sit permanently in the rail; it is a
+ *  chip in the settings bar now, so the panel has to be opened before its contents exist. */
+function openPersonalize() {
+  // Idempotent: clicking the chip while the panel is already open would close it. The chip reads
+  // "Personalize" until a brief is read, then "For you Tailored".
+  const chip = screen.queryByRole("button", { name: /^personalize$|tailored/i });
+  if (chip && chip.getAttribute("aria-expanded") !== "true") fireEvent.click(chip);
+}
+
+/** Open the panel AND read the brief. Separate from opening, because a test that wants to see the
+ *  offer to personalize must not have it clicked out from under it. */
+function readBrief() {
+  openPersonalize();
+  fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+}
+
 /** Pick a value from one of the composer's setting menus. The controls became menus in the
  *  composer rebuild; the guarantees they are asserted against are unchanged. */
 function pickSetting(setting: string, option: RegExp) {
@@ -33,11 +49,13 @@ function renderSetup(overrides: Partial<React.ComponentProps<typeof IdleCourseSe
 afterEach(() => vi.unstubAllGlobals());
 
 describe("IdleCourseSetup", () => {
-  it("renders the topic form beside the persistent course-setup rail", () => {
+  it("renders the topic form with every setting docked inside its box", () => {
     renderSetup();
 
-    expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: /course setup/i })).toBeInTheDocument();
+    // The rail is gone: Depth, Level, Sources and Personalize all live in the composer now.
+    expect(screen.getByLabelText("Topic")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /depth/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^personalize$/i })).toBeInTheDocument();
   });
 
   it("builds in one click with no personalization and the default options", () => {
@@ -62,7 +80,7 @@ describe("IdleCourseSetup", () => {
     renderSetup({ onGenerate });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    readBrief();
     await screen.findByText(/reach CLB 10/i); // the brief (with its inferred goal_type) is ready
 
     // The quick Level control (options bar) maps onto the clarifier's target level.
@@ -83,14 +101,51 @@ describe("IdleCourseSetup", () => {
     renderSetup();
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    readBrief();
     await screen.findByText(/reach CLB 10/i);
 
     // Editing the topic drops the brief that was read for the old topic.
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "spanish" } });
 
     expect(screen.queryByText(/reach CLB 10/i)).not.toBeInTheDocument();
+    // The offer to personalize is back, which is what "the brief was dropped" means to a user.
+    openPersonalize();
     expect(screen.getByRole("button", { name: /personalize this topic/i })).toBeInTheDocument();
+  });
+
+  it("says on the chip whether the build is tailored, without opening the panel", async () => {
+    // The bar has to carry the state. Otherwise the only way to know whether a brief is threading
+    // is to open the panel and look, which defeats having a bar at all.
+    stubFetch({ ok: true, json: async () => makeBriefResponse() });
+    renderSetup();
+
+    expect(screen.getByRole("button", { name: /^personalize$/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
+    readBrief();
+    await screen.findByText(/reach CLB 10/i);
+
+    expect(screen.getByRole("button", { name: /tailored/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^personalize$/i })).not.toBeInTheDocument();
+  });
+
+  it("leaves Level out of the panel, because the Level chip owns it", async () => {
+    // Two level pickers is a bug rather than a convenience: they would disagree.
+    stubFetch({ ok: true, json: async () => makeBriefResponse() });
+    renderSetup();
+
+    fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
+    readBrief();
+    await screen.findByText(/reach CLB 10/i);
+
+    const panel = screen.getByRole("dialog", { name: /for you/i });
+    // The LEVEL clarifier question, by its actual prompt: it must not be rendered here.
+    expect(within(panel).queryByText(/current level with this/i)).not.toBeInTheDocument();
+    // The other questions from the same brief are present, so this is exclusion and not an
+    // empty panel passing by accident.
+    expect(within(panel).getByText(/already comfortable with/i)).toBeInTheDocument();
+    // And it is still settable, from the one control that owns it.
+    expect(screen.getByRole("button", { name: /level/i })).toBeInTheDocument();
   });
 
   it("shows a retryable error when the brief read fails", async () => {
@@ -98,7 +153,7 @@ describe("IdleCourseSetup", () => {
     renderSetup();
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    readBrief();
 
     // The alert carries the real cause, not just a generic "failed".
     expect(await screen.findByRole("alert")).toHaveTextContent(/http 500/i);
@@ -118,7 +173,7 @@ describe("IdleCourseSetup", () => {
     fireEvent.keyDown(depth, { key: "Escape" });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    readBrief();
     await screen.findByText(/reach CLB 10/i);
 
     // Still reachable after the brief renders.
@@ -183,24 +238,20 @@ describe("IdleCourseSetup", () => {
     });
   });
 
-  it("opens Settings from the operator pointer", () => {
+  it("still reaches Settings, now from the Sources menu", () => {
+    // The rail's operator section is gone, but the capability it pointed at is not: the trusted
+    // domain list is one row inside the Sources menu.
     const onOpenSettings = vi.fn();
     renderSetup({ onOpenSettings });
 
-    fireEvent.click(screen.getByRole("button", { name: /open settings/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sources/i }));
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Sources" })).getByRole("button", {
+        name: /trusted domains/i,
+      }),
+    );
 
     expect(onOpenSettings).toHaveBeenCalledOnce();
-  });
-
-  it("collapses the rail to an edge tab and expands it again", () => {
-    renderSetup();
-
-    fireEvent.click(screen.getByRole("button", { name: /collapse course setup/i }));
-    const reveal = screen.getByRole("button", { name: /show course setup/i });
-    expect(reveal).toBeInTheDocument();
-
-    fireEvent.click(reveal);
-    expect(screen.queryByRole("button", { name: /show course setup/i })).not.toBeInTheDocument();
   });
 
   it("aborts an in-flight brief read when unmounted", () => {
@@ -215,39 +266,11 @@ describe("IdleCourseSetup", () => {
     const { unmount } = renderSetup();
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    readBrief();
     expect(captured?.aborted).toBe(false);
 
     unmount();
     expect(captured?.aborted).toBe(true);
-  });
-
-  it("opens the setup drawer, closes it on Escape, and returns focus to the toggle", () => {
-    renderSetup();
-    const toggle = screen.getByRole("button", { name: /^course setup$/i });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: /close course setup overlay/i })).toBeInTheDocument();
-
-    // Esc dismisses the drawer (WCAG 2.2) and restores focus to the control that opened it.
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(toggle).toHaveFocus();
-  });
-
-  it("closes the setup drawer when the scrim is clicked", () => {
-    renderSetup();
-    const toggle = screen.getByRole("button", { name: /^course setup$/i });
-
-    fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole("button", { name: /close course setup overlay/i }));
-
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(
-      screen.queryByRole("button", { name: /close course setup overlay/i }),
-    ).not.toBeInTheDocument();
   });
 });
 
@@ -288,7 +311,7 @@ describe("IdleCourseSetup — variant coverage across goal types", () => {
       renderSetup({ onGenerate });
 
       fireEvent.change(screen.getByLabelText("Topic"), { target: { value: `topic-${goalType}` } });
-      fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+      readBrief();
       // The fixture always carries the "CLB 10" goal text; the variant covers the inferred GOAL
       // option (goal_type), not the goal prose — this just waits for the ready brief to render.
       await screen.findByText(/reach CLB 10/i);
