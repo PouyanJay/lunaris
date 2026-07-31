@@ -21,10 +21,6 @@ interface AgentShellProps {
   title: string;
   /** Right-aligned canvas-header content — status, metrics, view actions. */
   meta?: ReactNode;
-  /** Crossing to the other Lunaris product, docked beside the brand — the brand is what says which
-   *  product you are in. A slot rather than a direct mount: the shell stays presentational and does
-   *  not acquire a dependency on auth context. Absent while Lunaris is a single product. */
-  productSwitcher?: ReactNode;
   /** The global-search trigger, docked in the header's right cluster (the ⌘K field). */
   search?: ReactNode;
   /** Optional view controls (e.g. a course's view tabs). On wide screens they sit inline in the
@@ -60,7 +56,6 @@ export function AgentShell({
   sidebar,
   title,
   meta,
-  productSwitcher,
   search,
   toolbar,
   banner,
@@ -137,7 +132,6 @@ export function AgentShell({
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
-        {productSwitcher}
         {/* A blank title (e.g. the Account page, whose location is shown by the active sidebar
             entry) renders a spacer, not an empty heading — the surface supplies its own h1. */}
         {title ? (
