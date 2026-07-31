@@ -13,7 +13,7 @@ vi.mock("./hooks/useAuth", () => ({
 }));
 
 import App from "./App";
-import { routedFetch } from "./test/fixtures";
+import { makeCourse, makeRun, routedFetch } from "./test/fixtures";
 
 /** A signed-in auth state whose account metadata is under the test's control. */
 function signedIn(userMetadata: Record<string, unknown> = {}) {
@@ -133,6 +133,60 @@ describe("App — the product gateway and fork", () => {
 
     await screen.findByRole("region", { name: /choose a product/i });
     expect(auth.updateLastProduct).not.toHaveBeenCalled();
+  });
+
+  // ─── Deep links never see the gateway ────────────────────────────────────────────────────────
+  // The guarantee is structural: only the bare root is redirect-eligible, so no deeper path can
+  // reach the gateway. These pin that down at the surface a user would actually hit.
+
+  it("takes a Studio deep link straight to the course, gateway or no gateway", async () => {
+    // No remembered product — the state that WOULD show the gateway at the root.
+    useAuthMock.mockReturnValue(signedIn());
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /choose a product/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test");
+  });
+
+  it("takes a Live deep link straight to Live, with no remembered product", async () => {
+    useAuthMock.mockReturnValue(signedIn());
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lunaris Live" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /choose a product/i })).not.toBeInTheDocument();
+  });
+
+  it("holds the deep link across sign-in — the gateway never interposes", async () => {
+    // There is no `?next=` handoff in this app, and deliberately so: AuthGate renders the login
+    // screen in place at the deep-linked URL rather than bouncing through a login route, so the URL
+    // is never lost and never has to be handed back. This proves the fork did not break that.
+    vi.stubGlobal("fetch", routedFetch({ runs: [makeRun()], course: makeCourse() }));
+    window.history.pushState(null, "", "/courses/course-test");
+    const signedOut = { ...signedIn(), session: null, user: null };
+    useAuthMock.mockReturnValue(signedOut);
+
+    const { rerender } = render(<App />);
+    expect(
+      screen.queryByRole("heading", { name: "How binary search works" }),
+    ).not.toBeInTheDocument();
+
+    // Sign-in completes: same URL, now with a session and no remembered product.
+    useAuthMock.mockReturnValue(signedIn());
+    rerender(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "How binary search works", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /choose a product/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/courses/course-test");
   });
 
   it("records the choice so the next sign-in skips the gateway", async () => {
