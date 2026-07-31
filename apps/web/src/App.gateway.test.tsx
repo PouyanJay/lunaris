@@ -135,6 +135,23 @@ describe("App — the product gateway and fork", () => {
     expect(auth.updateLastProduct).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["an unknown product", "workshop"],
+    ["the wrong case", "Live"],
+    ["an empty string", ""],
+    ["a non-string", 7],
+  ])("falls open to the gateway when the remembered product is %s", async (_case, stored) => {
+    // The hard constraint: a corrupt preference must produce a real choice, never a blank screen
+    // and never a redirect loop back into itself.
+    useAuthMock.mockReturnValue(signedIn({ last_product: stored }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    expect(await screen.findByRole("region", { name: /choose a product/i })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/gateway"));
+  });
+
   // ─── Product switcher ────────────────────────────────────────────────────────────────────────
 
   it("offers a switch to Live from Studio's top bar", async () => {

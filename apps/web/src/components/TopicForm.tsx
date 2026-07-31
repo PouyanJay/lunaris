@@ -15,7 +15,7 @@ interface TopicFormProps {
 
 const EXAMPLES = ["How binary search works", "How merge sort works", "How HTTPS works"];
 
-/** The idle entry point: name a topic and Lunaris builds a verified course for it. A real <form>
+/** The idle entry point: name a topic and Lunaris Studio builds a verified course for it. A real <form>
  *  (Enter submits), a labelled input, and example topics for a warm start. Personalization and build
  *  settings live in the always-visible course-setup rail beside this form, so the default path here
  *  is one click. */
@@ -53,8 +53,8 @@ export function TopicForm({ value, onChange, onSubmit, options }: TopicFormProps
           What do you want to <span className={styles.titleAccent}>learn</span>?
         </h2>
         <p id={hintId} className={styles.hint}>
-          Name a topic. Lunaris maps its prerequisites, writes the lessons, and verifies every claim
-          &mdash; you&rsquo;ll watch each step run. Tailor it to you in the setup rail.
+          Name a topic. Lunaris Studio maps its prerequisites, writes the lessons, and verifies
+          every claim &mdash; you&rsquo;ll watch each step run. Tailor it to you in the setup rail.
         </p>
 
         {/* The field is self-evident from the heading + placeholder; keep the label for screen
