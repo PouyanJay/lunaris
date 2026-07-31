@@ -188,6 +188,53 @@ describe("App — the product gateway and fork", () => {
     );
   });
 
+  it("crosses from Live back to Studio when the switcher is used", async () => {
+    // The switcher's Studio link points at `/`, which is the one redirect-eligible path. Standing
+    // in Live, the remembered product is "live" — so unless using the switcher RECORDS the crossing,
+    // `/` bounces straight back to Live and the control appears dead.
+    useAuthMock.mockReturnValue(signedIn({ last_product: "live" }));
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    const switcher = await screen.findByRole("navigation", { name: /product/i });
+    fireEvent.click(within(switcher).getByRole("link", { name: "Lunaris Studio" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(
+      screen.queryByRole("heading", { name: "Lunaris Live", level: 1 }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("crosses from Studio to Live when the switcher is used", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "studio" }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    const switcher = await screen.findByRole("navigation", { name: /product/i });
+    fireEvent.click(within(switcher).getByRole("link", { name: "Lunaris Live" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Lunaris Live", level: 1 }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/live"));
+  });
+
+  it("leaves Live via the empty state's action — same bounce hazard as the switcher", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "live" }));
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("link", { name: /go to lunaris studio/i }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(
+      screen.queryByRole("heading", { name: "Lunaris Live", level: 1 }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides the switcher entirely when Live is flagged off", async () => {
     vi.stubEnv("VITE_LIVE_ENABLED", "false");
     useAuthMock.mockReturnValue(signedIn({ last_product: "studio" }));
