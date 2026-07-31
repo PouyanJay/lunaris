@@ -22,7 +22,10 @@ export default function LiveShell() {
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
-        {/* The same switcher Studio's top bar mounts — one component, two shells. */}
+        {/* The same switcher Studio's top bar mounts — one component, two shells. Mounted directly
+            rather than through a slot the way AgentShell takes it: LiveShell IS Live's composition
+            root today (there is no LiveApp layer above it), so it wires context here exactly as
+            App.tsx does for Studio. Revisit if Live grows its own container/presentation split. */}
         <ProductSwitcher current="live" />
       </header>
       <main className={styles.canvas}>

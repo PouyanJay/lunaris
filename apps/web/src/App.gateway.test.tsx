@@ -161,11 +161,14 @@ describe("App — the product gateway and fork", () => {
     render(<App />);
 
     const switcher = await screen.findByRole("navigation", { name: /product/i });
-    expect(within(switcher).getByRole("link", { name: "Lunaris Live" })).toBeInTheDocument();
-    // The product you are in is marked, not just styled.
+    // The product you are in is marked, not just styled — and only that one. Asserting the
+    // positive alone would still pass if every link were marked current, which announces nonsense.
     expect(within(switcher).getByRole("link", { name: "Lunaris Studio" })).toHaveAttribute(
       "aria-current",
       "page",
+    );
+    expect(within(switcher).getByRole("link", { name: "Lunaris Live" })).not.toHaveAttribute(
+      "aria-current",
     );
   });
 
@@ -176,10 +179,12 @@ describe("App — the product gateway and fork", () => {
     render(<App />);
 
     const switcher = await screen.findByRole("navigation", { name: /product/i });
-    expect(within(switcher).getByRole("link", { name: "Lunaris Studio" })).toBeInTheDocument();
     expect(within(switcher).getByRole("link", { name: "Lunaris Live" })).toHaveAttribute(
       "aria-current",
       "page",
+    );
+    expect(within(switcher).getByRole("link", { name: "Lunaris Studio" })).not.toHaveAttribute(
+      "aria-current",
     );
   });
 

@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 
-import { useProductFork } from "../../hooks/useProductFork";
+import { useIsProductForked } from "../../hooks/useIsProductForked";
 import type { Product } from "../../lib/product";
 import { PRODUCT_ROUTES, ROUTES } from "../../lib/routes";
 import styles from "./ProductSwitcher.module.css";
@@ -24,7 +24,7 @@ const DESTINATIONS: { product: Product; label: string; to: string }[] = [
  *  Renders nothing at all when Lunaris is a single product, so Studio's chrome is untouched until
  *  Live is switched on. */
 export function ProductSwitcher({ current }: ProductSwitcherProps) {
-  const forked = useProductFork();
+  const forked = useIsProductForked();
   if (!forked) return null;
 
   return (

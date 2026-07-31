@@ -7,7 +7,7 @@ import { isLiveEnabled } from "../lib/product";
  *  the account, and there is no account to read without it). One shared predicate so the router and
  *  the switcher cannot drift into disagreeing — a switcher offering a destination the router will
  *  not route to would strand the user on a not-found. */
-export function useProductFork(): boolean {
+export function useIsProductForked(): boolean {
   const { enabled } = useAuth();
   return isLiveEnabled() && enabled;
 }
