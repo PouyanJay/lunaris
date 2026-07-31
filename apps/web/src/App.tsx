@@ -13,6 +13,7 @@ import type { SearchEntry } from "./lib/searchIndex";
 import { AuthGate } from "./components/auth/AuthGate";
 import { ProductRouter } from "./components/gateway/ProductRouter";
 import { ProductSwitcher } from "./components/gateway/ProductSwitcher";
+import { useIsProductForked } from "./hooks/useIsProductForked";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
@@ -63,7 +64,14 @@ import { regenerateLesson } from "./lib/loadCourse";
 import { putCourseOpened } from "./lib/progress";
 import { isLlmKeyless } from "./lib/capabilities";
 import { resolveDisplayName } from "./lib/profile";
-import { coursePath, lessonPath, resolveRoute, ROUTES, type ShellRoute } from "./lib/routes";
+import {
+  coursePath,
+  lessonPath,
+  PRODUCT_ROUTES,
+  resolveRoute,
+  ROUTES,
+  type ShellRoute,
+} from "./lib/routes";
 import { fetchSettings } from "./lib/settings";
 import { useCourseRouting } from "./hooks/useCourseRouting";
 import { useCancelRun } from "./hooks/useCancelRun";
@@ -193,6 +201,9 @@ function StudioApp({
   const { isAdmin } = useMe(apiBaseUrl);
   // The signed-in email seeds the Home greeting's display name (offline/unauthed → null).
   const { user } = useAuth();
+  // Decided here, inside AuthProvider, so the composer stays presentational (the Phase 0 lesson:
+  // a layout component that reaches for auth context breaks every standalone test of it).
+  const forked = useIsProductForked();
   // Per-capability live/fallback status drives the Draft-mode banner; refetch when Settings closes so
   // a key the user just added flips its capability back to live and the banner clears.
   const { capabilities, reload: reloadCapabilities } = useCapabilities(apiBaseUrl);
@@ -748,6 +759,11 @@ function StudioApp({
         body: (
           <IdleCourseSetup
             apiBaseUrl={apiBaseUrl}
+            onStartLive={
+              forked
+                ? (topic) => navigate(`${PRODUCT_ROUTES.live}?topic=${encodeURIComponent(topic)}`)
+                : undefined
+            }
             onGenerate={generate}
             onOpenSettings={openSettings}
             runs={runsState.status === "ready" ? runsState.runs : []}

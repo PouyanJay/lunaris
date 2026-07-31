@@ -9,6 +9,7 @@ import { applyComposerLevel, type ComposerLevel } from "../../lib/composerLevel"
 import { fetchBrief } from "../../lib/fetchBrief";
 import { CourseLoadError } from "../../lib/loadCourse";
 import type { BriefLoadState } from "../../types/clarifier";
+import type { Product } from "../../lib/product";
 import type { CourseRun, DiscoveryDepth } from "../../types/course";
 import { TopicForm } from "../TopicForm";
 import { ComposerFeatures } from "./ComposerFeatures";
@@ -25,6 +26,9 @@ interface IdleCourseSetupProps {
   /** Build the course from a request: the topic, the learner's confirmed clarification (absent →
    *  inference-only), the chosen search depth, and the "Official sources only" trust switch. */
   onGenerate: (request: BuildRequest) => void;
+  /** Start a Lunaris Live session for the topic instead of compiling a course. Absent when Lunaris
+   *  is a single product — the composer then only ever generates. */
+  onStartLive?: ((topic: string) => void) | undefined;
   /** Open the operator/admin Settings panel (the rail only points there). */
   onOpenSettings: () => void;
   /** The run history (from the shell's useRuns) — drives the composer's recent-builds table. */
@@ -45,10 +49,13 @@ interface IdleCourseSetupProps {
 export function IdleCourseSetup({
   apiBaseUrl,
   onGenerate,
+  onStartLive,
   onOpenSettings,
   runs = [],
 }: IdleCourseSetupProps) {
   const [topic, setTopic] = useState("");
+  // Which product the topic goes to. Studio is the default, so the existing path is untouched.
+  const [mode, setMode] = useState<Product>("studio");
   const [depth, setDepth] = useState<DiscoveryDepth>("standard");
   // The composer's quick options bar: target level (mapped onto the brief's clarification) and the
   // per-build "Official sources only" trust switch. Level "recommended" = today's inferred default.
@@ -108,10 +115,16 @@ export function IdleCourseSetup({
     (submitted: string) => {
       const fromBrief =
         brief.status === "ready" ? answersToClarification(brief.answers) : undefined;
+      // Live's promise is a session, not a build — so it must never reach the build control room.
+      // The Studio-only build settings below are simply not consulted.
+      if (mode === "live" && onStartLive) {
+        onStartLive(submitted);
+        return;
+      }
       const clarification = applyComposerLevel(fromBrief, level);
       onGenerate({ topic: submitted, clarification, discoveryDepth: depth, officialOnly });
     },
-    [brief, level, depth, officialOnly, onGenerate],
+    [brief, level, depth, officialOnly, mode, onStartLive, onGenerate],
   );
 
   const closeDrawer = useCallback(() => {
@@ -145,9 +158,20 @@ export function IdleCourseSetup({
           value={topic}
           onChange={handleTopicChange}
           onSubmit={handleSubmit}
+          submitLabel={mode === "live" ? "Start session" : "Generate course"}
+          hint={
+            mode === "live" ? (
+              <>
+                Name a topic. Lunaris Live maps it, then teaches it to you in a session &mdash; a
+                tutor that watches what you do and remembers what you know.
+              </>
+            ) : undefined
+          }
           options={
             <ComposerOptions
               depth={depth}
+              mode={mode}
+              onModeChange={onStartLive ? setMode : undefined}
               onDepthChange={setDepth}
               level={level}
               onLevelChange={setLevel}

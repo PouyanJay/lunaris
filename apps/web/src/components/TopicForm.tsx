@@ -11,6 +11,11 @@ interface TopicFormProps {
   onSubmit: (topic: string) => void;
   /** The quick build controls (depth / level / trust) rendered inside the input panel. */
   options?: ReactNode;
+  /** What submitting promises. Studio compiles a course; Live opens a session, and the button must
+   *  not promise a build it will not perform. */
+  submitLabel?: string;
+  /** The line under the heading, which describes that same promise. */
+  hint?: ReactNode;
 }
 
 const EXAMPLES = ["How binary search works", "How merge sort works", "How HTTPS works"];
@@ -19,7 +24,14 @@ const EXAMPLES = ["How binary search works", "How merge sort works", "How HTTPS 
  *  (Enter submits), a labelled input, and example topics for a warm start. Personalization and build
  *  settings live in the always-visible course-setup rail beside this form, so the default path here
  *  is one click. */
-export function TopicForm({ value, onChange, onSubmit, options }: TopicFormProps) {
+export function TopicForm({
+  value,
+  onChange,
+  onSubmit,
+  options,
+  submitLabel = "Generate course",
+  hint,
+}: TopicFormProps) {
   const inputId = useId();
   const hintId = useId();
   const errorId = useId();
@@ -53,8 +65,13 @@ export function TopicForm({ value, onChange, onSubmit, options }: TopicFormProps
           What do you want to <span className={styles.titleAccent}>learn</span>?
         </h2>
         <p id={hintId} className={styles.hint}>
-          Name a topic. Lunaris Studio maps its prerequisites, writes the lessons, and verifies
-          every claim &mdash; you&rsquo;ll watch each step run. Tailor it to you in the setup rail.
+          {hint ?? (
+            <>
+              Name a topic. Lunaris Studio maps its prerequisites, writes the lessons, and verifies
+              every claim &mdash; you&rsquo;ll watch each step run. Tailor it to you in the setup
+              rail.
+            </>
+          )}
         </p>
 
         {/* The field is self-evident from the heading + placeholder; keep the label for screen
@@ -81,8 +98,8 @@ export function TopicForm({ value, onChange, onSubmit, options }: TopicFormProps
             maxLength={200}
             autoFocus
           />
-          <Button type="submit" variant="accent" aria-label="Generate course">
-            <span className={styles.submitLabel}>Generate course</span>
+          <Button type="submit" variant="accent" aria-label={submitLabel}>
+            <span className={styles.submitLabel}>{submitLabel}</span>
             {/* On phones the label collapses to this go-arrow so the input gets the width. */}
             <svg
               className={styles.submitIcon}
