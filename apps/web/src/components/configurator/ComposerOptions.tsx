@@ -94,16 +94,22 @@ export function ComposerOptions({
           aria-labelledby={levelLabelId}
         />
       </div>
-      <div className={`${styles.option} ${styles.switchOption}`}>
-        <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
-          Official sources only
-        </span>
-        <Switch
-          checked={officialOnly}
-          onChange={onOfficialOnlyChange}
-          aria-labelledby={officialLabelId}
-        />
-      </div>
+      {/* Studio-only: Live compiles a graph and teaches from it, it never researches sources, so a
+          trust control here could not affect the outcome. Offering a control that does nothing is
+          worse than not offering it. Depth and Level stay — plan §5 puts depth in a session's own
+          config. */}
+      {mode !== "live" && (
+        <div className={`${styles.option} ${styles.switchOption}`}>
+          <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
+            Official sources only
+          </span>
+          <Switch
+            checked={officialOnly}
+            onChange={onOfficialOnlyChange}
+            aria-labelledby={officialLabelId}
+          />
+        </div>
+      )}
     </div>
   );
 }

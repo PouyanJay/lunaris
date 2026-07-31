@@ -69,6 +69,61 @@ describe("Composer — the Studio | Live fork", () => {
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
   });
 
+  it("drops Studio-only build settings when Live is selected", async () => {
+    // Live compiles a graph and teaches; it never researches sources. Offering a trust control that
+    // cannot affect the outcome is worse than not offering it. Depth and Level stay — plan §5 puts
+    // depth in a session's own config.
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+
+    expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Standard" })).toBeInTheDocument();
+  });
+
+  it("stops promising a build in the feature cards when Live is selected", async () => {
+    // The cards under the composer describe what submitting does. Under Live they described a
+    // Studio build — researching sources and a build to watch — neither of which Live performs.
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    expect(
+      screen.getByRole("list", { name: /what a lunaris studio build does/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+
+    expect(
+      screen.queryByRole("list", { name: /what a lunaris studio build does/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("list", { name: /what a lunaris live session does/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/watch it build/i)).not.toBeInTheDocument();
+  });
+
+  it("carries the topic into Live's surface, which names it back", async () => {
+    window.history.pushState(null, "", "/live?topic=How%20transformers%20work");
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Lunaris Live", level: 1 });
+    expect(screen.getByText(/how transformers work/i)).toBeInTheDocument();
+  });
+
+  it("renders Live cleanly with no topic at all", async () => {
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Lunaris Live", level: 1 });
+    // No stray "undefined" / empty quotes where a topic would go.
+    expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
+  });
+
   it("hides the fork entirely when Live is flagged off", async () => {
     vi.stubEnv("VITE_LIVE_ENABLED", "false");
     window.history.pushState(null, "", "/new");

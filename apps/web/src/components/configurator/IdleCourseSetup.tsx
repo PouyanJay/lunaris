@@ -180,7 +180,7 @@ export function IdleCourseSetup({
             />
           }
         />
-        <ComposerFeatures />
+        <ComposerFeatures mode={mode} />
         <RecentBuildsTable runs={runs} />
       </div>
 
