@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 
 import { useAuth } from "../../hooks/useAuth";
@@ -33,6 +33,12 @@ export function ProductRouter({ studio }: ProductRouterProps) {
   const active = useIsProductForked();
   const entered = productEnteredAt(pathname);
 
+  // True only for this session's first render. Latched off after the first commit rather than
+  // during render, so it survives a StrictMode double-render (which would otherwise consume the
+  // landing before the real one happened).
+  const [landing, setLanding] = useState(true);
+  useEffect(() => setLanding(false), []);
+
   // Being in a product is what makes it the remembered one, however you got there — gateway click,
   // deep link, or the switcher. Idempotent: once the preference matches, this stops firing.
   useEffect(() => {
@@ -51,10 +57,15 @@ export function ProductRouter({ studio }: ProductRouterProps) {
   }
   if (route === "gateway") return <ProductGateway onChoose={choose} />;
 
-  // Only the bare root is eligible for the remembered-product redirect. Every deeper path is a deep
-  // link and is left exactly where it points, so "a deep link never shows the gateway" holds by
-  // construction rather than by a branch that could rot.
-  if (pathname === ROUTES.home) {
+  // The remembered-product redirect is a LANDING decision — "on every subsequent login, go straight
+  // to the product you last used" — not a standing guard on `/`. Treating it as a guard made Studio
+  // Home unreachable from inside Live: every link to `/` (the product switcher, Live's empty-state
+  // action) bounced back to `/live`, because the remembered product was still "live". So it fires
+  // only on the first render of this session, and afterwards `/` simply means Studio Home.
+  //
+  // Still scoped to the bare root: every deeper path is a deep link and is left where it points, so
+  // "a deep link never shows the gateway" holds by construction.
+  if (landing && pathname === ROUTES.home) {
     if (product === null) return <Navigate to={PRODUCT_ROUTES.gateway} replace />;
     if (product === "live") return <Navigate to={PRODUCT_ROUTES.live} replace />;
   }
