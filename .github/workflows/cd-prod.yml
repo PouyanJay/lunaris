@@ -366,6 +366,11 @@ jobs:
           # stops. Set this var to the control app's URL (printed by the promote job's control-plane
           # deploy step) after the first deploy; empty → the switch falls back to the API base.
           VITE_PROD_CONTROL_URL: ${{ vars.VITE_PROD_CONTROL_URL }}
+          # Offers Lunaris Live (the gateway, the product switcher, the /live route-space). Baked in
+          # at build time, so flipping it is a rebuild + redeploy, not a config change. Scoped to the
+          # prod environment: dev can run Live while prod stays Studio-only. Unset or anything but
+          # "true" keeps Lunaris as Studio alone.
+          VITE_LIVE_ENABLED: ${{ vars.VITE_LIVE_ENABLED }}
       - name: Deploy to Static Web Apps (prod)
         uses: Azure/static-web-apps-deploy@v1
         with:
