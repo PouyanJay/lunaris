@@ -88,6 +88,53 @@ describe("App — the product gateway and fork", () => {
     expect(screen.queryByRole("region", { name: /choose a product/i })).not.toBeInTheDocument();
   });
 
+  it("sends a returning Live learner straight to Live — zero choices, no gateway", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "live" }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lunaris Live" })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/live"));
+    expect(screen.queryByRole("region", { name: /choose a product/i })).not.toBeInTheDocument();
+  });
+
+  it("leaves a returning Studio user on Studio Home — zero choices, no gateway", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "studio" }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(screen.queryByRole("region", { name: /choose a product/i })).not.toBeInTheDocument();
+  });
+
+  it("remembers a product entered directly, not only one picked at the gateway", async () => {
+    // Someone who always deep-links into Live would otherwise never be remembered: the gateway
+    // click is not the only way to enter a product.
+    const auth = signedIn({ last_product: "studio" });
+    useAuthMock.mockReturnValue(auth);
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lunaris Live" })).toBeInTheDocument();
+    await waitFor(() => expect(auth.updateLastProduct).toHaveBeenCalledWith("live"));
+  });
+
+  it("does not treat arriving at the bare root as choosing Studio", async () => {
+    // The root is ambiguous by design — the gateway resolves it. Recording Studio on arrival would
+    // rob a first-time user of the choice before they ever made it.
+    const auth = signedIn();
+    useAuthMock.mockReturnValue(auth);
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    await screen.findByRole("region", { name: /choose a product/i });
+    expect(auth.updateLastProduct).not.toHaveBeenCalled();
+  });
+
   it("records the choice so the next sign-in skips the gateway", async () => {
     const auth = signedIn();
     useAuthMock.mockReturnValue(auth);

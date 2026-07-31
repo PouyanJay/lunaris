@@ -1,6 +1,7 @@
 import { matchPath } from "react-router";
 
 import type { CourseView } from "../components/reader/ViewToggle";
+import type { Product } from "./product";
 
 /** The app's fixed destinations — one source of truth for path literals (sidebar + router). */
 export const ROUTES = {
@@ -35,6 +36,23 @@ export function resolveProductRoute(pathname: string): ProductRoute {
     return { kind: "live" };
   }
   return { kind: "studio" };
+}
+
+/** The product a path unambiguously places the user in, or `null` when arriving there says nothing
+ *  about which product they want.
+ *
+ *  Entering a product is what makes it the remembered one — picking it at the gateway is only the
+ *  first of several ways in (a deep link and the product switcher are the others), so recording the
+ *  choice at the gateway alone would forget anyone who habitually deep-links.
+ *
+ *  The bare root is deliberately excluded: it is the one ambiguous path, resolved by the gateway or
+ *  by the existing preference. Treating arrival there as choosing Studio would rob a first-time
+ *  user of the choice before they ever made it. */
+export function productEnteredAt(pathname: string): Product | null {
+  const route = resolveProductRoute(pathname);
+  if (route.kind === "live") return "live";
+  if (route.kind === "studio" && pathname !== ROUTES.home) return "studio";
+  return null;
 }
 
 /** The Settings surface's sub-sections, in nav order. One source of truth for the sub-nav, the

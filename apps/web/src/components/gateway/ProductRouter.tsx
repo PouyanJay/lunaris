@@ -1,10 +1,10 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 
 import { useAuth } from "../../hooks/useAuth";
 import { useProductChoice } from "../../hooks/useProductChoice";
 import { isLiveEnabled } from "../../lib/product";
-import { PRODUCT_ROUTES, resolveProductRoute, ROUTES } from "../../lib/routes";
+import { PRODUCT_ROUTES, productEnteredAt, resolveProductRoute, ROUTES } from "../../lib/routes";
 import { ProductGateway } from "./ProductGateway";
 import styles from "./ProductRouter.module.css";
 
@@ -29,7 +29,16 @@ export function ProductRouter({ studio }: ProductRouterProps) {
   const { pathname } = useLocation();
   const { product, choose } = useProductChoice(user, enabled ? updateLastProduct : undefined);
 
-  if (!isLiveEnabled() || !enabled) return <>{studio}</>;
+  const active = isLiveEnabled() && enabled;
+  const entered = productEnteredAt(pathname);
+
+  // Being in a product is what makes it the remembered one, however you got there — gateway click,
+  // deep link, or the switcher. Idempotent: once the preference matches, this stops firing.
+  useEffect(() => {
+    if (active && entered !== null && entered !== product) choose(entered);
+  }, [active, entered, product, choose]);
+
+  if (!active) return <>{studio}</>;
 
   const route = resolveProductRoute(pathname);
   if (route.kind === "live") {
