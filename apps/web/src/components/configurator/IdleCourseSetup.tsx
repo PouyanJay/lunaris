@@ -88,7 +88,9 @@ export function IdleCourseSetup({
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         const message =
-          error instanceof CourseLoadError ? error.message : "We couldn't read your goal. Try again.";
+          error instanceof CourseLoadError
+            ? error.message
+            : "We couldn't read your goal. Try again.";
         setBrief({ status: "error", message });
       });
   }, [apiBaseUrl, topic]);

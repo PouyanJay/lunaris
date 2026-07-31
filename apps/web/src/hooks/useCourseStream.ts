@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import type { StageTimes } from "../lib/buildTimeline";
 import { runBuildBridgeWorker } from "../lib/buildBridge";
 import { isDeviceComputeActive } from "../lib/computeSource";
-import {
-  getDeviceEngine,
-  type ChatBackend,
-  type DeviceProgress,
-} from "../lib/deviceEngine";
+import { getDeviceEngine, type ChatBackend, type DeviceProgress } from "../lib/deviceEngine";
 import { CourseLoadError, fetchCourseById } from "../lib/loadCourse";
 import { fetchRunEvents, fetchRuns } from "../lib/runs";
 import { splitRunEvents } from "../lib/splitRunEvents";
@@ -347,7 +350,9 @@ function buildFailureMessage(error: unknown, onDevice: boolean): string {
 
 /** Download + boot the on-device model, then hand off to the stream; a failed preparation is a
  *  recoverable error state, never a build that starts without its model. */
-function prepareDeviceThenStream(options: StreamBuildOptions & { engine: BuildDeviceEngine }): void {
+function prepareDeviceThenStream(
+  options: StreamBuildOptions & { engine: BuildDeviceEngine },
+): void {
   const { engine, controller, setState, request } = options;
   setState({ status: "preparing-device", topic: request.topic, progress: null });
   engine

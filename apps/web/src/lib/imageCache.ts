@@ -61,7 +61,11 @@ export function clearSeenImages(): void {
  *  no SW (and it only ever intercepts signed storage images regardless). Best-effort: a registration
  *  failure (no SW support, an insecure context) just means images load uncached, never a broken app. */
 export function registerImageCache(): void {
-  if (!import.meta.env.PROD || typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+  if (
+    !import.meta.env.PROD ||
+    typeof navigator === "undefined" ||
+    !("serviceWorker" in navigator)
+  ) {
     return;
   }
   window.addEventListener("load", () => {

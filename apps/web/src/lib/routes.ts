@@ -25,17 +25,18 @@ export const PRODUCT_ROUTES = {
 } as const;
 
 /** Which product a URL belongs to. Resolved before {@link resolveRoute}, which stays purely
- *  Studio's concern. */
-export type ProductRoute = { kind: "gateway" } | { kind: "live" } | { kind: "studio" };
+ *  Studio's concern. A plain union rather than the tagged-object shape `ShellRoute` uses: no
+ *  variant carries a payload, and inventing one for symmetry would be a wrapper around a string. */
+export type ProductRoute = "gateway" | "live" | "studio";
 
 /** Route a path to its product. Everything outside the gateway and the `/live` space is Studio's,
  *  which is what keeps Live additive rather than a rewrite of the existing router. */
 export function resolveProductRoute(pathname: string): ProductRoute {
-  if (pathname === PRODUCT_ROUTES.gateway) return { kind: "gateway" };
+  if (pathname === PRODUCT_ROUTES.gateway) return "gateway";
   if (pathname === PRODUCT_ROUTES.live || pathname.startsWith(`${PRODUCT_ROUTES.live}/`)) {
-    return { kind: "live" };
+    return "live";
   }
-  return { kind: "studio" };
+  return "studio";
 }
 
 /** The product a path unambiguously places the user in, or `null` when arriving there says nothing
@@ -50,8 +51,8 @@ export function resolveProductRoute(pathname: string): ProductRoute {
  *  user of the choice before they ever made it. */
 export function productEnteredAt(pathname: string): Product | null {
   const route = resolveProductRoute(pathname);
-  if (route.kind === "live") return "live";
-  if (route.kind === "studio" && pathname !== ROUTES.home) return "studio";
+  if (route === "live") return "live";
+  if (route === "studio" && pathname !== ROUTES.home) return "studio";
   return null;
 }
 

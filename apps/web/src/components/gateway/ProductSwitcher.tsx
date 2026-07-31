@@ -28,7 +28,7 @@ export function ProductSwitcher({ current }: ProductSwitcherProps) {
   if (!forked) return null;
 
   return (
-    <nav className={styles.switcher} aria-label="Product">
+    <nav className={`welded ${styles.switcher}`} aria-label="Product">
       {DESTINATIONS.map(({ product, label, to }) => (
         <Link
           key={product}

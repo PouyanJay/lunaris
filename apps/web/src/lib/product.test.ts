@@ -53,7 +53,7 @@ describe("resolveProductRoute", () => {
     ["/livestream", "studio"],
     ["/liveness", "studio"],
   ])("routes %s to %s", (pathname, kind) => {
-    expect(resolveProductRoute(pathname).kind).toBe(kind);
+    expect(resolveProductRoute(pathname)).toBe(kind);
   });
 });
 

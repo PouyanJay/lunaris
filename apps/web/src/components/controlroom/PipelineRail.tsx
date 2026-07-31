@@ -43,7 +43,11 @@ export function PipelineRail({ phases }: PipelineRailProps) {
               <span className={`${styles.duration} mono`}>{formatDuration(phase.durationMs)}</span>
             )}
             <span className="sr-only">
-              {phase.status === "done" ? "done" : phase.status === "active" ? "in progress" : "pending"}
+              {phase.status === "done"
+                ? "done"
+                : phase.status === "active"
+                  ? "in progress"
+                  : "pending"}
             </span>
           </li>
         ))}

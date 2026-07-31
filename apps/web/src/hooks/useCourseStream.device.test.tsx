@@ -11,9 +11,11 @@ vi.mock("../lib/streamCourse", () => ({ streamCourse: streamCourseMock }));
 vi.mock("../lib/buildBridge", () => ({ runBuildBridgeWorker: workerMock }));
 
 /** A controllable fake engine: preload resolves on demand, reporting one progress beat. */
-function fakeEngine(preload = vi.fn(async (onProgress?: (p: DeviceProgress) => void) => {
-  onProgress?.({ progress: 0.4, text: "Fetching params" });
-})) {
+function fakeEngine(
+  preload = vi.fn(async (onProgress?: (p: DeviceProgress) => void) => {
+    onProgress?.({ progress: 0.4, text: "Fetching params" });
+  }),
+) {
   return { preload, chat: vi.fn(async () => "unused") };
 }
 

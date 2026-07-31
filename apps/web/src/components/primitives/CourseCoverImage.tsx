@@ -155,7 +155,8 @@ function useCoverImageSource(
     setAdopted((held) => {
       const current = held[rung];
       const fresh = incomingRef.current.find(
-        (url) => current !== undefined && storageImageCacheKey(url) === storageImageCacheKey(current),
+        (url) =>
+          current !== undefined && storageImageCacheKey(url) === storageImageCacheKey(current),
       );
       if (fresh !== undefined && fresh !== current) {
         return held.map((url, i) => (i === rung ? fresh : url));

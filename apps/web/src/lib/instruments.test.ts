@@ -26,7 +26,11 @@ describe("groundingLedger", () => {
 
   it("sums claim verdicts across modules and counts accepted sources by trust tier", () => {
     const events = [
-      makeProgressEvent("claims_verified", 1, { claimsTotal: 10, claimsSupported: 8, claimsCut: 2 }),
+      makeProgressEvent("claims_verified", 1, {
+        claimsTotal: 10,
+        claimsSupported: 8,
+        claimsCut: 2,
+      }),
       makeProgressEvent("claims_verified", 2, { claimsTotal: 5, claimsSupported: 5, claimsCut: 0 }),
     ];
     const agentEvents = [
@@ -56,7 +60,13 @@ describe("readinessScorecard", () => {
 
   it("reads grounding as a clean success when nothing was cut", () => {
     const gauges = readinessScorecard(
-      [makeProgressEvent("claims_verified", 0, { claimsTotal: 5, claimsSupported: 5, claimsCut: 0 })],
+      [
+        makeProgressEvent("claims_verified", 0, {
+          claimsTotal: 5,
+          claimsSupported: 5,
+          claimsCut: 0,
+        }),
+      ],
       [],
     );
 
@@ -81,7 +91,11 @@ describe("readinessScorecard", () => {
 
   it("derives grounding, coverage, and trust from their real events", () => {
     const events = [
-      makeProgressEvent("claims_verified", 1, { claimsTotal: 10, claimsSupported: 8, claimsCut: 2 }),
+      makeProgressEvent("claims_verified", 1, {
+        claimsTotal: 10,
+        claimsSupported: 8,
+        claimsCut: 2,
+      }),
       makeProgressEvent("coverage_verified", 2, { gapCount: 0 }),
     ];
     const agentEvents = [source(0, "official", true, 0.9), source(1, "open", true, 0.7)];
@@ -97,7 +111,10 @@ describe("readinessScorecard", () => {
   });
 
   it("flags coverage gaps amber with the honest count", () => {
-    const gauges = readinessScorecard([makeProgressEvent("coverage_verified", 0, { gapCount: 3 })], []);
+    const gauges = readinessScorecard(
+      [makeProgressEvent("coverage_verified", 0, { gapCount: 3 })],
+      [],
+    );
 
     const coverage = gauges.find((gauge) => gauge.key === "coverage")!;
     expect(coverage.value).toBe("3 gaps");

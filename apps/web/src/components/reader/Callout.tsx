@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-import { ExplainAction, reactNodeToText } from "../explain/ExplainAction";
+import { ExplainAction } from "../explain/ExplainAction";
+import { reactNodeToText } from "../explain/reactNodeToText";
 import { Callout as CalloutPanel } from "../primitives/Callout";
 import { CALLOUT_META, resolveCalloutVariant } from "../primitives/calloutVariants";
 

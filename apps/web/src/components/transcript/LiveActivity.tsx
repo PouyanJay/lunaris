@@ -31,7 +31,11 @@ const VERBS: Record<string, readonly string[]> = {
     "Vetting videos & articles…",
     "Finding the best aids…",
   ],
-  lesson_videos: ["Rendering lesson videos…", "Awaiting the explainers…", "Stitching in the videos…"],
+  lesson_videos: [
+    "Rendering lesson videos…",
+    "Awaiting the explainers…",
+    "Stitching in the videos…",
+  ],
   run_completed: ["Finalizing…", "Assembling the course…", "Wrapping up…"],
 };
 const DEFAULT_VERBS = ["Working…", "Thinking…"] as const;

@@ -50,7 +50,7 @@ export function ProductGateway({ onChoose }: ProductGatewayProps) {
           <p className={styles.lede}>You can switch any time — we&rsquo;ll remember this one.</p>
         </div>
 
-        <div className={styles.panels}>
+        <div className={`welded ${styles.panels}`}>
           <Link
             to={ROUTES.home}
             className={`${styles.panel} ${styles.studio}`}

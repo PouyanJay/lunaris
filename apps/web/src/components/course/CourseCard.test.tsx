@@ -69,7 +69,9 @@ describe("CourseCard cover from the pre-signed summary thumb", () => {
 
   it("falls back to the dark thumb in dark theme when there is no light twin", () => {
     setTheme("dark");
-    const { container } = renderCard(makeCourseSummary({ thumbUrl: DARK_THUMB, thumbUrlLight: null }));
+    const { container } = renderCard(
+      makeCourseSummary({ thumbUrl: DARK_THUMB, thumbUrlLight: null }),
+    );
 
     expect(coverSrc(container)).toBe(DARK_THUMB);
   });

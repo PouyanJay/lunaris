@@ -24,9 +24,7 @@ describe("RecentBuildsTable", () => {
   });
 
   it("lists each build with a linked topic, structure, status, and time", () => {
-    renderTable([
-      makeRun({ id: "c-1", topic: "How HTTPS works", kcCount: 15, moduleCount: 4 }),
-    ]);
+    renderTable([makeRun({ id: "c-1", topic: "How HTTPS works", kcCount: 15, moduleCount: 4 })]);
 
     const row = screen.getByRole("row", { name: /how https works/i });
     // The topic is a real link into the course/build canvas (Cmd/middle-click works).

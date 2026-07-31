@@ -6,6 +6,7 @@ import { useProductChoice } from "../../hooks/useProductChoice";
 import { useIsProductForked } from "../../hooks/useIsProductForked";
 import { PRODUCT_ROUTES, productEnteredAt, resolveProductRoute, ROUTES } from "../../lib/routes";
 import { ProductGateway } from "./ProductGateway";
+import { ProductSwitcher } from "./ProductSwitcher";
 import styles from "./ProductRouter.module.css";
 
 // Live is code-split at the product boundary: Studio's bundle must never carry Live's dependencies,
@@ -41,14 +42,14 @@ export function ProductRouter({ studio }: ProductRouterProps) {
   if (!active) return <>{studio}</>;
 
   const route = resolveProductRoute(pathname);
-  if (route.kind === "live") {
+  if (route === "live") {
     return (
       <Suspense fallback={<div className={styles.loading} role="status" aria-live="polite" />}>
-        <LiveShell />
+        <LiveShell productSwitcher={<ProductSwitcher current="live" />} />
       </Suspense>
     );
   }
-  if (route.kind === "gateway") return <ProductGateway onChoose={choose} />;
+  if (route === "gateway") return <ProductGateway onChoose={choose} />;
 
   // Only the bare root is eligible for the remembered-product redirect. Every deeper path is a deep
   // link and is left exactly where it points, so "a deep link never shows the gateway" holds by

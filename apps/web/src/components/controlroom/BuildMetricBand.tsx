@@ -12,8 +12,7 @@ export function BuildMetricBand({ events }: BuildMetricBandProps) {
   const graphEvent = [...events].reverse().find((event) => event.stage === "graph_built");
   if (!graphEvent || graphEvent.kcCount == null) return null;
 
-  const acyclic =
-    graphEvent.graph == null ? "—" : graphEvent.graph.isAcyclic ? "yes" : "no";
+  const acyclic = graphEvent.graph == null ? "—" : graphEvent.graph.isAcyclic ? "yes" : "no";
 
   return (
     <dl className={styles.band} aria-label="Graph metrics">
@@ -27,7 +26,10 @@ export function BuildMetricBand({ events }: BuildMetricBandProps) {
       </div>
       <div className={styles.cell}>
         <dt className={`${styles.label} mono`}>ACYCLIC</dt>
-        <dd className={`${styles.value} mono`} data-tone={acyclic === "yes" ? "success" : undefined}>
+        <dd
+          className={`${styles.value} mono`}
+          data-tone={acyclic === "yes" ? "success" : undefined}
+        >
           {acyclic}
         </dd>
       </div>

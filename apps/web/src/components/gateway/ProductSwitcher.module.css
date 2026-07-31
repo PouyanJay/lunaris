@@ -1,12 +1,11 @@
 /* The product switcher, docked beside the brand lockup in both top bars. A hairline-bordered pair
    welded into one control — the same "one region, divided by a rule" idiom as the gateway, at
    chrome scale. */
+/* Composed on the shared `.welded` idiom (index.css) — the same "one region, divided by rules"
+   structure the gateway uses, here at chrome scale. */
 .switcher {
   display: inline-flex;
   align-items: center;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
 }
 
 .option {

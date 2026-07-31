@@ -107,9 +107,11 @@ function remarkArrowFlow() {
         continue;
       }
 
-      if (chain.lead) result.push({ type: "paragraph", children: [{ type: "text", value: chain.lead }] });
+      if (chain.lead)
+        result.push({ type: "paragraph", children: [{ type: "text", value: chain.lead }] });
       result.push(buildFlow(chain.nodes));
-      if (chain.trail) result.push({ type: "paragraph", children: [{ type: "text", value: chain.trail }] });
+      if (chain.trail)
+        result.push({ type: "paragraph", children: [{ type: "text", value: chain.trail }] });
     }
 
     tree.children = result as unknown as Root["children"];

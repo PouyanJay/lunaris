@@ -58,13 +58,12 @@
    One border level for the whole region; the split between products is a hairline, so the two
    halves read as one control rather than two cards. */
 
+/* Composed on the shared `.welded` idiom (index.css), which owns the border, radius, clipping and
+   ground. This adds only the two-up track and the larger masthead-scale radius. */
 .panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  border: var(--border-width) solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
-  background: var(--surface);
 }
 
 .panel {

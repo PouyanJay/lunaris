@@ -6,8 +6,7 @@ import { feedLine, groupFeedByDay } from "./activityFeed";
 // Local-calendar fixtures, never absolute-UTC literals: grouping derives the LOCAL day, so a
 // fixed "...T12:00:00Z" flips groups when the suite runs in Tokyo or Auckland.
 const NOW = new Date(2026, 6, 8, 15, 0, 0);
-const atDaysAgo = (days: number, hour = 12) =>
-  new Date(2026, 6, 8 - days, hour).toISOString();
+const atDaysAgo = (days: number, hour = 12) => new Date(2026, 6, 8 - days, hour).toISOString();
 
 function item(overrides: Partial<ActivityFeedItem> = {}): ActivityFeedItem {
   return {

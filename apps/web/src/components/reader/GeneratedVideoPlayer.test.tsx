@@ -149,7 +149,9 @@ describe("GeneratedVideoPlayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Play it" }));
 
     // Assert — firing the error throws nothing and the player is still mounted.
-    expect(() => fireEvent.error(document.querySelector("video") as HTMLVideoElement)).not.toThrow();
+    expect(() =>
+      fireEvent.error(document.querySelector("video") as HTMLVideoElement),
+    ).not.toThrow();
     expect(document.querySelector("video")).not.toBeNull();
   });
 });

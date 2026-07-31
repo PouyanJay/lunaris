@@ -233,8 +233,6 @@ describe("BuildControlRoom", () => {
         /assembling the prerequisite graph/i,
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("region", { name: /readiness scorecard/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /readiness scorecard/i })).not.toBeInTheDocument();
   });
 });

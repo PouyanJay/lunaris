@@ -6,7 +6,9 @@
   border: var(--border-width) solid var(--border-strong);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  transition: opacity var(--dur) var(--ease), border-color var(--dur) var(--ease);
+  transition:
+    opacity var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
 }
 
 .node[data-state="queued"] {

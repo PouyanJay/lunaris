@@ -16,7 +16,8 @@ interface Node {
 }
 
 /** Definitional cue adjectives — kept tight (no "key"/"core"/"main", which read as ordinary prose). */
-const CUE = "hallmark|defining|dominant|central|primary|principal|chief|cornerstone|essential|fundamental";
+const CUE =
+  "hallmark|defining|dominant|central|primary|principal|chief|cornerstone|essential|fundamental";
 /** A subject (≤5 words, sentence-initial) followed by "is/are (the|a|an) <cue>". */
 const DEFINITION = new RegExp(
   `(^|[.!?]\\s+)([A-Z][\\w-]*(?:\\s+[\\w-]+){0,4}?)\\s+(?:is|are)\\s+(?:the|a|an)\\s+(?:${CUE})\\b`,

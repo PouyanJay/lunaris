@@ -307,6 +307,17 @@ p {
   background-color: var(--text-muted);
 }
 
+/* The welded region: a bordered container whose children are divided by hairlines rather than
+   sitting apart as separate cards. One border level for the whole region, so a group of choices
+   reads as a single instrument. Used at masthead scale (the product gateway) and at chrome scale
+   (the product switcher); the consumer supplies padding, type and the divider direction. */
+.welded {
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+
 .eyebrow {
   font-size: var(--eyebrow-size);
   text-transform: uppercase;
