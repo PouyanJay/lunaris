@@ -1,4 +1,5 @@
-import { Menu, menuRowCaretClass, menuRowClass, type MenuOption } from "../primitives/Menu";
+import { Menu, type MenuOption } from "../primitives/Menu";
+import { menuRowCaretClass, menuRowClass } from "../primitives/menuRow";
 import type { ComposerLevel } from "../../lib/composerLevel";
 import type { Product } from "../../lib/product";
 import type { DiscoveryDepth } from "../../types/course";
