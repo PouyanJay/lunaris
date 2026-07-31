@@ -53,9 +53,7 @@ const webLlmLoader: BackendLoader = async (modelId, onProgress) => {
   return {
     chat: async (messages: ChatMessage[]) => {
       const reply = await engine.chat.completions.create({
-        messages: messages as Parameters<
-          typeof engine.chat.completions.create
-        >[0]["messages"],
+        messages: messages as Parameters<typeof engine.chat.completions.create>[0]["messages"],
       });
       return reply.choices[0]?.message?.content ?? "";
     },

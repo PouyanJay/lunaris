@@ -58,7 +58,9 @@ describe("CourseReader — claim → lesson backlink", () => {
     const claimText = "Zephyr protocol encrypts the quokka channel";
     lesson.segments.demonstrate.prose = `${filler}\n\n${claimText}.`;
     lesson.segments.demonstrate.resources = [];
-    lesson.segments.demonstrate.claims = [{ text: claimText, supportedBy: null, verifierStatus: "cut" }];
+    lesson.segments.demonstrate.claims = [
+      { text: claimText, supportedBy: null, verifierStatus: "cut" },
+    ];
     lesson.expects = [];
     lesson.selfCheck = [];
     course.modules[0]!.assessment.items = [];

@@ -11,6 +11,8 @@ import { useSearchIndex } from "./hooks/useSearchIndex";
 import { useSearchShortcut } from "./hooks/useSearchShortcut";
 import type { SearchEntry } from "./lib/searchIndex";
 import { AuthGate } from "./components/auth/AuthGate";
+import { ProductRouter } from "./components/gateway/ProductRouter";
+import { ProductSwitcher } from "./components/gateway/ProductSwitcher";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
@@ -475,9 +477,7 @@ function StudioApp({
       toolbar: (
         <ViewToggle value={viewMode} onChange={(view) => navigate(coursePath(course.id, view))} />
       ),
-      meta: (
-        <CourseStatusMeta course={course} apiBaseUrl={apiBaseUrl} onPublished={onReload} />
-      ),
+      meta: <CourseStatusMeta course={course} apiBaseUrl={apiBaseUrl} onPublished={onReload} />,
       body: bodies[viewMode](),
     };
   };
@@ -788,6 +788,7 @@ function StudioApp({
         sidebar={sidebar}
         title={canvas.title}
         meta={canvas.meta}
+        productSwitcher={<ProductSwitcher current="studio" />}
         toolbar={canvas.toolbar}
         search={<SearchTrigger onOpen={openPalette} />}
         banner={
@@ -843,12 +844,18 @@ export default function App() {
         // while useLocation never follows, stranding the canvas on the old route.
         <BrowserRouter useTransitions={false}>
           <AuthGate apiBaseUrl={apiBaseUrl}>
-            <StudioApp
-              apiBaseUrl={apiBaseUrl}
-              theme={theme}
-              onToggleTheme={toggle}
-              preference={preference}
-              onPreferenceChange={setPreference}
+            {/* The product fork sits strictly inside the auth gate: you sign into Lunaris, then
+                choose a product. Transparent while Live is flagged off. */}
+            <ProductRouter
+              studio={
+                <StudioApp
+                  apiBaseUrl={apiBaseUrl}
+                  theme={theme}
+                  onToggleTheme={toggle}
+                  preference={preference}
+                  onPreferenceChange={setPreference}
+                />
+              }
             />
           </AuthGate>
         </BrowserRouter>

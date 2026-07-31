@@ -125,9 +125,7 @@ function HomeBody({
           onViewCourse={onViewCourse}
         />
       )}
-      {recent.length > 0 && (
-        <RecentCourses courses={recent} onRequestDelete={onRequestDelete} />
-      )}
+      {recent.length > 0 && <RecentCourses courses={recent} onRequestDelete={onRequestDelete} />}
       {hasMore && (
         <div className={styles.viewAllRow}>
           <Link className={styles.viewAll} to={ROUTES.library}>

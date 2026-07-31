@@ -10,7 +10,11 @@ const BAR_AREA_PX = 96;
 const MIN_BAR_PX = 4;
 
 const weekdayLetter = new Intl.DateTimeFormat(undefined, { weekday: "narrow" });
-const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" });
+const dayLabel = new Intl.DateTimeFormat(undefined, {
+  weekday: "long",
+  month: "short",
+  day: "numeric",
+});
 
 function isToday(date: string): boolean {
   return parseLocalDate(date).toDateString() === new Date().toDateString();

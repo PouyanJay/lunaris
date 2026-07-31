@@ -14,9 +14,9 @@ describe("homeSubline", () => {
   });
 
   it("singularises a lone completed lesson", () => {
-    expect(
-      homeSubline([makeCourseSummary({ lessonsDone: 1, learnerStatus: "completed" })]),
-    ).toBe("1 lesson completed");
+    expect(homeSubline([makeCourseSummary({ lessonsDone: 1, learnerStatus: "completed" })])).toBe(
+      "1 lesson completed",
+    );
   });
 
   it("shows only the in-progress count when no lessons are done yet", () => {
@@ -43,10 +43,7 @@ describe("homeSubline", () => {
 
   it("leads with the streak when one is alight", () => {
     expect(
-      homeSubline(
-        [makeCourseSummary({ lessonsDone: 6, learnerStatus: "completed" })],
-        5,
-      ),
+      homeSubline([makeCourseSummary({ lessonsDone: 6, learnerStatus: "completed" })], 5),
     ).toBe("5-day streak · 6 lessons completed");
   });
 

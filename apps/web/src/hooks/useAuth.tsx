@@ -4,6 +4,7 @@ import type { Session, User } from "@supabase/supabase-js";
 
 import { clearCoverViews } from "./coverViewCache";
 import { clearLibraryCache } from "./libraryCache";
+import { LAST_PRODUCT_KEY, type Product } from "../lib/product";
 import { supabase } from "../lib/supabase";
 
 /** Result of a sign-up: a session means immediate login; otherwise the user must confirm by email. */
@@ -23,12 +24,27 @@ interface AuthState {
   signOut: () => Promise<void>;
   /** Persist the account's display name to Supabase user_metadata (read via resolveDisplayName). */
   updateDisplayName: (displayName: string) => Promise<void>;
+  /** Persist the product the account last used, so the next sign-in skips the gateway (read via
+   *  resolveLastProduct). Mirrors updateDisplayName — same metadata store, same refresh path. */
+  updateLastProduct: (product: Product) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
 
 function unconfigured(): never {
   throw new Error("Authentication is not configured");
+}
+
+/** Persist a patch onto the signed-in account's Supabase `user_metadata`.
+ *
+ *  `updateUser` emits a USER_UPDATED event, which the provider's onAuthStateChange listener picks
+ *  up to refresh the session — so a written field flows to the surfaces that read it (the account
+ *  row, the greeting, the product fork) without a reload. Every metadata write goes through here so
+ *  that refresh behaviour, and the unconfigured-auth guard, cannot differ between fields. */
+async function writeUserMetadata(patch: Record<string, unknown>): Promise<void> {
+  if (!supabase) unconfigured();
+  const { error } = await supabase.auth.updateUser({ data: patch });
+  if (error) throw error;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -98,13 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut: async () => {
         await supabase?.auth.signOut();
       },
-      updateDisplayName: async (displayName) => {
-        if (!supabase) unconfigured();
-        // updateUser emits a USER_UPDATED event; the onAuthStateChange listener above refreshes
-        // the session so the new name flows to the account row and greeting without a reload.
-        const { error } = await supabase.auth.updateUser({ data: { display_name: displayName } });
-        if (error) throw error;
-      },
+      updateDisplayName: (displayName) => writeUserMetadata({ display_name: displayName }),
+      updateLastProduct: (product) => writeUserMetadata({ [LAST_PRODUCT_KEY]: product }),
     }),
     [enabled, loading, session],
   );

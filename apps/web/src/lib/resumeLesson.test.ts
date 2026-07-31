@@ -29,17 +29,16 @@ function progress(overrides: Partial<CourseProgress> = {}): CourseProgress {
 
 describe("resolveResumePoint", () => {
   it("resumes at the recorded last-opened lesson when it still exists", () => {
-    const point = resolveResumePoint(
-      threeLessonCourse(),
-      progress({ lastLessonId: "l-2" }),
-    );
+    const point = resolveResumePoint(threeLessonCourse(), progress({ lastLessonId: "l-2" }));
     expect(point).toEqual({ lessonId: "l-2", number: 2, total: 3, moduleTitle: "Foundations" });
   });
 
   it("falls back to the first unfinished lesson when there is no recorded position", () => {
     const point = resolveResumePoint(
       threeLessonCourse(),
-      progress({ lessons: [{ lessonId: "l-1", state: "done", updatedAt: "2026-07-01T00:00:00Z" }] }),
+      progress({
+        lessons: [{ lessonId: "l-1", state: "done", updatedAt: "2026-07-01T00:00:00Z" }],
+      }),
     );
     expect(point?.lessonId).toBe("l-2");
     expect(point?.number).toBe(2);

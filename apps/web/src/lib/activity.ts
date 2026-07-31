@@ -66,7 +66,10 @@ export async function putHeartbeat(apiBaseUrl: string): Promise<void> {
 
 /** Fetch the caller's activity snapshot (streaks, study minutes, feed). Rejects with
  *  ActivityError on a transport/HTTP failure so the caller can surface a recoverable message. */
-export async function fetchActivity(apiBaseUrl: string, signal?: AbortSignal): Promise<ActivityView> {
+export async function fetchActivity(
+  apiBaseUrl: string,
+  signal?: AbortSignal,
+): Promise<ActivityView> {
   const url = `${apiBaseUrl}/api/activity?tz=${encodeURIComponent(viewerTimeZone())}`;
   let response: Response;
   try {

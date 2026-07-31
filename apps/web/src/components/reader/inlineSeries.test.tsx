@@ -8,7 +8,11 @@ import { Markdown } from "./Markdown";
  *  terminal and/or connector and short items, so prose clauses and dash-appositives stay inline. */
 describe("inline series → bullet list (R4a)", () => {
   it("lifts an em-dash series, keeping the lead-in as prose", () => {
-    render(<Markdown>{"The Th2/ILC2 axis produces three core T2 cytokines—IL-4, IL-5, and IL-13."}</Markdown>);
+    render(
+      <Markdown>
+        {"The Th2/ILC2 axis produces three core T2 cytokines—IL-4, IL-5, and IL-13."}
+      </Markdown>,
+    );
 
     const list = screen.getByRole("list");
     const items = within(list).getAllByRole("listitem");
@@ -22,7 +26,9 @@ describe("inline series → bullet list (R4a)", () => {
   it("lifts a colon series embedded mid-paragraph, preserving the trailing sentence", () => {
     render(
       <Markdown>
-        {"It drives the canonical features: airflow limitation, mucus plugging, airway remodeling, and hyperresponsiveness. The paradigm is established."}
+        {
+          "It drives the canonical features: airflow limitation, mucus plugging, airway remodeling, and hyperresponsiveness. The paradigm is established."
+        }
       </Markdown>,
     );
 
@@ -39,7 +45,9 @@ describe("inline series → bullet list (R4a)", () => {
   describe("does NOT fire", () => {
     it("leaves a dash appositive with no and/or connector inline", () => {
       const { container } = render(
-        <Markdown>{"Diverse triggers—infectious, allergic, irritant, osmotic—activate the response."}</Markdown>,
+        <Markdown>
+          {"Diverse triggers—infectious, allergic, irritant, osmotic—activate the response."}
+        </Markdown>,
       );
       expect(container.querySelector("ul")).toBeNull();
     });
@@ -47,7 +55,9 @@ describe("inline series → bullet list (R4a)", () => {
     it("leaves a colon followed by a long prose clause inline", () => {
       const { container } = render(
         <Markdown>
-          {"These are upstream drivers: they activate innate lymphoid cells and prime dendritic cells, which recruit and activate Th2 cells."}
+          {
+            "These are upstream drivers: they activate innate lymphoid cells and prime dendritic cells, which recruit and activate Th2 cells."
+          }
         </Markdown>,
       );
       expect(container.querySelector("ul")).toBeNull();
@@ -59,7 +69,9 @@ describe("token-led sentences → keyed list (R4b)", () => {
   it("builds a definition list keyed by the leading token", () => {
     render(
       <Markdown>
-        {"IL-4 drives Th2 differentiation. IL-5 recruits eosinophils to the airway. IL-13 drives mucus hypersecretion."}
+        {
+          "IL-4 drives Th2 differentiation. IL-5 recruits eosinophils to the airway. IL-13 drives mucus hypersecretion."
+        }
       </Markdown>,
     );
 
@@ -81,7 +93,9 @@ describe("token-led sentences → keyed list (R4b)", () => {
   it("does not mistake all-caps emphasis prose for a keyed list", () => {
     // NEVER/ALWAYS/ONLY read as emphasis, not tokens — a "guidelines" paragraph must stay prose.
     const { container } = render(
-      <Markdown>{"NEVER skip the warmup. ALWAYS stretch first. ONLY then begin the set."}</Markdown>,
+      <Markdown>
+        {"NEVER skip the warmup. ALWAYS stretch first. ONLY then begin the set."}
+      </Markdown>,
     );
     expect(container.querySelector("dl")).toBeNull();
   });

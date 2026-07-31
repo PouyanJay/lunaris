@@ -22,7 +22,9 @@ describe("data tokens (R2)", () => {
   });
 
   it("chips the reference wall's cytokine tokens", () => {
-    render(<Markdown>{"CANONICAL CYTOKINES: three core cytokines are IL-4, IL-5, and IL-13."}</Markdown>);
+    render(
+      <Markdown>{"CANONICAL CYTOKINES: three core cytokines are IL-4, IL-5, and IL-13."}</Markdown>,
+    );
     for (const t of ["IL-4", "IL-5", "IL-13"]) {
       expect(screen.getByText(t)).toHaveAttribute("data-category", "data");
     }
@@ -37,7 +39,9 @@ describe("data tokens (R2)", () => {
     });
 
     it("does not chip a bare number or a plain year", () => {
-      const { container } = render(<Markdown>{"By 2024 the type 2 response was mapped."}</Markdown>);
+      const { container } = render(
+        <Markdown>{"By 2024 the type 2 response was mapped."}</Markdown>,
+      );
       expect(container.querySelector('[data-category="data"]')).toBeNull();
       expect(container.textContent).toContain("2024");
       expect(container.textContent).toContain("type 2");

@@ -8,7 +8,8 @@ import { Markdown } from "./Markdown";
  *  it is deterministic; it never lets unsafe markup through; and it composes with the existing lifts. */
 
 /** Alphanumeric word tokens, keeping hyphenated ids ("il-4", "t2-high", "600-eosinophil") whole. */
-const words = (text: string): string[] => text.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? [];
+const words = (text: string): string[] =>
+  text.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? [];
 
 describe("prose formatting — guardrails (R8)", () => {
   it("adds no words and drops only list conjunctions (presentation-only)", () => {
@@ -61,7 +62,9 @@ describe("prose formatting — guardrails (R8)", () => {
 
   it("keeps the sanitiser gate closed with the added custom elements", () => {
     const { container } = render(
-      <Markdown>{"Stay safe <script>alert(1)</script> and [click](javascript:alert(2))."}</Markdown>,
+      <Markdown>
+        {"Stay safe <script>alert(1)</script> and [click](javascript:alert(2))."}
+      </Markdown>,
     );
     expect(container.querySelector("script")).toBeNull();
     expect(container.querySelector('a[href^="javascript:"]')).toBeNull();

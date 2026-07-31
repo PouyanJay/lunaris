@@ -259,7 +259,8 @@ describe("CourseCoverImage stable artwork across token rotation", () => {
     );
     const regenerated: import("../../hooks/useCourseCover").CourseCoverState = {
       phase: "image",
-      imageUrl: "https://ref.supabase.co/storage/v1/object/sign/course-covers/c/j2/cover.png?token=B",
+      imageUrl:
+        "https://ref.supabase.co/storage/v1/object/sign/course-covers/c/j2/cover.png?token=B",
       imageUrlLight: null,
       thumbUrl:
         "https://ref.supabase.co/storage/v1/render/image/sign/course-covers/c/j2/cover.png?width=1280&token=B",

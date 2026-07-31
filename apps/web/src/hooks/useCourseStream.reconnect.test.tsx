@@ -26,7 +26,11 @@ const COURSE = { id: "course-1", topic: "Graphs" } as unknown as Course;
  *  rejects as if the live SSE connection dropped before the terminal course frame. */
 function streamDropsAfterIds(): void {
   streamCourseMock.mockImplementation(
-    (_base: string, _topic: string, options: { onRunId?: (id: string) => void; onCourseId?: (id: string) => void }) => {
+    (
+      _base: string,
+      _topic: string,
+      options: { onRunId?: (id: string) => void; onCourseId?: (id: string) => void },
+    ) => {
       options.onRunId?.("run-1");
       options.onCourseId?.("course-1");
       return Promise.reject(
@@ -145,7 +149,11 @@ describe("useCourseStream reconnect (SSE drop resilience)", () => {
   it("still errors immediately on a non-stream-drop failure (no re-attach)", async () => {
     // Arrange — a real server failure, not a transient stream drop (no streamIncomplete flag).
     streamCourseMock.mockImplementation(
-      (_base: string, _topic: string, options: { onRunId?: (id: string) => void; onCourseId?: (id: string) => void }) => {
+      (
+        _base: string,
+        _topic: string,
+        options: { onRunId?: (id: string) => void; onCourseId?: (id: string) => void },
+      ) => {
         options.onRunId?.("run-1");
         options.onCourseId?.("course-1");
         return Promise.reject(new CourseLoadError("Course generation failed (HTTP 503)."));

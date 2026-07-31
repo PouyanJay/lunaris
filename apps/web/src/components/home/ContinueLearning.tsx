@@ -157,12 +157,7 @@ export function ContinueLearning({
       <h2 id="home-continue" className={`eyebrow ${styles.sectionEyebrow}`}>
         Continue learning
       </h2>
-      <ContinueHero
-        course={hero}
-        state={state}
-        onResume={onResume}
-        onViewCourse={onViewCourse}
-      />
+      <ContinueHero course={hero} state={state} onResume={onResume} onViewCourse={onViewCourse} />
       {rows.length > 0 && (
         <ul className={styles.rows}>
           {rows.map((course) => (

@@ -29,11 +29,11 @@ const FEATURES: Feature[] = [
   },
 ];
 
-/** Three restrained, informational cards under the composer explaining what a Lunaris build does —
+/** Three restrained, informational cards under the composer explaining what a Lunaris Studio build does —
  *  hairline panels with a stroked glyph, eyebrow, title, and one line, not marketing tiles. */
 export function ComposerFeatures() {
   return (
-    <ul className={styles.grid} aria-label="What a Lunaris build does">
+    <ul className={styles.grid} aria-label="What a Lunaris Studio build does">
       {FEATURES.map((feature) => (
         <li key={feature.title} className={styles.card}>
           <svg

@@ -61,7 +61,9 @@ describe("useLibrary cross-navigation cache", () => {
     // The next account starts from the skeleton, never the previous user's cached grid...
     expect(second.result.current.state).toEqual({ status: "loading" });
     // ...then loads its own library (awaited so no state update dangles past the test).
-    await waitFor(() => expect(second.result.current.state).toEqual({ status: "ready", courses: ONE }));
+    await waitFor(() =>
+      expect(second.result.current.state).toEqual({ status: "ready", courses: ONE }),
+    );
   });
 
   it("keeps the cached cards when a background revalidation fails", async () => {

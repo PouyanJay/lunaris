@@ -92,7 +92,10 @@ export type CourseCoverState =
  *  lightbox), so `coverVariantForTheme`'s load ladder dedupes to the single thumb URL and still
  *  falls back to the Typographic cover if the signed URL has expired. Theme selection is identical
  *  to a hook-resolved cover — the light twin (when present) is shown in the app's dark theme. */
-export function coverStateFromThumb(thumbUrl: string, thumbUrlLight: string | null): CourseCoverState {
+export function coverStateFromThumb(
+  thumbUrl: string,
+  thumbUrlLight: string | null,
+): CourseCoverState {
   return {
     phase: "image",
     imageUrl: thumbUrl,

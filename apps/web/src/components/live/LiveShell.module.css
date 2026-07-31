@@ -1,0 +1,107 @@
+/* Lunaris Live's shell: the same inverted-L chrome idiom as Studio's AgentShell (full-width top
+   bar over the canvas), so crossing between products never feels like leaving the product family.
+   Live has no sidebar yet — the canvas takes the full lower region. */
+.shell {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-top: var(--border-width) solid var(--frame-top);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex: none;
+  min-height: var(--header-height);
+  padding: var(--space-3) var(--space-5);
+  background: var(--bg-subtle);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.wordmark {
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.canvas {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8) var(--space-5);
+}
+
+.empty {
+  max-width: 46ch;
+  text-align: center;
+}
+
+/* Adds only the mono face and rhythm on top of the global `.eyebrow` motif (index.css). */
+.eyebrow {
+  font-family: var(--font-mono);
+  margin: 0 0 var(--space-3);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 var(--space-4);
+}
+
+.body {
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-6);
+}
+
+/* The empty state's way out. Neutral, not accent — the accent is a scalpel, and this is an escape
+   hatch rather than the hero action of the screen. */
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* ≥32px hit target in dense UI. */
+  min-height: 32px;
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  transition: background-color var(--dur) var(--ease);
+}
+
+.action:hover {
+  background: var(--bg-muted);
+}
+
+.action:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action {
+    transition: none;
+  }
+}

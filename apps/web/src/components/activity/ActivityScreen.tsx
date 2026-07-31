@@ -85,8 +85,8 @@ export function ActivityScreen({ apiBaseUrl, onBrowseCourses }: ActivityScreenPr
               <ActivityFeed feed={view.feed} />
             ) : (
               <p className={styles.quietFeed}>
-                Nothing in the feed yet — finish a lesson or mark a concept understood and it
-                lands here.
+                Nothing in the feed yet — finish a lesson or mark a concept understood and it lands
+                here.
               </p>
             )}
           </Panel>

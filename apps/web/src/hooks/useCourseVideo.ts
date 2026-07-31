@@ -104,9 +104,7 @@ export function useCourseVideo(
         intervalMs: pollIntervalMs,
         onWorking: (workingStatus) => setState({ phase: "working", status: workingStatus }),
         onSettled: (view) =>
-          view.job.status === "cancelled"
-            ? settleStopped()
-            : setState(toCourseVideoState(view)),
+          view.job.status === "cancelled" ? settleStopped() : setState(toCourseVideoState(view)),
       });
     },
     [apiBaseUrl, pollIntervalMs, stopPolling, settleStopped],

@@ -236,7 +236,10 @@ describe("buildTimeline", () => {
     expect(videos.summary).toBe("3 lesson videos ready");
     expect(videos.summaryTone).toBeUndefined(); // none degraded → no amber
     expect(videos.entries).toEqual([
-      expect.objectContaining({ kind: "reasoning", text: "Explainer video for “Routing” is ready." }),
+      expect.objectContaining({
+        kind: "reasoning",
+        text: "Explainer video for “Routing” is ready.",
+      }),
     ]);
   });
 
@@ -256,9 +259,9 @@ describe("buildTimeline", () => {
     expect(videos.summary).toBe("3 lesson videos · 2 ready · 1 needs a retry");
     expect(videos.summaryTone).toBe("warning");
     // The amber tone is scoped to the Videos phase — no other phase picks it up.
-    expect(phases.filter((p) => p.label !== "Videos").every((p) => p.summaryTone === undefined)).toBe(
-      true,
-    );
+    expect(
+      phases.filter((p) => p.label !== "Videos").every((p) => p.summaryTone === undefined),
+    ).toBe(true);
   });
 
   it("buckets the seed_grounding beats under the Seeding phase, between Curriculum and Grounding", () => {

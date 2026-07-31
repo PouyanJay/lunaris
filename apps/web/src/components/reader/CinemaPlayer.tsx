@@ -380,7 +380,9 @@ export function CinemaPlayer({
     }
     // iOS Safari has no element Fullscreen API — only the <video> can go fullscreen (native controls
     // take over there), so fall back to that rather than silently no-op.
-    const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    const video = videoRef.current as
+      | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
+      | null;
     video?.webkitEnterFullscreen?.();
   };
 

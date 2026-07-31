@@ -44,7 +44,9 @@ describe("BuildMetricBand", () => {
 
   it("answers ACYCLIC with an em dash when the stream predates the structured payload", () => {
     render(
-      <BuildMetricBand events={[makeProgressEvent("graph_built", 1, { kcCount: 3, edgeCount: 2 })]} />,
+      <BuildMetricBand
+        events={[makeProgressEvent("graph_built", 1, { kcCount: 3, edgeCount: 2 })]}
+      />,
     );
 
     expect(screen.getByLabelText("Graph metrics")).toHaveTextContent("—");

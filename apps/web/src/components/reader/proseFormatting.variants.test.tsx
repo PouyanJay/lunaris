@@ -40,17 +40,21 @@ describe("prose formatting — variant coverage", () => {
     it.each(["IL-4", "Th2", "ILC2", "TSLP", "IgE", "600-eosinophil", "CO2"])(
       "chips %j",
       (token) => {
-        const { container } = render(<Markdown>{`The marker ${token} appears in the sample here.`}</Markdown>);
+        const { container } = render(
+          <Markdown>{`The marker ${token} appears in the sample here.`}</Markdown>,
+        );
         expect(hasChip(container)).toBe(true);
       },
     );
-    it.each(["the year 2024 arrived", "a type 2 response here", "this is REALLY important now", "plain words only here"])(
-      "leaves %j unchipped",
-      (prose) => {
-        const { container } = render(<Markdown>{prose}</Markdown>);
-        expect(hasChip(container)).toBe(false);
-      },
-    );
+    it.each([
+      "the year 2024 arrived",
+      "a type 2 response here",
+      "this is REALLY important now",
+      "plain words only here",
+    ])("leaves %j unchipped", (prose) => {
+      const { container } = render(<Markdown>{prose}</Markdown>);
+      expect(hasChip(container)).toBe(false);
+    });
   });
 
   describe("R3 arrow flow — fires only at >=2 arrows", () => {
@@ -73,12 +77,18 @@ describe("prose formatting — variant coverage", () => {
     });
     it("leaves a long prose clause after a colon inline", () => {
       const { container } = render(
-        <Markdown>{"The reason is this: the system depends on many slow feedback loops, which stabilize it over years."}</Markdown>,
+        <Markdown>
+          {
+            "The reason is this: the system depends on many slow feedback loops, which stabilize it over years."
+          }
+        </Markdown>,
       );
       expect(container.querySelector("ul")).toBeNull();
     });
     it("leaves a cueless series with a trailing clause inline (ambiguous to bound)", () => {
-      const { container } = render(<Markdown>{"The parts are red, green, and blue in order."}</Markdown>);
+      const { container } = render(
+        <Markdown>{"The parts are red, green, and blue in order."}</Markdown>,
+      );
       expect(container.querySelector("ul")).toBeNull();
     });
     it("does not lift a 2-item cued series (below the 3-item threshold)", () => {
@@ -93,7 +103,9 @@ describe("prose formatting — variant coverage", () => {
       expect(screen.getByText("Recursion").tagName).toBe("STRONG");
     });
     it("leaves an ordinary predicate unbolded", () => {
-      const { container } = render(<Markdown>{"The function is a helper used across modules."}</Markdown>);
+      const { container } = render(
+        <Markdown>{"The function is a helper used across modules."}</Markdown>,
+      );
       expect(container.querySelector("strong")).toBeNull();
     });
   });
@@ -102,7 +114,9 @@ describe("prose formatting — variant coverage", () => {
     it("formats a computer-science lesson", () => {
       const { container } = render(
         <Markdown>
-          {"COMPILATION PIPELINE: source flows through the toolchain. The pipeline is lexer → parser → optimizer → codegen at the end."}
+          {
+            "COMPILATION PIPELINE: source flows through the toolchain. The pipeline is lexer → parser → optimizer → codegen at the end."
+          }
         </Markdown>,
       );
       expect(screen.getByRole("heading", { name: /compilation pipeline/i })).toBeInTheDocument();
@@ -113,7 +127,9 @@ describe("prose formatting — variant coverage", () => {
     it("formats a history lesson with a labelled series", () => {
       const { container } = render(
         <Markdown>
-          {"CAUSES: several forces converged before 1914. Three drivers stand out: alliances, nationalism, and militarism."}
+          {
+            "CAUSES: several forces converged before 1914. Three drivers stand out: alliances, nationalism, and militarism."
+          }
         </Markdown>,
       );
       expect(screen.getByRole("heading", { name: /causes/i })).toBeInTheDocument();

@@ -91,8 +91,8 @@ export function ConfigRail({
         {brief.status === "blank" && topic.trim() !== "" && (
           <div className={styles.sectionBody}>
             <p className={styles.muted}>
-              We&rsquo;ll read your goal and pre-fill the details &mdash; confirm or adjust them, then
-              build. Skip this and we&rsquo;ll use the inference.
+              We&rsquo;ll read your goal and pre-fill the details &mdash; confirm or adjust them,
+              then build. Skip this and we&rsquo;ll use the inference.
             </p>
             <Button variant="secondary" onClick={onLoadBrief}>
               Personalize this topic
@@ -120,8 +120,7 @@ export function ConfigRail({
         {brief.status === "ready" && (
           <div className={styles.sectionBody}>
             <p className={styles.read}>
-              We read this as{" "}
-              <strong>{brief.data.brief.goal || brief.data.brief.subject}</strong>.
+              We read this as <strong>{brief.data.brief.goal || brief.data.brief.subject}</strong>.
             </p>
             <div className={styles.questions}>
               {/* The target level is owned by the composer's options-bar Level control (P5), so it's

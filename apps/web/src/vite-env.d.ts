@@ -9,6 +9,9 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   /** Supabase anon (publishable) key — safe to ship in the client; auth is enforced server-side. */
   readonly VITE_SUPABASE_ANON_KEY?: string;
+  /** "true" offers Lunaris Live (the gateway, the product switcher, the /live route-space). Unset
+   *  or anything else keeps Lunaris as Studio alone — the default until Live's Phase 2 exit. */
+  readonly VITE_LIVE_ENABLED?: string;
 }
 
 interface ImportMeta {

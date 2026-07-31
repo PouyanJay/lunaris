@@ -1,6 +1,7 @@
 import { matchPath } from "react-router";
 
 import type { CourseView } from "../components/reader/ViewToggle";
+import type { Product } from "./product";
 
 /** The app's fixed destinations — one source of truth for path literals (sidebar + router). */
 export const ROUTES = {
@@ -15,6 +16,45 @@ export const ROUTES = {
   profile: "/profile",
   admin: "/admin",
 } as const;
+
+/** The product route-space: the surfaces that sit ABOVE a single product's navigation. Studio owns
+ *  every path not claimed here, so adding Live cost Studio no route changes at all. */
+export const PRODUCT_ROUTES = {
+  gateway: "/gateway",
+  live: "/live",
+} as const;
+
+/** Which product a URL belongs to. Resolved before {@link resolveRoute}, which stays purely
+ *  Studio's concern. A plain union rather than the tagged-object shape `ShellRoute` uses: no
+ *  variant carries a payload, and inventing one for symmetry would be a wrapper around a string. */
+export type ProductRoute = "gateway" | "live" | "studio";
+
+/** Route a path to its product. Everything outside the gateway and the `/live` space is Studio's,
+ *  which is what keeps Live additive rather than a rewrite of the existing router. */
+export function resolveProductRoute(pathname: string): ProductRoute {
+  if (pathname === PRODUCT_ROUTES.gateway) return "gateway";
+  if (pathname === PRODUCT_ROUTES.live || pathname.startsWith(`${PRODUCT_ROUTES.live}/`)) {
+    return "live";
+  }
+  return "studio";
+}
+
+/** The product a path unambiguously places the user in, or `null` when arriving there says nothing
+ *  about which product they want.
+ *
+ *  Entering a product is what makes it the remembered one — picking it at the gateway is only the
+ *  first of several ways in (a deep link and the product switcher are the others), so recording the
+ *  choice at the gateway alone would forget anyone who habitually deep-links.
+ *
+ *  The bare root is deliberately excluded: it is the one ambiguous path, resolved by the gateway or
+ *  by the existing preference. Treating arrival there as choosing Studio would rob a first-time
+ *  user of the choice before they ever made it. */
+export function productEnteredAt(pathname: string): Product | null {
+  const route = resolveProductRoute(pathname);
+  if (route === "live") return "live";
+  if (route === "studio" && pathname !== ROUTES.home) return "studio";
+  return null;
+}
 
 /** The Settings surface's sub-sections, in nav order. One source of truth for the sub-nav, the
  *  URL segment (`/settings/:section`), and the section renderer. */

@@ -60,12 +60,7 @@ export function BuildControlRoom({
   const gauges = useMemo(() => readinessScorecard(events, agentEvents), [events, agentEvents]);
 
   return (
-    <div
-      className={styles.room}
-      role="region"
-      aria-label={`Building ${topic}`}
-      data-view={view}
-    >
+    <div className={styles.room} role="region" aria-label={`Building ${topic}`} data-view={view}>
       <div className={styles.viewBar}>
         <SegmentedControl segments={VIEWS} value={view} onChange={setView} label="Build view" />
       </div>

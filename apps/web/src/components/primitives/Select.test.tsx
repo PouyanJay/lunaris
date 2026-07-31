@@ -65,7 +65,9 @@ describe("Select", () => {
   });
 
   it("does not open when disabled", () => {
-    render(<Select value="a" options={OPTIONS} onChange={vi.fn()} disabled aria-labelledby="lbl" />);
+    render(
+      <Select value="a" options={OPTIONS} onChange={vi.fn()} disabled aria-labelledby="lbl" />,
+    );
     fireEvent.click(screen.getByRole("button"));
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });

@@ -15,7 +15,9 @@ describe("example / attribution panels (R7)", () => {
     const panel = heading.closest("section");
     expect(panel).not.toBeNull();
     // The arrow-chain flow lives inside the same panel.
-    expect(within(panel as HTMLElement).getByRole("list", { name: /step chain/i })).toBeInTheDocument();
+    expect(
+      within(panel as HTMLElement).getByRole("list", { name: /step chain/i }),
+    ).toBeInTheDocument();
   });
 
   it("wraps the worked-attribution section (with its keyed list) in a panel", () => {

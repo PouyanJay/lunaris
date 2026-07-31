@@ -173,7 +173,14 @@ describe("stepIndexForClaim", () => {
       kind: "resources",
       words: 0,
     },
-    { id: "apply:0", sectionId: "apply", sectionLabel: "Practice", kind: "content", markdown: "Try it.", words: 2 },
+    {
+      id: "apply:0",
+      sectionId: "apply",
+      sectionLabel: "Practice",
+      kind: "content",
+      markdown: "Try it.",
+      words: 2,
+    },
   ];
 
   it("targets the content step whose chunk contains the matched sentence", () => {
@@ -181,7 +188,9 @@ describe("stepIndexForClaim", () => {
   });
 
   it("tolerates whitespace and case differences when matching the sentence", () => {
-    expect(stepIndexForClaim(steps, "demonstrate", "https is   the SECURE version of http.")).toBe(2);
+    expect(stepIndexForClaim(steps, "demonstrate", "https is   the SECURE version of http.")).toBe(
+      2,
+    );
   });
 
   it("falls back to the phase's first step when there is no matched sentence", () => {

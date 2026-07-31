@@ -309,6 +309,10 @@ jobs:
           # ships auth-disabled while the API (SUPABASE_URL set) requires tokens → every route 401s.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          # Offers Lunaris Live (the gateway, the product switcher, the /live route-space). Baked in
+          # at build time like every VITE_ var, so flipping it is a rebuild + redeploy, not a config
+          # change. Unset or anything but "true" keeps Lunaris as Studio alone.
+          VITE_LIVE_ENABLED: ${{ vars.VITE_LIVE_ENABLED }}
       - name: Deploy to Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:

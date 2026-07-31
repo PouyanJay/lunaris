@@ -83,7 +83,9 @@
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+  transition:
+    color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
 }
 
 .ctrlButton:hover {

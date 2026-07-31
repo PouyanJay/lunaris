@@ -24,7 +24,12 @@ vi.mock("../../hooks/useAuth", () => ({
 function renderLayout(section: AccountSection, isAdmin: boolean) {
   return render(
     <MemoryRouter>
-      <AccountLayout apiBaseUrl="http://api.test" section={section} isAdmin={isAdmin} onGoHome={vi.fn()} />
+      <AccountLayout
+        apiBaseUrl="http://api.test"
+        section={section}
+        isAdmin={isAdmin}
+        onGoHome={vi.fn()}
+      />
     </MemoryRouter>,
   );
 }
@@ -55,9 +60,7 @@ describe("AccountLayout", () => {
     renderLayout("admin-portal", true);
 
     expect(screen.getByText("ADMIN PORTAL PANEL")).toBeInTheDocument();
-    expect(
-      screen.getByRole("navigation", { name: /account sections/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /account sections/i })).toBeInTheDocument();
     expect(
       within(screen.getByRole("navigation", { name: /account sections/i })).getByRole("link", {
         name: /admin portal/i,

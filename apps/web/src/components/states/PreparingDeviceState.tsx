@@ -23,9 +23,8 @@ export function PreparingDeviceState({ topic, progress }: PreparingDeviceStatePr
           <span className="eyebrow">Preparing your device</span>
           <h2 className={styles.title}>Loading the on-device model</h2>
           <p className={styles.body}>
-            “{topic}” will build using this device — the model loads first (about 1.8{" "}GB
-            the first time, then cached). Keep this tab open: the build runs only while it stays
-            open.
+            “{topic}” will build using this device — the model loads first (about 1.8{" "}GB the
+            first time, then cached). Keep this tab open: the build runs only while it stays open.
           </p>
         </div>
         <ProgressBar value={progress?.progress ?? 0} label="Model download" />

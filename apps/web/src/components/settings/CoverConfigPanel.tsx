@@ -47,13 +47,7 @@ export function CoverConfigPanel({
 }: CoverConfigPanelProps) {
   const { state, apply } = useConfig(apiBaseUrl);
   const { save, busy, feedback } = useConfigSaver(apiBaseUrl, apply);
-  const keyPresent = useProviderKeyPresent(
-    apiBaseUrl,
-    byokEnabled,
-    secrets,
-    "openai",
-    keysVersion,
-  );
+  const keyPresent = useProviderKeyPresent(apiBaseUrl, byokEnabled, secrets, "openai", keysVersion);
 
   const byName = useMemo(
     () =>
@@ -194,4 +188,3 @@ function PresetRow({ setting, busy, feedback, onSave }: PresetRowProps) {
     </div>
   );
 }
-

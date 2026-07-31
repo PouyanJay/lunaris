@@ -26,7 +26,7 @@ export function AppFrame({ title, meta, children, theme, onToggleTheme }: AppFra
         <div className={styles.brand}>
           <BrandMark size={20} />
           <div className={styles.heading}>
-            <span className="eyebrow">Lunaris · Prerequisite graph</span>
+            <span className="eyebrow">Lunaris Studio · Prerequisite graph</span>
             <h1 className={styles.title} title={title}>
               {title}
             </h1>

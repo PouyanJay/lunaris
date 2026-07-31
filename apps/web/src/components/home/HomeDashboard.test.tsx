@@ -245,7 +245,12 @@ describe("HomeDashboard", () => {
         routedFetch({
           library: [summary],
           course: makeCourse(),
-          progress: { courseId: "course-test", objectives: [], lessons: [], lastLessonId: lessonId },
+          progress: {
+            courseId: "course-test",
+            objectives: [],
+            lessons: [],
+            lastLessonId: lessonId,
+          },
         }),
       );
 
@@ -338,7 +343,11 @@ describe("HomeDashboard", () => {
 
     it("shows the continue section and the recent grid together", async () => {
       const courses = [
-        makeCourseSummary({ id: "c-hero", topic: "In-progress course", learnerStatus: "in_progress" }),
+        makeCourseSummary({
+          id: "c-hero",
+          topic: "In-progress course",
+          learnerStatus: "in_progress",
+        }),
         completed({ id: "c-done", topic: "Finished course" }),
       ];
       vi.stubGlobal(
@@ -348,9 +357,7 @@ describe("HomeDashboard", () => {
 
       renderHome();
 
-      expect(
-        await screen.findByRole("heading", { name: "Continue learning" }),
-      ).toBeInTheDocument();
+      expect(await screen.findByRole("heading", { name: "Continue learning" })).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Recent courses" })).toBeInTheDocument();
       // The completed course sits in the recent grid, not the continue section.
       expect(screen.getByRole("link", { name: /finished course/i })).toHaveAttribute(

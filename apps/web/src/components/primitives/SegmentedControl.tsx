@@ -35,7 +35,8 @@ export function SegmentedControl<T extends string>({
     const index = segments.findIndex((s) => s.value === value);
     if (index < 0) return;
     let next = -1;
-    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (index + 1) % segments.length;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown")
+      next = (index + 1) % segments.length;
     else if (event.key === "ArrowLeft" || event.key === "ArrowUp")
       next = (index - 1 + segments.length) % segments.length;
     else if (event.key === "Home") next = 0;
@@ -48,12 +49,7 @@ export function SegmentedControl<T extends string>({
   }
 
   return (
-    <div
-      role="radiogroup"
-      aria-label={label}
-      aria-labelledby={labelledBy}
-      className={styles.group}
-    >
+    <div role="radiogroup" aria-label={label} aria-labelledby={labelledBy} className={styles.group}>
       {segments.map((segment) => {
         const selected = segment.value === value;
         return (

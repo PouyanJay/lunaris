@@ -88,7 +88,13 @@ export function AppearanceSection({
 export function LlmSection({ surface }: { surface: SettingsSurface }) {
   return (
     <>
-      <CredentialList section="llm" surface={surface} eyebrow="LLM" title="Provider keys" defaultOpen />
+      <CredentialList
+        section="llm"
+        surface={surface}
+        eyebrow="LLM"
+        title="Provider keys"
+        defaultOpen
+      />
       <ConfigPanel
         apiBaseUrl={surface.apiBaseUrl}
         perUserConfig={surface.perUserConfigEnabled}
@@ -119,7 +125,13 @@ export function VideoSection({ surface }: { surface: SettingsSurface }) {
 export function VoiceSection({ surface }: { surface: SettingsSurface }) {
   return (
     <>
-      <CredentialList section="voice" surface={surface} eyebrow="Voice" title="Provider key" defaultOpen />
+      <CredentialList
+        section="voice"
+        surface={surface}
+        eyebrow="Voice"
+        title="Provider key"
+        defaultOpen
+      />
       <VoiceConfigPanel
         apiBaseUrl={surface.apiBaseUrl}
         byokEnabled={surface.byokEnabled}
@@ -134,7 +146,13 @@ export function VoiceSection({ surface }: { surface: SettingsSurface }) {
 export function ToolsSection({ surface }: { surface: SettingsSurface }) {
   return (
     <>
-      <CredentialList section="tools" surface={surface} eyebrow="Tools" title="Service keys" defaultOpen />
+      <CredentialList
+        section="tools"
+        surface={surface}
+        eyebrow="Tools"
+        title="Service keys"
+        defaultOpen
+      />
       <CoverConfigPanel
         apiBaseUrl={surface.apiBaseUrl}
         byokEnabled={surface.byokEnabled}

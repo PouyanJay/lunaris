@@ -63,9 +63,7 @@ describe("PrereqGraphExplorer mastery overlay", () => {
 
     // The inspector survives, and the node under it now announces the fresh state.
     expect(screen.getByRole("heading", { name: "Sorted Order" })).toBeInTheDocument();
-    await waitFor(() =>
-      expect(container.querySelector('[aria-label*="Up next."]')).not.toBeNull(),
-    );
+    await waitFor(() => expect(container.querySelector('[aria-label*="Up next."]')).not.toBeNull());
   });
 
   it("GOAL keeps the badge face on a goal node the learner has mastered (AD-3)", async () => {
@@ -80,8 +78,9 @@ describe("PrereqGraphExplorer mastery overlay", () => {
 
     const goal = await waitFor(() => {
       const node = container.querySelector('[data-id="binary_search"]');
-      expect(node?.querySelector('[aria-label*="Course goal."][aria-label*="Mastered."]')).not
-        .toBeNull();
+      expect(
+        node?.querySelector('[aria-label*="Course goal."][aria-label*="Mastered."]'),
+      ).not.toBeNull();
       return node!;
     });
     const badge = goal.querySelector('[class*="badge"]')!;

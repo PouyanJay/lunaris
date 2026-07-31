@@ -38,7 +38,9 @@ describe("ConfigRail", () => {
 
     expect(screen.getByText(/name a topic/i)).toBeInTheDocument();
     // No personalize trigger with nothing to personalize.
-    expect(screen.queryByRole("button", { name: /personalize this topic/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /personalize this topic/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers to personalize the entered topic, loading the brief on demand", () => {

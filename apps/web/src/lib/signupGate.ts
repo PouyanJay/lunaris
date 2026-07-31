@@ -54,10 +54,8 @@ export function fetchSignupGateStatus(
   apiBaseUrl: string,
   signal?: AbortSignal,
 ): Promise<SignupGateStatus> {
-  return request(
-    `${apiBaseUrl}/api/signup-gate`,
-    signal ? { signal } : undefined,
-    (input, init) => fetch(input, init),
+  return request(`${apiBaseUrl}/api/signup-gate`, signal ? { signal } : undefined, (input, init) =>
+    fetch(input, init),
   ) as Promise<SignupGateStatus>;
 }
 

@@ -29,11 +29,7 @@ export function KcNode({ data, selected }: NodeProps<KcNodeType>) {
   const { kc, tier, order, isGoal, state } = data;
   const tierStyle = { "--node-tier": `var(--tier-${tier})` } as CSSProperties;
 
-  const classes = [
-    styles.node,
-    isGoal ? styles.goal : "",
-    selected ? styles.selected : "",
-  ]
+  const classes = [styles.node, isGoal ? styles.goal : "", selected ? styles.selected : ""]
     .filter(Boolean)
     .join(" ");
 

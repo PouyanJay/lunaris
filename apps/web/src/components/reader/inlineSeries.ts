@@ -154,9 +154,11 @@ function remarkInlineSeries() {
         result.push(node);
         continue;
       }
-      if (series.lead) result.push({ type: "paragraph", children: [{ type: "text", value: series.lead }] });
+      if (series.lead)
+        result.push({ type: "paragraph", children: [{ type: "text", value: series.lead }] });
       result.push(buildBulletList(series.items));
-      if (series.trail) result.push({ type: "paragraph", children: [{ type: "text", value: series.trail }] });
+      if (series.trail)
+        result.push({ type: "paragraph", children: [{ type: "text", value: series.trail }] });
     }
 
     tree.children = result as unknown as Root["children"];

@@ -198,9 +198,7 @@ function NavItem({
   onPrefetch?: (() => void) | undefined;
 }) {
   // Prefetch on intent from either input — a pointer hover or keyboard focus reaching the entry.
-  const prefetch = onPrefetch
-    ? { onMouseEnter: onPrefetch, onFocus: onPrefetch }
-    : undefined;
+  const prefetch = onPrefetch ? { onMouseEnter: onPrefetch, onFocus: onPrefetch } : undefined;
   if (collapsed) {
     return (
       <NavLink
