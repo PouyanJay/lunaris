@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 
 import { ROUTES } from "../../lib/routes";
-import { Badge } from "../primitives/Badge";
+import { ProductSwitcher } from "../gateway/ProductSwitcher";
 import { BrandMark } from "../shell/BrandMark";
 import styles from "./LiveShell.module.css";
 
@@ -21,10 +21,9 @@ export default function LiveShell() {
         <div className={styles.brand}>
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
-          {/* The house Badge primitive, accent tint — states which product you are in without a
-              second wordmark. T5 replaces this with the product switcher. */}
-          <Badge category="accent">Live</Badge>
         </div>
+        {/* The same switcher Studio's top bar mounts — one component, two shells. */}
+        <ProductSwitcher current="live" />
       </header>
       <main className={styles.canvas}>
         <div className={styles.empty}>

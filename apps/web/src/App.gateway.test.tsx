@@ -135,6 +135,49 @@ describe("App — the product gateway and fork", () => {
     expect(auth.updateLastProduct).not.toHaveBeenCalled();
   });
 
+  // ─── Product switcher ────────────────────────────────────────────────────────────────────────
+
+  it("offers a switch to Live from Studio's top bar", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "studio" }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    const switcher = await screen.findByRole("navigation", { name: /product/i });
+    expect(within(switcher).getByRole("link", { name: "Lunaris Live" })).toBeInTheDocument();
+    // The product you are in is marked, not just styled.
+    expect(within(switcher).getByRole("link", { name: "Lunaris Studio" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("offers a switch back to Studio from Live's top bar", async () => {
+    useAuthMock.mockReturnValue(signedIn({ last_product: "live" }));
+    window.history.pushState(null, "", "/live");
+
+    render(<App />);
+
+    const switcher = await screen.findByRole("navigation", { name: /product/i });
+    expect(within(switcher).getByRole("link", { name: "Lunaris Studio" })).toBeInTheDocument();
+    expect(within(switcher).getByRole("link", { name: "Lunaris Live" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("hides the switcher entirely when Live is flagged off", async () => {
+    vi.stubEnv("VITE_LIVE_ENABLED", "false");
+    useAuthMock.mockReturnValue(signedIn({ last_product: "studio" }));
+    window.history.pushState(null, "", "/");
+
+    render(<App />);
+
+    // Studio renders as it always did — no fork, nothing to switch to.
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(screen.queryByRole("navigation", { name: /product/i })).not.toBeInTheDocument();
+  });
+
   // ─── Structure and accessibility ─────────────────────────────────────────────────────────────
 
   it("gives the gateway one h1 and a heading per product", async () => {

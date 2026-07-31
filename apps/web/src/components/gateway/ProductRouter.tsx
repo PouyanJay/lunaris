@@ -3,7 +3,7 @@ import { Navigate, useLocation } from "react-router";
 
 import { useAuth } from "../../hooks/useAuth";
 import { useProductChoice } from "../../hooks/useProductChoice";
-import { isLiveEnabled } from "../../lib/product";
+import { useProductFork } from "../../hooks/useProductFork";
 import { PRODUCT_ROUTES, productEnteredAt, resolveProductRoute, ROUTES } from "../../lib/routes";
 import { ProductGateway } from "./ProductGateway";
 import styles from "./ProductRouter.module.css";
@@ -29,7 +29,7 @@ export function ProductRouter({ studio }: ProductRouterProps) {
   const { pathname } = useLocation();
   const { product, choose } = useProductChoice(user, enabled ? updateLastProduct : undefined);
 
-  const active = isLiveEnabled() && enabled;
+  const active = useProductFork();
   const entered = productEnteredAt(pathname);
 
   // Being in a product is what makes it the remembered one, however you got there — gateway click,

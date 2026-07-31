@@ -12,6 +12,7 @@ import { useSearchShortcut } from "./hooks/useSearchShortcut";
 import type { SearchEntry } from "./lib/searchIndex";
 import { AuthGate } from "./components/auth/AuthGate";
 import { ProductRouter } from "./components/gateway/ProductRouter";
+import { ProductSwitcher } from "./components/gateway/ProductSwitcher";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
 import { CourseLibrary } from "./components/library/CourseLibrary";
@@ -787,6 +788,7 @@ function StudioApp({
         sidebar={sidebar}
         title={canvas.title}
         meta={canvas.meta}
+        productSwitcher={<ProductSwitcher current="studio" />}
         toolbar={canvas.toolbar}
         search={<SearchTrigger onOpen={openPalette} />}
         banner={
