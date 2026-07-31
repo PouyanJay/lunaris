@@ -69,21 +69,6 @@ describe("Composer — the Studio | Live fork", () => {
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
   });
 
-  it("drops Studio-only build settings when Live is selected", async () => {
-    // Live compiles a graph and teaches; it never researches sources. Offering a trust control that
-    // cannot affect the outcome is worse than not offering it. Depth and Level stay — plan §5 puts
-    // depth in a session's own config.
-    window.history.pushState(null, "", "/new");
-
-    render(<App />);
-
-    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
-
-    expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Standard" })).toBeInTheDocument();
-  });
-
   it("stops promising a build in the feature cards when Live is selected", async () => {
     // The cards under the composer describe what submitting does. Under Live they described a
     // Studio build — researching sources and a build to watch — neither of which Live performs.
@@ -103,6 +88,53 @@ describe("Composer — the Studio | Live fork", () => {
       screen.getByRole("list", { name: /what a lunaris live session does/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/watch it build/i)).not.toBeInTheDocument();
+  });
+
+  it("offers no build settings under Live, because none of them reach a session", async () => {
+    // Under Live the submit path carries the topic and nothing else — the brief, Depth, Level and
+    // the trust switch are all discarded. A control the learner can set but that cannot affect the
+    // outcome is worse than no control, so the rail offers only the Mode row until Phase 2 gives
+    // Live config it can actually honour.
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    // Personalize only offers itself once there is a topic to tailor.
+    fireEvent.change(await screen.findByLabelText(/topic/i), {
+      target: { value: "How HTTPS works" },
+    });
+    expect(screen.getByRole("button", { name: /personalize this topic/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Standard" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Recommended" })).toBeInTheDocument();
+    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Live" }));
+
+    expect(
+      screen.queryByRole("button", { name: /personalize this topic/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Standard" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Recommended" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
+    // The fork itself stays, so the choice is reversible.
+    expect(screen.getByRole("radio", { name: "Live" })).toBeChecked();
+  });
+
+  it("restores every build setting when switching back to Studio", async () => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText(/topic/i), {
+      target: { value: "How HTTPS works" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Live" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Studio" }));
+
+    expect(screen.getByRole("button", { name: /personalize this topic/i })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Standard" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Recommended" })).toBeInTheDocument();
+    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
   });
 
   it("carries the topic into Live's surface, which names it back", async () => {

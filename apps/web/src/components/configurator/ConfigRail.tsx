@@ -9,6 +9,11 @@ import styles from "./ConfigRail.module.css";
 interface ConfigRailProps {
   /** The topic being configured (from the main column); empty until the learner names one. */
   topic: string;
+  /** Hides the Personalize section, whose brief only ever reaches the build pipeline. Live's submit
+   *  path carries the topic alone, so offering to personalize a session it cannot shape would be a
+   *  promise the product does not keep. Live's own placement conversation arrives in Phase 2 — and
+   *  as a conversation that runs while the graph compiles (plan §6), not as a pre-build form. */
+  personalizable?: boolean;
   /** The learner-tier brief lifecycle (owned by the parent so its answers feed the build). */
   brief: BriefLoadState;
   /** Read (or re-read) the brief for the current topic — the personalize trigger / error retry. */
@@ -32,6 +37,7 @@ interface ConfigRailProps {
  * `useRailLayout`. All learner-tier states are handled: blank / loading / error / ready.
  */
 export function ConfigRail({
+  personalizable = true,
   topic,
   brief,
   onLoadBrief,
@@ -76,70 +82,73 @@ export function ConfigRail({
       </header>
 
       {/* Tier 1 — learner personalization, always visible. */}
-      <section className={styles.section} aria-labelledby={learnerTitleId}>
-        <div className={styles.sectionHead}>
-          <p className="eyebrow">Personalize</p>
-          <h3 id={learnerTitleId} className={styles.sectionTitle}>
-            For you
-          </h3>
-        </div>
-
-        {brief.status === "blank" && topic.trim() === "" && (
-          <p className={styles.muted}>Name a topic to tailor the course to you.</p>
-        )}
-
-        {brief.status === "blank" && topic.trim() !== "" && (
-          <div className={styles.sectionBody}>
-            <p className={styles.muted}>
-              We&rsquo;ll read your goal and pre-fill the details &mdash; confirm or adjust them,
-              then build. Skip this and we&rsquo;ll use the inference.
-            </p>
-            <Button variant="secondary" onClick={onLoadBrief}>
-              Personalize this topic
-            </Button>
+      {personalizable && (
+        <section className={styles.section} aria-labelledby={learnerTitleId}>
+          <div className={styles.sectionHead}>
+            <p className="eyebrow">Personalize</p>
+            <h3 id={learnerTitleId} className={styles.sectionTitle}>
+              For you
+            </h3>
           </div>
-        )}
 
-        {brief.status === "loading" && (
-          <p className={styles.muted} role="status">
-            Reading your goal&hellip;
-          </p>
-        )}
+          {brief.status === "blank" && topic.trim() === "" && (
+            <p className={styles.muted}>Name a topic to tailor the course to you.</p>
+          )}
 
-        {brief.status === "error" && (
-          <div className={styles.sectionBody}>
-            <p className={styles.error} role="alert">
-              {brief.message}
-            </p>
-            <Button variant="secondary" onClick={onLoadBrief}>
-              Try again
-            </Button>
-          </div>
-        )}
-
-        {brief.status === "ready" && (
-          <div className={styles.sectionBody}>
-            <p className={styles.read}>
-              We read this as <strong>{brief.data.brief.goal || brief.data.brief.subject}</strong>.
-            </p>
-            <div className={styles.questions}>
-              {/* The target level is owned by the composer's options-bar Level control (P5), so it's
-                  hidden here to avoid two level pickers. Its inferred answer stays in the brief and
-                  still threads when the options-bar Level is "Recommended" (no override). */}
-              {brief.data.clarifier.questions
-                .filter((question) => question.id !== QUESTION_IDS.LEVEL)
-                .map((question) => (
-                  <ClarifierQuestionField
-                    key={question.id}
-                    question={question}
-                    value={brief.answers[question.id] ?? ""}
-                    onChange={(value) => onAnswerChange(question.id, value)}
-                  />
-                ))}
+          {brief.status === "blank" && topic.trim() !== "" && (
+            <div className={styles.sectionBody}>
+              <p className={styles.muted}>
+                We&rsquo;ll read your goal and pre-fill the details &mdash; confirm or adjust them,
+                then build. Skip this and we&rsquo;ll use the inference.
+              </p>
+              <Button variant="secondary" onClick={onLoadBrief}>
+                Personalize this topic
+              </Button>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+
+          {brief.status === "loading" && (
+            <p className={styles.muted} role="status">
+              Reading your goal&hellip;
+            </p>
+          )}
+
+          {brief.status === "error" && (
+            <div className={styles.sectionBody}>
+              <p className={styles.error} role="alert">
+                {brief.message}
+              </p>
+              <Button variant="secondary" onClick={onLoadBrief}>
+                Try again
+              </Button>
+            </div>
+          )}
+
+          {brief.status === "ready" && (
+            <div className={styles.sectionBody}>
+              <p className={styles.read}>
+                We read this as <strong>{brief.data.brief.goal || brief.data.brief.subject}</strong>
+                .
+              </p>
+              <div className={styles.questions}>
+                {/* The target level is owned by the composer's options-bar Level control (P5), so it's
+                    hidden here to avoid two level pickers. Its inferred answer stays in the brief and
+                    still threads when the options-bar Level is "Recommended" (no override). */}
+                {brief.data.clarifier.questions
+                  .filter((question) => question.id !== QUESTION_IDS.LEVEL)
+                  .map((question) => (
+                    <ClarifierQuestionField
+                      key={question.id}
+                      question={question}
+                      value={brief.answers[question.id] ?? ""}
+                      onChange={(value) => onAnswerChange(question.id, value)}
+                    />
+                  ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Operator/admin lives in Settings; point there rather than duplicate it. Search depth,
           target level, and the trust switch moved to the composer's options bar (P5). */}

@@ -208,6 +208,7 @@ export function IdleCourseSetup({
       >
         <ConfigRail
           topic={topic}
+          personalizable={mode !== "live"}
           brief={brief}
           onLoadBrief={loadBrief}
           onAnswerChange={handleAnswerChange}

@@ -72,43 +72,46 @@ export function ComposerOptions({
           />
         </div>
       )}
-      <div className={styles.option}>
-        <span id={depthLabelId} className={`eyebrow ${styles.label}`}>
-          Depth
-        </span>
-        <SegmentedControl
-          segments={DEPTHS}
-          value={depth}
-          onChange={onDepthChange}
-          aria-labelledby={depthLabelId}
-        />
-      </div>
-      <div className={styles.option}>
-        <span id={levelLabelId} className={`eyebrow ${styles.label}`}>
-          Level
-        </span>
-        <SegmentedControl
-          segments={LEVELS}
-          value={level}
-          onChange={onLevelChange}
-          aria-labelledby={levelLabelId}
-        />
-      </div>
-      {/* Studio-only: Live compiles a graph and teaches from it, it never researches sources, so a
-          trust control here could not affect the outcome. Offering a control that does nothing is
-          worse than not offering it. Depth and Level stay — plan §5 puts depth in a session's own
-          config. */}
+      {/* Studio-only. Every one of these reaches the build pipeline and nothing else: Live's submit
+          path carries the topic alone, so under Live they would be controls the learner can set but
+          that cannot affect the outcome — worse than no controls at all. Live gets its own config
+          (plan §5: depth, session length, text vs voice, language) in Phase 2, wired to a runtime
+          that can honour it. */}
       {mode !== "live" && (
-        <div className={`${styles.option} ${styles.switchOption}`}>
-          <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
-            Official sources only
-          </span>
-          <Switch
-            checked={officialOnly}
-            onChange={onOfficialOnlyChange}
-            aria-labelledby={officialLabelId}
-          />
-        </div>
+        <>
+          <div className={styles.option}>
+            <span id={depthLabelId} className={`eyebrow ${styles.label}`}>
+              Depth
+            </span>
+            <SegmentedControl
+              segments={DEPTHS}
+              value={depth}
+              onChange={onDepthChange}
+              aria-labelledby={depthLabelId}
+            />
+          </div>
+          <div className={styles.option}>
+            <span id={levelLabelId} className={`eyebrow ${styles.label}`}>
+              Level
+            </span>
+            <SegmentedControl
+              segments={LEVELS}
+              value={level}
+              onChange={onLevelChange}
+              aria-labelledby={levelLabelId}
+            />
+          </div>
+          <div className={`${styles.option} ${styles.switchOption}`}>
+            <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
+              Official sources only
+            </span>
+            <Switch
+              checked={officialOnly}
+              onChange={onOfficialOnlyChange}
+              aria-labelledby={officialLabelId}
+            />
+          </div>
+        </>
       )}
     </div>
   );
