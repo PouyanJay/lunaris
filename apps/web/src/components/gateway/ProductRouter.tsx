@@ -1,12 +1,8 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
-import { Navigate, useLocation } from "react-router";
+import { lazy, Suspense, type ReactNode } from "react";
+import { useLocation } from "react-router";
 
-import { useAuth } from "../../hooks/useAuth";
-import { useProductChoice } from "../../hooks/useProductChoice";
 import { useIsProductForked } from "../../hooks/useIsProductForked";
-import { PRODUCT_ROUTES, productEnteredAt, resolveProductRoute, ROUTES } from "../../lib/routes";
-import { ProductGateway } from "./ProductGateway";
-import { ProductSwitcher } from "./ProductSwitcher";
+import { resolveProductRoute } from "../../lib/routes";
 import styles from "./ProductRouter.module.css";
 
 // Live is code-split at the product boundary: Studio's bundle must never carry Live's dependencies,
@@ -15,59 +11,27 @@ import styles from "./ProductRouter.module.css";
 const LiveShell = lazy(() => import("../live/LiveShell"));
 
 interface ProductRouterProps {
-  /** Studio's app, rendered for every path Live and the gateway do not claim. */
+  /** Studio's app, rendered for every path Live does not claim. */
   studio: ReactNode;
 }
 
-/** Routes a signed-in user to a product, and forks first-timers to the gateway.
+/** Routes a URL to its product.
  *
- *  Sits between AuthGate and Studio so the fork is strictly post-authentication. Transparent when
- *  Live is flagged off or auth is unconfigured: Lunaris is then Studio alone, `/` is Home, and
- *  `/live` falls through to Studio's not-found — nothing observable changes. That is also why the
- *  existing routing suite, which runs without Supabase, keeps its current meaning. */
+ *  Phase 0.5 moved the fork itself into the composer — you choose Studio or Live at the moment you
+ *  name a topic, not at login — so this is now pure routing: no gateway, and no remembered product.
+ *  `/` unconditionally means Studio Home again.
+ *
+ *  Transparent when Live is flagged off or auth is unconfigured: Lunaris is then Studio alone and
+ *  `/live` falls through to Studio's not-found. */
 export function ProductRouter({ studio }: ProductRouterProps) {
-  const { enabled, user, updateLastProduct } = useAuth();
+  const forked = useIsProductForked();
   const { pathname } = useLocation();
-  const { product, choose } = useProductChoice(user, enabled ? updateLastProduct : undefined);
 
-  const active = useIsProductForked();
-  const entered = productEnteredAt(pathname);
+  if (!forked || resolveProductRoute(pathname) !== "live") return <>{studio}</>;
 
-  // True only for this session's first render. Latched off after the first commit rather than
-  // during render, so it survives a StrictMode double-render (which would otherwise consume the
-  // landing before the real one happened).
-  const [landing, setLanding] = useState(true);
-  useEffect(() => setLanding(false), []);
-
-  // Being in a product is what makes it the remembered one, however you got there — gateway click,
-  // deep link, or the switcher. Idempotent: once the preference matches, this stops firing.
-  useEffect(() => {
-    if (active && entered !== null && entered !== product) choose(entered);
-  }, [active, entered, product, choose]);
-
-  if (!active) return <>{studio}</>;
-
-  const route = resolveProductRoute(pathname);
-  if (route === "live") {
-    return (
-      <Suspense fallback={<div className={styles.loading} role="status" aria-live="polite" />}>
-        <LiveShell productSwitcher={<ProductSwitcher current="live" />} />
-      </Suspense>
-    );
-  }
-  if (route === "gateway") return <ProductGateway onChoose={choose} />;
-
-  // The remembered-product redirect is a LANDING decision — "on every subsequent login, go straight
-  // to the product you last used" — not a standing guard on `/`. Treating it as a guard made Studio
-  // Home unreachable from inside Live: every link to `/` (the product switcher, Live's empty-state
-  // action) bounced back to `/live`, because the remembered product was still "live". So it fires
-  // only on the first render of this session, and afterwards `/` simply means Studio Home.
-  //
-  // Still scoped to the bare root: every deeper path is a deep link and is left where it points, so
-  // "a deep link never shows the gateway" holds by construction.
-  if (landing && pathname === ROUTES.home) {
-    if (product === null) return <Navigate to={PRODUCT_ROUTES.gateway} replace />;
-    if (product === "live") return <Navigate to={PRODUCT_ROUTES.live} replace />;
-  }
-  return <>{studio}</>;
+  return (
+    <Suspense fallback={<div className={styles.loading} role="status" aria-live="polite" />}>
+      <LiveShell />
+    </Suspense>
+  );
 }

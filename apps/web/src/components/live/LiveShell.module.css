@@ -63,6 +63,22 @@
   margin: 0 0 var(--space-4);
 }
 
+/* What the learner asked for, echoed back. The topic is user data, so it takes the mono face the
+   house reserves for data; the sentence around it stays prose. */
+.topic {
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-4);
+}
+
+.topicName {
+  font-family: var(--font-mono);
+  color: var(--text);
+  /* A long topic must wrap rather than push the centred column wider. */
+  overflow-wrap: anywhere;
+}
+
 .body {
   font-size: var(--text-base);
   line-height: var(--lh-base);

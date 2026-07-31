@@ -28,23 +28,13 @@ describe("useAuth — metadata writes", () => {
     updateUser.mockResolvedValue({ error: null });
   });
 
-  it("writes the remembered product under the key the reader looks for", async () => {
-    const { result } = renderHook(() => useAuth(), { wrapper });
-
-    await result.current.updateLastProduct("live");
-
-    // `last_product` is the same constant `resolveLastProduct` reads, so a rename cannot silently
-    // split the write path from the read path.
-    expect(updateUser).toHaveBeenCalledWith({ data: { last_product: "live" } });
-  });
-
-  it("writes the display name without disturbing the product", async () => {
+  it("writes the display name as a patch, not a replacement", async () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     await result.current.updateDisplayName("Ada");
 
-    // A patch, not a replacement: Supabase merges `data`, so writing one field must not name the
-    // other. Sending both would let a stale display name clobber a fresh product, and vice versa.
+    // Supabase merges `data`, so a write must name only its own field. Naming others would let a
+    // stale value clobber a fresh one written elsewhere.
     expect(updateUser).toHaveBeenCalledWith({ data: { display_name: "Ada" } });
   });
 
@@ -52,6 +42,6 @@ describe("useAuth — metadata writes", () => {
     updateUser.mockResolvedValue({ error: new Error("offline") });
     const { result } = renderHook(() => useAuth(), { wrapper });
 
-    await expect(result.current.updateLastProduct("studio")).rejects.toThrow("offline");
+    await expect(result.current.updateDisplayName("Ada")).rejects.toThrow("offline");
   });
 });

@@ -3,10 +3,16 @@ import { useId } from "react";
 import { SegmentedControl } from "../primitives/SegmentedControl";
 import { Switch } from "../primitives/Switch";
 import type { ComposerLevel } from "../../lib/composerLevel";
+import type { Product } from "../../lib/product";
 import type { DiscoveryDepth } from "../../types/course";
 import styles from "./ComposerOptions.module.css";
 
 interface ComposerOptionsProps {
+  /** Which product the topic will be sent to. The row is absent from the DOM entirely unless
+   *  `onModeChange` is supplied — that is how the app layer signals Lunaris is two products, so
+   *  this stays presentational and never reaches for auth context itself. */
+  mode: Product;
+  onModeChange?: ((mode: Product) => void) | undefined;
   depth: DiscoveryDepth;
   onDepthChange: (depth: DiscoveryDepth) => void;
   level: ComposerLevel;
@@ -14,6 +20,11 @@ interface ComposerOptionsProps {
   officialOnly: boolean;
   onOfficialOnlyChange: (value: boolean) => void;
 }
+
+const MODES: { value: Product; label: string }[] = [
+  { value: "studio", label: "Studio" },
+  { value: "live", label: "Live" },
+];
 
 const DEPTHS: { value: DiscoveryDepth; label: string }[] = [
   { value: "standard", label: "Standard" },
@@ -32,6 +43,8 @@ const LEVELS: { value: ComposerLevel; label: string }[] = [
  *  only" trust switch. The deeper personalization brief stays reachable below; these are the
  *  one-glance knobs. All feed straight into the build. */
 export function ComposerOptions({
+  mode,
+  onModeChange,
   depth,
   onDepthChange,
   level,
@@ -39,11 +52,26 @@ export function ComposerOptions({
   officialOnly,
   onOfficialOnlyChange,
 }: ComposerOptionsProps) {
+  const modeLabelId = useId();
   const depthLabelId = useId();
   const levelLabelId = useId();
   const officialLabelId = useId();
   return (
     <div className={styles.bar}>
+      {/* The fork sits first: it decides what every control below it even means. */}
+      {onModeChange && (
+        <div className={styles.option}>
+          <span id={modeLabelId} className={`eyebrow ${styles.label}`}>
+            Mode
+          </span>
+          <SegmentedControl
+            segments={MODES}
+            value={mode}
+            onChange={onModeChange}
+            aria-labelledby={modeLabelId}
+          />
+        </div>
+      )}
       <div className={styles.option}>
         <span id={depthLabelId} className={`eyebrow ${styles.label}`}>
           Depth
@@ -66,16 +94,22 @@ export function ComposerOptions({
           aria-labelledby={levelLabelId}
         />
       </div>
-      <div className={`${styles.option} ${styles.switchOption}`}>
-        <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
-          Official sources only
-        </span>
-        <Switch
-          checked={officialOnly}
-          onChange={onOfficialOnlyChange}
-          aria-labelledby={officialLabelId}
-        />
-      </div>
+      {/* Studio-only: Live compiles a graph and teaches from it, it never researches sources, so a
+          trust control here could not affect the outcome. Offering a control that does nothing is
+          worse than not offering it. Depth and Level stay — plan §5 puts depth in a session's own
+          config. */}
+      {mode !== "live" && (
+        <div className={`${styles.option} ${styles.switchOption}`}>
+          <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
+            Official sources only
+          </span>
+          <Switch
+            checked={officialOnly}
+            onChange={onOfficialOnlyChange}
+            aria-labelledby={officialLabelId}
+          />
+        </div>
+      )}
     </div>
   );
 }

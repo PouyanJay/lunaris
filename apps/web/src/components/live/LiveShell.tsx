@@ -1,16 +1,9 @@
-import { useEffect, type ReactNode } from "react";
-import { Link } from "react-router";
+import { useEffect } from "react";
+import { Link, useSearchParams } from "react-router";
 
 import { ROUTES } from "../../lib/routes";
 import { BrandMark } from "../shell/BrandMark";
 import styles from "./LiveShell.module.css";
-
-interface LiveShellProps {
-  /** Crossing to the other product, docked beside the brand. A slot for the same reason
-   *  AgentShell takes one: the shell stays presentational rather than acquiring a dependency on
-   *  auth context, and both shells then treat the switcher identically. */
-  productSwitcher?: ReactNode;
-}
 
 /** Lunaris Live's app shell.
  *
@@ -21,7 +14,12 @@ interface LiveShellProps {
  *
  *  Loaded lazily by {@link ProductRouter} so Live's future dependencies never reach Studio's
  *  bundle. */
-export default function LiveShell({ productSwitcher }: LiveShellProps) {
+export default function LiveShell() {
+  // The composer sends the topic here rather than into a build. Nothing is created yet — Live has
+  // no compiler until Phase 1 — so the surface acknowledges what was asked and says plainly that
+  // nothing happened, rather than implying work is underway.
+  const topic = useSearchParams()[0].get("topic")?.trim();
+
   // Both products are served from one index.html, whose static <title> names Studio. Live must not
   // wear it — an accurate title per surface is the contract, and the browser tab is the one place
   // the wrong product name is visible at a glance.
@@ -40,12 +38,17 @@ export default function LiveShell({ productSwitcher }: LiveShellProps) {
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
-        {productSwitcher}
       </header>
       <main className={styles.canvas}>
         <div className={styles.empty}>
           <p className={`eyebrow ${styles.eyebrow}`}>Coming soon</p>
           <h1 className={styles.title}>Lunaris Live</h1>
+          {topic ? (
+            <p className={styles.topic}>
+              You asked to learn <span className={styles.topicName}>{topic}</span>. Nothing has been
+              created — sessions aren&rsquo;t open yet.
+            </p>
+          ) : null}
           <p className={styles.body}>
             Live teaches through sessions: a tutor that watches what you do, breaks things with you,
             and remembers what you know. The session runtime is still being built — there is nothing
