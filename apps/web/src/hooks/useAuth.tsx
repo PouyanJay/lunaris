@@ -4,6 +4,7 @@ import type { Session, User } from "@supabase/supabase-js";
 
 import { clearCoverViews } from "./coverViewCache";
 import { clearLibraryCache } from "./libraryCache";
+import { LAST_PRODUCT_KEY, type Product } from "../lib/product";
 import { supabase } from "../lib/supabase";
 
 /** Result of a sign-up: a session means immediate login; otherwise the user must confirm by email. */
@@ -23,6 +24,9 @@ interface AuthState {
   signOut: () => Promise<void>;
   /** Persist the account's display name to Supabase user_metadata (read via resolveDisplayName). */
   updateDisplayName: (displayName: string) => Promise<void>;
+  /** Persist the product the account last used, so the next sign-in skips the gateway (read via
+   *  resolveLastProduct). Mirrors updateDisplayName — same metadata store, same refresh path. */
+  updateLastProduct: (product: Product) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -103,6 +107,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // updateUser emits a USER_UPDATED event; the onAuthStateChange listener above refreshes
         // the session so the new name flows to the account row and greeting without a reload.
         const { error } = await supabase.auth.updateUser({ data: { display_name: displayName } });
+        if (error) throw error;
+      },
+      updateLastProduct: async (product) => {
+        if (!supabase) unconfigured();
+        const { error } = await supabase.auth.updateUser({
+          data: { [LAST_PRODUCT_KEY]: product },
+        });
         if (error) throw error;
       },
     }),

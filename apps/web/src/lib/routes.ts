@@ -16,6 +16,27 @@ export const ROUTES = {
   admin: "/admin",
 } as const;
 
+/** The product route-space: the surfaces that sit ABOVE a single product's navigation. Studio owns
+ *  every path not claimed here, so adding Live cost Studio no route changes at all. */
+export const PRODUCT_ROUTES = {
+  gateway: "/gateway",
+  live: "/live",
+} as const;
+
+/** Which product a URL belongs to. Resolved before {@link resolveRoute}, which stays purely
+ *  Studio's concern. */
+export type ProductRoute = { kind: "gateway" } | { kind: "live" } | { kind: "studio" };
+
+/** Route a path to its product. Everything outside the gateway and the `/live` space is Studio's,
+ *  which is what keeps Live additive rather than a rewrite of the existing router. */
+export function resolveProductRoute(pathname: string): ProductRoute {
+  if (pathname === PRODUCT_ROUTES.gateway) return { kind: "gateway" };
+  if (pathname === PRODUCT_ROUTES.live || pathname.startsWith(`${PRODUCT_ROUTES.live}/`)) {
+    return { kind: "live" };
+  }
+  return { kind: "studio" };
+}
+
 /** The Settings surface's sub-sections, in nav order. One source of truth for the sub-nav, the
  *  URL segment (`/settings/:section`), and the section renderer. */
 export const SETTINGS_SECTIONS = [

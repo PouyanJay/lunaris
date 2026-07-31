@@ -1,0 +1,7 @@
+/* Held ground while Live's split chunk loads. Deliberately empty rather than a spinner: the chunk
+   resolves in a frame or two on a warm cache, and a flashed spinner reads as slower than nothing.
+   It still carries role="status" so assistive tech is told the region is busy. */
+.loading {
+  height: 100%;
+  background: var(--bg);
+}
