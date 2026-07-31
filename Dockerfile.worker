@@ -67,7 +67,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 # builds, so Docker/buildx reuse the cached layer indefinitely — meaning a Debian point-release
 # that fixes a HIGH/CRITICAL (e.g. CVE-2026-12912, libtiff6 → 4.7.0-3+deb13u3) never gets pulled
 # and Trivy keeps failing. Bump this date to bust the cache and force apt-get upgrade to re-run.
-ARG APT_SECURITY_EPOCH=2026-07-20
+ARG APT_SECURITY_EPOCH=2026-07-31
 RUN echo "apt security epoch: ${APT_SECURITY_EPOCH}" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
