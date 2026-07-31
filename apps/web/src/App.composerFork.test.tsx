@@ -120,8 +120,10 @@ describe("Composer — the Studio | Live fork", () => {
     render(<App />);
 
     await screen.findByRole("heading", { name: "Lunaris Live", level: 1 });
-    // No stray "undefined" / empty quotes where a topic would go.
-    expect(screen.queryByText(/undefined/i)).not.toBeInTheDocument();
+    // The echo is omitted entirely rather than rendered empty. Asserting on the text "undefined"
+    // would prove nothing — React renders an undefined child as nothing, so that assertion holds
+    // whether or not the guard exists.
+    expect(screen.queryByText(/you asked to learn/i)).not.toBeInTheDocument();
   });
 
   it("hides the fork entirely when Live is flagged off", async () => {

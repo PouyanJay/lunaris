@@ -16,8 +16,8 @@ export const ROUTES = {
   admin: "/admin",
 } as const;
 
-/** The product route-space: the surfaces that sit ABOVE a single product's navigation. Studio owns
- *  every path not claimed here, so adding Live cost Studio no route changes at all. */
+/** The product route-space: the paths a product other than Studio claims. Studio owns every path
+ *  not listed here, so adding Live cost Studio no route changes at all. */
 export const PRODUCT_ROUTES = {
   live: "/live",
 } as const;
@@ -27,8 +27,8 @@ export const PRODUCT_ROUTES = {
  *  variant carries a payload, and inventing one for symmetry would be a wrapper around a string. */
 export type ProductRoute = "live" | "studio";
 
-/** Route a path to its product. Everything outside the gateway and the `/live` space is Studio's,
- *  which is what keeps Live additive rather than a rewrite of the existing router. */
+/** Route a path to its product. Everything outside the `/live` space is Studio's, which is what
+ *  keeps Live additive rather than a rewrite of the existing router. */
 export function resolveProductRoute(pathname: string): ProductRoute {
   if (pathname === PRODUCT_ROUTES.live || pathname.startsWith(`${PRODUCT_ROUTES.live}/`)) {
     return "live";
