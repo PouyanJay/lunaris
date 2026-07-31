@@ -2,6 +2,11 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
 
 import styles from "./Menu.module.css";
 
+/** The panel's own row styling, for a footer entry that leads somewhere rather than choosing a
+ *  value. Exported so a consumer composes one in the menu's language instead of inventing another. */
+export const menuRowClass = styles.row;
+export const menuRowCaretClass = styles.rowCaret;
+
 export interface MenuOption<T extends string> {
   value: T;
   label: string;

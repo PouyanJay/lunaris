@@ -18,6 +18,17 @@ import {
   waitForRunsFetch,
 } from "./test/fixtures";
 
+/** Pick a value from one of the composer's setting menus. The controls became menus in the
+ *  composer rebuild; the guarantees they are asserted against are unchanged. */
+function pickSetting(setting: string, option: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(setting, "i") }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: setting })).getByRole("menuitemradio", {
+      name: option,
+    }),
+  );
+}
+
 function stubFetchResolving(course = makeCourse()) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => course }));
 }
@@ -129,8 +140,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     // The rail interprets the goal and offers the confirm questions.
     expect(await screen.findByText(/reach CLB 10/i)).toBeInTheDocument();
     // Set the target level via the composer's options bar (maps onto the clarification).
-    const level = screen.getByRole("radiogroup", { name: "Level" });
-    fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
+    pickSetting("Level", /advanced/i);
 
     // Build from the confirmed brief → the stream resolves to the ready course.
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
@@ -681,7 +691,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    fireEvent.click(screen.getByRole("switch", { name: /official sources only/i }));
+    pickSetting("Sources", /official only/i);
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 

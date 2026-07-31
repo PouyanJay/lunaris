@@ -180,6 +180,7 @@ export function IdleCourseSetup({
               onLevelChange={setLevel}
               officialOnly={officialOnly}
               onOfficialOnlyChange={setOfficialOnly}
+              onOpenTrustedSources={onOpenSettings}
             />
           }
         />

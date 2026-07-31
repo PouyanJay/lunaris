@@ -5,6 +5,17 @@ import { makeBriefResponse } from "../../test/fixtures";
 import type { BriefResponse, GoalType } from "../../types/clarifier";
 import { IdleCourseSetup } from "./IdleCourseSetup";
 
+/** Pick a value from one of the composer's setting menus. The controls became menus in the
+ *  composer rebuild; the guarantees they are asserted against are unchanged. */
+function pickSetting(setting: string, option: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(setting, "i") }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: setting })).getByRole("menuitemradio", {
+      name: option,
+    }),
+  );
+}
+
 function stubFetch(response: { ok: boolean; status?: number; json: () => Promise<unknown> }) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
 }
@@ -55,8 +66,7 @@ describe("IdleCourseSetup", () => {
     await screen.findByText(/reach CLB 10/i); // the brief (with its inferred goal_type) is ready
 
     // The quick Level control (options bar) maps onto the clarifier's target level.
-    const level = screen.getByRole("radiogroup", { name: "Level" });
-    fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
+    pickSetting("Level", /advanced/i);
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     expect(onGenerate).toHaveBeenCalledWith({
@@ -101,16 +111,18 @@ describe("IdleCourseSetup", () => {
     stubFetch({ ok: true, json: async () => makeBriefResponse() });
     renderSetup();
 
-    const depth = screen.getByRole("radiogroup", { name: "Depth" });
-    expect(within(depth).getByRole("radio", { name: "Standard" })).toBeInTheDocument();
-    expect(within(depth).getByRole("radio", { name: "Thorough" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    const depth = screen.getByRole("menu", { name: "Depth" });
+    expect(within(depth).getByRole("menuitemradio", { name: /standard/i })).toBeInTheDocument();
+    expect(within(depth).getByRole("menuitemradio", { name: /thorough/i })).toBeInTheDocument();
+    fireEvent.keyDown(depth, { key: "Escape" });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
     fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
     await screen.findByText(/reach CLB 10/i);
 
-    // Still present after the brief renders.
-    expect(within(depth).getByRole("radio", { name: "Thorough" })).toBeInTheDocument();
+    // Still reachable after the brief renders.
+    expect(screen.getByRole("button", { name: /depth/i })).toBeInTheDocument();
   });
 
   it("threads the chosen Thorough depth into the build", () => {
@@ -118,8 +130,12 @@ describe("IdleCourseSetup", () => {
     renderSetup({ onGenerate });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
-    const depth = screen.getByRole("radiogroup", { name: "Depth" });
-    fireEvent.click(within(depth).getByRole("radio", { name: "Thorough" }));
+    fireEvent.click(screen.getByRole("button", { name: /depth/i }));
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Depth" })).getByRole("menuitemradio", {
+        name: /thorough/i,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     expect(onGenerate).toHaveBeenCalledWith({
@@ -130,12 +146,33 @@ describe("IdleCourseSetup", () => {
     });
   });
 
+  it("opens Settings from the Sources menu's trusted-domains row", () => {
+    // The row is a real destination, not an ornament. A menu entry that goes nowhere is exactly
+    // what this bar was built to stop offering.
+    const onOpenSettings = vi.fn();
+    renderSetup({ onOpenSettings });
+
+    fireEvent.click(screen.getByRole("button", { name: /sources/i }));
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Sources" })).getByRole("button", {
+        name: /trusted domains/i,
+      }),
+    );
+
+    expect(onOpenSettings).toHaveBeenCalled();
+  });
+
   it("threads the Official-sources-only switch into the build", () => {
     const onGenerate = vi.fn();
     renderSetup({ onGenerate });
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "binary search" } });
-    fireEvent.click(screen.getByRole("switch", { name: /official sources only/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sources/i }));
+    fireEvent.click(
+      within(screen.getByRole("menu", { name: "Sources" })).getByRole("menuitemradio", {
+        name: /official only/i,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
     expect(onGenerate).toHaveBeenCalledWith({
@@ -257,8 +294,7 @@ describe("IdleCourseSetup — variant coverage across goal types", () => {
       await screen.findByText(/reach CLB 10/i);
 
       // Override the smart default depth (options bar), then build with the confirmed goal type.
-      const depth = screen.getByRole("radiogroup", { name: "Depth" });
-      fireEvent.click(within(depth).getByRole("radio", { name: "Thorough" }));
+      pickSetting("Depth", /thorough/i);
       fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
       expect(onGenerate).toHaveBeenCalledWith({

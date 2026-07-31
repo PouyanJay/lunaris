@@ -122,11 +122,16 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
+    // The whole settings bar is Studio's: under Live none of it can reach the outcome.
+    expect(screen.getByRole("button", { name: /depth/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /level/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sources/i })).toBeInTheDocument();
+
     fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
 
-    expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "Standard" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /depth/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /level/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sources/i })).not.toBeInTheDocument();
   });
 
   it("stops promising a build in the feature cards when Live is selected", async () => {
@@ -254,11 +259,11 @@ describe("Composer — the Studio | Live fork", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
-    expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /depth/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /live mode/i }));
 
-    expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /depth/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
   });
 
