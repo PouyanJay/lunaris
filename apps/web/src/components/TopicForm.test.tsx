@@ -4,10 +4,23 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TopicForm } from "./TopicForm";
 
+/** The heading and action label now come from the parent, which owns the mode. Studio's are the
+ *  defaults here so each test states only what it is actually about. */
+const HEADING = { lead: "What do you want to ", accent: "learn", tail: "?" };
+const SUBMIT = "Generate course";
+
 describe("TopicForm", () => {
   it("submits the trimmed topic", () => {
     const onSubmit = vi.fn();
-    render(<TopicForm value="  merge sort  " onChange={vi.fn()} onSubmit={onSubmit} />);
+    render(
+      <TopicForm
+        value="  merge sort  "
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
@@ -16,7 +29,15 @@ describe("TopicForm", () => {
 
   it("reports the controlled value as the user types", () => {
     const onChange = vi.fn();
-    render(<TopicForm value="" onChange={onChange} onSubmit={vi.fn()} />);
+    render(
+      <TopicForm
+        value=""
+        onChange={onChange}
+        onSubmit={vi.fn()}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
 
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "graphs" } });
 
@@ -25,7 +46,15 @@ describe("TopicForm", () => {
 
   it("surfaces an error and does not submit when the topic is empty", () => {
     const onSubmit = vi.fn();
-    render(<TopicForm value="   " onChange={vi.fn()} onSubmit={onSubmit} />);
+    render(
+      <TopicForm
+        value="   "
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
@@ -36,7 +65,15 @@ describe("TopicForm", () => {
   it("dismisses the empty-topic error as soon as the user types", () => {
     function Harness() {
       const [value, setValue] = useState("");
-      return <TopicForm value={value} onChange={setValue} onSubmit={vi.fn()} />;
+      return (
+        <TopicForm
+          value={value}
+          onChange={setValue}
+          onSubmit={vi.fn()}
+          heading={HEADING}
+          submitLabel={SUBMIT}
+        />
+      );
     }
     render(<Harness />);
 
@@ -49,7 +86,15 @@ describe("TopicForm", () => {
 
   it("submits on Enter (the single-field keyboard path)", () => {
     const onSubmit = vi.fn();
-    render(<TopicForm value="graphs" onChange={vi.fn()} onSubmit={onSubmit} />);
+    render(
+      <TopicForm
+        value="graphs"
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
 
     fireEvent.submit(screen.getByLabelText("Topic").closest("form")!);
 
@@ -59,7 +104,15 @@ describe("TopicForm", () => {
   it("generates straight from an example chip", () => {
     const onChange = vi.fn();
     const onSubmit = vi.fn();
-    render(<TopicForm value="" onChange={onChange} onSubmit={onSubmit} />);
+    render(
+      <TopicForm
+        value=""
+        onChange={onChange}
+        onSubmit={onSubmit}
+        heading={HEADING}
+        submitLabel={SUBMIT}
+      />,
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "How merge sort works" }));
 

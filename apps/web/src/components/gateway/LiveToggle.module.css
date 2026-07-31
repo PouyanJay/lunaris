@@ -1,0 +1,63 @@
+/* The moon that switches Lunaris into Live. Sits in the composer's dock beside the submit action. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* ≥32px keeps the target comfortable even though the glyph is 18px. */
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.toggle:hover {
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+}
+
+.toggle:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--field),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* Tilted, so the crescent reads as a moon in the sky rather than a logo stamped flat. */
+.moon {
+  display: block;
+  flex: none;
+  transform: rotate(-24deg);
+  transition: transform var(--dur) var(--ease);
+}
+
+.toggle[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent-500);
+  color: var(--accent-700);
+}
+
+.toggle[aria-pressed="true"] .moon {
+  transform: rotate(-24deg) scale(1.06);
+}
+
+/* Appears only when Live is on, so the state is carried by a word as well as a hue. */
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle,
+  .moon {
+    transition: none;
+  }
+}

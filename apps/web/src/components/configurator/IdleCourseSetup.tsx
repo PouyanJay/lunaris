@@ -12,6 +12,7 @@ import type { BriefLoadState } from "../../types/clarifier";
 import type { Product } from "../../lib/product";
 import type { CourseRun, DiscoveryDepth } from "../../types/course";
 import { TopicForm } from "../TopicForm";
+import { LiveToggle } from "../gateway/LiveToggle";
 import { ComposerFeatures } from "./ComposerFeatures";
 import { ComposerOptions } from "./ComposerOptions";
 import { ConfigRail } from "./ConfigRail";
@@ -158,20 +159,22 @@ export function IdleCourseSetup({
           value={topic}
           onChange={handleTopicChange}
           onSubmit={handleSubmit}
-          submitLabel={mode === "live" ? "Start session" : "Generate course"}
-          hint={
-            mode === "live" ? (
-              <>
-                Name a topic. Lunaris Live maps it, then teaches it to you in a session &mdash; a
-                tutor that watches what you do and remembers what you know.
-              </>
+          heading={
+            mode === "live"
+              ? { lead: "What should we ", accent: "work through", tail: "?" }
+              : { lead: "What do you want to ", accent: "learn", tail: "?" }
+          }
+          live={mode === "live"}
+          modeControl={
+            onStartLive ? (
+              <LiveToggle on={mode === "live"} onChange={(on) => setMode(on ? "live" : "studio")} />
             ) : undefined
           }
+          submitLabel={mode === "live" ? "Start session" : "Generate course"}
           options={
             <ComposerOptions
-              depth={depth}
               mode={mode}
-              onModeChange={onStartLive ? setMode : undefined}
+              depth={depth}
               onDepthChange={setDepth}
               level={level}
               onLevelChange={setLevel}

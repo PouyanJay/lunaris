@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -48,7 +48,7 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
     fireEvent.change(screen.getByLabelText(/topic/i), {
       target: { value: "How transformers work" },
     });
@@ -60,12 +60,57 @@ describe("Composer — the Studio | Live fork", () => {
     expect(await screen.findByRole("heading", { name: "Lunaris Live" })).toBeInTheDocument();
   });
 
+  it("turns the moon on and names the state in words, not colour alone", async () => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    const moon = await screen.findByRole("button", { name: /live mode/i });
+    expect(moon).toHaveAttribute("aria-pressed", "false");
+    // Off: the word is absent, so the control is quiet until it matters.
+    expect(within(moon).queryByText("Live")).not.toBeInTheDocument();
+
+    fireEvent.click(moon);
+
+    expect(moon).toHaveAttribute("aria-pressed", "true");
+    // On: colour is never the only signal. A colour-blind user must still see the state.
+    expect(within(moon).getByText("Live")).toBeInTheDocument();
+  });
+
+  it("accepts a multi-line topic, since the box is a composer and not a single-line field", async () => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    const field = await screen.findByLabelText(/topic/i);
+    expect(field.tagName).toBe("TEXTAREA");
+  });
+
+  it("accents the operative verb, and changes it with the mode", async () => {
+    window.history.pushState(null, "", "/new");
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: /what do you want to learn/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /live mode/i }));
+
+    expect(
+      screen.getByRole("heading", { name: /what should we work through/i }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps Studio the default, so the existing path is unchanged", async () => {
     window.history.pushState(null, "", "/new");
 
     render(<App />);
 
-    expect(await screen.findByRole("radio", { name: "Studio" })).toBeChecked();
+    expect(await screen.findByRole("button", { name: /live mode/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
   });
 
@@ -78,7 +123,7 @@ describe("Composer — the Studio | Live fork", () => {
     render(<App />);
 
     expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
 
     expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Standard" })).toBeInTheDocument();
@@ -94,7 +139,7 @@ describe("Composer — the Studio | Live fork", () => {
     expect(
       screen.getByRole("list", { name: /what a lunaris studio build does/i }),
     ).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
 
     expect(
       screen.queryByRole("list", { name: /what a lunaris studio build does/i }),
@@ -133,7 +178,7 @@ describe("Composer — the Studio | Live fork", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: /generate course/i })).toBeInTheDocument();
-    expect(screen.queryByRole("radio", { name: "Live" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /live mode/i })).not.toBeInTheDocument();
   });
 
   // ─── Variants ────────────────────────────────────────────────────────────────────────────────
@@ -148,7 +193,7 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
     fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: topic } });
     fireEvent.click(screen.getByRole("button", { name: /start session/i }));
 
@@ -165,7 +210,7 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
     fireEvent.click(screen.getByRole("button", { name: /start session/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/enter a topic/i);
@@ -177,7 +222,7 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
     fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("button", { name: /start session/i }));
 
@@ -192,11 +237,14 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
     fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: "How HTTPS works" } });
     fireEvent.change(screen.getByLabelText(/topic/i), { target: { value: "How TLS works" } });
 
-    expect(screen.getByRole("radio", { name: "Live" })).toBeChecked();
+    expect(screen.getByRole("button", { name: /live mode/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.getByRole("button", { name: /start session/i })).toBeInTheDocument();
   });
 
@@ -205,10 +253,10 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("radio", { name: "Live" }));
+    fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
     expect(screen.queryByText(/official sources only/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("radio", { name: "Studio" }));
+    fireEvent.click(screen.getByRole("button", { name: /live mode/i }));
 
     expect(screen.getByText(/official sources only/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();

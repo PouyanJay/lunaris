@@ -25,47 +25,60 @@
   color: var(--accent-500);
 }
 
-.hint {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: 1.55;
-  margin-bottom: var(--space-2);
-}
-
 /* Input + button welded into one hairline field; focus surfaces on the whole group. */
-.field {
-  display: flex;
-  gap: var(--space-2);
-  align-items: stretch;
+/* ── The box ───────────────────────────────────────────────────────────────────
+   A field recessed from the page, not a card raised above it: the composer should read as somewhere
+   to type. Every control docks inside it. No overflow clipping, because the settings menus open
+   downward and out of the box. */
+.box {
+  background: var(--field);
+  border: var(--border-width) solid var(--field-edge);
+  border-radius: 18px;
+  transition: border-color var(--dur) var(--ease);
 }
 
-/* Match the submit button to the input's height so the welded field reads as one inline row (the
-   base Button is 32px; the input is taller). Scoped child selector outweighs the Button default. */
-.field > button {
-  height: 38px;
+.box:focus-within {
+  border-color: var(--border-strong);
 }
 
-/* The submit button shows its full label on desktop; the go-arrow is phone-only (see media query). */
-.submitIcon {
-  display: none;
+/* Live takes the whole edge, so the mode is legible from the field itself and not only the moon. */
+.box[data-live] {
+  border-color: var(--accent-500);
 }
 
 .input {
-  flex: 1;
-  min-width: 0;
-  height: 38px;
-  padding: 0 var(--space-3);
+  display: block;
+  width: 100%;
+  padding: var(--space-5) var(--space-5) var(--space-3);
+  border: 0;
+  background: transparent;
+  color: var(--text);
   font-family: var(--font-sans);
   font-size: var(--text-base);
-  color: var(--text);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border-strong);
-  border-radius: var(--radius-md);
-  transition: border-color var(--dur) var(--ease);
+  line-height: 1.6;
+  resize: none;
+  /* 16px minimum on mobile or iOS Safari zooms the page on focus. */
+  min-height: 92px;
+}
+
+.input:focus {
+  outline: none;
 }
 
 .input::placeholder {
   color: var(--text-muted);
+}
+
+/* The action row: mode at the left, submit at the right. */
+.dock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.spacer {
+  margin-left: auto;
 }
 
 .input:hover {
