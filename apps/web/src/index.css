@@ -59,6 +59,13 @@
   --primary: var(--gray-900);
   --primary-text: #ffffff;
 
+  /* The composer's own ground: a field recessed from the page rather than a card raised above it,
+     so the input reads as somewhere to type rather than a panel to read. `--field-sub` is the
+     second step down, used by the settings bar docked inside it. */
+  --field: #f2f4f7;
+  --field-sub: #e9ecf1;
+  --field-edge: #e2e5ea;
+
   /* Difficulty ramp — a single hue stepped by tier (category color, not an accent). */
   --tier-1: #5a7fb5;
   --tier-2: #5f93a8;
@@ -168,6 +175,10 @@
   --danger: #d2726a;
   --primary: #eceef1;
   --primary-text: #0a0b0d;
+
+  --field: #17191e;
+  --field-sub: #121418;
+  --field-edge: #23262d;
 
   --tier-1: #6b8fc4;
   --tier-2: #6fa3b8;
