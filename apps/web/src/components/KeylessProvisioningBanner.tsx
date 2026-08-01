@@ -20,7 +20,7 @@ export function KeylessProvisioningBanner({ status }: KeylessProvisioningBannerP
       <p className={styles.text}>
         Waking up the local model for this Draft build. The first build after an idle period can
         take
-        <span className={styles.nowrap}> ~30–60s</span> while it starts up — it speeds up once warm.
+        <span className={styles.nowrap}> ~30–60s</span> while it starts up. It speeds up once warm.
       </p>
     </AccentBand>
   );

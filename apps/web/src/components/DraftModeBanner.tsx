@@ -36,7 +36,7 @@ export function DraftModeBanner({ capabilities, onOpenSettings }: DraftModeBanne
       <div className={styles.head}>
         <span className={`eyebrow ${styles.eyebrow}`}>Draft mode</span>
         <p className={styles.text}>
-          Building with free local fallbacks — quality and verification are reduced.
+          Building with free local fallbacks. Quality and verification are reduced.
         </p>
         {onOpenSettings && (
           <button type="button" className={styles.action} onClick={onOpenSettings}>

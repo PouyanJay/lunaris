@@ -1,0 +1,218 @@
+/* A settings menu: a chip that opens a list of options, each with the consequence of choosing it.
+   One visual language for every dropdown in the composer's dock. */
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* ─── The chip ─────────────────────────────────────────────────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* ≥28px keeps the target usable at toolbar density. */
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.chip:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.chip:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--field-sub),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* The setting's name takes the mono face the house reserves for data labels. */
+.key {
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.value {
+  white-space: nowrap;
+}
+
+.caret {
+  opacity: 0.55;
+  flex: none;
+}
+
+/* ─── The panel ────────────────────────────────────────────────────────────────
+   Opens downward from the chip. Capped so a long list scrolls inside itself rather than running
+   past the fold. */
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-popover);
+  min-width: 264px;
+  max-width: calc(100vw - 32px);
+  max-height: min(50vh, 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 16px 40px rgb(0 0 0 / 28%),
+    0 2px 6px rgb(0 0 0 / 12%);
+}
+
+/* ─── Rows ─────────────────────────────────────────────────────────────────────
+   Radius is concentric with the panel: 12px panel minus its 4px padding. */
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--bg-muted);
+}
+
+/* Inset so the ring is not clipped by the panel's own rounded edge. */
+.item:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+/* The check is the state; it is present for the chosen row and invisible (not absent) for the rest,
+   so the rows never shift horizontally as the selection moves. */
+.check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--accent-500);
+  opacity: 0;
+}
+
+.item[aria-checked="true"] .check {
+  opacity: 1;
+}
+
+.item[aria-checked="true"] .title {
+  font-weight: 600;
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  display: block;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+}
+
+.desc {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.separator {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip {
+    transition: none;
+  }
+}
+
+/* A row that leads somewhere else rather than choosing a value: its destination sits at the right,
+   with a chevron. Exported so consumers can style a footer entry in the panel's own language. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: var(--bg-muted);
+}
+
+.row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--focus-ring);
+}
+
+.rowCaret {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* ─── Panel ────────────────────────────────────────────────────────────────────
+   The same elevated surface as the option menu, but holding arbitrary content rather than a list.
+   Wider, because a form needs room a list does not. */
+.panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: var(--z-popover);
+  width: 400px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0 16px 40px rgb(0 0 0 / 28%),
+    0 2px 6px rgb(0 0 0 / 12%);
+  overflow: hidden;
+}
+
+/* Hung from the chip's right edge, for a wide panel on a chip that sits well along the bar. */
+.panelRight {
+  left: auto;
+  right: 0;
+}

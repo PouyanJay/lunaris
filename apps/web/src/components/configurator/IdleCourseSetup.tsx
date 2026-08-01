@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAutoHideScroll } from "../../hooks/useAutoHideScroll";
 import type { BuildRequest } from "../../hooks/useCourseStream";
-import { useEscapeKey } from "../../hooks/useEscapeKey";
-import { RAIL_MAX_WIDTH, RAIL_MIN_WIDTH, useRailLayout } from "../../hooks/useRailLayout";
 import { answersToClarification, recommendedAnswers } from "../../lib/clarification";
 import { applyComposerLevel, type ComposerLevel } from "../../lib/composerLevel";
 import { fetchBrief } from "../../lib/fetchBrief";
@@ -12,14 +10,12 @@ import type { BriefLoadState } from "../../types/clarifier";
 import type { Product } from "../../lib/product";
 import type { CourseRun, DiscoveryDepth } from "../../types/course";
 import { TopicForm } from "../TopicForm";
+import { LiveToggle } from "../gateway/LiveToggle";
+import { PersonalizeMenu } from "./PersonalizeMenu";
 import { ComposerFeatures } from "./ComposerFeatures";
 import { ComposerOptions } from "./ComposerOptions";
-import { ConfigRail } from "./ConfigRail";
 import { RecentBuildsTable } from "./RecentBuildsTable";
 import styles from "./IdleCourseSetup.module.css";
-
-/** The config rail persists its collapse/width separately from the reader rail. */
-const RAIL_STORAGE_KEY = "lunaris.config.rail";
 
 interface IdleCourseSetupProps {
   apiBaseUrl: string;
@@ -36,15 +32,15 @@ interface IdleCourseSetupProps {
 }
 
 /**
- * The idle "new course" surface: a topic-entry column welded to a persistent, resizable, collapsible
- * course-setup rail. The rail is the editable projection of the brief + build settings (see
- * {@link ConfigRail}); this owns the topic, the chosen depth, and the learner-tier brief lifecycle so
- * the confirmed values thread straight into the build. Replaces the buried Personalize modal: the
- * default path is still one click (Generate), personalization is always one glance away in the rail.
+ * The idle "new course" surface: a single centred column holding the composer.
  *
- * Layout mirrors the reader: a two-column grid driven by `useRailLayout` (drag/keyboard resize,
- * collapse to an edge tab on wide screens, a focus-trapped drawer on narrow). A topic edit
- * invalidates any brief read for the previous topic, so a stale clarifier can never build.
+ * Every build setting lives inside the composer's box now, docked in a bar at its foot, so there is
+ * no rail beside it and nothing to resize, collapse or turn into a drawer. This owns the topic, the
+ * chosen mode, the build settings and the learner-tier brief lifecycle, so the confirmed values
+ * thread straight into the build.
+ *
+ * A topic edit invalidates any brief read for the previous topic, so a stale clarifier can never
+ * build.
  */
 export function IdleCourseSetup({
   apiBaseUrl,
@@ -64,10 +60,7 @@ export function IdleCourseSetup({
   const [brief, setBrief] = useState<BriefLoadState>({ status: "blank" });
   const briefController = useRef<AbortController | null>(null);
 
-  const rail = useRailLayout(RAIL_STORAGE_KEY);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const mainRef = useRef<HTMLDivElement>(null);
-  const drawerToggleRef = useRef<HTMLButtonElement>(null);
 
   // Cancel any in-flight brief read on unmount so it can't settle on a gone component.
   useEffect(() => () => briefController.current?.abort(), []);
@@ -127,117 +120,49 @@ export function IdleCourseSetup({
     [brief, level, depth, officialOnly, mode, onStartLive, onGenerate],
   );
 
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    drawerToggleRef.current?.focus();
-  }, []);
-  useEscapeKey(drawerOpen, closeDrawer);
   useAutoHideScroll(mainRef);
 
   return (
-    <div
-      className={`${styles.layout} ${rail.resizing ? styles.resizing : ""}`}
-      style={{ "--rail-width": rail.collapsed ? "0px" : `${rail.width}px` } as CSSProperties}
-      data-rail-collapsed={rail.collapsed ? "true" : undefined}
-    >
-      <div className={`${styles.main} scroller`} ref={mainRef}>
-        {/* Narrow-screen affordance: the rail becomes a drawer, opened from here (shown via CSS). */}
-        <div className={styles.drawerBar}>
-          <button
-            ref={drawerToggleRef}
-            type="button"
-            className={styles.drawerToggle}
-            aria-expanded={drawerOpen}
-            aria-controls="config-rail"
-            onClick={() => setDrawerOpen((open) => !open)}
-          >
-            Course setup
-          </button>
-        </div>
-        <TopicForm
-          value={topic}
-          onChange={handleTopicChange}
-          onSubmit={handleSubmit}
-          submitLabel={mode === "live" ? "Start session" : "Generate course"}
-          hint={
-            mode === "live" ? (
-              <>
-                Name a topic. Lunaris Live maps it, then teaches it to you in a session &mdash; a
-                tutor that watches what you do and remembers what you know.
-              </>
-            ) : undefined
-          }
-          options={
-            <ComposerOptions
-              depth={depth}
-              mode={mode}
-              onModeChange={onStartLive ? setMode : undefined}
-              onDepthChange={setDepth}
-              level={level}
-              onLevelChange={setLevel}
-              officialOnly={officialOnly}
-              onOfficialOnlyChange={setOfficialOnly}
-            />
-          }
-        />
-        <ComposerFeatures mode={mode} />
-        <RecentBuildsTable runs={runs} />
-      </div>
-
-      {/* Drag handle between the topic column and the rail (wide screens, expanded only). */}
-      {!rail.collapsed && (
-        <div
-          className={styles.splitter}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize course setup"
-          aria-valuenow={rail.width}
-          aria-valuemin={RAIL_MIN_WIDTH}
-          aria-valuemax={RAIL_MAX_WIDTH}
-          tabIndex={0}
-          onPointerDown={rail.startResize}
-          onKeyDown={rail.nudgeWidth}
-        />
-      )}
-
-      {/* The course-setup rail: a static column on wide screens, a drawer on narrow. One instance —
-          the wrapper's class switches presentation. */}
-      <div
-        id="config-rail"
-        className={`${styles.railWrap} ${drawerOpen ? styles.railWrapOpen : ""}`}
-      >
-        <ConfigRail
-          topic={topic}
-          brief={brief}
-          onLoadBrief={loadBrief}
-          onAnswerChange={handleAnswerChange}
-          onOpenSettings={onOpenSettings}
-          onCollapse={rail.toggleCollapsed}
-          onClose={closeDrawer}
-        />
-      </div>
-
-      {/* When collapsed on wide screens, a slim edge tab brings it back. */}
-      {rail.collapsed && (
-        <button
-          type="button"
-          className={styles.railReveal}
-          onClick={rail.toggleCollapsed}
-          aria-label="Show course setup"
-        >
-          <span aria-hidden="true">‹</span>
-          <span className={styles.railRevealText}>Course setup</span>
-        </button>
-      )}
-
-      {drawerOpen && (
-        <button
-          type="button"
-          className={styles.scrim}
-          aria-label="Close course setup overlay"
-          onClick={closeDrawer}
-        />
-      )}
+    <div className={`${styles.column} scroller`} ref={mainRef}>
+      <TopicForm
+        value={topic}
+        onChange={handleTopicChange}
+        onSubmit={handleSubmit}
+        heading={
+          mode === "live"
+            ? { lead: "What should we ", accent: "work through", tail: "?" }
+            : { lead: "What do you want to ", accent: "learn", tail: "?" }
+        }
+        live={mode === "live"}
+        modeControl={
+          onStartLive ? (
+            <LiveToggle on={mode === "live"} onChange={(on) => setMode(on ? "live" : "studio")} />
+          ) : undefined
+        }
+        submitLabel={mode === "live" ? "Start session" : "Generate course"}
+        options={
+          <ComposerOptions
+            mode={mode}
+            depth={depth}
+            onDepthChange={setDepth}
+            level={level}
+            onLevelChange={setLevel}
+            officialOnly={officialOnly}
+            onOfficialOnlyChange={setOfficialOnly}
+            onOpenTrustedSources={onOpenSettings}
+            personalize={
+              <PersonalizeMenu
+                topic={topic}
+                brief={brief}
+                onLoadBrief={loadBrief}
+                onAnswerChange={handleAnswerChange}
+              />
+            }
+          />
+        }
+      />
+      <ComposerFeatures mode={mode} />
+      <RecentBuildsTable runs={runs} />
     </div>
   );
 }

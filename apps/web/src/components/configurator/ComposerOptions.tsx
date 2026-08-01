@@ -1,115 +1,110 @@
-import { useId } from "react";
+import type { ReactNode } from "react";
 
-import { SegmentedControl } from "../primitives/SegmentedControl";
-import { Switch } from "../primitives/Switch";
+import { Menu, type MenuOption } from "../primitives/Menu";
+import { menuRowCaretClass, menuRowClass } from "../primitives/menuRow";
 import type { ComposerLevel } from "../../lib/composerLevel";
 import type { Product } from "../../lib/product";
 import type { DiscoveryDepth } from "../../types/course";
 import styles from "./ComposerOptions.module.css";
 
 interface ComposerOptionsProps {
-  /** Which product the topic will be sent to. The row is absent from the DOM entirely unless
-   *  `onModeChange` is supplied — that is how the app layer signals Lunaris is two products, so
-   *  this stays presentational and never reaches for auth context itself. */
+  /** Which product the topic goes to. The bar is Studio's entirely: under Live nothing here can
+   *  reach the outcome, so none of it is offered. */
   mode: Product;
-  onModeChange?: ((mode: Product) => void) | undefined;
   depth: DiscoveryDepth;
   onDepthChange: (depth: DiscoveryDepth) => void;
   level: ComposerLevel;
   onLevelChange: (level: ComposerLevel) => void;
   officialOnly: boolean;
   onOfficialOnlyChange: (value: boolean) => void;
+  /** Personalization, rendered as the last chip in the bar. Supplied by the parent, which owns the
+   *  brief lifecycle. */
+  personalize?: ReactNode;
+  /** Opens the Settings panel, where the trusted-domain list actually lives. A callback rather than
+   *  a Link: this component stays presentational and free of router context, which is the same rule
+   *  that keeps it free of auth context. */
+  onOpenTrustedSources?: (() => void) | undefined;
 }
 
-const MODES: { value: Product; label: string }[] = [
-  { value: "studio", label: "Studio" },
-  { value: "live", label: "Live" },
+const DEPTHS: MenuOption<DiscoveryDepth>[] = [
+  { value: "standard", label: "Standard", description: "Fewer sources, faster build" },
+  { value: "thorough", label: "Thorough", description: "Wider research. Slower, better grounded" },
 ];
 
-const DEPTHS: { value: DiscoveryDepth; label: string }[] = [
-  { value: "standard", label: "Standard" },
-  { value: "thorough", label: "Thorough" },
+const LEVELS: MenuOption<ComposerLevel>[] = [
+  { value: "recommended", label: "Recommended", description: "Match what we read from your topic" },
+  { value: "beginner", label: "Beginner", description: "Assume no prior exposure" },
+  { value: "intermediate", label: "Intermediate", description: "Assume the fundamentals" },
+  { value: "advanced", label: "Advanced", description: "Skip the basics and go deep" },
 ];
 
-const LEVELS: { value: ComposerLevel; label: string }[] = [
-  { value: "recommended", label: "Recommended" },
-  { value: "beginner", label: "Beginner" },
-  { value: "intermediate", label: "Intermediate" },
-  { value: "advanced", label: "Advanced" },
+/** The trust setting reads better as a choice between two named states than as an on/off, because
+ *  "off" would have to mean "any source", which is a decision rather than an absence. */
+type SourceScope = "any" | "official";
+
+const SOURCES: MenuOption<SourceScope>[] = [
+  { value: "any", label: "Any source", description: "Use the best evidence found" },
+  {
+    value: "official",
+    label: "Official only",
+    description: "Restrict to primary and authoritative sources",
+  },
 ];
 
-/** The composer's options bar (P5): the quick build controls that sit under the topic input —
- *  search Depth, target Level (maps to the clarifier's level answer), and the "Official sources
- *  only" trust switch. The deeper personalization brief stays reachable below; these are the
- *  one-glance knobs. All feed straight into the build. */
+/** The build settings, docked as a bar inside the foot of the composer.
+ *
+ *  Each setting is a chip that opens a menu explaining what choosing it does, rather than a row of
+ *  controls competing with the topic for attention. The bar belongs to Studio: Live composes its
+ *  lesson as it teaches, so a build setting could not change its outcome, and a control that cannot
+ *  affect anything is worse than no control. Live's own config arrives with the runtime that can
+ *  honour it. */
 export function ComposerOptions({
   mode,
-  onModeChange,
   depth,
   onDepthChange,
   level,
   onLevelChange,
   officialOnly,
   onOfficialOnlyChange,
+  personalize,
+  onOpenTrustedSources,
 }: ComposerOptionsProps) {
-  const modeLabelId = useId();
-  const depthLabelId = useId();
-  const levelLabelId = useId();
-  const officialLabelId = useId();
+  if (mode === "live") return null;
+
   return (
     <div className={styles.bar}>
-      {/* The fork sits first: it decides what every control below it even means. */}
-      {onModeChange && (
-        <div className={styles.option}>
-          <span id={modeLabelId} className={`eyebrow ${styles.label}`}>
-            Mode
-          </span>
-          <SegmentedControl
-            segments={MODES}
-            value={mode}
-            onChange={onModeChange}
-            aria-labelledby={modeLabelId}
-          />
-        </div>
-      )}
-      <div className={styles.option}>
-        <span id={depthLabelId} className={`eyebrow ${styles.label}`}>
-          Depth
-        </span>
-        <SegmentedControl
-          segments={DEPTHS}
-          value={depth}
-          onChange={onDepthChange}
-          aria-labelledby={depthLabelId}
-        />
-      </div>
-      <div className={styles.option}>
-        <span id={levelLabelId} className={`eyebrow ${styles.label}`}>
-          Level
-        </span>
-        <SegmentedControl
-          segments={LEVELS}
-          value={level}
-          onChange={onLevelChange}
-          aria-labelledby={levelLabelId}
-        />
-      </div>
-      {/* Studio-only: Live compiles a graph and teaches from it, it never researches sources, so a
-          trust control here could not affect the outcome. Offering a control that does nothing is
-          worse than not offering it. Depth and Level stay — plan §5 puts depth in a session's own
-          config. */}
-      {mode !== "live" && (
-        <div className={`${styles.option} ${styles.switchOption}`}>
-          <span id={officialLabelId} className={`eyebrow ${styles.label}`}>
-            Official sources only
-          </span>
-          <Switch
-            checked={officialOnly}
-            onChange={onOfficialOnlyChange}
-            aria-labelledby={officialLabelId}
-          />
-        </div>
-      )}
+      <Menu label="Depth" value={depth} options={DEPTHS} onChange={onDepthChange} />
+      <Menu label="Level" value={level} options={LEVELS} onChange={onLevelChange} />
+      <Menu
+        label="Sources"
+        value={officialOnly ? "official" : "any"}
+        options={SOURCES}
+        onChange={(scope) => onOfficialOnlyChange(scope === "official")}
+        footer={
+          // A real destination, not an ornament: the Settings panel that owns the domain list. A
+          // row that led nowhere would be the exact thing this bar exists to remove.
+          onOpenTrustedSources ? (
+            <button type="button" className={menuRowClass} onClick={onOpenTrustedSources}>
+              Trusted domains
+              <svg
+                className={menuRowCaretClass}
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 6l6 6-6 6" />
+              </svg>
+            </button>
+          ) : undefined
+        }
+      />
+      {personalize}
     </div>
   );
 }

@@ -18,6 +18,33 @@ import {
   waitForRunsFetch,
 } from "./test/fixtures";
 
+/** Open the composer's Personalize panel. The brief used to sit permanently in the rail; it is a
+ *  chip in the settings bar now, so the panel has to be opened before its contents exist. */
+function openPersonalize() {
+  // Idempotent: clicking the chip while the panel is already open would close it. The chip reads
+  // "Personalize" until a brief is read, then "For you Tailored".
+  const chip = screen.queryByRole("button", { name: /^personalize$|tailored/i });
+  if (chip && chip.getAttribute("aria-expanded") !== "true") fireEvent.click(chip);
+}
+
+/** Open the panel AND read the brief. Separate from opening, because a test that wants to see the
+ *  offer to personalize must not have it clicked out from under it. */
+function readBrief() {
+  openPersonalize();
+  fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+}
+
+/** Pick a value from one of the composer's setting menus. The controls became menus in the
+ *  composer rebuild; the guarantees they are asserted against are unchanged. */
+function pickSetting(setting: string, option: RegExp) {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(setting, "i") }));
+  fireEvent.click(
+    within(screen.getByRole("menu", { name: setting })).getByRole("menuitemradio", {
+      name: option,
+    }),
+  );
+}
+
 function stubFetchResolving(course = makeCourse()) {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => course }));
 }
@@ -124,13 +151,12 @@ describe("App — live studio (VITE_API_URL set)", () => {
 
     // Name a topic, then personalize it from the always-visible setup rail (not a buried modal).
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "english" } });
-    fireEvent.click(screen.getByRole("button", { name: /personalize this topic/i }));
+    readBrief();
 
     // The rail interprets the goal and offers the confirm questions.
     expect(await screen.findByText(/reach CLB 10/i)).toBeInTheDocument();
     // Set the target level via the composer's options bar (maps onto the clarification).
-    const level = screen.getByRole("radiogroup", { name: "Level" });
-    fireEvent.click(within(level).getByRole("radio", { name: "Advanced" }));
+    pickSetting("Level", /advanced/i);
 
     // Build from the confirmed brief → the stream resolves to the ready course.
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
@@ -148,52 +174,6 @@ describe("App — live studio (VITE_API_URL set)", () => {
       targetLevel: "advanced",
       goalType: "credential",
     });
-  });
-
-  it("shows the persistent course-setup rail beside the topic form in the idle state", async () => {
-    const fetchMock = routedFetch({ runs: [] });
-    vi.stubGlobal("fetch", fetchMock);
-    render(<App />);
-
-    // The rail replaces the old buried Personalize modal — it sits beside the form, always visible.
-    expect(screen.getByRole("complementary", { name: /course setup/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /open settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
-    await waitForRunsFetch(fetchMock);
-  });
-
-  it("opens the Settings canvas from the rail's operator pointer", async () => {
-    // The Settings canvas mounts the config + trusted-sources panels, which fetch their own
-    // endpoints — route them all so their async state settles within the awaited assertions.
-    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0]) => {
-      const url = input instanceof Request ? input.url : String(input);
-      if (url.includes("/api/settings")) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ secrets: [], pipeline: "stub", supportsLessonRegeneration: true }),
-        });
-      }
-      if (url.includes("/api/source-authorities")) {
-        return Promise.resolve({ ok: true, json: async () => [] });
-      }
-      if (url.includes("/api/config")) {
-        return Promise.resolve({ ok: true, json: async () => ({ settings: [] }) });
-      }
-      if (url.includes("/api/runs")) {
-        return Promise.resolve({ ok: true, json: async () => [] });
-      }
-      throw new Error(`unhandled URL ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    render(<App />);
-    await waitForRunsFetch(fetchMock);
-
-    // The operator tier points to Settings rather than duplicating admin controls in the rail.
-    fireEvent.click(screen.getByRole("button", { name: /open settings/i }));
-
-    // findBy awaits the canvas switch + the panels' fetches settling (no act warnings).
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /done/i })).toBeInTheDocument();
   });
 
   it("collapses the sidebar to a mini icon rail and expands it again", async () => {
@@ -216,7 +196,6 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.queryByRole("separator", { name: /resize sidebar/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /new course/i })).toBeInTheDocument();
-    // Exact match scopes to the sidebar's "Settings" — the idle rail also has an "Open Settings…".
     // Navigation entries are real links (they route to /settings), not buttons.
     expect(screen.getByRole("link", { name: /^settings$/i })).toBeInTheDocument();
 
@@ -681,7 +660,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    fireEvent.click(screen.getByRole("switch", { name: /official sources only/i }));
+    pickSetting("Sources", /official only/i);
     fireEvent.change(screen.getByLabelText("Topic"), { target: { value: "x" } });
     fireEvent.click(screen.getByRole("button", { name: /generate course/i }));
 
