@@ -8,8 +8,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  /* `safe` is doing real work here, not decoration. A plain `center` in a scroll container clips
+     the top of anything taller than the viewport and puts it out of reach: with a long build
+     history the heading would be unscrollable. `safe center` centres while the content fits and
+     falls back to start alignment the moment it does not. A browser without `safe` drops the whole
+     declaration and lands on start alignment, which is the old behaviour rather than a broken one,
+     so there is deliberately no plain `center` fallback above this. */
+  justify-content: safe center;
   gap: var(--space-10);
-  padding: var(--space-10) var(--space-5) var(--space-12);
+  /* Symmetric, so "centred" reads as centred. These are the minimum edges once the content is tall
+     enough to scroll. */
+  padding: var(--space-10) var(--space-5);
 }
 
 /* Every direct child takes the measure, so nothing has to remember to set its own. */
