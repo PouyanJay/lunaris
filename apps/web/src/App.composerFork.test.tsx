@@ -134,15 +134,17 @@ describe("Composer — the Studio | Live fork", () => {
     expect(screen.queryByRole("button", { name: /sources/i })).not.toBeInTheDocument();
   });
 
-  it("stops promising a build in the feature cards when Live is selected", async () => {
-    // The cards under the composer describe what submitting does. Under Live they described a
-    // Studio build — researching sources and a build to watch — neither of which Live performs.
+  it("stops promising a build in the explainer when Live is selected", async () => {
+    // The cells under the composer describe what submitting does. Under Live they described a
+    // Studio build, researching sources and a build to watch, neither of which Live performs.
+    // The explainer is first-run only, so this needs a loaded but empty build history.
+    vi.stubGlobal("fetch", routedFetch({ runs: [] }));
     window.history.pushState(null, "", "/new");
 
     render(<App />);
 
     expect(
-      screen.getByRole("list", { name: /what a lunaris studio build does/i }),
+      await screen.findByRole("list", { name: /what a lunaris studio build does/i }),
     ).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: /live mode/i }));
 

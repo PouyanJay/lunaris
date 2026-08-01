@@ -1,14 +1,16 @@
-/* Three informational cards under the composer. Hairline panels, restrained — an instrument note,
-   not a marketing hero. */
+/* What a build does, shown once to someone who has never run one. ONE region divided by hairlines
+   rather than three cards floating on the page ground: an instrument note, not a marketing hero. */
 .grid {
   list-style: none;
   margin: 0;
   padding: 0;
   width: 100%;
-  max-width: 720px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
 }
 
 .card {
@@ -17,9 +19,23 @@
   align-items: flex-start;
   gap: var(--space-2);
   padding: var(--space-5);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-subtle);
+}
+
+/* The divider IS the structure: one rule between cells, none around them. */
+.card + .card {
+  border-left: var(--border-width) solid var(--border);
+}
+
+/* Stacked on narrow viewports, so the rule turns with the layout rather than disappearing. */
+@media (max-width: 700px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card + .card {
+    border-left: 0;
+    border-top: var(--border-width) solid var(--border);
+  }
 }
 
 /* Neutral, not accent — the amber stays a scalpel (the "learn" word, Generate, the live state). */

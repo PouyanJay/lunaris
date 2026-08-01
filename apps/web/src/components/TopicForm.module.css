@@ -1,13 +1,11 @@
+/* The column owns centring and the measure now. This used to fill the viewport and centre itself,
+   which pushed the explainer and the build history below the fold and left them at the page edge. */
 .center {
-  height: 100%;
-  display: grid;
-  place-items: center;
-  padding: var(--space-8);
+  width: 100%;
 }
 
 .form {
   width: 100%;
-  max-width: 540px;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -25,7 +23,6 @@
   color: var(--accent-500);
 }
 
-/* Input + button welded into one hairline field; focus surfaces on the whole group. */
 /* ── The box ───────────────────────────────────────────────────────────────────
    A field recessed from the page, not a card raised above it: the composer should read as somewhere
    to type. Every control docks inside it. No overflow clipping, because the settings menus open
@@ -37,8 +34,12 @@
   transition: border-color var(--dur) var(--ease);
 }
 
+/* Focus surfaces on the WHOLE box, not the textarea inside it. The global :focus-visible rule
+   forces border-radius to --radius-sm, which drew a near-rectangular halo around this 18px field,
+   so the ring is taken here where it can follow the real corner. */
 .box:focus-within {
-  border-color: var(--border-strong);
+  border-color: var(--accent-500);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* Live takes the whole edge, so the mode is legible from the field itself and not only the moon. */
@@ -58,11 +59,16 @@
   line-height: 1.6;
   resize: none;
   /* 16px minimum on mobile or iOS Safari zooms the page on focus. */
-  min-height: 92px;
+  min-height: 148px;
 }
 
-.input:focus {
+/* The field itself shows nothing: the box around it carries the focus state. Suppressing the
+   global ring here is what removes the grey rectangle; without the box rule above it would also
+   remove the focus indicator, which is why the two changes belong together. */
+.input:focus,
+.input:focus-visible {
   outline: none;
+  box-shadow: none;
 }
 
 .input::placeholder {
@@ -81,17 +87,9 @@
   margin-left: auto;
 }
 
-.input:hover {
-  border-color: var(--text-muted);
-}
-
-.input:focus-visible {
-  outline: none;
-  border-color: var(--accent-500);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
-
-.input[aria-invalid="true"] {
+/* Invalid surfaces on the box, for the same reason focus does: the field has no border of its own
+   to colour. */
+.box:has(.input[aria-invalid="true"]) {
   border-color: var(--danger);
 }
 

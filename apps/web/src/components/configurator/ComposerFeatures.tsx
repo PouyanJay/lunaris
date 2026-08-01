@@ -13,7 +13,7 @@ const STUDIO_FEATURES: Feature[] = [
   {
     eyebrow: "Grounded",
     title: "Verified against real sources",
-    body: "Every factual claim is checked against retrieved evidence — unsupported ones are cut, not shipped.",
+    body: "Every factual claim is checked against retrieved evidence. Unsupported ones are cut, not shipped.",
     path: "M12 3l7 4v5c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4zM9.5 12l2 2 3.5-4",
   },
   {
@@ -25,7 +25,7 @@ const STUDIO_FEATURES: Feature[] = [
   {
     eyebrow: "Transparent",
     title: "Watch it build, live",
-    body: "See the agent research, plan, and write in real time — every tool call and decision streams to you.",
+    body: "See the agent research, plan and write in real time. Every tool call and decision streams to you.",
     path: "M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6zm9 2.5A2.5 2.5 0 1012 9.5a2.5 2.5 0 000 5z",
   },
 ];
@@ -43,7 +43,7 @@ const LIVE_FEATURES: Feature[] = [
   {
     eyebrow: "Responsive",
     title: "Taught in real time",
-    body: "A tutor explains, asks, and reacts to what you do — the lesson is composed as you go, not read from a script.",
+    body: "A tutor explains, asks, and reacts to what you do. The lesson is composed as you go, not read from a script.",
     path: "M4 5h16v10H9l-5 4V5zm4 5h8M8 12h5",
   },
   {
@@ -60,7 +60,7 @@ interface ComposerFeaturesProps {
   mode?: Product;
 }
 
-/** Three restrained, informational cards under the composer explaining what submitting does —
+/** Three restrained, informational cells under the composer explaining what submitting does:
  *  hairline panels with a stroked glyph, eyebrow, title, and one line, not marketing tiles. */
 export function ComposerFeatures({ mode = "studio" }: ComposerFeaturesProps) {
   const live = mode === "live";

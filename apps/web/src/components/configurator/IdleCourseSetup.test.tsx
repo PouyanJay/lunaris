@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { makeBriefResponse } from "../../test/fixtures";
+import { makeBriefResponse, makeRun } from "../../test/fixtures";
 import type { BriefResponse, GoalType } from "../../types/clarifier";
 import { IdleCourseSetup } from "./IdleCourseSetup";
 
@@ -43,7 +44,16 @@ function renderSetup(overrides: Partial<React.ComponentProps<typeof IdleCourseSe
     onOpenSettings: vi.fn(),
     ...overrides,
   };
-  return { props, ...render(<IdleCourseSetup {...props} />) };
+  // RecentBuildsTable links to a course, which is real navigation and correctly a <Link>, so the
+  // harness supplies router context rather than the component avoiding it.
+  return {
+    props,
+    ...render(
+      <MemoryRouter>
+        <IdleCourseSetup {...props} />
+      </MemoryRouter>,
+    ),
+  };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -127,6 +137,38 @@ describe("IdleCourseSetup", () => {
 
     expect(screen.getByRole("button", { name: /tailored/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^personalize$/i })).not.toBeInTheDocument();
+  });
+
+  // ─── What sits below the composer ────────────────────────────────────────────────────────────
+
+  it("explains what a build does only for someone who has never built one", () => {
+    renderSetup({ runsLoaded: true, runs: [] });
+
+    expect(
+      screen.getByRole("list", { name: /what a lunaris studio build does/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("drops the explainer once there are builds, and shows them instead", () => {
+    // Someone with completed courses does not need to be told what a build does; that space is
+    // better spent on the thing they came back for.
+    renderSetup({ runsLoaded: true, runs: [makeRun()] });
+
+    expect(
+      screen.queryByRole("list", { name: /what a lunaris studio build does/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /recent builds/i })).toBeInTheDocument();
+  });
+
+  it("shows neither while the build history is still loading", () => {
+    // The parent collapses an unloaded history to an empty array, so without an explicit signal the
+    // explainer would flash up and vanish for every returning user.
+    renderSetup({ runsLoaded: false, runs: [] });
+
+    expect(
+      screen.queryByRole("list", { name: /what a lunaris studio build does/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /recent builds/i })).not.toBeInTheDocument();
   });
 
   it("does not offer to personalize before there is a topic to read", () => {
