@@ -14,7 +14,6 @@ import { LiveToggle } from "../gateway/LiveToggle";
 import { PersonalizeMenu } from "./PersonalizeMenu";
 import { ComposerFeatures } from "./ComposerFeatures";
 import { ComposerOptions } from "./ComposerOptions";
-import { RecentBuildsTable } from "./RecentBuildsTable";
 import styles from "./IdleCourseSetup.module.css";
 
 interface IdleCourseSetupProps {
@@ -27,7 +26,8 @@ interface IdleCourseSetupProps {
   onStartLive?: ((topic: string) => void) | undefined;
   /** Open the operator/admin Settings panel (the rail only points there). */
   onOpenSettings: () => void;
-  /** The run history (from the shell's useRuns), which drives the recent-builds table. */
+  /** The run history (from the shell's useRuns). Read only to tell a first-time visitor from a
+   *  returning one; the composer no longer lists builds. */
   runs?: CourseRun[];
   /** Whether that history has actually loaded. The parent collapses an unloaded history to an empty
    *  array, so without this the first-run explainer would flash up and vanish for every returning
@@ -169,7 +169,6 @@ export function IdleCourseSetup({
       {/* What a build does is first-run material: someone with completed courses does not need to
           be told, and the space is better spent on what they came back for. */}
       {runsLoaded && runs.length === 0 && <ComposerFeatures mode={mode} />}
-      <RecentBuildsTable runs={runs} />
     </div>
   );
 }

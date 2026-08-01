@@ -1,5 +1,4 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { makeBriefResponse, makeRun } from "../../test/fixtures";
@@ -44,16 +43,7 @@ function renderSetup(overrides: Partial<React.ComponentProps<typeof IdleCourseSe
     onOpenSettings: vi.fn(),
     ...overrides,
   };
-  // RecentBuildsTable links to a course, which is real navigation and correctly a <Link>, so the
-  // harness supplies router context rather than the component avoiding it.
-  return {
-    props,
-    ...render(
-      <MemoryRouter>
-        <IdleCourseSetup {...props} />
-      </MemoryRouter>,
-    ),
-  };
+  return { props, ...render(<IdleCourseSetup {...props} />) };
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -149,15 +139,15 @@ describe("IdleCourseSetup", () => {
     ).toBeInTheDocument();
   });
 
-  it("drops the explainer once there are builds, and shows them instead", () => {
-    // Someone with completed courses does not need to be told what a build does; that space is
-    // better spent on the thing they came back for.
+  it("drops the explainer once there are builds", () => {
+    // Someone with completed courses does not need to be told what a build does. The composer is
+    // then just the composer: nothing below it, so it can sit centred on the page.
     renderSetup({ runsLoaded: true, runs: [makeRun()] });
 
     expect(
       screen.queryByRole("list", { name: /what a lunaris studio build does/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /recent builds/i })).toBeInTheDocument();
+    expect(screen.getByLabelText("Topic")).toBeInTheDocument();
   });
 
   it("shows neither while the build history is still loading", () => {
@@ -168,7 +158,6 @@ describe("IdleCourseSetup", () => {
     expect(
       screen.queryByRole("list", { name: /what a lunaris studio build does/i }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: /recent builds/i })).not.toBeInTheDocument();
   });
 
   it("does not offer to personalize before there is a topic to read", () => {
