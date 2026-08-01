@@ -7,7 +7,11 @@
 
 .form {
   width: 100%;
-  max-width: 540px;
+  /* Sized so the four setting chips hold one row even at their widest, which is after a brief is
+     read and Personalize grows to "FOR YOU Tailored". At 720px that state had ~36px of slack, which
+     is inside the error of estimating text width; 760 keeps it comfortable. Narrower than this and
+     Personalize wrapped to a second line, breaking the bar's read as one strip of controls. */
+  max-width: 760px;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -61,7 +65,7 @@
   line-height: 1.6;
   resize: none;
   /* 16px minimum on mobile or iOS Safari zooms the page on focus. */
-  min-height: 92px;
+  min-height: 148px;
 }
 
 /* The field itself shows nothing: the box around it carries the focus state. Suppressing the
