@@ -766,6 +766,7 @@ function StudioApp({
             onGenerate={generate}
             onOpenSettings={openSettings}
             runs={runsState.status === "ready" ? runsState.runs : []}
+            runsLoaded={runsState.status === "ready"}
           />
         ),
       };

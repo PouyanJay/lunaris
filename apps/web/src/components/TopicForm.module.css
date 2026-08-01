@@ -1,17 +1,11 @@
+/* The column owns centring and the measure now. This used to fill the viewport and centre itself,
+   which pushed the explainer and the build history below the fold and left them at the page edge. */
 .center {
-  height: 100%;
-  display: grid;
-  place-items: center;
-  padding: var(--space-8);
+  width: 100%;
 }
 
 .form {
   width: 100%;
-  /* Sized so the four setting chips hold one row even at their widest, which is after a brief is
-     read and Personalize grows to "FOR YOU Tailored". At 720px that state had ~36px of slack, which
-     is inside the error of estimating text width; 760 keeps it comfortable. Narrower than this and
-     Personalize wrapped to a second line, breaking the bar's read as one strip of controls. */
-  max-width: 760px;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);

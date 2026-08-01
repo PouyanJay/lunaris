@@ -27,8 +27,12 @@ interface IdleCourseSetupProps {
   onStartLive?: ((topic: string) => void) | undefined;
   /** Open the operator/admin Settings panel (the rail only points there). */
   onOpenSettings: () => void;
-  /** The run history (from the shell's useRuns) — drives the composer's recent-builds table. */
+  /** The run history (from the shell's useRuns), which drives the recent-builds table. */
   runs?: CourseRun[];
+  /** Whether that history has actually loaded. The parent collapses an unloaded history to an empty
+   *  array, so without this the first-run explainer would flash up and vanish for every returning
+   *  user. */
+  runsLoaded?: boolean;
 }
 
 /**
@@ -48,6 +52,7 @@ export function IdleCourseSetup({
   onStartLive,
   onOpenSettings,
   runs = [],
+  runsLoaded = false,
 }: IdleCourseSetupProps) {
   const [topic, setTopic] = useState("");
   // Which product the topic goes to. Studio is the default, so the existing path is untouched.
@@ -161,7 +166,9 @@ export function IdleCourseSetup({
           />
         }
       />
-      <ComposerFeatures mode={mode} />
+      {/* What a build does is first-run material: someone with completed courses does not need to
+          be told, and the space is better spent on what they came back for. */}
+      {runsLoaded && runs.length === 0 && <ComposerFeatures mode={mode} />}
       <RecentBuildsTable runs={runs} />
     </div>
   );
