@@ -162,8 +162,14 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    await screen.findByRole("heading", { name: "Lunaris Live", level: 1 });
-    expect(screen.getByText(/how transformers work/i)).toBeInTheDocument();
+    // Phase 1: the topic is no longer merely echoed under a product heading — it IS the heading,
+    // because Live now compiles a map of it. The round trip is what this pins either way. Wait for
+    // the settled state first: the compiling state names the topic too, and asserting on that one
+    // races the swap to the compiled map.
+    await screen.findByText(/concept map/i);
+    expect(
+      screen.getByRole("heading", { name: "How transformers work", level: 1 }),
+    ).toBeInTheDocument();
   });
 
   it("renders Live cleanly with no topic at all", async () => {
@@ -207,7 +213,10 @@ describe("Composer — the Studio | Live fork", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/live"));
     // Encoded on the way out, decoded on the way in — the learner sees exactly what they typed.
     expect(new URLSearchParams(window.location.search).get("topic")).toBe(topic);
-    expect(await screen.findByText(topic, { exact: false })).toBeInTheDocument();
+    // The heading of the settled map specifically: Live repeats the topic in more than one place,
+    // and a loose text match would pass on any one of them.
+    await screen.findByText(/concept map/i);
+    expect(screen.getByRole("heading", { name: topic, level: 1 })).toBeInTheDocument();
   });
 
   it("refuses to start a session with an empty topic", async () => {

@@ -44,6 +44,12 @@
   padding: var(--space-8) var(--space-5);
 }
 
+/* A compiled map is read top-down, so it anchors to the top of the canvas rather than floating in
+   its middle the way the single-message states do. */
+.canvas[data-state="ready"] {
+  align-items: flex-start;
+}
+
 .empty {
   max-width: 46ch;
   text-align: center;
@@ -61,22 +67,6 @@
   letter-spacing: -0.02em;
   color: var(--text);
   margin: 0 0 var(--space-4);
-}
-
-/* What the learner asked for, echoed back. The topic is user data, so it takes the mono face the
-   house reserves for data; the sentence around it stays prose. */
-.topic {
-  font-size: var(--text-base);
-  line-height: var(--lh-base);
-  color: var(--text-secondary);
-  margin: 0 0 var(--space-4);
-}
-
-.topicName {
-  font-family: var(--font-mono);
-  color: var(--text);
-  /* A long topic must wrap rather than push the centred column wider. */
-  overflow-wrap: anywhere;
 }
 
 .body {
@@ -120,4 +110,79 @@
   .action {
     transition: none;
   }
+}
+
+/* ─── The compiled map ───────────────────────────────────────────────
+   Concepts as a welded column in prerequisite order: one border level for the region, hairlines
+   between rows — the house panel idiom, not a stack of floating cards. T7 lays it out as a graph. */
+.map {
+  width: 100%;
+  max-width: 720px;
+}
+
+.mapHead {
+  margin-bottom: var(--space-5);
+}
+
+.mapMeta {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+  /* The list carries its own counter: the order IS the content here (prerequisites first), so the
+     numbering is information rather than decoration. */
+  counter-reset: concept;
+}
+
+.node {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-4);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.node:last-child {
+  border-bottom: 0;
+}
+
+.node::before {
+  counter-increment: concept;
+  content: counter(concept);
+  grid-row: 1 / span 3;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  padding-top: 2px;
+}
+
+.nodeName {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+  line-height: var(--lh-base);
+}
+
+.nodeDefinition {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--lh-sm);
+}
+
+/* The dependency line is data about the graph, so it takes the muted register the house reserves
+   for metadata rather than competing with the concept's own name. */
+.nodeRequires {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--lh-xs);
 }

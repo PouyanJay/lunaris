@@ -16,6 +16,7 @@ members = [
     "lunaris-eval",
     "lunaris-graph",
     "lunaris-grounding",
+    "lunaris-live",
     "lunaris-runtime",
     "lunaris-video",
 ]
@@ -1690,6 +1691,23 @@ requires-dist = [
     { name = "supabase", specifier = ">=2.9" },
     { name = "tavily-python", specifier = ">=0.5" },
     { name = "trafilatura", specifier = ">=1.12" },
+]
+
+[[package]]
+name = "lunaris-live"
+version = "0.0.0"
+source = { editable = "packages/live" }
+dependencies = [
+    { name = "lunaris-runtime" },
+    { name = "pydantic" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "lunaris-runtime", editable = "packages/runtime" },
+    { name = "pydantic", specifier = ">=2.9" },
+    { name = "structlog", specifier = ">=24.4" },
 ]
 
 [[package]]

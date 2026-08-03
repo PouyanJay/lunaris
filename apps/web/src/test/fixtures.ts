@@ -420,6 +420,7 @@ export function routedFetch(
     library?: unknown;
     activity?: unknown;
     bookmarks?: unknown;
+    liveGraph?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -482,6 +483,29 @@ export function routedFetch(
         feed: [],
       };
       return Promise.resolve({ ok: true, json: async () => activity });
+    }
+    // Lunaris Live's compile: POST a topic, get its concept map back. The default echoes the
+    // requested topic through a one-node graph, so a test asserting the topic survived the URL is
+    // asserting the round trip rather than a fixture constant.
+    if (url.includes("/api/live/graphs") && method === "POST") {
+      const topic = String(JSON.parse(String(init?.body ?? "{}")).topic ?? "");
+      const fallback = {
+        graphId: "g-test",
+        topic,
+        version: 1,
+        nodes: [
+          {
+            id: "n1",
+            name: topic,
+            definition: `${topic}, put together.`,
+            requires: [],
+            provenance: "compiled",
+          },
+        ],
+        topoOrder: ["n1"],
+        isAcyclic: true,
+      };
+      return Promise.resolve({ ok: true, json: async () => handlers.liveGraph ?? fallback });
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);
