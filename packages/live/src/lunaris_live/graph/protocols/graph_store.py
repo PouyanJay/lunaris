@@ -20,6 +20,20 @@ class IGraphStore(Protocol):
     Synchronous, because supabase-py is; async callers off-load via ``asyncio.to_thread``.
     """
 
-    def save(self, graph: ConceptGraph, *, owner_id: str | None = None) -> None: ...
+    def save(
+        self,
+        graph: ConceptGraph,
+        *,
+        owner_id: str | None = None,
+        expected_version: int | None = None,
+    ) -> None:
+        """Persist ``graph``.
+
+        ``expected_version`` makes the write conditional: it succeeds only if the stored graph is
+        still at that version, and raises ``GraphVersionConflictError`` otherwise. An extension
+        always passes it, having read a version and then spent seconds thinking; it must not
+        overwrite whatever arrived meanwhile. A cold compile passes nothing — nothing to race.
+        """
+        ...
 
     def load(self, graph_id: str, *, owner_id: str | None = None) -> ConceptGraph: ...

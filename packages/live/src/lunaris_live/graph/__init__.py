@@ -7,11 +7,13 @@ picks its next move off it, and assessment is generated from what each node says
 from .assembly import assemble
 from .claude_graph_compiler import ClaudeGraphCompiler
 from .graph_compilation_error import GraphCompilationError
+from .graph_version_conflict_error import GraphVersionConflictError
 from .memory_graph_store import MemoryGraphStore
 from .protocols import IGraphCompiler, IGraphStore
 from .schema import (
     ConceptGraph,
     ConceptNode,
+    GraphEdit,
     LiveModel,
     MasteryCriterion,
     MasteryCriterionKind,
@@ -27,6 +29,8 @@ __all__ = [
     "ConceptGraph",
     "ConceptNode",
     "GraphCompilationError",
+    "GraphEdit",
+    "GraphVersionConflictError",
     "IGraphCompiler",
     "IGraphStore",
     "LiveModel",

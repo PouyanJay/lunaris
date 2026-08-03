@@ -8,7 +8,12 @@ the in-memory store that offline dev and CI actually use, rather than being left
 """
 
 import pytest
-from lunaris_live.graph import ConceptGraph, ConceptNode, MemoryGraphStore
+from lunaris_live.graph import (
+    ConceptGraph,
+    ConceptNode,
+    GraphVersionConflictError,
+    MemoryGraphStore,
+)
 
 
 def _graph(graph_id: str = "g1") -> ConceptGraph:
@@ -70,3 +75,39 @@ def test_a_missing_graph_raises_the_store_agnostic_not_found_signal() -> None:
     # Act / Assert — FileNotFoundError is the contract the router turns into a 404.
     with pytest.raises(FileNotFoundError):
         MemoryGraphStore().load("never-compiled")
+
+
+def test_a_cold_compile_writes_without_claiming_a_version() -> None:
+    # Arrange / Act — no expected_version: there is nothing to race with on a first write.
+    store = MemoryGraphStore()
+    store.save(_graph(), owner_id="learner-1")
+
+    # Assert
+    assert store.load("g1", owner_id="learner-1").version == 1
+
+
+def test_an_extension_that_lost_the_race_is_refused_rather_than_overwriting() -> None:
+    """Two turns of one session can overlap. Without this the later write silently discards the
+    earlier one's concepts, which the learner experiences as a question that never landed."""
+    # Arrange — both extensions read version 1.
+    store = MemoryGraphStore()
+    store.save(_graph(), owner_id="learner-1")
+    first = _graph().model_copy(update={"version": 2})
+    second = _graph().model_copy(update={"version": 2})
+
+    # Act — the first one home wins.
+    store.save(first, owner_id="learner-1", expected_version=1)
+
+    # Assert — the loser is told, not silently applied on top.
+    with pytest.raises(GraphVersionConflictError):
+        store.save(second, owner_id="learner-1", expected_version=1)
+    assert store.load("g1", owner_id="learner-1").version == 2
+
+
+def test_extending_a_graph_that_is_gone_is_a_conflict_not_a_resurrection() -> None:
+    # Arrange — nothing stored; a stale extension arrives for a purged graph.
+    store = MemoryGraphStore()
+
+    # Act / Assert — a conditional write must not create the row it was meant to update.
+    with pytest.raises(GraphVersionConflictError):
+        store.save(_graph(), owner_id="learner-1", expected_version=1)

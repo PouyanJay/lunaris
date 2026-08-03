@@ -3,7 +3,7 @@ import re
 import structlog
 
 from .assembly import assemble
-from .schema import ConceptGraph, ConceptNode, NodeProvenance
+from .schema import ConceptGraph, ConceptNode, GraphEdit, NodeProvenance
 
 logger = structlog.get_logger()
 
@@ -61,33 +61,59 @@ class StubGraphCompiler:
     async def extend(
         self, graph: ConceptGraph, *, request: str, anchors: list[str], run_id: str
     ) -> ConceptGraph:
-        """Attach one concept for ``request`` onto ``anchors``, bumping the version.
+        """Attach one concept for ``request``, honouring the same contract the real compiler does.
 
-        The stub's structural obligations are the ones T5 tests: the new node is marked
-        ``EXTENDED``, it hangs off the named anchors, and the result is re-assembled so an extension
-        can never leave the graph cyclic.
+        Both implementations of ``IGraphCompiler`` have to agree on what an extension *is*, or the
+        offline path would prove a contract production does not hold: append-only with respect to
+        the settled map, marked EXTENDED, version bumped, and recorded in the edit log.
         """
+        known = {node.id for node in graph.nodes}
+        # The slug comes from the request text alone, so it can land on an id the map already has —
+        # a learner echoing the topic back is enough. Two nodes under one id is silently
+        # destructive: ordering is derived over a set, so the duplicate collapses out of the order
+        # while both remain in the node list, and the bare new one shadows the compiled concept's
+        # teaching notes for anyone building an id lookup.
         added = ConceptNode(
-            id=_slugify(request),
-            name=request,
-            definition=f"{request}, asked for mid-session.",
-            requires=[anchor for anchor in anchors if anchor in {n.id for n in graph.nodes}],
+            id=_unused(_slugify(request), known, graph.version + 1),
+            name=_shorten(request),
+            definition=f"{_shorten(request)}, asked for mid-session.",
+            requires=[anchor for anchor in anchors if anchor in known],
             provenance=NodeProvenance.EXTENDED,
         )
-        extended = graph.model_copy(
-            update={"nodes": [*graph.nodes, added], "version": graph.version + 1}
+        version = graph.version + 1
+        edit = GraphEdit(
+            version=version,
+            request=request[:500],
+            added=[added.id],
+            anchors=[anchor for anchor in anchors if anchor in known],
         )
-        graph = assemble(extended)
+        extended = assemble(
+            graph.model_copy(
+                update={
+                    "nodes": [*graph.nodes, added],
+                    "version": version,
+                    "edits": [*graph.edits, edit],
+                }
+            )
+        )
 
         logger.info(
             "live.graph.extended",
             run_id=run_id,
             graph_id=graph.graph_id,
             compiler="stub",
-            version=graph.version,
-            added=added.id,
+            version=version,
+            added=[added.id],
         )
-        return graph
+        return extended
+
+
+def _unused(candidate: str, known: set[str], version: int) -> str:
+    """``candidate`` if the map does not already use it, else an id disambiguated by version."""
+    if candidate not in known:
+        return candidate
+    suffixed = f"{candidate}-v{version}"[:100]
+    return suffixed if suffixed not in known else f"{candidate}-{len(known)}"[:100]
 
 
 def _shorten(topic: str) -> str:

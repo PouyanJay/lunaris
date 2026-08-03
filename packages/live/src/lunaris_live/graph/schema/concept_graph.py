@@ -2,6 +2,7 @@ from pydantic import Field
 
 from .base import LiveModel
 from .concept_node import ConceptNode
+from .graph_edit import GraphEdit
 
 
 class ConceptGraph(LiveModel):
@@ -26,3 +27,5 @@ class ConceptGraph(LiveModel):
     topo_order: list[str] = Field(default_factory=list)
     #: Derived by assembly. False until assembly has proved otherwise.
     is_acyclic: bool = False
+    #: Append-only: one entry per runtime extension, in version order. Empty on a cold compile.
+    edits: list[GraphEdit] = Field(default_factory=list)

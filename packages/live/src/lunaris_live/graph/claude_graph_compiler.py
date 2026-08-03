@@ -13,6 +13,7 @@ from .graph_compilation_error import GraphCompilationError
 from .schema import (
     ConceptGraph,
     ConceptNode,
+    GraphEdit,
     MasteryCriterion,
     MasteryCriterionKind,
     NodeProvenance,
@@ -28,6 +29,10 @@ _DEFAULT_MAX_CONCURRENCY = 8
 #: not a target — it exists so a stalled provider call fails the request instead of holding a
 #: learner on a screen that will never resolve.
 _DEFAULT_DEADLINE_S = 200.0
+
+#: An extension happens mid-conversation, so its ceiling is a pause a tutor can talk over rather
+#: than a wait a learner has to sit through. Past it the tutor is better off saying it doesn't know.
+_DEFAULT_EXTEND_DEADLINE_S = 15.0
 
 #: Headroom for ~20 concepts of structured JSON. The provider default is far lower, and a
 #: decomposition cut off mid-object is the one failure this compiler cannot degrade around.
@@ -46,6 +51,22 @@ for C, do not also list A for C.
 Respond with ONLY a JSON object, no prose:
 {{"concepts": [{{"id": "kebab-case-id", "name": "Short name", "definition": "One sentence, plain \
 language, no jargon the learner would not already have", "requires": ["other-id"]}}]}}"""
+
+_EXTEND_PROMPT = """A learner partway through a course on "{topic}" has asked for something the \
+course does not currently cover.
+
+They asked: "{request}"
+
+The course already covers these concepts:
+{known}
+
+Give ONLY the genuinely new concepts needed to answer them — usually 1 to 3, never more than 5. Do \
+not restate a concept that is already listed above. Each new concept may list prerequisites drawn \
+from the existing ids above or from the other new concepts.
+
+Respond with ONLY a JSON object, no prose:
+{{"concepts": [{{"id": "kebab-case-id", "name": "Short name", "definition": "One sentence, plain \
+language", "requires": ["existing-or-new-id"]}}]}}"""
 
 _SPEC_PROMPT = """You are writing the teaching notes for one concept in a course about "{topic}".
 
@@ -90,6 +111,7 @@ class ClaudeGraphCompiler:
         client: object | None = None,
         max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
         deadline_s: float = _DEFAULT_DEADLINE_S,
+        extend_deadline_s: float = _DEFAULT_EXTEND_DEADLINE_S,
     ) -> None:
         self._model_name = model_name
         # Injected in tests; production leaves it None so the client is built on first use and
@@ -97,6 +119,7 @@ class ClaudeGraphCompiler:
         self._client = client
         self._max_concurrency = max(1, max_concurrency)
         self._deadline_s = deadline_s
+        self._extend_deadline_s = extend_deadline_s
 
     async def compile(self, topic: str, *, graph_id: str, run_id: str) -> ConceptGraph:
         clock = time.monotonic()
@@ -142,7 +165,71 @@ class ClaudeGraphCompiler:
     async def extend(
         self, graph: ConceptGraph, *, request: str, anchors: list[str], run_id: str
     ) -> ConceptGraph:
-        raise NotImplementedError("runtime graph extension lands with C1 (T5)")
+        """Grow the map onto one branch, for something the learner asked for mid-session.
+
+        **Append-only with respect to what is already there.** Only new concepts are added, and
+        only new concepts may declare prerequisites; an existing concept passes through untouched
+        even if the model restates it. A learner is partway through this map, and a question asked
+        in passing must never re-sequence the course underneath them. It also makes the result safe
+        by construction: nothing existing can point at a new concept, so no loop can form through
+        the settled graph, and the repair can never spend an established edge.
+        """
+        clock = time.monotonic()
+        async with asyncio.timeout(self._extend_deadline_s):
+            proposed = await self._propose_branch(graph, request=request, run_id=run_id)
+            added = await self._author_all(proposed, topic=graph.topic, run_id=run_id)
+
+        added = [node.model_copy(update={"provenance": NodeProvenance.EXTENDED}) for node in added]
+        version = graph.version + 1
+        edit = GraphEdit(
+            version=version,
+            request=request[:500],
+            added=[node.id for node in added],
+            anchors=[anchor for anchor in anchors if anchor in {n.id for n in graph.nodes}],
+        )
+        extended = assemble(
+            graph.model_copy(
+                update={
+                    "nodes": [*graph.nodes, *added],
+                    "version": version,
+                    "edits": [*graph.edits, edit],
+                }
+            )
+        )
+
+        logger.info(
+            "live.graph.extended",
+            run_id=run_id,
+            graph_id=graph.graph_id,
+            version=version,
+            added=edit.added,
+            elapsed_ms=round((time.monotonic() - clock) * 1000),
+        )
+        return extended
+
+    async def _propose_branch(
+        self, graph: ConceptGraph, *, request: str, run_id: str
+    ) -> list[dict[str, Any]]:
+        """The genuinely new concepts a request needs, scoped to what the map already covers."""
+        known = {node.id for node in graph.nodes}
+        response = await self._ask(
+            _EXTEND_PROMPT.format(
+                topic=graph.topic,
+                request=request,
+                known="\n".join(f"- {node.id}: {node.name}" for node in graph.nodes),
+            )
+        )
+        payload = _parse_json_object(response)
+        raw = payload.get("concepts") if payload else None
+        raw = raw if isinstance(raw, list) else []
+        # Anything already on the map is dropped rather than merged: honouring a restatement is how
+        # an extension would come to rewrite the settled graph.
+        fresh = [c for c in _distinct(c for c in raw if _is_usable(c)) if c["id"] not in known]
+
+        if not fresh:
+            logger.warning("live.graph.extend_found_nothing", run_id=run_id, request=request[:200])
+            raise GraphCompilationError(f"nothing new to add for {request!r}")
+        return fresh
 
     async def _decompose(self, topic: str, *, run_id: str) -> list[dict[str, Any]]:
         response = await self._ask(

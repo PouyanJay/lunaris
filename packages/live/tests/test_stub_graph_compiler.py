@@ -90,3 +90,25 @@ async def test_an_extension_naming_an_unknown_anchor_still_assembles() -> None:
     assert added.requires == []
     assert extended.is_acyclic is True
     assert sorted(extended.topo_order) == sorted(node.id for node in extended.nodes)
+
+
+async def test_an_extension_never_reuses_an_id_the_map_already_has() -> None:
+    """The stub derives ids from the request text alone, so a learner echoing the topic back is
+    enough to collide with a compiled concept.
+
+    Two nodes under one id is silently destructive: ordering is derived over a set, so the duplicate
+    collapses out of the order while both stay in the node list — and the bare new node shadows the
+    compiled one's teaching notes for anything building an id lookup.
+    """
+    # Arrange — a request whose slug is exactly an existing concept's id.
+    compiler = StubGraphCompiler()
+    graph = await _compiled("How neural networks learn")
+    colliding = graph.nodes[-1].id.replace("-", " ")
+
+    # Act
+    extended = await compiler.extend(graph, request=colliding, anchors=[], run_id="r2")
+
+    # Assert — every concept keeps a distinct id, and the map stays internally consistent.
+    ids = [node.id for node in extended.nodes]
+    assert len(ids) == len(set(ids))
+    assert len(extended.topo_order) == len(extended.nodes)

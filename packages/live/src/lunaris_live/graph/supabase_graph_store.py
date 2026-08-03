@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from lunaris_runtime.persistence.guard import guard
 
+from .graph_version_conflict_error import GraphVersionConflictError
 from .schema import ConceptGraph
 
 _URL_ENV = "SUPABASE_URL"
@@ -48,7 +49,13 @@ class SupabaseGraphStore:
         return self._client
 
     @guard("live_graphs upsert")
-    def save(self, graph: ConceptGraph, *, owner_id: str | None = None) -> None:
+    def save(
+        self,
+        graph: ConceptGraph,
+        *,
+        owner_id: str | None = None,
+        expected_version: int | None = None,
+    ) -> None:
         client = self._ensure_client()
         row: dict[str, object] = {
             "id": graph.graph_id,
@@ -62,7 +69,24 @@ class SupabaseGraphStore:
             # can outlive the caller's JWT), so isolation rides entirely on stamping the right
             # user_id here — that column is what RLS enforces against for any later user-JWT read.
             row["user_id"] = owner_id
-        client.table(_TABLE).upsert(row).execute()  # type: ignore[attr-defined]
+        if expected_version is None:
+            client.table(_TABLE).upsert(row).execute()  # type: ignore[attr-defined]
+            return
+
+        # Conditional on the version we read. Postgres decides the winner, so two extensions racing
+        # from the same version cannot both succeed however the requests interleave above.
+        # count="exact" rather than reading back rows — the house convention for "did my
+        # conditional write actually land" (see supabase_cover_job_queue), because a zero-row
+        # no-op must be loud rather than indistinguishable from a successful write.
+        updated = (
+            client.table(_TABLE)  # type: ignore[attr-defined]
+            .update(row, count="exact")
+            .eq("id", graph.graph_id)
+            .eq("version", expected_version)
+            .execute()
+        )
+        if not updated.count:
+            raise GraphVersionConflictError(graph.graph_id)
 
     @guard("live_graphs select")
     def load(self, graph_id: str, *, owner_id: str | None = None) -> ConceptGraph:

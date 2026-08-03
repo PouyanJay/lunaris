@@ -18,3 +18,23 @@ class LiveGraphRequest(BaseModel):
         if not value.strip():
             raise ValueError("topic must not be blank")
         return value
+
+
+class LiveGraphExtendRequest(BaseModel):
+    """What a session sends when the learner asks for something the map does not cover (C1).
+
+    ``anchors`` is where the tutor believes the request attaches — the concepts the learner already
+    has. It is a hint recorded in the edit log, not a constraint: unknown ids are ignored rather
+    than refused, because a tutor guessing wrongly about attachment should cost accuracy in the
+    history, never the answer itself.
+    """
+
+    request: str = Field(min_length=1, max_length=500)
+    anchors: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("request")
+    @classmethod
+    def _request_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("request must not be blank")
+        return value

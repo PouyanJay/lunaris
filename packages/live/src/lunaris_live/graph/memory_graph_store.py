@@ -1,3 +1,4 @@
+from .graph_version_conflict_error import GraphVersionConflictError
 from .schema import ConceptGraph
 
 
@@ -12,7 +13,17 @@ class MemoryGraphStore:
     def __init__(self) -> None:
         self._graphs: dict[str, tuple[str | None, ConceptGraph]] = {}
 
-    def save(self, graph: ConceptGraph, *, owner_id: str | None = None) -> None:
+    def save(
+        self,
+        graph: ConceptGraph,
+        *,
+        owner_id: str | None = None,
+        expected_version: int | None = None,
+    ) -> None:
+        if expected_version is not None:
+            stored = self._graphs.get(graph.graph_id)
+            if stored is None or stored[1].version != expected_version:
+                raise GraphVersionConflictError(graph.graph_id)
         self._graphs[graph.graph_id] = (owner_id, graph)
 
     def load(self, graph_id: str, *, owner_id: str | None = None) -> ConceptGraph:
