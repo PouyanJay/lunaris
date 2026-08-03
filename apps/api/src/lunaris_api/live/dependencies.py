@@ -9,9 +9,15 @@ from lunaris_live.graph import (
     StubGraphCompiler,
     SupabaseGraphStore,
 )
+from lunaris_runtime.credentials import CredentialResolver
 from lunaris_runtime.run_config import resolve_config
 
 from ..config import Settings, get_settings
+from ..dependencies import (
+    CostEventStoreDep,
+    SubjectCostStoreDep,
+    get_video_credential_resolver,
+)
 from .service import LiveGraphService
 
 #: Decomposition decides what the course is made of and every later phase reads it, so it runs on
@@ -49,11 +55,37 @@ def _resolve_compiler(settings: Settings) -> IGraphCompiler:
     )
 
 
+def get_live_credential_resolver(settings: Settings) -> CredentialResolver | None:
+    """The BYOK resolver a Live compile runs on, or ``None`` when BYOK is off.
+
+    Delegates to the shared vault-backed resolver rather than composing a second one — the same
+    alias the cover worker takes, for the same reason: one tenant, one set of keys, however many
+    surfaces spend them. ``None`` (no master key — local dev / single-user) leaves the compiler
+    reading the process environment, unchanged.
+    """
+    return get_video_credential_resolver(settings)
+
+
 def get_live_graph_service(
     settings: Annotated[Settings, Depends(get_settings)],
+    cost_event_store: CostEventStoreDep,
+    subject_cost_store: SubjectCostStoreDep,
 ) -> LiveGraphService:
-    """Live's compile plane as a request dependency."""
-    return LiveGraphService(_resolve_compiler(settings), _resolve_graph_store(settings))
+    """Live's compile plane as a request dependency.
+
+    The cost stores and the BYOK resolver come from Studio's composition root: Live is a second
+    product, not a second platform, so a tenant's key and a tenant's ledger are the same ones either
+    way — what differs is only the subject a cost is filed under (``LIVE_GRAPH``, chosen in the
+    service). Reusing the shared getters is also what keeps the two products' spend in one place,
+    which is the entire reason D2 generalized the ledger's key rather than giving Live its own.
+    """
+    return LiveGraphService(
+        _resolve_compiler(settings),
+        _resolve_graph_store(settings),
+        cost_event_store=cost_event_store,
+        subject_cost_store=subject_cost_store,
+        credential_resolver=get_live_credential_resolver(settings),
+    )
 
 
 LiveGraphServiceDep = Annotated[LiveGraphService, Depends(get_live_graph_service)]
