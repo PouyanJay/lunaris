@@ -76,6 +76,8 @@ Give:
 - objective: what the learner should be able to do once they have it. One sentence.
 - misconceptions: 2-3 wrong models people actually hold about this, each written AS THE LEARNER \
 WOULD BELIEVE IT, not as a correction.
+- aliases: 1-3 other names a learner might call this by, including the everyday phrasing someone \
+would use before they knew the technical term. Omit if the name is already the only one.
 - depth: one of "intuition_first", "formal", "applied".
 - criteria: 2-3 things the learner must be able to DO to prove they understand — never "knows \
 that…", always an action that can be watched. Each has a "kind" of "predict" (say what happens), \
@@ -83,8 +85,8 @@ that…", always an action that can be watched. Each has a "kind" of "predict" (
 interactive simulator), or "explain" (teach it back).
 
 Respond with ONLY a JSON object, no prose:
-{{"objective": "...", "misconceptions": ["..."], "depth": "intuition_first", "criteria": \
-[{{"kind": "predict", "statement": "...", "needsSim": false}}]}}"""
+{{"objective": "...", "misconceptions": ["..."], "aliases": ["..."], "depth": "intuition_first", \
+"criteria": [{{"kind": "predict", "statement": "...", "needsSim": false}}]}}"""
 
 
 class ClaudeGraphCompiler:
@@ -298,6 +300,10 @@ class ClaudeGraphCompiler:
 
         return known.model_copy(
             update={
+                # Aliases live on the node rather than the spec: they are how a question gets
+                # resolved to this concept at all, which has to work even when authoring the rest
+                # of the notes failed.
+                "aliases": _parse_aliases(payload.get("aliases")),
                 "teaching_spec": _parse_teaching_spec(payload, run_id=run_id, concept=known.id),
                 "mastery_criteria": _parse_criteria(
                     payload.get("criteria"), run_id=run_id, concept=known.id
@@ -376,6 +382,17 @@ def _parse_json_object(text: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _parse_aliases(raw: object) -> list[str]:
+    """Other names a learner might use for a concept, deduplicated and bounded."""
+    if not isinstance(raw, list):
+        return []
+    aliases: list[str] = []
+    for item in raw:
+        if isinstance(item, str) and item.strip() and item[:100] not in aliases:
+            aliases.append(item[:100])
+    return aliases[:5]
 
 
 def _parse_teaching_spec(

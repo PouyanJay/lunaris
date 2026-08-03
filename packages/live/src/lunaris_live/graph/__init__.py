@@ -9,7 +9,9 @@ from .claude_graph_compiler import ClaudeGraphCompiler
 from .graph_compilation_error import GraphCompilationError
 from .graph_version_conflict_error import GraphVersionConflictError
 from .memory_graph_store import MemoryGraphStore
+from .prerequisites_of import prerequisites_of
 from .protocols import IGraphCompiler, IGraphStore
+from .resolve_request import resolve_request
 from .schema import (
     ConceptGraph,
     ConceptNode,
@@ -43,4 +45,6 @@ __all__ = [
     "TeachingDepth",
     "TeachingSpec",
     "assemble",
+    "prerequisites_of",
+    "resolve_request",
 ]

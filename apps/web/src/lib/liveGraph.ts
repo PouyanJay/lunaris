@@ -35,6 +35,8 @@ export interface ConceptNode {
   /** Ids of the concepts that must be understood before this one. */
   requires: string[];
   provenance: NodeProvenance;
+  /** Other names a learner might call this by — always an array, empty when the name stands alone. */
+  aliases: string[];
   /** Always present on the wire, but null when authoring failed for this concept. */
   teachingSpec: TeachingSpec | null;
   /** Always an array — empty when this concept has none yet, never absent. */

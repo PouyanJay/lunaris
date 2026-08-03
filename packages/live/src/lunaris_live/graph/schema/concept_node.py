@@ -25,6 +25,9 @@ class ConceptNode(LiveModel):
     #: Ids of the concepts that must be understood before this one.
     requires: list[str] = Field(default_factory=list)
     provenance: NodeProvenance = NodeProvenance.COMPILED
+    #: Other names a learner might call this concept. What makes a question resolvable when it is
+    #: asked in the learner's words rather than the compiler's.
+    aliases: list[str] = Field(default_factory=list)
     teaching_spec: TeachingSpec | None = None
     #: What the learner must be able to do to have understood this — the basis of every later check.
     mastery_criteria: list[MasteryCriterion] = Field(default_factory=list)

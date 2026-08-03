@@ -328,3 +328,17 @@ async def test_trailing_prose_containing_a_brace_is_ignored() -> None:
 
     # Assert
     assert len(graph.nodes) == 3
+
+
+async def test_the_names_a_learner_might_use_are_recorded_on_the_concept() -> None:
+    """Aliases are what make a question resolvable when it is asked in the learner's words rather
+    than the compiler's — the C2 lookup has nothing else to match against."""
+    # Arrange
+    spec = {**_SPEC, "aliases": ["cost function", "objective function", "cost function"]}
+    model = ScriptedModel([json.dumps(_DECOMPOSITION), *[json.dumps(spec)] * 3])
+
+    # Act
+    graph = await _compiled(model)
+
+    # Assert — deduplicated, and kept even though the rest of the notes could have failed.
+    assert graph.nodes[0].aliases == ["cost function", "objective function"]
