@@ -18,13 +18,14 @@ from lunaris_runtime.metering import record_cost
 from lunaris_runtime.persistence import (
     CoverImageTransform,
     InMemoryCostEventStore,
-    InMemoryCourseCostStore,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
+    InMemorySubjectCostStore,
     PersistenceError,
 )
 from lunaris_runtime.schema import (
     CostProvider,
+    CostSubjectType,
     CostUnit,
     Course,
     CoverJob,
@@ -315,7 +316,7 @@ async def test_cover_worker_records_cost_into_the_course_rollup() -> None:
     # A cover job whose render spends on GPT-Image records that cost into the SAME course rollup the
     # main build feeds (by course_id) — proving the worker enters a cost_scope and drains it (T6).
     queue, storage, course_store = InMemoryCoverJobQueue(), InMemoryCoverStorage(), _store()
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
 
     class _MeteringPipeline:
         async def produce(self, job: CoverJob, *, on_stage) -> RenderedCover:  # type: ignore[no-untyped-def]
@@ -334,14 +335,20 @@ async def test_cover_worker_records_cost_into_the_course_rollup() -> None:
         course_store=course_store,  # type: ignore[arg-type]
         worker_id="worker-test",
         cost_event_store=event_store,
-        course_cost_store=cost_store,
+        subject_cost_store=cost_store,
     )
     await queue.enqueue(_job())
 
     assert await worker.run_once() is True
 
-    rollup = await cost_store.get(course_id="course-1", owner_id=_OWNER)
+    rollup = await cost_store.get(
+        subject_type=CostSubjectType.COURSE, subject_id="course-1", owner_id=_OWNER
+    )
     assert rollup is not None
     assert rollup.breakdown["byProvider"]["openai"] == pytest.approx(0.30)
-    ledger = await event_store.list_for_course(course_id="course-1", owner_id=_OWNER)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id="course-1",
+        owner_id=_OWNER,
+    )
     assert [e.component for e in ledger] == ["cover_image"]

@@ -47,6 +47,22 @@ class CostPocket(StrEnum):
     PLATFORM = "platform"
 
 
+class CostSubjectType(StrEnum):
+    """What a cost was spent *on* — the first half of the ledger's rollup key.
+
+    Costs were once keyed by ``course_id`` alone, because a course was the only thing in the system
+    that could spend money. Lunaris Live's concept graphs spend too, and a graph is not a course: it
+    has its own id space, its own lifecycle and its own purge. Course ids and graph ids are minted
+    from different sequences, so nothing stops them colliding — and under a single-column key that
+    collision would silently merge one product's spend into the other's total, in an append-only
+    ledger nobody may correct afterwards. Pairing the id with what kind of thing it names is what
+    keeps the two namespaces apart.
+    """
+
+    COURSE = "course"
+    LIVE_GRAPH = "live_graph"
+
+
 class CostUnit(StrEnum):
     """The billing unit a cost rate is charged per (course-cost-metering price book).
 

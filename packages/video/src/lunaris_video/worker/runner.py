@@ -5,8 +5,8 @@ import structlog
 from lunaris_runtime.credentials import CredentialResolver
 from lunaris_runtime.persistence import (
     ICostEventStore,
-    ICourseCostStore,
     IRunEventStore,
+    ISubjectCostStore,
     IVideoJobQueue,
     IVideoStorage,
     PersistenceError,
@@ -29,7 +29,7 @@ async def run_video_workers(
     worker_id_prefix: str,
     credential_resolver: CredentialResolver | None = None,
     cost_event_store: ICostEventStore | None = None,
-    course_cost_store: ICourseCostStore | None = None,
+    subject_cost_store: ISubjectCostStore | None = None,
     lease_seconds: int = 300,
     lease_max_attempts: int = 3,
     sweep_interval_seconds: float = 60.0,
@@ -65,7 +65,7 @@ async def run_video_workers(
             worker_id=f"{worker_id_prefix}-{index}",
             credential_resolver=credential_resolver,
             cost_event_store=cost_event_store,
-            course_cost_store=course_cost_store,
+            subject_cost_store=subject_cost_store,
             heartbeat_interval_s=heartbeat_interval_s,
         )
         for index in range(max(1, count))

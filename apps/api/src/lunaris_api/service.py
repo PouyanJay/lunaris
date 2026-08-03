@@ -21,12 +21,12 @@ from lunaris_runtime.metering import (
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
     ICostEventStore,
-    ICourseCostStore,
     ICourseStore,
     ICoverJobQueue,
     ICoverStorage,
     IRunEventStore,
     IRunStore,
+    ISubjectCostStore,
     IVideoJobQueue,
     IVideoStorage,
     OwnerScopedCourseStore,
@@ -38,6 +38,7 @@ from lunaris_runtime.schema import (
     AgentEvent,
     CapabilityName,
     Clarification,
+    CostSubjectType,
     Course,
     CourseRun,
     CourseStatus,
@@ -208,7 +209,7 @@ class CourseService:
         activity_store: IActivityStore | None = None,
         corpus_store: ICorpusStore | None = None,
         cost_event_store: ICostEventStore | None = None,
-        course_cost_store: ICourseCostStore | None = None,
+        subject_cost_store: ISubjectCostStore | None = None,
         throttle: KeylessBuildThrottle | None = None,
         bridge_registry: DeviceBridgeRegistry | None = None,
         bridge_limits: BridgeLimits | None = None,
@@ -263,7 +264,7 @@ class CourseService:
         # the buffer is drained to these stores when the build finishes. Best-effort; None (the
         # default) → metering off (no scope entered, nothing drained) for batch / tests.
         self._cost_event_store = cost_event_store
-        self._course_cost_store = course_cost_store
+        self._subject_cost_store = subject_cost_store
         # In-flight task registry for cancellation. In production a process-wide singleton is
         # injected (so the cancel request and the build request share it). The lone-instance default
         # is unreachable by cancel requests — fine for callers that never cancel (batch / tests).
@@ -491,9 +492,10 @@ class CourseService:
         adapter over the shared ``make_cost_scope`` that pulls this service's cost stores."""
         return make_cost_scope(
             self._cost_event_store,
-            self._course_cost_store,
+            self._subject_cost_store,
             run_id=run_id,
-            course_id=course_id,
+            subject_type=CostSubjectType.COURSE,
+            subject_id=course_id,
             owner_id=owner_id,
         )
 
@@ -502,7 +504,7 @@ class CourseService:
 
         Drained in the build's ``finally`` so a failed/cancelled build still records the partial
         cost it already spent."""
-        await drain_cost_scope(cost, self._cost_event_store, self._course_cost_store)
+        await drain_cost_scope(cost, self._cost_event_store, self._subject_cost_store)
 
     def _close_bridge(self, run_id: str, bridge: DeviceBridge | None) -> None:
         """Remove the bridge once the run task ends, so the tab's next poll 404s (its stop signal)
@@ -1058,13 +1060,15 @@ class CourseService:
         leaves no orphaned cost rows. Best-effort and owner-scoped — a purge failure logs and is
         swallowed (cost data is non-authoritative observability, never blocks the delete). A no-op
         when metering is unwired. Returns the number of ledger rows purged."""
-        if self._cost_event_store is None or self._course_cost_store is None:
+        if self._cost_event_store is None or self._subject_cost_store is None:
             return 0
         try:
-            purged = await self._cost_event_store.delete_for_course(
-                course_id=course_id, owner_id=owner_id
+            purged = await self._cost_event_store.delete_for_subject(
+                subject_type=CostSubjectType.COURSE, subject_id=course_id, owner_id=owner_id
             )
-            await self._course_cost_store.delete_for_course(course_id=course_id, owner_id=owner_id)
+            await self._subject_cost_store.delete_for_subject(
+                subject_type=CostSubjectType.COURSE, subject_id=course_id, owner_id=owner_id
+            )
             return purged
         except PersistenceError:
             logger.warning("course_cost_purge_failed", course_id=course_id, exc_info=True)

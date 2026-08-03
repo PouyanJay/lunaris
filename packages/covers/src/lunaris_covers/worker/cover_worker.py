@@ -14,13 +14,19 @@ from lunaris_runtime.metering import (
 from lunaris_runtime.persistence import (
     CoverArtifactPaths,
     ICostEventStore,
-    ICourseCostStore,
     ICourseStore,
     ICoverJobQueue,
     ICoverStorage,
+    ISubjectCostStore,
     PersistenceError,
 )
-from lunaris_runtime.schema import CoverArtifact, CoverJob, CoverJobStatus, CoverProvenance
+from lunaris_runtime.schema import (
+    CostSubjectType,
+    CoverArtifact,
+    CoverJob,
+    CoverJobStatus,
+    CoverProvenance,
+)
 
 from lunaris_covers.errors import CoverPipelineError
 from lunaris_covers.models.rendered_cover import RenderedCover
@@ -73,7 +79,7 @@ class CoverWorker:
         worker_id: str,
         credential_resolver: CredentialResolver | None = None,
         cost_event_store: ICostEventStore | None = None,
-        course_cost_store: ICourseCostStore | None = None,
+        subject_cost_store: ISubjectCostStore | None = None,
         heartbeat_interval_s: float = 60.0,
         cancel_poll_interval_s: float = 5.0,
     ) -> None:
@@ -85,9 +91,9 @@ class CoverWorker:
         self._credential_resolver = credential_resolver
         # Per-course cost metering (course-cost-metering T6): the cover render's Claude
         # art-direction + GPT-Image calls record into a cost_scope (entered in _render beside the
-        # credential scope) and drain here into the same course rollup (by course_id) as the build.
+        # credential scope) and drain here into the same course rollup as the build.
         self._cost_event_store = cost_event_store
-        self._course_cost_store = course_cost_store
+        self._subject_cost_store = subject_cost_store
         self._heartbeat_interval_s = heartbeat_interval_s
         # Tighter than the heartbeat so a stopped render aborts promptly — the cloud worker has no
         # direct channel from the API; this DB poll IS the cancellation signal.
@@ -130,15 +136,16 @@ class CoverWorker:
         # even a cancelled/failed cover records the partial compute it already spent.
         cost = make_cost_scope(
             self._cost_event_store,
-            self._course_cost_store,
+            self._subject_cost_store,
             run_id=job.id,
-            course_id=job.course_id,
+            subject_type=CostSubjectType.COURSE,
+            subject_id=job.course_id,
             owner_id=job.user_id,
         )
         try:
             await self._render_and_settle(job, cost)
         finally:
-            await drain_cost_scope(cost, self._cost_event_store, self._course_cost_store)
+            await drain_cost_scope(cost, self._cost_event_store, self._subject_cost_store)
 
     async def _render_and_settle(self, job: CoverJob, cost: CostScope | None) -> None:
         """Produce + upload the cover, then settle the job (READY / FAILED / cancel-abort)."""

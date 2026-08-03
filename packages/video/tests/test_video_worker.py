@@ -14,14 +14,15 @@ from lunaris_runtime.logging import configure_logging
 from lunaris_runtime.metering import record_cost
 from lunaris_runtime.persistence import (
     InMemoryCostEventStore,
-    InMemoryCourseCostStore,
     InMemoryRunEventStore,
+    InMemorySubjectCostStore,
     InMemoryVideoJobQueue,
     InMemoryVideoStorage,
     PersistenceError,
 )
 from lunaris_runtime.schema import (
     CostProvider,
+    CostSubjectType,
     CostUnit,
     RunEventKind,
     VideoArtifact,
@@ -512,7 +513,7 @@ async def test_video_worker_records_cost_into_the_course_rollup() -> None:
         InMemoryVideoStorage(),
         InMemoryRunEventStore(),
     )
-    cost_events, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    cost_events, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
 
     class _MeteringPipeline:
         async def produce(self, job: VideoJob, *, on_stage) -> RenderedVideo:  # type: ignore[no-untyped-def]
@@ -531,14 +532,20 @@ async def test_video_worker_records_cost_into_the_course_rollup() -> None:
         events=events,
         worker_id="worker-test",
         cost_event_store=cost_events,
-        course_cost_store=cost_store,
+        subject_cost_store=cost_store,
     )
     await queue.enqueue(_job())
 
     assert await worker.run_once() is True
 
-    rollup = await cost_store.get(course_id="course-1", owner_id=_OWNER)
+    rollup = await cost_store.get(
+        subject_type=CostSubjectType.COURSE, subject_id="course-1", owner_id=_OWNER
+    )
     assert rollup is not None
     assert rollup.breakdown["byProvider"]["elevenlabs"] == pytest.approx(1000 * 0.0003)
-    ledger = await cost_events.list_for_course(course_id="course-1", owner_id=_OWNER)
+    ledger = await cost_events.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id="course-1",
+        owner_id=_OWNER,
+    )
     assert [e.component for e in ledger] == ["voice"]

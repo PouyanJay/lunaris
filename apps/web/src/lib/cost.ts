@@ -14,11 +14,16 @@ export interface CostBreakdown {
   eventCount: number;
 }
 
-/** A course's build-cost rollup (mirrors the API's `CourseCost`): the total the Overview reads,
+/** What a metered cost was spent on. The ledger keys by `(subjectType, subjectId)` because a
+ *  course id and a Live graph id come from different sequences and may collide. */
+export type CostSubjectType = "course" | "live_graph";
+
+/** A course's build-cost rollup (mirrors the API's `SubjectCost`): the total the Overview reads,
  *  plus the breakdown behind it. `GET /api/courses/{id}/cost` returns `null` for a course that was
  *  never metered (built before metering, still building, or another owner's). */
 export interface CourseCost {
-  courseId: string;
+  subjectType: CostSubjectType;
+  subjectId: string;
   totalAmount: number;
   currency: string;
   breakdown: CostBreakdown;
@@ -31,7 +36,8 @@ export interface CourseCost {
  *  calculated from (e.g. `{ input_tokens, output_tokens }`, `{ chars }`, `{ compute_seconds }`). */
 export interface CostEvent {
   runId: string;
-  courseId: string;
+  subjectType: CostSubjectType;
+  subjectId: string;
   seq: number;
   component: string;
   provider: string;

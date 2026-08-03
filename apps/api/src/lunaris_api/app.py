@@ -14,13 +14,13 @@ from lunaris_video import run_video_workers
 from .config import get_settings
 from .dependencies import (
     get_cost_event_store,
-    get_course_cost_store,
     get_course_store,
     get_cover_credential_resolver,
     get_cover_job_queue,
     get_cover_pipeline,
     get_cover_storage,
     get_run_event_store,
+    get_subject_cost_store,
     get_video_credential_resolver,
     get_video_job_queue,
     get_video_pipeline,
@@ -91,7 +91,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     worker_id_prefix=f"api-{os.getpid()}",
                     credential_resolver=get_video_credential_resolver(settings),
                     cost_event_store=get_cost_event_store(settings),
-                    course_cost_store=get_course_cost_store(settings),
+                    subject_cost_store=get_subject_cost_store(settings),
                     lease_seconds=settings.video_lease_seconds,
                 )
             )
@@ -109,7 +109,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     worker_id_prefix=f"api-cover-{os.getpid()}",
                     credential_resolver=get_cover_credential_resolver(settings),
                     cost_event_store=get_cost_event_store(settings),
-                    course_cost_store=get_course_cost_store(settings),
+                    subject_cost_store=get_subject_cost_store(settings),
                     lease_seconds=settings.cover_lease_seconds,
                 )
             )

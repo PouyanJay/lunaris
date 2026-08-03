@@ -4,27 +4,35 @@ The course build (``CourseService``) and the cover / video workers each enter a 
 their provider calls and drain it at the boundary. The construction ("build a scope, or ``None``
 when metering is off") and the enter-or-no-op step are identical across all three, so they live
 here once rather than tripled — each caller keeps only its one-line adapter that pulls ``run_id`` /
-``course_id`` / ``owner_id`` from its own job or request.
+subject / ``owner_id`` from its own job or request.
 """
 
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 
-from lunaris_runtime.persistence import ICostEventStore, ICourseCostStore
+from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.pricing import PriceBook
+from lunaris_runtime.schema import CostSubjectType
 
 from .cost_scope import CostScope, cost_scope
 
 
 def make_cost_scope(
     event_store: ICostEventStore | None,
-    cost_store: ICourseCostStore | None,
+    cost_store: ISubjectCostStore | None,
     *,
     run_id: str,
-    course_id: str,
+    subject_type: CostSubjectType,
+    subject_id: str,
     owner_id: str | None,
 ) -> CostScope | None:
     """A fresh cost scope for a run, or ``None`` when metering is off (either store unwired).
+
+    ``subject_type`` is deliberately required rather than defaulted to ``COURSE``. A default would
+    be correct for every caller that exists today and silently wrong for the first one that is not:
+    an omitted argument would file a Live graph's spend under a course, and if that graph's id ever
+    collided with a real course's the two would merge in rows nobody may correct. The whole point of
+    the composite key is that a subject's kind is stated, never assumed.
 
     Priced against the current checked-in price book; deep ``record_cost`` calls buffer into it, and
     the boundary drains it via ``drain_cost_scope``."""
@@ -32,7 +40,8 @@ def make_cost_scope(
         return None
     return CostScope(
         run_id=run_id,
-        course_id=course_id,
+        subject_type=subject_type,
+        subject_id=subject_id,
         owner_id=owner_id,
         price_book=PriceBook.current(),
     )

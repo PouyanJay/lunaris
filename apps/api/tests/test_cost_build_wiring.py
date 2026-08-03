@@ -19,10 +19,10 @@ from lunaris_runtime.metering import record_cost
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryCostEventStore,
-    InMemoryCourseCostStore,
     InMemoryRunStore,
+    InMemorySubjectCostStore,
 )
-from lunaris_runtime.schema import CostPocket, CostProvider, CostUnit, Course
+from lunaris_runtime.schema import CostPocket, CostProvider, CostSubjectType, CostUnit, Course
 
 _OPUS = "claude-opus-4-8"
 
@@ -50,7 +50,7 @@ def _service(
     tmp_path: Path,
     *,
     event_store: InMemoryCostEventStore | None = None,
-    cost_store: InMemoryCourseCostStore | None = None,
+    cost_store: InMemorySubjectCostStore | None = None,
 ) -> CourseService:
     return CourseService(
         CourseStore(tmp_path),
@@ -58,14 +58,14 @@ def _service(
         InMemoryRunStore(),
         RunRegistry(),
         cost_event_store=event_store,
-        course_cost_store=cost_store,
+        subject_cost_store=cost_store,
     )
 
 
 async def test_build_records_claude_cost_through_the_scope(tmp_path: Path) -> None:
     # Arrange
     clear_correlation()
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     service = _service(tmp_path, event_store=event_store, cost_store=cost_store)
 
     # Act — run a real build; the stub pipeline records a Claude cost inside the build task.
@@ -73,13 +73,16 @@ async def test_build_records_claude_cost_through_the_scope(tmp_path: Path) -> No
 
     # Assert — the scope was entered around the task and drained at the boundary: the cost reached
     # the rollup (and the ledger) with the calculated total.
-    rollup = await cost_store.get(course_id=course.id)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=course.id)
     assert rollup is not None
     assert rollup.total_amount == pytest.approx(30.0)  # $5 input + $25 output
     assert rollup.breakdown["byProvider"]["anthropic"] == pytest.approx(30.0)
     # Auth off → the unscoped single-user path bills the platform pocket (no tenant key in scope).
     assert rollup.breakdown["byPocket"]["platform"] == pytest.approx(30.0)
-    ledger = await event_store.list_for_course(course_id=course.id)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=course.id,
+    )
     assert [e.component for e in ledger] == ["llm"]
     assert ledger[0].pocket is CostPocket.PLATFORM
 
@@ -89,14 +92,14 @@ async def test_stream_build_records_claude_cost_through_the_durable_task(tmp_pat
     # drains from its finally — so a build recorded over the stream still rolls its cost up, even
     # though the drain lives on a different task than create()'s.
     clear_correlation()
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     service = _service(tmp_path, event_store=event_store, cost_store=cost_store)
 
     # Drain the whole stream so the durable build task runs to completion (and its finally drains).
     async for _item in service.stream("graphs", course_id="c-stream", run_id="run-stream"):
         pass
 
-    rollup = await cost_store.get(course_id="c-stream")
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id="c-stream")
     assert rollup is not None
     assert rollup.total_amount == pytest.approx(30.0)
     assert rollup.breakdown["byProvider"]["anthropic"] == pytest.approx(30.0)

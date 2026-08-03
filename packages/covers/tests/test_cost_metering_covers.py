@@ -12,11 +12,16 @@ import pytest
 from lunaris_covers.rendering.openai_image_renderer import COVER_IMAGE_MODEL, OpenAiImageRenderer
 from lunaris_runtime.metering import CostScope, cost_scope
 from lunaris_runtime.pricing import PriceBook
-from lunaris_runtime.schema import CostPocket, CostProvider
+from lunaris_runtime.schema import CostPocket, CostProvider, CostSubjectType
 
 
 def _scope() -> CostScope:
-    return CostScope(run_id="r", course_id="c", price_book=PriceBook.current())
+    return CostScope(
+        run_id="r",
+        subject_type=CostSubjectType.COURSE,
+        subject_id="c",
+        price_book=PriceBook.current(),
+    )
 
 
 def _image_response() -> SimpleNamespace:

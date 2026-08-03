@@ -4,10 +4,16 @@ import structlog
 
 from lunaris_runtime.persistence import (
     ICostEventStore,
-    ICourseCostStore,
+    ISubjectCostStore,
     PersistenceError,
 )
-from lunaris_runtime.schema import CostEvent, CostPocket, CostProvider, CourseCost
+from lunaris_runtime.schema import (
+    CostEvent,
+    CostPocket,
+    CostProvider,
+    CostSubjectType,
+    SubjectCost,
+)
 
 logger = structlog.get_logger()
 
@@ -18,7 +24,7 @@ class CostEventRecorder:
     The cost twin of ``RunEventRecorder``: each paid (or metered) call during a build is buffered
     as a ``CostEvent`` (``seq`` assigned here, run-scoped) and flushed in best-effort batches — a
     failed cost write is logged and swallowed, never blocking a yield or breaking a build.
-    ``finalize`` flushes the tail, then recomputes the ``course_costs`` rollup by summing the
+    ``finalize`` flushes the tail, then recomputes the ``subject_costs`` rollup by summing the
     course's whole ledger (so it aggregates across the build run and the separate video/cover jobs,
     and re-recording is idempotent) and upserts it.
 
@@ -32,10 +38,11 @@ class CostEventRecorder:
     def __init__(
         self,
         event_store: ICostEventStore | None,
-        cost_store: ICourseCostStore | None,
+        cost_store: ISubjectCostStore | None,
         *,
         run_id: str,
-        course_id: str,
+        subject_type: CostSubjectType,
+        subject_id: str,
         price_book_version: str,
         owner_id: str | None = None,
         currency: str = "USD",
@@ -45,7 +52,8 @@ class CostEventRecorder:
         self._event_store = event_store
         self._cost_store = cost_store
         self._run_id = run_id
-        self._course_id = course_id
+        self._subject_type = subject_type
+        self._subject_id = subject_id
         self._price_book_version = price_book_version
         self._owner_id = owner_id
         self._currency = currency
@@ -74,14 +82,16 @@ class CostEventRecorder:
                 logger.warning(
                     "cost_events_truncated",
                     run_id=self._run_id,
-                    course_id=self._course_id,
+                    subject_type=self._subject_type.value,
+                    subject_id=self._subject_id,
                     cap=self._cap,
                 )
             return
         self._buffer.append(
             CostEvent(
                 run_id=self._run_id,
-                course_id=self._course_id,
+                subject_type=self._subject_type,
+                subject_id=self._subject_id,
                 seq=self._seq,
                 component=component,
                 provider=provider,
@@ -109,12 +119,13 @@ class CostEventRecorder:
             logger.warning(
                 "cost_events_append_failed",
                 run_id=self._run_id,
-                course_id=self._course_id,
+                subject_type=self._subject_type.value,
+                subject_id=self._subject_id,
                 exc_info=True,
             )
 
     async def finalize(self) -> None:
-        """Flush the tail, then recompute + upsert the course rollup from the whole ledger.
+        """Flush the tail, then recompute + upsert the subject rollup from the whole ledger.
 
         Best-effort like ``flush``: a failed rollup is logged and swallowed. Recomputing from the
         ledger (not just this run's buffer) is what makes the total aggregate the build + video +
@@ -124,20 +135,23 @@ class CostEventRecorder:
         if self._event_store is None or self._cost_store is None:
             return
         try:
-            events = await self._event_store.list_for_course(
-                course_id=self._course_id, owner_id=self._owner_id
+            events = await self._event_store.list_for_subject(
+                subject_type=self._subject_type,
+                subject_id=self._subject_id,
+                owner_id=self._owner_id,
             )
             rollup = self._roll_up(events)
             await self._cost_store.upsert(cost=rollup, owner_id=self._owner_id)
         except PersistenceError:
             logger.warning(
-                "course_cost_rollup_failed",
+                "subject_cost_rollup_failed",
                 run_id=self._run_id,
-                course_id=self._course_id,
+                subject_type=self._subject_type.value,
+                subject_id=self._subject_id,
                 exc_info=True,
             )
 
-    def _roll_up(self, events: list[CostEvent]) -> CourseCost:
+    def _roll_up(self, events: list[CostEvent]) -> SubjectCost:
         """Sum the ledger into the materialized total + breakdown the Overview reads."""
         total = sum(event.amount for event in events)
         by_component: dict[str, float] = {}
@@ -157,8 +171,9 @@ class CostEventRecorder:
             "byPocket": by_pocket,
             "eventCount": len(events),
         }
-        return CourseCost(
-            course_id=self._course_id,
+        return SubjectCost(
+            subject_type=self._subject_type,
+            subject_id=self._subject_id,
             total_amount=total,
             currency=self._currency,
             breakdown=breakdown,

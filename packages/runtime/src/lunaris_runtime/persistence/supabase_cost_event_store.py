@@ -4,9 +4,10 @@ from collections.abc import Sequence
 
 import structlog
 
-from lunaris_runtime.schema import CostEvent, CostPocket, CostProvider
+from lunaris_runtime.schema import CostEvent, CostPocket, CostProvider, CostSubjectType
 
 from .guard import guard
+from .legacy_cost_key import legacy_course_id
 
 logger = structlog.get_logger()
 
@@ -68,7 +69,10 @@ class SupabaseCostEventStore:
         rows = [
             {
                 "run_id": event.run_id,
-                "course_id": event.course_id,
+                "subject_type": event.subject_type.value,
+                "subject_id": event.subject_id,
+                # Written for as long as the column exists — see legacy_course_id.
+                "course_id": legacy_course_id(event.subject_type, event.subject_id),
                 "seq": event.seq,
                 "component": event.component,
                 "provider": event.provider.value,
@@ -87,8 +91,8 @@ class SupabaseCostEventStore:
         await asyncio.to_thread(lambda: client.table(_TABLE).insert(rows).execute())  # type: ignore[attr-defined]
 
     @guard("cost_events list")
-    async def list_for_course(
-        self, *, course_id: str, owner_id: str | None = None
+    async def list_for_subject(
+        self, *, subject_type: CostSubjectType, subject_id: str, owner_id: str | None = None
     ) -> list[CostEvent]:
         client = self._ensure_client()
         rows: list[dict[str, object]] = []
@@ -97,7 +101,12 @@ class SupabaseCostEventStore:
             end = start + _PAGE_SIZE - 1
 
             def _run(s: int = start, e: int = end) -> object:
-                query = client.table(_TABLE).select("*").eq("course_id", course_id)  # type: ignore[attr-defined]
+                query = (
+                    client.table(_TABLE)  # type: ignore[attr-defined]
+                    .select("*")
+                    .eq("subject_type", subject_type.value)
+                    .eq("subject_id", subject_id)
+                )
                 if owner_id is not None:
                     query = query.eq("user_id", owner_id)  # another user's ledger reads as empty
                 return query.order("run_id").order("seq").range(s, e).execute()
@@ -109,16 +118,26 @@ class SupabaseCostEventStore:
                 break
         else:
             logger.warning(
-                "cost_events_read_hit_page_ceiling", course_id=course_id, pages=_MAX_PAGES
+                "cost_events_read_hit_page_ceiling",
+                subject_type=subject_type.value,
+                subject_id=subject_id,
+                pages=_MAX_PAGES,
             )
         return [self._to_cost_event(row) for row in rows]
 
     @guard("cost_events delete")
-    async def delete_for_course(self, *, course_id: str, owner_id: str | None = None) -> int:
+    async def delete_for_subject(
+        self, *, subject_type: CostSubjectType, subject_id: str, owner_id: str | None = None
+    ) -> int:
         client = self._ensure_client()
 
         def _run() -> object:
-            query = client.table(_TABLE).delete(count="exact").eq("course_id", course_id)  # type: ignore[attr-defined]
+            query = (
+                client.table(_TABLE)  # type: ignore[attr-defined]
+                .delete(count="exact")
+                .eq("subject_type", subject_type.value)
+                .eq("subject_id", subject_id)
+            )
             if owner_id is not None:
                 query = query.eq("user_id", owner_id)  # only purge the caller's own events
             return query.execute()
@@ -131,7 +150,8 @@ class SupabaseCostEventStore:
         # Coerce explicitly: supabase-py rows are untyped. The jsonb usage arrives as a fresh dict.
         return CostEvent(
             run_id=str(row["run_id"]),
-            course_id=str(row["course_id"]),
+            subject_type=CostSubjectType(str(row["subject_type"])),
+            subject_id=str(row["subject_id"]),
             seq=int(row["seq"]),  # type: ignore[arg-type]
             component=str(row["component"]),
             provider=CostProvider(row["provider"]),
