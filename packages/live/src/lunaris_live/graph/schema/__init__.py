@@ -3,11 +3,19 @@
 from .base import LiveModel
 from .concept_graph import ConceptGraph
 from .concept_node import ConceptNode
+from .mastery_criterion import MasteryCriterion
+from .mastery_criterion_kind import MasteryCriterionKind
 from .node_provenance import NodeProvenance
+from .teaching_depth import TeachingDepth
+from .teaching_spec import TeachingSpec
 
 __all__ = [
     "ConceptGraph",
     "ConceptNode",
     "LiveModel",
+    "MasteryCriterion",
+    "MasteryCriterionKind",
     "NodeProvenance",
+    "TeachingDepth",
+    "TeachingSpec",
 ]

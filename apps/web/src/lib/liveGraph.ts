@@ -3,7 +3,31 @@ import { authedFetch } from "./apiClient";
 /** Where a concept came from — a cold compile, or a learner's mid-session request (C1). */
 export type NodeProvenance = "compiled" | "extended";
 
-/** One atomic concept: the unit a Live session teaches and assesses. */
+/** The shape of evidence a mastery criterion asks for. Each maps to something the runtime can
+ *  stage: a checkable question, a simulator milestone, or teaching it back. */
+export type MasteryCriterionKind = "predict" | "manipulate" | "explain";
+
+/** One thing the learner must be able to DO to have understood a concept — never "knows that…",
+ *  because a statement of knowledge cannot be watched and a statement of action can. */
+export interface MasteryCriterion {
+  kind: MasteryCriterionKind;
+  statement: string;
+  /** Demonstrating this needs an interactive simulator (Phase 3). */
+  needsSim: boolean;
+}
+
+/** How a concept should be taught. `misconceptions` are stated as the learner would believe them,
+ *  not as corrections — that is what lets a tutor go looking for the wrong model in front of it. */
+export interface TeachingSpec {
+  objective: string;
+  misconceptions: string[];
+  depth: "intuition_first" | "formal" | "applied";
+}
+
+/** One atomic concept: the unit a Live session teaches and assesses.
+ *
+ *  `teachingSpec` is null when authoring failed for this concept: it is still a real concept, and
+ *  the compiler deliberately keeps it rather than losing the map over one failed call. */
 export interface ConceptNode {
   id: string;
   name: string;
@@ -11,6 +35,10 @@ export interface ConceptNode {
   /** Ids of the concepts that must be understood before this one. */
   requires: string[];
   provenance: NodeProvenance;
+  /** Always present on the wire, but null when authoring failed for this concept. */
+  teachingSpec: TeachingSpec | null;
+  /** Always an array — empty when this concept has none yet, never absent. */
+  masteryCriteria: MasteryCriterion[];
 }
 
 /** A topic's concept map. `topoOrder` and `isAcyclic` are derived server-side by assembly — the

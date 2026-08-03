@@ -2,14 +2,23 @@ from typing import Annotated
 
 from fastapi import Depends
 from lunaris_live.graph import (
+    ClaudeGraphCompiler,
+    IGraphCompiler,
     IGraphStore,
     MemoryGraphStore,
     StubGraphCompiler,
     SupabaseGraphStore,
 )
+from lunaris_runtime.run_config import resolve_config
 
 from ..config import Settings, get_settings
 from .service import LiveGraphService
+
+#: Decomposition decides what the course is made of and every later phase reads it, so it runs on
+#: the strong tier, not the bulk one. Same env knob Studio's tiers use, so a tenant's model choice
+#: covers both products. (Splitting decomposition from spec authoring across two tiers is a
+#: latency/cost lever T4 owns; one tier keeps this honest until there is a measurement to tune to.)
+_DEFAULT_MODEL = "claude-opus-4-8"
 
 # One durable store per process, same lazy-client rationale as Studio's stores: the service-role
 # client is built on first write, so the singleton needs no creds and no network until then.
@@ -25,15 +34,23 @@ def _resolve_graph_store(settings: Settings) -> IGraphStore:
     return _supabase_graph_store if settings.has_supabase else _memory_graph_store
 
 
+def _resolve_compiler(settings: Settings) -> IGraphCompiler:
+    """The model-backed compiler, or the deterministic stub under ``LUNARIS_PIPELINE=stub``.
+
+    Keyed to the same switch Studio's pipeline reads, so one setting decides whether the whole
+    process talks to a provider — which is what makes the test suite and offline dev hermetic
+    without either product needing its own opt-out.
+    """
+    if settings.pipeline == "stub":
+        return StubGraphCompiler()
+    return ClaudeGraphCompiler(resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL)
+
+
 def get_live_graph_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> LiveGraphService:
-    """Live's compile plane as a request dependency.
-
-    The compiler is the deterministic stub until T3 lands the model-backed one; both satisfy
-    ``IGraphCompiler``, so this is the only line that changes when it does.
-    """
-    return LiveGraphService(StubGraphCompiler(), _resolve_graph_store(settings))
+    """Live's compile plane as a request dependency."""
+    return LiveGraphService(_resolve_compiler(settings), _resolve_graph_store(settings))
 
 
 LiveGraphServiceDep = Annotated[LiveGraphService, Depends(get_live_graph_service)]

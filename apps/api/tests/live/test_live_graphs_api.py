@@ -135,3 +135,62 @@ async def test_a_topic_at_the_length_limit_is_accepted(client: httpx.AsyncClient
     response = await client.post("/api/live/graphs", json={"topic": "x" * 200})
 
     assert response.status_code == 201, response.text
+
+
+async def test_a_topic_that_cannot_be_mapped_is_reported_as_an_upstream_failure(
+    tmp_path: Path,
+) -> None:
+    """A compile that produces nothing must not surface as an empty map.
+
+    An empty graph reads as "this topic has no concepts in it" — the learner has no reason to
+    retry, and the failure is invisible in the product. 502 says the failure was upstream and
+    trying again is worth doing.
+    """
+    # Arrange — a compiler that fails the way a real one does when decomposition comes back junk.
+    from lunaris_api.live.dependencies import get_live_graph_service
+    from lunaris_api.live.service import LiveGraphService
+    from lunaris_live.graph import GraphCompilationError, MemoryGraphStore
+
+    class FailingCompiler:
+        async def compile(self, topic: str, *, graph_id: str, run_id: str) -> object:
+            raise GraphCompilationError(f"could not decompose {topic!r} into concepts")
+
+        async def extend(self, *args: object, **kwargs: object) -> object:
+            raise NotImplementedError
+
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+    )
+    app.dependency_overrides[get_live_graph_service] = lambda: LiveGraphService(
+        FailingCompiler(), MemoryGraphStore()
+    )
+
+    # Act
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+        response = await http_client.post("/api/live/graphs", json={"topic": "asdfgh"})
+
+    # Assert — an honest failure, and the run id is still returned so it can be traced.
+    assert response.status_code == 502
+    assert "try again" in response.json()["detail"].lower()
+    assert response.headers["X-Run-Id"]
+
+
+def test_the_real_compiler_is_wired_in_unless_the_pipeline_is_stubbed(tmp_path: Path) -> None:
+    """The composition root's one decision, pinned.
+
+    Every other test in this file runs under ``pipeline="stub"``, so without this nothing would
+    notice if the wiring fell back to the stub in production too — the suite would stay green while
+    Live quietly stopped talking to a model at all.
+    """
+    from lunaris_api.live.dependencies import _resolve_compiler
+    from lunaris_live.graph import ClaudeGraphCompiler, StubGraphCompiler
+
+    def _settings(pipeline: str) -> Settings:
+        return Settings(
+            pipeline=pipeline, course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+        )
+
+    assert isinstance(_resolve_compiler(_settings("stub")), StubGraphCompiler)
+    assert isinstance(_resolve_compiler(_settings("agent")), ClaudeGraphCompiler)

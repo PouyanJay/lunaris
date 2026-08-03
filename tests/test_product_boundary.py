@@ -26,10 +26,17 @@ LIVE_PACKAGE_PREFIXES = ("lunaris_live",)
 #: ``apps/api/.../live`` is Live's **region inside the shared API host** — the Python mirror of
 #: the web's ``components/live/**`` exemption in ``apps/web/eslint.config.js``. One FastAPI app
 #: serves both products, so somewhere has to name ``lunaris_live`` in order to mount Live's routes;
-#: confining that to one directory is what keeps the boundary real. Studio's own modules — including
-#: the shared composition root in ``dependencies.py`` — stay swept, so Live cannot leak back into
-#: them. Keep this list short: every entry is a place the boundary stops applying.
-LIVE_SOURCE_DIRS = ("packages/live", "apps/api/src/lunaris_api/live")
+#: confining that to one directory is what keeps the boundary real. ``apps/api/tests/live`` is the
+#: same region's tests — they exercise Live's endpoints and so must name Live, and putting them
+#: anywhere else would mean either weakening this rule or testing Live's API through a keyhole.
+#: Studio's own modules — including the shared composition root in ``dependencies.py`` — stay swept,
+#: so Live cannot leak back into them. Keep this list short: every entry is a place the boundary
+#: stops applying.
+LIVE_SOURCE_DIRS = (
+    "packages/live",
+    "apps/api/src/lunaris_api/live",
+    "apps/api/tests/live",
+)
 
 
 def _is_live_source(relative: str) -> bool:
@@ -124,7 +131,9 @@ def test_the_live_exemption_stops_at_a_directory_boundary() -> None:
     and the failure mode — a Studio file quietly stopping being checked — is invisible otherwise.
     """
     assert _is_live_source("apps/api/src/lunaris_api/live/router.py")
+    assert _is_live_source("apps/api/tests/live/test_live_graphs_api.py")
     assert _is_live_source("packages/live/src/lunaris_live/graph/assembly.py")
 
     assert not _is_live_source("apps/api/src/lunaris_api/live_graph_service.py")
+    assert not _is_live_source("apps/api/tests/live_helpers.py")
     assert not _is_live_source("packages/live_experiment/src/thing.py")
