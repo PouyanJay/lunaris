@@ -1,9 +1,13 @@
 """The assembly invariants — Live's correctness moat.
 
 A compiler may propose any structure; only this module may declare it sound. These tests pin the
-guarantees the rest of the product leans on, and they are written against ``assemble``'s signature
-rather than its internals, so T2 can swap the body for Studio's extracted edge algebra without
-touching a single assertion.
+guarantees the rest of the product leans on, written against ``assemble``'s signature rather than
+its internals — which is what let T2 move the body onto the shared ``lunaris_runtime.dag`` algebra
+without touching a single assertion here.
+
+The algebra itself is tested directly in ``packages/runtime/tests/test_dag.py``. What these cover is
+Live's own translation on top of it: a concept carrying its prerequisites, dangling and duplicate
+claims pruned, and the repair reported rather than absorbed.
 """
 
 from lunaris_live.graph import ConceptGraph, ConceptNode, assemble
@@ -112,6 +116,27 @@ def test_repairing_a_loop_spares_concepts_that_merely_depend_on_it() -> None:
     assert requires["a"] == ["x"]
 
 
+def test_which_edge_a_repair_spends_is_fixed_and_not_left_to_input_order() -> None:
+    """The tie-break itself, pinned by value.
+
+    Every edge in an unweighted loop is equally suspect, so the rule is the lowest-sorting
+    ``(prerequisite, dependent)`` pair — deliberately not "whichever the search reached first",
+    which would make the repair depend on the order the compiler happened to emit concepts in. Two
+    compiles of one topic have to be comparable, and a T2 refactor already changed this rule once
+    without any test noticing.
+    """
+    # Arrange — the same loop, declared in two different orders.
+    forwards = _graph(_node("a", "b"), _node("b", "c"), _node("c", "a"))
+    backwards = _graph(_node("c", "a"), _node("b", "c"), _node("a", "b"))
+
+    # Act
+    first = {node.id: node.requires for node in assemble(forwards).nodes}
+    second = {node.id: node.requires for node in assemble(backwards).nodes}
+
+    # Assert — the lowest-sorting edge (c's claim on a) is the one spent, either way round.
+    assert first == second == {"a": ["b"], "b": ["c"], "c": []}
+
+
 def test_a_concept_cannot_require_itself() -> None:
     # Arrange
     graph = _graph(_node("a", "a"))
@@ -122,6 +147,20 @@ def test_a_concept_cannot_require_itself() -> None:
     # Assert
     assert assembled.nodes[0].requires == []
     assert assembled.topo_order == ["a"]
+
+
+def test_a_prerequisite_claimed_twice_counts_once() -> None:
+    """ "Needs X, and also X" says nothing twice — and left in, one dependency would look like two
+    edges to everything downstream, including the cycle repair."""
+    # Arrange
+    graph = _graph(_node("a"), _node("b", "a", "a"))
+
+    # Act
+    assembled = assemble(graph)
+
+    # Assert
+    assert {node.id: node.requires for node in assembled.nodes} == {"a": [], "b": ["a"]}
+    assert assembled.topo_order == ["a", "b"]
 
 
 def test_assembly_is_reproducible() -> None:

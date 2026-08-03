@@ -5,11 +5,13 @@ draw a dependency loop. It is *not* allowed to assert that its own output is cor
 ``is_acyclic`` and ``topo_order`` are computed here, from the edges, and a graph is only ever marked
 acyclic by code that proved it.
 
-This module is Live's assembly *entry point*; T2 replaces its body with the edge algebra extracted
-from Studio's ``GraphAssembler`` (the proven moat) without changing this signature.
+The structural guarantees come from ``lunaris_runtime.dag``, the same algebra Studio's
+``GraphAssembler`` runs on. What lives here is the translation between Live's node model — where a
+concept carries its own prerequisites — and the plain edges that algebra works in.
 """
 
 import structlog
+from lunaris_runtime.dag import remove_cycles, topological_order
 
 from .schema import ConceptGraph, ConceptNode
 
@@ -19,115 +21,69 @@ logger = structlog.get_logger()
 def assemble(graph: ConceptGraph) -> ConceptGraph:
     """Return ``graph`` with dangling and cyclic prerequisites removed and its order derived.
 
-    Deterministic for a given input: ties are broken by id, so the same nodes always assemble to the
-    same order — a compile is reproducible and a diff between two versions is readable.
+    Deterministic for a given input: the same concepts always assemble to the same order, so a
+    compile is reproducible and the diff between two versions of a growing graph is readable.
     """
     known = {node.id for node in graph.nodes}
     # Drop prerequisites naming a concept that isn't in the graph. A dangling edge is the most
     # common decomposition error, and it must not be able to strand a node out of the topo order.
-    pruned = [
-        node.model_copy(
-            update={"requires": [r for r in node.requires if r in known and r != node.id]}
-        )
-        for node in graph.nodes
-    ]
+    # Repeats go too: "needs X, and also X" says nothing twice, and leaving duplicates in would make
+    # a single dependency look like two edges to everything downstream of here.
+    pruned = [node.model_copy(update={"requires": _usable(node, known)}) for node in graph.nodes]
 
-    pruned, dropped = _break_cycles(pruned)
-    ordered_ids, acyclic = _kahn(pruned)
+    # Live's edges carry no strength — a prerequisite is claimed or it isn't — so no weights are
+    # passed and the loop's lowest-sorting edge is spent. Only edges *inside* a cycle are ever cut.
+    edges = _edges_of(pruned)
+    kept = set(remove_cycles(edges))
+    dropped = [edge for index, edge in enumerate(edges) if index not in kept]
 
     if dropped:
+        pruned = _without(pruned, dropped)
         # A repair loses information, so it is reported rather than absorbed: these edges were in
         # the compiler's output and are not in the graph the learner gets.
         logger.warning(
             "live.graph.cycle_repaired",
             graph_id=graph.graph_id,
-            # Structured, not prose: a log query should be able to filter on the concepts involved
-            # without parsing a sentence back apart.
             dropped_edges=[
                 {"dependent": dependent, "prerequisite": prerequisite}
-                for dependent, prerequisite in dropped
+                for prerequisite, dependent in dropped
             ],
         )
 
-    return graph.model_copy(
-        update={"nodes": pruned, "topo_order": ordered_ids, "is_acyclic": acyclic}
-    )
+    # Re-derived from the corrected nodes rather than by filtering the original edges: `pruned` is
+    # the single answer to "what survived", and asking it twice is how the two drift apart.
+    order = topological_order([node.id for node in pruned], _edges_of(pruned))
+    return graph.model_copy(update={"nodes": pruned, "topo_order": order, "is_acyclic": True})
 
 
-def _kahn(nodes: list[ConceptNode]) -> tuple[list[str], bool]:
-    """Kahn's algorithm, id-sorted for reproducibility. Returns (order, is_acyclic)."""
-    remaining = {node.id: set(node.requires) for node in nodes}
-    order: list[str] = []
-
-    while remaining:
-        ready = sorted(node_id for node_id, needs in remaining.items() if not needs)
-        if not ready:
-            return order, False  # everything left is inside a cycle
-        for node_id in ready:
-            del remaining[node_id]
-            order.append(node_id)
-        for needs in remaining.values():
-            needs.difference_update(ready)
-
-    return order, True
+def _edges_of(nodes: list[ConceptNode]) -> list[tuple[str, str]]:
+    """The dependencies as ``(prerequisite, dependent)`` pairs — an edge points forward, from what
+    you need first to what it unlocks."""
+    return [(prerequisite, node.id) for node in nodes for prerequisite in node.requires]
 
 
-def _break_cycles(nodes: list[ConceptNode]) -> tuple[list[ConceptNode], list[tuple[str, str]]]:
-    """Remove the fewest prerequisites needed to make the graph teachable.
+def _usable(node: ConceptNode, known: set[str]) -> list[str]:
+    """The node's prerequisites that name a real, different concept — each of them once.
 
-    A loop means the compiler was wrong about *one* of its claims, not all of them. So each repair
-    cuts a single edge, and only ever an edge **inside an actual cycle** — never one belonging to a
-    concept that merely depends on a looped one. That distinction matters more than it looks: node
-    ids come from concept slugs, so which concepts happen to sort first is unrelated to which
-    dependency is wrong, and a repair that keyed off ordering would discard real curriculum at
-    random. (This is the discipline Studio's ``GraphAssembler.remove_cycles`` already follows; T2
-    replaces this body with that extracted algebra.)
-
-    Returns the repaired nodes and the ``(dependent, prerequisite)`` pairs that were spent.
+    Order is preserved so the compiler's own sense of what matters most survives.
     """
-    requires = {node.id: list(node.requires) for node in nodes}
-    dropped: list[tuple[str, str]] = []
+    usable: list[str] = []
+    for prerequisite in node.requires:
+        if prerequisite in known and prerequisite != node.id and prerequisite not in usable:
+            usable.append(prerequisite)
+    return usable
 
-    while (cycle := _find_cycle(requires)) is not None:
-        # Every edge here is genuinely load-bearing for the loop, so any of them repairs it. Pick
-        # the lowest-sorting one, so the same broken decomposition always repairs the same way.
-        dependent, prerequisite = min(
-            (cycle[i], cycle[(i + 1) % len(cycle)]) for i in range(len(cycle))
+
+def _without(nodes: list[ConceptNode], dropped: list[tuple[str, str]]) -> list[ConceptNode]:
+    """The nodes again, minus the prerequisites the cycle repair spent."""
+    by_dependent: dict[str, set[str]] = {}
+    for prerequisite, dependent in dropped:
+        by_dependent.setdefault(dependent, set()).add(prerequisite)
+    return [
+        node
+        if node.id not in by_dependent
+        else node.model_copy(
+            update={"requires": [r for r in node.requires if r not in by_dependent[node.id]]}
         )
-        requires[dependent].remove(prerequisite)
-        dropped.append((dependent, prerequisite))
-
-    repaired = [node.model_copy(update={"requires": requires[node.id]}) for node in nodes]
-    return repaired, dropped
-
-
-def _find_cycle(requires: dict[str, list[str]]) -> list[str] | None:
-    """One dependency loop, as the concepts around it, or ``None`` if the graph is already acyclic.
-
-    Depth-first search over ``dependent → prerequisite``; a grey node reached again closes a loop.
-    Nodes and edges are walked in sorted order so the cycle found is the same on every run.
-    """
-    unvisited, in_progress, done = 0, 1, 2
-    colour = dict.fromkeys(requires, unvisited)
-    path: list[str] = []
-
-    def walk(node: str) -> list[str] | None:
-        colour[node] = in_progress
-        path.append(node)
-        for prerequisite in sorted(requires[node]):
-            if colour.get(prerequisite, done) == in_progress:
-                return path[path.index(prerequisite) :]
-            if colour.get(prerequisite, done) == unvisited:
-                found = walk(prerequisite)
-                if found is not None:
-                    return found
-        path.pop()
-        colour[node] = done
-        return None
-
-    for node in sorted(requires):
-        if colour[node] == unvisited:
-            found = walk(node)
-            if found is not None:
-                return found
-    return None
+        for node in nodes
+    ]

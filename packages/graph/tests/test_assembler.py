@@ -187,3 +187,40 @@ def test_prune_to_frontier_keeps_only_what_is_needed() -> None:
     # Assert — `a` is dropped (known); b and goal remain
     assert kept_ids == {"b", "goal"}
     assert {(e.from_, e.to) for e in kept_edges} == {("b", "goal")}
+
+
+def test_removing_cycles_is_unaffected_by_the_same_edge_object_appearing_twice() -> None:
+    """The assembler used to drop cycle edges by object identity, which removed every occurrence of
+    a repeated ``Edge`` in one step; it now removes one index at a time and re-scans.
+
+    ``PrerequisiteGraphBuilder`` builds a fresh ``Edge`` per pair, so this cannot arise from the
+    pipeline today — which is exactly why it is pinned here rather than discovered later by whoever
+    first passes a reused edge in. ``Edge`` is a Pydantic model with value equality, so identity and
+    equality genuinely diverge in this case.
+    """
+    # Arrange — one object, referenced twice, closing a loop with a stronger edge.
+    repeated = _edge("b", "a", strength=0.2)
+    edges = [_edge("a", "b", strength=0.9), repeated, repeated]
+
+    # Act
+    kept = GraphAssembler().remove_cycles(edges)
+
+    # Assert — the weakest judgment loses and what remains is acyclic.
+    assert GraphAssembler().is_acyclic(kept) is True
+    assert {(e.from_, e.to) for e in kept} == {("a", "b")}
+
+
+def test_a_cycle_of_equally_confident_edges_is_still_broken() -> None:
+    """Tied strengths give no reason to prefer either judgment, but the graph must still come back
+    acyclic — and it must do so the same way every run."""
+    # Arrange
+    edges = [_edge("a", "b", strength=0.5), _edge("b", "a", strength=0.5)]
+
+    # Act
+    first = GraphAssembler().remove_cycles(edges)
+    second = GraphAssembler().remove_cycles(edges)
+
+    # Assert
+    assert len(first) == 1
+    assert GraphAssembler().is_acyclic(first) is True
+    assert [(e.from_, e.to) for e in first] == [(e.from_, e.to) for e in second]

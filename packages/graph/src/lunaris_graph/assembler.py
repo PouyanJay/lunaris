@@ -1,5 +1,6 @@
 from collections import deque
 
+from lunaris_runtime.dag import find_cycle, is_reachable, remove_cycles, topological_order
 from lunaris_runtime.schema import Edge, KnowledgeComponent
 
 
@@ -9,6 +10,11 @@ class GraphAssembler:
     The LLM judges edges; this class guarantees the structure: removes cycles,
     minimizes via transitive reduction, prunes to the frontier→goal subgraph, and
     produces a valid topological order. Every method is pure and exhaustively testable.
+
+    The structural algebra itself lives in ``lunaris_runtime.dag`` — Lunaris Live needs the same
+    guarantees over its own node model, and one implementation means a fix reaches both products.
+    What stays here is what is genuinely Studio's: the difficulty ordering, the LLM-judged edge
+    strength that decides which claim to disbelieve first, and the frontier→goal pruning.
     """
 
     def candidate_pairs(
@@ -21,15 +27,11 @@ class GraphAssembler:
     def remove_cycles(self, edges: list[Edge]) -> list[Edge]:
         """A real prerequisite graph is a DAG; any cycle is a judgment error.
 
-        Break each cycle at its weakest edge until none remain.
+        Break each cycle at its weakest edge until none remain — the least confident judgment is the
+        one most likely to be the wrong one.
         """
-        kept = list(edges)
-        while True:
-            cycle = self._find_cycle(kept)
-            if cycle is None:
-                return kept
-            weakest = min(cycle, key=lambda e: e.strength)
-            kept = [e for e in kept if e is not weakest]
+        kept = remove_cycles(self._pairs(edges), weights=[e.strength for e in edges])
+        return [edges[index] for index in kept]
 
     def transitive_reduction(self, edges: list[Edge]) -> list[Edge]:
         """Drop A→C when A→…→C already holds, so sequencing isn't over-constrained."""
@@ -38,7 +40,7 @@ class GraphAssembler:
             if edge not in kept:
                 continue
             others = [e for e in kept if e is not edge]
-            if self._reachable(edge.from_, edge.to, others):
+            if is_reachable(edge.from_, edge.to, self._pairs(others)):
                 kept = others
         return kept
 
@@ -61,54 +63,19 @@ class GraphAssembler:
 
     def topological_sort(self, nodes: list[KnowledgeComponent], edges: list[Edge]) -> list[str]:
         """Validated teaching order. Tie-break by difficulty for a smooth ramp (ZPD)."""
-        difficulty = {n.id: n.difficulty for n in nodes}
-        ids = set(difficulty)
-        in_degree = dict.fromkeys(ids, 0)
-        successors: dict[str, list[str]] = {i: [] for i in ids}
-        for e in edges:
-            if e.from_ in ids and e.to in ids:
-                in_degree[e.to] += 1
-                successors[e.from_].append(e.to)
-
-        ready = [i for i in ids if in_degree[i] == 0]
-        order: list[str] = []
-        while ready:
-            ready.sort(key=lambda i: (difficulty[i], i))
-            current = ready.pop(0)
-            order.append(current)
-            for nxt in successors[current]:
-                in_degree[nxt] -= 1
-                if in_degree[nxt] == 0:
-                    ready.append(nxt)
-
-        if len(order) != len(ids):
-            raise ValueError("graph is not acyclic; cannot topologically sort")
-        return order
+        return topological_order(
+            [n.id for n in nodes], self._pairs(edges), rank={n.id: n.difficulty for n in nodes}
+        )
 
     def is_acyclic(self, edges: list[Edge]) -> bool:
-        return self._find_cycle(edges) is None
+        return find_cycle(self._pairs(edges)) is None
 
     # ── internals ────────────────────────────────────────────────
 
-    def _adjacency(self, edges: list[Edge]) -> dict[str, list[Edge]]:
-        adj: dict[str, list[Edge]] = {}
-        for e in edges:
-            adj.setdefault(e.from_, []).append(e)
-        return adj
-
-    def _reachable(self, src: str, dst: str, edges: list[Edge]) -> bool:
-        adj = self._adjacency(edges)
-        seen: set[str] = set()
-        queue: deque[str] = deque(e.to for e in adj.get(src, []))
-        while queue:
-            node = queue.popleft()
-            if node == dst:
-                return True
-            if node in seen:
-                continue
-            seen.add(node)
-            queue.extend(e.to for e in adj.get(node, []))
-        return False
+    @staticmethod
+    def _pairs(edges: list[Edge]) -> list[tuple[str, str]]:
+        """Studio's edges as the plain pairs the shared algebra works in."""
+        return [(e.from_, e.to) for e in edges]
 
     def _ancestors(self, target: str, edges: list[Edge]) -> set[str]:
         """All nodes with a path to ``target`` (its transitive prerequisites)."""
@@ -124,42 +91,3 @@ class GraphAssembler:
             seen.add(node)
             queue.extend(reverse.get(node, []))
         return seen
-
-    def _find_cycle(self, edges: list[Edge]) -> list[Edge] | None:
-        adj = self._adjacency(edges)
-        nodes: set[str] = set()
-        for e in edges:
-            nodes.update((e.from_, e.to))
-
-        white, gray, black = 0, 1, 2
-        color = dict.fromkeys(nodes, white)
-        path: list[Edge] = []
-
-        def visit(node: str) -> list[Edge] | None:
-            color[node] = gray
-            for edge in adj.get(node, []):
-                nxt = edge.to
-                if color.get(nxt, white) == white:
-                    path.append(edge)
-                    found = visit(nxt)
-                    if found is not None:
-                        return found
-                    path.pop()
-                elif color.get(nxt) == gray:
-                    cycle: list[Edge] = []
-                    started = False
-                    for step in path:
-                        started = started or step.from_ == nxt
-                        if started:
-                            cycle.append(step)
-                    cycle.append(edge)
-                    return cycle
-            color[node] = black
-            return None
-
-        for start in sorted(nodes):
-            if color[start] == white:
-                found = visit(start)
-                if found is not None:
-                    return found
-        return None
