@@ -1,4 +1,19 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic.alias_generators import to_camel
+
+
+class CompileFailure(BaseModel):
+    """Why a streamed compile stopped — the terminal frame of a stream that failed.
+
+    A stream sends its status code before the work starts, so a failure can only ever be said in the
+    body. This carries the run id with it because a failed compile is precisely when someone needs
+    to go and read the logs for it, and the header is long gone by the time the web shows the error.
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    message: str
+    run_id: str
 
 
 class LiveGraphRequest(BaseModel):

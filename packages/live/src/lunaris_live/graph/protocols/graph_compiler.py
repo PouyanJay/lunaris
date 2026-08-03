@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from ..schema import ConceptGraph
+from .compile_progress_sink import ICompileProgressSink
 
 
 class IGraphCompiler(Protocol):
@@ -16,7 +17,22 @@ class IGraphCompiler(Protocol):
     ``compile`` is cold and minutes-long, ``extend`` is warm and returns inside a spoken pause.
     """
 
-    async def compile(self, topic: str, *, graph_id: str, run_id: str) -> ConceptGraph: ...
+    async def compile(
+        self,
+        topic: str,
+        *,
+        graph_id: str,
+        run_id: str,
+        on_progress: ICompileProgressSink | None = None,
+    ) -> ConceptGraph:
+        """Compile ``topic`` cold, reporting to ``on_progress`` as the work lands.
+
+        The sink is optional and defaulted because progress is the *caller's* concern: the
+        await-full POST has nobody to tell, the stream does. Only the compiler knows how many
+        concepts there are, so only the compiler can count them — which is why this is a parameter
+        here rather than something the API infers from the outside.
+        """
+        ...
 
     async def extend(
         self, graph: ConceptGraph, *, request: str, anchors: list[str], run_id: str

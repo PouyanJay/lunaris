@@ -112,77 +112,24 @@
   }
 }
 
-/* ─── The compiled map ───────────────────────────────────────────────
-   Concepts as a welded column in prerequisite order: one border level for the region, hairlines
-   between rows — the house panel idiom, not a stack of floating cards. T7 lays it out as a graph. */
-.map {
+/* ─── The map workspace ──────────────────────────────────────────────
+   The compiled map, with the selected concept's teaching notes docked beside it. The map keeps its
+   own width when nothing is open, so opening a concept slides the notes in rather than reflowing
+   the whole map under the learner. */
+.workspace {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-5);
   width: 100%;
-  max-width: 720px;
+  max-width: 1240px;
+  margin: 0 auto;
 }
 
-.mapHead {
-  margin-bottom: var(--space-5);
-}
-
-.mapMeta {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.nodes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  overflow: hidden;
-  /* The list carries its own counter: the order IS the content here (prerequisites first), so the
-     numbering is information rather than decoration. */
-  counter-reset: concept;
-}
-
-.node {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-  padding: var(--space-4);
-  border-bottom: var(--border-width) solid var(--border);
-}
-
-.node:last-child {
-  border-bottom: 0;
-}
-
-.node::before {
-  counter-increment: concept;
-  content: counter(concept);
-  grid-row: 1 / span 3;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  padding-top: 2px;
-}
-
-.nodeName {
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--text);
-  line-height: var(--lh-base);
-}
-
-.nodeDefinition {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  line-height: var(--lh-sm);
-}
-
-/* The dependency line is data about the graph, so it takes the muted register the house reserves
-   for metadata rather than competing with the concept's own name. */
-.nodeRequires {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  line-height: var(--lh-xs);
+/* Below the break the notes stack under the map instead of beside it (see ConceptSpecPanel). */
+@media (max-width: 900px) {
+  .workspace {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

@@ -3,6 +3,7 @@ import type { Clarification } from "../types/clarifier";
 import type { AgentEvent, Course, DiscoveryDepth, ProgressEvent } from "../types/course";
 import type { ComputeSource } from "./computeSource";
 import { CourseLoadError, parseCourse } from "./loadCourse";
+import { readSseFrames } from "./sse";
 
 interface StreamCourseOptions {
   /** Called for each coarse pipeline-stage event as it arrives. */
@@ -76,28 +77,15 @@ export async function streamCourse(
   const courseId = response.headers.get("X-Course-Id");
   if (courseId) onCourseId?.(courseId);
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let course: Course | null = null;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    // SSE frames are separated by a blank line; process every complete frame in the buffer.
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary !== -1) {
-      const frame = parseFrame(buffer.slice(0, boundary));
-      buffer = buffer.slice(boundary + 2);
-      if (frame?.event === "progress") {
-        onProgress?.(frame.data as ProgressEvent);
-      } else if (frame?.event === "agent") {
-        onAgent?.(frame.data as AgentEvent);
-      } else if (frame?.event === "course") {
-        course = parseCourse(frame.data);
-      }
-      boundary = buffer.indexOf("\n\n");
+  for await (const frame of readSseFrames(response.body)) {
+    if (frame.event === "progress") {
+      onProgress?.(frame.data as ProgressEvent);
+    } else if (frame.event === "agent") {
+      onAgent?.(frame.data as AgentEvent);
+    } else if (frame.event === "course") {
+      course = parseCourse(frame.data);
     }
   }
 
@@ -110,20 +98,4 @@ export async function streamCourse(
     });
   }
   return course;
-}
-
-/** Parse one SSE frame into its event name + decoded JSON data, or null if it has no data. */
-function parseFrame(frame: string): { event: string; data: unknown } | null {
-  let event = "message";
-  let data = "";
-  for (const line of frame.split("\n")) {
-    if (line.startsWith("event:")) event = line.slice("event:".length).trim();
-    else if (line.startsWith("data:")) data += line.slice("data:".length).trim();
-  }
-  if (!data) return null;
-  try {
-    return { event, data: JSON.parse(data) };
-  } catch {
-    return null;
-  }
 }

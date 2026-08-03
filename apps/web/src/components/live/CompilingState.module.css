@@ -1,0 +1,99 @@
+/* The compile screen: minutes long, so it is built to be watched rather than endured. */
+.compiling {
+  width: 100%;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.head {
+  text-align: center;
+}
+
+/* Adds only the mono face and rhythm on top of the global `.eyebrow` motif (index.css). */
+.eyebrow {
+  font-family: var(--font-mono);
+  margin: 0 0 var(--space-3);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0;
+}
+
+.body {
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+/* The measured phase. The bar and its count are one region: the bar alone is decoration, and the
+   count alone is a number nobody can size at a glance. */
+.measure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.count {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A skeleton of the levels being built — the shape of the answer, so the canvas does not jump when
+   the map lands. Deliberately not a spinner: a spinner says "wait", this says what for. */
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-4);
+}
+
+.skeletonLevel {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skeletonNode {
+  flex: 1;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  animation: pulse 1.8s var(--ease) infinite;
+}
+
+.skeletonLevel:nth-child(2) .skeletonNode {
+  animation-delay: 0.2s;
+}
+
+.skeletonLevel:nth-child(3) .skeletonNode {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonNode {
+    animation: none;
+  }
+}

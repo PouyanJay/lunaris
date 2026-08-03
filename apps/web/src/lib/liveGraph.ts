@@ -54,6 +54,8 @@ export interface ConceptGraph {
   isAcyclic: boolean;
 }
 
+/** Every way a compile can fail, as one error type — so the surface has one failure state to
+ *  render rather than one per transport, HTTP status and payload shape. */
 export class LiveGraphError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -61,30 +63,34 @@ export class LiveGraphError extends Error {
   }
 }
 
-/** Compile a topic into a concept map.
+/** Re-read a map that has already been compiled.
  *
- *  Rejects with `LiveGraphError` on transport/HTTP failure and on an alien payload shape — the map
- *  reads node fields unguarded, so the trust-boundary check belongs here rather than in the view. */
-export async function compileGraph(
+ *  The compile survives the connection that asked for it — the server does not cancel a compile
+ *  when its stream drops, and it persists the result under the id it handed over in a header before
+ *  the body. So a learner whose three-minute stream died to a proxy timeout can have the finished
+ *  map for the price of one GET, instead of paying for the same compile twice.
+ *
+ *  Rejects with `LiveGraphError`, including on 404 — a map that is genuinely not there yet is a
+ *  normal outcome here (the compile may have failed server-side too), and the caller's answer to
+ *  that is to compile again. */
+export async function loadGraph(
   apiBaseUrl: string,
-  topic: string,
+  graphId: string,
   signal?: AbortSignal,
 ): Promise<ConceptGraph> {
   let response: Response;
   try {
-    response = await authedFetch(`${apiBaseUrl}/api/live/graphs`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ topic }),
-      ...(signal ? { signal } : {}),
-    });
+    response = await authedFetch(
+      `${apiBaseUrl}/api/live/graphs/${encodeURIComponent(graphId)}`,
+      signal ? { signal } : {},
+    );
   } catch (cause) {
     throw new LiveGraphError("Could not reach the compiler.", { cause });
   }
   if (!response.ok) {
-    throw new LiveGraphError(`Couldn't build the map for this topic (HTTP ${response.status}).`);
+    throw new LiveGraphError(`Couldn't read that map (HTTP ${response.status}).`);
   }
-  const body = (await response.json()) as ConceptGraph | null;
+  const body: unknown = await response.json();
   if (!isConceptGraph(body)) {
     throw new LiveGraphError("Couldn't read the map (unexpected response).");
   }
@@ -95,8 +101,12 @@ export async function compileGraph(
  *
  *  `topoOrder` earns its place in particular: `ConceptMap` maps over it directly, so a payload
  *  missing it would throw a raw TypeError inside render rather than surfacing as the recoverable
- *  `LiveGraphError` this boundary promises. */
-function isConceptGraph(body: ConceptGraph | null): body is ConceptGraph {
+ *  `LiveGraphError` this boundary promises.
+ *
+ *  Exported because the compile arrives two ways — awaited here, streamed by `streamGraph` — and a
+ *  second copy of this check is how one of the two paths quietly stops guarding. */
+export function isConceptGraph(payload: unknown): payload is ConceptGraph {
+  const body = payload as ConceptGraph | null;
   return (
     !!body &&
     typeof body.graphId === "string" &&

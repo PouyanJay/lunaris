@@ -152,7 +152,7 @@ async def test_a_topic_that_cannot_be_mapped_is_reported_as_an_upstream_failure(
     from lunaris_live.graph import GraphCompilationError, MemoryGraphStore
 
     class FailingCompiler:
-        async def compile(self, topic: str, *, graph_id: str, run_id: str) -> object:
+        async def compile(self, topic: str, **kwargs: object) -> object:
             raise GraphCompilationError(f"could not decompose {topic!r} into concepts")
 
         async def extend(self, *args: object, **kwargs: object) -> object:
@@ -205,7 +205,7 @@ async def test_a_compile_that_overruns_its_budget_is_reported_as_a_timeout(tmp_p
     from lunaris_live.graph import MemoryGraphStore
 
     class StalledCompiler:
-        async def compile(self, topic: str, *, graph_id: str, run_id: str) -> object:
+        async def compile(self, topic: str, **kwargs: object) -> object:
             raise TimeoutError
 
         async def extend(self, *args: object, **kwargs: object) -> object:

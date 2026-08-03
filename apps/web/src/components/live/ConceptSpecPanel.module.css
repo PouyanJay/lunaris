@@ -1,0 +1,183 @@
+/* The teaching notes, docked beside the map. One border level for the region, hairlines between
+   sections — the same panel idiom as the map it sits next to. */
+.panel {
+  flex: none;
+  width: 340px;
+  align-self: start;
+  position: sticky;
+  top: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.identity {
+  min-width: 0;
+}
+
+/* Adds only the mono face and rhythm on top of the global `.eyebrow` motif (index.css). */
+.eyebrow {
+  font-family: var(--font-mono);
+  margin: 0 0 var(--space-2);
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: var(--lh-lg);
+  color: var(--text);
+  margin: 0;
+  /* Concept names are model-written and occasionally long; wrapping beats truncating here because
+     the name is the panel's subject, not metadata. */
+  overflow-wrap: anywhere;
+}
+
+.id {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* ≥32px hit target in dense UI. */
+  width: 32px;
+  height: 32px;
+  color: var(--text-secondary);
+  background: transparent;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease);
+}
+
+.close:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+.close:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--focus-ring);
+}
+
+.definition {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  margin: var(--space-4) 0 0;
+}
+
+.section {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: var(--border-width) solid var(--border);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.sectionTitle {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.cue {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.prose {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text);
+  margin: 0;
+}
+
+.absent {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* A misconception is stated as the learner would believe it, so it is set apart from the panel's
+   own voice — a quoted rule rather than another paragraph of advice. */
+.misconception {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+}
+
+.criterion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kind {
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.needsSim {
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .close {
+    transition: none;
+  }
+}
+
+/* Below the tablet break the notes sit under the map rather than beside it: 340px of aside on a
+   phone leaves the map unreadable, and the map is what the panel is about. */
+@media (max-width: 900px) {
+  .panel {
+    width: 100%;
+    position: static;
+    max-height: none;
+  }
+}

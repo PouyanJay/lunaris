@@ -3,7 +3,9 @@ import re
 import structlog
 
 from .assembly import assemble
-from .schema import ConceptGraph, ConceptNode, GraphEdit, NodeProvenance
+from .protocols import ICompileProgressSink
+from .report_progress import report_progress
+from .schema import CompilePhase, ConceptGraph, ConceptNode, GraphEdit, NodeProvenance
 
 logger = structlog.get_logger()
 
@@ -23,7 +25,18 @@ class StubGraphCompiler:
     does. Real decomposition is T3, behind the same ``IGraphCompiler`` protocol.
     """
 
-    async def compile(self, topic: str, *, graph_id: str, run_id: str) -> ConceptGraph:
+    async def compile(
+        self,
+        topic: str,
+        *,
+        graph_id: str,
+        run_id: str,
+        on_progress: ICompileProgressSink | None = None,
+    ) -> ConceptGraph:
+        # Reported even though this compiler finishes instantly: the keyless path runs it, and a
+        # surface that only ever sees progress from the keyed compiler would be a screen nobody
+        # tests. The phases are real ones, just fast.
+        report_progress(on_progress, CompilePhase.DECOMPOSING)
         slug = _slugify(topic)
         # A topic may run to the request's full 200 characters, so names composed around it have to
         # be shortened or they overflow ConceptNode.name and fail validation on a valid request.
@@ -47,6 +60,9 @@ class StubGraphCompiler:
                 requires=[f"{slug}-core"],
             ),
         ]
+        for done, _ in enumerate(nodes, start=1):
+            report_progress(on_progress, CompilePhase.AUTHORING, done=done, total=len(nodes))
+        report_progress(on_progress, CompilePhase.ASSEMBLING, done=len(nodes), total=len(nodes))
         graph = assemble(ConceptGraph(graph_id=graph_id, topic=topic, nodes=nodes))
 
         logger.info(

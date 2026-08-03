@@ -10,7 +10,10 @@ from pydantic import ValidationError
 
 from .assembly import assemble
 from .graph_compilation_error import GraphCompilationError
+from .protocols import ICompileProgressSink
+from .report_progress import report_progress
 from .schema import (
+    CompilePhase,
     ConceptGraph,
     ConceptNode,
     GraphEdit,
@@ -123,16 +126,26 @@ class ClaudeGraphCompiler:
         self._deadline_s = deadline_s
         self._extend_deadline_s = extend_deadline_s
 
-    async def compile(self, topic: str, *, graph_id: str, run_id: str) -> ConceptGraph:
+    async def compile(
+        self,
+        topic: str,
+        *,
+        graph_id: str,
+        run_id: str,
+        on_progress: ICompileProgressSink | None = None,
+    ) -> ConceptGraph:
         clock = time.monotonic()
         # A request that hangs is worse than one that fails: the learner waits with no way to know
         # it is never coming, and the abandoned work keeps spending tokens behind them. The timeout
         # cancels the whole tree — the in-flight authoring calls included.
         try:
             async with asyncio.timeout(self._deadline_s):
+                report_progress(on_progress, CompilePhase.DECOMPOSING)
                 concepts = await self._decompose(topic, run_id=run_id)
                 decomposed_at = time.monotonic()
-                nodes = await self._author_all(concepts, topic=topic, run_id=run_id)
+                nodes = await self._author_all(
+                    concepts, topic=topic, run_id=run_id, on_progress=on_progress
+                )
                 authored_at = time.monotonic()
         except TimeoutError:
             # Without this the run goes silent exactly when someone needs to read it:
@@ -147,6 +160,7 @@ class ClaudeGraphCompiler:
             )
             raise
 
+        report_progress(on_progress, CompilePhase.ASSEMBLING, done=len(nodes), total=len(nodes))
         graph = assemble(ConceptGraph(graph_id=graph_id, topic=topic, nodes=nodes))
 
         logger.info(
@@ -255,15 +269,30 @@ class ClaudeGraphCompiler:
         return concepts
 
     async def _author_all(
-        self, concepts: list[dict[str, Any]], *, topic: str, run_id: str
+        self,
+        concepts: list[dict[str, Any]],
+        *,
+        topic: str,
+        run_id: str,
+        on_progress: ICompileProgressSink | None = None,
     ) -> list[ConceptNode]:
         """Author every concept's teaching notes concurrently, capped so a large graph doesn't
         burst past the provider's rate limit."""
         semaphore = asyncio.Semaphore(self._max_concurrency)
+        total = len(concepts)
+        # Counted as each call *lands*, not as each is dispatched: they run concurrently, so the
+        # order they finish in is not the order they started, and only completions are progress.
+        # Safe unsynchronised — asyncio runs these on one thread with no await between the two
+        # statements below.
+        done = 0
 
         async def author(concept: dict[str, Any]) -> ConceptNode | None:
+            nonlocal done
             async with semaphore:
-                return await self._author(concept, topic=topic, run_id=run_id)
+                node = await self._author(concept, topic=topic, run_id=run_id)
+            done += 1
+            report_progress(on_progress, CompilePhase.AUTHORING, done=done, total=total)
+            return node
 
         authored = await asyncio.gather(*(author(concept) for concept in concepts))
         return [node for node in authored if node is not None]

@@ -10,9 +10,11 @@ from .graph_compilation_error import GraphCompilationError
 from .graph_version_conflict_error import GraphVersionConflictError
 from .memory_graph_store import MemoryGraphStore
 from .prerequisites_of import prerequisites_of
-from .protocols import IGraphCompiler, IGraphStore
+from .protocols import ICompileProgressSink, IGraphCompiler, IGraphStore
 from .resolve_request import resolve_request
 from .schema import (
+    CompilePhase,
+    CompileProgress,
     ConceptGraph,
     ConceptNode,
     GraphEdit,
@@ -28,11 +30,14 @@ from .supabase_graph_store import SupabaseGraphStore
 
 __all__ = [
     "ClaudeGraphCompiler",
+    "CompilePhase",
+    "CompileProgress",
     "ConceptGraph",
     "ConceptNode",
     "GraphCompilationError",
     "GraphEdit",
     "GraphVersionConflictError",
+    "ICompileProgressSink",
     "IGraphCompiler",
     "IGraphStore",
     "LiveModel",
