@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from collections.abc import Iterable
 from typing import Any
 
@@ -22,6 +23,11 @@ from .schema import (
 logger = structlog.get_logger()
 
 _DEFAULT_MAX_CONCURRENCY = 8
+
+#: The plan's budget for a cold compile is three minutes; this sits just past it. It is a ceiling,
+#: not a target — it exists so a stalled provider call fails the request instead of holding a
+#: learner on a screen that will never resolve.
+_DEFAULT_DEADLINE_S = 200.0
 
 #: Headroom for ~20 concepts of structured JSON. The provider default is far lower, and a
 #: decomposition cut off mid-object is the one failure this compiler cannot degrade around.
@@ -83,16 +89,39 @@ class ClaudeGraphCompiler:
         *,
         client: object | None = None,
         max_concurrency: int = _DEFAULT_MAX_CONCURRENCY,
+        deadline_s: float = _DEFAULT_DEADLINE_S,
     ) -> None:
         self._model_name = model_name
         # Injected in tests; production leaves it None so the client is built on first use and
         # constructing the compiler needs no API key.
         self._client = client
         self._max_concurrency = max(1, max_concurrency)
+        self._deadline_s = deadline_s
 
     async def compile(self, topic: str, *, graph_id: str, run_id: str) -> ConceptGraph:
-        concepts = await self._decompose(topic, run_id=run_id)
-        nodes = await self._author_all(concepts, topic=topic, run_id=run_id)
+        clock = time.monotonic()
+        # A request that hangs is worse than one that fails: the learner waits with no way to know
+        # it is never coming, and the abandoned work keeps spending tokens behind them. The timeout
+        # cancels the whole tree — the in-flight authoring calls included.
+        try:
+            async with asyncio.timeout(self._deadline_s):
+                concepts = await self._decompose(topic, run_id=run_id)
+                decomposed_at = time.monotonic()
+                nodes = await self._author_all(concepts, topic=topic, run_id=run_id)
+                authored_at = time.monotonic()
+        except TimeoutError:
+            # Without this the run goes silent exactly when someone needs to read it:
+            # compile_started and then nothing, with no way to tell a stalled decomposition from
+            # stalled authoring — the whole reason the phases are timed separately.
+            logger.warning(
+                "live.graph.compile_timed_out",
+                run_id=run_id,
+                graph_id=graph_id,
+                deadline_s=self._deadline_s,
+                elapsed_ms=round((time.monotonic() - clock) * 1000),
+            )
+            raise
+
         graph = assemble(ConceptGraph(graph_id=graph_id, topic=topic, nodes=nodes))
 
         logger.info(
@@ -102,6 +131,11 @@ class ClaudeGraphCompiler:
             compiler="claude",
             node_count=len(graph.nodes),
             unspecified=sum(1 for node in graph.nodes if node.teaching_spec is None),
+            # Split by phase, because they fail differently: decomposition is one serial call whose
+            # cost scales with the model, authoring is N concurrent calls whose cost scales with the
+            # graph. Only measuring the total tells you a compile was slow, never which to fix.
+            decompose_ms=round((decomposed_at - clock) * 1000),
+            authoring_ms=round((authored_at - decomposed_at) * 1000),
         )
         return graph
 

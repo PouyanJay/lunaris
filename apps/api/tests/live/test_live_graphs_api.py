@@ -194,3 +194,37 @@ def test_the_real_compiler_is_wired_in_unless_the_pipeline_is_stubbed(tmp_path: 
 
     assert isinstance(_resolve_compiler(_settings("stub")), StubGraphCompiler)
     assert isinstance(_resolve_compiler(_settings("agent")), ClaudeGraphCompiler)
+
+
+async def test_a_compile_that_overruns_its_budget_is_reported_as_a_timeout(tmp_path: Path) -> None:
+    """504, not 502: nothing was wrong with the topic, so retrying it verbatim is reasonable and
+    the message should say so."""
+    # Arrange
+    from lunaris_api.live.dependencies import get_live_graph_service
+    from lunaris_api.live.service import LiveGraphService
+    from lunaris_live.graph import MemoryGraphStore
+
+    class StalledCompiler:
+        async def compile(self, topic: str, *, graph_id: str, run_id: str) -> object:
+            raise TimeoutError
+
+        async def extend(self, *args: object, **kwargs: object) -> object:
+            raise NotImplementedError
+
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+    )
+    app.dependency_overrides[get_live_graph_service] = lambda: LiveGraphService(
+        StalledCompiler(), MemoryGraphStore()
+    )
+
+    # Act
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+        response = await http_client.post("/api/live/graphs", json={"topic": "Tides"})
+
+    # Assert
+    assert response.status_code == 504
+    assert "too long" in response.json()["detail"].lower()
+    assert response.headers["X-Run-Id"]

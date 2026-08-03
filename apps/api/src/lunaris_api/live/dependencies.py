@@ -43,7 +43,10 @@ def _resolve_compiler(settings: Settings) -> IGraphCompiler:
     """
     if settings.pipeline == "stub":
         return StubGraphCompiler()
-    return ClaudeGraphCompiler(resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL)
+    return ClaudeGraphCompiler(
+        resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL,
+        deadline_s=settings.live_compile_deadline_s,
+    )
 
 
 def get_live_graph_service(

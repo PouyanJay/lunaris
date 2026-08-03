@@ -56,6 +56,9 @@ class Settings:
     # Device-bridge bounds (device-compute Draft builds): how long the tab may go silent before
     # its build is failed as disconnected, and the per-completion ceiling for a tab that polls
     # but never answers. Tuned per environment when proxies or device profiles demand it.
+    #: Ceiling on a Lunaris Live cold compile. Past the plan's 3-minute budget on purpose — it
+    #: exists so a stalled provider call fails the request rather than holding a learner forever.
+    live_compile_deadline_s: float = 200.0
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
     # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
@@ -147,6 +150,7 @@ def get_settings() -> Settings:
         draft_max_concurrent=_env_int("LUNARIS_DRAFT_MAX_CONCURRENT", default=1),
         explain_daily_cap=_env_int("LUNARIS_EXPLAIN_DAILY_CAP", default=50),
         keyless_compute=_env_compute("LUNARIS_KEYLESS_COMPUTE", default=ComputeKind.CPU),
+        live_compile_deadline_s=_env_float("LUNARIS_LIVE_COMPILE_DEADLINE_S", default=200.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

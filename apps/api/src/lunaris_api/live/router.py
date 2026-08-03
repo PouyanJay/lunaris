@@ -26,6 +26,14 @@ async def compile_graph(
     response.headers["X-Run-Id"] = run_id
     try:
         return await service.compile(payload.topic, run_id=run_id, owner_id=owner_id)
+    except TimeoutError as exc:
+        # The compile overran its budget and was abandoned. Distinct from the 502 below because the
+        # remedy differs: nothing was wrong with the topic, so retrying it verbatim is reasonable.
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Mapping this topic took too long. Try again.",
+            headers={"X-Run-Id": run_id},
+        ) from exc
     except GraphCompilationError as exc:
         # The model gave us nothing usable. Say so — an empty graph would read to the learner as
         # "your topic has no concepts in it" rather than "we failed", and they'd have no reason to
