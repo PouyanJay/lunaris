@@ -20,6 +20,17 @@ def _reset_keyless_throttle() -> Iterator[None]:
     dependencies._get_keyless_build_throttle.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_live_throttle() -> Iterator[None]:
+    """The same hazard for Live's compile/extend throttle (T8c): its per-day counts are process-wide
+    for a given Settings, so without this one test's compiles could exhaust another's allowance."""
+    from lunaris_api.live import dependencies
+
+    dependencies._get_live_graph_throttle.cache_clear()
+    yield
+    dependencies._get_live_graph_throttle.cache_clear()
+
+
 class ReleasablePipeline:
     """A pipeline that emits one progress beat, parks on a release ``Event``, then builds a real
     course via the stub orchestrator. Lets a test drop the SSE consumer *before* the build finishes

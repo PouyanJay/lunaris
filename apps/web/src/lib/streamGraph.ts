@@ -1,4 +1,5 @@
 import { authedFetch } from "./apiClient";
+import { detailOf } from "./apiErrors";
 import { isConceptGraph, LiveGraphError, type ConceptGraph } from "./liveGraph";
 import { readSseFrames } from "./sse";
 
@@ -51,7 +52,13 @@ export async function streamGraph(
     throw new LiveGraphError("Could not reach the compiler.", { cause });
   }
   if (!response.ok) {
-    throw new LiveGraphError(`Couldn't build the map for this topic (HTTP ${response.status}).`);
+    // The server's own words where it has any — a compile refused before it started (the throttle,
+    // or a spent budget) explains what the learner can do next, and the status alone does not. The
+    // status is the fallback for a failure with no body of ours, such as a proxy's.
+    throw new LiveGraphError(
+      (await detailOf(response)) ??
+        `Couldn't build the map for this topic (HTTP ${response.status}).`,
+    );
   }
   if (!response.body) {
     throw new LiveGraphError("The compile stream returned no body.");

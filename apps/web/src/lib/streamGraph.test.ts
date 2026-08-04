@@ -84,6 +84,38 @@ describe("streamGraph — watching a compile happen", () => {
     );
   });
 
+  it("surfaces the server's own words when the compile is refused before it starts", async () => {
+    // A refusal (the compile throttle, T8c) arrives as a *status*, not as a frame — and "you have
+    // built today's maps" and "one is already building" are the same 429 with different next steps.
+    // A learner shown only the number can act on neither.
+    const original = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ detail: "You've built today's 20 maps." }), {
+          status: 429,
+          headers: { "content-type": "application/json" },
+        }),
+      )) as unknown as typeof fetch;
+
+    try {
+      await expect(streamGraph("", "Tides", {})).rejects.toThrow(/today's 20 maps/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("falls back to the status when a refusal carries no message", async () => {
+    const original = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.resolve(new Response("nginx said no", { status: 503 }))) as unknown as typeof fetch;
+
+    try {
+      await expect(streamGraph("", "Tides", {})).rejects.toThrow(/HTTP 503/);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
   it("treats a stream that stops before the map as a failure, not as an empty map", async () => {
     // A dropped connection must never render as "this topic has no concepts in it".
     const frames = ['event: progress\ndata: {"phase":"authoring","done":2,"total":9}\n\n'];

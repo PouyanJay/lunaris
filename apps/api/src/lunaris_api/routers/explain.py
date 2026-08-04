@@ -8,15 +8,12 @@ from lunaris_runtime.logging import bind_request_id
 
 from ..dependencies import ExplainBindingDep, ExplainThrottleDep, OptionalUserIdDep
 from ..explain_throttle import ExplainDailyCapReachedError
+from ..local_owner_key import LOCAL_OWNER_KEY
 from ..schemas import ExplainRequest, ExplainResponse
 
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/explain", tags=["explain"])
-
-# The per-day cap bucket for an unowned caller (auth off / single-user instance) — mirrors the
-# build throttle's local bucket.
-_LOCAL_OWNER_KEY = "__local__"
 
 
 @router.post("", response_model=ExplainResponse)
@@ -50,7 +47,7 @@ async def explain_blob(
         )
     if binding.source == "server-fallback":
         try:
-            throttle.admit(owner_id or _LOCAL_OWNER_KEY)
+            throttle.admit(owner_id or LOCAL_OWNER_KEY)
         except ExplainDailyCapReachedError as exc:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

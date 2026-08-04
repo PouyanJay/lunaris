@@ -14,6 +14,7 @@ from lunaris_runtime.persistence import PersistenceError
 
 from ..dependencies import OptionalUserIdDep
 from .dependencies import LiveGraphServiceDep
+from .graph_throttle import LiveWorkRefusedError
 from .schemas import CompileFailure, LiveGraphExtendRequest, LiveGraphRequest
 
 logger = structlog.get_logger()
@@ -43,6 +44,8 @@ async def compile_graph(
     response.headers["X-Run-Id"] = run_id
     try:
         return await service.compile(payload.topic, run_id=run_id, owner_id=owner_id)
+    except LiveWorkRefusedError as exc:
+        raise _refusal(exc, run_id=run_id) from exc
     except Exception as exc:
         if isinstance(exc, PersistenceError):
             # The store itself failed. Logged with the traceback because nothing below the router
@@ -83,11 +86,17 @@ async def stream_graph(
     run_id = uuid4().hex
     graph_id = uuid4().hex
 
+    # Opened here rather than inside ``frames()`` on purpose: this is the last moment a refusal can
+    # still be a status code. Once the body starts, a 429 could only be sent as an error frame, and
+    # "we declined to start a compile" would reach the learner as "your compile failed".
+    try:
+        beats = service.stream(topic, graph_id=graph_id, run_id=run_id, owner_id=owner_id)
+    except LiveWorkRefusedError as exc:
+        raise _refusal(exc, run_id=run_id) from exc
+
     async def frames() -> AsyncIterator[str]:
         try:
-            async for kind, payload in service.stream(
-                topic, graph_id=graph_id, run_id=run_id, owner_id=owner_id
-            ):
+            async for kind, payload in beats:
                 yield _frame(kind, payload)
         except Exception as exc:
             # A stream's status was sent before the work began, so a failure can only be said in the
@@ -114,6 +123,20 @@ async def stream_graph(
 def _frame(kind: str, payload: CompileProgress | ConceptGraph | CompileFailure) -> str:
     """One SSE frame — camelCase JSON, the wire contract the web already reads."""
     return f"event: {kind}\ndata: {payload.model_dump_json(by_alias=True)}\n\n"
+
+
+def _refusal(exc: LiveWorkRefusedError, *, run_id: str) -> HTTPException:
+    """Work Live declined to start, as one HTTP answer for all three entry points.
+
+    The refusal carries its own status and its own sentence, so a new reason to refuse is a new
+    exception class and nothing here changes. The learner is told *why* — "you have used today's
+    maps" and "one is already building" are the same 429 but different next steps, and a surface
+    that only sees the number can offer neither.
+    """
+    logger.info("live.graph.refused", reason=type(exc).__name__, run_id=run_id)
+    return HTTPException(
+        status_code=exc.status_code, detail=exc.detail, headers={"X-Run-Id": run_id}
+    )
 
 
 def _failure_of(exc: Exception) -> tuple[int, str]:
@@ -185,6 +208,8 @@ async def extend_graph(
             run_id=run_id,
             owner_id=owner_id,
         )
+    except LiveWorkRefusedError as exc:
+        raise _refusal(exc, run_id=run_id) from exc
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Graph not found"

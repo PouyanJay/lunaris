@@ -60,6 +60,7 @@ from .cover_enqueue import enqueue_cover_job
 from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import DraftReservation, KeylessBuildThrottle
 from .library import LibraryEntry
+from .local_owner_key import LOCAL_OWNER_KEY
 from .progress import IProgressStore, ProgressStoreUnavailableError
 from .progress_sink import QueueAgentSink, QueueProgressSink, StreamItem
 from .run_event_recorder import RunEventRecorder
@@ -75,8 +76,6 @@ _LLM_KEY_ENV = next(s.env_var for s in CAPABILITY_SPECS if s.capability is Capab
 # from the same capability table so the build-time auto-enqueue gate and the enqueue route's tier
 # gate (require_keyed_cover_caller) agree on what "keyed for covers" means.
 _COVER_KEY_ENV = next(s.env_var for s in CAPABILITY_SPECS if s.capability is CapabilityName.COVER)
-# The per-day cap bucket for a build with no owner (auth off / single-user instance).
-_LOCAL_OWNER_KEY = "__local__"
 
 # Bounds for the run-history list, shared with the GET /api/runs router so the HTTP validation and
 # the service-layer clamp stay in lockstep (single source of truth).
@@ -332,7 +331,7 @@ class CourseService:
         keyless = self._is_keyless_llm(credentials)
         reservation: DraftReservation | None = None
         if self._throttle is not None and keyless:
-            reservation = self._throttle.reserve(owner_id or _LOCAL_OWNER_KEY)
+            reservation = self._throttle.reserve(owner_id or LOCAL_OWNER_KEY)
         bridge: DeviceBridge | None = None
         if (
             compute is ComputeChoice.DEVICE

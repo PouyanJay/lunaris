@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -18,6 +19,7 @@ from ..dependencies import (
     SubjectCostStoreDep,
     get_video_credential_resolver,
 )
+from .graph_throttle import LiveGraphThrottle
 from .service import LiveGraphService
 
 #: Decomposition decides what the course is made of and every later phase reads it, so it runs on
@@ -55,6 +57,23 @@ def _resolve_compiler(settings: Settings) -> IGraphCompiler:
     )
 
 
+@lru_cache
+def _get_live_graph_throttle(settings: Settings) -> LiveGraphThrottle:
+    """The process-wide Live throttle for the given settings (T8c).
+
+    Cached on the frozen ``Settings`` value because the in-flight slots and per-day counts have to
+    be shared across requests: ``get_live_graph_service`` builds a service per request, and a
+    per-request throttle would never see the compile it is supposed to be counting. Keyed on the
+    whole ``Settings`` (not just the Live fields) so it cannot drift as the config surface grows;
+    tests reset it via ``_get_live_graph_throttle.cache_clear()`` (see the API conftest).
+    """
+    return LiveGraphThrottle(
+        compile_daily_cap=settings.live_compile_daily_cap,
+        compile_max_concurrent=settings.live_compile_max_concurrent,
+        extend_daily_cap=settings.live_extend_daily_cap,
+    )
+
+
 def get_live_credential_resolver(settings: Settings) -> CredentialResolver | None:
     """The BYOK resolver a Live compile runs on, or ``None`` when BYOK is off.
 
@@ -85,6 +104,8 @@ def get_live_graph_service(
         cost_event_store=cost_event_store,
         subject_cost_store=subject_cost_store,
         credential_resolver=get_live_credential_resolver(settings),
+        throttle=_get_live_graph_throttle(settings),
+        graph_budget_usd=settings.live_graph_budget_usd,
     )
 
 
