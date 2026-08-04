@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import structlog
-from lunaris_runtime.resilience import build_chat_model, retry_on_rate_limit
+from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 from pydantic import ValidationError
 
 from .assembly import assemble
@@ -90,6 +90,14 @@ interactive simulator), or "explain" (teach it back).
 Respond with ONLY a JSON object, no prose:
 {{"objective": "...", "misconceptions": ["..."], "aliases": ["..."], "depth": "intuition_first", \
 "criteria": [{{"kind": "predict", "statement": "...", "needsSim": false}}]}}"""
+
+
+#: How hard a transient failure is retried. Three attempts inside a four-second ceiling survives a
+#: dropped socket while staying comfortably within C1's fifteen-second extension budget — which
+#: ``_ask`` also serves, and which the library defaults (eight attempts, thirty-second ceiling)
+#: would blow through long before the outer deadline cancelled them.
+_TRANSIENT_ATTEMPTS = 3
+_TRANSIENT_MAX_DELAY_S = 4.0
 
 
 class ClaudeGraphCompiler:
@@ -341,12 +349,27 @@ class ClaudeGraphCompiler:
         )
 
     async def _ask(self, prompt: str, *, max_tokens: int | None = None) -> str:
+        """One model call, retried through a transient failure and no further.
+
+        The defaults would allow eight attempts backing off to thirty seconds each — sized for a
+        batch job. This same method backs C1's extension, which has fifteen seconds for the *whole*
+        request, so an unbounded back-off there would turn a fast clean failure into a slow
+        timeout-cancelled one on the path the learner is actually waiting on.
+        """
         if self._client is None:
             # Sized so a full decomposition is never cut off mid-object: the provider default is
             # around a thousand tokens, which a 20-concept response would overrun — and a truncated
             # decomposition is the one failure this compiler cannot degrade around.
             self._client = build_chat_model(self._model_name, max_tokens=max_tokens)
-        message = await retry_on_rate_limit(lambda: self._client.ainvoke(prompt))  # type: ignore[attr-defined]
+        # Transient, not just rate-limited: a dropped socket on decomposition is the one failure
+        # this compiler cannot degrade around — there is no map without it — and T9's eval showed
+        # it killing whole compiles. Authoring survives a blip already (a concept keeps its
+        # identity and loses its notes), but retrying is cheaper than losing the notes.
+        message = await retry_on_transient(
+            lambda: self._client.ainvoke(prompt),  # type: ignore[attr-defined]
+            max_attempts=_TRANSIENT_ATTEMPTS,
+            max_delay_s=_TRANSIENT_MAX_DELAY_S,
+        )
         content = message.content
         return content if isinstance(content, str) else str(content)
 

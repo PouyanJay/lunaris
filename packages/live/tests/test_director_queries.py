@@ -9,12 +9,14 @@ is a railway, and replacing that later is a rewrite rather than a patch. So they
 functions over a graph already in memory: no I/O, nothing to await, usable inside a single turn.
 """
 
+import pytest
 from lunaris_live.graph import (
     ConceptGraph,
     ConceptNode,
     prerequisites_of,
     resolve_request,
 )
+from lunaris_live.graph.resolve_request import _fold
 
 
 def _node(node_id: str, name: str, *requires: str, aliases: list[str] | None = None) -> ConceptNode:
@@ -153,14 +155,107 @@ def test_a_concept_whose_name_is_an_everyday_word_is_still_reachable() -> None:
     assert resolve_request(graph, "what is work in physics").id == "work"
 
 
-def test_an_inflected_word_is_a_known_miss() -> None:
-    """Pinned rather than fixed: lexical matching has no stemming, so this returns None today.
+def test_an_inflected_word_resolves_to_the_concept_it_names() -> None:
+    """T6 pinned this as a known miss — "so that swapping in embeddings, which would resolve it,
+    shows up here as a deliberate change". This is that change, arrived at from the other end.
 
-    Recorded so the limitation is a documented choice rather than something Phase 2 discovers and
-    reports as a regression — and so that swapping in embeddings, which would resolve it, shows up
-    here as a deliberate change.
+    T9's ten real topics made the cost concrete: a map of the seasons containing "Earth's axis is
+    tilted" answered *nothing* to "why is the earth tilted", because ``tilted`` and ``tilt`` are
+    different strings. Under C2 that is not a missing feature, it is a wrong answer — the director
+    reads ``None`` as "the map does not cover this" and pays for an extension that re-adds a concept
+    already there, which D4's budget now charges the learner for.
+
+    Fixed by folding inflections rather than by embeddings: deterministic, no call, and it keeps the
+    "returns inside the same turn" promise the whole query rests on.
     """
-    assert resolve_request(_graph(), "what are gradients") is None
+    assert resolve_request(_graph(), "what are gradients").id == "gradient"
+
+
+def test_a_real_learner_question_reaches_a_differently_inflected_concept() -> None:
+    """The case from T9's eval, kept as the regression it is. The learner says "tilted"; the map
+    says "the tilt of the Earth"."""
+    # Arrange
+    graph = ConceptGraph(
+        graph_id="g",
+        topic="Why the seasons change",
+        nodes=[
+            _node(
+                "tilt",
+                "Earth's axis is tilted",
+                aliases=["the tilt of the Earth", "axial tilt"],
+            )
+        ],
+    )
+
+    # Act / Assert
+    assert resolve_request(graph, "why is the earth tilted").id == "tilt"
+
+
+def test_folding_inflections_does_not_make_an_off_map_question_match() -> None:
+    """The half of C2 that matters more. A confident wrong match sends the tutor off to answer a
+    question the learner never asked, so widening what counts as a match must not widen this."""
+    assert resolve_request(_graph(), "how do I deploy this to a phone") is None
+    assert resolve_request(_graph(), "what are the ethics of all this") is None
+
+
+def test_folding_does_not_invent_a_match_that_only_exists_after_folding() -> None:
+    """The specific hazard folding introduces, rather than a question that was never close.
+
+    "Rates" folds to "rate"; a concept named "Rat" does not, and must not be dragged into range by
+    a question that never mentioned it. This is the case that would be invisible in a test built
+    from off-map questions with no shared letters — which is what makes it worth its own test.
+    """
+    # Arrange
+    graph = ConceptGraph(
+        graph_id="g",
+        topic="Urban ecology",
+        nodes=[_node("rat", "Rat"), _node("bus", "Bus")],
+        topo_order=["rat", "bus"],
+        is_acyclic=True,
+    )
+
+    # Act / Assert
+    assert resolve_request(graph, "what are interest rates") is None
+    assert resolve_request(graph, "how does a business work") is None
+
+
+@pytest.mark.parametrize(
+    ("base", "inflected"),
+    [
+        ("gradient", "gradients"),
+        ("tilt", "tilted"),
+        ("theory", "theories"),
+        ("reform", "reforms"),
+        ("committee", "committees"),
+        # The silent-e family: the shape a naive "strip two characters" rule gets wrong, sending
+        # "states" to "stat" while "state" stayed put — a concept unreachable by its own plural.
+        ("state", "states"),
+        ("phase", "phases"),
+        ("cause", "causes"),
+        ("note", "notes"),
+        ("rate", "rates"),
+        ("response", "responses"),
+        # Not a plural at all, and must survive as itself.
+        ("bias", "biased"),
+    ],
+)
+def test_a_word_and_its_inflection_fold_together(base: str, inflected: str) -> None:
+    assert _fold(base) == _fold(inflected), f"{base!r} and {inflected!r} are not the same word"
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ("rat", "rate"),  # would collide if folding stripped a trailing "e"
+        ("not", "note"),  # ...and "not" is a noise word: a map of jazz would lose its notes
+        ("axis", "axes"),
+        ("bus", "bias"),
+    ],
+)
+def test_two_different_words_never_fold_together(left: str, right: str) -> None:
+    """The asymmetry the fold is built around. A miss costs one needless extension; a false match
+    has the tutor answer a question nobody asked."""
+    assert _fold(left) != _fold(right)
 
 
 def test_a_cyclic_hand_built_graph_terminates() -> None:

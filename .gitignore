@@ -256,3 +256,6 @@ node_modules/
 
 # Compiled ARM JSON from `az bicep build` — bicep is the source, JSON is build output.
 /infra/*.json
+
+# Keyed-eval output (model-generated maps for human review; costs money to make, read once)
+.eval/

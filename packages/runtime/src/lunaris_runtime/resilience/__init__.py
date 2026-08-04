@@ -7,7 +7,7 @@ from .llm_client import (
     get_llm_rate_limiter,
 )
 from .parse_repair import DEFAULT_PARSE_REPAIR_ATTEMPTS, invoke_with_parse_repair
-from .retry import retry_on_rate_limit
+from .retry import retry_on_rate_limit, retry_on_transient
 from .smoke_check import SmokeCheckResult, keyless_tool_calling_smoke_check
 from .tool_call_repair import repair_tool_calls
 
@@ -25,4 +25,5 @@ __all__ = [
     "probe_keyless_llm_endpoint",
     "repair_tool_calls",
     "retry_on_rate_limit",
+    "retry_on_transient",
 ]

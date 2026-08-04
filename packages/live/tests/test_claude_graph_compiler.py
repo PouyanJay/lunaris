@@ -342,3 +342,37 @@ async def test_the_names_a_learner_might_use_are_recorded_on_the_concept() -> No
 
     # Assert — deduplicated, and kept even though the rest of the notes could have failed.
     assert graph.nodes[0].aliases == ["cost function", "objective function"]
+
+
+async def test_a_dropped_connection_on_decomposition_is_retried_not_fatal() -> None:
+    """The failure T9's ten-topic eval found the expensive way: five of ten real compiles died on
+    ``APIConnectionError``.
+
+    Decomposition is the one call this compiler documents as unsurvivable — there is no map without
+    it — and the retry it sat behind only ever recognised rate limits, so a dropped socket cost the
+    learner the whole three minutes and (since D4) a day's compile allowance too. Pinned at the
+    compiler rather than only at the retry helper, because "imported the right helper, called the
+    wrong one" is exactly the wiring mistake a helper's own tests cannot see.
+    """
+
+    # Arrange — the first decomposition call drops its connection, as a real client's would.
+    class DroppedConnectionModel(ScriptedModel):
+        def __init__(self, responses: list[str]) -> None:
+            super().__init__(responses)
+            self.dropped = False
+
+        async def ainvoke(self, prompt: str) -> AIMessage:
+            self.prompts.append(prompt)
+            if not self.dropped:
+                self.dropped = True
+                raise ConnectionError("Connection error.")
+            return AIMessage(content=self._responses.pop(0))
+
+    model = DroppedConnectionModel([json.dumps(_DECOMPOSITION), *[json.dumps(_SPEC)] * 3])
+
+    # Act
+    graph = await _compiled(model)
+
+    # Assert — the blip cost a retry, not the map.
+    assert model.dropped, "the model never dropped a connection, so this proves nothing"
+    assert len(graph.nodes) == 3
