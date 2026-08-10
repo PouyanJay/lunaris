@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router";
 import { CompilingState } from "./CompilingState";
 import { ConceptMap } from "./ConceptMap";
 import { ConceptSpecPanel } from "./ConceptSpecPanel";
+import { SessionView } from "./SessionView";
 import { useCompileGraph } from "../../hooks/useCompileGraph";
 import { type ConceptGraph } from "../../lib/liveGraph";
 import { ROUTES } from "../../lib/routes";
@@ -49,31 +50,53 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
           <CompilingState topic={topic ?? ""} progress={state.progress} />
         ) : null}
         {state.status === "failed" ? <FailedState message={state.message} onRetry={retry} /> : null}
-        {state.status === "ready" ? <MapWorkspace graph={state.graph} /> : null}
+        {state.status === "ready" ? (
+          <MapWorkspace graph={state.graph} apiBaseUrl={apiBaseUrl} />
+        ) : null}
       </main>
     </div>
   );
 }
 
-/** The compiled map beside the notes for whichever concept is open. */
-function MapWorkspace({ graph }: { graph: ConceptGraph }) {
+/** The compiled map beside the notes for whichever concept is open — and the way into a session on
+ *  it. The map is a map of the subject, never a route through the session: it is what a learner
+ *  reads *before* being taught, and what keeps score once they are. */
+function MapWorkspace({ graph, apiBaseUrl }: { graph: ConceptGraph; apiBaseUrl: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [teaching, setTeaching] = useState(false);
   const selected = graph.nodes.find((node) => node.id === selectedId) ?? null;
 
+  if (teaching) {
+    return (
+      <div className={styles.teaching}>
+        <button type="button" className={styles.back} onClick={() => setTeaching(false)}>
+          &larr; Back to the map
+        </button>
+        <SessionView apiBaseUrl={apiBaseUrl} graphId={graph.graphId} topic={graph.topic} />
+      </div>
+    );
+  }
+
   return (
-    <div className={styles.workspace}>
-      <ConceptMap
-        graph={graph}
-        selectedId={selected?.id ?? null}
-        onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
-      />
-      {selected && (
-        <ConceptSpecPanel
+    <div className={styles.mapArea}>
+      <div className={styles.startBar}>
+        <p className={styles.startLead}>
+          {graph.nodes.length} concepts, ordered so nothing arrives before what it needs.
+        </p>
+        <button type="button" className={styles.start} onClick={() => setTeaching(true)}>
+          Start a session
+        </button>
+      </div>
+      <div className={styles.workspace}>
+        <ConceptMap
           graph={graph}
-          concept={selected}
-          onClose={() => setSelectedId(null)}
+          selectedId={selected?.id ?? null}
+          onSelect={(id) => setSelectedId((current) => (current === id ? null : id))}
         />
-      )}
+        {selected && (
+          <ConceptSpecPanel graph={graph} concept={selected} onClose={() => setSelectedId(null)} />
+        )}
+      </div>
     </div>
   );
 }

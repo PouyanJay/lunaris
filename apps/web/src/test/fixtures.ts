@@ -512,7 +512,9 @@ export function routedFetch(
           new ReadableStream({
             start(controller) {
               controller.enqueue(
-                encoder.encode(`event: progress\ndata: {"phase":"authoring","done":1,"total":1}\n\n`),
+                encoder.encode(
+                  `event: progress\ndata: {"phase":"authoring","done":1,"total":1}\n\n`,
+                ),
               );
               controller.enqueue(encoder.encode(`event: graph\ndata: ${graph}\n\n`));
               controller.close();

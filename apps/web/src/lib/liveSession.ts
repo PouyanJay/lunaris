@@ -1,4 +1,8 @@
 import { authedFetch } from "./apiClient";
+
+/** The server's own bound on an answer, mirrored so the box can stop a learner writing past it
+ *  rather than letting the request come back 422 with the words they typed. */
+export const MAX_ANSWER_CHARS = 4000;
 import { detailOf } from "./apiErrors";
 
 /** What the director decided to do next — the plan's four moves, and only these four. */
