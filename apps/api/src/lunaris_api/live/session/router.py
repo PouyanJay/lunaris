@@ -7,6 +7,7 @@ from lunaris_live.session import (
     Session,
     SessionClosedError,
     SessionFormatError,
+    StaleAnswerError,
     TutorUnavailableError,
 )
 from lunaris_runtime.persistence import PersistenceError
@@ -87,7 +88,9 @@ async def answer_turn(
     """
     correlated = {"X-Session-Id": session_id}
     try:
-        session = await service.answer(session_id, payload.answer, owner_id=owner_id)
+        session = await service.answer(
+            session_id, payload.answer, answering_seq=payload.answering_seq, owner_id=owner_id
+        )
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found", headers=correlated
@@ -141,6 +144,15 @@ def _translate(exc: Exception, correlated: dict[str, str]) -> HTTPException | No
         return HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=_UNREADABLE,
+            headers=correlated,
+        )
+    if isinstance(exc, StaleAnswerError):
+        # The same 409 family as a closed session, and for the same reason: the request is well
+        # formed and the learner did nothing wrong — the question they answered is simply not the
+        # one in front of them any more. Re-reading the session is the recovery, not retrying.
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That question has already been answered. Reload to catch up.",
             headers=correlated,
         )
     if isinstance(exc, SessionClosedError):

@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from ..graph import ConceptGraph
 from .decide_move import decide_move
 from .protocols import ITutor
@@ -40,6 +42,8 @@ async def open_session(
     return Session(
         session_id=session_id,
         graph_id=graph.graph_id,
+        # Stamped once, here, at the only moment a session is born. Every later read carries it.
+        started_at=datetime.now(UTC),
         turns=[
             SessionTurn(
                 seq=clock.turn,

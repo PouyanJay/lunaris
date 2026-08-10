@@ -41,8 +41,8 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
         return DirectorMove(
             kind=MoveKind.CLOSE,
             reason=(
-                f"The session's {round(clock.budget_s / 60)} minutes are up. Stopping here so it "
-                "ends on a recap rather than mid-explanation."
+                f"The session's {round(clock.budget_s / 60)} minutes are up — better to end on a "
+                "recap than mid-explanation."
             ),
         )
 

@@ -6,6 +6,7 @@ const SESSION = {
   sessionId: "s1",
   graphId: "g1",
   status: "active",
+  startedAt: "2026-08-09T21:00:00Z",
   turns: [
     {
       seq: 1,
@@ -70,7 +71,7 @@ describe("liveSession — opening and resuming a session", () => {
     };
 
     const session = await withFetch(json(answered), () =>
-      answerTurn("", "s1", "It pulls things together."),
+      answerTurn("", "s1", "It pulls things together.", 1),
     );
 
     expect(session.turns).toHaveLength(2);

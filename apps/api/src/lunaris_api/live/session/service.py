@@ -1,4 +1,5 @@
 import asyncio
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import structlog
@@ -93,7 +94,9 @@ class LiveSessionService:
         logger.info("live.session.started", turn_count=len(session.turns))
         return session
 
-    async def answer(self, session_id: str, answer: str, *, owner_id: str | None = None) -> Session:
+    async def answer(
+        self, session_id: str, answer: str, *, answering_seq: int, owner_id: str | None = None
+    ) -> Session:
         """Score what the learner said, move what the system believes, and take the next turn.
 
         Two writes, not one transaction, and the order is chosen for how each half fails. The
@@ -104,6 +107,11 @@ class LiveSessionService:
         recorded it, and ``apply_evidence`` runs twice on one answer. That is the one thing the
         ``_PULL`` / ``_MASTERED`` relationship exists to prevent: two pulls clear the mastery bar,
         so a single lucky guess plus a storage blip would unlock a dependent concept.
+
+        The session's age is measured from the row rather than from anything held in this process:
+        a session outlives the request that opened it and every process that has served it since,
+        and a clock that reset on a reload would let a learner extend a bounded session forever by
+        refreshing.
 
         Raises ``FileNotFoundError`` (no such session for this learner), ``SessionClosedError``
         (the director already ended it), and ``GraderUnavailableError`` / ``TutorUnavailableError``
@@ -122,13 +130,25 @@ class LiveSessionService:
             graph,
             known,
             answer=answer,
+            answering_seq=answering_seq,
             grader=self._grader,
             tutor=self._tutor,
             run_id=run_id,
+            # Clamped: ``SessionClock.elapsed_s`` is ``ge=0``, and a host whose clock steps
+            # backwards between opening a session and answering in it (NTP correction, a container
+            # resync) would otherwise fail the turn on a validation error the router cannot
+            # translate. Same guard ``recall_of`` applies to its own elapsed count.
+            elapsed_s=max(0.0, (datetime.now(UTC) - session.started_at).total_seconds()),
             budget_s=self._session_budget_s,
         )
 
-        await asyncio.to_thread(self._sessions.save, outcome.session, owner_id=owner_id)
+        # Conditional on the session still being the length this request read. Two answers in
+        # flight at once both pass ``take_turn``'s check — they loaded the same head — and only the
+        # store can settle which one lands. The loser is a stale answer, which is what the learner
+        # is told (409), rather than a graded turn that quietly disappeared.
+        await asyncio.to_thread(
+            self._sessions.save, outcome.session, owner_id=owner_id, expect_turns=len(session.turns)
+        )
         await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
 
         logger.info(

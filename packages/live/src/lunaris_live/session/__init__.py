@@ -36,6 +36,7 @@ from .schema import (
 from .session_closed_error import SessionClosedError
 from .session_format_error import SessionFormatError
 from .stage_criterion import stage_criterion
+from .stale_answer_error import StaleAnswerError
 from .stub_grader import StubGrader
 from .stub_tutor import StubTutor
 from .supabase_knowledge_store import SupabaseKnowledgeStore
@@ -66,6 +67,7 @@ __all__ = [
     "SessionFormatError",
     "SessionStatus",
     "SessionTurn",
+    "StaleAnswerError",
     "StubGrader",
     "StubTutor",
     "SupabaseKnowledgeStore",

@@ -52,6 +52,10 @@ export interface LiveSession {
   sessionId: string;
   graphId: string;
   status: "active" | "closed";
+  /** When the session opened (ISO 8601, UTC). The session is bounded by wall time, so this is what
+   *  a surface needs to show how much of it is left — and it survives a reload because it is on the
+   *  row rather than in whichever process happened to serve the request. */
+  startedAt: string;
   turns: SessionTurn[];
 }
 
@@ -100,11 +104,15 @@ export async function loadSession(
 
 /** Answer the criterion the last turn staged. Resolves with the WHOLE session, not just the new
  *  turn: the answered turn changes too — it gains the learner's words and the verdict on them — and
- *  a surface stitching two shapes together is one that can disagree with the row behind it. */
+ *  a surface stitching two shapes together is one that can disagree with the row behind it.
+ *
+ *  `answeringSeq` names the turn being answered, so a double-submit is refused (409) rather than
+ *  graded against the question that replaced it. */
 export async function answerTurn(
   apiBaseUrl: string,
   sessionId: string,
   answer: string,
+  answeringSeq: number,
   signal?: AbortSignal,
 ): Promise<LiveSession> {
   return request(
@@ -113,7 +121,7 @@ export async function answerTurn(
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ answer }),
+      body: JSON.stringify({ answer, answeringSeq }),
       ...(signal ? { signal } : {}),
     },
     "Couldn't send that answer.",

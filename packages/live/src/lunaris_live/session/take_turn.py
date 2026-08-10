@@ -18,9 +18,15 @@ from .schema import (
 )
 from .session_closed_error import SessionClosedError
 from .stage_criterion import stage_criterion
+from .stale_answer_error import StaleAnswerError
 from .turn_outcome import TurnOutcome
 
 logger = structlog.get_logger()
+
+#: How a session signs off. Deliberately plain and deliberately not generated: a goodbye is the one
+#: turn with nothing to teach, and P2c replaces it with the real ceremony (recap, mastery delta,
+#: what to come back to) rather than with better prose.
+_CLOSING = "That's where we'll stop for today."
 
 
 async def take_turn(
@@ -29,9 +35,11 @@ async def take_turn(
     model: LearnerModel,
     *,
     answer: str,
+    answering_seq: int,
     grader: IGrader,
     tutor: ITutor,
     run_id: str,
+    elapsed_s: float,
     budget_s: float,
 ) -> TurnOutcome:
     """The loop, once: score what the learner just said, move the belief, decide what happens next.
@@ -46,7 +54,12 @@ async def take_turn(
     and the session still advances, because stranding somebody on a concept the map cannot yet
     check would be the map's problem made into the learner's.
 
-    Raises ``SessionClosedError`` on a session the director has already ended, and
+    ``answering_seq`` is the turn the learner was looking at when they answered. It is named rather
+    than assumed, because a duplicate submit would otherwise be graded against the question that
+    replaced it — recorded under a criterion it was never written for.
+
+    Raises ``StaleAnswerError`` when the named turn is not the one in front of the learner,
+    ``SessionClosedError`` on a session the director has already ended, and
     ``GraderUnavailableError`` / ``TutorUnavailableError`` when a turn could not be taken at all —
     in which case nothing has moved and the caller can offer the learner a retry that means
     something.
@@ -57,6 +70,11 @@ async def take_turn(
         raise ValueError(f"session {session.session_id} has no turn to answer")
 
     asked = session.turns[-1]
+    if answering_seq != asked.seq:
+        raise StaleAnswerError(
+            f"answer names turn {answering_seq}; {session.session_id} is on turn {asked.seq}"
+        )
+
     said = answer.strip()[:MAX_ANSWER_CHARS]
     graded = await _grade(asked, graph, said=said, grader=grader, run_id=run_id)
 
@@ -65,7 +83,7 @@ async def take_turn(
     model = _moved_by(model, asked, graded)
     turns = [*session.turns[:-1], asked.model_copy(update={"answer": said, "grade": graded})]
 
-    clock = SessionClock(turn=len(turns) + 1, elapsed_s=0.0, budget_s=budget_s)
+    clock = SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s)
     move = decide_move(graph, model, clock)
     if move.kind is MoveKind.CLOSE:
         return TurnOutcome(session=_closed(session, turns, move, run_id=run_id), model=model)
@@ -95,9 +113,17 @@ def _moved_by(model: LearnerModel, asked: SessionTurn, graded: TurnGrade | None)
 def _closed(
     session: Session, turns: list[SessionTurn], move: DirectorMove, *, run_id: str
 ) -> Session:
-    """The session, ended. The closing words are P2c's ceremony; what T5 owes is that a session
-    which has run out of material stops rather than looping, and that the last thing left in the
-    transcript is still the turn the learner answered."""
+    """The session, ended — and said out loud.
+
+    The goodbye is a turn rather than only a status, because ``status`` is a field and the
+    transcript is what the learner reads: a session that ended by going quiet is indistinguishable
+    from one that crashed. It is written deterministically rather than by the tutor, which teaches
+    concepts and is deliberately refused a CLOSE — a close is about the session, not a concept.
+
+    The recap, the mastery delta and the spaced-retrieval schedule are P2c's ceremony. What is owed
+    here is that a session which has run out of material or out of time stops rather than looping,
+    ends visibly, and says why.
+    """
     logger.info(
         "live.session.closed",
         run_id=run_id,
@@ -105,7 +131,15 @@ def _closed(
         reason=move.reason,
         turn_count=len(turns),
     )
-    return session.model_copy(update={"turns": turns, "status": SessionStatus.CLOSED})
+    goodbye = SessionTurn(
+        seq=len(turns) + 1,
+        move=move,
+        # The director's own reason, verbatim: the learner is owed the same explanation the trace
+        # gets, and two wordings of one decision is how the two come to disagree.
+        tutor=f"{_CLOSING} {move.reason}",
+        run_id=run_id,
+    )
+    return session.model_copy(update={"turns": [*turns, goodbye], "status": SessionStatus.CLOSED})
 
 
 async def _teach(

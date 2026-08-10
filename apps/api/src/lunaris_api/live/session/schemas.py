@@ -35,3 +35,7 @@ class AnswerRequest(BaseModel):
     )
 
     answer: str = Field(min_length=1, max_length=MAX_ANSWER_CHARS)
+    #: The turn the learner was looking at. Required, not inferred: a double-submit would otherwise
+    #: be graded against the question that replaced it, and the words would go into the record under
+    #: a criterion they were never written for.
+    answering_seq: int = Field(ge=1)

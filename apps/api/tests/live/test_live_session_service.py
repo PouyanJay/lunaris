@@ -11,6 +11,8 @@ is exactly what the first test would catch. The leak in the other direction — 
 another's map — is closed a layer earlier by the graph store, which refuses the read outright.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from lunaris_api.live.session.service import LiveSessionService
 from lunaris_live.graph import ConceptGraph, MemoryGraphStore, StubGraphCompiler
@@ -126,7 +128,13 @@ async def test_the_transcript_is_written_before_the_belief() -> None:
     ).start("g1", session_id="s1", owner_id="learner-1")
 
     class RefusesToWrite:
-        def save(self, session: Session, *, owner_id: str | None = None) -> None:
+        def save(
+            self,
+            session: Session,
+            *,
+            owner_id: str | None = None,
+            expect_turns: int | None = None,
+        ) -> None:
             raise PersistenceError("storage is having trouble")
 
         def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
@@ -143,7 +151,37 @@ async def test_the_transcript_is_written_before_the_belief() -> None:
 
     # Act
     with pytest.raises(PersistenceError):
-        await service.answer("s1", "I have no idea.", owner_id="learner-1")
+        await service.answer("s1", "I have no idea.", answering_seq=1, owner_id="learner-1")
 
     # Assert — the belief never landed, because the transcript never did.
     assert knowledge.load("g1", owner_id="learner-1").nodes == {}
+
+
+async def test_a_clock_that_stepped_backwards_does_not_break_a_turn() -> None:
+    """Hosts correct their clocks. If the machine answering a turn has stepped behind the one that
+    opened the session, the elapsed time is negative — and ``SessionClock.elapsed_s`` is ``ge=0``,
+    so the turn would fail on a validation error no handler translates and the learner would get a
+    bare 500 for something entirely on our side."""
+    # Arrange — a session stamped in the future, which is what a backward step looks like.
+    graph = await _map()
+    graphs, sessions, knowledge = MemoryGraphStore(), MemorySessionStore(), MemoryKnowledgeStore()
+    graphs.save(graph, owner_id="learner-1")
+    service = LiveSessionService(
+        graphs,
+        sessions,
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=1800.0,
+    )
+    opened = await service.start("g1", session_id="s1", owner_id="learner-1")
+    sessions.save(
+        opened.model_copy(update={"started_at": datetime.now(UTC) + timedelta(minutes=5)}),
+        owner_id="learner-1",
+    )
+
+    # Act
+    answered = await service.answer("s1", "An answer.", answering_seq=1, owner_id="learner-1")
+
+    # Assert — the turn happened, treated as no time having passed.
+    assert answered.turns[0].answer == "An answer."

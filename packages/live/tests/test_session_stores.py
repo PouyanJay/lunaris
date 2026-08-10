@@ -9,6 +9,7 @@ everything they got wrong. The store is the last thing between one learner's and
 the loop writes through the service-role client, which bypasses RLS.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -19,6 +20,7 @@ from lunaris_live.session import (
     Session,
     SessionFormatError,
     SessionTurn,
+    StaleAnswerError,
     SupabaseSessionStore,
 )
 from lunaris_runtime.persistence import PersistenceError
@@ -28,6 +30,7 @@ def _session(session_id: str = "s1") -> Session:
     return Session(
         session_id=session_id,
         graph_id="g1",
+        started_at=datetime(2026, 8, 9, 21, 0, tzinfo=UTC),
         turns=[
             SessionTurn(
                 seq=1,
@@ -179,6 +182,7 @@ def test_a_session_this_build_cannot_parse_is_not_an_outage() -> None:
         "sessionId": "s1",
         "graphId": "g1",
         "status": "active",
+        "startedAt": "2026-08-09T21:00:00Z",
         "turns": [
             {
                 "seq": 1,
@@ -188,6 +192,35 @@ def test_a_session_this_build_cannot_parse_is_not_an_outage() -> None:
         ],
     }
     store = SupabaseSessionStore(client=FakeSupabase({"payload": stale}))
+
+    # Act / Assert
+    with pytest.raises(SessionFormatError):
+        store.load("s1", owner_id=None)
+
+
+def test_a_session_nobody_can_date_is_unreadable_rather_than_re_clocked() -> None:
+    """``started_at`` is required and has no default, and this is why.
+
+    A default would run afresh on every parse, so a row stored before the field existed would be
+    stamped "now" on each read — handing a session one turn from its budget a whole new one, every
+    time it was reloaded. That is the unbounded session the budget exists to prevent, arriving
+    silently. Unreadable is the honest answer for a session nobody can date.
+    """
+    # Arrange — a session written before sessions were dated.
+    undated = {
+        "sessionId": "s1",
+        "graphId": "g1",
+        "status": "active",
+        "turns": [
+            {
+                "seq": 1,
+                "move": {"kind": "introduce", "nodeId": "a", "reason": "Opening concept."},
+                "tutor": "Let's start with A.",
+                "runId": "r1",
+            }
+        ],
+    }
+    store = SupabaseSessionStore(client=FakeSupabase({"payload": undated}))
 
     # Act / Assert
     with pytest.raises(SessionFormatError):
@@ -216,3 +249,52 @@ def test_a_format_failure_is_still_a_persistence_failure_to_anyone_not_looking_f
     # Act / Assert
     with pytest.raises(PersistenceError):
         store.load("s1", owner_id=None)
+
+
+# ── two answers at once ────────────────────────────────────────────────────────────────────────
+
+
+def test_a_write_conditioned_on_a_head_that_has_moved_is_refused() -> None:
+    """The concurrent double-submit, settled where it can actually be settled.
+
+    Two answers sent at the same moment both read a one-turn session, so both pass every check made
+    against the snapshot they hold — the staleness guard in ``take_turn`` sees identical, correct
+    values in each request. Only the store knows which one arrived second, and without this it
+    silently overwrites the first: a graded answer and the model calls behind it vanish from the
+    transcript, with nobody told.
+    """
+    # Arrange — the first answer has landed, so the stored session is two turns long.
+    store = MemorySessionStore()
+    store.save(_session(), owner_id="learner-1")
+    grown = _session().model_copy(
+        update={
+            "turns": [
+                *_session().turns,
+                SessionTurn(
+                    seq=2,
+                    move=DirectorMove(kind=MoveKind.RETRIEVE, node_id="a", reason="Coming back."),
+                    tutor="What happens when it doubles?",
+                    run_id="r2",
+                ),
+            ]
+        }
+    )
+    store.save(grown, owner_id="learner-1", expect_turns=1)
+
+    # Act / Assert — the second request still believes the session is one turn long.
+    with pytest.raises(StaleAnswerError):
+        store.save(grown, owner_id="learner-1", expect_turns=1)
+
+    # And the winner is untouched.
+    assert len(store.load("s1", owner_id="learner-1").turns) == 2
+
+
+def test_creating_a_session_is_the_one_unconditional_write() -> None:
+    """``expect_turns=None`` is not a loophole — it is the only moment there is nothing to compare
+    against, because the session did not exist a moment ago."""
+    # Arrange / Act
+    store = MemorySessionStore()
+    store.save(_session(), owner_id="learner-1")
+
+    # Assert
+    assert store.load("s1", owner_id="learner-1").session_id == "s1"

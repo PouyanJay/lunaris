@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import Field
 
 from ...graph.schema.base import LiveModel
@@ -19,4 +21,14 @@ class Session(LiveModel):
     session_id: str = Field(min_length=1, max_length=100)
     graph_id: str = Field(min_length=1, max_length=100)
     status: SessionStatus = SessionStatus.ACTIVE
+    #: When the session opened, in UTC. The budget is wall time (plan §6, AD9), and wall time is the
+    #: one thing a resumed session cannot recover from its own turns — so it is stamped here and
+    #: carried in the row rather than held in the process, which a reload would reset.
+    #:
+    #: Required, with no default, and that is the load-bearing part. A default would run afresh on
+    #: every parse, so a row stored before this field existed would be re-stamped "now" on each
+    #: read — handing a session that was one turn from its budget a whole new one, every time it
+    #: was reloaded. Unreadable is the honest answer for a session nobody can date: it surfaces as
+    #: ``SessionFormatError`` (a 500 that says so) rather than as an unbounded session.
+    started_at: datetime
     turns: list[SessionTurn] = Field(default_factory=list)

@@ -80,9 +80,11 @@ async def _answered(answer: str, *, model: LearnerModel | None = None):
         _graph(),
         model or LearnerModel(graph_id="g1"),
         answer=answer,
+        answering_seq=1,
         grader=StubGrader(),
         tutor=StubTutor(),
         run_id="r2",
+        elapsed_s=0.0,
         budget_s=_BUDGET_S,
     )
 
@@ -182,9 +184,11 @@ async def test_a_learner_who_keeps_missing_is_not_marched_onward() -> None:
         _graph(),
         first.model,
         answer="Still no idea.",
+        answering_seq=first.session.turns[-1].seq,
         grader=StubGrader(),
         tutor=StubTutor(),
         run_id="r3",
+        elapsed_s=0.0,
         budget_s=_BUDGET_S,
     )
 
@@ -220,18 +224,22 @@ async def test_a_map_with_nothing_left_to_teach_closes_rather_than_looping() -> 
             single,
             model,
             answer="I can explain Alpha: it is what Alpha is.",
+            answering_seq=session.turns[-1].seq,
             grader=StubGrader(),
             tutor=StubTutor(),
             run_id=f"r{index + 2}",
+            elapsed_s=0.0,
             budget_s=_BUDGET_S,
         )
         session, model = outcome.session, outcome.model
         if session.status is SessionStatus.CLOSED:
             break
 
-    # Assert — closed, and the last thing in the transcript is still the answered turn.
+    # Assert — closed, ending on the goodbye, with the answered turn still behind it (T6 makes the
+    # ending a turn the learner can read rather than a status change they cannot see).
     assert session.status is SessionStatus.CLOSED
-    assert session.turns[-1].answer is not None
+    assert session.turns[-1].move.kind is MoveKind.CLOSE
+    assert session.turns[-2].answer is not None
 
 
 # ── the tutor is told what it has already said ─────────────────────────────────────────────────
@@ -267,9 +275,11 @@ async def test_the_tutor_is_handed_what_it_already_said_about_this_concept() -> 
         _graph(),
         LearnerModel(graph_id="g1"),
         answer="No idea, sorry.",
+        answering_seq=1,
         grader=StubGrader(),
         tutor=tutor,
         run_id="r2",
+        elapsed_s=0.0,
         budget_s=_BUDGET_S,
     )
 
@@ -280,9 +290,11 @@ async def test_the_tutor_is_handed_what_it_already_said_about_this_concept() -> 
             _graph(),
             outcome.model,
             answer=reply,
+            answering_seq=outcome.session.turns[-1].seq,
             grader=StubGrader(),
             tutor=tutor,
             run_id=f"r{index + 3}",
+            elapsed_s=0.0,
             budget_s=_BUDGET_S,
         )
 
@@ -318,9 +330,11 @@ async def test_a_grader_that_cannot_answer_moves_nothing() -> None:
             _graph(),
             model,
             answer="A real attempt at an answer.",
+            answering_seq=session.turns[-1].seq,
             grader=BrokenGrader(),
             tutor=StubTutor(),
             run_id="r2",
+            elapsed_s=0.0,
             budget_s=_BUDGET_S,
         )
 
@@ -350,9 +364,11 @@ async def test_a_tutor_that_cannot_speak_mid_session_moves_nothing_either() -> N
             _graph(),
             model,
             answer="No idea, sorry.",
+            answering_seq=session.turns[-1].seq,
             grader=StubGrader(),
             tutor=SilentTutor(),
             run_id="r2",
+            elapsed_s=0.0,
             budget_s=_BUDGET_S,
         )
     assert model.nodes == {}
@@ -375,9 +391,11 @@ async def test_a_closed_session_does_not_take_another_turn() -> None:
             _graph(),
             LearnerModel(graph_id="g1"),
             answer="Anything.",
+            answering_seq=closed.turns[-1].seq,
             grader=StubGrader(),
             tutor=StubTutor(),
             run_id="r2",
+            elapsed_s=0.0,
             budget_s=_BUDGET_S,
         )
 
@@ -423,9 +441,11 @@ async def test_a_turn_that_asked_nothing_gradeable_still_moves_the_session_on() 
         sim_only,
         LearnerModel(graph_id="g1"),
         answer="I think it blows up.",
+        answering_seq=1,
         grader=StubGrader(),
         tutor=StubTutor(),
         run_id="r2",
+        elapsed_s=0.0,
         budget_s=_BUDGET_S,
     )
 

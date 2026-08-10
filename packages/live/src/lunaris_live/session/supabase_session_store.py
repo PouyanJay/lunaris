@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from .schema import Session
 from .session_format_error import SessionFormatError
+from .stale_answer_error import StaleAnswerError
 
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
@@ -50,7 +51,17 @@ class SupabaseSessionStore:
         return self._client
 
     @guard("live_sessions upsert")
-    def save(self, session: Session, *, owner_id: str | None = None) -> None:
+    def save(
+        self, session: Session, *, owner_id: str | None = None, expect_turns: int | None = None
+    ) -> None:
+        """Write the session's head, optionally only if it is still the one the caller read.
+
+        ``expect_turns`` turns this into a compare-and-set against ``turn_count``, which is why that
+        column was lifted out of the payload in the first place. Two answers submitted at once both
+        read the same head and both pass any in-memory staleness check; without the condition here
+        the second write silently overwrites the first, losing a graded answer and the model calls
+        that produced it. Postgres settles it: the second UPDATE matches no row.
+        """
         client = self._ensure_client()
         row: dict[str, object] = {
             "id": session.session_id,
@@ -63,7 +74,19 @@ class SupabaseSessionStore:
         }
         if owner_id is not None:
             row["user_id"] = owner_id
-        client.table(_TABLE).upsert(row, on_conflict="id").execute()  # type: ignore[attr-defined]
+
+        if expect_turns is None:
+            client.table(_TABLE).upsert(row, on_conflict="id").execute()  # type: ignore[attr-defined]
+            return
+
+        query = client.table(_TABLE).update(row).eq("id", session.session_id)  # type: ignore[attr-defined]
+        # Scoped both ways, like the read: the service-role client bypasses RLS, so an update that
+        # only matched on the id could rewrite another learner's session.
+        query = query.is_("user_id", None) if owner_id is None else query.eq("user_id", owner_id)
+        if not query.eq("turn_count", expect_turns).execute().data:
+            raise StaleAnswerError(
+                f"session {session.session_id} is no longer at {expect_turns} turns"
+            )
 
     @guard("live_sessions load")
     def load(self, session_id: str, *, owner_id: str | None = None) -> Session:

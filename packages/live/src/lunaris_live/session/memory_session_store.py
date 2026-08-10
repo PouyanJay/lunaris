@@ -1,4 +1,7 @@
+import threading
+
 from .schema import Session
+from .stale_answer_error import StaleAnswerError
 
 
 class MemorySessionStore:
@@ -13,10 +16,23 @@ class MemorySessionStore:
         # Kept parallel to the sessions so ``Session`` stays a clean wire contract with no owner
         # field on it — the same split the in-memory cost store uses.
         self._owners: dict[str, str | None] = {}
+        # The service hops these calls onto worker threads, so two answers in flight really are two
+        # threads. The lock makes the check and the write one step; without it the compare-and-set
+        # below is a race with a smaller window rather than a guarantee.
+        self._lock = threading.Lock()
 
-    def save(self, session: Session, *, owner_id: str | None = None) -> None:
-        self._sessions[session.session_id] = session
-        self._owners[session.session_id] = owner_id
+    def save(
+        self, session: Session, *, owner_id: str | None = None, expect_turns: int | None = None
+    ) -> None:
+        with self._lock:
+            if expect_turns is not None:
+                stored = self._sessions.get(session.session_id)
+                if stored is not None and len(stored.turns) != expect_turns:
+                    raise StaleAnswerError(
+                        f"session {session.session_id} has moved on to {len(stored.turns)} turns"
+                    )
+            self._sessions[session.session_id] = session
+            self._owners[session.session_id] = owner_id
 
     def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         session = self._sessions.get(session_id)

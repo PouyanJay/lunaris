@@ -109,6 +109,22 @@ async def client_with_an_unreadable_session(tmp_path: Path) -> AsyncIterator[htt
 
 
 @pytest.fixture
+async def client_with_no_time_left(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
+    """The same app with a session budget already spent by the time anyone answers."""
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(),
+        env_file=tmp_path / ".env",
+        live_session_budget_s=0.001,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+        yield http_client
+
+
+@pytest.fixture
 async def client_with_a_broken_grader(tmp_path: Path) -> AsyncIterator[httpx.AsyncClient]:
     """The same app with a grader that cannot score — the provider being down, mid-session."""
 
@@ -269,8 +285,14 @@ async def test_a_tutor_that_cannot_speak_leaves_no_session_behind(
     assert resumed.status_code == 404
 
 
-async def _answer(client: httpx.AsyncClient, session_id: str, answer: str) -> httpx.Response:
-    return await client.post(f"/api/live/sessions/{session_id}/turns", json={"answer": answer})
+async def _answer(
+    client: httpx.AsyncClient, session_id: str, answer: str, *, seq: int = 1
+) -> httpx.Response:
+    """Answer the turn the learner is looking at. The seq is part of the contract (T6): a duplicate
+    submit must not be graded against the question that replaced the one it was written for."""
+    return await client.post(
+        f"/api/live/sessions/{session_id}/turns", json={"answer": answer, "answeringSeq": seq}
+    )
 
 
 async def test_answering_takes_the_session_to_its_next_turn(client: httpx.AsyncClient) -> None:
@@ -304,8 +326,11 @@ async def test_what_a_learner_demonstrated_outlives_the_session(client: httpx.As
     opened = (await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})).json()
     session_id, first_concept = opened["sessionId"], opened["turns"][0]["move"]["nodeId"]
     statement = opened["turns"][0]["criterion"]["statement"]
+    answered = opened
     for _ in range(3):
-        answered = (await _answer(client, session_id, statement)).json()
+        answered = (
+            await _answer(client, session_id, statement, seq=answered["turns"][-1]["seq"])
+        ).json()
         if answered["status"] != "active":
             break
 
@@ -315,6 +340,33 @@ async def test_what_a_learner_demonstrated_outlives_the_session(client: httpx.As
     # Assert — it does not start over on the concept they just demonstrated.
     assert reopened["sessionId"] != session_id
     assert reopened["turns"][0]["move"]["nodeId"] != first_concept
+
+
+async def test_a_session_out_of_time_says_goodbye_rather_than_going_quiet(
+    client_with_no_time_left: httpx.AsyncClient,
+) -> None:
+    """The clock is wall time measured from the row (plan §6, AD9), so it is real across requests
+    and survives a reload — before T6 it was hardcoded to zero and the budget was a setting nothing
+    could reach. And the ending is a turn: ``status`` is a field, but the transcript is what the
+    learner reads, and a session that stopped talking is indistinguishable from one that crashed."""
+    # Arrange
+    graph = await _graph(client_with_no_time_left)
+    opened = (
+        await client_with_no_time_left.post(
+            "/api/live/sessions", json={"graphId": graph["graphId"]}
+        )
+    ).json()
+
+    # Act
+    session = (await _answer(client_with_no_time_left, opened["sessionId"], "Anything.")).json()
+
+    # Assert — closed, with a goodbye that says why, and the answered turn still behind it.
+    assert session["status"] == "closed"
+    closing = session["turns"][-1]
+    assert closing["move"]["kind"] == "close"
+    assert closing["tutor"].strip()
+    assert "minutes are up" in closing["tutor"]
+    assert session["turns"][-2]["answer"] == "Anything."
 
 
 async def test_a_session_that_has_closed_does_not_take_another_answer(
@@ -328,7 +380,8 @@ async def test_a_session_that_has_closed_does_not_take_another_answer(
     session_id = opened["sessionId"]
     session = opened
     for _ in range(12):
-        session = (await _answer(client, session_id, session["turns"][-1]["tutor"])).json()
+        head = session["turns"][-1]
+        session = (await _answer(client, session_id, head["tutor"], seq=head["seq"])).json()
         if session["status"] == "closed":
             break
     assert session["status"] == "closed", "the director never ran out of material"
@@ -338,6 +391,40 @@ async def test_a_session_that_has_closed_does_not_take_another_answer(
 
     # Assert
     assert response.status_code == 409, response.text
+
+
+async def test_an_answer_to_a_question_that_has_moved_on_is_refused(
+    client: httpx.AsyncClient,
+) -> None:
+    """A learner pressing send twice, or a second tab. Without the seq the duplicate is graded
+    against the question that replaced the one they were answering — the words land in the record
+    under a criterion they were never written for, and the belief that moves is the wrong one."""
+    # Arrange — one answer given, so the session is on turn 2.
+    graph = await _graph(client)
+    opened = (await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})).json()
+    await _answer(client, opened["sessionId"], "First attempt.", seq=1)
+
+    # Act — the same submit arriving again.
+    response = await _answer(client, opened["sessionId"], "First attempt.", seq=1)
+
+    # Assert — a conflict with the session's state, not with the learner: reloading is the recovery.
+    assert response.status_code == 409, response.text
+    resumed = (await client.get(f"/api/live/sessions/{opened['sessionId']}")).json()
+    assert len(resumed["turns"]) == 2, "the refused answer must not have taken a turn"
+
+
+async def test_an_answer_that_names_no_turn_is_refused(client: httpx.AsyncClient) -> None:
+    """The seq is part of the contract, not an optimisation a client may skip: omitted, the server
+    would have to guess which question was being answered, which is the guess this prevents."""
+    # Arrange
+    graph = await _graph(client)
+    opened = (await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})).json()
+
+    # Act / Assert
+    response = await client.post(
+        f"/api/live/sessions/{opened['sessionId']}/turns", json={"answer": "Something."}
+    )
+    assert response.status_code == 422
 
 
 async def test_an_answer_with_nothing_in_it_is_refused_at_the_door(
