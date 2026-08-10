@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 from collections.abc import Iterable
 from typing import Any
@@ -8,6 +7,7 @@ import structlog
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 from pydantic import ValidationError
 
+from ..model_json import parse_json_object
 from .assembly import assemble
 from .graph_compilation_error import GraphCompilationError
 from .protocols import ICompileProgressSink
@@ -243,7 +243,7 @@ class ClaudeGraphCompiler:
                 known="\n".join(f"- {node.id}: {node.name}" for node in graph.nodes),
             )
         )
-        payload = _parse_json_object(response)
+        payload = parse_json_object(response)
         raw = payload.get("concepts") if payload else None
         raw = raw if isinstance(raw, list) else []
         # Anything already on the map is dropped rather than merged: honouring a restatement is how
@@ -259,7 +259,7 @@ class ClaudeGraphCompiler:
         response = await self._ask(
             _DECOMPOSE_PROMPT.format(topic=topic), max_tokens=_DECOMPOSE_TOKENS
         )
-        payload = _parse_json_object(response)
+        payload = parse_json_object(response)
         raw = payload.get("concepts") if payload else None
         raw = raw if isinstance(raw, list) else []
         concepts = _distinct(concept for concept in raw if _is_usable(concept))
@@ -330,7 +330,7 @@ class ClaudeGraphCompiler:
             )
             return known
 
-        payload = _parse_json_object(response)
+        payload = parse_json_object(response)
         if payload is None:
             logger.warning("live.graph.spec_unparseable", run_id=run_id, concept=known.id)
             return known
@@ -413,27 +413,6 @@ def _identity_of(concept: dict[str, Any]) -> ConceptNode:
         requires=[str(r) for r in concept.get("requires", []) if isinstance(r, str)],
         provenance=NodeProvenance.COMPILED,
     )
-
-
-def _parse_json_object(text: str) -> dict[str, Any] | None:
-    """The JSON object in a model response, or ``None``.
-
-    Models wrap JSON in prose and fences however the mood takes them, and a re-ask costs a call and
-    seconds we do not have. So this normalises deterministically rather than repairing by prompt.
-
-    It decodes forward from the first brace rather than slicing to the last one: trailing prose can
-    easily contain a stray brace, and a fence marker can appear *inside* a string value the model
-    wrote. Reading one well-formed object and ignoring whatever follows is both more forgiving and
-    incapable of mangling the content it accepts.
-    """
-    start = text.find("{")
-    if start == -1:
-        return None
-    try:
-        parsed, _ = json.JSONDecoder().raw_decode(text[start:])
-    except json.JSONDecodeError:
-        return None
-    return parsed if isinstance(parsed, dict) else None
 
 
 def _parse_aliases(raw: object) -> list[str]:

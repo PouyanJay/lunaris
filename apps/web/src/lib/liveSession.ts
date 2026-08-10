@@ -15,6 +15,20 @@ export interface DirectorMove {
   reason: string;
 }
 
+/** What one answer was judged to show, and why. Three verdicts and not a score: the grader marks
+ *  one answer against one explicit do-statement, and a number would claim a precision it lacks. */
+export interface TurnGrade {
+  kind: "met" | "partial" | "not_met";
+  reason: string;
+}
+
+/** The one thing the learner was asked to DO on this turn — the bar their answer is marked against.
+ *  Copied onto the turn server-side, so a transcript cannot come to misreport what was asked. */
+export interface StagedCriterion {
+  kind: "predict" | "manipulate" | "explain";
+  statement: string;
+}
+
 /** One beat of the loop: what the director chose, and what the tutor said about it. */
 export interface SessionTurn {
   /** 1-based, monotonic — the order the learner lived it. */
@@ -24,6 +38,13 @@ export interface SessionTurn {
   /** The run that produced this turn — what a learner reporting a problem can name, and what ties
    *  a line of transcript to the model calls behind it. Not rendered; carried. */
   runId: string;
+  /** What the learner was asked to demonstrate, or null when the concept has nothing a text
+   *  session can check (its criteria need a simulator — Phase 3). */
+  criterion: StagedCriterion | null;
+  /** What they said. Null on the turn in front of them, which is what makes it the open one. */
+  answer: string | null;
+  /** What that answer was judged to show. Null when nothing was staged to judge it against. */
+  grade: TurnGrade | null;
 }
 
 /** A learner's run at a concept graph. Persisted server-side, so a reload resumes it. */
@@ -74,6 +95,28 @@ export async function loadSession(
     `${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}`,
     signal ? { signal } : {},
     "Couldn't reopen that session.",
+  );
+}
+
+/** Answer the criterion the last turn staged. Resolves with the WHOLE session, not just the new
+ *  turn: the answered turn changes too — it gains the learner's words and the verdict on them — and
+ *  a surface stitching two shapes together is one that can disagree with the row behind it. */
+export async function answerTurn(
+  apiBaseUrl: string,
+  sessionId: string,
+  answer: string,
+  signal?: AbortSignal,
+): Promise<LiveSession> {
+  return request(
+    apiBaseUrl,
+    `${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}/turns`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ answer }),
+      ...(signal ? { signal } : {}),
+    },
+    "Couldn't send that answer.",
   );
 }
 

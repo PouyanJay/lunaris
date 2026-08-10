@@ -4,12 +4,14 @@ from uuid import uuid4
 import structlog
 from lunaris_live.graph import IGraphStore
 from lunaris_live.session import (
+    IGrader,
     IKnowledgeStore,
     ISessionStore,
     ITutor,
     Session,
     SessionClock,
     open_session,
+    take_turn,
 )
 from lunaris_runtime.logging import bind_request_id, bind_run_id
 
@@ -35,12 +37,14 @@ class LiveSessionService:
         *,
         knowledge: IKnowledgeStore,
         tutor: ITutor,
+        grader: IGrader,
         session_budget_s: float,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
         self._knowledge = knowledge
         self._tutor = tutor
+        self._grader = grader
         self._session_budget_s = session_budget_s
 
     async def start(
@@ -88,6 +92,51 @@ class LiveSessionService:
         # proves propagation rather than proving they were threaded through by hand.
         logger.info("live.session.started", turn_count=len(session.turns))
         return session
+
+    async def answer(self, session_id: str, answer: str, *, owner_id: str | None = None) -> Session:
+        """Score what the learner said, move what the system believes, and take the next turn.
+
+        Two writes, not one transaction, and the order is chosen for how each half fails. The
+        transcript goes first and the belief second, so a crash between them under-counts evidence
+        rather than over-counting it: the learner sees a graded turn whose belief did not move, and
+        the concept simply comes round again. The other order looks safer and is not — the response
+        is a "try again" (503), a retry re-grades the same answer against a transcript that never
+        recorded it, and ``apply_evidence`` runs twice on one answer. That is the one thing the
+        ``_PULL`` / ``_MASTERED`` relationship exists to prevent: two pulls clear the mastery bar,
+        so a single lucky guess plus a storage blip would unlock a dependent concept.
+
+        Raises ``FileNotFoundError`` (no such session for this learner), ``SessionClosedError``
+        (the director already ended it), and ``GraderUnavailableError`` / ``TutorUnavailableError``
+        when the turn could not be taken at all — nothing has moved in that case, so a retry means
+        exactly what the learner expects it to.
+        """
+        run_id = uuid4().hex
+        bind_run_id(run_id, session_id=session_id)
+
+        session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
+        graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
+        known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
+
+        outcome = await take_turn(
+            session,
+            graph,
+            known,
+            answer=answer,
+            grader=self._grader,
+            tutor=self._tutor,
+            run_id=run_id,
+            budget_s=self._session_budget_s,
+        )
+
+        await asyncio.to_thread(self._sessions.save, outcome.session, owner_id=owner_id)
+        await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
+
+        logger.info(
+            "live.session.answered",
+            turn_count=len(outcome.session.turns),
+            status=outcome.session.status.value,
+        )
+        return outcome.session
 
     async def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Re-read a session so a reloaded tab lands back in it (U2).

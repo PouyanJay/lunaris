@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { loadSession, LiveSessionError, startSession } from "./liveSession";
+import { answerTurn, loadSession, LiveSessionError, startSession } from "./liveSession";
 
 const SESSION = {
   sessionId: "s1",
@@ -12,6 +12,9 @@ const SESSION = {
       move: { kind: "introduce", nodeId: "a", reason: "Opening concept." },
       tutor: "Let's start with Gravity.",
       runId: "r1",
+      criterion: { kind: "explain", statement: "Explain gravity in your own words." },
+      answer: null,
+      grade: null,
     },
   ],
 };
@@ -41,6 +44,37 @@ describe("liveSession — opening and resuming a session", () => {
     const [first] = session.turns;
     expect(first?.move.kind).toBe("introduce");
     expect(first?.move.reason).toBe("Opening concept.");
+  });
+
+  it("sends an answer and gets the session back with the turn it produced", async () => {
+    // The answered turn changes as well as gaining a successor, which is why the whole session
+    // comes back rather than just the new turn.
+    const answered = {
+      ...SESSION,
+      turns: [
+        {
+          ...SESSION.turns[0],
+          answer: "It pulls things together.",
+          grade: { kind: "partial", reason: "Nearly." },
+        },
+        {
+          seq: 2,
+          move: { kind: "retrieve", nodeId: "a", reason: "Coming back." },
+          tutor: "Once more.",
+          runId: "r2",
+          criterion: null,
+          answer: null,
+          grade: null,
+        },
+      ],
+    };
+
+    const session = await withFetch(json(answered), () =>
+      answerTurn("", "s1", "It pulls things together."),
+    );
+
+    expect(session.turns).toHaveLength(2);
+    expect(session.turns[0]?.grade?.kind).toBe("partial");
   });
 
   it("resumes the session a reloaded tab was in", async () => {

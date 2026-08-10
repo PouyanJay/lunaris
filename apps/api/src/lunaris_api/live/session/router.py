@@ -2,12 +2,18 @@ from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, HTTPException, Response, status
-from lunaris_live.session import Session, SessionFormatError, TutorUnavailableError
+from lunaris_live.session import (
+    GraderUnavailableError,
+    Session,
+    SessionClosedError,
+    SessionFormatError,
+    TutorUnavailableError,
+)
 from lunaris_runtime.persistence import PersistenceError
 
 from ...dependencies import OptionalUserIdDep
 from .dependencies import LiveSessionServiceDep
-from .schemas import SessionStartRequest
+from .schemas import AnswerRequest, SessionStartRequest
 
 logger = structlog.get_logger()
 
@@ -19,6 +25,10 @@ _UNAVAILABLE = "Live is having trouble reaching its storage. Try again shortly."
 #: means their session did not open, the other means it may not have been saved. Both end, so both
 #: are worth retrying — which is why this is a 503 rather than a session opened with nothing in it.
 _TUTOR_UNAVAILABLE = "Live's tutor could not reach its model. Try again shortly."
+
+#: The grader is a different outage from the tutor, and the learner's next step differs: their
+#: answer was not scored, so nothing they said has been lost or held against them.
+_GRADER_UNAVAILABLE = "Live could not score that answer just now. Try sending it again."
 
 #: A row this build cannot parse never becomes readable by waiting, so it must not read as an
 #: outage: "try again" on a permanently unreadable session is an invitation to reload forever.
@@ -61,6 +71,36 @@ async def start_session(
         raise
 
 
+@router.post("/{session_id}/turns", response_model=Session)
+async def answer_turn(
+    session_id: str,
+    payload: AnswerRequest,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> Session:
+    """Answer the criterion the last turn staged, and get the session back with its next turn.
+
+    The whole session comes back rather than just the new turn: the answered turn changes too — it
+    gains the learner's words and the verdict on them — and a surface patching two shapes together
+    is a surface that can disagree with the row behind it.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        session = await service.answer(session_id, payload.answer, owner_id=owner_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found", headers=correlated
+        ) from exc
+    except Exception as exc:
+        logger.warning("live.session.answer_failed", session_id=session_id, exc_info=True)
+        if (translated := _translate(exc, correlated)) is not None:
+            raise translated from exc
+        raise
+    response.headers["X-Session-Id"] = session_id
+    return session
+
+
 @router.get("/{session_id}", response_model=Session)
 async def read_session(
     session_id: str,
@@ -92,7 +132,7 @@ async def read_session(
 def _translate(exc: Exception, correlated: dict[str, str]) -> HTTPException | None:
     """The HTTP answer to a failure a learner could plausibly act on, or ``None`` to let it fly.
 
-    One place, because the two entry points fail in the same ways and drifting apart would mean a
+    One place, because every entry point fails in the same ways and drifting apart would mean a
     learner learning what "try again" means from whichever endpoint they hit first. Ordered
     deliberately: ``SessionFormatError`` IS a ``PersistenceError``, and reading as a retryable
     outage is exactly the mistake it exists to prevent.
@@ -101,6 +141,21 @@ def _translate(exc: Exception, correlated: dict[str, str]) -> HTTPException | No
         return HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=_UNREADABLE,
+            headers=correlated,
+        )
+    if isinstance(exc, SessionClosedError):
+        # The request is well formed and the session is real; it is the session's *state* that
+        # refuses. A learner with a stale tab should be told it ended, not that they did something
+        # wrong and not that it might work on a retry.
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This session has already ended.",
+            headers=correlated,
+        )
+    if isinstance(exc, GraderUnavailableError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_GRADER_UNAVAILABLE,
             headers=correlated,
         )
     if isinstance(exc, TutorUnavailableError):

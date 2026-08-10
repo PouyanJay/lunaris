@@ -1,6 +1,6 @@
 from ..graph import ConceptGraph, ConceptNode
 from .recall_of import recall_of
-from .schema import DirectorMove, EvidenceKind, LearnerModel, MoveKind, SessionClock
+from .schema import DirectorMove, LearnerModel, MoveKind, SessionClock
 
 #: Recall at or above this counts as "the learner has this". It gates introductions, so it is the
 #: number that decides whether progress through the map is earned or waved through. Set above what a
@@ -66,13 +66,20 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
             ),
         )
 
-    if (next_up := _frontier(graph, model, clock)) is not None:
+    if (next_up := _frontier(graph, model)) is not None:
         return DirectorMove(
             kind=MoveKind.INTRODUCE,
             node_id=next_up.id,
+            # Two readings of one rule, because the trace is read by a human deciding whether the
+            # policy is any good. A second pass over a concept the learner has already met is not
+            # "the next thing this map can teach", and a reason that said so would be the one part
+            # of the record that cannot be checked quietly telling them something untrue.
             reason=(
-                f"Everything {next_up.name} depends on has been demonstrated, so it is the next "
-                "thing this map can teach."
+                f"{next_up.name} has been started but not yet shown, so the session stays with it "
+                "rather than moving on."
+                if next_up.id in model.nodes
+                else f"Everything {next_up.name} depends on has been demonstrated, so it is the "
+                "next thing this map can teach."
             ),
         )
 
@@ -85,18 +92,24 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
     )
 
 
-def _knows(model: LearnerModel, node_id: str, clock: SessionClock) -> bool:
-    """Whether the learner may be built on for ``node_id``: believed, now, at this turn.
+def _demonstrated(model: LearnerModel, node_id: str) -> bool:
+    """Whether the learner has ever shown this concept — the belief at its last evidence, undecayed.
+
+    Deliberately NOT the decayed recall, and running a whole session is what settled it. Recall
+    dips below ``_MASTERED`` long before it falls under ``_DECAYED``, so a concept sitting in that
+    band was neither "known" (the frontier offered it again) nor faded enough to retrieve — and the
+    director taught it from scratch to somebody who had just proved it. Judging *what was earned*
+    on the undecayed belief and *what has faded* on the decayed one keeps both rules honest, and it
+    makes an unlock permanent: progress through the map is earned once, not re-earned every turn.
 
     One threshold and no separate evidence-count guard, because the threshold already implies one.
     A single piece of evidence moves the belief by ``_PULL`` (0.45), which is below ``_MASTERED``
     (0.6) by construction — so mastery necessarily takes more than one answer, and a guard saying so
     again would be a second place to keep the same rule true. That relationship is what
-    ``test_one_right_answer_does_not_unlock_the_next_concept`` pins: raise the pull past the
-    threshold and it fails, which is the honest way to hold this invariant.
+    ``test_one_right_answer_does_not_unlock_the_next_concept`` pins.
     """
     known = model.nodes.get(node_id)
-    return known is not None and recall_of(model, node_id, at_turn=clock.turn) >= _MASTERED
+    return known is not None and known.estimate >= _MASTERED
 
 
 def _stuck_on(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
@@ -132,8 +145,12 @@ def _most_decayed(
     return min(due, key=lambda pair: pair[0])[1] if due else None
 
 
-def _frontier(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -> ConceptNode | None:
+def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
     """The next concept worth teaching: not yet known, everything it needs already demonstrated.
+
+    "Not yet known" is read off the undecayed belief, so a concept the learner has demonstrated is
+    never introduced a second time: whatever else the session does with it, teaching it again from
+    scratch is the one move that tells somebody their work did not count.
 
     Walked in the map's own teaching order so two sessions on one map agree about what comes next,
     and so the choice inherits Phase 1's ordering rather than inventing a second one.
@@ -149,13 +166,8 @@ def _frontier(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -> 
     by_id = {node.id: node for node in graph.nodes}
     for node_id in graph.topo_order:
         node = by_id.get(node_id)
-        if node is None or _knows(model, node_id, clock):
+        if node is None or _demonstrated(model, node_id):
             continue
-        if all(_knows(model, required, clock) for required in node.requires):
+        if all(_demonstrated(model, required) for required in node.requires):
             return node
     return None
-
-
-#: Re-exported for the grader (T5), which needs the same notion of "met" the director gates on —
-#: two definitions of mastery would let a session award progress the policy refuses to act on.
-MASTERY_EVIDENCE = EvidenceKind.MET

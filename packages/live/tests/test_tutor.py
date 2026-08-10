@@ -211,6 +211,128 @@ async def test_closing_is_not_something_the_tutor_is_asked_to_teach() -> None:
         await _taught(ScriptedModel(), move=DirectorMove(kind=MoveKind.CLOSE, reason="Time is up."))
 
 
+# ── not saying the same thing twice ────────────────────────────────────────────────────────────
+
+
+async def test_the_tutor_is_told_what_it_has_already_said_about_this_concept() -> None:
+    """Found by running a whole session (T5): the second turn on a concept came back as the first
+    turn's words, verbatim. "Come at it a different way" is an instruction no tutor can follow
+    without knowing which way it already came at it — the remediation prompt was asking for
+    something the tutor had no way to do."""
+    # Arrange
+    model = ScriptedModel()
+    first = "Picture the loss as a hillside you are standing on."
+
+    # Act
+    await ClaudeTutor("m", client=model).teach(
+        _move(MoveKind.REMEDIATE),
+        _node(),
+        topic="How neural networks learn",
+        already_said=[first],
+        run_id="r1",
+    )
+
+    # Assert — the words themselves, and the prohibition that makes carrying them worth anything.
+    prompt = model.prompts[0]
+    assert first in prompt
+    assert "do not re-use its analogy" in prompt.lower()
+
+
+async def test_a_first_turn_on_a_concept_is_not_told_to_avoid_anything() -> None:
+    """An empty history must not become an instruction about nothing — a tutor told not to repeat
+    itself before it has said anything is being handed a puzzle instead of a concept."""
+    # Arrange
+    model = ScriptedModel()
+
+    # Act
+    await _taught(model)
+
+    # Assert
+    assert "already said" not in model.prompts[0].lower()
+
+
+async def test_the_stub_does_not_repeat_itself_on_a_second_pass_either() -> None:
+    """The offline path has to be able to show it, or a surface built and reviewed against the stub
+    would pass over a tutor that says one thing forever."""
+    # Arrange
+    tutor = StubTutor()
+    first = await tutor.teach(_move(), _node(), topic="A subject", run_id="r1")
+
+    # Act
+    second = await tutor.teach(
+        _move(MoveKind.REMEDIATE),
+        _node(),
+        topic="A subject",
+        already_said=[first],
+        run_id="r2",
+    )
+
+    # Assert
+    assert second != first
+    assert second.startswith("Another way to see it.")
+
+
+# ── staging what the learner will be marked on ─────────────────────────────────────────────────
+
+
+async def test_the_turn_ends_by_asking_for_the_criterion_that_will_be_graded() -> None:
+    """U1's mechanism: the tutor stages one of the concept's do-statements, the learner answers in
+    prose, and a *separate* grader scores that answer against that same statement. If the tutor
+    ends on a question of its own devising, the grader marks an answer to a question nobody
+    recorded — and the belief that moves is about something else entirely."""
+    # Arrange
+    model = ScriptedModel()
+    criterion = MasteryCriterion(
+        kind=MasteryCriterionKind.PREDICT,
+        statement="Say which way a weight should move to lower the loss.",
+    )
+
+    # Act
+    await ClaudeTutor("m", client=model).teach(
+        _move(), _node(), topic="How neural networks learn", criterion=criterion, run_id="r1"
+    )
+
+    # Assert — the statement verbatim, and the instruction that makes it the closing question.
+    prompt = model.prompts[0]
+    assert criterion.statement in prompt
+    assert "end by asking them to do exactly this" in prompt.lower()
+
+
+async def test_a_concept_with_nothing_checkable_still_ends_somewhere() -> None:
+    """Every criterion needing a simulator (Phase 3) is a real state: the concept can be taught
+    here and cannot be checked here. The turn still has to end on something a learner can reply to,
+    and nothing they say can move a belief."""
+    # Arrange
+    model = ScriptedModel()
+
+    # Act
+    await ClaudeTutor("m", client=model).teach(
+        _move(), _node(), topic="How neural networks learn", criterion=None, run_id="r1"
+    )
+
+    # Assert
+    prompt = model.prompts[0].lower()
+    assert "end by asking them to do exactly this" not in prompt
+    assert "question that makes them think" in prompt
+
+
+async def test_the_stub_asks_the_staged_criterion_too() -> None:
+    """The offline path has to put a real question in front of the learner, or nothing downstream —
+    the grader, the belief, the director's next move — can be exercised without a provider."""
+    # Arrange
+    criterion = MasteryCriterion(
+        kind=MasteryCriterionKind.EXPLAIN, statement="Explain the gradient in your own words."
+    )
+
+    # Act
+    said = await StubTutor().teach(
+        _move(), _node(), topic="How neural networks learn", criterion=criterion, run_id="r1"
+    )
+
+    # Assert
+    assert criterion.statement in said
+
+
 # ── failing honestly ───────────────────────────────────────────────────────────────────────────
 
 

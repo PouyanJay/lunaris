@@ -7,7 +7,7 @@ tutor — behind the same entry point, so nothing above has to know a session go
 """
 
 import pytest
-from lunaris_live.graph import ConceptGraph, ConceptNode
+from lunaris_live.graph import ConceptGraph, ConceptNode, MasteryCriterion
 from lunaris_live.session import (
     DirectorMove,
     EvidenceKind,
@@ -50,7 +50,15 @@ class SpyTutor:
     def __init__(self) -> None:
         self.calls: list[tuple[DirectorMove, ConceptNode, str, str]] = []
 
-    async def teach(self, move: DirectorMove, node: ConceptNode, *, topic: str, run_id: str) -> str:
+    async def teach(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        run_id: str,
+    ) -> str:
         self.calls.append((move, node, topic, run_id))
         return f"Teaching {node.name}."
 

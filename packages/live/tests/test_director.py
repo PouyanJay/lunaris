@@ -21,6 +21,7 @@ from lunaris_live.session import (
     SessionClock,
     apply_evidence,
     decide_move,
+    recall_of,
 )
 
 
@@ -108,6 +109,22 @@ def test_one_right_answer_does_not_unlock_the_next_concept() -> None:
     assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "a")
 
 
+def test_the_trace_does_not_call_a_second_pass_a_first_one() -> None:
+    """The reason is the audit trail (plan §7), and the part nobody can check against anything
+    else. A director reporting "the next thing this map can teach" while going back over a concept
+    the learner has already met would be lying in the only record of its own judgement."""
+    # Arrange — one right answer: not enough for mastery, so the session stays on "a".
+    model = apply_evidence(LearnerModel(graph_id="g1"), "a", EvidenceKind.MET, at_turn=1)
+
+    # Act
+    move = decide_move(_graph(), model, SessionClock(turn=2, elapsed_s=30.0, budget_s=1800.0))
+
+    # Assert
+    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "a")
+    assert "next thing this map can teach" not in move.reason
+    assert "not yet shown" in move.reason
+
+
 # ── remediating ───────────────────────────────────────────────────────────────────────────────
 
 
@@ -184,6 +201,43 @@ def test_a_freshly_demonstrated_concept_is_not_retrieved() -> None:
 
     # Assert
     assert move.kind is not MoveKind.RETRIEVE
+
+
+def test_a_concept_already_demonstrated_is_never_introduced_again() -> None:
+    """Found by running a whole session rather than by reading the rules (T5).
+
+    Recall slips under ``_MASTERED`` long before it falls under ``_DECAYED``, and a concept sitting
+    in that band used to be neither known (so the frontier offered it) nor faded enough to retrieve
+    — so the director taught it again from the beginning, to a learner who had just proved it. The
+    fix is that what was *earned* is judged on the undecayed belief; only what has *faded* is judged
+    on recall.
+    """
+    # Arrange — "a" mastered, then far enough on that its recall has slipped below the mastery bar
+    # but not yet far enough to be due for retrieval.
+    model = _mastered(LearnerModel(graph_id="g1"), "a")
+    clock = SessionClock(turn=14, elapsed_s=300.0, budget_s=1800.0)
+    assert 0.45 <= recall_of(model, "a", at_turn=clock.turn) < 0.6, "the band this test is about"
+
+    # Act
+    move = decide_move(_graph(), model, clock)
+
+    # Assert — on to the untouched root instead.
+    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "d")
+
+
+def test_a_faded_prerequisite_does_not_lock_a_learner_out_of_what_they_earned() -> None:
+    """The other half: an unlock is earned once. If a prerequisite's *decayed* recall gated the
+    frontier, a learner would lose access to material they had already opened simply by spending
+    turns elsewhere — and with nothing introducible left, the session would close early."""
+    # Arrange — "a" and "d" mastered long enough ago that recall has slipped below the bar.
+    model = _mastered(LearnerModel(graph_id="g1"), "a", "d")
+    clock = SessionClock(turn=14, elapsed_s=300.0, budget_s=1800.0)
+
+    # Act
+    move = decide_move(_graph(), model, clock)
+
+    # Assert
+    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "b")
 
 
 def test_a_concept_never_demonstrated_is_introduced_rather_than_retrieved() -> None:

@@ -2,6 +2,7 @@ from ..graph import ConceptGraph
 from .decide_move import decide_move
 from .protocols import ITutor
 from .schema import LearnerModel, Session, SessionClock, SessionTurn
+from .stage_criterion import stage_criterion
 
 
 async def open_session(
@@ -33,6 +34,9 @@ async def open_session(
     if node is None:
         raise ValueError(f"graph {graph.graph_id} has nothing to teach")
 
+    # Staged now rather than when the answer arrives: the tutor has to ask for it in its own words
+    # as part of the teaching, and the turn has to record what was asked (U1).
+    staged = stage_criterion(node)
     return Session(
         session_id=session_id,
         graph_id=graph.graph_id,
@@ -40,8 +44,11 @@ async def open_session(
             SessionTurn(
                 seq=clock.turn,
                 move=move,
-                tutor=await tutor.teach(move, node, topic=graph.topic, run_id=run_id),
+                tutor=await tutor.teach(
+                    move, node, topic=graph.topic, criterion=staged, run_id=run_id
+                ),
                 run_id=run_id,
+                criterion=staged,
             )
         ],
     )

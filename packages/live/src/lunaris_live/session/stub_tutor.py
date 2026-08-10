@@ -1,4 +1,6 @@
-from ..graph.schema import ConceptNode
+from collections.abc import Sequence
+
+from ..graph.schema import ConceptNode, MasteryCriterion
 from .reject_unteachable_move import reject_unteachable_move
 from .schema import DirectorMove, MoveKind
 
@@ -20,6 +22,16 @@ _SCRIPT: dict[MoveKind, str] = {
 #: can prove it, since the API suite has no provider.
 _WATCH_FOR = " A lot of people think {misconception} Worth watching for."
 
+#: The staged do-statement, asked plainly. The offline path has to put a real question in front of
+#: the learner or nothing downstream — the grader, the belief, the director's next move — can be
+#: exercised without a provider.
+_ASK = " So: {statement}"
+
+#: Opens a turn the tutor has already spoken on. The offline path has to be able to *show* that a
+#: second pass over one concept is not the first pass repeated, or a surface — and a review — could
+#: pass over a tutor that says the same thing forever.
+_AGAIN = "Another way to see it. "
+
 
 class StubTutor:
     """A tutor that needs no model, no key and no network.
@@ -30,13 +42,26 @@ class StubTutor:
     or ignore the director entirely, without a single test noticing.
     """
 
-    async def teach(self, move: DirectorMove, node: ConceptNode, *, topic: str, run_id: str) -> str:
+    async def teach(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> str:
         script = _SCRIPT.get(move.kind)
         if script is None:
             reject_unteachable_move(move.kind)
 
         said = script.format(name=node.name, definition=node.definition)
+        if already_said:
+            said = _AGAIN + said
         misconceptions = node.teaching_spec.misconceptions if node.teaching_spec else []
         if misconceptions:
             said += _WATCH_FOR.format(misconception=misconceptions[0])
+        if criterion is not None:
+            said += _ASK.format(statement=criterion.statement)
         return said

@@ -39,6 +39,16 @@ def resolve_strong_model() -> str:
     return resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL
 
 
+#: Grading one answer against one explicit do-statement is a classification, not a quality surface,
+#: so it runs on the bulk tier — the same knob Studio's workers read.
+_DEFAULT_WORKER_MODEL = "claude-haiku-4-5-20251001"
+
+
+def resolve_worker_model() -> str:
+    """The model Live's classification surfaces run on (A1)."""
+    return resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER_MODEL
+
+
 # One durable store per process, same lazy-client rationale as Studio's stores: the service-role
 # client is built on first write, so the singleton needs no creds and no network until then.
 _supabase_graph_store = SupabaseGraphStore()

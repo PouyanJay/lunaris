@@ -9,6 +9,7 @@ from .session import Session
 from .session_clock import SessionClock
 from .session_status import SessionStatus
 from .session_turn import SessionTurn
+from .turn_grade import TurnGrade
 
 __all__ = [
     "DirectorMove",
@@ -20,4 +21,5 @@ __all__ = [
     "SessionClock",
     "SessionStatus",
     "SessionTurn",
+    "TurnGrade",
 ]

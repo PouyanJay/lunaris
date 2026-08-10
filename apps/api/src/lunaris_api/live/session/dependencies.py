@@ -2,19 +2,22 @@ from typing import Annotated
 
 from fastapi import Depends
 from lunaris_live.session import (
+    ClaudeGrader,
     ClaudeTutor,
+    IGrader,
     IKnowledgeStore,
     ISessionStore,
     ITutor,
     MemoryKnowledgeStore,
     MemorySessionStore,
+    StubGrader,
     StubTutor,
     SupabaseKnowledgeStore,
     SupabaseSessionStore,
 )
 
 from ...config import Settings, get_settings
-from ..dependencies import resolve_graph_store, resolve_strong_model
+from ..dependencies import resolve_graph_store, resolve_strong_model, resolve_worker_model
 from .service import LiveSessionService
 
 # One durable store per process — same lazy-client rationale as the graph store: the service-role
@@ -53,9 +56,24 @@ def get_live_tutor(settings: Annotated[Settings, Depends(get_settings)]) -> ITut
     return StubTutor() if settings.pipeline == "stub" else ClaudeTutor(resolve_strong_model())
 
 
+def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGrader:
+    """The model-backed grader, or the deterministic one under ``LUNARIS_PIPELINE=stub``.
+
+    A dependency of its own for the same reason the tutor is: a grader that cannot answer is the
+    failure worth staging in a test, and an answer wrongly scored is the mistake that compounds —
+    every verdict it gets wrong is written into a belief the director acts on for the rest of the
+    session.
+
+    Runs on the worker tier (A1): teaching is the quality surface, judging one answer against one
+    explicit do-statement is a classification.
+    """
+    return StubGrader() if settings.pipeline == "stub" else ClaudeGrader(resolve_worker_model())
+
+
 def get_live_session_service(
     settings: Annotated[Settings, Depends(get_settings)],
     tutor: Annotated[ITutor, Depends(get_live_tutor)],
+    grader: Annotated[IGrader, Depends(get_live_grader)],
 ) -> LiveSessionService:
     """Live's session plane as a request dependency.
 
@@ -68,6 +86,7 @@ def get_live_session_service(
         _resolve_session_store(settings),
         knowledge=_resolve_knowledge_store(settings),
         tutor=tutor,
+        grader=grader,
         session_budget_s=settings.live_session_budget_s,
     )
 

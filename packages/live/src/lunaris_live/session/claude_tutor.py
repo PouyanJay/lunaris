@@ -1,9 +1,10 @@
 import asyncio
+from collections.abc import Sequence
 
 import structlog
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 
-from ..graph.schema import ConceptNode
+from ..graph.schema import ConceptNode, MasteryCriterion
 from .reject_unteachable_move import reject_unteachable_move
 from .schema import DirectorMove, MoveKind
 from .tutor_unavailable_error import TutorUnavailableError
@@ -25,12 +26,41 @@ _TRANSIENT_MAX_DELAY_S = 4.0
 _PROMPT = """You are tutoring one learner, one to one, in a live text session about "{topic}".
 
 The concept in front of you: {name} — {definition}
-{notes}
+{notes}{history}
 {instruction}
 
 Write only what you would say to them next, in your own voice, addressed to them directly. Under \
-120 words. No headings, no bullet lists, no markdown. Finish with one question that makes them \
-think, not one they can answer with yes."""
+120 words. No headings, no bullet lists, no markdown. {closing}"""
+
+#: How a turn ends. The staged form is U1's whole mechanism: the tutor asks for the concept's own
+#: do-statement, the learner answers in prose, and a separate grader scores that answer against that
+#: statement. Asked in the tutor's words rather than pasted, because a do-statement is written for
+#: the system ("Say which way a weight should move") and a question is written for a person.
+_STAGE = (
+    'End by asking them to do exactly this, in your own words, as a question: "{statement}" '
+    "Ask for it directly — this is what they will be marked on, so a question they could answer "
+    "without doing it would mark them on nothing."
+)
+
+#: When the concept has nothing a text session can check (every criterion needs a simulator), the
+#: turn still has to end somewhere. Nothing the learner says next can move a belief, so this asks
+#: for thought rather than for evidence.
+_OPEN_ENDED = "Finish with one question that makes them think, not one they can answer with yes."
+
+#: What this tutor has already said to this learner about this concept. Passed verbatim, because
+#: the instruction is not to avoid the topic but to avoid the *words and the analogy* — a
+#: remediation that reopens with the same hillside is the same explanation in a different order.
+_ALREADY_SAID = """
+You have ALREADY said this to them, word for word, earlier in this session:
+{said}
+Do not repeat it and do not re-use its analogy or its example. They have heard it and it did not \
+land; saying it again more slowly is the one thing that cannot work.
+"""
+
+#: How much of the history to carry. The last two turns on a concept is what a remediation needs to
+#: avoid repeating itself; the whole session would be most of the prompt and most of the cost.
+_HISTORY_DEPTH = 2
+_HISTORY_CHARS = 600
 
 #: What the move means for the person speaking. The director's whole output is the move, so a tutor
 #: that ignored it would make the policy decorative: the trace would record adaptation the learner
@@ -82,7 +112,16 @@ class ClaudeTutor:
         self._client = client
         self._deadline_s = deadline_s
 
-    async def teach(self, move: DirectorMove, node: ConceptNode, *, topic: str, run_id: str) -> str:
+    async def teach(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> str:
         instruction = _INSTRUCTION.get(move.kind)
         if instruction is None:
             reject_unteachable_move(move.kind)
@@ -92,7 +131,9 @@ class ClaudeTutor:
             name=node.name,
             definition=node.definition,
             notes=_notes_on(node),
+            history=_history_of(already_said),
             instruction=instruction,
+            closing=_STAGE.format(statement=criterion.statement) if criterion else _OPEN_ENDED,
         )
         said = await self._say(prompt, run_id=run_id, node_id=node.id)
 
@@ -144,6 +185,14 @@ class ClaudeTutor:
         )
         content = message.content
         return (content if isinstance(content, str) else str(content)).strip()
+
+
+def _history_of(already_said: Sequence[str]) -> str:
+    """What the tutor has already told this learner about this concept, or nothing at all."""
+    recent = [said.strip() for said in already_said if said.strip()][-_HISTORY_DEPTH:]
+    if not recent:
+        return ""
+    return _ALREADY_SAID.format(said="\n\n".join(f'"{said[:_HISTORY_CHARS]}"' for said in recent))
 
 
 def _notes_on(node: ConceptNode) -> str:

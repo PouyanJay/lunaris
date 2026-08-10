@@ -19,9 +19,12 @@ from lunaris_live.session import (
     LearnerModel,
     MemoryKnowledgeStore,
     MemorySessionStore,
+    Session,
+    StubGrader,
     StubTutor,
     apply_evidence,
 )
+from lunaris_runtime.persistence import PersistenceError
 
 _TOPIC = "How neural networks learn"
 
@@ -48,6 +51,7 @@ async def wired() -> tuple[LiveSessionService, ConceptGraph, MemoryKnowledgeStor
         MemorySessionStore(),
         knowledge=knowledge,
         tutor=StubTutor(),
+        grader=StubGrader(),
         session_budget_s=1800.0,
     )
     return service, graph, knowledge
@@ -97,3 +101,49 @@ async def test_beliefs_stored_for_one_learner_are_not_read_for_another(
 
     # Assert
     assert session.turns[0].move.node_id == graph.topo_order[0]
+
+
+async def test_the_transcript_is_written_before_the_belief() -> None:
+    """Two writes, not one transaction, so the order is chosen for how each half fails.
+
+    Transcript first means a crash between them under-counts evidence: the learner sees a graded
+    turn whose belief did not move, and the concept comes round again. The other order looks safer
+    and is not — the response is a retryable 503, a retry re-grades the same answer against a
+    transcript that never recorded it, and one lucky guess plus a storage blip clears the mastery
+    bar that ``_PULL`` was sized to keep two answers away.
+    """
+    # Arrange — a session store that reads back fine and refuses every write.
+    graph = await _map()
+    graphs, knowledge = MemoryGraphStore(), MemoryKnowledgeStore()
+    graphs.save(graph, owner_id="learner-1")
+    opened = await LiveSessionService(
+        graphs,
+        MemorySessionStore(),
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=1800.0,
+    ).start("g1", session_id="s1", owner_id="learner-1")
+
+    class RefusesToWrite:
+        def save(self, session: Session, *, owner_id: str | None = None) -> None:
+            raise PersistenceError("storage is having trouble")
+
+        def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
+            return opened
+
+    service = LiveSessionService(
+        graphs,
+        RefusesToWrite(),
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=1800.0,
+    )
+
+    # Act
+    with pytest.raises(PersistenceError):
+        await service.answer("s1", "I have no idea.", owner_id="learner-1")
+
+    # Assert — the belief never landed, because the transcript never did.
+    assert knowledge.load("g1", owner_id="learner-1").nodes == {}

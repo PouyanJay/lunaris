@@ -1,3 +1,4 @@
+from lunaris_live.session import MAX_ANSWER_CHARS
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
@@ -14,3 +15,23 @@ class SessionStartRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     graph_id: str = Field(min_length=1, max_length=100)
+
+
+class AnswerRequest(BaseModel):
+    """What the learner said in reply to the criterion the last turn staged.
+
+    Bounded at both ends at the trust boundary. Empty is refused rather than graded as a miss: an
+    empty POST is a client bug, and scoring it would lower a belief — and so change what the
+    director teaches next — on the strength of a stray keystroke. The ceiling is generous enough for
+    somebody explaining a concept properly and small enough that a pasted chapter never becomes a
+    model prompt and a stored row.
+    """
+
+    # Stripped BEFORE the length check, or " " passes it and reaches the grader as "" — which the
+    # stub scores NOT_MET, lowering a belief and changing what the director teaches next on the
+    # strength of one stray keystroke. The bound is the domain's, imported rather than restated.
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, str_strip_whitespace=True
+    )
+
+    answer: str = Field(min_length=1, max_length=MAX_ANSWER_CHARS)
