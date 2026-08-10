@@ -8,20 +8,41 @@ lives between requests. The director's policy, the tutor, the grader and the lea
 top of these contracts without changing them.
 """
 
+from .apply_evidence import apply_evidence
+from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
 from .open_session import open_session
-from .protocols import ISessionStore
-from .schema import DirectorMove, MoveKind, Session, SessionStatus, SessionTurn
+from .protocols import IKnowledgeStore, ISessionStore
+from .recall_of import recall_of
+from .schema import (
+    DirectorMove,
+    EvidenceKind,
+    LearnerModel,
+    MoveKind,
+    NodeKnowledge,
+    Session,
+    SessionStatus,
+    SessionTurn,
+)
+from .supabase_knowledge_store import SupabaseKnowledgeStore
 from .supabase_session_store import SupabaseSessionStore
 
 __all__ = [
     "DirectorMove",
+    "EvidenceKind",
+    "IKnowledgeStore",
     "ISessionStore",
+    "LearnerModel",
+    "MemoryKnowledgeStore",
     "MemorySessionStore",
     "MoveKind",
+    "NodeKnowledge",
     "Session",
     "SessionStatus",
     "SessionTurn",
+    "SupabaseKnowledgeStore",
     "SupabaseSessionStore",
+    "apply_evidence",
     "open_session",
+    "recall_of",
 ]
