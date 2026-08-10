@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from lunaris_runtime.metering import CostScope, cost_scope
 from lunaris_runtime.pricing import PriceBook
-from lunaris_runtime.schema import CostProvider
+from lunaris_runtime.schema import CostProvider, CostSubjectType
 from lunaris_video.models.sandbox_result import SandboxResult
 from lunaris_video.rendering import scene_renderer as sr
 from lunaris_video.schemas import SceneContracts, VoiceSpec
@@ -21,7 +21,12 @@ _VOICE = VoiceSpec(provider="elevenlabs", voice_id="v-test", model="eleven_multi
 
 
 def _scope() -> CostScope:
-    return CostScope(run_id="r", course_id="c", price_book=PriceBook.current())
+    return CostScope(
+        run_id="r",
+        subject_type=CostSubjectType.COURSE,
+        subject_id="c",
+        price_book=PriceBook.current(),
+    )
 
 
 async def test_voice_synthesis_records_character_cost(

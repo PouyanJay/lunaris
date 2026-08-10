@@ -56,6 +56,18 @@ class Settings:
     # Device-bridge bounds (device-compute Draft builds): how long the tab may go silent before
     # its build is failed as disconnected, and the per-completion ceiling for a tab that polls
     # but never answers. Tuned per environment when proxies or device profiles demand it.
+    #: Ceiling on a Lunaris Live cold compile. Past the plan's 3-minute budget on purpose — it
+    #: exists so a stalled provider call fails the request rather than holding a learner forever.
+    live_compile_deadline_s: float = 200.0
+    # Lunaris Live admission control (Phase 1, T8c / D4). A cold compile is minutes of provider
+    # calls, so it is capped per owner — one in flight, a fixed number per day; an extension is
+    # learner-triggered and repeatable inside a session, so it is capped per graph.
+    # ``live_graph_budget_usd`` is the ceiling on one map's whole spend (compile + every extension),
+    # read from the ledger's rollup: a runaway guard, not a ration — 0 turns it off.
+    live_compile_daily_cap: int = 20
+    live_compile_max_concurrent: int = 1
+    live_extend_daily_cap: int = 50
+    live_graph_budget_usd: float = 10.0
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
     # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
@@ -147,6 +159,11 @@ def get_settings() -> Settings:
         draft_max_concurrent=_env_int("LUNARIS_DRAFT_MAX_CONCURRENT", default=1),
         explain_daily_cap=_env_int("LUNARIS_EXPLAIN_DAILY_CAP", default=50),
         keyless_compute=_env_compute("LUNARIS_KEYLESS_COMPUTE", default=ComputeKind.CPU),
+        live_compile_deadline_s=_env_float("LUNARIS_LIVE_COMPILE_DEADLINE_S", default=200.0),
+        live_compile_daily_cap=_env_int("LUNARIS_LIVE_COMPILE_DAILY_CAP", default=20),
+        live_compile_max_concurrent=_env_int("LUNARIS_LIVE_COMPILE_MAX_CONCURRENT", default=1),
+        live_extend_daily_cap=_env_int("LUNARIS_LIVE_EXTEND_DAILY_CAP", default=50),
+        live_graph_budget_usd=_env_float("LUNARIS_LIVE_GRAPH_BUDGET_USD", default=10.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

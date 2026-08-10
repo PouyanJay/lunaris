@@ -20,9 +20,55 @@ def _is_rate_limit(exc: BaseException) -> bool:
     return "rate_limit" in text or "429" in text or "overloaded" in text
 
 
+def _is_transient(exc: BaseException) -> bool:
+    """Detect anything worth trying again — a rate limit, or the connection itself failing.
+
+    Connection-level failures are matched the same way rate limits are: by class name and message,
+    so this stays provider-agnostic and does not import an SDK. The provider's own client already
+    retries a couple of times before surfacing one, so an error reaching here has already survived
+    that — which is why the back-off above it is worth having rather than redundant.
+    """
+    if _is_rate_limit(exc):
+        return True
+    name = type(exc).__name__.lower()
+    if "connection" in name or "timeout" in name:
+        return True
+    text = str(exc).lower()
+    return "connection error" in text or "connection reset" in text
+
+
+async def retry_on_transient[T](
+    operation: Callable[[], Awaitable[T]],
+    *,
+    max_attempts: int = 8,
+    base_delay_s: float = 1.0,
+    max_delay_s: float = 30.0,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    rng: Callable[[float, float], float] = random.uniform,
+) -> T:
+    """``retry_on_rate_limit``, widened to cover a dropped connection as well.
+
+    A separate entry point rather than a widened default, because every existing caller chose the
+    narrow behaviour and a connection error means something different to each of them. Live's graph
+    compiler uses this one: its decomposition is a single serial call it explicitly cannot degrade
+    around, so a dropped socket there costs a learner the whole three-minute compile — which T9's
+    ten-topic eval demonstrated, five times in one run.
+    """
+    return await retry_on_rate_limit(
+        operation,
+        is_retryable=_is_transient,
+        max_attempts=max_attempts,
+        base_delay_s=base_delay_s,
+        max_delay_s=max_delay_s,
+        sleep=sleep,
+        rng=rng,
+    )
+
+
 async def retry_on_rate_limit[T](
     operation: Callable[[], Awaitable[T]],
     *,
+    is_retryable: Callable[[BaseException], bool] = _is_rate_limit,
     max_attempts: int = 8,
     base_delay_s: float = 1.0,
     max_delay_s: float = 30.0,
@@ -42,13 +88,17 @@ async def retry_on_rate_limit[T](
     Re-raises immediately for non-rate-limit errors (auth, bad request) and after the
     final attempt. ``sleep`` and ``rng`` are injectable so tests are deterministic and
     don't wait in real time.
+
+    ``is_retryable`` decides what counts as transient. It defaults to rate limits alone — every
+    caller that predates it chose exactly that — and ``retry_on_transient`` is the widened variant
+    for callers whose single failed call costs more than a retry.
     """
     backoff_cap_s = base_delay_s
     for attempt in range(1, max_attempts + 1):
         try:
             return await operation()
         except Exception as exc:
-            if not _is_rate_limit(exc) or attempt == max_attempts:
+            if not is_retryable(exc) or attempt == max_attempts:
                 raise
             delay = rng(0.0, backoff_cap_s)
             logger.warning("rate_limited_retrying", attempt=attempt, delay_s=delay)

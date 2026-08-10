@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 
 from lunaris_runtime.pricing import PriceBook
+from lunaris_runtime.schema import CostSubjectType
 
 from .cost_entry import CostEntry
 
@@ -23,14 +24,16 @@ from .cost_entry import CostEntry
 class CostScope:
     """A running build's cost context: attribution + the price book + the buffered entries.
 
-    Carries the ``run_id`` / ``course_id`` a cost is stamped with, the ``owner_id`` it belongs to,
+    Carries the ``run_id`` and the ``(subject_type, subject_id)`` a cost is stamped with, the
+    ``owner_id`` it belongs to,
     the ``PriceBook`` ``record_cost`` prices against (its ``version`` is stamped on every row), the
     display ``currency``, and the ``entries`` buffer deep code appends to. One scope per build task,
     so the buffer needs no locking (a task's contextvar copy is private to it).
     """
 
     run_id: str
-    course_id: str
+    subject_type: CostSubjectType
+    subject_id: str
     price_book: PriceBook
     owner_id: str | None = None
     currency: str = "USD"

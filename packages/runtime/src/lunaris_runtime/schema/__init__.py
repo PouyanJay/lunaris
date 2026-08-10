@@ -5,7 +5,6 @@ from .clarifier import Clarification, Clarifier, ClarifierOption, ClarifierQuest
 from .cost_event import CostEvent
 from .course import Course
 from .course_brief import CourseBrief, DeliverableShape, Gap, Preferences, TargetStandard
-from .course_cost import CourseCost
 from .course_run import CourseRun
 from .course_scope import CourseScope
 from .course_videos import CourseVideos
@@ -23,6 +22,7 @@ from .enums import (
     ComputeKind,
     CostPocket,
     CostProvider,
+    CostSubjectType,
     CostUnit,
     CourseStatus,
     CoverJobStatus,
@@ -81,6 +81,7 @@ from .run_event import RunEvent
 from .settings import Budget, BudgetLedger, CourseSettings, RiskProfile
 from .source_evaluation import SourceEvaluation
 from .standard_research import CompetencyArea, ResearchSource, StandardResearch
+from .subject_cost import SubjectCost
 from .video_artifact import VideoArtifact
 from .video_job import VideoJob
 from .video_provenance import DegradedScene, VideoProvenance
@@ -129,10 +130,10 @@ __all__ = [
     "CostEvent",
     "CostPocket",
     "CostProvider",
+    "CostSubjectType",
     "CostUnit",
     "Course",
     "CourseBrief",
-    "CourseCost",
     "CourseModel",
     "CourseRun",
     "CourseScope",
@@ -203,6 +204,7 @@ __all__ = [
     "StandardResearch",
     "StepItem",
     "StepsSpec",
+    "SubjectCost",
     "SubjectField",
     "TargetStandard",
     "TimelineEvent",

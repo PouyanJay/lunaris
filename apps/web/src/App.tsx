@@ -862,6 +862,7 @@ export default function App() {
             {/* The product fork sits strictly inside the auth gate: you sign into Lunaris, then
                 choose a product. Transparent while Live is flagged off. */}
             <ProductRouter
+              apiBaseUrl={apiBaseUrl}
               studio={
                 <StudioApp
                   apiBaseUrl={apiBaseUrl}

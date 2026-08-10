@@ -4,11 +4,11 @@ Lunaris Live may build on Studio's shared foundations; Studio must never depend 
 direction is the whole basis for keeping both products in one repo — Live can be flagged off,
 broken, or later lifted into its own repo without Studio noticing.
 
-The web half is an ESLint rule (``apps/web/eslint.config.js``). This is the Python half. It is
-deliberately written before ``packages/live_*`` exists: today it passes vacuously, and the moment
-Phase 1 adds the first Live package it starts enforcing without anyone having to remember to add it.
-The alternative — adding the rule alongside the code it constrains — is exactly how a boundary gets
-crossed once "just for now" and then stays crossed.
+The web half is an ESLint rule (``apps/web/eslint.config.js``). This is the Python half. It was
+written in Phase 0, before any Live package existed, so that the boundary would be enforced from
+Live's first commit rather than retrofitted after something had already crossed it — and in Phase 1
+it did exactly that, catching Live's compile plane being wired into Studio's shared composition
+root on the day the package landed.
 """
 
 from __future__ import annotations
@@ -22,7 +22,33 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LIVE_PACKAGE_PREFIXES = ("lunaris_live",)
 
 #: Where Live's own source lives — allowed to import itself.
-LIVE_SOURCE_DIRS = ("packages/live",)
+#:
+#: ``apps/api/.../live`` is Live's **region inside the shared API host** — the Python mirror of
+#: the web's ``components/live/**`` exemption in ``apps/web/eslint.config.js``. One FastAPI app
+#: serves both products, so somewhere has to name ``lunaris_live`` in order to mount Live's routes;
+#: confining that to one directory is what keeps the boundary real. ``apps/api/tests/live`` is the
+#: same region's tests — they exercise Live's endpoints and so must name Live, and putting them
+#: anywhere else would mean either weakening this rule or testing Live's API through a keyhole.
+#: Studio's own modules — including the shared composition root in ``dependencies.py`` — stay swept,
+#: so Live cannot leak back into them. Keep this list short: every entry is a place the boundary
+#: stops applying.
+LIVE_SOURCE_DIRS = (
+    "packages/live",
+    "apps/api/src/lunaris_api/live",
+    "apps/api/tests/live",
+)
+
+
+def _is_live_source(relative: str) -> bool:
+    """Whether a repo-relative path lies inside one of Live's own directories.
+
+    Matches on a directory *boundary*, not a string prefix: a bare ``startswith`` would also exempt
+    a Studio module that merely begins with the same characters (``.../live_graph_service.py``
+    beside ``.../live/``), silently widening the exemption to files nobody meant to exempt.
+    """
+    return any(
+        relative == live_dir or relative.startswith(f"{live_dir}/") for live_dir in LIVE_SOURCE_DIRS
+    )
 
 
 def _studio_python_sources() -> list[Path]:
@@ -36,7 +62,7 @@ def _studio_python_sources() -> list[Path]:
             relative = path.relative_to(REPO_ROOT).as_posix()
             if "__pycache__" in relative or "/.venv/" in relative:
                 continue
-            if any(relative.startswith(live_dir) for live_dir in LIVE_SOURCE_DIRS):
+            if _is_live_source(relative):
                 continue
             files.append(path)
     return files
@@ -61,9 +87,8 @@ def _imported_modules(source: Path) -> set[str]:
 def test_studio_never_imports_live() -> None:
     """No Studio module may import a Lunaris Live package.
 
-    Passes vacuously until Phase 1 creates the first ``packages/live_*``; it exists so that the
-    boundary is enforced from that package's first commit rather than retrofitted after something
-    has already crossed it.
+    Live's own directories are exempt (``LIVE_SOURCE_DIRS``) — including its region inside the
+    shared API host, which is the one place allowed to mount Live's routes.
     """
     offenders: list[str] = []
     for source in _studio_python_sources():
@@ -91,3 +116,24 @@ def test_boundary_check_actually_inspects_studio_sources() -> None:
     agent_package = REPO_ROOT / "packages/agent/src/lunaris_agent/harness/agent.py"
     assert agent_package in sources, "the sweep should cover the agent harness"
     assert _imported_modules(agent_package), "the import extractor returned nothing for a real file"
+
+    # Studio's shared composition root must stay swept — it is the single most likely place for a
+    # Live dependency to be wired in "just for now", and it sits right beside Live's own region.
+    composition_root = REPO_ROOT / "apps/api/src/lunaris_api/dependencies.py"
+    assert composition_root in sources, "Studio's composition root must remain inside the sweep"
+
+
+def test_the_live_exemption_stops_at_a_directory_boundary() -> None:
+    """The exemption must cover Live's directory and nothing that merely looks like it.
+
+    ``apps/api/src/lunaris_api/live/`` is exempt; a Studio module named ``live_*.py`` in the same
+    package is not. Written as its own test because the difference is one character in the matcher
+    and the failure mode — a Studio file quietly stopping being checked — is invisible otherwise.
+    """
+    assert _is_live_source("apps/api/src/lunaris_api/live/router.py")
+    assert _is_live_source("apps/api/tests/live/test_live_graphs_api.py")
+    assert _is_live_source("packages/live/src/lunaris_live/graph/assembly.py")
+
+    assert not _is_live_source("apps/api/src/lunaris_api/live_graph_service.py")
+    assert not _is_live_source("apps/api/tests/live_helpers.py")
+    assert not _is_live_source("packages/live_experiment/src/thing.py")

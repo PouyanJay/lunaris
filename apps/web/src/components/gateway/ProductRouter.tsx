@@ -13,6 +13,8 @@ const LiveShell = lazy(() => import("../live/LiveShell"));
 interface ProductRouterProps {
   /** Studio's app, rendered for every path Live does not claim. */
   studio: ReactNode;
+  /** Where the API lives — Live compiles its concept graph through it. */
+  apiBaseUrl: string;
 }
 
 /** Routes a URL to its product.
@@ -23,7 +25,7 @@ interface ProductRouterProps {
  *
  *  Transparent when Live is flagged off or auth is unconfigured: Lunaris is then Studio alone and
  *  `/live` falls through to Studio's not-found. */
-export function ProductRouter({ studio }: ProductRouterProps) {
+export function ProductRouter({ studio, apiBaseUrl }: ProductRouterProps) {
   const forked = useIsProductForked();
   const { pathname } = useLocation();
 
@@ -31,7 +33,7 @@ export function ProductRouter({ studio }: ProductRouterProps) {
 
   return (
     <Suspense fallback={<div className={styles.loading} role="status" aria-live="polite" />}>
-      <LiveShell />
+      <LiveShell apiBaseUrl={apiBaseUrl} />
     </Suspense>
   );
 }

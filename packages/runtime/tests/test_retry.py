@@ -1,5 +1,5 @@
 import pytest
-from lunaris_runtime.resilience import retry_on_rate_limit
+from lunaris_runtime.resilience import retry_on_rate_limit, retry_on_transient
 
 
 class _RateLimitError(Exception):
@@ -108,3 +108,90 @@ async def test_full_jitter_can_sample_zero_to_spread_the_herd() -> None:
 
     # Assert — bottom of the window is 0, so a herd does not retry in lockstep
     assert delays == [0.0, 0.0]
+
+
+class _ConnectionBlipError(Exception):
+    """What the Anthropic SDK raises when the socket dies mid-call: no status, no rate-limit
+    wording, nothing the rate-limit predicate can recognise."""
+
+    def __str__(self) -> str:
+        return "Connection error."
+
+
+async def test_a_connection_blip_is_not_a_rate_limit() -> None:
+    """The default predicate stays exactly as narrow as it was — widening it under every existing
+    caller is a behaviour change none of them asked for."""
+    # Arrange
+    attempts = 0
+
+    async def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        raise _ConnectionBlipError
+
+    # Act / Assert
+    with pytest.raises(_ConnectionBlipError):
+        await retry_on_rate_limit(operation, base_delay_s=0, sleep=_noop_sleep)
+    assert attempts == 1, "a connection error was retried by the rate-limit retry"
+
+
+async def test_a_transient_retry_survives_a_connection_blip() -> None:
+    """T9 found this the expensive way: five of ten real compiles died on ``APIConnectionError``.
+
+    The call it kills is decomposition — the single serial call the compiler documents as the one
+    failure it cannot degrade around — so one dropped socket costs the learner the whole three
+    minutes, and D4 charges them a daily compile for it.
+    """
+    # Arrange
+    attempts = 0
+
+    async def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise _ConnectionBlipError
+        return "recovered"
+
+    # Act / Assert
+    assert await retry_on_transient(operation, base_delay_s=0, sleep=_noop_sleep) == "recovered"
+    assert attempts == 3
+
+
+async def test_a_transient_retry_still_gives_up_on_a_real_error() -> None:
+    """Retrying a bad request or a bad key just burns the budget slowly — the failure is ours and
+    it will not heal."""
+    # Arrange
+    attempts = 0
+
+    async def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        raise ValueError("invalid_request_error: your prompt is malformed")
+
+    # Act / Assert
+    with pytest.raises(ValueError):
+        await retry_on_transient(operation, base_delay_s=0, sleep=_noop_sleep)
+    assert attempts == 1
+
+
+class _RequestTimeoutError(Exception):
+    """A request that never came back — the other half of "transient", and the one a compile
+    running fifteen concurrent calls hits when the provider is slow rather than broken."""
+
+
+async def test_a_transient_retry_survives_a_request_timeout() -> None:
+    """Pinned separately from the connection blip: they are two different clauses of the predicate,
+    and a test of one says nothing about the other."""
+    # Arrange
+    attempts = 0
+
+    async def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 2:
+            raise _RequestTimeoutError("request timed out")
+        return "recovered"
+
+    # Act / Assert
+    assert await retry_on_transient(operation, base_delay_s=0, sleep=_noop_sleep) == "recovered"
+    assert attempts == 2

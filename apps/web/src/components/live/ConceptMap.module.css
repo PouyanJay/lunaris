@@ -1,0 +1,166 @@
+/* The compiled map. Levels are hairline-divided bands inside one bordered region — the house panel
+   idiom — rather than a scatter of floating cards, so the map reads as an instrument. */
+.map {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.head {
+  margin-bottom: var(--space-5);
+}
+
+/* Adds only the mono face and rhythm on top of the global `.eyebrow` motif (index.css). */
+.eyebrow {
+  font-family: var(--font-mono);
+  margin: 0 0 var(--space-3);
+}
+
+.title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin: 0 0 var(--space-3);
+}
+
+.meta {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.levels {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.level {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.level:last-child {
+  border-bottom: 0;
+}
+
+.levelLabel {
+  margin: 0;
+  padding-top: var(--space-2);
+  color: var(--text-muted);
+}
+
+.concepts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-2);
+}
+
+/* A concept is a button: opening its teaching notes is an action, not a navigation. */
+.concept {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+  height: 100%;
+  text-align: left;
+  padding: var(--space-3);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.concept:hover {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+}
+
+.concept:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--focus-ring);
+}
+
+/* The open concept is the one place the accent earns its keep on this screen. */
+.concept[aria-expanded="true"] {
+  border-color: var(--accent-500);
+  background: var(--bg-muted);
+}
+
+.conceptName {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  line-height: var(--lh-sm);
+}
+
+.conceptDefinition {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  line-height: var(--lh-xs);
+  /* Definitions run to a sentence or to a paragraph depending on the model's mood; clamped so one
+     long one cannot set the height of an entire level. The full text is in the notes panel. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.conceptMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+
+/* Structural provenance: this concept came from a learner's question, not the cold compile. */
+.added {
+  color: var(--accent-500);
+  letter-spacing: 0.08em;
+}
+
+.needs {
+  flex-basis: 100%;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .concept {
+    transition: none;
+  }
+}
+
+/* One column of concepts below the tablet break, and the level label above its band rather than
+   beside it — 76px of gutter is a third of the width on a phone. */
+@media (max-width: 720px) {
+  .level {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .levelLabel {
+    padding-top: 0;
+  }
+}

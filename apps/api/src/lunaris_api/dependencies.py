@@ -47,29 +47,29 @@ from lunaris_runtime.device_bridge import BridgeLimits
 from lunaris_runtime.persistence import (
     CourseStore,
     ICostEventStore,
-    ICourseCostStore,
     ICourseStore,
     ICoverJobQueue,
     ICoverStorage,
     InMemoryCostEventStore,
-    InMemoryCourseCostStore,
     InMemoryCoverJobQueue,
     InMemoryCoverStorage,
     InMemoryRunEventStore,
     InMemoryRunStore,
+    InMemorySubjectCostStore,
     InMemoryVideoJobQueue,
     InMemoryVideoStorage,
     IRunEventStore,
     IRunStore,
+    ISubjectCostStore,
     IVideoJobQueue,
     IVideoStorage,
     SupabaseCostEventStore,
-    SupabaseCourseCostStore,
     SupabaseCourseStore,
     SupabaseCoverJobQueue,
     SupabaseCoverStorage,
     SupabaseRunEventStore,
     SupabaseRunStore,
+    SupabaseSubjectCostStore,
     SupabaseVideoJobQueue,
     SupabaseVideoStorage,
 )
@@ -258,8 +258,8 @@ def get_run_event_store(settings: Annotated[Settings, Depends(get_settings)]) ->
 # writes and a later `GET .../cost` read must see the same in-memory instances).
 _in_memory_cost_event_store = InMemoryCostEventStore()
 _supabase_cost_event_store = SupabaseCostEventStore()
-_in_memory_course_cost_store = InMemoryCourseCostStore()
-_supabase_course_cost_store = SupabaseCourseCostStore()
+_in_memory_subject_cost_store = InMemorySubjectCostStore()
+_supabase_subject_cost_store = SupabaseSubjectCostStore()
 
 
 def get_cost_event_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICostEventStore:
@@ -269,17 +269,19 @@ def get_cost_event_store(settings: Annotated[Settings, Depends(get_settings)]) -
     return _in_memory_cost_event_store
 
 
-def get_course_cost_store(settings: Annotated[Settings, Depends(get_settings)]) -> ICourseCostStore:
+def get_subject_cost_store(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ISubjectCostStore:
     """The per-course cost rollup (the Overview total): Supabase when keyed, else in-process."""
     if settings.has_supabase:
-        return _supabase_course_cost_store
-    return _in_memory_course_cost_store
+        return _supabase_subject_cost_store
+    return _in_memory_subject_cost_store
 
 
 # The rollup store is read by the cost endpoint for the Overview total; the ledger store is read by
 # the cost-events endpoint for the drill-through (T8) and is also wired into a build's
 # CostEventRecorder at the composition root.
-CourseCostStoreDep = Annotated[ICourseCostStore, Depends(get_course_cost_store)]
+SubjectCostStoreDep = Annotated[ISubjectCostStore, Depends(get_subject_cost_store)]
 CostEventStoreDep = Annotated[ICostEventStore, Depends(get_cost_event_store)]
 
 
@@ -1060,7 +1062,7 @@ def get_course_service(
     activity_store: ActivityStoreDep,
     corpus_store: CorpusStoreDep,
     cost_event_store: CostEventStoreDep,
-    course_cost_store: CourseCostStoreDep,
+    subject_cost_store: SubjectCostStoreDep,
 ) -> CourseService:
     """Compose the CourseService for the configured pipeline (overridable in tests)."""
     # Durable Postgres store when Supabase is configured (courses survive restarts + are shared
@@ -1118,7 +1120,7 @@ def get_course_service(
         # Per-course cost metering (course-cost-metering T4): the build enters a cost_scope so the
         # deep pipeline's record_cost calls buffer, then drains to these stores at the boundary.
         cost_event_store=cost_event_store,
-        course_cost_store=course_cost_store,
+        subject_cost_store=subject_cost_store,
         throttle=_get_keyless_build_throttle(settings),
         bridge_registry=_device_bridge_registry,
         bridge_limits=BridgeLimits(

@@ -10,21 +10,22 @@ from lunaris_runtime.schema import (
     AgentEvent,
     Clarification,
     CostEvent,
+    CostSubjectType,
     Course,
-    CourseCost,
     DiscoveryDepth,
     ProgressEvent,
+    SubjectCost,
 )
 from pydantic import ValidationError
 
 from ..cover_thumbs import CoverThumbs, sign_library_cover_thumbs
 from ..dependencies import (
     CostEventStoreDep,
-    CourseCostStoreDep,
     CourseServiceDep,
     CoverStorageDep,
     OptionalUserIdDep,
     ProgressStoreDep,
+    SubjectCostStoreDep,
 )
 from ..draft_throttle import DraftBuildRefusedError
 from ..library import CourseSummary, LearnerSnapshot, assemble_course_summaries
@@ -260,13 +261,13 @@ async def get_course(
     return course
 
 
-@router.get("/{course_id}/cost", response_model=CourseCost | None)
+@router.get("/{course_id}/cost", response_model=SubjectCost | None)
 async def get_course_cost(
     course_id: str,
-    cost_store: CourseCostStoreDep,
+    cost_store: SubjectCostStoreDep,
     response: Response,
     owner_id: OptionalUserIdDep,
-) -> CourseCost | None:
+) -> SubjectCost | None:
     """The metered build cost of a course — the total + breakdown the Overview reads.
 
     ``null`` (200, not 404) when the course has no metered cost: a course built before metering
@@ -275,7 +276,9 @@ async def get_course_cost(
     A ``request_id`` is bound + returned in ``X-Request-Id`` for cross-layer log triangulation.
     """
     response.headers["X-Request-Id"] = _bind()
-    return await cost_store.get(course_id=course_id, owner_id=owner_id)
+    return await cost_store.get(
+        subject_type=CostSubjectType.COURSE, subject_id=course_id, owner_id=owner_id
+    )
 
 
 @router.get("/{course_id}/cost/events", response_model=list[CostEvent])
@@ -295,7 +298,9 @@ async def get_course_cost_events(
     cross-layer log triangulation.
     """
     response.headers["X-Request-Id"] = _bind()
-    return await event_store.list_for_course(course_id=course_id, owner_id=owner_id)
+    return await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE, subject_id=course_id, owner_id=owner_id
+    )
 
 
 @router.post("/{course_id}/publish", response_model=Course)

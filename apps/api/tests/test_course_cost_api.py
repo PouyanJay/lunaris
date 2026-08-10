@@ -12,11 +12,11 @@ from collections.abc import AsyncIterator
 import httpx
 import pytest
 from lunaris_api.app import create_app
-from lunaris_api.dependencies import get_cost_event_store, get_course_cost_store
+from lunaris_api.dependencies import get_cost_event_store, get_subject_cost_store
 from lunaris_runtime.logging import clear_correlation
 from lunaris_runtime.metering import CostEventRecorder
-from lunaris_runtime.persistence import InMemoryCostEventStore, InMemoryCourseCostStore
-from lunaris_runtime.schema import CostPocket, CostProvider
+from lunaris_runtime.persistence import InMemoryCostEventStore, InMemorySubjectCostStore
+from lunaris_runtime.schema import CostPocket, CostProvider, CostSubjectType
 
 _COURSE_ID = "course-skeleton"
 _RUN_ID = "run-skeleton"
@@ -29,13 +29,13 @@ def event_store() -> InMemoryCostEventStore:
 
 
 @pytest.fixture
-def course_cost_store() -> InMemoryCourseCostStore:
-    return InMemoryCourseCostStore()
+def subject_cost_store() -> InMemorySubjectCostStore:
+    return InMemorySubjectCostStore()
 
 
 @pytest.fixture
 async def http_with(
-    course_cost_store: InMemoryCourseCostStore,
+    subject_cost_store: InMemorySubjectCostStore,
     event_store: InMemoryCostEventStore,
 ) -> AsyncIterator[httpx.AsyncClient]:
     clear_correlation()
@@ -43,7 +43,7 @@ async def http_with(
     # The cost endpoints read the rollup store (the total) and the ledger store (the drill-through);
     # override both so the test's recorder and the endpoints share one instance each (auth off → the
     # unscoped single-user path, owner_id is None).
-    app.dependency_overrides[get_course_cost_store] = lambda: course_cost_store
+    app.dependency_overrides[get_subject_cost_store] = lambda: subject_cost_store
     app.dependency_overrides[get_cost_event_store] = lambda: event_store
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -53,14 +53,15 @@ async def http_with(
 async def test_recorded_cost_rolls_up_and_reads_back_over_http(
     http_with: httpx.AsyncClient,
     event_store: InMemoryCostEventStore,
-    course_cost_store: InMemoryCourseCostStore,
+    subject_cost_store: InMemorySubjectCostStore,
 ) -> None:
     # Arrange — a build records one (stub) metered call, then finalizes to roll the course up.
     recorder = CostEventRecorder(
         event_store,
-        course_cost_store,
+        subject_cost_store,
         run_id=_RUN_ID,
-        course_id=_COURSE_ID,
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
         price_book_version=_PRICE_BOOK_VERSION,
     )
     await recorder.record(
@@ -80,7 +81,10 @@ async def test_recorded_cost_rolls_up_and_reads_back_over_http(
     assert response.status_code == 200
     body = response.json()
     assert body is not None, "expected a metered rollup, not a null (not-metered) body"
-    assert body["courseId"] == _COURSE_ID
+    # The rollup names what it was spent on, not just how much: a course id and a graph id can
+    # collide, so the type is what keeps one product's spend out of the other's total.
+    assert body["subjectType"] == "course"
+    assert body["subjectId"] == _COURSE_ID
     assert body["totalAmount"] == pytest.approx(0.5)
     assert body["currency"] == "USD"
     assert body["priceBookVersion"] == _PRICE_BOOK_VERSION
@@ -92,7 +96,10 @@ async def test_recorded_cost_rolls_up_and_reads_back_over_http(
     assert breakdown["byPocket"]["platform"] == pytest.approx(0.5)
 
     # Behavioral: the append-only ledger holds the underlying event (the drill-through source).
-    ledger = await event_store.list_for_course(course_id=_COURSE_ID)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+    )
     assert [e.seq for e in ledger] == [0]
     assert ledger[0].component == "walking_skeleton"
 
@@ -109,14 +116,15 @@ async def test_unmetered_course_reads_as_null_not_404(http_with: httpx.AsyncClie
 async def test_cost_ledger_reads_back_over_http_for_the_drill_through(
     http_with: httpx.AsyncClient,
     event_store: InMemoryCostEventStore,
-    course_cost_store: InMemoryCourseCostStore,
+    subject_cost_store: InMemorySubjectCostStore,
 ) -> None:
     # Arrange — a build records two metered calls across two providers, ordered by emission.
     recorder = CostEventRecorder(
         event_store,
-        course_cost_store,
+        subject_cost_store,
         run_id=_RUN_ID,
-        course_id=_COURSE_ID,
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
         price_book_version=_PRICE_BOOK_VERSION,
     )
     await recorder.record(
@@ -163,14 +171,15 @@ async def test_cost_ledger_reads_back_over_http_for_the_drill_through(
 
 async def test_cost_ledger_is_owner_scoped_no_cross_owner_leak(
     event_store: InMemoryCostEventStore,
-    course_cost_store: InMemoryCourseCostStore,
+    subject_cost_store: InMemorySubjectCostStore,
 ) -> None:
     # Arrange — a build owned by "alice" records cost (the recorder stamps the owner on each write).
     recorder = CostEventRecorder(
         event_store,
-        course_cost_store,
+        subject_cost_store,
         run_id=_RUN_ID,
-        course_id=_COURSE_ID,
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
         price_book_version=_PRICE_BOOK_VERSION,
         owner_id="alice",
     )
@@ -186,8 +195,19 @@ async def test_cost_ledger_is_owner_scoped_no_cross_owner_leak(
 
     # Assert — the endpoint's owner-scoping contract (the store the route delegates to): another
     # owner reading the same course's ledger sees nothing, while the owner sees their events.
-    assert await event_store.list_for_course(course_id=_COURSE_ID, owner_id="bob") == []
-    theirs = await event_store.list_for_course(course_id=_COURSE_ID, owner_id="alice")
+    assert (
+        await event_store.list_for_subject(
+            subject_type=CostSubjectType.COURSE,
+            subject_id=_COURSE_ID,
+            owner_id="bob",
+        )
+        == []
+    )
+    theirs = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+        owner_id="alice",
+    )
     assert [event.seq for event in theirs] == [0]
 
 

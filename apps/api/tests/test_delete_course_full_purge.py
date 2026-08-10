@@ -17,10 +17,10 @@ from lunaris_runtime.metering import CostEventRecorder
 from lunaris_runtime.persistence import (
     CourseStore,
     InMemoryCostEventStore,
-    InMemoryCourseCostStore,
     InMemoryRunStore,
+    InMemorySubjectCostStore,
 )
-from lunaris_runtime.schema import CostPocket, CostProvider
+from lunaris_runtime.schema import CostPocket, CostProvider, CostSubjectType
 
 _OWNER = "00000000-0000-0000-0000-00000000000a"
 _OTHER = "00000000-0000-0000-0000-00000000000b"
@@ -70,7 +70,7 @@ class _Stores:
         self.activity = InMemoryActivityStore()
         self.corpus = InMemoryCorpusStore()
         self.cost_events = InMemoryCostEventStore()
-        self.course_costs = InMemoryCourseCostStore()
+        self.course_costs = InMemorySubjectCostStore()
 
     async def seed(self, owner: str, course_id: str) -> None:
         await self.progress.set_lesson(
@@ -85,7 +85,8 @@ class _Stores:
             self.cost_events,
             self.course_costs,
             run_id=f"run-{course_id}",
-            course_id=course_id,
+            subject_type=CostSubjectType.COURSE,
+            subject_id=course_id,
             price_book_version="test",
             owner_id=owner,
         )
@@ -105,8 +106,14 @@ class _Stores:
         marks = [b for b in await self.bookmarks.list(user_id=owner) if b.course_id == course_id]
         events = [e for e in await self.activity.events(user_id=owner) if e.course_id == course_id]
         chunks = await self.corpus.match([0.1], k=100, min_score=0.0, course_id=course_id)
-        ledger = await self.cost_events.list_for_course(course_id=course_id, owner_id=owner)
-        rollup = await self.course_costs.get(course_id=course_id, owner_id=owner)
+        ledger = await self.cost_events.list_for_subject(
+            subject_type=CostSubjectType.COURSE,
+            subject_id=course_id,
+            owner_id=owner,
+        )
+        rollup = await self.course_costs.get(
+            subject_type=CostSubjectType.COURSE, subject_id=course_id, owner_id=owner
+        )
         return {
             "progress": len(objectives) + len(lessons) + (1 if state else 0),
             "bookmarks": len(marks),
@@ -126,7 +133,7 @@ def _service(tmp_path: Path, stores: _Stores) -> CourseService:
         activity_store=stores.activity,
         corpus_store=stores.corpus,
         cost_event_store=stores.cost_events,
-        course_cost_store=stores.course_costs,
+        subject_cost_store=stores.course_costs,
     )
 
 

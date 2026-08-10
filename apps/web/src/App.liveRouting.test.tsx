@@ -94,7 +94,9 @@ describe("App — the Live route-space", () => {
 
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("link", { name: /go to lunaris studio/i }));
+    // Phase 1 renamed the way out: with nothing to compile, the honest next step is to name a
+    // topic, not to leave for Studio. What is pinned is that the empty state still has one.
+    fireEvent.click(await screen.findByRole("link", { name: /name a topic/i }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(

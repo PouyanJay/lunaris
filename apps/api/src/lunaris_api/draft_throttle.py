@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .daily_counter import DailyCounter
+
 
 class DraftBuildRefusedError(Exception):
     """Base for a refused keyless build.
@@ -95,9 +97,7 @@ class KeylessBuildThrottle:
         self._max_concurrent = max(1, max_concurrent)
         self._clock = clock or (lambda: datetime.now(UTC))
         self._active = 0
-        # (owner_key, iso-day) -> builds started that day. Pruned to the current day on each reserve
-        # so the map can't grow without bound across days.
-        self._counts: dict[tuple[str, str], int] = {}
+        self._counts = DailyCounter(clock=clock)
 
     def reserve(self, owner_key: str) -> DraftReservation:
         """Admit one keyless build for ``owner_key``, or refuse with the reason.
@@ -111,22 +111,13 @@ class KeylessBuildThrottle:
             raise DraftTierDisabledError
         if self._active >= self._max_concurrent:
             raise DraftBuildBusyError
-        day = self._clock().date().isoformat()
-        self._prune(day)
-        used = self._counts.get((owner_key, day), 0)
-        if used >= self._daily_cap:
+        if self._counts.used(owner_key) >= self._daily_cap:
             raise DraftDailyCapReachedError(self._daily_cap)
-        self._counts[(owner_key, day)] = used + 1
+        self._counts.count(owner_key)
         self._active += 1
-        return DraftReservation(owner_key=owner_key, day=day)
+        return DraftReservation(owner_key=owner_key, day=self._clock().date().isoformat())
 
     def release(self, reservation: DraftReservation) -> None:
         """Free the in-flight slot the build held. The day's count is intentionally NOT decremented
         — a completed build still counts against the daily cap. Idempotent-safe (floors at zero)."""
         self._active = max(0, self._active - 1)
-
-    def _prune(self, today: str) -> None:
-        """Drop count entries from earlier days so the cap resets and the map stays bounded."""
-        stale = [key for key in self._counts if key[1] != today]
-        for key in stale:
-            del self._counts[key]

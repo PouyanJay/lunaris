@@ -12,7 +12,7 @@ from langchain_core.outputs import ChatGeneration, LLMResult
 from lunaris_runtime.metering import CostScope, cost_scope
 from lunaris_runtime.metering.metering_callback import MeteringCallbackHandler
 from lunaris_runtime.pricing import PriceBook
-from lunaris_runtime.schema import CostProvider
+from lunaris_runtime.schema import CostProvider, CostSubjectType
 
 _OPUS = "claude-opus-4-8"  # $5/MTok in, $25/MTok out
 
@@ -25,7 +25,12 @@ def _result(usage: dict) -> LLMResult:
 
 
 def _scope() -> CostScope:
-    return CostScope(run_id="r", course_id="c", price_book=PriceBook.current())
+    return CostScope(
+        run_id="r",
+        subject_type=CostSubjectType.COURSE,
+        subject_id="c",
+        price_book=PriceBook.current(),
+    )
 
 
 def test_callback_splits_cache_tokens_and_prices_them() -> None:

@@ -22,7 +22,8 @@ import { CourseCostPanel } from "./CourseCostPanel";
 
 function meteredRollup(overrides: Partial<CourseCost> = {}): CourseCost {
   return {
-    courseId: "c-1",
+    subjectType: "course",
+    subjectId: "c-1",
     totalAmount: 0.42,
     currency: "USD",
     breakdown: {
@@ -53,7 +54,8 @@ function ledger(): CostEvent[] {
   return [
     {
       runId: "r-1",
-      courseId: "c-1",
+      subjectType: "course",
+      subjectId: "c-1",
       seq: 0,
       component: "planner",
       provider: "anthropic",
@@ -66,7 +68,8 @@ function ledger(): CostEvent[] {
     },
     {
       runId: "r-2",
-      courseId: "c-1",
+      subjectType: "course",
+      subjectId: "c-1",
       seq: 1,
       component: "render",
       provider: "manim",

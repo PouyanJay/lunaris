@@ -1,0 +1,22 @@
+[project]
+name = "lunaris-live"
+version = "0.0.0"
+description = "Lunaris Live — runtime-generated tutoring sessions over a concept graph"
+requires-python = ">=3.12"
+dependencies = [
+    # Live builds on Studio's foundations (persistence guard, logging/correlation); the boundary is
+    # one-way — Studio must never depend on Live. See tests/test_product_boundary.py.
+    "lunaris-runtime",
+    "pydantic>=2.9",
+    "structlog>=24.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lunaris_live"]
+
+[tool.uv.sources]
+lunaris-runtime = { workspace = true }

@@ -420,6 +420,7 @@ export function routedFetch(
     library?: unknown;
     activity?: unknown;
     bookmarks?: unknown;
+    liveGraph?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -482,6 +483,44 @@ export function routedFetch(
         feed: [],
       };
       return Promise.resolve({ ok: true, json: async () => activity });
+    }
+    // Lunaris Live's compile: a topic goes up as a query param, the map comes back over SSE. The
+    // default echoes the requested topic through a one-node graph, so a test asserting the topic
+    // survived the URL is asserting the round trip rather than a fixture constant.
+    if (url.includes("/api/live/graphs/stream")) {
+      const topic = new URL(url, "http://test").searchParams.get("topic") ?? "";
+      const fallback = {
+        graphId: "g-test",
+        topic,
+        version: 1,
+        nodes: [
+          {
+            id: "n1",
+            name: topic,
+            definition: `${topic}, put together.`,
+            requires: [],
+            provenance: "compiled",
+          },
+        ],
+        topoOrder: ["n1"],
+        isAcyclic: true,
+      };
+      const graph = JSON.stringify(handlers.liveGraph ?? fallback);
+      const encoder = new TextEncoder();
+      return Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(
+                encoder.encode(`event: progress\ndata: {"phase":"authoring","done":1,"total":1}\n\n`),
+              );
+              controller.enqueue(encoder.encode(`event: graph\ndata: ${graph}\n\n`));
+              controller.close();
+            },
+          }),
+          { headers: { "content-type": "text/event-stream", "x-run-id": "run-test" } },
+        ),
+      );
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);

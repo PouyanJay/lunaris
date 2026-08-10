@@ -17,9 +17,9 @@ from lunaris_runtime.metering import (
     drain_cost_scope,
     record_cost,
 )
-from lunaris_runtime.persistence import InMemoryCostEventStore, InMemoryCourseCostStore
+from lunaris_runtime.persistence import InMemoryCostEventStore, InMemorySubjectCostStore
 from lunaris_runtime.pricing import PriceBook
-from lunaris_runtime.schema import CostPocket, CostProvider, CostUnit
+from lunaris_runtime.schema import CostPocket, CostProvider, CostSubjectType, CostUnit
 
 _RUN_ID = "run-seam"
 _COURSE_ID = "course-seam"
@@ -27,12 +27,17 @@ _OPUS = "claude-opus-4-8"  # $5/MTok in, $25/MTok out
 
 
 def _scope() -> CostScope:
-    return CostScope(run_id=_RUN_ID, course_id=_COURSE_ID, price_book=PriceBook.current())
+    return CostScope(
+        run_id=_RUN_ID,
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+        price_book=PriceBook.current(),
+    )
 
 
 async def test_record_cost_prices_and_persists_a_claude_call() -> None:
     # Arrange
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
 
     # Act — a "deep" Claude call records 1M input + 1M output tokens inside the run's cost scope.
@@ -46,12 +51,15 @@ async def test_record_cost_prices_and_persists_a_claude_call() -> None:
     await drain_cost_scope(scope, event_store, cost_store)
 
     # Assert — calculated cost = $5 (input) + $25 (output) = $30, persisted to ledger + rollup.
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.total_amount == pytest.approx(30.0)
     assert rollup.breakdown["byProvider"]["anthropic"] == pytest.approx(30.0)
     assert rollup.breakdown["byComponent"]["module_author"] == pytest.approx(30.0)
-    ledger = await event_store.list_for_course(course_id=_COURSE_ID)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+    )
     assert [e.component for e in ledger] == ["module_author"]
     # usage keys are CostUnit values (the auditable measured units the cost was calculated from).
     assert ledger[0].usage == {"input_tokens": 1_000_000, "output_tokens": 1_000_000}
@@ -59,7 +67,7 @@ async def test_record_cost_prices_and_persists_a_claude_call() -> None:
 
 async def test_cache_tokens_price_at_the_split_rates() -> None:
     # Cache read is 0.1x input and cache write is 1.25x input, so metering them separately matters.
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
     with cost_scope(scope):
         record_cost(
@@ -72,14 +80,14 @@ async def test_cache_tokens_price_at_the_split_rates() -> None:
             },
         )
     await drain_cost_scope(scope, event_store, cost_store)
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.total_amount == pytest.approx(0.50 + 6.25)
 
 
 async def test_user_key_pocket_persists_through_ledger_and_rollup() -> None:
     # Arrange — a build on the tenant's own Anthropic key.
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
 
     # Act
@@ -93,9 +101,12 @@ async def test_user_key_pocket_persists_through_ledger_and_rollup() -> None:
     await drain_cost_scope(scope, event_store, cost_store)
 
     # Assert — the user_key pocket survives to the ledger row AND the rollup's byPocket split.
-    ledger = await event_store.list_for_course(course_id=_COURSE_ID)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+    )
     assert ledger[0].pocket is CostPocket.USER_KEY
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.breakdown["byPocket"]["user_key"] == pytest.approx(5.0)
     assert rollup.breakdown["byPocket"]["platform"] == pytest.approx(0.0)
@@ -103,7 +114,7 @@ async def test_user_key_pocket_persists_through_ledger_and_rollup() -> None:
 
 async def test_platform_pocket_persists_through_ledger_and_rollup() -> None:
     # Arrange — no credential scope carrying the key → platform (env / infra) spend.
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
 
     # Act
@@ -117,9 +128,12 @@ async def test_platform_pocket_persists_through_ledger_and_rollup() -> None:
     await drain_cost_scope(scope, event_store, cost_store)
 
     # Assert — the platform pocket lands on the ledger row and the rollup split.
-    ledger = await event_store.list_for_course(course_id=_COURSE_ID)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+    )
     assert ledger[0].pocket is CostPocket.PLATFORM
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.breakdown["byPocket"]["platform"] == pytest.approx(5.0)
     assert rollup.breakdown["byPocket"]["user_key"] == pytest.approx(0.0)
@@ -128,7 +142,7 @@ async def test_platform_pocket_persists_through_ledger_and_rollup() -> None:
 async def test_render_compute_bills_to_platform_even_under_a_tenant_scope() -> None:
     # Arrange — render compute has no BYOK key, so it's platform spend even when a DIFFERENT
     # provider's tenant key is live in the same scope (guards against "any active key -> user_key").
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
 
     # Act
@@ -142,9 +156,12 @@ async def test_render_compute_bills_to_platform_even_under_a_tenant_scope() -> N
     await drain_cost_scope(scope, event_store, cost_store)
 
     # Assert
-    ledger = await event_store.list_for_course(course_id=_COURSE_ID)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+    )
     assert ledger[0].pocket is CostPocket.PLATFORM
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.breakdown["byPocket"]["platform"] == pytest.approx(120 * 0.0000024)
     assert rollup.breakdown["byPocket"]["user_key"] == pytest.approx(0.0)
@@ -153,7 +170,7 @@ async def test_render_compute_bills_to_platform_even_under_a_tenant_scope() -> N
 async def test_record_cost_degrades_to_zero_on_an_unpriced_unit() -> None:
     # Arrange — a mixed call: a priced unit plus a unit with no rate for this provider (Anthropic
     # has no IMAGES rate). The un-priced unit must degrade to 0, not crash the build.
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
 
     # Act
@@ -168,10 +185,13 @@ async def test_record_cost_degrades_to_zero_on_an_unpriced_unit() -> None:
 
     # Assert — amount reflects only the priced portion ($5); both units are still recorded
     # (auditable), the un-priced one just contributed 0. No exception raised.
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.total_amount == pytest.approx(5.0)
-    ledger = await event_store.list_for_course(course_id=_COURSE_ID)
+    ledger = await event_store.list_for_subject(
+        subject_type=CostSubjectType.COURSE,
+        subject_id=_COURSE_ID,
+    )
     assert ledger[0].usage == {"input_tokens": 1_000_000, "images": 3}
 
 
@@ -189,7 +209,7 @@ async def test_record_cost_is_a_noop_without_a_scope() -> None:
 
 async def test_keyless_local_call_records_zero_cost() -> None:
     # A keyless build's local fallback is metered but prices to $0 — an honest "~$0", not "no data".
-    event_store, cost_store = InMemoryCostEventStore(), InMemoryCourseCostStore()
+    event_store, cost_store = InMemoryCostEventStore(), InMemorySubjectCostStore()
     scope = _scope()
     with cost_scope(scope):
         record_cost(
@@ -199,7 +219,7 @@ async def test_keyless_local_call_records_zero_cost() -> None:
             usage={CostUnit.INPUT_TOKENS: 5_000, CostUnit.OUTPUT_TOKENS: 2_000},
         )
     await drain_cost_scope(scope, event_store, cost_store)
-    rollup = await cost_store.get(course_id=_COURSE_ID)
+    rollup = await cost_store.get(subject_type=CostSubjectType.COURSE, subject_id=_COURSE_ID)
     assert rollup is not None
     assert rollup.total_amount == pytest.approx(0.0)
     assert rollup.breakdown["eventCount"] == 1  # metered, not dropped
