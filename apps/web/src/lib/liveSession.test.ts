@@ -11,6 +11,7 @@ const SESSION = {
       seq: 1,
       move: { kind: "introduce", nodeId: "a", reason: "Opening concept." },
       tutor: "Let's start with Gravity.",
+      runId: "r1",
     },
   ],
 };
@@ -37,8 +38,9 @@ describe("liveSession — opening and resuming a session", () => {
     expect(session.sessionId).toBe("s1");
     // The move rides every turn: without it the transcript is prose nobody can explain the
     // choice of, which is the whole point of the director emitting its reasoning.
-    expect(session.turns[0].move.kind).toBe("introduce");
-    expect(session.turns[0].move.reason).toBe("Opening concept.");
+    const [first] = session.turns;
+    expect(first?.move.kind).toBe("introduce");
+    expect(first?.move.reason).toBe("Opening concept.");
   });
 
   it("resumes the session a reloaded tab was in", async () => {

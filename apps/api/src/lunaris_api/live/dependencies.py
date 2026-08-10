@@ -25,8 +25,19 @@ from .service import LiveGraphService
 #: Decomposition decides what the course is made of and every later phase reads it, so it runs on
 #: the strong tier, not the bulk one. Same env knob Studio's tiers use, so a tenant's model choice
 #: covers both products. (Splitting decomposition from spec authoring across two tiers is a
-#: latency/cost lever T4 owns; one tier keeps this honest until there is a measurement to tune to.)
+#: latency/cost lever; one tier keeps this honest until there is a measurement to tune to.)
 _DEFAULT_MODEL = "claude-opus-4-8"
+
+
+def resolve_strong_model() -> str:
+    """The model Live's quality surfaces run on — the compiler's decomposition and the tutor.
+
+    One function rather than a constant per composition root, so a tenant's model choice cannot end
+    up meaning two different things inside one product: a session taught by a weaker model than the
+    map it walks would be a difference nobody configured.
+    """
+    return resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL
+
 
 # One durable store per process, same lazy-client rationale as Studio's stores: the service-role
 # client is built on first write, so the singleton needs no creds and no network until then.
@@ -56,10 +67,7 @@ def _resolve_compiler(settings: Settings) -> IGraphCompiler:
     """
     if settings.pipeline == "stub":
         return StubGraphCompiler()
-    return ClaudeGraphCompiler(
-        resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL,
-        deadline_s=settings.live_compile_deadline_s,
-    )
+    return ClaudeGraphCompiler(resolve_strong_model(), deadline_s=settings.live_compile_deadline_s)
 
 
 @lru_cache

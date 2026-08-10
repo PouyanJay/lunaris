@@ -32,6 +32,23 @@ async def test_a_compile_is_reproducible_for_the_same_topic() -> None:
     assert [node.id for node in first.nodes] == [node.id for node in second.nodes]
 
 
+async def test_every_stub_concept_is_teachable_in_practice() -> None:
+    """A node without teaching notes is teachable *in principle* and useless to a session: the
+    tutor has a definition and nothing to teach around, and the grader (T5) has no criterion to
+    stage. The offline path is what CI and keyless dev run, so a stub map that could not be taught
+    would leave the whole session loop untested below the API.
+    """
+    # Act
+    graph = await _compiled()
+
+    # Assert
+    for node in graph.nodes:
+        assert node.teaching_spec is not None, f"{node.id} has no teaching notes"
+        assert node.teaching_spec.objective
+        assert node.teaching_spec.misconceptions, f"{node.id} names no misconception to teach past"
+        assert node.mastery_criteria, f"{node.id} has nothing the learner could be asked to do"
+
+
 async def test_every_compiled_node_is_marked_as_compiled() -> None:
     # Act
     graph = await _compiled()

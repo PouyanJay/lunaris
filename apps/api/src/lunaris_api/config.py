@@ -68,6 +68,10 @@ class Settings:
     live_compile_max_concurrent: int = 1
     live_extend_daily_cap: int = 50
     live_graph_budget_usd: float = 10.0
+    #: How long a Live session runs before the director closes it (plan §6: 25-40 minutes). A
+    #: bound on the learner's wall clock, not on turns — a session of long, slow turns would
+    #: otherwise run for hours.
+    live_session_budget_s: float = 1800.0
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
     # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
@@ -164,6 +168,7 @@ def get_settings() -> Settings:
         live_compile_max_concurrent=_env_int("LUNARIS_LIVE_COMPILE_MAX_CONCURRENT", default=1),
         live_extend_daily_cap=_env_int("LUNARIS_LIVE_EXTEND_DAILY_CAP", default=50),
         live_graph_budget_usd=_env_float("LUNARIS_LIVE_GRAPH_BUDGET_USD", default=10.0),
+        live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

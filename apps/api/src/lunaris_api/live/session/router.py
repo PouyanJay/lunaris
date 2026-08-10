@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import structlog
 from fastapi import APIRouter, HTTPException, Response, status
-from lunaris_live.session import Session
+from lunaris_live.session import Session, SessionFormatError, TutorUnavailableError
 from lunaris_runtime.persistence import PersistenceError
 
 from ...dependencies import OptionalUserIdDep
@@ -14,6 +14,15 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/live/sessions", tags=["live"])
 
 _UNAVAILABLE = "Live is having trouble reaching its storage. Try again shortly."
+
+#: The tutor being down is a different outage from storage being down, and a learner can tell: one
+#: means their session did not open, the other means it may not have been saved. Both end, so both
+#: are worth retrying — which is why this is a 503 rather than a session opened with nothing in it.
+_TUTOR_UNAVAILABLE = "Live's tutor could not reach its model. Try again shortly."
+
+#: A row this build cannot parse never becomes readable by waiting, so it must not read as an
+#: outage: "try again" on a permanently unreadable session is an invitation to reload forever.
+_UNREADABLE = "This session was saved in a format Live can no longer read."
 
 
 @router.post("", response_model=Session, status_code=status.HTTP_201_CREATED)
@@ -47,12 +56,8 @@ async def start_session(
         # and ``guard`` only translates. Without this an outage is a bare 500 with no way to tell
         # what broke, on the path where a learner has just lost a session before it began.
         logger.warning("live.session.start_failed", session_id=session_id, exc_info=True)
-        if isinstance(exc, PersistenceError):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=_UNAVAILABLE,
-                headers=correlated,
-            ) from exc
+        if (translated := _translate(exc, correlated)) is not None:
+            raise translated from exc
         raise
 
 
@@ -77,12 +82,37 @@ async def read_session(
         ) from exc
     except Exception as exc:
         logger.warning("live.session.read_failed", session_id=session_id, exc_info=True)
-        if isinstance(exc, PersistenceError):
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=_UNAVAILABLE,
-                headers=correlated,
-            ) from exc
+        if (translated := _translate(exc, correlated)) is not None:
+            raise translated from exc
         raise
     response.headers["X-Session-Id"] = session_id
     return session
+
+
+def _translate(exc: Exception, correlated: dict[str, str]) -> HTTPException | None:
+    """The HTTP answer to a failure a learner could plausibly act on, or ``None`` to let it fly.
+
+    One place, because the two entry points fail in the same ways and drifting apart would mean a
+    learner learning what "try again" means from whichever endpoint they hit first. Ordered
+    deliberately: ``SessionFormatError`` IS a ``PersistenceError``, and reading as a retryable
+    outage is exactly the mistake it exists to prevent.
+    """
+    if isinstance(exc, SessionFormatError):
+        return HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_UNREADABLE,
+            headers=correlated,
+        )
+    if isinstance(exc, TutorUnavailableError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_TUTOR_UNAVAILABLE,
+            headers=correlated,
+        )
+    if isinstance(exc, PersistenceError):
+        return HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=_UNAVAILABLE,
+            headers=correlated,
+        )
+    return None

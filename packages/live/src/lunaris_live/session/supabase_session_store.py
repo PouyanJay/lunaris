@@ -1,8 +1,10 @@
 import os
 
 from lunaris_runtime.persistence.guard import guard
+from pydantic import ValidationError
 
 from .schema import Session
+from .session_format_error import SessionFormatError
 
 _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
@@ -76,4 +78,12 @@ class SupabaseSessionStore:
         rows = query.limit(1).execute().data
         if not rows:
             raise FileNotFoundError(session_id)
-        return Session.model_validate(rows[0]["payload"])
+        try:
+            return Session.model_validate(rows[0]["payload"])
+        except ValidationError as exc:
+            # Told apart from a backend failure because the two want opposite things from the
+            # learner: an outage ends and is worth retrying, a row written by a schema this build no
+            # longer understands does not. Undistinguished, ``guard`` would turn this into the same
+            # "storage is having trouble" a reload is the right answer to. Live under a rolling
+            # deploy, and the turn schema is still growing (T4 added ``run_id``; T5, T6 add more).
+            raise SessionFormatError(f"session {session_id} is not in a readable format") from exc

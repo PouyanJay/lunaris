@@ -18,3 +18,8 @@ class SessionTurn(LiveModel):
     #: What the tutor said, in the learner's language. Empty is never valid: a turn the learner
     #: cannot see is a decision that happened to them invisibly.
     tutor: str = Field(min_length=1)
+    #: The run that produced this turn (R6) — the session's id answers "show me this learner's
+    #: session", this one answers "show me what the tutor was actually asked on this line". A turn
+    #: is one or more model calls, so without it a stored transcript is unattached to the logs that
+    #: explain it.
+    run_id: str = Field(min_length=1, max_length=100)

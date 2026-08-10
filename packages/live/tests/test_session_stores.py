@@ -9,14 +9,19 @@ everything they got wrong. The store is the last thing between one learner's and
 the loop writes through the service-role client, which bypasses RLS.
 """
 
+from typing import Any
+
 import pytest
 from lunaris_live.session import (
     DirectorMove,
     MemorySessionStore,
     MoveKind,
     Session,
+    SessionFormatError,
     SessionTurn,
+    SupabaseSessionStore,
 )
+from lunaris_runtime.persistence import PersistenceError
 
 
 def _session(session_id: str = "s1") -> Session:
@@ -28,6 +33,7 @@ def _session(session_id: str = "s1") -> Session:
                 seq=1,
                 move=DirectorMove(kind=MoveKind.INTRODUCE, node_id="a", reason="Opening concept."),
                 tutor="Let's start with A.",
+                run_id="r1",
             )
         ],
     )
@@ -116,6 +122,7 @@ def test_saving_the_same_session_again_replaces_its_head() -> None:
                     seq=2,
                     move=DirectorMove(kind=MoveKind.RETRIEVE, node_id="a", reason="Coming back."),
                     tutor="What happens when it doubles?",
+                    run_id="r2",
                 ),
             ]
         }
@@ -126,3 +133,86 @@ def test_saving_the_same_session_again_replaces_its_head() -> None:
 
     # Assert
     assert [turn.seq for turn in store.load("s1", owner_id="learner-1").turns] == [1, 2]
+
+
+# ── a row this build cannot read ───────────────────────────────────────────────────────────────
+
+
+class FakeSupabase:
+    """The narrow slice of supabase-py the session store uses: a chainable query over one row."""
+
+    def __init__(self, row: dict[str, Any] | None) -> None:
+        self._row = row
+
+    def table(self, _name: str) -> "FakeSupabase":
+        return self
+
+    def select(self, *_columns: str) -> "FakeSupabase":
+        return self
+
+    def eq(self, _column: str, _value: object) -> "FakeSupabase":
+        return self
+
+    def is_(self, _column: str, _value: object) -> "FakeSupabase":
+        return self
+
+    def limit(self, _count: int) -> "FakeSupabase":
+        return self
+
+    def execute(self) -> Any:
+        class Result:
+            data = [] if self._row is None else [self._row]
+
+        return Result()
+
+
+def test_a_session_this_build_cannot_parse_is_not_an_outage() -> None:
+    """The failure has to be distinguishable from a backend being down, because the two want
+    opposite things from the caller: an outage is worth retrying and a row written by a schema this
+    build no longer understands never will be. Undistinguished, it reads as a transient 503 and
+    invites a learner to reload forever on a session that cannot come back.
+
+    Live under a rolling deploy: T4 added ``run_id`` to a turn, and T5 and T6 both add more.
+    """
+    # Arrange — a session saved before turns carried the run that produced them.
+    stale = {
+        "sessionId": "s1",
+        "graphId": "g1",
+        "status": "active",
+        "turns": [
+            {
+                "seq": 1,
+                "move": {"kind": "introduce", "nodeId": "a", "reason": "Opening concept."},
+                "tutor": "Let's start with A.",
+            }
+        ],
+    }
+    store = SupabaseSessionStore(client=FakeSupabase({"payload": stale}))
+
+    # Act / Assert
+    with pytest.raises(SessionFormatError):
+        store.load("s1", owner_id=None)
+
+
+def test_a_readable_row_still_loads_through_the_same_path() -> None:
+    """The guard above must not be a wall: the ordinary row goes through untouched."""
+    # Arrange
+    payload = _session().model_dump(mode="json", by_alias=True)
+    store = SupabaseSessionStore(client=FakeSupabase({"payload": payload}))
+
+    # Act
+    loaded = store.load("s1", owner_id=None)
+
+    # Assert
+    assert loaded.turns[0].run_id == "r1"
+
+
+def test_a_format_failure_is_still_a_persistence_failure_to_anyone_not_looking_for_it() -> None:
+    """Callers that only know about ``PersistenceError`` keep working — the distinction is
+    available to the router that wants it, not imposed on everything that touches a store."""
+    # Arrange
+    store = SupabaseSessionStore(client=FakeSupabase({"payload": {"nonsense": True}}))
+
+    # Act / Assert
+    with pytest.raises(PersistenceError):
+        store.load("s1", owner_id=None)

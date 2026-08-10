@@ -5,7 +5,16 @@ import structlog
 from .assembly import assemble
 from .protocols import ICompileProgressSink
 from .report_progress import report_progress
-from .schema import CompilePhase, ConceptGraph, ConceptNode, GraphEdit, NodeProvenance
+from .schema import (
+    CompilePhase,
+    ConceptGraph,
+    ConceptNode,
+    GraphEdit,
+    MasteryCriterion,
+    MasteryCriterionKind,
+    NodeProvenance,
+    TeachingSpec,
+)
 
 logger = structlog.get_logger()
 
@@ -46,18 +55,24 @@ class StubGraphCompiler:
                 id=f"{slug}-foundations",
                 name=f"Foundations of {label}",
                 definition=f"The ideas you need in place before {label} makes sense.",
+                teaching_spec=_spec(f"Foundations of {label}"),
+                mastery_criteria=_criteria(f"Foundations of {label}"),
             ),
             ConceptNode(
                 id=f"{slug}-core",
                 name=f"Core of {label}",
                 definition=f"The central mechanism of {label}.",
                 requires=[f"{slug}-foundations"],
+                teaching_spec=_spec(f"Core of {label}"),
+                mastery_criteria=_criteria(f"Core of {label}"),
             ),
             ConceptNode(
                 id=slug,
                 name=topic,
                 definition=f"{topic}, put together.",
                 requires=[f"{slug}-core"],
+                teaching_spec=_spec(label),
+                mastery_criteria=_criteria(label),
             ),
         ]
         for done, _ in enumerate(nodes, start=1):
@@ -95,6 +110,8 @@ class StubGraphCompiler:
             definition=f"{_shorten(request)}, asked for mid-session.",
             requires=[anchor for anchor in anchors if anchor in known],
             provenance=NodeProvenance.EXTENDED,
+            teaching_spec=_spec(_shorten(request)),
+            mastery_criteria=_criteria(_shorten(request)),
         )
         version = graph.version + 1
         edit = GraphEdit(
@@ -122,6 +139,32 @@ class StubGraphCompiler:
             added=[added.id],
         )
         return extended
+
+
+def _spec(name: str) -> TeachingSpec:
+    """Teaching notes for a stub concept — enough that the session loop has something to run on.
+
+    Not decoration. A node without them is teachable *in principle* and useless in practice: the
+    tutor has a definition and nothing to teach around, and the grader has no criterion to stage.
+    The offline path is what CI and keyless dev run, so a stub map without notes would leave the
+    whole loop below the API untested.
+    """
+    return TeachingSpec(
+        objective=f"Explain {name} in your own words and say where it applies.",
+        # Named after the concept so a session wired to the wrong node is visible rather than
+        # plausible — the same reason the stub's definitions mention the topic.
+        misconceptions=[f"{name} is a label to memorise rather than something to understand."],
+    )
+
+
+def _criteria(name: str) -> list[MasteryCriterion]:
+    """One do-statement per stub concept: what the learner would be asked to demonstrate."""
+    return [
+        MasteryCriterion(
+            kind=MasteryCriterionKind.EXPLAIN,
+            statement=f"Explain {name} back in your own words.",
+        )
+    ]
 
 
 def _unused(candidate: str, known: set[str], version: int) -> str:

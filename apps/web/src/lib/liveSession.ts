@@ -21,6 +21,9 @@ export interface SessionTurn {
   seq: number;
   move: DirectorMove;
   tutor: string;
+  /** The run that produced this turn — what a learner reporting a problem can name, and what ties
+   *  a line of transcript to the model calls behind it. Not rendered; carried. */
+  runId: string;
 }
 
 /** A learner's run at a concept graph. Persisted server-side, so a reload resumes it. */

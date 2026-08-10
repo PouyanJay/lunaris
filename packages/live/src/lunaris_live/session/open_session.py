@@ -1,41 +1,47 @@
 from ..graph import ConceptGraph
-from .schema import DirectorMove, MoveKind, Session, SessionTurn
-
-#: The walking skeleton's stand-in for the tutor (T4 replaces it with a real one). Deliberately
-#: names the concept rather than being lorem: a fixed string that mentioned nothing would let the
-#: whole path be wired to the wrong node without any test noticing.
-_OPENING = "Let's start with {name}. {definition}"
+from .decide_move import decide_move
+from .protocols import ITutor
+from .schema import LearnerModel, Session, SessionClock, SessionTurn
 
 
-def open_session(graph: ConceptGraph, *, session_id: str) -> Session:
+async def open_session(
+    graph: ConceptGraph,
+    model: LearnerModel,
+    clock: SessionClock,
+    *,
+    session_id: str,
+    run_id: str,
+    tutor: ITutor,
+) -> Session:
     """Open a session on ``graph`` and take its first turn.
 
-    The skeleton's move policy is "the first concept in the map's own teaching order", which is not
-    the director (T3) — but it is not arbitrary either: ``topo_order`` puts prerequisites first, so
-    the opening concept provably has nothing before it. A skeleton that opened in the middle of the
-    map would be wired correctly and pedagogically wrong, and the difference matters enough that the
-    test pins it now rather than after the director lands.
+    Both halves of the turn are real here: the director picks the move from what this learner is
+    believed to know (T2, T3), and the tutor says it (T4). The learner model is why a returning
+    learner does not start over at the root — a session that always opened on ``topo_order[0]``
+    would be correctly wired and would re-teach somebody the thing they came back having learned.
 
-    Raises ``ValueError`` on a map with no concepts — there is nothing to teach, and a session that
-    opened on it would show the learner an empty transcript and call it a lesson.
+    Raises ``ValueError`` when the map has nothing to teach: an empty graph, or one whose teaching
+    order names concepts it does not contain, leaves the director with nothing to introduce and its
+    first move is to close. Handing a learner a session that opens on "we're done" is worse than
+    telling the caller the map is broken.
+
+    Raises ``TutorUnavailableError`` when the tutor cannot speak — the turn did not happen, so
+    neither did the session.
     """
-    if not graph.topo_order:
-        raise ValueError(f"graph {graph.graph_id} has no concepts to teach")
+    move = decide_move(graph, model, clock)
+    node = next((n for n in graph.nodes if n.id == move.node_id), None)
+    if node is None:
+        raise ValueError(f"graph {graph.graph_id} has nothing to teach")
 
-    first = next(node for node in graph.nodes if node.id == graph.topo_order[0])
-    move = DirectorMove(
-        kind=MoveKind.INTRODUCE,
-        node_id=first.id,
-        reason="Opening concept: it is first in the map's teaching order, so nothing precedes it.",
-    )
     return Session(
         session_id=session_id,
         graph_id=graph.graph_id,
         turns=[
             SessionTurn(
-                seq=1,
+                seq=clock.turn,
                 move=move,
-                tutor=_OPENING.format(name=first.name, definition=first.definition),
+                tutor=await tutor.teach(move, node, topic=graph.topic, run_id=run_id),
+                run_id=run_id,
             )
         ],
     )
