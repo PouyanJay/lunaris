@@ -37,8 +37,13 @@ _supabase_graph_store = SupabaseGraphStore()
 _memory_graph_store = MemoryGraphStore()
 
 
-def _resolve_graph_store(settings: Settings) -> IGraphStore:
-    """Durable where Supabase is configured, in-process otherwise (offline dev and the suite)."""
+def resolve_graph_store(settings: Settings) -> IGraphStore:
+    """Durable where Supabase is configured, in-process otherwise (offline dev and the suite).
+
+    Public because the session plane composes against the *same* store: a session reading from a
+    different store than the compiler wrote to would find no maps, and it would read as a data
+    problem rather than the wiring one it is.
+    """
     return _supabase_graph_store if settings.has_supabase else _memory_graph_store
 
 
@@ -100,7 +105,7 @@ def get_live_graph_service(
     """
     return LiveGraphService(
         _resolve_compiler(settings),
-        _resolve_graph_store(settings),
+        resolve_graph_store(settings),
         cost_event_store=cost_event_store,
         subject_cost_store=subject_cost_store,
         credential_resolver=get_live_credential_resolver(settings),
