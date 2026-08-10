@@ -72,6 +72,13 @@ class Settings:
     #: bound on the learner's wall clock, not on turns — a session of long, slow turns would
     #: otherwise run for hours.
     live_session_budget_s: float = 1800.0
+    #: Lunaris Live session admission. A session is bounded by its clock already, so only the
+    #: *opening* is rationed per owner per day — a runaway starts by opening sessions in a loop, and
+    #: capping turns would end sittings that were going well for a reason nobody could explain.
+    #: ``live_session_budget_usd`` is the ceiling on one session's whole spend, read from the
+    #: ledger's rollup: a runaway guard, not a ration — 0 turns it off.
+    live_session_daily_cap: int = 20
+    live_session_budget_usd: float = 2.0
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
     # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
@@ -169,6 +176,8 @@ def get_settings() -> Settings:
         live_extend_daily_cap=_env_int("LUNARIS_LIVE_EXTEND_DAILY_CAP", default=50),
         live_graph_budget_usd=_env_float("LUNARIS_LIVE_GRAPH_BUDGET_USD", default=10.0),
         live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
+        live_session_daily_cap=_env_int("LUNARIS_LIVE_SESSION_DAILY_CAP", default=20),
+        live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=2.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

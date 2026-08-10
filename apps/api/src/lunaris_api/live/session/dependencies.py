@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
@@ -17,8 +18,15 @@ from lunaris_live.session import (
 )
 
 from ...config import Settings, get_settings
-from ..dependencies import resolve_graph_store, resolve_strong_model, resolve_worker_model
+from ...dependencies import CostEventStoreDep, SubjectCostStoreDep
+from ..dependencies import (
+    get_live_credential_resolver,
+    resolve_graph_store,
+    resolve_strong_model,
+    resolve_worker_model,
+)
 from .service import LiveSessionService
+from .throttle import LiveSessionThrottle
 
 # One durable store per process — same lazy-client rationale as the graph store: the service-role
 # client is built on first write, so the singleton needs no creds and no network until then.
@@ -70,10 +78,25 @@ def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGr
     return StubGrader() if settings.pipeline == "stub" else ClaudeGrader(resolve_worker_model())
 
 
+@lru_cache
+def _get_live_session_throttle(settings: Settings) -> LiveSessionThrottle:
+    """The process-wide session throttle for these settings.
+
+    Cached on the frozen ``Settings`` value because the per-day counts have to be shared across
+    requests: the service is built per request, and a per-request throttle would never see the
+    openings it is supposed to be counting. Keyed on the whole ``Settings`` (not just the Live
+    fields) so it cannot drift as the config surface grows; tests reset it via
+    ``_get_live_session_throttle.cache_clear()``.
+    """
+    return LiveSessionThrottle(open_daily_cap=settings.live_session_daily_cap)
+
+
 def get_live_session_service(
     settings: Annotated[Settings, Depends(get_settings)],
     tutor: Annotated[ITutor, Depends(get_live_tutor)],
     grader: Annotated[IGrader, Depends(get_live_grader)],
+    cost_event_store: CostEventStoreDep,
+    subject_cost_store: SubjectCostStoreDep,
 ) -> LiveSessionService:
     """Live's session plane as a request dependency.
 
@@ -88,6 +111,14 @@ def get_live_session_service(
         tutor=tutor,
         grader=grader,
         session_budget_s=settings.live_session_budget_s,
+        # The ledger and the tenant's keys come from Studio's composition root: Live is a second
+        # product, not a second platform, so a tenant's spend and a tenant's key are the same ones
+        # either way. What differs is only the subject a cost is filed under (``LIVE_SESSION``).
+        cost_event_store=cost_event_store,
+        subject_cost_store=subject_cost_store,
+        credential_resolver=get_live_credential_resolver(settings),
+        throttle=_get_live_session_throttle(settings),
+        session_budget_usd=settings.live_session_budget_usd,
     )
 
 

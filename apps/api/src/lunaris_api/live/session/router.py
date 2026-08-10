@@ -13,6 +13,7 @@ from lunaris_live.session import (
 from lunaris_runtime.persistence import PersistenceError
 
 from ...dependencies import OptionalUserIdDep
+from ..work_refused import LiveWorkRefusedError
 from .dependencies import LiveSessionServiceDep
 from .schemas import AnswerRequest, SessionStartRequest
 
@@ -146,6 +147,11 @@ def _translate(exc: Exception, correlated: dict[str, str]) -> HTTPException | No
             detail=_UNREADABLE,
             headers=correlated,
         )
+    if isinstance(exc, LiveWorkRefusedError):
+        # Every refusal maps the same way, from one place: the throttle and the budget each carry
+        # their own status and the sentence a learner reads, so a new one cannot arrive with no
+        # words or the wrong code.
+        return HTTPException(status_code=exc.status_code, detail=exc.detail, headers=correlated)
     if isinstance(exc, StaleAnswerError):
         # The same 409 family as a closed session, and for the same reason: the request is well
         # formed and the learner did nothing wrong — the question they answered is simply not the

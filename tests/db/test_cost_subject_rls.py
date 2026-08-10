@@ -221,3 +221,75 @@ def test_a_learner_cannot_erase_their_own_spend(db: "psycopg.Cursor", as_user: _
     # the moment somebody granted DELETE without adding a policy.
     db.execute("select count(*) from public.cost_events where subject_id = %s", (graph,))
     assert db.fetchone()[0] == 1
+
+
+def test_a_live_session_is_a_subject_the_ledger_accepts(db: "psycopg.Cursor") -> None:
+    """The CHECK constraint has to admit the new spender, or a session's first cost row is rejected
+    at the database and the ledger silently under-reports the product's newest expense."""
+    # Arrange
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+
+    # Act
+    _insert_event(
+        db,
+        owner,
+        subject_type=CostSubjectType.LIVE_SESSION.value,
+        subject_id="sess-1",
+        run_id="r-live-session",
+    )
+
+    # Assert
+    db.execute("select subject_type from public.cost_events where subject_id = %s", ("sess-1",))
+    assert db.fetchall() == [("live_session",)]
+
+
+def test_a_session_and_a_graph_sharing_an_id_are_two_subjects(db: "psycopg.Cursor") -> None:
+    """Session ids and graph ids are minted from independent sequences, so nothing stops them
+    colliding. Under a single-column key that collision would merge a sitting's spend into the map's
+    total — in append-only rows nobody may correct."""
+    # Arrange
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+    shared = "deadbeef"
+
+    # Act
+    _insert_event(
+        db, owner, subject_type="live_graph", subject_id=shared, run_id="r-graph", amount=1.0
+    )
+    _insert_event(
+        db, owner, subject_type="live_session", subject_id=shared, run_id="r-session", amount=2.0
+    )
+
+    # Assert
+    db.execute(
+        "select subject_type, amount from public.cost_events where subject_id = %s order by 1",
+        (shared,),
+    )
+    assert db.fetchall() == [("live_graph", 1.0), ("live_session", 2.0)]
+
+
+def test_another_learner_cannot_read_a_sessions_spend(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
+    """Money is the row a user must never be able to read across an account boundary — and a
+    session's spend says what somebody was taught and how much of it, which is more personal again
+    than a map's."""
+    # Arrange
+    owner, stranger = str(uuid.uuid4()), str(uuid.uuid4())
+    _seed_user(db, owner)
+    _seed_user(db, stranger)
+    _insert_event(
+        db,
+        owner,
+        subject_type=CostSubjectType.LIVE_SESSION.value,
+        subject_id="sess-private",
+        run_id="r-private",
+    )
+
+    # Act
+    as_user(db, stranger)
+    db.execute("select id from public.cost_events where subject_id = %s", ("sess-private",))
+
+    # Assert
+    assert db.fetchall() == []
