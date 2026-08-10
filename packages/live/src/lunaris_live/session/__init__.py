@@ -9,6 +9,7 @@ top of these contracts without changing them.
 """
 
 from .apply_evidence import apply_evidence
+from .decide_move import decide_move
 from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
 from .open_session import open_session
@@ -21,6 +22,7 @@ from .schema import (
     MoveKind,
     NodeKnowledge,
     Session,
+    SessionClock,
     SessionStatus,
     SessionTurn,
 )
@@ -38,11 +40,13 @@ __all__ = [
     "MoveKind",
     "NodeKnowledge",
     "Session",
+    "SessionClock",
     "SessionStatus",
     "SessionTurn",
     "SupabaseKnowledgeStore",
     "SupabaseSessionStore",
     "apply_evidence",
+    "decide_move",
     "open_session",
     "recall_of",
 ]

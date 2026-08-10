@@ -6,6 +6,7 @@ from .learner_model import LearnerModel
 from .move_kind import MoveKind
 from .node_knowledge import NodeKnowledge
 from .session import Session
+from .session_clock import SessionClock
 from .session_status import SessionStatus
 from .session_turn import SessionTurn
 
@@ -16,6 +17,7 @@ __all__ = [
     "MoveKind",
     "NodeKnowledge",
     "Session",
+    "SessionClock",
     "SessionStatus",
     "SessionTurn",
 ]
