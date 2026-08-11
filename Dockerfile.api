@@ -56,6 +56,17 @@ USER app
 
 EXPOSE 8000
 
+# Fail the BUILD if the app cannot import, rather than the deploy. `uv sync --package lunaris-api`
+# installs only the declared closure, so a workspace package that is imported but not declared is
+# present in the dev venv and absent here — and because every router is imported at module scope,
+# the first symptom is uvicorn dying at startup in Azure, long after CI went green.
+#
+# That is not hypothetical: `apps/api` imported `lunaris_live` undeclared from Phase 1, and this
+# image built clean through two merges while the *cover* image's equivalent line was the only thing
+# that noticed. Importing the ASGI app is the cheapest possible reproduction of what CMD does.
+# (`tests/test_dependency_closure.py` is the local, every-commit version of the same check.)
+RUN python -c "import lunaris_api.main; print('api app ok')"
+
 # Liveness probe — the API's own /api/healthz ({"status":"ok"}), no extra tooling needed.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
     CMD python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/healthz', timeout=2).status==200 else 1)"

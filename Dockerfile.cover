@@ -53,11 +53,13 @@ RUN useradd --create-home --uid 1000 app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 
-# Fail the BUILD if the cover worker's closure can't import — surfaces a packaging break here, not at
-# first job in cloud.
-RUN python -c "import lunaris_covers; import lunaris_api.cover_worker_entrypoint; print('cover worker ok')"
-
 USER app
+
+# Fail the BUILD if the cover worker's closure can't import — surfaces a packaging break here, not at
+# first job in cloud. This is the line that caught Phase 1's undeclared `lunaris_live`, when it was
+# the only image asserting anything; all three now do. Runs after `USER app` so it uses the identity
+# CMD uses — root can import things `app` cannot, and fidelity to startup is the whole point.
+RUN python -c "import lunaris_covers; import lunaris_api.cover_worker_entrypoint; print('cover worker ok')"
 
 # No EXPOSE / HTTP ingress — the worker has no port. KEDA scales it on the pending-job COUNT in
 # Postgres (infra/cover.bicep), not on HTTP traffic; "liveness" is draining the queue. ACA sends

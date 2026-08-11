@@ -89,6 +89,15 @@ RUN python -c "import manim; print('manim', manim.__version__)"
 
 USER app
 
+# Fail the BUILD if the worker's own entry point cannot import. The manim line above proves the
+# render toolchain, not the application: an undeclared workspace package would leave this image
+# building green and dying on its first scale-out, which is what happened in Phase 1 and was caught
+# only by Dockerfile.cover's equivalent line.
+#
+# Placed AFTER `USER app`, unlike cover's, so it runs as the identity CMD runs as. The point of this
+# line is fidelity to startup, and root can import things `app` cannot.
+RUN python -c "import lunaris_api.worker_entrypoint; print('video worker ok')"
+
 # No EXPOSE / HTTP ingress — the worker has no port. KEDA scales it on the pending-job COUNT in
 # Postgres (infra/video.bicep), not on HTTP traffic; "liveness" is draining the queue. ACA sends
 # SIGTERM on scale-in, which the entry point turns into a graceful, lease-preserving shutdown.

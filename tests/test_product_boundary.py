@@ -13,8 +13,9 @@ root on the day the package landed.
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
+
+from _source_scan import imported_module_names
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,20 +69,11 @@ def _studio_python_sources() -> list[Path]:
     return files
 
 
-def _imported_modules(source: Path) -> set[str]:
-    """The top-level module names a file imports, from both `import x` and `from x import y`."""
-    try:
-        tree = ast.parse(source.read_text(encoding="utf-8"))
-    except SyntaxError:  # pragma: no cover - a syntax error is another test's problem
-        return set()
-
-    modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            modules.add(node.module)
-    return modules
+#: The module names a file imports. Shared with ``test_dependency_closure.py`` — both guards sweep
+#: the tree asking the same question, and two copies of the walk meant a fix to one leaving the
+#: other quietly weaker than it looks. Names arrive dotted, which is what the prefix match below
+#: wants.
+_imported_modules = imported_module_names
 
 
 def test_studio_never_imports_live() -> None:
