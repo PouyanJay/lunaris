@@ -25,8 +25,29 @@ from .service import LiveGraphService
 #: Decomposition decides what the course is made of and every later phase reads it, so it runs on
 #: the strong tier, not the bulk one. Same env knob Studio's tiers use, so a tenant's model choice
 #: covers both products. (Splitting decomposition from spec authoring across two tiers is a
-#: latency/cost lever T4 owns; one tier keeps this honest until there is a measurement to tune to.)
+#: latency/cost lever; one tier keeps this honest until there is a measurement to tune to.)
 _DEFAULT_MODEL = "claude-opus-4-8"
+
+
+def resolve_strong_model() -> str:
+    """The model Live's quality surfaces run on — the compiler's decomposition and the tutor.
+
+    One function rather than a constant per composition root, so a tenant's model choice cannot end
+    up meaning two different things inside one product: a session taught by a weaker model than the
+    map it walks would be a difference nobody configured.
+    """
+    return resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL
+
+
+#: Grading one answer against one explicit do-statement is a classification, not a quality surface,
+#: so it runs on the bulk tier — the same knob Studio's workers read.
+_DEFAULT_WORKER_MODEL = "claude-haiku-4-5-20251001"
+
+
+def resolve_worker_model() -> str:
+    """The model Live's classification surfaces run on (A1)."""
+    return resolve_config("LUNARIS_MODEL_WORKER") or _DEFAULT_WORKER_MODEL
+
 
 # One durable store per process, same lazy-client rationale as Studio's stores: the service-role
 # client is built on first write, so the singleton needs no creds and no network until then.
@@ -37,8 +58,13 @@ _supabase_graph_store = SupabaseGraphStore()
 _memory_graph_store = MemoryGraphStore()
 
 
-def _resolve_graph_store(settings: Settings) -> IGraphStore:
-    """Durable where Supabase is configured, in-process otherwise (offline dev and the suite)."""
+def resolve_graph_store(settings: Settings) -> IGraphStore:
+    """Durable where Supabase is configured, in-process otherwise (offline dev and the suite).
+
+    Public because the session plane composes against the *same* store: a session reading from a
+    different store than the compiler wrote to would find no maps, and it would read as a data
+    problem rather than the wiring one it is.
+    """
     return _supabase_graph_store if settings.has_supabase else _memory_graph_store
 
 
@@ -51,10 +77,7 @@ def _resolve_compiler(settings: Settings) -> IGraphCompiler:
     """
     if settings.pipeline == "stub":
         return StubGraphCompiler()
-    return ClaudeGraphCompiler(
-        resolve_config("LUNARIS_MODEL_STRONG") or _DEFAULT_MODEL,
-        deadline_s=settings.live_compile_deadline_s,
-    )
+    return ClaudeGraphCompiler(resolve_strong_model(), deadline_s=settings.live_compile_deadline_s)
 
 
 @lru_cache
@@ -100,7 +123,7 @@ def get_live_graph_service(
     """
     return LiveGraphService(
         _resolve_compiler(settings),
-        _resolve_graph_store(settings),
+        resolve_graph_store(settings),
         cost_event_store=cost_event_store,
         subject_cost_store=subject_cost_store,
         credential_resolver=get_live_credential_resolver(settings),

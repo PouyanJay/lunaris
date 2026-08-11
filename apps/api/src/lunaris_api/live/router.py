@@ -14,8 +14,8 @@ from lunaris_runtime.persistence import PersistenceError
 
 from ..dependencies import OptionalUserIdDep
 from .dependencies import LiveGraphServiceDep
-from .graph_throttle import LiveWorkRefusedError
 from .schemas import CompileFailure, LiveGraphExtendRequest, LiveGraphRequest
+from .work_refused import LiveWorkRefusedError
 
 logger = structlog.get_logger()
 

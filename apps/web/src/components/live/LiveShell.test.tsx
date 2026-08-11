@@ -68,6 +68,26 @@ function streamingFetch(frames: string[], { keepOpen = false } = {}): typeof fet
 
 const READY = [`event: graph\ndata: ${JSON.stringify(GRAPH)}\n\n`];
 
+/** A session as the sessions endpoint returns it — a different shape entirely from the compile's
+ *  stream, which is the point: the two calls have to be told apart. */
+const SESSION = {
+  sessionId: "s1",
+  graphId: "g1",
+  status: "active",
+  startedAt: "2026-08-09T21:00:00Z",
+  turns: [
+    {
+      seq: 1,
+      move: { kind: "introduce", nodeId: "a", reason: "Nothing precedes it." },
+      tutor: "Picture the loss as a hillside.",
+      runId: "r1",
+      criterion: { kind: "explain", statement: "Explain it back." },
+      answer: null,
+      grade: null,
+    },
+  ],
+};
+
 function renderLive(topic: string) {
   return render(
     <MemoryRouter initialEntries={[`/live?topic=${encodeURIComponent(topic)}`]}>
@@ -315,5 +335,45 @@ describe("LiveShell — the concept's teaching notes", () => {
 
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
     expect(concept).toHaveFocus();
+  });
+});
+
+describe("LiveShell — the way into a session", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers a session on the map it just compiled, and can come back from it", async () => {
+    // The map is a map of the subject, never a route through the session — so starting one is an
+    // action on the map rather than something the compile drops the learner into.
+    //
+    // The two calls are routed apart deliberately. Serving the compile's SSE body to the session
+    // POST as well leaves the surface in its *failed* state — and because the session's landmark
+    // region renders in every state, an assertion on the landmark alone passes just as happily
+    // when starting a session is completely broken. So this waits for something only a session
+    // that actually opened can show.
+    const compile = streamingFetch(READY);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).includes("/api/live/sessions")
+          ? Promise.resolve(
+              new Response(JSON.stringify(SESSION), {
+                status: 201,
+                headers: { "content-type": "application/json" },
+              }),
+            )
+          : compile(input, init),
+      ),
+    );
+    renderLive("How neural networks learn");
+
+    fireEvent.click(await screen.findByRole("button", { name: /start a session/i }));
+
+    expect(await screen.findByText(/picture the loss as a hillside/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: /session on how neural networks learn/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /back to the map/i }));
+    expect(await screen.findByRole("button", { name: /start a session/i })).toBeInTheDocument();
   });
 });

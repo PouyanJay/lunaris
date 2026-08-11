@@ -31,6 +31,18 @@ def _reset_live_throttle() -> Iterator[None]:
     dependencies._get_live_graph_throttle.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_live_session_throttle() -> Iterator[None]:
+    """And the same again for the session plane's (T8): its per-day opening counts and its in-flight
+    turn slots are process-wide for a given Settings, so without this one test's sessions could
+    exhaust another's allowance — or leave a slot held, refusing a turn a later test never sent."""
+    from lunaris_api.live.session import dependencies
+
+    dependencies._get_live_session_throttle.cache_clear()
+    yield
+    dependencies._get_live_session_throttle.cache_clear()
+
+
 class ReleasablePipeline:
     """A pipeline that emits one progress beat, parks on a release ``Event``, then builds a real
     course via the stub orchestrator. Lets a test drop the SSE consumer *before* the build finishes

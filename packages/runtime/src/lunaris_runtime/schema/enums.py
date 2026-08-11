@@ -61,6 +61,9 @@ class CostSubjectType(StrEnum):
 
     COURSE = "course"
     LIVE_GRAPH = "live_graph"
+    #: One learner's sitting at a map. Not the graph it walks: a map outlives every session run on
+    #: it, is purged separately, and "what did this session cost" is a question about one sitting.
+    LIVE_SESSION = "live_session"
 
 
 class CostUnit(StrEnum):
