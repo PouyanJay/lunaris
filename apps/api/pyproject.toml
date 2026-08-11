@@ -29,6 +29,7 @@ dependencies = [
     # than moved: it was a "not vetted yet" marker, not a known incompatibility, and re-capping at
     # <51 would just recreate the same block on the next advisory.
     "cryptography>=50.0.0",
+    "ag-ui-protocol>=0.1.19",
 ]
 
 [project.optional-dependencies]

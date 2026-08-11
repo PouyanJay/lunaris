@@ -72,7 +72,12 @@ function MapWorkspace({ graph, apiBaseUrl }: { graph: ConceptGraph; apiBaseUrl: 
         <button type="button" className={styles.back} onClick={() => setTeaching(false)}>
           &larr; Back to the map
         </button>
-        <SessionView apiBaseUrl={apiBaseUrl} graphId={graph.graphId} topic={graph.topic} />
+        <SessionView
+          apiBaseUrl={apiBaseUrl}
+          graphId={graph.graphId}
+          topic={graph.topic}
+          copilotUrl={import.meta.env.VITE_COPILOT_URL}
+        />
       </div>
     );
   }

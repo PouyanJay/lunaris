@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 
 import { useLiveSession } from "../../hooks/useLiveSession";
 import type { LiveSession } from "../../lib/liveSession";
@@ -8,11 +8,31 @@ import { AnswerForm } from "./AnswerForm";
 import { SessionTranscript } from "./SessionTranscript";
 import styles from "./SessionView.module.css";
 
+/** CopilotKit's whole module graph, kept out of Live's chunk until a deployment actually has a
+ *  runtime to talk to.
+ *
+ *  Statically imported it costs every `/live` visitor ~171 kB gzipped whether or not
+ *  `VITE_COPILOT_URL` is set — and today it is set nowhere, so that would be the entire cost for
+ *  none of the benefit. Lazily, the kit is fetched only once the surface is genuinely in use.
+ *
+ *  It also keeps Live's own lazy chunk light enough to resolve promptly: pulling the kit in eagerly
+ *  made `App.liveRouting` and `App.composerFork` time out waiting for the shell to appear, which is
+ *  a real signal about first paint rather than a quirk of the test environment. */
+const CopilotSession = lazy(() =>
+  import("./CopilotSession").then((module) => ({ default: module.CopilotSession })),
+);
+
 interface SessionViewProps {
   apiBaseUrl: string;
   graphId: string;
   /** The map's topic, shown as the session's subject. */
   topic: string;
+  /** Lunaris Live's CopilotKit runtime, when the deployment has one.
+   *
+   *  Undefined everywhere until an operator sets `VITE_COPILOT_URL`, which is why adding the
+   *  generative surface changes nothing for anyone yet: the transcript below is still the session.
+   *  T2 gives the stream a live turn to carry; until then it replays what the turn already said. */
+  copilotUrl?: string | undefined;
 }
 
 /** A live session, in the plainest form that can carry one: the transcript, and a box to answer in.
@@ -21,7 +41,7 @@ interface SessionViewProps {
  *  that the loop is usable and legible end to end — every move visible with the reason behind it,
  *  every verdict attached to the answer that earned it, and every state a session can actually be
  *  in rendered rather than assumed. */
-export function SessionView({ apiBaseUrl, graphId, topic }: SessionViewProps) {
+export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionViewProps) {
   const { state, answer, retry } = useLiveSession(apiBaseUrl, graphId);
   // Their own words, shown the moment they send them. Optimistic about the *echo* only — never
   // about the verdict, which is the server's to give and the one thing that must not be guessed.
@@ -67,6 +87,12 @@ export function SessionView({ apiBaseUrl, graphId, topic }: SessionViewProps) {
             />
           )}
         </>
+      ) : null}
+
+      {session && copilotUrl ? (
+        <Suspense fallback={<p className={styles.ended}>Loading the live session surface…</p>}>
+          <CopilotSession runtimeUrl={copilotUrl} sessionId={session.sessionId} topic={topic} />
+        </Suspense>
       ) : null}
 
       {state.status === "failed" && !session ? (

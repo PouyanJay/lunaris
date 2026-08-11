@@ -1,0 +1,29 @@
+/* T1 container only. The kit's own surfaces are re-skinned onto the token set in T7, where the
+   `--copilot-kit-*` custom properties are bound in one block — doing it piecemeal here is how a
+   design system ends up with a second, accidental one. */
+
+.session {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.chat {
+  min-height: 0;
+  flex: 1;
+}
+
+.unavailable {
+  margin: 0;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+}
