@@ -114,6 +114,10 @@ async def test_a_run_streams_the_ag_ui_lifecycle_in_order(client: httpx.AsyncCli
         "TEXT_MESSAGE_START",
         "TEXT_MESSAGE_CONTENT",
         "TEXT_MESSAGE_END",
+        # T3's Tier 1 card, between the words it follows and the state that settles the run.
+        "TOOL_CALL_START",
+        "TOOL_CALL_ARGS",
+        "TOOL_CALL_END",
         "STATE_SNAPSHOT",
         "RUN_FINISHED",
     ]

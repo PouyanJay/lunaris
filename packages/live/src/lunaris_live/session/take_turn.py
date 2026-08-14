@@ -15,8 +15,10 @@ from .schema import (
     SessionClock,
     SessionStatus,
     SessionTurn,
+    SurfaceSpec,
     TurnGrade,
 )
+from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
 from .stage_criterion import stage_criterion
 from .stale_answer_error import StaleAnswerError
@@ -93,9 +95,16 @@ async def take_turn(
     clock = SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s)
     move = decide_move(graph, model, clock)
     if move.kind is MoveKind.CLOSE:
-        return TurnOutcome(session=_closed(session, turns, move, run_id=run_id), model=model)
+        # The surface is chosen from the same three inputs the move was (T3), so a close shows what
+        # the learner demonstrated rather than an empty card.
+        closing = select_surface(move, None, graph=graph, criterion=None, model=model, clock=clock)
+        return TurnOutcome(
+            session=_closed(session, turns, move, run_id=run_id, surface=closing), model=model
+        )
 
-    taught = await _teach(graph, move, turns, tutor=tutor, run_id=run_id, on_delta=on_delta)
+    taught = await _teach(
+        graph, move, turns, tutor=tutor, run_id=run_id, on_delta=on_delta, model=model, clock=clock
+    )
     logger.info(
         "live.session.turn_taken",
         run_id=run_id,
@@ -118,7 +127,12 @@ def _moved_by(model: LearnerModel, asked: SessionTurn, graded: TurnGrade | None)
 
 
 def _closed(
-    session: Session, turns: list[SessionTurn], move: DirectorMove, *, run_id: str
+    session: Session,
+    turns: list[SessionTurn],
+    move: DirectorMove,
+    *,
+    run_id: str,
+    surface: SurfaceSpec,
 ) -> Session:
     """The session, ended — and said out loud.
 
@@ -145,6 +159,7 @@ def _closed(
         # gets, and two wordings of one decision is how the two come to disagree.
         tutor=f"{_CLOSING} {move.reason}",
         run_id=run_id,
+        surface=surface,
     )
     return session.model_copy(update={"turns": [*turns, goodbye], "status": SessionStatus.CLOSED})
 
@@ -157,6 +172,8 @@ async def _teach(
     tutor: ITutor,
     run_id: str,
     on_delta: ITutorDeltaSink | None,
+    model: LearnerModel,
+    clock: SessionClock,
 ) -> SessionTurn:
     """The next turn: the move, said out loud, with something staged for the learner to meet."""
     node = _node_of(graph, move.node_id) if move.node_id is not None else None
@@ -184,6 +201,9 @@ async def _teach(
         ),
         run_id=run_id,
         criterion=staged,
+        # Chosen from the move, the concept and the belief — never from what the tutor happened to
+        # say. Plan §8 makes that mandatory for this tier: these components feed the learner model.
+        surface=select_surface(move, node, graph=graph, criterion=staged, model=model, clock=clock),
     )
 
 

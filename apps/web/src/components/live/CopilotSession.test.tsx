@@ -1,7 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { LIVE_AGENT, copilotRuntimeUrl, sessionHeaders } from "../../lib/copilotRuntime";
+import {
+  LIVE_AGENT,
+  SURFACE_TOOL,
+  copilotRuntimeUrl,
+  sessionHeaders,
+} from "../../lib/copilotRuntime";
 import { CopilotSession } from "./CopilotSession";
 
 describe("the generative session surface", () => {
@@ -36,6 +41,13 @@ describe("the generative session surface", () => {
     // apps/copilot: LIVE_AGENT = "live". Asserted as a literal on both sides, because the two are
     // separately deployed and nothing at build time sees them drift apart.
     expect(LIVE_AGENT).toBe("live");
+  });
+
+  it("registers the tool name the API actually calls", () => {
+    // apps/api: SURFACE_TOOL = "lunaris.surface". Asserted as a literal on both sides, because the
+    // two are separately deployed and nothing at build time sees them drift apart. A mismatch is a
+    // Tier 1 card that never renders while every server-side assertion still passes.
+    expect(SURFACE_TOOL).toBe("lunaris.surface");
   });
 
   it("names the session on every run", () => {

@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from uuid import uuid4
 
 from ag_ui.core import (
@@ -9,11 +9,15 @@ from ag_ui.core import (
     TextMessageContentEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallStartEvent,
 )
 from lunaris_live.session import Session
 
 from ..turn_beat import TurnBeat
 from .session_snapshot import SessionSnapshot
+from .surface_tool import SURFACE_TOOL
 
 
 async def turn_events(
@@ -74,6 +78,11 @@ async def turn_events(
     yield TextMessageEndEvent(message_id=message_id)
 
     if settled is not None:
+        # The card the director chose, after the words it follows: a quiz that appeared while the
+        # tutor was still setting it up would be answered against half a sentence.
+        for event in _surface_events(settled):
+            yield event
+
         # Before ``RUN_FINISHED``, deliberately. A client that treats the end of a run as "settled"
         # would otherwise render the previous turn's state for the whole length of the next one.
         yield StateSnapshotEvent(
@@ -81,3 +90,28 @@ async def turn_events(
         )
 
     yield RunFinishedEvent(thread_id=thread_id, run_id=run_id)
+
+
+def _surface_events(session: Session) -> Iterator[BaseEvent]:
+    """The standing turn's Tier 1 card, as the tool call CopilotKit renders it (T3).
+
+    Nothing at all when the turn has no surface. That is every turn P2a stored (R4), and a client
+    waiting on tool frames that never come would sit on a spinner over a session it can read
+    perfectly well — so the absence has to be silence rather than an empty call.
+
+    The arguments go out as a single ``TOOL_CALL_ARGS`` frame. They are already complete when the
+    turn is built — this is a deterministic spec, not a model writing JSON a token at a time — and
+    splitting a finished object into fragments would only invite a client to render a half-parsed
+    one.
+    """
+    standing = session.turns[-1] if session.turns else None
+    if standing is None or standing.surface is None:
+        return
+
+    call_id = uuid4().hex
+    yield ToolCallStartEvent(tool_call_id=call_id, tool_call_name=SURFACE_TOOL)
+    yield ToolCallArgsEvent(
+        tool_call_id=call_id,
+        delta=standing.surface.model_dump_json(by_alias=True),
+    )
+    yield ToolCallEndEvent(tool_call_id=call_id)

@@ -4,6 +4,7 @@ from ..graph import ConceptGraph
 from .decide_move import decide_move
 from .protocols import ITutor
 from .schema import LearnerModel, Session, SessionClock, SessionTurn
+from .select_surface import select_surface
 from .stage_criterion import stage_criterion
 
 
@@ -53,6 +54,9 @@ async def open_session(
                 ),
                 run_id=run_id,
                 criterion=staged,
+                surface=select_surface(
+                    move, node, graph=graph, criterion=staged, model=model, clock=clock
+                ),
             )
         ],
     )

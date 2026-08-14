@@ -4,6 +4,7 @@ from ...graph.schema.base import LiveModel
 from ...graph.schema.mastery_criterion import MasteryCriterion
 from ..max_answer_chars import MAX_ANSWER_CHARS
 from .director_move import DirectorMove
+from .surface_spec import SurfaceSpec
 from .turn_grade import TurnGrade
 
 
@@ -37,3 +38,12 @@ class SessionTurn(LiveModel):
     #: What that answer was judged to show. ``None`` when nothing was staged to judge it against —
     #: never a stand-in for "we could not tell", which leaves the turn ungraded rather than failed.
     grade: TurnGrade | None = None
+    #: The Tier 1 component this turn put on screen, and its props (P2b T3). Recorded rather than
+    #: re-derived on read, so a reloaded tab renders the card the learner was halfway through
+    #: answering — and so the trace says what they were actually shown, not what today's rules would
+    #: show them now.
+    #:
+    #: Optional because every session row written before P2b has none (R4). Required would make the
+    #: whole of Live's stored history unreadable, which is the failure ``SessionFormatError`` exists
+    #: to report about a corrupt row rather than about us.
+    surface: SurfaceSpec | None = None

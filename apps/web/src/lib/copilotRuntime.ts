@@ -11,6 +11,19 @@ export const SESSION_HEADER = "x-lunaris-session-id";
 /** Which agent the runtime exposes. One, because there is one loop. */
 export const LIVE_AGENT = "live";
 
+/** The tool a Tier 1 card arrives as, and the name `useCopilotAction` must register (P2b T3).
+ *
+ *  CopilotKit renders a controlled component by calling a tool the frontend provides. Python calls
+ *  this one with a `SurfaceSpec` — chosen by the deterministic director, never by a model — and the
+ *  renderers land in T4.
+ *
+ *  Pinned here as a literal rather than imported, exactly like the runtime's mount path: the API
+ *  and this SPA are separately deployed, so a shared constant would only prove agreement at commit
+ *  time and says nothing about which build is running where. Both suites assert the same literal
+ *  instead. Drift is the worst failure this seam has — a card that silently never renders, with the
+ *  run looking perfect from the server. */
+export const SURFACE_TOOL = "lunaris.surface";
+
 /** Where the runtime answers, from the host an operator configured.
  *
  *  The Node service mounts at `/api/copilotkit`; a browser pointed at the bare host 404s every run

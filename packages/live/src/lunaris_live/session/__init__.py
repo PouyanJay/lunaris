@@ -23,17 +23,26 @@ from .recall_of import recall_of
 from .reject_unteachable_move import reject_unteachable_move
 from .relay_delta import relay_delta
 from .schema import (
+    ConceptMapCard,
+    CriterionCard,
     DirectorMove,
     EvidenceKind,
+    ExplainBack,
     LearnerModel,
+    MasteryMeter,
+    MeterEntry,
     MoveKind,
     NodeKnowledge,
+    QuizCard,
     Session,
     SessionClock,
     SessionStatus,
     SessionTurn,
+    SurfaceKind,
+    SurfaceSpec,
     TurnGrade,
 )
+from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
 from .session_format_error import SessionFormatError
 from .stage_criterion import stage_criterion
@@ -50,8 +59,11 @@ __all__ = [
     "MAX_ANSWER_CHARS",
     "ClaudeGrader",
     "ClaudeTutor",
+    "ConceptMapCard",
+    "CriterionCard",
     "DirectorMove",
     "EvidenceKind",
+    "ExplainBack",
     "GraderUnavailableError",
     "IGrader",
     "IKnowledgeStore",
@@ -59,10 +71,13 @@ __all__ = [
     "ITutor",
     "ITutorDeltaSink",
     "LearnerModel",
+    "MasteryMeter",
     "MemoryKnowledgeStore",
     "MemorySessionStore",
+    "MeterEntry",
     "MoveKind",
     "NodeKnowledge",
+    "QuizCard",
     "Session",
     "SessionClock",
     "SessionClosedError",
@@ -74,6 +89,8 @@ __all__ = [
     "StubTutor",
     "SupabaseKnowledgeStore",
     "SupabaseSessionStore",
+    "SurfaceKind",
+    "SurfaceSpec",
     "TurnGrade",
     "TurnOutcome",
     "TutorUnavailableError",
@@ -83,6 +100,7 @@ __all__ = [
     "recall_of",
     "reject_unteachable_move",
     "relay_delta",
+    "select_surface",
     "stage_criterion",
     "take_turn",
 ]
