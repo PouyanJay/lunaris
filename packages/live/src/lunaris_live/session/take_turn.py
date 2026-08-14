@@ -1,11 +1,12 @@
 import structlog
 
-from ..graph import ConceptGraph, ConceptNode
+from ..graph import ConceptGraph, ConceptNode, MasteryCriterion
 from .apply_evidence import apply_evidence
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
-from .protocols import IGrader, ITutor
+from .protocols import IGrader, ITutor, ITutorDeltaSink
+from .relay_delta import relay_delta
 from .schema import (
     DirectorMove,
     LearnerModel,
@@ -41,6 +42,7 @@ async def take_turn(
     run_id: str,
     elapsed_s: float,
     budget_s: float,
+    on_delta: ITutorDeltaSink | None = None,
 ) -> TurnOutcome:
     """The loop, once: score what the learner just said, move the belief, decide what happens next.
 
@@ -57,6 +59,11 @@ async def take_turn(
     ``answering_seq`` is the turn the learner was looking at when they answered. It is named rather
     than assumed, because a duplicate submit would otherwise be graded against the question that
     replaced it — recorded under a criterion it was never written for.
+
+    ``on_delta`` is where the tutor's words go *while* they are being written (P2b A2). Passing one
+    switches the tutor to its streaming path; leaving it ``None`` is P2a's turn exactly, single call
+    and all, which is what the REST endpoint keeps. It is deliberately not the loop's business
+    whether anybody is listening: a failing sink costs a fragment and never the turn.
 
     Raises ``StaleAnswerError`` when the named turn is not the one in front of the learner,
     ``SessionClosedError`` on a session the director has already ended, and
@@ -88,7 +95,7 @@ async def take_turn(
     if move.kind is MoveKind.CLOSE:
         return TurnOutcome(session=_closed(session, turns, move, run_id=run_id), model=model)
 
-    taught = await _teach(graph, move, turns, tutor=tutor, run_id=run_id)
+    taught = await _teach(graph, move, turns, tutor=tutor, run_id=run_id, on_delta=on_delta)
     logger.info(
         "live.session.turn_taken",
         run_id=run_id,
@@ -149,6 +156,7 @@ async def _teach(
     *,
     tutor: ITutor,
     run_id: str,
+    on_delta: ITutorDeltaSink | None,
 ) -> SessionTurn:
     """The next turn: the move, said out loud, with something staged for the learner to meet."""
     node = _node_of(graph, move.node_id) if move.node_id is not None else None
@@ -162,7 +170,8 @@ async def _teach(
     return SessionTurn(
         seq=len(turns) + 1,
         move=move,
-        tutor=await tutor.teach(
+        tutor=await _said(
+            tutor,
             move,
             node,
             topic=graph.topic,
@@ -171,10 +180,50 @@ async def _teach(
             # prompt on material the learner is not being taught right now.
             already_said=[turn.tutor for turn in turns if turn.move.node_id == node.id],
             run_id=run_id,
+            on_delta=on_delta,
         ),
         run_id=run_id,
         criterion=staged,
     )
+
+
+async def _said(
+    tutor: ITutor,
+    move: DirectorMove,
+    node: ConceptNode,
+    *,
+    topic: str,
+    criterion: MasteryCriterion | None,
+    already_said: list[str],
+    run_id: str,
+    on_delta: ITutorDeltaSink | None,
+) -> str:
+    """What the tutor says, relayed fragment by fragment when somebody is listening.
+
+    The two paths meet here and nowhere else, so the turn that gets stored is the same object either
+    way. Relaying happens *inside* the loop over the fragments rather than after it — a version that
+    collected the lesson and then replayed it would satisfy every assertion about content and leave
+    the learner waiting exactly as long as P2a's surface did.
+    """
+    if on_delta is None:
+        return await tutor.teach(
+            move,
+            node,
+            topic=topic,
+            criterion=criterion,
+            already_said=already_said,
+            run_id=run_id,
+        )
+
+    parts: list[str] = []
+    async for delta in tutor.stream(
+        move, node, topic=topic, criterion=criterion, already_said=already_said, run_id=run_id
+    ):
+        parts.append(delta)
+        relay_delta(on_delta, delta)
+    # Stripped for the same reason ``teach`` strips: a stored lesson opening or closing on
+    # whitespace is a lesson that renders differently everywhere it is read.
+    return "".join(parts).strip()
 
 
 async def _grade(

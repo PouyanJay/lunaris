@@ -47,6 +47,10 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
   // about the verdict, which is the server's to give and the one thing that must not be guessed.
   const [sending, setSending] = useState<string | null>(null);
   const session = state.status === "opening" ? null : state.session;
+  // The turn in front of the learner, named once. Two surfaces need it — the answer form asks for
+  // its criterion, the generative panel opens on its words — and the Python side calls the same
+  // thing `standing` (`SessionSnapshot.of`), so the concept keeps one name across the wire.
+  const standing = session?.turns.at(-1) ?? null;
 
   return (
     <section className={styles.session} aria-label={`Session on ${topic}`}>
@@ -78,7 +82,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
             </p>
           ) : (
             <AnswerForm
-              criterion={session.turns[session.turns.length - 1]?.criterion?.statement ?? null}
+              criterion={standing?.criterion?.statement ?? null}
               busy={state.status === "answering"}
               onAnswer={(text) => {
                 setSending(text);
@@ -91,7 +95,12 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
 
       {session && copilotUrl ? (
         <Suspense fallback={<p className={styles.ended}>Loading the live session surface…</p>}>
-          <CopilotSession runtimeUrl={copilotUrl} sessionId={session.sessionId} topic={topic} />
+          <CopilotSession
+            runtimeUrl={copilotUrl}
+            sessionId={session.sessionId}
+            topic={topic}
+            standingTurn={standing?.tutor ?? null}
+          />
         </Suspense>
       ) : null}
 

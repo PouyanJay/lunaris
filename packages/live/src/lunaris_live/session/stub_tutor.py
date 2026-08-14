@@ -1,4 +1,5 @@
-from collections.abc import Sequence
+import re
+from collections.abc import AsyncIterator, Sequence
 
 from ..graph.schema import ConceptNode, MasteryCriterion
 from .reject_unteachable_move import reject_unteachable_move
@@ -32,6 +33,12 @@ _ASK = " So: {statement}"
 #: pass over a tutor that says the same thing forever.
 _AGAIN = "Another way to see it. "
 
+#: How the offline path breaks a lesson into fragments: on word boundaries, keeping the whitespace,
+#: so the pieces re-join to exactly what ``teach`` said. A model streams in tokens rather than
+#: words, and the surface must not care which — a client that only renders correctly on one of the
+#: two chunkings is a client that will break the first time a provider changes its tokenizer.
+_FRAGMENTS = re.compile(r"\S+\s*")
+
 
 class StubTutor:
     """A tutor that needs no model, no key and no network.
@@ -52,6 +59,38 @@ class StubTutor:
         already_said: Sequence[str] = (),
         run_id: str,
     ) -> str:
+        return self._lesson(move, node, criterion=criterion, already_said=already_said)
+
+    async def stream(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> AsyncIterator[str]:
+        """The same lesson, word by word.
+
+        Genuinely fragmented rather than yielded whole: the offline path is what CI, keyless dev and
+        every review of the live surface actually see, so a stub that handed over one piece would
+        let a surface that cannot assemble deltas pass every test we have.
+        """
+        lesson = self._lesson(move, node, criterion=criterion, already_said=already_said)
+        for fragment in _FRAGMENTS.findall(lesson):
+            yield fragment
+
+    def _lesson(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        criterion: MasteryCriterion | None,
+        already_said: Sequence[str],
+    ) -> str:
+        """What this tutor says about this move, whole. One source for both paths, so the words a
+        learner streams and the words a learner re-reads cannot come apart."""
         script = _SCRIPT.get(move.kind)
         if script is None:
             reject_unteachable_move(move.kind)

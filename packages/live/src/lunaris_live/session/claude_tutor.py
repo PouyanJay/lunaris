@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 
 import structlog
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
@@ -22,6 +22,12 @@ _DEFAULT_DEADLINE_S = 30.0
 #: sized for a batch job and would turn a fast clean failure into a slow cancelled one.
 _TRANSIENT_ATTEMPTS = 3
 _TRANSIENT_MAX_DELAY_S = 4.0
+
+#: How long the streaming path waits for the *next* fragment before calling the stream dead. Well
+#: inside the whole-lesson deadline, because a stream that has stopped producing looks exactly like
+#: one still thinking, and the learner is watching a cursor either way. Generous enough to cover
+#: time-to-first-token, which is the longest gap a healthy stream has.
+_FRAGMENT_DEADLINE_S = 15.0
 
 _PROMPT = """You are tutoring one learner, one to one, in a live text session about "{topic}".
 
@@ -122,18 +128,8 @@ class ClaudeTutor:
         already_said: Sequence[str] = (),
         run_id: str,
     ) -> str:
-        instruction = _INSTRUCTION.get(move.kind)
-        if instruction is None:
-            reject_unteachable_move(move.kind)
-
-        prompt = _PROMPT.format(
-            topic=topic,
-            name=node.name,
-            definition=node.definition,
-            notes=_notes_on(node),
-            history=_history_of(already_said),
-            instruction=instruction,
-            closing=_STAGE.format(statement=criterion.statement) if criterion else _OPEN_ENDED,
+        prompt = _prompt_for(
+            move, node, topic=topic, criterion=criterion, already_said=already_said
         )
         said = await self._say(prompt, run_id=run_id, node_id=node.id)
 
@@ -153,6 +149,82 @@ class ClaudeTutor:
             chars=len(said),
         )
         return said
+
+    async def stream(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> AsyncIterator[str]:
+        """The same lesson, handed over as the model writes it (P2b A2).
+
+        Not retried, and that is the difference from ``teach`` rather than an omission. Once a
+        fragment has been yielded the learner has read it, so a second attempt would either repeat
+        words they are looking at or contradict them — a whole answer can be thrown away and asked
+        for again, and a partly-read one cannot. A stream that dies is therefore a failed turn, and
+        the caller offers a retry that means something because nothing has been persisted yet.
+        """
+        prompt = _prompt_for(
+            move, node, topic=topic, criterion=criterion, already_said=already_said
+        )
+        said = 0
+        async for fragment in self._fragments(prompt, run_id=run_id, node_id=node.id):
+            # A model often opens with whitespace, and ``teach`` strips it. Doing the same to the
+            # first words the learner sees keeps the two paths saying the same thing — and stops a
+            # surface having to trim text it is rendering one fragment at a time.
+            opening = fragment.lstrip() if said == 0 else fragment
+            if not opening:
+                continue
+            said += len(opening)
+            yield opening
+
+        if said == 0:
+            # Same failure as a tutor that answered with nothing, for the same reason:
+            # ``SessionTurn.tutor`` is ``min_length=1``, and a wordless turn cannot be stored.
+            logger.warning("live.tutor.streamed_nothing", run_id=run_id, node=node.id)
+            raise TutorUnavailableError(f"tutor streamed nothing for {node.id}")
+
+        logger.info(
+            "live.tutor.taught", run_id=run_id, node=node.id, move=move.kind.value, chars=said
+        )
+
+    async def _fragments(self, prompt: str, *, run_id: str, node_id: str) -> AsyncIterator[str]:
+        """The model's own fragments, bounded twice, with every failure named one way.
+
+        Two deadlines because they catch different deaths. ``_FRAGMENT_DEADLINE_S`` bounds the wait
+        for the *next* fragment — a stream that has silently stopped producing looks identical to
+        one still thinking, and only a clock can tell them apart. ``deadline_s`` bounds the whole
+        lesson, so a model trickling one token at a time cannot hold a learner past the budget by
+        never quite going quiet.
+
+        The per-fragment timeout lives in ``_next_chunk`` and wraps the ``anext`` alone, never a
+        ``yield``. A timeout that could fire while this generator is suspended would deliver its
+        cancellation into whatever the *consumer* happened to be awaiting, which is a failure with
+        no relationship to the tutor at all — which is most of why the read is its own function.
+        """
+        started = asyncio.get_running_loop().time()
+        if self._client is None:
+            self._client = build_chat_model(self._model_name)
+        chunks = self._client.astream(prompt)  # type: ignore[attr-defined]
+        try:
+            while (chunk := await _next_chunk(chunks, run_id=run_id, node_id=node_id)) is not None:
+                if asyncio.get_running_loop().time() - started > self._deadline_s:
+                    logger.warning(
+                        "live.tutor.timed_out",
+                        run_id=run_id,
+                        node=node_id,
+                        deadline_s=self._deadline_s,
+                    )
+                    raise TutorUnavailableError(f"tutor timed out on {node_id}")
+                yield _text_of(chunk)
+        finally:
+            # The provider's stream holds a socket, and abandoning this generator part-way — the
+            # learner closed the tab — would otherwise leave it open until the client was collected.
+            await getattr(chunks, "aclose", _nothing_to_close)()
 
     async def _say(self, prompt: str, *, run_id: str, node_id: str) -> str:
         """One bounded attempt at speaking, with every way it can fail named the same way.
@@ -183,8 +255,70 @@ class ClaudeTutor:
             max_attempts=_TRANSIENT_ATTEMPTS,
             max_delay_s=_TRANSIENT_MAX_DELAY_S,
         )
-        content = message.content
-        return (content if isinstance(content, str) else str(content)).strip()
+        return _text_of(message).strip()
+
+
+async def _next_chunk(chunks: AsyncIterator[object], *, run_id: str, node_id: str) -> object | None:
+    """One chunk from the model, bounded, with every way it can fail named the same way.
+
+    ``None`` means the stream ended. Anything else — a stall, a dropped socket, a provider error —
+    comes back as ``TutorUnavailableError``, so the generator above has one failure to think about
+    and can be read as a loop rather than as exception handling with a loop inside it.
+
+    The ``asyncio.timeout`` is here rather than around the caller's loop precisely so it can only
+    fire while this ``anext`` is awaited. Wrapped around a body containing a ``yield``, it would be
+    live while the *consumer* was running and would cancel whatever that happened to be doing.
+    """
+    try:
+        async with asyncio.timeout(_FRAGMENT_DEADLINE_S):
+            return await anext(chunks, None)
+    except TimeoutError as exc:
+        logger.warning("live.tutor.stream_stalled", run_id=run_id, node=node_id)
+        raise TutorUnavailableError(f"tutor stopped mid-answer on {node_id}") from exc
+    except Exception as exc:
+        logger.warning("live.tutor.stream_failed", run_id=run_id, node=node_id, exc_info=True)
+        raise TutorUnavailableError(f"tutor could not teach {node_id}") from exc
+
+
+async def _nothing_to_close() -> None:
+    """Stand-in for a stream that has no ``aclose`` — a hand-rolled async iterator in a test."""
+
+
+def _text_of(message: object) -> str:
+    """The words in a message or a chunk. ``content`` is typed loosely by the provider (a string,
+    or a list of content blocks), and one place to normalise it is what stops the streaming and
+    whole paths disagreeing about what "what the model said" means."""
+    content = getattr(message, "content", "")
+    return content if isinstance(content, str) else str(content)
+
+
+def _prompt_for(
+    move: DirectorMove,
+    node: ConceptNode,
+    *,
+    topic: str,
+    criterion: MasteryCriterion | None,
+    already_said: Sequence[str],
+) -> str:
+    """What the tutor is asked, for either way of answering.
+
+    Shared by ``teach`` and ``stream`` rather than duplicated: the two paths exist to differ in
+    *delivery*, and a prompt that drifted between them would make the live surface and the stored
+    transcript two different lessons — which is exactly the divergence ``ITutor`` promises against.
+    """
+    instruction = _INSTRUCTION.get(move.kind)
+    if instruction is None:
+        reject_unteachable_move(move.kind)
+
+    return _PROMPT.format(
+        topic=topic,
+        name=node.name,
+        definition=node.definition,
+        notes=_notes_on(node),
+        history=_history_of(already_said),
+        instruction=instruction,
+        closing=_STAGE.format(statement=criterion.statement) if criterion else _OPEN_ENDED,
+    )
 
 
 def _history_of(already_said: Sequence[str]) -> str:

@@ -47,9 +47,72 @@ describe("the generative session surface", () => {
   it("tells the learner when the generative surface is not configured", () => {
     // A blank panel would read as a broken session. Live still works without the runtime — P2a's
     // transcript uses REST — so this has to say which half is missing.
-    render(<CopilotSession runtimeUrl={undefined} sessionId="sess-1" topic="Neural networks" />);
+    render(
+      <CopilotSession
+        runtimeUrl={undefined}
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Which way would you step?"
+      />,
+    );
 
     expect(screen.getByRole("status")).toHaveTextContent(/not configured/i);
+  });
+
+  it("opens on the question the learner is actually being marked on", () => {
+    // T2 makes a message sent here take a real turn, graded against the criterion the *standing*
+    // turn staged. A chat that opened empty would therefore invite an answer to a question the
+    // learner had never been shown — and the grader's verdict would look arbitrary to them.
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Which way would you step to lower the loss?"
+      />,
+    );
+
+    expect(
+      screen.getByText(/Which way would you step to lower the loss\?/),
+    ).toBeInTheDocument();
+  });
+
+  it("opens on nothing at all when the session has nothing standing", () => {
+    // A closed session, or one whose turn could not be read. Seeding the chat with an empty string
+    // would render a blank assistant bubble, which reads as a tutor that said nothing.
+    //
+    // Asserted on the *absence of any assistant bubble*, not on the composer: the composer is
+    // rendered by `<CopilotChat/>` unconditionally, so a test looking at it stays green even when a
+    // label is passed — which is the exact defect it exists to catch, and which review caught it
+    // committing. The class is the kit's own, and that coupling is deliberate rather than
+    // incidental: it is the same seam T7 re-skins, so a version bump that renames it should fail
+    // here rather than silently stop checking anything.
+    const { container } = render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn={null}
+      />,
+    );
+
+    expect(container.querySelector(".copilotKitAssistantMessage")).toBeNull();
+    expect(screen.getByTestId("copilot-chat-textarea")).toBeInTheDocument();
+  });
+
+  it("renders the standing turn as the tutor's own message", () => {
+    // The other half of the pair, and the reason the class above is the right thing to look at: a
+    // seeded turn has to arrive as an assistant bubble, not as text loose on the page.
+    const { container } = render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Which way would you step?"
+      />,
+    );
+
+    expect(container.querySelector(".copilotKitAssistantMessage")).not.toBeNull();
   });
 
   it("mounts the chat surface when it is configured", () => {
@@ -58,6 +121,7 @@ describe("the generative session surface", () => {
         runtimeUrl="http://runtime.test"
         sessionId="sess-1"
         topic="Neural networks"
+        standingTurn="Anything at all."
       />,
     );
 

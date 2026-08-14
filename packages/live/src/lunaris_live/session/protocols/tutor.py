@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Protocol
 
 from ...graph.schema import ConceptNode, MasteryCriterion
@@ -30,6 +30,13 @@ class ITutor(Protocol):
 
     ``run_id`` is the turn's own run (R6), not the session's — a turn is one or more model calls,
     and what the tutor was asked has to be findable from a line in a stored transcript.
+
+    **Two ways to say one thing (P2b A2).** ``teach`` answers with the whole turn and ``stream``
+    answers with it in fragments; both must produce the same lesson from the same arguments, or a
+    learner watching the live surface and a learner re-reading the stored session are being taught
+    different things. They are separate methods rather than one built on the other because they fail
+    differently: a whole answer can be retried transparently, and a stream whose socket dies after
+    ten words has already put those ten words in front of somebody.
     """
 
     async def teach(
@@ -42,3 +49,21 @@ class ITutor(Protocol):
         already_said: Sequence[str] = (),
         run_id: str,
     ) -> str: ...
+
+    def stream(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> AsyncIterator[str]:
+        """The same lesson, in the order it is written.
+
+        Declared ``def`` returning an ``AsyncIterator`` rather than ``async def``: an async
+        generator function is *called* to get its iterator, not awaited, and an ``async def``
+        signature here would type-check every correct implementation as wrong.
+        """
+        ...

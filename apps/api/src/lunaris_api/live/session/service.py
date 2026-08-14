@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -11,9 +11,12 @@ from lunaris_live.session import (
     IKnowledgeStore,
     ISessionStore,
     ITutor,
+    ITutorDeltaSink,
     LearnerModel,
     Session,
     SessionClock,
+    SessionClosedError,
+    SessionStatus,
     TurnOutcome,
     open_session,
     take_turn,
@@ -30,8 +33,30 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, Pers
 from lunaris_runtime.schema import CostSubjectType
 
 from .throttle import LiveSessionBudgetExhaustedError, LiveSessionThrottle
+from .turn_beat import TurnBeat
+from .turn_context import TurnContext
 
 logger = structlog.get_logger()
+
+
+def _absorb_detached_turn(task: "asyncio.Task[Session]", *, run_id: str, session_id: str) -> None:
+    """Consume the result of a turn whose stream went away, logging a failure rather than letting it
+    surface as a bare unretrieved-exception warning with nothing to correlate it to.
+
+    The ids are passed explicitly and cannot ride contextvars: the turn runs in its own task, which
+    snapshots the context at creation, so a binding made inside that task never reaches this
+    callback — it runs back in the caller's context.
+    """
+    if task.cancelled():
+        return
+    if (error := task.exception()) is not None:
+        logger.warning(
+            "live.session.detached_turn_failed",
+            run_id=run_id,
+            session_id=session_id,
+            error=str(error),
+        )
+
 
 #: What the ledger is allowed to take out of a turn. Both are bounded for the same reason the
 #: compile plane bounds its own: a store that *fails* is survivable — metering is observability and
@@ -176,17 +201,153 @@ class LiveSessionService:
         """
         run_id = uuid4().hex
         bind_run_id(run_id, session_id=session_id)
+        context = await self._ready(session_id, owner_id)
+        return await self._take_and_save(
+            context, answer, answering_seq=answering_seq, run_id=run_id, owner_id=owner_id
+        )
 
-        # Admission first, and in this order: a session already over its ceiling should cost a
-        # rollup read rather than two store reads and a pair of billed model calls.
+    async def stream_answer(
+        self, session_id: str, answer: str, *, run_id: str, owner_id: str | None = None
+    ) -> AsyncIterator[tuple[TurnBeat, str | Session]]:
+        """The same turn as ``answer``, narrating itself as the tutor writes it (P2b T2).
+
+        Yields ``(TurnBeat.DELTA, …)`` per fragment and one terminal ``(TurnBeat.SESSION, …)``.
+        The turn itself is identical — same director, same grader, same belief moves, same rows —
+        because a second implementation of the loop is a second thing that can be wrong about a
+        learner. What differs is only when the words leave.
+
+        ``run_id`` is passed *in* rather than minted: this run began in a browser and crossed a Node
+        runtime to get here (R5), and an id made on this side would leave three runtimes' logs with
+        no shared key.
+
+        Deliberately **awaited before it yields anything**, like the compile stream and for the
+        same reason: admission, the session read and the closed-session check all have to happen
+        while the status line is still available. Deferred into the body they could only be said as
+        a frame, which a surface reads as "the turn failed" rather than "we did not start one".
+
+        The answering seq is derived from the session this call just read, rather than named by
+        the client as ``POST /turns`` requires it to be. AG-UI's ``RunAgentInput`` is CopilotKit's
+        own schema and carries no room for it, and the protection is not lost: the compare-and-set
+        on the save still settles which of two concurrent answers counts, and the per-session turn
+        slot still serialises them.
+        """
+        bind_run_id(run_id, session_id=session_id)
+        context = await self._ready(session_id, owner_id)
+        if context.session.status is not SessionStatus.ACTIVE:
+            # ``take_turn`` checks this too, and that check stays: it is the loop's own invariant.
+            # This one exists so the refusal is a 409 rather than an error frame on a 200 — the same
+            # sentence the REST surface gives, which is what ``failure_mapping`` exists to hold.
+            raise SessionClosedError(f"session {session_id} has already closed")
+
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        turns = context.session.turns
+        # ``put_nowait`` on an unbounded queue never blocks and never awaits, which is exactly what
+        # ``ITutorDeltaSink`` asks of a sink — the tutor must never wait on the surface reading it.
+        taking = asyncio.create_task(
+            self._take_and_save(
+                context,
+                answer,
+                answering_seq=turns[-1].seq if turns else 0,
+                run_id=run_id,
+                owner_id=owner_id,
+                on_delta=queue.put_nowait,
+            )
+        )
+        return self._beats(taking, queue, run_id=run_id, session_id=session_id)
+
+    async def _beats(
+        self,
+        taking: "asyncio.Task[Session]",
+        queue: "asyncio.Queue[str]",
+        *,
+        run_id: str,
+        session_id: str,
+    ) -> AsyncIterator[tuple[TurnBeat, str | Session]]:
+        """The stream's body: each fragment as it lands, then the session the turn produced.
+
+        **No fragment can be left behind, and the loop's shape is what guarantees it** rather than a
+        drain at the end. ``asyncio.wait`` gives every future it is handed a slice before returning,
+        so a pending ``queue.get()`` always resolves while the queue has anything in it — which
+        means the "the turn is over" branch below is only reached with the queue genuinely empty,
+        and nothing can be put into it between that moment and the check (no await separates them).
+
+        Worth stating because the obvious defence — draining the queue after the task completes — is
+        unreachable code here, and unreachable code that looks like a safety net is worse than none:
+        it invites the belief that the loop is safe *because of it*. Proven by mutation: removing a
+        drain from this position changed no test, and by ``test_no_fragment_is_lost_when_the_turn_
+        finishes_before_anyone_reads_it``, which drives the case it was meant to cover.
+        """
+        fragment = asyncio.ensure_future(queue.get())
+        try:
+            while True:
+                await asyncio.wait({fragment, taking}, return_when=asyncio.FIRST_COMPLETED)
+                if fragment.done():
+                    yield TurnBeat.DELTA, fragment.result()
+                    fragment = asyncio.ensure_future(queue.get())
+                    continue
+                # The turn is over and the queue is empty (see above). Raises here if the turn
+                # failed, which is what puts a ``RUN_ERROR`` on the stream.
+                yield TurnBeat.SESSION, taking.result()
+                return
+        finally:
+            # Unconditionally, and that is the point: the pending ``queue.get()`` is an
+            # *independent* task, so a consumer that walks away mid-stream — a closed tab, an ASGI
+            # cancellation, an ``aclose()`` — abandons this coroutine while that task is still
+            # parked on the queue's getters. Cancelling only on the way out below would leave
+            # it there until something resolved it, or until it was collected while still pending —
+            # a "Task was destroyed but it is pending!" warning nobody can trace.
+            fragment.cancel()
+            if not taking.done():
+                # The learner navigated away or the connection dropped. The turn is deliberately NOT
+                # cancelled: it has already paid a grader and a tutor, and it persists the session
+                # at the end — so re-reading is free recovery, and cancelling would bill somebody
+                # for a turn nobody can get back. Phase 1 settled this for the compile stream.
+                logger.info("live.session.stream_detached", run_id=run_id, session_id=session_id)
+                taking.add_done_callback(
+                    lambda task: _absorb_detached_turn(task, run_id=run_id, session_id=session_id)
+                )
+
+    async def _ready(self, session_id: str, owner_id: str | None) -> TurnContext:
+        """Everything a turn needs before it can be taken, in the order it should be paid for.
+
+        Admission first: a session already over its ceiling should cost a rollup read rather than
+        three store reads and a pair of billed model calls. Shared by both entry points, because a
+        learner's session must not be admitted on different terms depending on which transport they
+        reached it over.
+        """
         await self._refuse_if_budget_spent(session_id, owner_id)
-
         session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
         graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
         known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
+        return TurnContext(
+            session=session,
+            graph=graph,
+            known=known,
+            credentials=await self._resolve_credentials(owner_id),
+        )
 
-        credentials = await self._resolve_credentials(owner_id)
-        cost = self._cost_scope(run_id=run_id, session_id=session_id, owner_id=owner_id)
+    async def _take_and_save(
+        self,
+        context: TurnContext,
+        answer: str,
+        *,
+        answering_seq: int,
+        run_id: str,
+        owner_id: str | None,
+        on_delta: ITutorDeltaSink | None = None,
+    ) -> Session:
+        """One turn, metered, and both of its writes. The whole of what the two entry points share.
+
+        Kept as one function rather than duplicated per transport for the reason the whole session
+        plane is built on: the order of these two writes is a correctness decision (see ``answer``),
+        and a second copy is a second place for that order to be got wrong.
+
+        The four things read at the top of a turn arrive as one ``TurnContext`` rather than as four
+        arguments: they are read together, they are used together, and passing them apart meant both
+        call sites destructured a tuple only to hand its parts straight back.
+        """
+        session = context.session
+        cost = self._cost_scope(run_id=run_id, session_id=session.session_id, owner_id=owner_id)
         try:
             # The slot is what makes the ceiling mean anything. Two answers sent at once both load
             # the same session, both pass every check made against that snapshot, and both pay a
@@ -194,13 +355,21 @@ class LiveSessionService:
             # that has not been drained yet. The compare-and-set on the write settles which answer
             # *counts*; only this settles which one is *paid for*.
             with (
-                self._turn_slot(session_id),
-                self._credential_scope(credentials),
+                self._turn_slot(session.session_id),
+                self._credential_scope(context.credentials),
                 enter_cost_scope(cost),
             ):
-                outcome = await self._take(session, graph, known, answer, answering_seq, run_id)
+                outcome = await self._take(
+                    session,
+                    context.graph,
+                    context.known,
+                    answer,
+                    answering_seq,
+                    run_id,
+                    on_delta=on_delta,
+                )
         finally:
-            await self._drain(cost, run_id=run_id, session_id=session_id)
+            await self._drain(cost, run_id=run_id, session_id=session.session_id)
         # Conditional on the session still being the length this request read. Two answers in
         # flight at once both pass ``take_turn``'s check — they loaded the same head — and only the
         # store can settle which one lands. The loser is a stale answer, which is what the learner
@@ -212,6 +381,8 @@ class LiveSessionService:
 
         logger.info(
             "live.session.answered",
+            run_id=run_id,
+            session_id=session.session_id,
             turn_count=len(outcome.session.turns),
             status=outcome.session.status.value,
         )
@@ -229,6 +400,8 @@ class LiveSessionService:
         answer: str,
         answering_seq: int,
         run_id: str,
+        *,
+        on_delta: ITutorDeltaSink | None = None,
     ) -> TurnOutcome:
         """One turn of the loop, with the session's own clock read off its row.
 
@@ -248,6 +421,7 @@ class LiveSessionService:
             run_id=run_id,
             elapsed_s=max(0.0, (datetime.now(UTC) - session.started_at).total_seconds()),
             budget_s=self._session_budget_s,
+            on_delta=on_delta,
         )
 
     def _cost_scope(

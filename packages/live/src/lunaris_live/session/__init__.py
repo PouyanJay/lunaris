@@ -18,9 +18,10 @@ from .max_answer_chars import MAX_ANSWER_CHARS
 from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
 from .open_session import open_session
-from .protocols import IGrader, IKnowledgeStore, ISessionStore, ITutor
+from .protocols import IGrader, IKnowledgeStore, ISessionStore, ITutor, ITutorDeltaSink
 from .recall_of import recall_of
 from .reject_unteachable_move import reject_unteachable_move
+from .relay_delta import relay_delta
 from .schema import (
     DirectorMove,
     EvidenceKind,
@@ -56,6 +57,7 @@ __all__ = [
     "IKnowledgeStore",
     "ISessionStore",
     "ITutor",
+    "ITutorDeltaSink",
     "LearnerModel",
     "MemoryKnowledgeStore",
     "MemorySessionStore",
@@ -80,6 +82,7 @@ __all__ = [
     "open_session",
     "recall_of",
     "reject_unteachable_move",
+    "relay_delta",
     "stage_criterion",
     "take_turn",
 ]
