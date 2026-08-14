@@ -1,11 +1,12 @@
 import { Suspense, lazy, useState } from "react";
 
 import { useLiveSession } from "../../hooks/useLiveSession";
-import type { LiveSession } from "../../lib/liveSession";
+import type { LiveSession, SessionTurn } from "../../lib/liveSession";
 import { Button } from "../primitives/Button";
 import { StatusDot } from "../primitives/StatusDot";
 import { AnswerForm } from "./AnswerForm";
 import { SessionTranscript } from "./SessionTranscript";
+import { SurfaceCard } from "./SurfaceCard";
 import styles from "./SessionView.module.css";
 
 /** CopilotKit's whole module graph, kept out of Live's chunk until a deployment actually has a
@@ -29,9 +30,10 @@ interface SessionViewProps {
   topic: string;
   /** Lunaris Live's CopilotKit runtime, when the deployment has one.
    *
-   *  Undefined everywhere until an operator sets `VITE_COPILOT_URL`, which is why adding the
-   *  generative surface changes nothing for anyone yet: the transcript below is still the session.
-   *  T2 gives the stream a live turn to carry; until then it replays what the turn already said. */
+   *  Undefined everywhere until an operator sets `VITE_COPILOT_URL`. When it *is* set the panel
+   *  becomes the one place to answer and the transcript stays the record (T4) — two live answer
+   *  paths on one session is how the two surfaces came to disagree about what the learner had
+   *  done, which T2 recorded and this closes. */
   copilotUrl?: string | undefined;
 }
 
@@ -51,6 +53,13 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
   // its criterion, the generative panel opens on its words — and the Python side calls the same
   // thing `standing` (`SessionSnapshot.of`), so the concept keeps one name across the wire.
   const standing = session?.turns.at(-1) ?? null;
+  // Exactly one live answer path. With a runtime configured the CopilotKit panel owns answering and
+  // this side is the record; without one, this side is the whole session.
+  const answerHere = !copilotUrl;
+  const send = (text: string) => {
+    setSending(text);
+    answer(text);
+  };
 
   return (
     <section className={styles.session} aria-label={`Session on ${topic}`}>
@@ -75,21 +84,13 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
               {state.message}
             </p>
           ) : null}
-          {session.status === "closed" ? (
-            <p className={styles.ended}>
-              This session has ended. Its record stays here, and what you demonstrated is remembered
-              the next time you open this map.
-            </p>
-          ) : (
-            <AnswerForm
-              criterion={standing?.criterion?.statement ?? null}
-              busy={state.status === "answering"}
-              onAnswer={(text) => {
-                setSending(text);
-                answer(text);
-              }}
-            />
-          )}
+          <TurnFooter
+            standing={standing}
+            closed={session.status === "closed"}
+            answerHere={answerHere}
+            busy={state.status === "answering"}
+            onAnswer={send}
+          />
         </>
       ) : null}
 
@@ -115,6 +116,57 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
         </div>
       ) : null}
     </section>
+  );
+}
+
+/** What sits under the transcript: the director's card, a way to answer it, or the ending.
+ *
+ *  One function because it is one decision. Written as two adjacent conditionals it read as two —
+ *  each re-deriving part of the same state — and the four cases it actually has (a card to answer,
+ *  a card to read, a plain box for a session stored before P2b, and a session that has ended) were
+ *  something a reader had to reassemble rather than see. */
+function TurnFooter({
+  standing,
+  closed,
+  answerHere,
+  busy,
+  onAnswer,
+}: {
+  standing: SessionTurn | null;
+  closed: boolean;
+  /** False when the generative panel owns answering, so this side is the record (T4). */
+  answerHere: boolean;
+  busy: boolean;
+  onAnswer: (text: string) => void;
+}) {
+  return (
+    <>
+      {/* Rendered on a closed session too, where it is the mastery meter and reads as the ending
+          it is — but never answerable there. */}
+      {standing?.surface ? (
+        <SurfaceCard
+          spec={standing.surface}
+          busy={busy}
+          answerable={answerHere && !closed}
+          onAnswer={onAnswer}
+          welded
+        />
+      ) : null}
+      {closed ? (
+        <p className={styles.ended}>
+          This session has ended. Its record stays here, and what you demonstrated is remembered the
+          next time you open this map.
+        </p>
+      ) : answerHere && !standing?.surface ? (
+        // Every session P2a stored has no card. The plain box keeps that history answerable rather
+        // than making the tier's arrival a migration.
+        <AnswerForm
+          criterion={standing?.criterion?.statement ?? null}
+          busy={busy}
+          onAnswer={onAnswer}
+        />
+      ) : null}
+    </>
   );
 }
 

@@ -18,6 +18,12 @@ const OPENED = {
       criterion: { kind: "explain" as const, statement: "Explain the gradient in your own words." },
       answer: null,
       grade: null,
+      surface: {
+        kind: "explain_back" as const,
+        nodeId: "gradient",
+        concept: "Gradient",
+        prompt: "In your own words: what is Gradient, and what would you use it for?",
+      },
     },
   ],
 };
@@ -38,6 +44,13 @@ const ANSWERED = {
       criterion: { kind: "explain" as const, statement: "Say how steep it is there." },
       answer: null,
       grade: null,
+      surface: {
+        kind: "quiz_card" as const,
+        nodeId: "gradient",
+        concept: "Gradient",
+        question: "Which of these is actually true about Gradient?",
+        options: ["The slope of the loss.", "How big the loss is."],
+      },
     },
   ],
 };
@@ -55,6 +68,12 @@ const CLOSED = {
       criterion: null,
       answer: null,
       grade: null,
+      surface: {
+        kind: "mastery_meter" as const,
+        entries: [
+          { nodeId: "gradient", concept: "Gradient", recall: 0.51, evidenceCount: 2 },
+        ],
+      },
     },
   ],
 };
@@ -310,5 +329,98 @@ describe("SessionView — the plainest surface a session can have", () => {
 
     fireEvent.keyDown(box, { key: "Enter", metaKey: true });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("the Tier 1 card (T4)", () => {
+  it("puts the director's card in front of the learner, not a bare answer box", async () => {
+    // The turn's own surface, chosen server-side. Rendering only the generic box would throw away
+    // the whole tier: the card is what makes an explain-back different from a quiz.
+    vi.stubGlobal("fetch", jsonAlways(OPENED, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+
+    expect(
+      await screen.findByText(/In your own words: what is Gradient/i),
+    ).toBeInTheDocument();
+  });
+
+  it("answers through the card, and the answer reaches the API for that turn", async () => {
+    // The task's claim, from this side of the wire: what the learner typed into the *card* is what
+    // gets sent, named against the turn the card belonged to.
+    const fetchMock = jsonAlways(OPENED, 201);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+    await screen.findByText(/In your own words: what is Gradient/i);
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "It is the slope of the loss." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      const sent = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(([url]) =>
+        String(url).includes("/turns"),
+      );
+      expect(sent).toBeDefined();
+      expect(JSON.parse(String(sent?.[1]?.body))).toMatchObject({
+        answer: "It is the slope of the loss.",
+        answeringSeq: 1,
+      });
+    });
+  });
+
+  it("keeps a session stored before P2b answerable", async () => {
+    // Every row P2a wrote has no surface. Falling back to the plain box is what stops the tier's
+    // arrival making the whole of Live's own history unanswerable.
+    const noSurface = { ...OPENED.turns[0]!, surface: null };
+    vi.stubGlobal("fetch", jsonAlways({ ...OPENED, turns: [noSurface] }, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+
+    expect(await screen.findByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("stops taking answers once the session has closed", async () => {
+    // The meter is a record, and the close already said so. An answer box under it would invite an
+    // answer the server can only refuse.
+    vi.stubGlobal("fetch", jsonAlways(CLOSED, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+    await screen.findByText(/session has ended/i);
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAccessibleName(/gradient/i);
+  });
+
+  it("refuses to answer into a closed session even if a card says otherwise", async () => {
+    // Defensive, deliberately. A closed session's last turn is the goodbye, whose card is always
+    // the meter — so today the guard cannot fire. It exists because that is a *server-side*
+    // invariant, and a surface that took an answer for a session the API will refuse would show
+    // the learner a box whose only possible outcome is an error.
+    const closedButAnswerable = {
+      ...CLOSED,
+      turns: [CLOSED.turns[0]!, { ...CLOSED.turns[1]!, surface: OPENED.turns[0]!.surface }],
+    };
+    vi.stubGlobal("fetch", jsonAlways(closedButAnswerable, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+    await screen.findByText(/session has ended/i);
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("offers exactly one place to answer when the generative runtime is configured", async () => {
+    // The hazard T2 left open and T4 closes: with both surfaces live, answering in one advanced the
+    // session without the other knowing, and the two disagreed about what the learner had done.
+    // The CopilotKit panel becomes the place to answer, and the transcript stays the record.
+    vi.stubGlobal("fetch", jsonAlways(OPENED, 201));
+    render(
+      <SessionView
+        apiBaseUrl=""
+        graphId="g1"
+        topic="Neural networks"
+        copilotUrl="http://runtime.test"
+      />,
+    );
+    await screen.findByLabelText(/session on neural networks/i);
+
+    await waitFor(() => expect(screen.queryByRole("textbox")).not.toBeInTheDocument());
   });
 });

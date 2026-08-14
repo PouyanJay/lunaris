@@ -74,3 +74,25 @@
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-sm);
 }
+
+/* Inside a Tier 1 card (T4): the card already carries the border, the eyebrow and the question, so
+   the form contributes only the box. A second bordered region nested in the first is the
+   cards-in-cards look the house style rejects. */
+.embedded {
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+/* The label still exists for the input's accessible name — the card's own question is the visible
+   one, and two visible labels for one box is worse than none. */
+.hiddenLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -419,3 +419,87 @@ async def test_a_cancelled_reader_leaves_no_task_parked_on_the_queue() -> None:
     assert "_take_and_save" in next(iter(left)).get_coro().__qualname__, (
         "the turn is the one thing that should outlive its reader"
     )
+
+
+async def test_an_answer_from_a_card_moves_the_estimate_for_that_concept_and_no_other() -> None:
+    """T4's claim, at the layer where a belief actually moves.
+
+    A Tier 1 card is answered *in the card*, and what comes back is prose — for a quiz, the text of
+    the option they chose. It is graded against the criterion the card's own turn staged, and the
+    evidence lands on the concept **that turn** was about.
+
+    The load-bearing word is *that*, and reaching a state where it can be wrong takes work: for most
+    of a session the director stays on the concept just answered, so "the turn's concept" and "the
+    concept now being taught" are the same node and any confusion between them is invisible. The
+    answer below is the one that **masters** a concept, which is precisely when the director moves
+    on — so grading against its new move instead of the answered turn would file the evidence under
+    a concept the learner has never been asked about, while the session carried on looking perfect.
+
+    Verified by mutation: filing the evidence under the director's *new* ``move.node_id`` rather
+    than the answered turn's fails this test. An earlier version, which answered only once, passed
+    that mutation — the director had not moved on yet, so there was nothing to tell the two apart.
+    """
+    # Arrange — a session, and an answer good enough to be marked met.
+    graph = await _map()
+    graphs, sessions, knowledge = MemoryGraphStore(), MemorySessionStore(), MemoryKnowledgeStore()
+    graphs.save(graph, owner_id="learner-1")
+    service = LiveSessionService(
+        graphs,
+        sessions,
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=1800.0,
+    )
+    session = await service.start("g1", session_id="s1", owner_id="learner-1")
+    assert session.turns[-1].surface is not None, "a card must actually have been staged"
+    first_concept = session.turns[-1].move.node_id
+
+    # Act — answer it well until the concept is mastered, which is when the director moves on.
+    session = await _answered_until_the_director_moves_on(service, session, first_concept)
+
+    # Assert — the director really did move on, so the two nodes are distinguishable...
+    moved_on_to = session.turns[-1].move.node_id
+    assert moved_on_to != first_concept, (
+        "the director never left the first concept, so this test cannot tell the two apart"
+    )
+    # ...and every piece of evidence is filed under the concept that was actually answered.
+    beliefs = knowledge.load("g1", owner_id="learner-1").nodes
+    assert set(beliefs) == {first_concept}, (
+        f"evidence landed on {sorted(beliefs)}; only {first_concept} was ever answered"
+    )
+
+    # And the other direction, which "nothing leaked forward" does not cover: once the learner does
+    # answer the *new* concept, its evidence lands under it rather than being merged into the
+    # history of the one before it. Without this, filing everything under the session's first
+    # concept would satisfy every assertion above.
+    standing = session.turns[-1]
+    assert standing.criterion is not None
+    await service.answer(
+        "s1", standing.criterion.statement, answering_seq=standing.seq, owner_id="learner-1"
+    )
+
+    beliefs = knowledge.load("g1", owner_id="learner-1").nodes
+    assert set(beliefs) == {first_concept, moved_on_to}
+    assert beliefs[moved_on_to].evidence_count == 1
+
+
+async def _answered_until_the_director_moves_on(
+    service: LiveSessionService, session: Session, concept: str | None
+) -> Session:
+    """Answer the standing turn well until the director stops teaching ``concept``.
+
+    A loop rather than a fixed number of turns because *when* mastery arrives is a policy detail:
+    ``_PULL`` (0.45 per met answer) against ``_MASTERED`` (0.6) means it takes two today, and a test
+    that hardcoded two would fail the next time either number is tuned — for a reason that has
+    nothing to do with what it is checking. The bound is generous headroom, not an expectation.
+    """
+    for _ in range(6):
+        standing = session.turns[-1]
+        if standing.move.node_id != concept:
+            return session
+        assert standing.criterion is not None, "a turn with nothing staged cannot be answered well"
+        session = await service.answer(
+            "s1", standing.criterion.statement, answering_seq=standing.seq, owner_id="learner-1"
+        )
+    return session

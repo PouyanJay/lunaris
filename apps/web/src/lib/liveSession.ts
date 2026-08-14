@@ -1,4 +1,5 @@
 import { authedFetch } from "./apiClient";
+import type { SurfaceSpec } from "./surfaceSpec";
 
 /** The server's own bound on an answer, mirrored so the box can stop a learner writing past it
  *  rather than letting the request come back 422 with the words they typed. */
@@ -49,6 +50,10 @@ export interface SessionTurn {
   answer: string | null;
   /** What that answer was judged to show. Null when nothing was staged to judge it against. */
   grade: TurnGrade | null;
+  /** The Tier 1 card this turn put on screen, and its props (P2b T3). Null on every turn stored
+   *  before P2b, which is why it is optional rather than assumed — a surface that read it as
+   *  required would fail on the whole of Live's own history. */
+  surface: SurfaceSpec | null;
 }
 
 /** A learner's run at a concept graph. Persisted server-side, so a reload resumes it. */

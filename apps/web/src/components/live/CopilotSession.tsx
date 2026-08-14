@@ -1,7 +1,9 @@
-import { CopilotKit } from "@copilotkit/react-core";
+import { CopilotKit, useRenderToolCall } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 
-import { LIVE_AGENT, copilotRuntimeUrl, sessionHeaders } from "../../lib/copilotRuntime";
+import { LIVE_AGENT, SURFACE_TOOL, copilotRuntimeUrl, sessionHeaders } from "../../lib/copilotRuntime";
+import type { SurfaceSpec } from "../../lib/surfaceSpec";
+import { SurfaceCard } from "./SurfaceCard";
 import styles from "./CopilotSession.module.css";
 
 interface CopilotSessionProps {
@@ -51,6 +53,7 @@ export function CopilotSession({
             as a required string, and a CSS-module lookup is `string | undefined` under
             `exactOptionalPropertyTypes`. A wrapper also keeps layout ours when T7 swaps the kit's
             internals for our slots. */}
+        <SurfaceTool />
         <div className={styles.chat}>
           {/* Seeded with the turn the learner is standing on, because from T2 a message sent here
               takes a real turn and is graded against *that* turn's criterion. An empty chat would
@@ -65,4 +68,32 @@ export function CopilotSession({
       </CopilotKit>
     </section>
   );
+}
+
+/** Renders the director's Tier 1 card where the API called for it, inside the message stream.
+ *
+ *  `useRenderToolCall` rather than `useFrontendTool`: this tool is never *executed* here. The
+ *  server already decided which card and filled every prop (plan §8's controlled tier), so the
+ *  browser's only job is to draw it — a frontend handler would be a second place that could decide.
+ *
+ *  **Read-only in this panel, deliberately.** CopilotKit re-renders every tool call in the thread,
+ *  so an answerable card would stay answerable long after its turn had moved on — and the AG-UI
+ *  path derives the answering turn server-side (T2, AD10), so a late answer would be graded against
+ *  whatever question is up *now* rather than refused. Answering happens in the composer below until
+ *  the answered turn can be named on this transport, which is T9's work. The transcript surface,
+ *  which every environment currently runs, is fully answerable in-card. */
+function SurfaceTool() {
+  useRenderToolCall({
+    name: SURFACE_TOOL,
+    description: "The Tier 1 card the director chose for this turn.",
+    render: ({ args }) => (
+      <SurfaceCard
+        spec={args as unknown as SurfaceSpec}
+        busy={false}
+        answerable={false}
+        onAnswer={() => {}}
+      />
+    ),
+  });
+  return null;
 }

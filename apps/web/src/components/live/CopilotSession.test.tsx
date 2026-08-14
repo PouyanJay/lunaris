@@ -1,4 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { useRenderToolCall } from "@copilotkit/react-core";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -8,6 +10,14 @@ import {
   sessionHeaders,
 } from "../../lib/copilotRuntime";
 import { CopilotSession } from "./CopilotSession";
+
+// The hook is stubbed rather than driven: what needs proving is *what this component registers*,
+// which is a pure fact about the call — running CopilotKit's message machinery to observe it would
+// test the kit rather than us.
+vi.mock("@copilotkit/react-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@copilotkit/react-core")>()),
+  useRenderToolCall: vi.fn(),
+}));
 
 describe("the generative session surface", () => {
   // CopilotKit fetches `${runtimeUrl}/info` the moment the provider mounts. Left unstubbed that is
@@ -151,7 +161,70 @@ describe("the generative session surface", () => {
     const { SessionView } = await import("./SessionView");
     render(<SessionView apiBaseUrl="http://api.test" graphId="g1" topic="Neural networks" />);
 
-    expect(screen.queryByText(/not configured/i)).not.toBeInTheDocument();
+    // Awaited rather than asserted immediately: `SessionView` opens a session on mount, and that
+    // fetch settles after this test's body would otherwise have ended — landing an `act()` warning
+    // on whichever test happened to be running next. That is a cross-test leak, which this file
+    // has already been bitten by once (T1's unstubbed `/info` fetch).
+    await waitFor(() => expect(screen.queryByText(/not configured/i)).not.toBeInTheDocument());
   });
 });
 
+
+describe("the Tier 1 card inside the generative panel", () => {
+  const QUIZ = {
+    kind: "quiz_card" as const,
+    nodeId: "gradient",
+    concept: "Gradient",
+    question: "Which of these is actually true about Gradient?",
+    options: ["The slope of the loss.", "How big the loss is."],
+  };
+
+  /** The tool config `SurfaceTool` registered, captured without a live runtime.
+   *
+   *  `useRenderToolCall` is a plain hook, so mounting the panel is enough to record what it was
+   *  asked to render — no message store, no socket, no agent. That matters because this seam has
+   *  had no test at all, and AD14 names its worst failure exactly: a card that silently never
+   *  renders, with every server-side assertion still passing. */
+  function registeredTool() {
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Anything at all."
+      />,
+    );
+    const calls = vi.mocked(useRenderToolCall).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    return calls[0]![0];
+  }
+
+  it("registers under the name the API actually calls", () => {
+    expect(registeredTool().name).toBe(SURFACE_TOOL);
+  });
+
+  it("draws the card the tool call carries", () => {
+    const tool = registeredTool();
+
+    render(tool.render({ args: QUIZ } as never) as ReactElement);
+
+    expect(screen.getByRole("radiogroup", { name: QUIZ.question })).toBeInTheDocument();
+    expect(screen.getAllByRole("radio")).toHaveLength(2);
+  });
+
+  it("draws it as a record, with no way to answer in this panel", () => {
+    // Deliberate, and the reason is in the component's own docstring: CopilotKit re-renders every
+    // tool call in the thread, so an answerable card would outlive its turn — and the AG-UI path
+    // derives the answered turn server-side, so a late answer would be graded against whatever
+    // question is up now rather than refused. T9 is where that becomes nameable on this transport.
+    //
+    // Scoped to the card, because the panel around it has a composer of its own with a Send button.
+    // A document-wide query finds *that* one and reports the opposite of what it is asked.
+    const tool = registeredTool();
+
+    const card = render(tool.render({ args: QUIZ } as never) as ReactElement);
+
+    expect(within(card.container).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(card.container).getByRole("radio", { name: QUIZ.options[0]! })).toBeDisabled();
+  });
+});

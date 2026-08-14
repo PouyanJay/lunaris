@@ -10,6 +10,10 @@ interface AnswerFormProps {
   /** True while an answer is being marked — the box locks so one answer cannot be sent twice. */
   busy: boolean;
   onAnswer: (text: string) => void;
+  /** True when a Tier 1 card is already framing this (T4): the card carries the border, the
+   *  eyebrow and the question, so the form drops its own chrome and keeps only the box. Two
+   *  bordered regions inside one another is the cards-in-cards look the house style forbids. */
+  embedded?: boolean;
 }
 
 /** Where the learner replies. A textarea, because an answer is prose and the whole loop rests on
@@ -19,7 +23,7 @@ interface AnswerFormProps {
  *  answer would be the surface answering for them. Submit is never pre-disabled — a form that
  *  greys out its own button hides the reason it is not ready — so an empty send explains itself
  *  instead. */
-export function AnswerForm({ criterion, busy, onAnswer }: AnswerFormProps) {
+export function AnswerForm({ criterion, busy, onAnswer, embedded = false }: AnswerFormProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const boxId = useId();
@@ -47,13 +51,13 @@ export function AnswerForm({ criterion, busy, onAnswer }: AnswerFormProps) {
 
   return (
     <form
-      className={styles.form}
+      className={`${styles.form} ${embedded ? styles.embedded : ""}`.trim()}
       onSubmit={(event) => {
         event.preventDefault();
         submit();
       }}
     >
-      <label className={styles.label} htmlFor={boxId}>
+      <label className={embedded ? styles.hiddenLabel : styles.label} htmlFor={boxId}>
         Your answer
       </label>
       <textarea
