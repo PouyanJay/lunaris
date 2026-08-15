@@ -369,6 +369,67 @@ describe("the Tier 1 card (T4)", () => {
     });
   });
 
+  it("composes the standing turn around its card (T5)", async () => {
+    // Tier 2 in the surface every environment actually runs. The card stays answerable inside the
+    // composition — a layout that displaced the answer path would trade the tier for the loop.
+    const composed = {
+      ...OPENED,
+      turns: [
+        {
+          ...OPENED.turns[0]!,
+          layout: {
+            catalogId: "lunaris.live.layout/v1",
+            blocks: [
+              { component: "Stack", id: "root", children: ["example", "surface", "hint"] },
+              {
+                component: "WorkedExample",
+                id: "example",
+                title: "Rolling downhill",
+                steps: ["Read the slope.", "Step against it."],
+                expanded: true,
+              },
+              { component: "Surface", id: "surface" },
+              { component: "Hint", id: "hint", hint: "The sign is the direction." },
+            ],
+          },
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(composed, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+
+    expect(await screen.findByText("Rolling downhill")).toBeInTheDocument();
+    expect(screen.getByText("Show a hint")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("does not print the standing turn's words twice", async () => {
+    // The transcript above already holds every word the tutor has said, so the layout's prose slot
+    // is deliberately empty on this surface. Filling it would show the standing lesson twice, which
+    // reads as the tutor repeating itself rather than as a composition.
+    const composed = {
+      ...OPENED,
+      turns: [
+        {
+          ...OPENED.turns[0]!,
+          layout: {
+            catalogId: "lunaris.live.layout/v1",
+            blocks: [
+              { component: "Stack", id: "root", children: ["prose", "surface"] },
+              { component: "Prose", id: "prose" },
+              { component: "Surface", id: "surface" },
+            ],
+          },
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(composed, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
+    await screen.findByRole("textbox");
+
+    expect(screen.getAllByText(OPENED.turns[0]!.tutor)).toHaveLength(1);
+  });
+
   it("keeps a session stored before P2b answerable", async () => {
     // Every row P2a wrote has no surface. Falling back to the plain box is what stops the tier's
     // arrival making the whole of Live's own history unanswerable.

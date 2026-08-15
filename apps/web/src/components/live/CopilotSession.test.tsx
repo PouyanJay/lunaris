@@ -4,11 +4,13 @@ import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  LAYOUT_TOOL,
   LIVE_AGENT,
   SURFACE_TOOL,
   copilotRuntimeUrl,
   sessionHeaders,
 } from "../../lib/copilotRuntime";
+import { LAYOUT_CATALOG } from "../../lib/layoutSpec";
 import { CopilotSession } from "./CopilotSession";
 
 // The hook is stubbed rather than driven: what needs proving is *what this component registers*,
@@ -185,7 +187,7 @@ describe("the Tier 1 card inside the generative panel", () => {
    *  asked to render — no message store, no socket, no agent. That matters because this seam has
    *  had no test at all, and AD14 names its worst failure exactly: a card that silently never
    *  renders, with every server-side assertion still passing. */
-  function registeredTool() {
+  function registeredTool(name: string) {
     render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -194,17 +196,23 @@ describe("the Tier 1 card inside the generative panel", () => {
         standingTurn="Anything at all."
       />,
     );
-    const calls = vi.mocked(useRenderToolCall).mock.calls;
-    expect(calls.length).toBeGreaterThan(0);
-    return calls[0]![0];
+    // Looked up by name rather than by position. The panel registers two renderers from T5 (the
+    // card and its layout), and an index would quietly start asserting about the wrong one the
+    // first time a third is added or the two are reordered.
+    const config = vi
+      .mocked(useRenderToolCall)
+      .mock.calls.map((call) => call[0])
+      .find((registered) => registered.name === name);
+    expect(config, `nothing registered a renderer for ${name}`).toBeDefined();
+    return config!;
   }
 
   it("registers under the name the API actually calls", () => {
-    expect(registeredTool().name).toBe(SURFACE_TOOL);
+    expect(registeredTool(SURFACE_TOOL).name).toBe(SURFACE_TOOL);
   });
 
   it("draws the card the tool call carries", () => {
-    const tool = registeredTool();
+    const tool = registeredTool(SURFACE_TOOL);
 
     render(tool.render({ args: QUIZ } as never) as ReactElement);
 
@@ -220,11 +228,37 @@ describe("the Tier 1 card inside the generative panel", () => {
     //
     // Scoped to the card, because the panel around it has a composer of its own with a Send button.
     // A document-wide query finds *that* one and reports the opposite of what it is asked.
-    const tool = registeredTool();
+    const tool = registeredTool(SURFACE_TOOL);
 
     const card = render(tool.render({ args: QUIZ } as never) as ReactElement);
 
     expect(within(card.container).queryByRole("button")).not.toBeInTheDocument();
     expect(within(card.container).getByRole("radio", { name: QUIZ.options[0]! })).toBeDisabled();
+  });
+
+  it("registers a second renderer for the turn's Tier 2 layout", () => {
+    // Its own registration, mirroring the two tool calls the API sends. A build that drew the card
+    // and not the layout still assesses the learner correctly — which is exactly why the failure is
+    // quiet, and why it needs its own assertion rather than riding on the card's.
+    expect(registeredTool(LAYOUT_TOOL).name).toBe(LAYOUT_TOOL);
+    expect(LAYOUT_TOOL).toBe("lunaris.layout");
+  });
+
+  it("draws the composition the layout tool call carries", () => {
+    const tool = registeredTool(LAYOUT_TOOL);
+
+    const drawn = render(
+      tool.render({
+        args: {
+          catalogId: LAYOUT_CATALOG,
+          blocks: [
+            { component: "Stack", id: "root", children: ["hint"] },
+            { component: "Hint", id: "hint", hint: "The sign is the direction." },
+          ],
+        },
+      } as never) as ReactElement,
+    );
+
+    expect(within(drawn.container).getByText("The sign is the direction.")).toBeInTheDocument();
   });
 });

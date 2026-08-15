@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Protocol
 
 from ...graph.schema import ConceptNode, MasteryCriterion
-from ..schema import DirectorMove
+from ..schema import DirectorMove, LessonParts
 
 
 class ITutor(Protocol):
@@ -65,5 +65,34 @@ class ITutor(Protocol):
         Declared ``def`` returning an ``AsyncIterator`` rather than ``async def``: an async
         generator function is *called* to get its iterator, not awaited, and an ``async def``
         signature here would type-check every correct implementation as wrong.
+        """
+        ...
+
+    async def illustrate(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> LessonParts:
+        """The material that goes *around* the lesson — Tier 2's generative half (P2b T5, U4).
+
+        A worked example, a hint, and prompts to think through. What the tutor writes here is
+        offered to ``compose_layout``, which decides which of it this learner actually sees and in
+        what state. That split is the same line Tier 1 draws one tier up: the words are a model's,
+        the arrangement is a rule's, and only the second one feeds the learner model.
+
+        Same arguments as ``teach`` on purpose. The material has to belong to *this* move on *this*
+        concept — a worked example written for an introduction is the wrong instrument for a
+        remediation — and ``already_said`` is what stops the example reopening with the analogy the
+        lesson already spent.
+
+        **Nothing here can cost a turn.** Every field of ``LessonParts`` is optional, so an
+        implementation that has no material, cannot reach a provider, or is asked for something it
+        does not do answers with an empty one. The lesson and the Tier 1 card are on the turn
+        already; a failed illustration costs the trimmings.
         """
         ...

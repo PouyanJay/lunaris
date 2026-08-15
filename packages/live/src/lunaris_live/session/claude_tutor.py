@@ -5,8 +5,9 @@ import structlog
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 
 from ..graph.schema import ConceptNode, MasteryCriterion
+from ..model_json import parse_json_object
 from .reject_unteachable_move import reject_unteachable_move
-from .schema import DirectorMove, MoveKind
+from .schema import DirectorMove, LessonParts, MoveKind, WorkedExample
 from .tutor_unavailable_error import TutorUnavailableError
 
 logger = structlog.get_logger()
@@ -67,6 +68,48 @@ land; saying it again more slowly is the one thing that cannot work.
 #: avoid repeating itself; the whole session would be most of the prompt and most of the cost.
 _HISTORY_DEPTH = 2
 _HISTORY_CHARS = 600
+
+#: What the illustration is bounded by. Shorter than the lesson's deadline because it runs *beside*
+#: the words rather than in front of them: by the time the prose is written this has usually long
+#: since answered, and anything still outstanding is trimmings the turn will go without.
+_ILLUSTRATE_DEADLINE_S = 20.0
+
+#: Bounds on what comes back. The contract caps these too — this is the near side of the same wall,
+#: so an over-long field is trimmed into something usable instead of throwing the whole offer away.
+_TITLE_CHARS = 200
+_STEP_CHARS = 300
+_HINT_CHARS = 500
+_PROMPT_CHARS = 300
+_MAX_STEPS = 6
+_MAX_PROMPTS = 4
+
+_ILLUSTRATE = """You are tutoring one learner, one to one, in a live text session about "{topic}".
+
+The concept in front of you: {name} — {definition}
+{notes}{history}
+Alongside your explanation, prepare the supporting material for this concept. You are NOT teaching \
+here and you are NOT repeating the explanation — this is what sits around it on the page.
+
+- workedExample: one concrete instance worked through in 2 to 4 short steps. Each step is one \
+sentence and does something; a step that only restates the idea is not a step.
+- hint: one sentence they can uncover if they get stuck. Point at the thing people get wrong, do \
+not give the answer.
+- practice: 2 or 3 short prompts for them to think through. Not questions you will mark — thinking \
+prompts.
+
+{closing}
+
+Respond with ONLY a JSON object, no prose:
+{{"workedExample": {{"title": "...", "steps": ["...", "..."]}}, "hint": "...", \
+"practice": ["...", "..."]}}"""
+
+#: The practice prompts are aimed at the bar the learner is actually about to be marked against,
+#: because scaffolding pointed somewhere else is scaffolding for a different question.
+_PRACTICE_ON = 'The practice prompts should lead towards this, without answering it: "{statement}"'
+
+#: When the concept stages nothing checkable, the prompts have nothing to lead towards, so they are
+#: asked to lead somewhere else rather than at a bar that does not exist.
+_PRACTICE_OPEN = "The practice prompts should make them look at the idea from another side."
 
 #: What the move means for the person speaking. The director's whole output is the move, so a tutor
 #: that ignored it would make the policy decorative: the trace would record adaptation the learner
@@ -192,6 +235,61 @@ class ClaudeTutor:
             "live.tutor.taught", run_id=run_id, node=node.id, move=move.kind.value, chars=said
         )
 
+    async def illustrate(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> LessonParts:
+        """Tier 2's material: a worked example, a hint and prompts to think through (T5, U4).
+
+        **This can fail freely, and that is the design.** Every way it can go wrong — no provider, a
+        slow one, prose where JSON was asked for, a step list of the wrong shape — comes back as
+        empty ``LessonParts``, and the layout then degrades to the lesson and the card, which are on
+        the turn already. So the one thing generative composition is not allowed to do is cost a
+        learner their turn.
+
+        Its own deadline, well under the lesson's, for the same reason: this runs beside the words
+        rather than in front of them, so the only thing a slow illustration may spend is itself.
+        """
+        prompt = _ILLUSTRATE.format(
+            topic=topic,
+            name=node.name,
+            definition=node.definition,
+            notes=_notes_on(node),
+            history=_history_of(already_said),
+            closing=_PRACTICE_ON.format(statement=criterion.statement)
+            if criterion is not None
+            else _PRACTICE_OPEN,
+        )
+        try:
+            async with asyncio.timeout(_ILLUSTRATE_DEADLINE_S):
+                said = await self._ask(prompt)
+        except Exception:
+            # WARNING rather than INFO: the turn survives, but it survives *degraded* — the learner
+            # gets the lesson without its material, and PYTHON.md puts "fallback used, degraded
+            # mode entered" here. It is also the line an operator needs above the noise if a prompt
+            # regression starts costing every turn its trimmings.
+            logger.warning("live.tutor.illustration_skipped", run_id=run_id, node=node.id)
+            return LessonParts()
+
+        parts = _parts_from(parse_json_object(said))
+        logger.info(
+            "live.tutor.illustrated",
+            run_id=run_id,
+            node=node.id,
+            move=move.kind.value,
+            # What arrived, never the text itself — the same rule the lesson's own log keeps.
+            example_steps=len(parts.worked_example.steps) if parts.worked_example else 0,
+            hinted=parts.hint is not None,
+            prompts=len(parts.practice),
+        )
+        return parts
+
     async def _fragments(self, prompt: str, *, run_id: str, node_id: str) -> AsyncIterator[str]:
         """The model's own fragments, bounded twice, with every failure named one way.
 
@@ -278,6 +376,59 @@ async def _next_chunk(chunks: AsyncIterator[object], *, run_id: str, node_id: st
     except Exception as exc:
         logger.warning("live.tutor.stream_failed", run_id=run_id, node=node_id, exc_info=True)
         raise TutorUnavailableError(f"tutor could not teach {node_id}") from exc
+
+
+def _parts_from(payload: dict[str, object] | None) -> LessonParts:
+    """The model's answer as material, keeping whatever part of it was usable.
+
+    Field by field rather than one ``model_validate`` of the whole object, because these three are
+    independent offers: a worked example whose steps came back as a paragraph must not take the
+    hint down with it. ``LessonParts`` is optional all the way through, so the salvage has somewhere
+    to land, and anything that still does not fit the contract is simply not offered.
+
+    ``None`` is what ``parse_json_object`` answers when the response was prose — the single most
+    likely way this call goes wrong, and the reason the parameter is typed for it. Reached, it used
+    to raise an ``AttributeError`` that the loop caught and reported as a generic failure, so the
+    most ordinary outcome on this path arrived looking like a bug in Lunaris.
+    """
+    if payload is None:
+        return LessonParts()
+    return LessonParts(
+        worked_example=_example_from(payload.get("workedExample")),
+        hint=_one_line(payload.get("hint"), limit=_HINT_CHARS),
+        practice=[
+            prompt
+            for raw in _listed(payload.get("practice"))[:_MAX_PROMPTS]
+            if (prompt := _one_line(raw, limit=_PROMPT_CHARS)) is not None
+        ],
+    )
+
+
+def _example_from(raw: object) -> WorkedExample | None:
+    """A worked example, or nothing. Nothing when a step list came back as prose: a disclosure needs
+    a body it can hide, and one long paragraph collapsed behind a title is a title."""
+    if not isinstance(raw, dict):
+        return None
+    title = _one_line(raw.get("title"), limit=_TITLE_CHARS)
+    steps = [
+        step
+        for value in _listed(raw.get("steps"))[:_MAX_STEPS]
+        if (step := _one_line(value, limit=_STEP_CHARS)) is not None
+    ]
+    return WorkedExample(title=title, steps=steps) if title and steps else None
+
+
+def _listed(raw: object) -> list[object]:
+    """A list, or an empty one. A model answering with a bare string where an array was asked for is
+    not one item — treating it as one is how a whole practice set becomes a single sentence."""
+    return raw if isinstance(raw, list) else []
+
+
+def _one_line(raw: object, *, limit: int) -> str | None:
+    """One trimmed, bounded line of text, or nothing at all when there was none."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    return raw.strip()[:limit]
 
 
 async def _nothing_to_close() -> None:

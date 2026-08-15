@@ -12,8 +12,10 @@ moved by graded evidence, and the director reads it back.
 from .apply_evidence import apply_evidence
 from .claude_grader import ClaudeGrader
 from .claude_tutor import ClaudeTutor
+from .compose_layout import compose_layout
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
+from .mastery_thresholds import DECAYED, MASTERED
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
@@ -27,20 +29,31 @@ from .schema import (
     CriterionCard,
     DirectorMove,
     EvidenceKind,
+    ExampleBlock,
     ExplainBack,
+    HintBlock,
+    LayoutBlock,
+    LayoutComponent,
+    LayoutSpec,
     LearnerModel,
+    LessonParts,
     MasteryMeter,
     MeterEntry,
     MoveKind,
     NodeKnowledge,
+    PracticeBlock,
+    ProseBlock,
     QuizCard,
     Session,
     SessionClock,
     SessionStatus,
     SessionTurn,
+    StackBlock,
+    SurfaceBlock,
     SurfaceKind,
     SurfaceSpec,
     TurnGrade,
+    WorkedExample,
 )
 from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
@@ -56,6 +69,8 @@ from .turn_outcome import TurnOutcome
 from .tutor_unavailable_error import TutorUnavailableError
 
 __all__ = [
+    "DECAYED",
+    "MASTERED",
     "MAX_ANSWER_CHARS",
     "ClaudeGrader",
     "ClaudeTutor",
@@ -63,20 +78,28 @@ __all__ = [
     "CriterionCard",
     "DirectorMove",
     "EvidenceKind",
+    "ExampleBlock",
     "ExplainBack",
     "GraderUnavailableError",
+    "HintBlock",
     "IGrader",
     "IKnowledgeStore",
     "ISessionStore",
     "ITutor",
     "ITutorDeltaSink",
+    "LayoutBlock",
+    "LayoutComponent",
+    "LayoutSpec",
     "LearnerModel",
+    "LessonParts",
     "MasteryMeter",
     "MemoryKnowledgeStore",
     "MemorySessionStore",
     "MeterEntry",
     "MoveKind",
     "NodeKnowledge",
+    "PracticeBlock",
+    "ProseBlock",
     "QuizCard",
     "Session",
     "SessionClock",
@@ -84,17 +107,21 @@ __all__ = [
     "SessionFormatError",
     "SessionStatus",
     "SessionTurn",
+    "StackBlock",
     "StaleAnswerError",
     "StubGrader",
     "StubTutor",
     "SupabaseKnowledgeStore",
     "SupabaseSessionStore",
+    "SurfaceBlock",
     "SurfaceKind",
     "SurfaceSpec",
     "TurnGrade",
     "TurnOutcome",
     "TutorUnavailableError",
+    "WorkedExample",
     "apply_evidence",
+    "compose_layout",
     "decide_move",
     "open_session",
     "recall_of",

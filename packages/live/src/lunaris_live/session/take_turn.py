@@ -1,15 +1,18 @@
 import structlog
 
-from ..graph import ConceptGraph, ConceptNode, MasteryCriterion
+from ..graph import ConceptGraph, ConceptNode
 from .apply_evidence import apply_evidence
+from .compose_layout import compose_layout
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .protocols import IGrader, ITutor, ITutorDeltaSink
-from .relay_delta import relay_delta
+from .said_and_illustrated import said_and_illustrated
 from .schema import (
     DirectorMove,
+    LayoutSpec,
     LearnerModel,
+    LessonParts,
     MoveKind,
     Session,
     SessionClock,
@@ -99,7 +102,19 @@ async def take_turn(
         # the learner demonstrated rather than an empty card.
         closing = select_surface(move, None, graph=graph, criterion=None, model=model, clock=clock)
         return TurnOutcome(
-            session=_closed(session, turns, move, run_id=run_id, surface=closing), model=model
+            session=_closed(
+                session,
+                turns,
+                move,
+                run_id=run_id,
+                surface=closing,
+                # A goodbye names no concept and asked no tutor for material, so the lean layout is
+                # all there is to arrange: the sign-off and the meter. Composed rather than left
+                # ``None`` so that "every turn has a layout" is true of the last one too, and a
+                # renderer never has to hold a second way of drawing a turn.
+                layout=compose_layout(LessonParts(), node_id=None, model=model),
+            ),
+            model=model,
         )
 
     taught = await _teach(
@@ -133,6 +148,7 @@ def _closed(
     *,
     run_id: str,
     surface: SurfaceSpec,
+    layout: LayoutSpec,
 ) -> Session:
     """The session, ended — and said out loud.
 
@@ -160,6 +176,7 @@ def _closed(
         tutor=f"{_CLOSING} {move.reason}",
         run_id=run_id,
         surface=surface,
+        layout=layout,
     )
     return session.model_copy(update={"turns": [*turns, goodbye], "status": SessionStatus.CLOSED})
 
@@ -184,66 +201,32 @@ async def _teach(
         raise ValueError(f"{move.node_id} is not a concept on graph {graph.graph_id}")
 
     staged = stage_criterion(node)
+    # Only this concept's history: a tutor told everything it has ever said would spend the prompt
+    # on material the learner is not being taught right now.
+    already_said = [turn.tutor for turn in turns if turn.move.node_id == node.id]
+
+    said, parts = await said_and_illustrated(
+        tutor,
+        move,
+        node,
+        topic=graph.topic,
+        criterion=staged,
+        already_said=already_said,
+        run_id=run_id,
+        on_delta=on_delta,
+    )
     return SessionTurn(
         seq=len(turns) + 1,
         move=move,
-        tutor=await _said(
-            tutor,
-            move,
-            node,
-            topic=graph.topic,
-            criterion=staged,
-            # Only this concept's history: a tutor told everything it has ever said would spend the
-            # prompt on material the learner is not being taught right now.
-            already_said=[turn.tutor for turn in turns if turn.move.node_id == node.id],
-            run_id=run_id,
-            on_delta=on_delta,
-        ),
+        tutor=said,
         run_id=run_id,
         criterion=staged,
         # Chosen from the move, the concept and the belief — never from what the tutor happened to
         # say. Plan §8 makes that mandatory for this tier: these components feed the learner model.
         surface=select_surface(move, node, graph=graph, criterion=staged, model=model, clock=clock),
+        # Tier 2 (T5): the tutor wrote the material, the rules decide what this learner sees of it.
+        layout=compose_layout(parts, node_id=node.id, model=model),
     )
-
-
-async def _said(
-    tutor: ITutor,
-    move: DirectorMove,
-    node: ConceptNode,
-    *,
-    topic: str,
-    criterion: MasteryCriterion | None,
-    already_said: list[str],
-    run_id: str,
-    on_delta: ITutorDeltaSink | None,
-) -> str:
-    """What the tutor says, relayed fragment by fragment when somebody is listening.
-
-    The two paths meet here and nowhere else, so the turn that gets stored is the same object either
-    way. Relaying happens *inside* the loop over the fragments rather than after it — a version that
-    collected the lesson and then replayed it would satisfy every assertion about content and leave
-    the learner waiting exactly as long as P2a's surface did.
-    """
-    if on_delta is None:
-        return await tutor.teach(
-            move,
-            node,
-            topic=topic,
-            criterion=criterion,
-            already_said=already_said,
-            run_id=run_id,
-        )
-
-    parts: list[str] = []
-    async for delta in tutor.stream(
-        move, node, topic=topic, criterion=criterion, already_said=already_said, run_id=run_id
-    ):
-        parts.append(delta)
-        relay_delta(on_delta, delta)
-    # Stripped for the same reason ``teach`` strips: a stored lesson opening or closing on
-    # whitespace is a lesson that renders differently everywhere it is read.
-    return "".join(parts).strip()
 
 
 async def _grade(

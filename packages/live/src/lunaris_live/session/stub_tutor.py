@@ -3,7 +3,7 @@ from collections.abc import AsyncIterator, Sequence
 
 from ..graph.schema import ConceptNode, MasteryCriterion
 from .reject_unteachable_move import reject_unteachable_move
-from .schema import DirectorMove, MoveKind
+from .schema import DirectorMove, LessonParts, MoveKind, WorkedExample
 
 #: One phrasing per move, because a stub that said the same thing for every move would let a
 #: surface be built — and reviewed, and shipped — against a session that never appeared to adapt.
@@ -32,6 +32,17 @@ _ASK = " So: {statement}"
 #: second pass over one concept is not the first pass repeated, or a surface — and a review — could
 #: pass over a tutor that says the same thing forever.
 _AGAIN = "Another way to see it. "
+
+#: Tier 2's material, offline. Each line names the concept or quotes its authored notes, for the
+#: same reason the lesson does: a fixed string would let a layout be wired to the wrong node, or to
+#: no node at all, and still look right in every screenshot.
+_EXAMPLE_TITLE = "{name}, worked through"
+_EXAMPLE_START = "Start from what it is: {definition}"
+_EXAMPLE_MIDDLE = "Then use it for what it is for: {objective}"
+_EXAMPLE_MIDDLE_PLAIN = "Then use {name} on something small enough to check by hand."
+_EXAMPLE_END = "Finally, say back what {name} did, in one sentence."
+_HINT = "Watch for this one: {misconception}"
+_PRACTICE = "Before you answer, get {name} straight in your own head."
 
 #: How the offline path breaks a lesson into fragments: on word boundaries, keeping the whitespace,
 #: so the pieces re-join to exactly what ``teach`` said. A model streams in tokens rather than
@@ -80,6 +91,45 @@ class StubTutor:
         lesson = self._lesson(move, node, criterion=criterion, already_said=already_said)
         for fragment in _FRAGMENTS.findall(lesson):
             yield fragment
+
+    async def illustrate(
+        self,
+        move: DirectorMove,
+        node: ConceptNode,
+        *,
+        topic: str,
+        criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
+        run_id: str,
+    ) -> LessonParts:
+        """Tier 2's material, built from the concept's own authored notes rather than from lorem.
+
+        Every field is filled whenever the node can fill it, and that is what the offline path is
+        *for*: ``compose_layout`` only shows what it is given, so a stub that offered nothing would
+        let the whole tier — the three bands, the browser's renderer, a reviewer's read of a real
+        session — be exercised against a layout that could never contain anything. The composer is
+        then the only thing deciding what a learner sees, which is the claim under test.
+        """
+        spec = node.teaching_spec
+        return LessonParts(
+            worked_example=WorkedExample(
+                title=_EXAMPLE_TITLE.format(name=node.name),
+                steps=[
+                    _EXAMPLE_START.format(definition=node.definition),
+                    _EXAMPLE_MIDDLE.format(objective=spec.objective)
+                    if spec is not None
+                    else _EXAMPLE_MIDDLE_PLAIN.format(name=node.name),
+                    _EXAMPLE_END.format(name=node.name),
+                ],
+            ),
+            # The concept's first authored misconception, turned into the thing to watch for. A
+            # generic hint would read the same on every concept, and a surface built against one
+            # could not tell a hint wired to the wrong node from a working one.
+            hint=_HINT.format(misconception=spec.misconceptions[0])
+            if spec is not None and spec.misconceptions
+            else None,
+            practice=[_PRACTICE.format(name=node.name)] if criterion else [],
+        )
 
     def _lesson(
         self,

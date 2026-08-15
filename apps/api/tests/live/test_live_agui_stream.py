@@ -114,7 +114,12 @@ async def test_a_run_streams_the_ag_ui_lifecycle_in_order(client: httpx.AsyncCli
         "TEXT_MESSAGE_START",
         "TEXT_MESSAGE_CONTENT",
         "TEXT_MESSAGE_END",
-        # T3's Tier 1 card, between the words it follows and the state that settles the run.
+        # T3's Tier 1 card, then T5's Tier 2 layout around it — both between the words they
+        # follow and the state that settles the run. The layout comes second because it holds a
+        # slot for the card.
+        "TOOL_CALL_START",
+        "TOOL_CALL_ARGS",
+        "TOOL_CALL_END",
         "TOOL_CALL_START",
         "TOOL_CALL_ARGS",
         "TOOL_CALL_END",

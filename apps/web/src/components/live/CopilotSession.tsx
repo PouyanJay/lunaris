@@ -1,8 +1,16 @@
 import { CopilotKit, useRenderToolCall } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 
-import { LIVE_AGENT, SURFACE_TOOL, copilotRuntimeUrl, sessionHeaders } from "../../lib/copilotRuntime";
+import {
+  LAYOUT_TOOL,
+  LIVE_AGENT,
+  SURFACE_TOOL,
+  copilotRuntimeUrl,
+  sessionHeaders,
+} from "../../lib/copilotRuntime";
+import type { LayoutSpec } from "../../lib/layoutSpec";
 import type { SurfaceSpec } from "../../lib/surfaceSpec";
+import { LessonLayout } from "./LessonLayout";
 import { SurfaceCard } from "./SurfaceCard";
 import styles from "./CopilotSession.module.css";
 
@@ -54,6 +62,7 @@ export function CopilotSession({
             `exactOptionalPropertyTypes`. A wrapper also keeps layout ours when T7 swaps the kit's
             internals for our slots. */}
         <SurfaceTool />
+        <LayoutTool />
         <div className={styles.chat}>
           {/* Seeded with the turn the learner is standing on, because from T2 a message sent here
               takes a real turn and is graded against *that* turn's criterion. An empty chat would
@@ -68,6 +77,26 @@ export function CopilotSession({
       </CopilotKit>
     </section>
   );
+}
+
+/** Renders the turn's Tier 2 composition where the API called for it.
+ *
+ *  Registered as its own renderer rather than folded into `SurfaceTool`, mirroring the two tool
+ *  calls the API sends: a build that draws the card and not the layout still assesses the learner
+ *  correctly, which is the whole reason the tiers are separate calls.
+ *
+ *  The card slot is empty here. In the panel's message stream the card arrives as its own tool
+ *  call, so drawing a second copy inside the layout would put two of them on screen — and the
+ *  second would be the answerable one in a place a past turn can still be scrolled to. */
+function LayoutTool() {
+  useRenderToolCall({
+    name: LAYOUT_TOOL,
+    description: "How this turn was composed for this learner.",
+    render: ({ args }) => (
+      <LessonLayout layout={args as unknown as LayoutSpec} prose={null} card={null} />
+    ),
+  });
+  return null;
 }
 
 /** Renders the director's Tier 1 card where the API called for it, inside the message stream.

@@ -5,6 +5,7 @@ import type { LiveSession, SessionTurn } from "../../lib/liveSession";
 import { Button } from "../primitives/Button";
 import { StatusDot } from "../primitives/StatusDot";
 import { AnswerForm } from "./AnswerForm";
+import { LessonLayout } from "./LessonLayout";
 import { SessionTranscript } from "./SessionTranscript";
 import { SurfaceCard } from "./SurfaceCard";
 import styles from "./SessionView.module.css";
@@ -141,17 +142,27 @@ function TurnFooter({
 }) {
   return (
     <>
-      {/* Rendered on a closed session too, where it is the mastery meter and reads as the ending
-          it is — but never answerable there. */}
-      {standing?.surface ? (
-        <SurfaceCard
-          spec={standing.surface}
-          busy={busy}
-          answerable={answerHere && !closed}
-          onAnswer={onAnswer}
-          welded
-        />
-      ) : null}
+      {/* Tier 2 (T5). The layout says where the card goes and what supporting material sits around
+          it; with no layout it draws the card alone, which is every session stored before P2b.
+          The prose slot is empty here on purpose — the transcript above already holds every word
+          the tutor has said, and putting the standing turn's words back would print them twice. */}
+      <LessonLayout
+        layout={standing?.layout ?? null}
+        prose={null}
+        card={
+          /* Rendered on a closed session too, where it is the mastery meter and reads as the
+             ending it is — but never answerable there. */
+          standing?.surface ? (
+            <SurfaceCard
+              spec={standing.surface}
+              busy={busy}
+              answerable={answerHere && !closed}
+              onAnswer={onAnswer}
+              welded
+            />
+          ) : null
+        }
+      />
       {closed ? (
         <p className={styles.ended}>
           This session has ended. Its record stays here, and what you demonstrated is remembered the

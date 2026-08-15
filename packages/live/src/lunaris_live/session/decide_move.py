@@ -1,17 +1,8 @@
 from ..graph import ConceptGraph, ConceptNode
+from .mastery_thresholds import DECAYED as _DECAYED
+from .mastery_thresholds import MASTERED as _MASTERED
 from .recall_of import recall_of
 from .schema import DirectorMove, LearnerModel, MoveKind, SessionClock
-
-#: Recall at or above this counts as "the learner has this". It gates introductions, so it is the
-#: number that decides whether progress through the map is earned or waved through. Set above what a
-#: single MET can reach (one piece of evidence lands at 0.45), so mastery takes more than one right
-#: answer — a guess must not unlock a dependent.
-_MASTERED = 0.6
-
-#: Recall below this on a concept the learner HAS demonstrated means it is slipping and is worth
-#: coming back to. Under ``_MASTERED`` by design: a concept between the two is neither solid enough
-#: to build on nor faded enough to interrupt for.
-_DECAYED = 0.45
 
 #: Consecutive misses before the director stops advancing and changes approach. Two, not one: a
 #: learner is allowed to be wrong once — that is what a first attempt is for — but a second miss on

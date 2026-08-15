@@ -297,9 +297,13 @@ async def test_every_run_ends_with_the_state_the_session_is_now_in(
         "TEXT_MESSAGE_START",
         *["TEXT_MESSAGE_CONTENT"] * len(_of_type(events, "TEXT_MESSAGE_CONTENT")),
         "TEXT_MESSAGE_END",
-        # T3's Tier 1 card. Pinned here as well as in test_live_agui_surfaces.py, because this is
-        # the test that owns the *sequence* — a card emitted in the wrong place is a card answered
-        # against the wrong question.
+        # T3's Tier 1 card, then T5's Tier 2 layout. Pinned here as well as in the surfaces and
+        # layout suites, because this is the test that owns the *sequence* — a card emitted in the
+        # wrong place is a card answered against the wrong question, and a layout emitted before
+        # the card it slots would paint a hole.
+        "TOOL_CALL_START",
+        "TOOL_CALL_ARGS",
+        "TOOL_CALL_END",
         "TOOL_CALL_START",
         "TOOL_CALL_ARGS",
         "TOOL_CALL_END",

@@ -21,6 +21,7 @@ from typing import Any
 
 import httpx
 import pytest
+from _agui_frames import call_named, tool_names
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.live.session.agui.replayed_turn import replayed_turn
@@ -73,9 +74,8 @@ async def _events(
 
 
 def _surface_in(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """The spec the run carried, reassembled from its argument frames as a client would."""
-    args = "".join(event["delta"] for event in events if event["type"] == "TOOL_CALL_ARGS")
-    return json.loads(args)
+    """The Tier 1 spec the run carried."""
+    return call_named(events, SURFACE_TOOL)
 
 
 async def test_a_turn_carries_the_card_the_director_chose(client: httpx.AsyncClient) -> None:
@@ -110,8 +110,8 @@ async def test_the_card_is_named_by_the_tool_the_browser_registers(
     events = await _events(client, session["sessionId"], answer="A serious attempt.")
 
     # Assert
-    starts = [event for event in events if event["type"] == "TOOL_CALL_START"]
-    assert [event["toolCallName"] for event in starts] == ["lunaris.surface"]
+    # The layout rides beside it from T5, and its own name is pinned in `test_live_agui_layout`.
+    assert tool_names(events) == ["lunaris.surface", "lunaris.layout"]
     assert SURFACE_TOOL == "lunaris.surface"
 
 
@@ -137,6 +137,9 @@ async def test_the_card_arrives_after_the_words_and_before_the_state(
     assert [event["toolCallId"] for event in events if "toolCallId" in event].count(
         next(e["toolCallId"] for e in events if e["type"] == "TOOL_CALL_START")
     ) == 3, "one call, three frames, one id — or the client cannot assemble the arguments"
+    assert len({e["toolCallId"] for e in events if e["type"] == "TOOL_CALL_START"}) == 2, (
+        "the card and its layout are separate calls, so they need separate ids"
+    )
 
 
 async def test_a_reloaded_tab_gets_the_card_it_was_halfway_through(

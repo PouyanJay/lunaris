@@ -24,6 +24,14 @@ export const LIVE_AGENT = "live";
  *  run looking perfect from the server. */
 export const SURFACE_TOOL = "lunaris.surface";
 
+/** The tool a Tier 2 layout arrives as (P2b T5), pinned as a literal for the same reason.
+ *
+ *  A sibling of `SURFACE_TOOL` rather than a field on it: the card is chosen by rules that feed the
+ *  learner model, while the arrangement around it moves no belief, so a build that draws the card
+ *  and not the layout still assesses correctly. Drift here is a lesson that silently renders as
+ *  bare prose. */
+export const LAYOUT_TOOL = "lunaris.layout";
+
 /** Where the runtime answers, from the host an operator configured.
  *
  *  The Node service mounts at `/api/copilotkit`; a browser pointed at the bare host 404s every run

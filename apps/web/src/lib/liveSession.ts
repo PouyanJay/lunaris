@@ -1,4 +1,5 @@
 import { authedFetch } from "./apiClient";
+import type { LayoutSpec } from "./layoutSpec";
 import type { SurfaceSpec } from "./surfaceSpec";
 
 /** The server's own bound on an answer, mirrored so the box can stop a learner writing past it
@@ -54,6 +55,11 @@ export interface SessionTurn {
    *  before P2b, which is why it is optional rather than assumed — a surface that read it as
    *  required would fail on the whole of Live's own history. */
   surface: SurfaceSpec | null;
+  /** How this turn was composed for this learner (P2b T5) — where the words and the card go, and
+   *  what supporting material sits around them. Null on every turn stored before P2b, and on a turn
+   *  whose material could not be written, which is why the renderer falls back to the words and the
+   *  card rather than to nothing. */
+  layout: LayoutSpec | null;
 }
 
 /** A learner's run at a concept graph. Persisted server-side, so a reload resumes it. */
