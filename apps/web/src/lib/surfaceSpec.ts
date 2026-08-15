@@ -20,7 +20,8 @@ export type SurfaceKind =
   | "quiz_card"
   | "explain_back"
   | "mastery_meter"
-  | "concept_map";
+  | "concept_map"
+  | "sim_app";
 
 /** What shape of evidence a criterion asks for. Mirrors `MasteryCriterionKind`. */
 export type CriterionAsks = "predict" | "manipulate" | "explain";
@@ -79,9 +80,30 @@ export interface ConceptMapSpec {
   prerequisites: string[];
 }
 
+/** A simulator mounted in place, and the do-statement it exists to let the learner demonstrate.
+ *
+ *  Tier 3 (plan §8). The learner acts in the frame instead of writing, and the simulator reports
+ *  what they did; that report then goes in through the ordinary answer path and is graded by the
+ *  same separate grader against `statement`. So this is a new surface, not a new way to be
+ *  assessed — which is why it carries the criterion's words like every other assessment card. */
+export interface SimAppSpec {
+  kind: "sim_app";
+  nodeId: string;
+  concept: string;
+  /** Which simulator, so a stored turn still says what the learner used. */
+  appId: string;
+  /** Where the frame loads it from. The server refuses anything but `http(s)` and same-origin
+   *  paths, so a renderer does not have to re-decide what a frame may run. */
+  url: string;
+  title: string;
+  statement: string;
+  asks: CriterionAsks;
+}
+
 export type SurfaceSpec =
   | CriterionCardSpec
   | QuizCardSpec
   | ExplainBackSpec
   | MasteryMeterSpec
-  | ConceptMapSpec;
+  | ConceptMapSpec
+  | SimAppSpec;

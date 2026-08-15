@@ -96,9 +96,7 @@ describe("the generative session surface", () => {
       />,
     );
 
-    expect(
-      screen.getByText(/Which way would you step to lower the loss\?/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Which way would you step to lower the loss\?/)).toBeInTheDocument();
   });
 
   it("opens on nothing at all when the session has nothing standing", () => {
@@ -170,7 +168,6 @@ describe("the generative session surface", () => {
     await waitFor(() => expect(screen.queryByText(/not configured/i)).not.toBeInTheDocument());
   });
 });
-
 
 describe("the Tier 1 card inside the generative panel", () => {
   const QUIZ = {

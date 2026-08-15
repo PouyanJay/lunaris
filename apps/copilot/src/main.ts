@@ -2,7 +2,9 @@ import "./telemetry.js";
 
 import { createServer } from "node:http";
 
+import { SIM_REGISTRY_PATH } from "./contract.js";
 import { liveListener } from "./endpoint.js";
+import { handleSimRegistryRequest, simRegistryUrl } from "./simRegistry.js";
 
 /** One JSON object per line, matching the Python side's structlog output, so all three runtimes'
  *  logs can be filtered on the same keys.
@@ -40,6 +42,13 @@ const allowedOrigins = (process.env.LUNARIS_COPILOT_ORIGINS ?? "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+/** Whether this deployment registers Tier 3 simulators, matching the API's own `LUNARIS_LIVE_SIMS`.
+ *
+ *  Off unless asked for, and deliberately the same switch on both sides: the only simulator that
+ *  exists is a placeholder, and a runtime advertising one the API will not mount — or the reverse —
+ *  is two halves of a socket disagreeing about whether it is plugged in. */
+const simsEnabled = (process.env.LUNARIS_LIVE_SIMS ?? "").trim().toLowerCase() === "stub";
+
 const port = Number(process.env.PORT ?? 8100);
 
 if (!apiBaseUrl) {
@@ -54,7 +63,12 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 
-const copilot = liveListener({ apiBaseUrl, allowedOrigins });
+const copilot = liveListener({
+  apiBaseUrl,
+  allowedOrigins,
+  // Resolved after the port is validated, because the registry URL contains it.
+  ...(simsEnabled ? { simRegistryUrl: simRegistryUrl(port) } : {}),
+});
 
 const server = createServer((request, response) => {
   // Answered here rather than through the runtime: a liveness probe must not depend on the
@@ -62,6 +76,19 @@ const server = createServer((request, response) => {
   if (request.url === "/healthz") {
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ status: "ok" }));
+    return;
+  }
+  // The Tier 3 registry, spoken to by the MCP Apps middleware in this same process. Served here
+  // rather than through the CopilotKit runtime because it is not a CopilotKit route — it is an MCP
+  // server that happens to live at the same address.
+  if (simsEnabled && request.url?.startsWith(SIM_REGISTRY_PATH)) {
+    void handleSimRegistryRequest(request, response, apiBaseUrl).catch((error: unknown) => {
+      log("error", "copilot.sim_registry_failed", { message: String(error) });
+      if (!response.headersSent) {
+        response.writeHead(500, { "content-type": "application/json" });
+      }
+      response.end(JSON.stringify({ error: "sim registry failed" }));
+    });
     return;
   }
   void copilot(request, response);
@@ -79,6 +106,7 @@ server.listen(port, () => {
     port,
     api_base_url: apiBaseUrl,
     allowed_origins: allowedOrigins,
+    sim_registry: simsEnabled ? SIM_REGISTRY_PATH : null,
   });
 });
 

@@ -14,6 +14,8 @@ from .schema import (
     MoveKind,
     QuizCard,
     SessionClock,
+    SimApp,
+    SimAppCard,
     SurfaceSpec,
 )
 
@@ -39,6 +41,7 @@ def select_surface(
     criterion: MasteryCriterion | None,
     model: LearnerModel,
     clock: SessionClock,
+    sim: SimApp | None = None,
 ) -> SurfaceSpec:
     """Which Tier 1 component this turn shows, and every prop in it.
 
@@ -58,14 +61,28 @@ def select_surface(
     1. **A close is about the session**, not a concept, so it shows what was demonstrated.
     2. **Retrieval must be produced, not recognised.** A card with options would let recognition
        stand in for recall, which is the one substitution that makes the move pointless.
-    3. **A stuck learner is shown the wrong models they might hold** — the director only remediates
+    3. **A criterion that can only be demonstrated gets the simulator that demonstrates it** (T6),
+       and it outranks the quiz below because the answer any card collects is graded against the
+       criterion this turn staged. Showing a misconception quiz while a simulator's do-statement is
+       staged would mark a picked option against a statement about driving a rate until it diverges
+       — the instrument must match what is being marked. It fires only when a registry has actually
+       named an application: a mounted frame with nothing in it reads as a broken session, not as a
+       concept nobody has built a simulator for.
+    4. **A stuck learner is shown the wrong models they might hold** — the director only remediates
        after two misses, so "can you say it" has already been asked and answered. When the concept
        authored no misconceptions there is nothing to show, and the fall-through deliberately skips
-       rule 5's explain-back for the same reason: asking a stuck learner to say it back is the
+       rule 6's explain-back for the same reason: asking a stuck learner to say it back is the
        instrument that has just failed twice. They get the do-statement instead.
-    4. **A concept this session cannot check gets no assessment-shaped card**, because nothing said
-       next can move a belief and a card that looked like one would be lying about the turn.
-    5. **Otherwise the criterion decides**: explain it back, or meet the do-statement as written.
+    5. **A concept this session cannot check gets no assessment-shaped card**, because nothing said
+       next can move a belief and a card that looked like one would be lying about the turn. Rule 4
+       sits above it for exactly that reason: once a simulator is mounted, something *can*.
+    6. **Otherwise the criterion decides**: explain it back, or meet the do-statement as written.
+
+    ``sim`` is a **resolved application**, never the registry that found it. That keeps the
+    guarantee AD18 names: this function still takes nothing it could ask a question of, so the
+    determinism of the tier remains a property of the signature rather than of what a collaborator
+    happens to return today. Resolving it is the caller's job, next to the staging that produced the
+    criterion it belongs to.
 
     Raises ``ValueError`` when a move that names a concept arrives without one. Unreachable from
     ``decide_move`` — and this is a public function anyone can call, so the alternative is handing a
@@ -82,7 +99,30 @@ def select_surface(
             node_id=node.id, concept=node.name, prompt=_RECALL.format(concept=node.name)
         )
 
-    # Rule 3 is tried before rule 4's ``criterion is None`` check, which is safe because a
+    # Rule 3, and it sits above the remediation quiz for a reason that is about *correctness*
+    # rather than about pedagogy. Whatever card is shown, the answer it collects is graded against
+    # the criterion this turn staged — so a quiz shown while a simulator's do-statement is staged
+    # would have "a gradient points uphill" marked against "drive the learning rate up until the
+    # loss diverges". The instrument has to match what is being marked, or the tier feeds the
+    # learner model nonsense while looking perfectly reasonable on screen (plan §8).
+    #
+    # It also happens to be the order the plan asks for — remediation is "a modality switch (sim →
+    # worked example → Feynman)" (§7) — but the ordering would be this way round regardless.
+    #
+    # Reachable only since T6: before a simulator could be mounted, a sim-only concept could never
+    # be graded, so it could never accrue the evidence a remediation is decided from.
+    if sim is not None and criterion is not None and criterion.needs_sim:
+        return SimAppCard(
+            node_id=node.id,
+            concept=node.name,
+            app_id=sim.app_id,
+            url=sim.url,
+            title=sim.title,
+            statement=criterion.statement,
+            asks=criterion.kind,
+        )
+
+    # Rule 4 is tried before rule 5's ``criterion is None`` check, which is safe because a
     # remediation target always has one: ``decide_move`` only remediates on a concept with evidence,
     # and evidence only accrues on turns that staged a criterion. Stated because that invariant
     # lives in three files — if graph editing ever mutates an existing node's criteria, or the

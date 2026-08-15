@@ -3,7 +3,8 @@ from datetime import UTC, datetime
 from ..graph import ConceptGraph
 from .compose_layout import compose_layout
 from .decide_move import decide_move
-from .protocols import ITutor
+from .protocols import ISimRegistry, ITutor
+from .resolve_sim_app import resolve_sim_app
 from .said_and_illustrated import said_and_illustrated
 from .schema import LearnerModel, Session, SessionClock, SessionTurn
 from .select_surface import select_surface
@@ -18,6 +19,7 @@ async def open_session(
     session_id: str,
     run_id: str,
     tutor: ITutor,
+    sims: ISimRegistry | None = None,
 ) -> Session:
     """Open a session on ``graph`` and take its first turn.
 
@@ -41,7 +43,8 @@ async def open_session(
 
     # Staged now rather than when the answer arrives: the tutor has to ask for it in its own words
     # as part of the teaching, and the turn has to record what was asked (U1).
-    staged = stage_criterion(node)
+    staged = stage_criterion(node, sims=sims)
+    app = resolve_sim_app(sims, node, staged)
     said, parts = await said_and_illustrated(
         tutor,
         move,
@@ -64,7 +67,7 @@ async def open_session(
                 run_id=run_id,
                 criterion=staged,
                 surface=select_surface(
-                    move, node, graph=graph, criterion=staged, model=model, clock=clock
+                    move, node, graph=graph, criterion=staged, model=model, clock=clock, sim=app
                 ),
                 layout=compose_layout(parts, node_id=node.id, model=model),
             )

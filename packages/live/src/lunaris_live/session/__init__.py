@@ -20,10 +20,18 @@ from .max_answer_chars import MAX_ANSWER_CHARS
 from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
 from .open_session import open_session
-from .protocols import IGrader, IKnowledgeStore, ISessionStore, ITutor, ITutorDeltaSink
+from .protocols import (
+    IGrader,
+    IKnowledgeStore,
+    ISessionStore,
+    ISimRegistry,
+    ITutor,
+    ITutorDeltaSink,
+)
 from .recall_of import recall_of
 from .reject_unteachable_move import reject_unteachable_move
 from .relay_delta import relay_delta
+from .resolve_sim_app import resolve_sim_app
 from .schema import (
     ConceptMapCard,
     CriterionCard,
@@ -48,6 +56,8 @@ from .schema import (
     SessionClock,
     SessionStatus,
     SessionTurn,
+    SimApp,
+    SimAppCard,
     StackBlock,
     SurfaceBlock,
     SurfaceKind,
@@ -61,6 +71,8 @@ from .session_format_error import SessionFormatError
 from .stage_criterion import stage_criterion
 from .stale_answer_error import StaleAnswerError
 from .stub_grader import StubGrader
+from .stub_sim_path import STUB_SIM_PATH
+from .stub_sim_registry import StubSimRegistry
 from .stub_tutor import StubTutor
 from .supabase_knowledge_store import SupabaseKnowledgeStore
 from .supabase_session_store import SupabaseSessionStore
@@ -72,6 +84,7 @@ __all__ = [
     "DECAYED",
     "MASTERED",
     "MAX_ANSWER_CHARS",
+    "STUB_SIM_PATH",
     "ClaudeGrader",
     "ClaudeTutor",
     "ConceptMapCard",
@@ -85,6 +98,7 @@ __all__ = [
     "IGrader",
     "IKnowledgeStore",
     "ISessionStore",
+    "ISimRegistry",
     "ITutor",
     "ITutorDeltaSink",
     "LayoutBlock",
@@ -107,9 +121,12 @@ __all__ = [
     "SessionFormatError",
     "SessionStatus",
     "SessionTurn",
+    "SimApp",
+    "SimAppCard",
     "StackBlock",
     "StaleAnswerError",
     "StubGrader",
+    "StubSimRegistry",
     "StubTutor",
     "SupabaseKnowledgeStore",
     "SupabaseSessionStore",
@@ -127,6 +144,7 @@ __all__ = [
     "recall_of",
     "reject_unteachable_move",
     "relay_delta",
+    "resolve_sim_app",
     "select_surface",
     "stage_criterion",
     "take_turn",

@@ -6,11 +6,13 @@ import type {
   ExplainBackSpec,
   MasteryMeterSpec,
   QuizCardSpec,
+  SimAppSpec,
   SurfaceSpec,
 } from "../../lib/surfaceSpec";
 import { Button } from "../primitives/Button";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { AnswerForm } from "./AnswerForm";
+import { SimFrame } from "./SimFrame";
 import styles from "./SurfaceCard.module.css";
 
 /** What every answerable card is handed.
@@ -77,9 +79,35 @@ export function SurfaceCard({
       return <Meter spec={spec} {...frame} />;
     case "concept_map":
       return <Placement spec={spec} {...frame} />;
+    case "sim_app":
+      return (
+        <Simulator spec={spec} busy={busy} answerable={answerable} onAnswer={onAnswer} {...frame} />
+      );
     default:
       return unhandled(spec);
   }
+}
+
+/** A simulator mounted in place — Tier 3's card (P2b T6).
+ *
+ *  Shaped like the other assessment cards on purpose: the same shell, the same eyebrow naming what
+ *  the criterion asks for, and the do-statement in the same place, because it is the same thing
+ *  being asked. Only the instrument differs — the learner acts in the frame instead of writing, and
+ *  the simulator reports what they did through the ordinary answer path. */
+function Simulator({ spec, busy, answerable, onAnswer, welded }: AnswerableCardProps<SimAppSpec>) {
+  return (
+    <Shell eyebrow={ASK_LABELS[spec.asks]} concept={spec.concept} welded={welded}>
+      <p className={styles.ask}>{spec.statement}</p>
+      <SimFrame
+        url={spec.url}
+        title={spec.title}
+        appId={spec.appId}
+        answerable={answerable}
+        busy={busy}
+        onAnswer={onAnswer}
+      />
+    </Shell>
+  );
 }
 
 /** A card neither this build's union nor its switch knows about.

@@ -6,7 +6,7 @@ class SurfaceKind(StrEnum):
 
     A closed set, for the same reason ``MoveKind`` is one: these components *feed the learner model*
     (plan §8), so the set of instruments a learner can be assessed by is a pedagogical decision and
-    not something that should be able to grow by accident. Adding a sixth is a deliberate change
+    not something that should be able to grow by accident. Adding another is a deliberate change
     here that every renderer is forced to notice.
     """
 
@@ -20,3 +20,5 @@ class SurfaceKind(StrEnum):
     MASTERY_METER = "mastery_meter"
     #: Where a concept sits, for the case this session cannot check it at all.
     CONCEPT_MAP = "concept_map"
+    #: A simulator mounted in place, for a criterion that can only be demonstrated (plan §8, T6).
+    SIM_APP = "sim_app"

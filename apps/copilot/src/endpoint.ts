@@ -11,6 +11,33 @@ export interface EndpointConfig {
   apiBaseUrl: string;
   /** Origins allowed to call this runtime — the SPA's, and nothing else. */
   allowedOrigins: readonly string[];
+  /** Where this runtime's Tier 3 registry answers, or `undefined` for a deployment that registers
+   *  no simulators. Undefined is the default and the honest one: the only simulator that exists is
+   *  a placeholder, and there is nothing to register until Phase 3's factory has built something. */
+  simRegistryUrl?: string | undefined;
+}
+
+/** Tier 3's registration, as the runtime takes it (T6).
+ *
+ *  Its own function so the decision is *observable*: whether the MCP Apps middleware is attached at
+ *  all is a behavioural choice, and a test cannot see inside a constructed `CopilotRuntime`. Split
+ *  out, the choice is a value a test can assert on rather than a claim in a comment.
+ *
+ *  Spread at the top level rather than nested under a `middlewares` key, which is how this runtime
+ *  version takes them: `CopilotRuntimeOptions` *extends* `CopilotRuntimeMiddlewares`.
+ *
+ *  **Nothing at all when no registry is configured**, which is every deployment today. An empty
+ *  server list still attaches the middleware, and an attached middleware wraps the event stream of
+ *  every run — holding back `RUN_FINISHED` to look for tool calls that can never be there. That is
+ *  a permanent cost on the critical path of every lesson in exchange for nothing, and Tier 3 is the
+ *  one tier where nothing is exactly what is behind it so far. */
+export function mcpAppsOptions(config: EndpointConfig): {
+  mcpApps?: { servers: { url: string; type: "http" }[] };
+} {
+  if (!config.simRegistryUrl) {
+    return {};
+  }
+  return { mcpApps: { servers: [{ url: config.simRegistryUrl, type: "http" }] } };
 }
 
 /** The CopilotKit runtime as a Node request listener.
@@ -31,6 +58,7 @@ export interface EndpointConfig {
 export function liveListener(config: EndpointConfig) {
   const runtime = new CopilotRuntime({
     agents: ({ request }) => ({ [LIVE_AGENT]: liveAgentFor(request, config.apiBaseUrl) }),
+    ...mcpAppsOptions(config),
   });
 
   return createCopilotNodeListener({

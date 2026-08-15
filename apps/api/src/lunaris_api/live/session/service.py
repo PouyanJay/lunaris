@@ -10,6 +10,7 @@ from lunaris_live.session import (
     IGrader,
     IKnowledgeStore,
     ISessionStore,
+    ISimRegistry,
     ITutor,
     ITutorDeltaSink,
     LearnerModel,
@@ -93,6 +94,7 @@ class LiveSessionService:
         credential_resolver: CredentialResolver | None = None,
         throttle: LiveSessionThrottle | None = None,
         session_budget_usd: float = 0.0,
+        sims: ISimRegistry | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
@@ -108,6 +110,9 @@ class LiveSessionService:
         self._credential_resolver = credential_resolver
         # None leaves openings unrationed, which is what the suites predating this compose.
         self._throttle = throttle
+        # None means this deployment mounts no simulators (T6), which is the default and which
+        # leaves a sim-only concept exactly where P2a left it: taught here, not checkable here.
+        self._sims = sims
         # Ceiling on one session's whole spend, read from the ledger's rollup. 0 is uncapped; it is
         # a runaway guard, not a ration — the clock is what bounds an ordinary sitting.
         self._session_budget_usd = session_budget_usd
@@ -160,6 +165,7 @@ class LiveSessionService:
                     session_id=session_id,
                     run_id=run_id,
                     tutor=self._tutor,
+                    sims=self._sims,
                 )
         finally:
             # Drained even when the turn failed: a tutor call that timed out after the tokens went
@@ -418,6 +424,7 @@ class LiveSessionService:
             answering_seq=answering_seq,
             grader=self._grader,
             tutor=self._tutor,
+            sims=self._sims,
             run_id=run_id,
             elapsed_s=max(0.0, (datetime.now(UTC) - session.started_at).total_seconds()),
             budget_s=self._session_budget_s,

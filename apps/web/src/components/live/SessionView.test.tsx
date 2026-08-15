@@ -70,9 +70,7 @@ const CLOSED = {
       grade: null,
       surface: {
         kind: "mastery_meter" as const,
-        entries: [
-          { nodeId: "gradient", concept: "Gradient", recall: 0.51, evidenceCount: 2 },
-        ],
+        entries: [{ nodeId: "gradient", concept: "Gradient", recall: 0.51, evidenceCount: 2 }],
       },
     },
   ],
@@ -339,9 +337,7 @@ describe("the Tier 1 card (T4)", () => {
     vi.stubGlobal("fetch", jsonAlways(OPENED, 201));
     render(<SessionView apiBaseUrl="" graphId="g1" topic="Neural networks" />);
 
-    expect(
-      await screen.findByText(/In your own words: what is Gradient/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/In your own words: what is Gradient/i)).toBeInTheDocument();
   });
 
   it("answers through the card, and the answer reaches the API for that turn", async () => {

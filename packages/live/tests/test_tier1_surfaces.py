@@ -36,6 +36,7 @@ from lunaris_live.session import (
     MoveKind,
     SessionClock,
     SessionTurn,
+    SimApp,
     StubGrader,
     StubTutor,
     SurfaceKind,
@@ -138,14 +139,24 @@ def test_the_same_move_always_yields_the_same_spec() -> None:
 
 def test_the_spec_is_decided_without_asking_anything_generative() -> None:
     """A structural claim, not a behavioural one: ``select_surface`` is a pure function over the
-    move, the map and the belief. It takes no tutor, no grader and no client, so there is no seam
-    a model could be threaded through without changing this signature — which is what makes the
-    determinism above a property of the design rather than of today's implementation."""
+    move, the map, the belief and — since T6 — a resolved simulator. It takes no tutor, no grader
+    and no client, so there is no seam a model could be threaded through without changing this
+    signature, which is what makes the determinism above a property of the design rather than of
+    today's implementation.
+
+    **Every parameter here is inert data.** That is the actual claim, and it is why the set is
+    pinned rather than merely counted: ``sim`` is a resolved ``SimApp``, never the ``ISimRegistry``
+    that produced it, so nothing in this signature can be *asked* anything. Handing the registry in
+    would move the seam inside an object where this test cannot see it, and the tier's determinism
+    would then rest on a docstring — the same reasoning that kept ``graph``, ``model`` and ``clock``
+    from being bundled (AD18).
+    """
     # Arrange / Act
     parameters = set(signature(select_surface).parameters)
 
     # Assert
-    assert parameters == {"move", "node", "graph", "criterion", "model", "clock"}
+    assert parameters == {"move", "node", "graph", "criterion", "model", "clock", "sim"}
+    assert signature(select_surface).parameters["sim"].annotation == SimApp | None
 
 
 # ── one rule per situation, and the order is the policy ────────────────────────────────────────

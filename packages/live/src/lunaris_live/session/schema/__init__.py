@@ -22,6 +22,8 @@ from .session import Session
 from .session_clock import SessionClock
 from .session_status import SessionStatus
 from .session_turn import SessionTurn
+from .sim_app import SimApp
+from .sim_app_card import SimAppCard
 from .stack_block import StackBlock
 from .surface_block import SurfaceBlock
 from .surface_kind import SurfaceKind
@@ -53,6 +55,8 @@ __all__ = [
     "SessionClock",
     "SessionStatus",
     "SessionTurn",
+    "SimApp",
+    "SimAppCard",
     "StackBlock",
     "SurfaceBlock",
     "SurfaceKind",

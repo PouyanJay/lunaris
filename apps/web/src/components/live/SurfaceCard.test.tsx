@@ -7,8 +7,20 @@ import type {
   ExplainBackSpec,
   MasteryMeterSpec,
   QuizCardSpec,
+  SimAppSpec,
 } from "../../lib/surfaceSpec";
 import { SurfaceCard } from "./SurfaceCard";
+
+const SIM: SimAppSpec = {
+  kind: "sim_app",
+  nodeId: "divergence",
+  concept: "Divergence",
+  appId: "lunaris.sim.stub",
+  url: "/api/live/sims/stub",
+  title: "Divergence — placeholder simulator",
+  statement: "Drive the learning rate up until the loss diverges, and say where it turned.",
+  asks: "manipulate",
+};
 
 /** The Tier 1 cards (Phase 2b, T4).
  *
@@ -316,5 +328,36 @@ describe("keyboard operation", () => {
     fireEvent.submit(chosen.closest("form")!);
 
     expect(onAnswer).toHaveBeenCalledWith(QUIZ.options[2]!);
+  });
+});
+
+describe("the simulator card (Tier 3)", () => {
+  it("asks for the same do-statement every other assessment card asks for", () => {
+    // Tier 3 changes the instrument, not the question. The learner is marked against these exact
+    // words by the same separate grader, so showing them a paraphrase would assess them on
+    // something they were never asked.
+    render(<SurfaceCard spec={SIM} busy={false} answerable onAnswer={() => {}} />);
+
+    expect(screen.getByText(SIM.statement)).toBeInTheDocument();
+  });
+
+  it("mounts the simulator the server named", () => {
+    const { container } = render(
+      <SurfaceCard spec={SIM} busy={false} answerable onAnswer={() => {}} />,
+    );
+
+    const frame = container.querySelector("iframe");
+    expect(frame).toHaveAttribute("src", SIM.url);
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+  });
+
+  it("still shows the simulator on a turn that has been answered", () => {
+    // The record of what a learner was assessed by. A transcript that dropped the frame would be
+    // missing the instrument, which is the part of the turn hardest to reconstruct afterwards.
+    const { container } = render(
+      <SurfaceCard spec={SIM} busy={false} answerable={false} onAnswer={() => {}} />,
+    );
+
+    expect(container.querySelector("iframe")).toBeInTheDocument();
   });
 });

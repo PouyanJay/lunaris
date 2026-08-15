@@ -6,7 +6,8 @@ from .compose_layout import compose_layout
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
-from .protocols import IGrader, ITutor, ITutorDeltaSink
+from .protocols import IGrader, ISimRegistry, ITutor, ITutorDeltaSink
+from .resolve_sim_app import resolve_sim_app
 from .said_and_illustrated import said_and_illustrated
 from .schema import (
     DirectorMove,
@@ -48,6 +49,7 @@ async def take_turn(
     elapsed_s: float,
     budget_s: float,
     on_delta: ITutorDeltaSink | None = None,
+    sims: ISimRegistry | None = None,
 ) -> TurnOutcome:
     """The loop, once: score what the learner just said, move the belief, decide what happens next.
 
@@ -118,7 +120,15 @@ async def take_turn(
         )
 
     taught = await _teach(
-        graph, move, turns, tutor=tutor, run_id=run_id, on_delta=on_delta, model=model, clock=clock
+        graph,
+        move,
+        turns,
+        tutor=tutor,
+        run_id=run_id,
+        on_delta=on_delta,
+        model=model,
+        clock=clock,
+        sims=sims,
     )
     logger.info(
         "live.session.turn_taken",
@@ -191,6 +201,7 @@ async def _teach(
     on_delta: ITutorDeltaSink | None,
     model: LearnerModel,
     clock: SessionClock,
+    sims: ISimRegistry | None,
 ) -> SessionTurn:
     """The next turn: the move, said out loud, with something staged for the learner to meet."""
     node = _node_of(graph, move.node_id) if move.node_id is not None else None
@@ -200,7 +211,8 @@ async def _teach(
         # one would otherwise surface as an AttributeError from inside the tutor.
         raise ValueError(f"{move.node_id} is not a concept on graph {graph.graph_id}")
 
-    staged = stage_criterion(node)
+    staged = stage_criterion(node, sims=sims)
+    app = resolve_sim_app(sims, node, staged)
     # Only this concept's history: a tutor told everything it has ever said would spend the prompt
     # on material the learner is not being taught right now.
     already_said = [turn.tutor for turn in turns if turn.move.node_id == node.id]
@@ -223,7 +235,9 @@ async def _teach(
         criterion=staged,
         # Chosen from the move, the concept and the belief — never from what the tutor happened to
         # say. Plan §8 makes that mandatory for this tier: these components feed the learner model.
-        surface=select_surface(move, node, graph=graph, criterion=staged, model=model, clock=clock),
+        surface=select_surface(
+            move, node, graph=graph, criterion=staged, model=model, clock=clock, sim=app
+        ),
         # Tier 2 (T5): the tutor wrote the material, the rules decide what this learner sees of it.
         layout=compose_layout(parts, node_id=node.id, model=model),
     )
