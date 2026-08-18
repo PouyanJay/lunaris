@@ -249,3 +249,59 @@ describe("the runtime as a hop", () => {
     expect(seen).not.toContain("RUN_FINISHED");
   });
 });
+
+describe("a refusal from the API, as the browser hears it (T9)", () => {
+  /** A stand-in API that refuses the run before any frame, the shape FastAPI's ``failure_mapping``
+   *  gives a session past its ceiling, a duplicate send, a stale answer, a closed session. */
+  function refusingApi(status: number, detail: string): Promise<string> {
+    return listen(
+      createServer((request, response) => {
+        request.on("data", () => {});
+        request.on("end", () => {
+          response.writeHead(status, { "content-type": "application/json" });
+          response.end(JSON.stringify({ detail }));
+        });
+      }),
+    );
+  }
+
+  function runErrorsIn(body: string): { message: string }[] {
+    return body
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => JSON.parse(line.slice("data:".length)) as { type: string; message: string })
+      .filter((event) => event.type === "RUN_ERROR");
+  }
+
+  it("carries the API's sentence, not the wire it came wrapped in", async () => {
+    // Before this the browser read `HTTP 429: {"detail":"…"}`, the HTTP client's own error text,
+    // status and JSON envelope and all, in the learner's alert. The sentence FastAPI wrote for the
+    // learner is the whole of what should reach them, and it says what to do next (a ceiling says
+    // "start a fresh session", a duplicate says "give it a moment"), so nothing here paraphrases it.
+    // Asserted on what the *runtime* emits over a real socket, not on the agent's own error object:
+    // the kit's runner is what turns a thrown error into the RUN_ERROR the browser sees.
+    const detail =
+      "This session has reached its cost ceiling, so it has stopped here. What you demonstrated is saved.";
+    const runtimeUrl = await runtimeOver(await refusingApi(429, detail));
+
+    const response = await runOnce(runtimeUrl, { [SESSION_HEADER]: "sess-77" });
+    const body = await response.text();
+
+    const errors = runErrorsIn(body);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toBe(detail);
+  });
+
+  it("still says something when the refusal carries no sentence", async () => {
+    // A proxy in front of the API, or the API's own 500, answers with no `detail`. Empty would be
+    // a RUN_ERROR the browser renders as "The turn could not be taken: " and nothing after it.
+    const runtimeUrl = await runtimeOver(await refusingApi(502, ""));
+
+    const response = await runOnce(runtimeUrl, { [SESSION_HEADER]: "sess-77" });
+    const body = await response.text();
+
+    const errors = runErrorsIn(body);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toMatch(/502/);
+  });
+});

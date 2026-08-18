@@ -226,6 +226,25 @@ describe("the failed-turn slot", () => {
     expect(alert).toHaveTextContent("The tutor is unavailable.");
     expect(alert).toHaveTextContent(/still here/i);
   });
+
+  it("leaves the recovery to the sentence it was handed", () => {
+    // T9: the runtime now relays the API's own sentence for a refusal, a session at its ceiling
+    // is told to start a fresh one, a duplicate to give it a moment, a moved-on turn to reload,
+    // so a fixed "send your answer again" here would contradict what the sentence just said.
+    render(
+      <TurnError
+        error={{
+          message: "This session has reached its cost ceiling, so it has stopped here.",
+          timestamp: 1,
+        }}
+        isCurrentMessage
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/cost ceiling/);
+    expect(alert).not.toHaveTextContent(/send (your answer )?again/i);
+  });
 });
 
 function message(content: string): NonNullable<AssistantMessageProps["message"]> {

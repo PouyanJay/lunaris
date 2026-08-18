@@ -1,6 +1,6 @@
 import asyncio
-from collections.abc import AsyncIterator, Mapping
-from contextlib import AbstractContextManager, nullcontext
+from collections.abc import AsyncIterator, Coroutine, Mapping
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -18,6 +18,7 @@ from lunaris_live.session import (
     SessionClock,
     SessionClosedError,
     SessionStatus,
+    StaleAnswerError,
     TurnOutcome,
     open_session,
     take_turn,
@@ -209,11 +210,22 @@ class LiveSessionService:
         bind_run_id(run_id, session_id=session_id)
         context = await self._ready(session_id, owner_id)
         return await self._take_and_save(
-            context, answer, answering_seq=answering_seq, run_id=run_id, owner_id=owner_id
+            context,
+            answer,
+            answering_seq=answering_seq,
+            run_id=run_id,
+            owner_id=owner_id,
+            slot=self._turn_slot(session_id),
         )
 
     async def stream_answer(
-        self, session_id: str, answer: str, *, run_id: str, owner_id: str | None = None
+        self,
+        session_id: str,
+        answer: str,
+        *,
+        run_id: str,
+        owner_id: str | None = None,
+        answering_seq: int | None = None,
     ) -> AsyncIterator[tuple[TurnBeat, str | Session]]:
         """The same turn as ``answer``, narrating itself as the tutor writes it (P2b T2).
 
@@ -231,11 +243,10 @@ class LiveSessionService:
         while the status line is still available. Deferred into the body they could only be said as
         a frame, which a surface reads as "the turn failed" rather than "we did not start one".
 
-        The answering seq is derived from the session this call just read, rather than named by
-        the client as ``POST /turns`` requires it to be. AG-UI's ``RunAgentInput`` is CopilotKit's
-        own schema and carries no room for it, and the protection is not lost: the compare-and-set
-        on the save still settles which of two concurrent answers counts, and the per-session turn
-        slot still serialises them.
+        Everything that can refuse the turn is settled before this returns (the budget, the
+        session, the named turn, the session's single turn slot) because a refusal is only a status
+        while the status line is still available; ``take_turn`` re-checks the loop's own invariants
+        (closed, stale) so that this layer's checks can be about *how the refusal is said*.
         """
         bind_run_id(run_id, session_id=session_id)
         context = await self._ready(session_id, owner_id)
@@ -244,22 +255,80 @@ class LiveSessionService:
             # This one exists so the refusal is a 409 rather than an error frame on a 200 — the same
             # sentence the REST surface gives, which is what ``failure_mapping`` exists to hold.
             raise SessionClosedError(f"session {session_id} has already closed")
-
-        queue: asyncio.Queue[str] = asyncio.Queue()
-        turns = context.session.turns
+        answering_seq = self._resolve_answering_seq(context, answering_seq)
         # ``put_nowait`` on an unbounded queue never blocks and never awaits, which is exactly what
-        # ``ITutorDeltaSink`` asks of a sink — the tutor must never wait on the surface reading it.
-        taking = asyncio.create_task(
+        # ``ITutorDeltaSink`` asks of a sink: the tutor must never wait on the surface reading it.
+        queue: asyncio.Queue[str] = asyncio.Queue()
+        taking = self._claim_slot_task(
+            session_id,
             self._take_and_save(
                 context,
                 answer,
-                answering_seq=turns[-1].seq if turns else 0,
+                answering_seq=answering_seq,
                 run_id=run_id,
                 owner_id=owner_id,
                 on_delta=queue.put_nowait,
-            )
+                # The slot is already ours (below), so the turn is told not to claim one.
+                slot=nullcontext(),
+            ),
         )
         return self._beats(taking, queue, run_id=run_id, session_id=session_id)
+
+    @staticmethod
+    def _resolve_answering_seq(context: TurnContext, answering_seq: int | None) -> int:
+        """The turn this answer is for: the one the client named, checked, or the standing one.
+
+        A client that names its turn (T9: the browser puts it in ``forwardedProps``) is refused
+        *here* when that turn has moved on, so a late answer to a card the thread still shows is a
+        409 in REST's words rather than a turn graded against whatever question is up now. A client
+        that names nothing, which is every AG-UI client written before T9 and a bare reload, is
+        answering the standing turn, derived exactly as T2 derived it. ``take_turn`` checks the seq
+        again as the loop's own invariant; this check exists so the refusal is a status.
+        """
+        turns = context.session.turns
+        standing_seq = turns[-1].seq if turns else 0
+        if answering_seq is None:
+            return standing_seq
+        if answering_seq != standing_seq:
+            raise StaleAnswerError(
+                f"answer names turn {answering_seq}; {context.session.session_id} is on turn "
+                f"{standing_seq}"
+            )
+        return answering_seq
+
+    def _claim_slot_task(
+        self, session_id: str, turn: Coroutine[None, None, Session]
+    ) -> "asyncio.Task[Session]":
+        """Claim this session's turn slot, then run the turn as a task that releases it on exit.
+
+        Claimed *before* the task, so ``LiveSessionBusyError`` is raised while the status line is
+        still available: claimed inside the task, a duplicate send got a 200 whose stream then
+        apologised, in different words from the 409 the REST surface gives the same double send.
+        Held in an ``ExitStack`` so something other than a ``with`` block can release it.
+
+        Released from the task's done-callback, however the turn ends, and bound to the *task*
+        rather than threaded through the coroutine. That is deliberate and it was learned by
+        mutation: a held slot that only the coroutine referenced was released by garbage collection
+        the moment the reference was dropped (the suspended ``taking_turn`` generator's ``finally``
+        runs when it is collected), at a moment that differed from run to run. Bound here, the claim
+        lives exactly as long as the turn, whatever the coroutine does with its arguments.
+        """
+        held = ExitStack()
+        taking: asyncio.Task[Session] | None = None
+        try:
+            held.enter_context(self._turn_slot(session_id))
+            taking = asyncio.create_task(turn)
+            taking.add_done_callback(lambda _: held.close())
+        except BaseException:
+            # Nothing will run to release the slot, so release it here: a slot held by a turn that
+            # never started would refuse every answer this session ever sends again. And a turn
+            # that was built and never started (the busy refusal, every time) is closed rather than
+            # dropped, or it is reported at collection as "never awaited".
+            held.close()
+            if taking is None:
+                turn.close()
+            raise
+        return taking
 
     async def _beats(
         self,
@@ -340,6 +409,7 @@ class LiveSessionService:
         answering_seq: int,
         run_id: str,
         owner_id: str | None,
+        slot: AbstractContextManager[None],
         on_delta: ITutorDeltaSink | None = None,
     ) -> Session:
         """One turn, metered, and both of its writes. The whole of what the two entry points share.
@@ -351,39 +421,51 @@ class LiveSessionService:
         The four things read at the top of a turn arrive as one ``TurnContext`` rather than as four
         arguments: they are read together, they are used together, and passing them apart meant both
         call sites destructured a tuple only to hand its parts straight back.
+
+        ``slot`` is how the caller says who claims the session's turn slot: the REST path hands in
+        the slot itself, so it is claimed here (the whole call is awaited inline, so a refusal is a
+        status either way); the stream has already claimed it, because a busy refusal there must be
+        a status too and the status line is gone by the time this task runs, and hands in a no-op.
+        Required rather than defaulted, so a new entry point has to say which it is.
+
+        The slot covers the **whole** turn, writes included, not only the billed calls. Released
+        after the model calls alone it was free during the ledger drain and the two store writes,
+        and a retry arriving then read the *old* head, passed every check made against it, found the
+        slot free, and paid a second grader and tutor for the same turn before losing the
+        compare-and-set (found by review in P2b T9, and reproduced: the retry even won the write).
         """
         session = context.session
         cost = self._cost_scope(run_id=run_id, session_id=session.session_id, owner_id=owner_id)
-        try:
-            # The slot is what makes the ceiling mean anything. Two answers sent at once both load
-            # the same session, both pass every check made against that snapshot, and both pay a
-            # grader and a tutor before either tries to write — and the ceiling cannot see spend
-            # that has not been drained yet. The compare-and-set on the write settles which answer
-            # *counts*; only this settles which one is *paid for*.
-            with (
-                self._turn_slot(session.session_id),
-                self._credential_scope(context.credentials),
-                enter_cost_scope(cost),
-            ):
-                outcome = await self._take(
-                    session,
-                    context.graph,
-                    context.known,
-                    answer,
-                    answering_seq,
-                    run_id,
-                    on_delta=on_delta,
-                )
-        finally:
-            await self._drain(cost, run_id=run_id, session_id=session.session_id)
-        # Conditional on the session still being the length this request read. Two answers in
-        # flight at once both pass ``take_turn``'s check — they loaded the same head — and only the
-        # store can settle which one lands. The loser is a stale answer, which is what the learner
-        # is told (409), rather than a graded turn that quietly disappeared.
-        await asyncio.to_thread(
-            self._sessions.save, outcome.session, owner_id=owner_id, expect_turns=len(session.turns)
-        )
-        await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
+        # The slot is what makes the ceiling mean anything. Two answers sent at once both load the
+        # same session, both pass every check made against that snapshot, and both pay a grader
+        # and a tutor before either tries to write, and the ceiling cannot see spend that has not
+        # been drained yet. The compare-and-set on the write settles which answer *counts*; only
+        # this settles which one is *paid for*.
+        with slot:
+            try:
+                with self._credential_scope(context.credentials), enter_cost_scope(cost):
+                    outcome = await self._take(
+                        session,
+                        context.graph,
+                        context.known,
+                        answer,
+                        answering_seq,
+                        run_id,
+                        on_delta=on_delta,
+                    )
+            finally:
+                await self._drain(cost, run_id=run_id, session_id=session.session_id)
+            # Conditional on the session still being the length this request read. Two answers in
+            # flight at once both pass ``take_turn``'s check (they loaded the same head) and only
+            # the store can settle which one lands. The loser is a stale answer, which is what the
+            # learner is told (409), rather than a graded turn that quietly disappeared.
+            await asyncio.to_thread(
+                self._sessions.save,
+                outcome.session,
+                owner_id=owner_id,
+                expect_turns=len(session.turns),
+            )
+            await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
 
         logger.info(
             "live.session.answered",

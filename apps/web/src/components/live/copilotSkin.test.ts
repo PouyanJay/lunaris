@@ -16,7 +16,16 @@ import { describe, expect, it } from "vitest";
  *  named below, so a new one must be added here to be guarded. */
 
 const SRC_ROOT = join(__dirname, "..", "..");
-const KIT_STYLESHEETS = ["@copilotkit/react-ui/styles.css", "@copilotkit/react-ui/v2/styles.css"];
+const KIT_STYLESHEETS = [
+  "@copilotkit/react-ui/styles.css",
+  "@copilotkit/react-ui/v2/styles.css",
+  // Not a stylesheet, but it imports one: `@copilotkit/react-core/v2` (the entry that exports
+  // `useCopilotKit` / `useAgent`) pulls in the kit's 90 kB Tailwind sheet on import. Found in T9,
+  // reaching for `setProperties`; the root entry's `properties` prop is the seam instead. Its
+  // `/v2/headless` sibling is CSS-free but carries its own context, so hooks from it cannot see
+  // the root provider, forbidden by the same prefix.
+  "@copilotkit/react-core/v2",
+];
 const PANEL_STYLESHEETS = [
   "CopilotSession.module.css",
   "CopilotSlots.module.css",

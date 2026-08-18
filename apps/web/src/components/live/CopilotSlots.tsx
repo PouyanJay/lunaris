@@ -83,15 +83,19 @@ export function TurnComposer({ inProgress, onSend, chatReady = false }: InputPro
 
 /** A turn that failed after it began — a `RUN_ERROR` mid-turn, or a refusal the runtime relayed.
  *  Without this slot the kit shows nothing (it logs to the console), and a failed turn is
- *  indistinguishable from a tutor still thinking. */
+ *  indistinguishable from a tutor still thinking.
+ *
+ *  The message is printed as the API wrote it and the recovery is left to it (T9): every refusal's
+ *  sentence already says what to do next, a ceiling says start a fresh session, a duplicate says
+ *  give it a moment, a moved-on turn says reload, and a fixed "send it again" here contradicted
+ *  three of them. What this adds is only what is true of every failure: nothing was lost. */
 export function TurnError({ error }: ErrorMessageProps) {
   return (
     <div className={styles.turn} role="alert">
       <Callout variant="warning">
         <p className={styles.fault}>The turn could not be taken: {error.message}</p>
         <p className={styles.faultLead}>
-          Your session is still here and nothing has been lost. Send your answer again; if it keeps
-          failing, the transcript above is the record.
+          Your session is still here and nothing has been lost; the transcript above is the record.
         </p>
       </Callout>
     </div>

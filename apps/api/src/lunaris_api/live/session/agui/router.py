@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from lunaris_live.session import Session
 from lunaris_runtime.logging import bind_run_id
+from pydantic import ValidationError
 
 from ....dependencies import OptionalUserIdDep
 from ..dependencies import LiveSessionServiceDep
@@ -14,6 +15,7 @@ from ..failure_mapping import raise_translated
 from ..service import LiveSessionService
 from ..turn_beat import TurnBeat
 from .replayed_turn import replayed_turn
+from .run_props import RunProps
 from .turn_events import turn_events
 
 logger = structlog.get_logger()
@@ -64,7 +66,19 @@ async def stream_session(
     # here, so an id minted on this side would leave three runtimes' logs with no shared key.
     bind_run_id(payload.run_id, session_id=session_id, thread_id=payload.thread_id)
     try:
-        turn = await _turn_for(payload, service, session_id=session_id, owner_id=owner_id)
+        props = RunProps.of(payload.forwarded_props)
+    except ValidationError as exc:
+        # The one field of ``RunAgentInput`` the kit leaves untyped, validated here as if it were
+        # not: a run naming a turn that is not a turn is the client's mistake, said as one. Logged
+        # like every other refusal on this route, so a client sending bad props is findable by run.
+        logger.warning("live.agui.forwarded_props_invalid", session_id=session_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=exc.errors(include_url=False),
+            headers=correlated,
+        ) from exc
+    try:
+        turn = await _turn_for(payload, props, service, session_id=session_id, owner_id=owner_id)
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found", headers=correlated
@@ -85,6 +99,7 @@ async def stream_session(
 
 async def _turn_for(
     payload: RunAgentInput,
+    props: RunProps,
     service: LiveSessionService,
     *,
     session_id: str,
@@ -93,12 +108,17 @@ async def _turn_for(
     """What this run has to say, as the tagged stream ``turn_events`` renders.
 
     Awaited rather than deferred into the response body: everything that can refuse a turn — the
-    session missing, the owner's budget spent, the session already closed — happens in here, and it
-    can only be a status while the status line is still available.
+    session missing, the owner's budget spent, the session already closed, the answered turn moved
+    on, a turn already in flight, happens in here, and it can only be a status while the status
+    line is still available.
     """
     if (answer := _answer_in(payload.messages)) is not None:
         return await service.stream_answer(
-            session_id, answer, run_id=payload.run_id, owner_id=owner_id
+            session_id,
+            answer,
+            run_id=payload.run_id,
+            owner_id=owner_id,
+            answering_seq=props.answering_seq,
         )
     return replayed_turn(await service.load(session_id, owner_id=owner_id))
 
@@ -135,9 +155,15 @@ async def _frames(
         # the compile stream. Without it the client sees a stream that simply stops —
         # indistinguishable from a tutor still thinking, so it waits rather than saying anything.
         # This is the live turn's real failure path: a tutor or grader that dies mid-turn.
+        # Nothing has been persisted by then (a half-written lesson is not a turn), so the
+        # sentence carries its own recovery, as every refusal's does, the panel prints it and
+        # adds nothing (T9).
         logger.warning("live.agui.run_failed", exc_info=True)
         yield encoder.encode(
-            RunErrorEvent(message="The session could not be streamed.", code="run_failed")
+            RunErrorEvent(
+                message="The session could not be streamed. Send your answer again.",
+                code="run_failed",
+            )
         )
         return
     # No explicit ids: this line rides the contextvars binding in the endpoint, so the correlation

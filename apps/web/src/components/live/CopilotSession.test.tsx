@@ -1,5 +1,5 @@
 import { useRenderToolCall } from "@copilotkit/react-core";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -61,6 +61,57 @@ describe("the generative session surface", () => {
     );
   }
 
+  /** A `fetch` that answers every route the kit uses, the way the real runtime does: `/info`
+   *  listing the agent, an empty event stream for `/agent/live/connect`, and a run that starts and
+   *  finishes at once for `/agent/live/run`. Enough for the kit to believe it is connected and to
+   *  put a real run on the wire, which is what the T9 tests below inspect. */
+  function answerEveryRoute(
+    runFrames: (body: { threadId: string; runId: string }) => object[] = () => [],
+  ) {
+    const sse = (frames: object[]) =>
+      new Response(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""), {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url =
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith("/info")) {
+          return new Response(
+            JSON.stringify({
+              version: "1.67.1",
+              agents: { live: { name: "live", description: "" } },
+              mode: "sse",
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.endsWith("/agent/live/run")) {
+          const body = JSON.parse(String(init?.body)) as { threadId: string; runId: string };
+          return sse([
+            { type: "RUN_STARTED", threadId: body.threadId, runId: body.runId },
+            ...runFrames(body),
+            { type: "RUN_FINISHED", threadId: body.threadId, runId: body.runId },
+          ]);
+        }
+        return sse([]);
+      }),
+    );
+  }
+
+  /** The bodies of every run the kit put on the wire. */
+  function runsSent(): { forwardedProps?: Record<string, unknown> }[] {
+    return vi
+      .mocked(fetch)
+      .mock.calls.filter(([input]) => String(input).endsWith("/agent/live/run"))
+      .map(
+        ([, init]) =>
+          JSON.parse(String(init?.body)) as { forwardedProps?: Record<string, unknown> },
+      );
+  }
+
   it("addresses the runtime's own mount path", () => {
     // The Node runtime answers under /api/copilotkit. Pointed at the bare host, every run 404s.
     expect(copilotRuntimeUrl("http://runtime.test")).toBe("http://runtime.test/api/copilotkit");
@@ -105,6 +156,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Anything at all."
+        standingSeq={1}
       />,
     );
 
@@ -141,6 +193,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Anything at all."
+        standingSeq={1}
       />,
     );
 
@@ -160,6 +213,126 @@ describe("the generative session surface", () => {
     expect(document.querySelector("cpk-web-inspector")).toBeNull();
   });
 
+  it("names the turn it is answering on every run it sends (T9)", async () => {
+    // AD10 left the answered turn derived server-side over AG-UI, and AD22 parked the consequence:
+    // a late answer to a card the thread still shows is graded against whatever question is up
+    // now. The API now reads `forwardedProps.answeringSeq` and refuses a moved-on turn with REST's
+    // 409, but only if the browser names it. Pinned on the run body the kit actually *emits*, not
+    // on the prop that is meant to produce it (T7's lesson: the kit's transport is what the API
+    // sees, and a prop the kit ignores would leave every other test green).
+    answerEveryRoute();
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Which way would you step?"
+        standingSeq={3}
+      />,
+    );
+    // The composer unlocks once the kit has found the agent; a send before that is dropped.
+    const box = await screen.findByRole("textbox", { name: /your answer/i });
+    await waitFor(() => expect(box).toBeEnabled());
+
+    fireEvent.change(box, { target: { value: "Downhill." } });
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+
+    await waitFor(() => expect(runsSent()).toHaveLength(1));
+    expect(runsSent()[0]?.forwardedProps?.answeringSeq).toBe(3);
+  });
+
+  it("names nothing when it has no turn to name", async () => {
+    // A session with nothing standing (closed, or unreadable) is not answering anything, and a
+    // guessed seq would be refused as stale, or accepted, against a turn this browser never saw.
+    // The API derives the standing turn when nothing is named, which is every pre-T9 client.
+    answerEveryRoute();
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn={null}
+        standingSeq={null}
+      />,
+    );
+    const box = await screen.findByRole("textbox", { name: /your answer/i });
+    await waitFor(() => expect(box).toBeEnabled());
+
+    fireEvent.change(box, { target: { value: "Downhill." } });
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+
+    await waitFor(() => expect(runsSent()).toHaveLength(1));
+    expect(runsSent()[0]?.forwardedProps).not.toHaveProperty("answeringSeq");
+  });
+
+  it("names the turn the last state frame said is up, not the one it mounted with", async () => {
+    // The whole point. The REST read that seeded `standingSeq` never re-reads, so after the first
+    // turn it names a question that is no longer up, and the API would refuse every later send
+    // as stale (409). The run's own `STATE_SNAPSHOT` carries the turn now in front of the learner
+    // (`SessionSnapshot.turn`), and it has to win from then on.
+    answerEveryRoute(() => [{ type: "STATE_SNAPSHOT", snapshot: { turn: 4, status: "active" } }]);
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Which way would you step?"
+        standingSeq={3}
+      />,
+    );
+    const box = await screen.findByRole("textbox", { name: /your answer/i });
+    await waitFor(() => expect(box).toBeEnabled());
+
+    fireEvent.change(box, { target: { value: "Downhill." } });
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(runsSent()).toHaveLength(1));
+    // The composer locks for the run and unlocks when it settles; the second send waits for that.
+    await waitFor(() => expect(box).toBeEnabled());
+    fireEvent.change(box, { target: { value: "Still downhill." } });
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(runsSent()).toHaveLength(2));
+
+    expect(runsSent().map((run) => run.forwardedProps?.answeringSeq)).toEqual([3, 4]);
+  });
+
+  it("forgets the named turn when it is re-used for another session", async () => {
+    // The turn it learned from one session's state frames must not name the next session's
+    // answers: a re-used panel falls back to what the new session's REST read says is standing.
+    answerEveryRoute(() => [{ type: "STATE_SNAPSHOT", snapshot: { turn: 4, status: "active" } }]);
+    const view = render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Which way would you step?"
+        standingSeq={3}
+      />,
+    );
+    const box = await screen.findByRole("textbox", { name: /your answer/i });
+    await waitFor(() => expect(box).toBeEnabled());
+    fireEvent.change(box, { target: { value: "Downhill." } });
+    fireEvent.keyDown(box, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(runsSent()).toHaveLength(1));
+    await waitFor(() => expect(box).toBeEnabled());
+
+    view.rerender(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-2"
+        topic="Neural networks"
+        standingTurn="A different question."
+        standingSeq={7}
+      />,
+    );
+    const nextBox = await screen.findByRole("textbox", { name: /your answer/i });
+    await waitFor(() => expect(nextBox).toBeEnabled());
+    fireEvent.change(nextBox, { target: { value: "Uphill." } });
+    fireEvent.keyDown(nextBox, { key: "Enter", metaKey: true });
+    await waitFor(() => expect(runsSent()).toHaveLength(2));
+
+    expect(runsSent()[1]?.forwardedProps?.answeringSeq).toBe(7);
+  });
+
   it("tells the learner when the generative surface is not configured", () => {
     // A blank panel would read as a broken session. Live still works without the runtime — P2a's
     // transcript uses REST — so this has to say which half is missing.
@@ -169,6 +342,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Which way would you step?"
+        standingSeq={1}
       />,
     );
 
@@ -185,6 +359,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Which way would you step to lower the loss?"
+        standingSeq={1}
       />,
     );
 
@@ -205,6 +380,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn={null}
+        standingSeq={1}
       />,
     );
 
@@ -223,6 +399,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Which way would you step?"
+        standingSeq={1}
       />,
     );
 
@@ -239,6 +416,7 @@ describe("the generative session surface", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Anything at all."
+        standingSeq={1}
       />,
     );
 
@@ -289,6 +467,7 @@ describe("the Tier 1 card inside the generative panel", () => {
         sessionId="sess-1"
         topic="Neural networks"
         standingTurn="Anything at all."
+        standingSeq={1}
       />,
     );
     // Looked up by name rather than by position. The panel registers two renderers from T5 (the

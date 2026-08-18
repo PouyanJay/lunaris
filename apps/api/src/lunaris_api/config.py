@@ -76,9 +76,14 @@ class Settings:
     #: *opening* is rationed per owner per day — a runaway starts by opening sessions in a loop, and
     #: capping turns would end sittings that were going well for a reason nobody could explain.
     #: ``live_session_budget_usd`` is the ceiling on one session's whole spend, read from the
-    #: ledger's rollup: a runaway guard, not a ration — 0 turns it off.
+    #: ledger's rollup: a runaway guard, not a ration, 0 turns it off. Sized so it does not bind an
+    #: ordinary sitting: a keyed turn has been two model calls since P2b T5 (the lesson and its
+    #: material) plus a grade, ≈$0.15-0.20 at the P2a eval's rates, and a 30-minute sitting of
+    #: 15-20 turns is $2.25-4, so the $2 that fitted one call a turn would have ended good
+    #: sittings. Doubled with the calls (P2b T9); T10's keyed eval is where the estimate gets
+    #: measured rather than reasoned.
     live_session_daily_cap: int = 20
-    live_session_budget_usd: float = 2.0
+    live_session_budget_usd: float = 4.0
     #: Which Tier 3 simulator registry to serve (P2b T6). ``""`` — the default — means none, and a
     #: concept whose every criterion needs a simulator keeps P2a's honest position: taught here, not
     #: checkable here. ``"stub"`` mounts the placeholder simulator, which proves the socket and
@@ -184,7 +189,7 @@ def get_settings() -> Settings:
         live_sims=os.getenv("LUNARIS_LIVE_SIMS", "").strip().lower(),
         live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
         live_session_daily_cap=_env_int("LUNARIS_LIVE_SESSION_DAILY_CAP", default=20),
-        live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=2.0),
+        live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=4.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

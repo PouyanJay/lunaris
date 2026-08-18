@@ -40,6 +40,7 @@ function mountPanel(): CopilotChatProps {
       sessionId="sess-1"
       topic="Neural networks"
       standingTurn="Which way would you step?"
+      standingSeq={1}
     />,
   );
   expect(chatProps.current, "the panel did not mount <CopilotChat/>").not.toBeNull();

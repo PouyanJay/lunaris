@@ -102,6 +102,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
             sessionId={session.sessionId}
             topic={topic}
             standingTurn={standing?.tutor ?? null}
+            standingSeq={standing?.seq ?? null}
           />
         </Suspense>
       ) : null}
