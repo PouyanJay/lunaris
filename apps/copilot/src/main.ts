@@ -59,7 +59,10 @@ if (!apiBaseUrl) {
 // Validated rather than trusted: `Number("http://…")` is NaN, and `listen(NaN)` binds a random port
 // instead of failing — so a typo'd PORT would produce a healthy-looking service nothing can reach.
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  log("error", "copilot.boot_failed", { reason: "PORT is not a valid port", port: process.env.PORT });
+  log("error", "copilot.boot_failed", {
+    reason: "PORT is not a valid port",
+    port: process.env.PORT,
+  });
   process.exit(1);
 }
 

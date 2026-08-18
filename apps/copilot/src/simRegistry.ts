@@ -3,12 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
-import {
-  SIM_REGISTRY_PATH,
-  STUB_SIM_APP_ID,
-  STUB_SIM_PATH,
-  UI_RESOURCE_KEY,
-} from "./contract.js";
+import { SIM_REGISTRY_PATH, STUB_SIM_APP_ID, STUB_SIM_PATH, UI_RESOURCE_KEY } from "./contract.js";
 
 /** The Tier 3 registry, as an MCP server (P2b T6).
  *

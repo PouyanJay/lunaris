@@ -1,6 +1,7 @@
 name: CI
 
-# Gates every PR (and pushes to main) — Python, web, the API image build, and secret scanning.
+# Gates every PR (and pushes to main) — Python, web, the CopilotKit runtime, every image build, and
+# secret scanning.
 # Runs with a read-only token and NO secrets, so it is safe to run on forked-PR contributions.
 on:
   pull_request:
@@ -75,6 +76,26 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+  copilot:
+    name: CopilotKit runtime (typecheck + lint + format + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/copilot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/copilot/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format
+      # Real sockets: the endpoint suite boots the runtime and a fake API on ephemeral ports.
+      - run: npm test
+
   docker-build:
     name: API image builds
     runs-on: ubuntu-latest
@@ -124,6 +145,56 @@ jobs:
             ghcr.io/aquasecurity/trivy:0.71.0 image \
             --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
             --scanners vuln --no-progress lunaris-video-worker:ci
+
+  cover-build:
+    name: Cover worker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # The dedicated cover-worker image (course-cover-images). Until live-generative-surfaces T8 this
+      # image was built by cd-dev ONLY — which is where Phase 1's undeclared-dependency break surfaced,
+      # after two merges. Every root Dockerfile is now built here (tests/test_deploy_wiring.py pins it).
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cover
+          push: false
+          load: true
+          tags: lunaris-cover-worker:ci
+          cache-from: type=gha,scope=cover-worker
+          cache-to: type=gha,mode=max,scope=cover-worker
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy:0.71.0 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --scanners vuln --no-progress lunaris-cover-worker:ci
+
+  copilot-build:
+    name: CopilotKit runtime image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # Lunaris Live's CopilotKit runtime (apps/copilot). Build + load (no push — that's cd-*.yml) so
+      # Trivy scans it; the build's own `import('./dist/endpoint.js')` step fails here if a runtime
+      # dependency is missing from the production closure.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.copilot
+          push: false
+          load: true
+          tags: lunaris-copilot:ci
+          cache-from: type=gha,scope=copilot
+          cache-to: type=gha,mode=max,scope=copilot
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy:0.71.0 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --scanners vuln --no-progress lunaris-copilot:ci
 
   secrets:
     name: Secret scanning

@@ -219,7 +219,9 @@ describe("the runtime as a hop", () => {
           `data: ${JSON.stringify({ type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "early" })}\n\n`,
         );
         await held;
-        response.write(`data: ${JSON.stringify({ type: "TEXT_MESSAGE_END", messageId: "m1" })}\n\n`);
+        response.write(
+          `data: ${JSON.stringify({ type: "TEXT_MESSAGE_END", messageId: "m1" })}\n\n`,
+        );
         response.write(
           `data: ${JSON.stringify({ type: "RUN_FINISHED", threadId: "thread-1", runId: "run-1" })}\n\n`,
         );
