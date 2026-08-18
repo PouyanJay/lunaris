@@ -38,6 +38,29 @@ describe("the generative session surface", () => {
     vi.unstubAllGlobals();
   });
 
+  /** A `fetch` that answers the way the real runtime does: an info the kit can read, listing the
+   *  agent it will ask for. The default stub above leaves the kit *unconnected*, which is fine for
+   *  tests that only look at what mounts — but a test that waits long enough for the kit to finish
+   *  syncing must let it find the agent, or the kit throws "Agent 'live' not found" from an effect
+   *  no test awaits: an unhandled error vitest pins on whichever test ran last (the same cross-test
+   *  leak T1 fixed once already), and the whole run exits non-zero with every assertion green. */
+  function answerAsTheRuntime() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              version: "1.67.1",
+              agents: { live: { name: "live", description: "" } },
+              mode: "sse",
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+  }
+
   it("addresses the runtime's own mount path", () => {
     // The Node runtime answers under /api/copilotkit. Pointed at the bare host, every run 404s.
     expect(copilotRuntimeUrl("http://runtime.test")).toBe("http://runtime.test/api/copilotkit");
@@ -66,6 +89,75 @@ describe("the generative session surface", () => {
     // The runtime resolves which session to open from this header — it is not decoration, it is
     // the only thing that says whose lesson this is.
     expect(sessionHeaders("sess-5")).toEqual({ "x-lunaris-session-id": "sess-5" });
+  });
+
+  it("speaks the route shape the runtime serves: REST routes under the base path", async () => {
+    // T7's output verification found the panel had never reached the runtime: the kit's default
+    // transport POSTs `{"method": …}` bodies to the bare base path (its "single endpoint" mode),
+    // while `apps/copilot` mounts the multi-route shape (`GET …/info`, `POST …/agent/live/run`) —
+    // and every request 404'd. Six tasks of curl-driven e2e never noticed because curl spoke the
+    // runtime's shape directly. Pinned on what the kit actually *emits* under our configuration,
+    // not on the prop that configures it.
+    answerAsTheRuntime();
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Anything at all."
+      />,
+    );
+
+    const requested = () =>
+      vi.mocked(fetch).mock.calls.map(([input, init]) => ({
+        method: (init?.method ?? "GET").toUpperCase(),
+        url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      }));
+    await waitFor(() =>
+      expect(requested()).toContainEqual({
+        method: "GET",
+        url: "http://runtime.test/api/copilotkit/info",
+      }),
+    );
+    expect(requested()).not.toContainEqual(
+      expect.objectContaining({ method: "POST", url: "http://runtime.test/api/copilotkit" }),
+    );
+  });
+
+  it("phones nowhere but the runtime, and mounts no inspector", async () => {
+    // Left to its defaults the kit decides by hostname: on localhost it mounts its own inspector
+    // (a floating web component in the kit's skin, over our panel) and that inspector fetches
+    // announcements from the vendor's CDN. jsdom's hostname is localhost, so this is the exact
+    // environment in which the defaults misbehave. Off explicitly: dev and prod behave the same,
+    // and a self-hosted deployment carrying learner sessions makes no third-party requests.
+    //
+    // The kit only reaches for its inspector once it believes it is connected, and it believes
+    // that only from a runtime info it can read. On the default stub the defaults this test guards
+    // against never fire, so a test on top of it could not fail.
+    answerAsTheRuntime();
+    render(
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="sess-1"
+        topic="Neural networks"
+        standingTurn="Anything at all."
+      />,
+    );
+
+    const urls = () =>
+      vi
+        .mocked(fetch)
+        .mock.calls.map(([input]) =>
+          typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+        );
+    // Once connected the kit connects the agent; the inspector (and its CDN fetch) fires on the
+    // same connection event, ahead of it — so by the time the connect is on the wire, a mounted
+    // inspector has already shown its hand.
+    await waitFor(() =>
+      expect(urls()).toContain("http://runtime.test/api/copilotkit/agent/live/connect"),
+    );
+    expect(new Set(urls().map((url) => new URL(url).host))).toEqual(new Set(["runtime.test"]));
+    expect(document.querySelector("cpk-web-inspector")).toBeNull();
   });
 
   it("tells the learner when the generative surface is not configured", () => {
@@ -101,14 +193,12 @@ describe("the generative session surface", () => {
 
   it("opens on nothing at all when the session has nothing standing", () => {
     // A closed session, or one whose turn could not be read. Seeding the chat with an empty string
-    // would render a blank assistant bubble, which reads as a tutor that said nothing.
+    // would render a blank tutor row, which reads as a tutor that said nothing.
     //
-    // Asserted on the *absence of any assistant bubble*, not on the composer: the composer is
+    // Asserted on the *absence of any tutor message*, not on the composer: the composer is
     // rendered by `<CopilotChat/>` unconditionally, so a test looking at it stays green even when a
     // label is passed — which is the exact defect it exists to catch, and which review caught it
-    // committing. The class is the kit's own, and that coupling is deliberate rather than
-    // incidental: it is the same seam T7 re-skins, so a version bump that renames it should fail
-    // here rather than silently stop checking anything.
+    // committing.
     const { container } = render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -118,13 +208,15 @@ describe("the generative session surface", () => {
       />,
     );
 
-    expect(container.querySelector(".copilotKitAssistantMessage")).toBeNull();
-    expect(screen.getByTestId("copilot-chat-textarea")).toBeInTheDocument();
+    expect(container.querySelector('[data-speaker="tutor"]')).toBeNull();
+    expect(screen.getByRole("textbox", { name: /your answer/i })).toBeInTheDocument();
   });
 
-  it("renders the standing turn as the tutor's own message", () => {
-    // The other half of the pair, and the reason the class above is the right thing to look at: a
-    // seeded turn has to arrive as an assistant bubble, not as text loose on the page.
+  it("renders the standing turn as the tutor's own words, in our slot and not the kit's", () => {
+    // The other half of the pair: a seeded turn has to arrive as a tutor message, not as text
+    // loose on the page. Driven through the *real* `<CopilotChat/>` so that what is proven is
+    // that the kit hands its assistant message to our `TutorMessage` slot (T7, AD1) — the kit's
+    // own bubble class must be gone, or the re-skin registered a slot the kit is not using.
     const { container } = render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -134,10 +226,13 @@ describe("the generative session surface", () => {
       />,
     );
 
-    expect(container.querySelector(".copilotKitAssistantMessage")).not.toBeNull();
+    expect(container.querySelector('[data-speaker="tutor"]')).toHaveTextContent(
+      "Which way would you step?",
+    );
+    expect(container.querySelector(".copilotKitAssistantMessage")).toBeNull();
   });
 
-  it("mounts the chat surface when it is configured", () => {
+  it("mounts the chat surface when it is configured, with our composer and not the kit's", () => {
     render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -147,11 +242,14 @@ describe("the generative session surface", () => {
       />,
     );
 
-    // Asserted on the kit's own composer, not on our `<section aria-label>` wrapper. The wrapper is
-    // rendered unconditionally by this component, so a test looking at it passes even with
-    // `<CopilotChat />` deleted outright — which is the single thing T1 exists to prove. Mutation
-    // testing caught exactly that.
-    expect(screen.getByTestId("copilot-chat-textarea")).toBeInTheDocument();
+    // Asserted on the composer, not on our `<section aria-label>` wrapper. The wrapper is rendered
+    // unconditionally by this component, so a test looking at it passes even with `<CopilotChat />`
+    // deleted outright — which is the single thing T1 exists to prove. Mutation testing caught
+    // exactly that. From T7 the composer is our own answer form, handed to the kit as its `Input`
+    // slot; the kit's textarea (`copilot-chat-textarea`) must be gone, or the slot is registered
+    // but unused.
+    expect(screen.getByRole("textbox", { name: /your answer/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("copilot-chat-textarea")).not.toBeInTheDocument();
   });
 
   it("is absent from the session surface until a runtime is configured", async () => {

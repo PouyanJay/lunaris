@@ -1,6 +1,12 @@
-/* T1 container only. The kit's own surfaces are re-skinned onto the token set in T7, where the
-   `--copilot-kit-*` custom properties are bound in one block — doing it piecemeal here is how a
-   design system ends up with a second, accidental one. */
+/* The generative panel. One bordered region — the same panel-not-card the transcript is — whose
+   rows are welded by hairlines and whose composer is docked at the foot.
+
+   The kit's stylesheet is deliberately NOT loaded (AD35): every slot that paints is ours, and what
+   the kit still renders itself is scaffolding — the chat body, the scrolling message list, its
+   inner container and its footer — laid out here from tokens. Those class names are the kit's own,
+   reached through `:global()` and scoped under `.chat` so nothing leaks past this panel. A version
+   bump that renames them would leave the list unscrolled and unpadded, which is visible, rather
+   than re-skinned, which is not. */
 
 .session {
   display: flex;
@@ -10,11 +16,49 @@
   border: var(--border-width) solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-raised);
+  /* The panel sits below the transcript in a page that scrolls; bounding it is what lets the
+     message list scroll *itself* so the newest words are always in view. A viewport share rather
+     than a fixed height so it degrades to a phone. */
+  max-height: 70dvh;
+  overflow: hidden;
 }
 
 .chat {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
+}
+
+/* The kit's chat body: `<CopilotChat/>`'s root, holding the list and the composer. */
+.chat :global(.copilotKitChatBody) {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* The scrolling message list. The kit's own scroll-to-bottom targets this element's scrollTop, so
+   it must be the thing that overflows. */
+.chat :global(.copilotKitMessages) {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* Rows are welded by our own `.turn + .turn` hairlines (CopilotSlots), so the container adds no
+   padding of its own. */
+.chat :global(.copilotKitMessagesContainer) {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The kit's footer is the scroll anchor and, with suggestions off, otherwise empty. */
+.chat :global(.copilotKitMessagesFooter) {
+  margin: 0;
+  padding: 0;
 }
 
 .unavailable {

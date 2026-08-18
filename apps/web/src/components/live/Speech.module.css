@@ -1,0 +1,52 @@
+/* The two voices of a session, and the row a turn sits in, shared by the transcript and the
+   generative panel so a turn reads the same wherever it is drawn. Consumers `compose` the row so
+   its padding and the hairline between rows are stated once. */
+
+/* One turn: a padded row, welded to its neighbours by a hairline rather than boxed. */
+.turn {
+  padding: var(--space-4) var(--space-5);
+}
+
+.turn + .turn {
+  border-top: var(--border-width) solid var(--border);
+}
+
+/* The wait between voices: quiet, muted, announced (`role="status"` on the element). */
+.working {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-muted);
+}
+
+.tutor {
+  margin: 0;
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  color: var(--text);
+  white-space: pre-wrap;
+  /* Learners' and tutors' words are unbounded strings; a long token must wrap, not overflow. */
+  overflow-wrap: anywhere;
+}
+
+/* The learner's label: the eyebrow motif in mono, which is how every label in the transcript is
+   set (move kind, criterion, "You"). */
+.learnerLabel {
+  margin: var(--space-4) 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.answer {
+  margin: 0;
+  padding-left: var(--space-3);
+  border-left: 2px solid var(--border-strong);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

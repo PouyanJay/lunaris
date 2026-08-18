@@ -1,6 +1,7 @@
 import type { LiveSession, SessionTurn, TurnGrade } from "../../lib/liveSession";
 import { StatusDot, type StatusTone } from "../primitives/StatusDot";
 import styles from "./SessionTranscript.module.css";
+import { LearnerSpeech, TutorSpeech, Working } from "./Speech";
 
 /** How a verdict reads. Muted, reserved meanings, and never colour alone: the dot carries the tone
  *  and the uppercase mono word carries the meaning for anyone who cannot see it. */
@@ -37,11 +38,8 @@ export function SessionTranscript({ session, pending }: SessionTranscriptProps) 
       ))}
       {pending ? (
         <li className={styles.turn}>
-          <p className={styles.learnerLabel}>You</p>
-          <p className={styles.answer}>{pending}</p>
-          <p className={styles.marking} role="status">
-            Marking your answer…
-          </p>
+          <LearnerSpeech>{pending}</LearnerSpeech>
+          <Working>Marking your answer…</Working>
         </li>
       ) : null}
     </ol>
@@ -58,19 +56,14 @@ function Turn({ turn }: { turn: SessionTurn }) {
             only thing that makes that feel like teaching rather than being steered is being told. */}
         <span className={styles.moveReason}>{turn.move.reason}</span>
       </p>
-      <p className={styles.tutor}>{turn.tutor}</p>
+      <TutorSpeech>{turn.tutor}</TutorSpeech>
       {turn.criterion ? (
         <p className={styles.criterion}>
           <span className={styles.criterionLabel}>Show me</span>
           <span className={styles.criterionText}>{turn.criterion.statement}</span>
         </p>
       ) : null}
-      {turn.answer ? (
-        <>
-          <p className={styles.learnerLabel}>You</p>
-          <p className={styles.answer}>{turn.answer}</p>
-        </>
-      ) : null}
+      {turn.answer ? <LearnerSpeech>{turn.answer}</LearnerSpeech> : null}
       {turn.grade ? (
         <p className={styles.grade}>
           <StatusDot label={GRADE_LABEL[turn.grade.kind]} tone={GRADE_TONE[turn.grade.kind]} />

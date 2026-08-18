@@ -10,6 +10,13 @@ import {
 } from "../../lib/copilotRuntime";
 import type { LayoutSpec } from "../../lib/layoutSpec";
 import type { SurfaceSpec } from "../../lib/surfaceSpec";
+import {
+  LearnerMessage,
+  MarkingAnswer,
+  TurnComposer,
+  TurnError,
+  TutorMessage,
+} from "./CopilotSlots";
 import { LessonLayout } from "./LessonLayout";
 import { SurfaceCard } from "./SurfaceCard";
 import styles from "./CopilotSession.module.css";
@@ -25,12 +32,18 @@ interface CopilotSessionProps {
   standingTurn: string | null;
 }
 
+/** The kit's activity mark, built once: what it shows between the learner's send and the tutor's
+ *  first word. */
+const ICONS = { activityIcon: <MarkingAnswer /> };
+
 /** A live session over CopilotKit, streaming from the Node runtime.
  *
- *  T1 mounts the surface and proves the path; it is deliberately unstyled beyond its container.
- *  Binding CopilotKit's own look to our tokens — the `--copilot-kit-*` custom properties and the
- *  overridable slots — is T7, and doing it here would spread the re-skin across every task that
- *  touches this file.
+ *  AD1, discharged here (T7): the kit's state machine, transport and generative-UI machinery, and
+ *  none of its skin. Its stylesheet is not loaded at all — beyond its custom properties it carries a
+ *  font stack, radii, hover motion and a vendor tag that no property reaches — and every slot that
+ *  paints (`AssistantMessage`, `UserMessage`, `Input`, `ErrorMessage`, the activity mark) is one of
+ *  our primitives from `CopilotSlots`. What the kit still renders itself is the message list's
+ *  scaffolding, laid out by our own module.
  *
  *  Absent a runtime this renders an explanation rather than nothing. Live is still usable without
  *  it: P2a's transcript talks to the REST endpoints, which did not go away, so a blank panel would
@@ -52,27 +65,48 @@ export function CopilotSession({
 
   return (
     <section className={styles.session} aria-label={`Session on ${topic}`}>
+      {/* `useSingleEndpoint={false}`: the kit's default transport POSTs `{"method": …}` bodies to
+          the bare base path; `apps/copilot` mounts the multi-route shape (`GET …/info`,
+          `POST …/agent/live/run`, matching `mode: "multi-route"` there), and every request under
+          the default 404'd — found by T7's output verification, invisible to six tasks of e2e that
+          spoke the runtime's shape directly with curl.
+
+          `enableInspector={false}`: left to decide by hostname the kit mounts its own inspector on
+          localhost — a floating web component in its own skin, over our panel — which fetches from
+          the vendor's CDN. Off, so dev and prod behave the same and a self-hosted deployment
+          carrying learner sessions makes no third-party requests (the Node runtime's telemetry is
+          off for the same reason). */}
       <CopilotKit
         runtimeUrl={copilotRuntimeUrl(runtimeUrl)}
         agent={LIVE_AGENT}
         headers={sessionHeaders(sessionId)}
+        useSingleEndpoint={false}
+        enableInspector={false}
       >
         {/* Sized by our own wrapper rather than by the kit's `className` prop: the prop is typed
             as a required string, and a CSS-module lookup is `string | undefined` under
-            `exactOptionalPropertyTypes`. A wrapper also keeps layout ours when T7 swaps the kit's
-            internals for our slots. */}
+            `exactOptionalPropertyTypes`. The wrapper is also where the kit's own structural
+            classes are laid out. */}
         <SurfaceTool />
         <LayoutTool />
         <div className={styles.chat}>
-          {/* Seeded with the turn the learner is standing on, because from T2 a message sent here
-              takes a real turn and is graded against *that* turn's criterion. An empty chat would
-              invite an answer to a question they had never been shown, and the verdict would then
-              look arbitrary. Omitted rather than passed empty when there is nothing standing: an
-              empty initial label renders a blank assistant bubble, which reads as a tutor that said
-              nothing. Replaying the stored turn as a *label* rather than a run is deliberate for
-              now — T4 merges this surface with the transcript and reads the session's state off the
-              stream's own STATE_SNAPSHOT instead. */}
-          <CopilotChat {...(standingTurn ? { labels: { initial: standingTurn } } : {})} />
+          {/* Seeded with the turn the learner is standing on, because a message sent here takes a
+              real turn and is graded against *that* turn's criterion. An empty chat would invite an
+              answer to a question they had never been shown, and the verdict would then look
+              arbitrary. Omitted rather than passed empty when there is nothing standing: an empty
+              initial label renders a blank tutor row, which reads as a tutor that said nothing.
+
+              `suggestions="manual"` with none set: the kit would otherwise offer generated
+              "suggested replies", which is the surface answering for the learner. */}
+          <CopilotChat
+            {...(standingTurn ? { labels: { initial: standingTurn } } : {})}
+            icons={ICONS}
+            suggestions="manual"
+            AssistantMessage={TutorMessage}
+            UserMessage={LearnerMessage}
+            Input={TurnComposer}
+            ErrorMessage={TurnError}
+          />
         </div>
       </CopilotKit>
     </section>

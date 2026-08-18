@@ -121,6 +121,41 @@ const A_TAUGHT_TURN = [
   { type: "RUN_FINISHED", threadId: "thread-1", runId: "run-1" },
 ];
 
+describe("the route shape the browser kit is told to speak", () => {
+  // `apps/web` sets `useSingleEndpoint={false}` on `<CopilotKit>` — the kit then speaks REST routes
+  // under the base path (`GET …/info`, `POST …/agent/live/run`) rather than `{"method": …}` bodies
+  // to the bare base path. This side must serve exactly that shape, and refuse the other, or the
+  // two separately deployed halves 404 each other in production while each passes its own suite —
+  // which is what happened from T1 to T7 of live-generative-surfaces. Pinned over a real socket.
+  it("lists the agent at GET …/info", async () => {
+    const runtimeUrl = await runtimeOver("http://api.invalid");
+
+    // The browser sends the session header on every request, discovery included, and the agent
+    // factory needs it to name the session — as the real panel does (`<CopilotKit headers=…>`).
+    const response = await fetch(`${runtimeUrl}${BASE_PATH}/info`, {
+      headers: { [SESSION_HEADER]: "sess-1" },
+    });
+
+    expect(response.status).toBe(200);
+    const info = (await response.json()) as { agents: Record<string, unknown> };
+    expect(Object.keys(info.agents)).toEqual([LIVE_AGENT]);
+  });
+
+  it("refuses the single-endpoint probe at the bare base path", async () => {
+    // The kit's *default* transport. Answering it would let a misconfigured browser build appear
+    // to work here and fail on the first run; 404 keeps the drift loud on both sides.
+    const runtimeUrl = await runtimeOver("http://api.invalid");
+
+    const response = await fetch(`${runtimeUrl}${BASE_PATH}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "info" }),
+    });
+
+    expect(response.status).toBe(404);
+  });
+});
+
 describe("the runtime as a hop", () => {
   it("forwards a run to the session's own stream, as the learner who asked", async () => {
     // Arrange
