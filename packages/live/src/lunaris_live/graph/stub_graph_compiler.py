@@ -20,6 +20,14 @@ logger = structlog.get_logger()
 
 _MAX_SLUG_LENGTH = 40
 
+#: A topic that asks for a hands-on concept (P2b T10). Any topic saying so compiles to the three
+#: prose concepts plus a fourth, simulator-only one that requires the topic itself, so a stub-mode
+#: session can reach the two cards a concept nobody can check here produces (the concept map, and
+#: the simulator card when a registry is mounted). Opt-in by wording rather than always-on, because
+#: every earlier task's tests read the three-concept map and a session that ends on an uncheckable
+#: concept ends differently.
+_HANDS_ON = re.compile(r"\bhands[- ]on\b", re.IGNORECASE)
+
 #: Room for a derived name to wrap the topic ("Foundations of …") and still fit ConceptNode.name.
 #: A concept name is a label, not a restatement of the request, so shortening here loses nothing.
 _MAX_TOPIC_IN_NAME = 150
@@ -64,7 +72,10 @@ class StubGraphCompiler:
                 definition=f"The central mechanism of {label}.",
                 requires=[f"{slug}-foundations"],
                 teaching_spec=_spec(f"Core of {label}"),
-                mastery_criteria=_criteria(f"Core of {label}"),
+                # A PREDICT do-statement rather than a second EXPLAIN one, so a stub session meets
+                # the criterion card (T10): the director's rules show it for any criterion that is
+                # not "explain", and a map of nothing but EXPLAIN never reaches that rule.
+                mastery_criteria=_prediction(f"Core of {label}"),
             ),
             ConceptNode(
                 id=slug,
@@ -75,6 +86,17 @@ class StubGraphCompiler:
                 mastery_criteria=_criteria(label),
             ),
         ]
+        if _HANDS_ON.search(topic):
+            nodes.append(
+                ConceptNode(
+                    id=f"{slug}-practice",
+                    name=f"Practice with {label}",
+                    definition=f"{label}, driven by hand until it does what you predicted.",
+                    requires=[slug],
+                    teaching_spec=_spec(f"Practice with {label}"),
+                    mastery_criteria=_manipulation(f"Practice with {label}"),
+                )
+            )
         for done, _ in enumerate(nodes, start=1):
             report_progress(on_progress, CompilePhase.AUTHORING, done=done, total=len(nodes))
         report_progress(on_progress, CompilePhase.ASSEMBLING, done=len(nodes), total=len(nodes))
@@ -163,6 +185,28 @@ def _criteria(name: str) -> list[MasteryCriterion]:
         MasteryCriterion(
             kind=MasteryCriterionKind.EXPLAIN,
             statement=f"Explain {name} back in your own words.",
+        )
+    ]
+
+
+def _prediction(name: str) -> list[MasteryCriterion]:
+    """A do-statement met by predicting, not by explaining: the other prose-answerable kind."""
+    return [
+        MasteryCriterion(
+            kind=MasteryCriterionKind.PREDICT,
+            statement=f"Predict what changes in {name} when one input changes, and say why.",
+        )
+    ]
+
+
+def _manipulation(name: str) -> list[MasteryCriterion]:
+    """A do-statement that can only be demonstrated in a simulator, never described (T6): the
+    concept is taught here and, with no registry mounted, honestly not checkable here."""
+    return [
+        MasteryCriterion(
+            kind=MasteryCriterionKind.MANIPULATE,
+            statement=f"Drive {name} until it does what you predicted, and say what you changed.",
+            needs_sim=True,
         )
     ]
 

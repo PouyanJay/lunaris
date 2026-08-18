@@ -70,9 +70,9 @@ def _sim_only_graph() -> ConceptGraph:
 
 
 class _OneGraphStore:
-    """Serves the sim-only map above. Planted rather than compiled: `StubGraphCompiler` authors one
-    EXPLAIN criterion per concept and never sets `needs_sim`, so nothing it produces can reach this
-    tier at all — the gap T3 recorded and T10 owns closing for every variant."""
+    """Serves the sim-only map above. Planted rather than compiled, so the registry on/off behaviour
+    is isolated from what the compiler happens to author. (Since T10 a hands-on topic compiles to a
+    map that reaches this tier through the real path too: `test_live_surface_variants.py`.)"""
 
     def load(self, graph_id: str, *, owner_id: str | None = None) -> ConceptGraph:
         if graph_id != _GRAPH_ID:

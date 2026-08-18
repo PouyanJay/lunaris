@@ -76,14 +76,13 @@ class Settings:
     #: *opening* is rationed per owner per day — a runaway starts by opening sessions in a loop, and
     #: capping turns would end sittings that were going well for a reason nobody could explain.
     #: ``live_session_budget_usd`` is the ceiling on one session's whole spend, read from the
-    #: ledger's rollup: a runaway guard, not a ration, 0 turns it off. Sized so it does not bind an
-    #: ordinary sitting: a keyed turn has been two model calls since P2b T5 (the lesson and its
-    #: material) plus a grade, ≈$0.15-0.20 at the P2a eval's rates, and a 30-minute sitting of
-    #: 15-20 turns is $2.25-4, so the $2 that fitted one call a turn would have ended good
-    #: sittings. Doubled with the calls (P2b T9); T10's keyed eval is where the estimate gets
-    #: measured rather than reasoned.
+    #: ledger's rollup: a runaway guard, not a ration, 0 turns it off. Sized from measurement (P2b
+    #: T10's keyed eval, at the ledger's own price book): a keyed turn, two strong-tier model calls
+    #: (the lesson and its material) plus a worker-tier grade, costs about $0.02 to $0.026, so a
+    #: 30-turn sitting is under $1 and $2 binds only a runaway of eighty-odd turns. (T9 had doubled
+    #: this to $4 on an estimate of $0.15 to $0.20 a turn that the measurement did not bear out.)
     live_session_daily_cap: int = 20
-    live_session_budget_usd: float = 4.0
+    live_session_budget_usd: float = 2.0
     #: Which Tier 3 simulator registry to serve (P2b T6). ``""`` — the default — means none, and a
     #: concept whose every criterion needs a simulator keeps P2a's honest position: taught here, not
     #: checkable here. ``"stub"`` mounts the placeholder simulator, which proves the socket and
@@ -189,7 +188,7 @@ def get_settings() -> Settings:
         live_sims=os.getenv("LUNARIS_LIVE_SIMS", "").strip().lower(),
         live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
         live_session_daily_cap=_env_int("LUNARIS_LIVE_SESSION_DAILY_CAP", default=20),
-        live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=4.0),
+        live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=2.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

@@ -3,8 +3,8 @@ import { render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { CopilotSession } from "./CopilotSession";
-import { LearnerMessage, TurnComposer, TurnError, TutorMessage } from "./CopilotSlots";
+import { CopilotSession, PanelComposer } from "./CopilotSession";
+import { LearnerMessage, TurnError, TutorMessage } from "./CopilotSlots";
 
 /** What the panel hands `<CopilotChat/>`, captured at the kit's own prop contract.
  *
@@ -53,7 +53,9 @@ describe("what the panel hands CopilotChat", () => {
 
     expect(props.AssistantMessage).toBe(TutorMessage);
     expect(props.UserMessage).toBe(LearnerMessage);
-    expect(props.Input).toBe(TurnComposer);
+    // The panel's own composer wraps `TurnComposer` (T10): the same form, plus the send path the
+    // cards answer through and the ending in the composer's place once the session has closed.
+    expect(props.Input).toBe(PanelComposer);
     expect(props.ErrorMessage).toBe(TurnError);
   });
 

@@ -11,6 +11,7 @@ import {
   sessionHeaders,
 } from "../../lib/copilotRuntime";
 import { LAYOUT_CATALOG } from "../../lib/layoutSpec";
+import { runsSent, stubCopilotRuntime } from "../../test/copilotRuntimeStub";
 import { CopilotSession } from "./CopilotSession";
 
 // The hook is stubbed rather than driven: what needs proving is *what this component registers*,
@@ -61,56 +62,8 @@ describe("the generative session surface", () => {
     );
   }
 
-  /** A `fetch` that answers every route the kit uses, the way the real runtime does: `/info`
-   *  listing the agent, an empty event stream for `/agent/live/connect`, and a run that starts and
-   *  finishes at once for `/agent/live/run`. Enough for the kit to believe it is connected and to
-   *  put a real run on the wire, which is what the T9 tests below inspect. */
-  function answerEveryRoute(
-    runFrames: (body: { threadId: string; runId: string }) => object[] = () => [],
-  ) {
-    const sse = (frames: object[]) =>
-      new Response(frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""), {
-        status: 200,
-        headers: { "content-type": "text/event-stream" },
-      });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        if (url.endsWith("/info")) {
-          return new Response(
-            JSON.stringify({
-              version: "1.67.1",
-              agents: { live: { name: "live", description: "" } },
-              mode: "sse",
-            }),
-            { status: 200 },
-          );
-        }
-        if (url.endsWith("/agent/live/run")) {
-          const body = JSON.parse(String(init?.body)) as { threadId: string; runId: string };
-          return sse([
-            { type: "RUN_STARTED", threadId: body.threadId, runId: body.runId },
-            ...runFrames(body),
-            { type: "RUN_FINISHED", threadId: body.threadId, runId: body.runId },
-          ]);
-        }
-        return sse([]);
-      }),
-    );
-  }
-
-  /** The bodies of every run the kit put on the wire. */
-  function runsSent(): { forwardedProps?: Record<string, unknown> }[] {
-    return vi
-      .mocked(fetch)
-      .mock.calls.filter(([input]) => String(input).endsWith("/agent/live/run"))
-      .map(
-        ([, init]) =>
-          JSON.parse(String(init?.body)) as { forwardedProps?: Record<string, unknown> },
-      );
-  }
+  // The route-aware stub that lets the real kit connect and put runs on the wire is shared with
+  // the panel tests: `stubCopilotRuntime` / `runsSent` from `src/test/copilotRuntimeStub`.
 
   it("addresses the runtime's own mount path", () => {
     // The Node runtime answers under /api/copilotkit. Pointed at the bare host, every run 404s.
@@ -220,7 +173,7 @@ describe("the generative session surface", () => {
     // 409, but only if the browser names it. Pinned on the run body the kit actually *emits*, not
     // on the prop that is meant to produce it (T7's lesson: the kit's transport is what the API
     // sees, and a prop the kit ignores would leave every other test green).
-    answerEveryRoute();
+    stubCopilotRuntime();
     render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -245,7 +198,7 @@ describe("the generative session surface", () => {
     // A session with nothing standing (closed, or unreadable) is not answering anything, and a
     // guessed seq would be refused as stale, or accepted, against a turn this browser never saw.
     // The API derives the standing turn when nothing is named, which is every pre-T9 client.
-    answerEveryRoute();
+    stubCopilotRuntime();
     render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -270,7 +223,7 @@ describe("the generative session surface", () => {
     // turn it names a question that is no longer up, and the API would refuse every later send
     // as stale (409). The run's own `STATE_SNAPSHOT` carries the turn now in front of the learner
     // (`SessionSnapshot.turn`), and it has to win from then on.
-    answerEveryRoute(() => [{ type: "STATE_SNAPSHOT", snapshot: { turn: 4, status: "active" } }]);
+    stubCopilotRuntime(() => [{ type: "STATE_SNAPSHOT", snapshot: { turn: 4, status: "active" } }]);
     render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -298,7 +251,7 @@ describe("the generative session surface", () => {
   it("forgets the named turn when it is re-used for another session", async () => {
     // The turn it learned from one session's state frames must not name the next session's
     // answers: a re-used panel falls back to what the new session's REST read says is standing.
-    answerEveryRoute(() => [{ type: "STATE_SNAPSHOT", snapshot: { turn: 4, status: "active" } }]);
+    stubCopilotRuntime(() => [{ type: "STATE_SNAPSHOT", snapshot: { turn: 4, status: "active" } }]);
     const view = render(
       <CopilotSession
         runtimeUrl="http://runtime.test"
@@ -446,14 +399,6 @@ describe("the generative session surface", () => {
 });
 
 describe("the Tier 1 card inside the generative panel", () => {
-  const QUIZ = {
-    kind: "quiz_card" as const,
-    nodeId: "gradient",
-    concept: "Gradient",
-    question: "Which of these is actually true about Gradient?",
-    options: ["The slope of the loss.", "How big the loss is."],
-  };
-
   /** The tool config `SurfaceTool` registered, captured without a live runtime.
    *
    *  `useRenderToolCall` is a plain hook, so mounting the panel is enough to record what it was
@@ -485,30 +430,10 @@ describe("the Tier 1 card inside the generative panel", () => {
     expect(registeredTool(SURFACE_TOOL).name).toBe(SURFACE_TOOL);
   });
 
-  it("draws the card the tool call carries", () => {
-    const tool = registeredTool(SURFACE_TOOL);
-
-    render(tool.render({ args: QUIZ } as never) as ReactElement);
-
-    expect(screen.getByRole("radiogroup", { name: QUIZ.question })).toBeInTheDocument();
-    expect(screen.getAllByRole("radio")).toHaveLength(2);
-  });
-
-  it("draws it as a record, with no way to answer in this panel", () => {
-    // Deliberate, and the reason is in the component's own docstring: CopilotKit re-renders every
-    // tool call in the thread, so an answerable card would outlive its turn — and the AG-UI path
-    // derives the answered turn server-side, so a late answer would be graded against whatever
-    // question is up now rather than refused. T9 is where that becomes nameable on this transport.
-    //
-    // Scoped to the card, because the panel around it has a composer of its own with a Send button.
-    // A document-wide query finds *that* one and reports the opposite of what it is asked.
-    const tool = registeredTool(SURFACE_TOOL);
-
-    const card = render(tool.render({ args: QUIZ } as never) as ReactElement);
-
-    expect(within(card.container).queryByRole("button")).not.toBeInTheDocument();
-    expect(within(card.container).getByRole("radio", { name: QUIZ.options[0]! })).toBeDisabled();
-  });
+  // Drawing the card, answering in it, and the card becoming a record once its turn has passed
+  // are proven through the real kit in `CopilotSession.panel.test.tsx` (T10): the renderer reads
+  // the agent's state and the composer's send path from context, so it needs the provider around
+  // it, which this file's mocked hook deliberately does not have.
 
   it("registers a second renderer for the turn's Tier 2 layout", () => {
     // Its own registration, mirroring the two tool calls the API sends. A build that drew the card

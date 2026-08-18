@@ -3,6 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SessionView } from "./SessionView";
 
+// The generative panel is the kit's whole module graph; what this file needs from it is only its
+// contract with the host: it is mounted with a runtime configured, and it reports each turn it
+// takes. A stand-in that renders one button proves both without booting the kit.
+vi.mock("./CopilotSession", () => ({
+  CopilotSession: ({ onTurnTaken }: { onTurnTaken?: () => void }) => (
+    <button type="button" onClick={() => onTurnTaken?.()}>
+      turn taken
+    </button>
+  ),
+}));
+
 /** A session as the API returns it: one turn, already teaching, with something staged to answer. */
 const OPENED = {
   sessionId: "s1",
@@ -479,5 +490,43 @@ describe("the Tier 1 card (T4)", () => {
     await screen.findByLabelText(/session on neural networks/i);
 
     await waitFor(() => expect(screen.queryByRole("textbox")).not.toBeInTheDocument());
+  });
+
+  it("re-reads the session each time the panel takes a turn, so the record stays true", async () => {
+    // With the panel answering, the transcript beside it is the record (T4), and until T10 it never
+    // re-read: after the first panel turn it showed a session that no longer existed. The panel
+    // reports each turn its state frames announce, and the transcript re-reads the row.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+        const method = (init?.method ?? "GET").toUpperCase();
+        const body = method === "POST" ? OPENED : ANSWERED;
+        return Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status: method === "POST" ? 201 : 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }),
+    );
+    render(
+      <SessionView
+        apiBaseUrl=""
+        graphId="g1"
+        topic="Neural networks"
+        copilotUrl="http://runtime.test"
+      />,
+    );
+    await screen.findByLabelText(/session on neural networks/i);
+    expect(screen.getByText(/1 turn\b/)).toBeInTheDocument();
+
+    // The stand-in panel reports a turn the way the real one does (see the mock at the top).
+    fireEvent.click(await screen.findByRole("button", { name: /turn taken/i }));
+
+    await waitFor(() => expect(screen.getByText(/2 turns/)).toBeInTheDocument());
+    const reads = vi
+      .mocked(fetch)
+      .mock.calls.filter(([, init]) => (init?.method ?? "GET").toUpperCase() === "GET");
+    expect(reads.map(([input]) => String(input))).toContain("/api/live/sessions/s1");
   });
 });

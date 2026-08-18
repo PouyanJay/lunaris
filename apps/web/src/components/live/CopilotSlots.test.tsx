@@ -1,5 +1,5 @@
 import type { AssistantMessageProps, UserMessageProps } from "@copilotkit/react-ui";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LearnerMessage, TurnComposer, TurnError, TutorMessage } from "./CopilotSlots";
@@ -134,6 +134,43 @@ describe("the tutor's message slot", () => {
     const { container } = render(<TutorMessage {...tutorProps()} />);
 
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("what a screen reader hears of a streamed turn (T10)", () => {
+  // T7 left this open: streamed words are not announced as they arrive, and a live region on the
+  // message would re-announce on every delta. The choice, made without a browser to hand and
+  // recorded as such: announce the whole turn once, when the tutor has finished, through a
+  // visually hidden status region that is cleared again so it does not read twice on navigation.
+  it("announces the tutor's words once, when the turn is complete, and not while it streams", () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(
+        <TutorMessage {...tutorProps({ message: message("Half a"), isGenerating: true })} />,
+      );
+      const spoken = screen.getByRole("log", { name: /what the tutor said/i });
+      expect(spoken).toHaveTextContent("");
+
+      view.rerender(
+        <TutorMessage
+          {...tutorProps({ message: message("Half a sentence."), isGenerating: false })}
+        />,
+      );
+
+      expect(spoken).toHaveTextContent("Half a sentence.");
+      act(() => vi.runAllTimers());
+      expect(spoken).toHaveTextContent("");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not announce a turn that was already complete when it mounted", () => {
+    // A reload renders the whole transcript at once; announcing every turn of it would read a
+    // forty-minute session aloud on arrival.
+    render(<TutorMessage {...tutorProps({ message: message("An old turn.") })} />);
+
+    expect(screen.getByRole("log", { name: /what the tutor said/i })).toHaveTextContent("");
   });
 });
 

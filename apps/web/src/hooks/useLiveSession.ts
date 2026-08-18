@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { answerTurn, startSession, type LiveSession } from "../lib/liveSession";
+import { answerTurn, loadSession, startSession, type LiveSession } from "../lib/liveSession";
 
 /** A session's data states.
  *
@@ -20,6 +20,9 @@ export interface LiveSessionResult {
   answer: (text: string) => void;
   /** Re-open the session after a failure to start one. */
   retry: () => void;
+  /** Re-read the session's row, for when something other than `answer` has moved it on: the
+   *  generative panel taking a turn (T10). Ignored before there is a session to re-read. */
+  refresh: () => void;
 }
 
 /** Opens a session on `graphId` and drives its loop.
@@ -77,7 +80,18 @@ export function useLiveSession(apiBaseUrl: string, graphId: string): LiveSession
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
 
-  return { state, answer, retry };
+  const refresh = useCallback(() => {
+    const held = current.current;
+    const session = held.status === "opening" ? null : held.session;
+    if (!session) return;
+    loadSession(apiBaseUrl, session.sessionId)
+      .then((next) => setState({ status: "ready", session: next }))
+      // A failed re-read leaves what was on screen: the record is stale rather than gone, and the
+      // panel that caused the re-read is still the surface the learner is working in.
+      .catch(() => {});
+  }, [apiBaseUrl]);
+
+  return { state, answer, retry, refresh };
 }
 
 function messageOf(error: unknown): string {

@@ -81,20 +81,25 @@ async def turn_events(
     if settled is not None:
         # The card the director chose, after the words it follows: a quiz that appeared while the
         # tutor was still setting it up would be answered against half a sentence.
-        for event in _surface_events(settled):
+        surface_call_id, surface_events = _surface_events(settled)
+        for event in surface_events:
             yield event
 
         # Before ``RUN_FINISHED``, deliberately. A client that treats the end of a run as "settled"
         # would otherwise render the previous turn's state for the whole length of the next one.
+        # It names the card just sent, so the browser can tell the standing card from the record.
         yield StateSnapshotEvent(
-            snapshot=SessionSnapshot.of(settled).model_dump(by_alias=True, mode="json")
+            snapshot=SessionSnapshot.of(settled, surface_call_id=surface_call_id).model_dump(
+                by_alias=True, mode="json"
+            )
         )
 
     yield RunFinishedEvent(thread_id=thread_id, run_id=run_id)
 
 
-def _surface_events(session: Session) -> Iterator[BaseEvent]:
-    """The standing turn's two generative surfaces: the Tier 1 card (T3), then its layout (T5).
+def _surface_events(session: Session) -> tuple[str | None, list[BaseEvent]]:
+    """The standing turn's two generative surfaces: the Tier 1 card (T3), then its layout (T5),
+    with the id the card went out under (T10), or ``None`` when there was no card.
 
     Nothing at all when the turn has neither. That is every turn P2a stored (R4), and a client
     waiting on tool frames that never come would sit on a spinner over a session it can read
@@ -111,21 +116,31 @@ def _surface_events(session: Session) -> Iterator[BaseEvent]:
     """
     standing = session.turns[-1] if session.turns else None
     if standing is None:
-        return
+        return None, []
 
+    events: list[BaseEvent] = []
+    surface_call_id: str | None = None
     if standing.surface is not None:
-        yield from _tool_call(SURFACE_TOOL, standing.surface.model_dump_json(by_alias=True))
+        surface_call_id = uuid4().hex
+        events.extend(
+            _tool_call(
+                SURFACE_TOOL, standing.surface.model_dump_json(by_alias=True), surface_call_id
+            )
+        )
     if standing.layout is not None:
-        yield from _tool_call(LAYOUT_TOOL, standing.layout.model_dump_json(by_alias=True))
+        events.extend(
+            _tool_call(LAYOUT_TOOL, standing.layout.model_dump_json(by_alias=True), uuid4().hex)
+        )
+    return surface_call_id, events
 
 
-def _tool_call(name: str, arguments: str) -> Iterator[BaseEvent]:
+def _tool_call(name: str, arguments: str, call_id: str) -> Iterator[BaseEvent]:
     """One complete tool call, start to end, under its own id.
 
     A fresh id per call rather than one shared across the turn: AG-UI keys a call's arguments to its
-    id, and two calls sharing one would have the second read as an amendment to the first.
+    id, and two calls sharing one would have the second read as an amendment to the first. The id is
+    minted by the caller, which needs the card's to name it on the state frame.
     """
-    call_id = uuid4().hex
     yield ToolCallStartEvent(tool_call_id=call_id, tool_call_name=name)
     yield ToolCallArgsEvent(tool_call_id=call_id, delta=arguments)
     yield ToolCallEndEvent(tool_call_id=call_id)

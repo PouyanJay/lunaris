@@ -124,12 +124,11 @@
   color: var(--text);
 }
 
+/* Where the ending sits under the transcript: welded to the card above by its own top edge, and
+   closing the transcript's frame at the bottom. The words are `SessionEnded`'s. */
 .ended {
-  margin: 0;
+  composes: ended from "./SessionEnded.module.css";
   padding: var(--space-4) var(--space-5);
-  font-size: var(--text-sm);
-  line-height: var(--lh-sm);
-  color: var(--text-secondary);
   background: var(--bg-subtle);
   border: var(--border-width) solid var(--border);
   border-top: none;

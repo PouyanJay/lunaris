@@ -6,6 +6,7 @@ import { Button } from "../primitives/Button";
 import { StatusDot } from "../primitives/StatusDot";
 import { AnswerForm } from "./AnswerForm";
 import { LessonLayout } from "./LessonLayout";
+import { SessionEnded } from "./SessionEnded";
 import { SessionTranscript } from "./SessionTranscript";
 import { SurfaceCard } from "./SurfaceCard";
 import styles from "./SessionView.module.css";
@@ -45,7 +46,7 @@ interface SessionViewProps {
  *  every verdict attached to the answer that earned it, and every state a session can actually be
  *  in rendered rather than assumed. */
 export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionViewProps) {
-  const { state, answer, retry } = useLiveSession(apiBaseUrl, graphId);
+  const { state, answer, retry, refresh } = useLiveSession(apiBaseUrl, graphId);
   // Their own words, shown the moment they send them. Optimistic about the *echo* only — never
   // about the verdict, which is the server's to give and the one thing that must not be guessed.
   const [sending, setSending] = useState<string | null>(null);
@@ -103,6 +104,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
             topic={topic}
             standingTurn={standing?.tutor ?? null}
             standingSeq={standing?.seq ?? null}
+            onTurnTaken={refresh}
           />
         </Suspense>
       ) : null}
@@ -165,10 +167,7 @@ function TurnFooter({
         }
       />
       {closed ? (
-        <p className={styles.ended}>
-          This session has ended. Its record stays here, and what you demonstrated is remembered the
-          next time you open this map.
-        </p>
+        <SessionEnded className={styles.ended} />
       ) : answerHere && !standing?.surface ? (
         // Every session P2a stored has no card. The plain box keeps that history answerable rather
         // than making the tier's arrival a migration.

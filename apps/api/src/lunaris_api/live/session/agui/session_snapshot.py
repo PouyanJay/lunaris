@@ -30,15 +30,24 @@ class SessionSnapshot(LiveModel):
     #: The verdict on the most recent answer that was scored. ``None`` means nothing has been judged
     #: yet, never "judged and failed" — the distinction the whole learner model rests on.
     grade: TurnGrade | None = None
+    #: The tool-call id the standing turn's Tier 1 card went out under in *this* run (P2b T10), or
+    #: ``None`` when the turn has no card. CopilotKit keeps every card in the thread on screen, so
+    #: this is how a browser tells the question in front of the learner from the record: only the
+    #: card whose id matches is answerable in place. A fact about the transport, not the session,
+    #: which is why it lives on this projection and not on ``SessionTurn``.
+    surface_call_id: str | None = Field(default=None, min_length=1, max_length=100)
 
     @classmethod
-    def of(cls, session: Session) -> "SessionSnapshot":
+    def of(cls, session: Session, *, surface_call_id: str | None = None) -> "SessionSnapshot":
         """Read the state off a session.
 
         The grade is the last one *recorded*, not the last turn's: the turn in front of the learner
         has not been answered yet, so its grade is always ``None``, and a surface reading it there
         would show a blank verdict the instant the tutor finished speaking about the answer that
         earned one.
+
+        ``surface_call_id`` is minted by the frame producer, which is the only place that knows it;
+        it is passed in rather than derived because a replay mints a fresh id for the same card.
         """
         standing = session.turns[-1] if session.turns else None
         graded = next((turn.grade for turn in reversed(session.turns) if turn.grade), None)
@@ -50,4 +59,5 @@ class SessionSnapshot(LiveModel):
             if standing and standing.criterion is not None
             else None,
             grade=graded,
+            surface_call_id=surface_call_id,
         )

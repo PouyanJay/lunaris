@@ -4,6 +4,8 @@ import type {
   InputProps,
   UserMessageProps,
 } from "@copilotkit/react-ui";
+import { useEffect, useRef, useState } from "react";
+
 import { Callout } from "../primitives/Callout";
 import { AnswerForm } from "./AnswerForm";
 import styles from "./CopilotSlots.module.css";
@@ -23,11 +25,17 @@ import { LearnerSpeech, TutorSpeech, Working } from "./Speech";
  *  Deliberately without the kit's regenerate / copy / thumbs controls. Regenerating a *graded*
  *  turn would take another turn against the same criterion — the loop has no such move — and
  *  feedback on a turn has nowhere to go. */
-export function TutorMessage({ message, subComponent, isLoading }: AssistantMessageProps) {
+export function TutorMessage({
+  message,
+  subComponent,
+  isLoading,
+  isGenerating,
+}: AssistantMessageProps) {
   const words = message?.content ?? "";
   // The kit lets a tool result ask to be drawn before the words; the director's card follows the
   // words that frame it, so that request is honoured only when made.
   const cardFirst = message?.generativeUIPosition === "before";
+  const announced = useAnnouncedOnCompletion(words, Boolean(isLoading || isGenerating));
   if (!words && !subComponent && !isLoading) return null;
 
   const card = subComponent ? <div className={styles.surface}>{subComponent}</div> : null;
@@ -37,8 +45,41 @@ export function TutorMessage({ message, subComponent, isLoading }: AssistantMess
       {words ? <TutorSpeech>{words}</TutorSpeech> : null}
       {cardFirst ? null : card}
       {isLoading ? <Working>Tutor is writing…</Working> : null}
+      {/* What a screen reader hears of a streamed turn (T10, the question T7 left): the whole
+          turn, once, when it is complete. A live region on the words themselves would re-announce
+          on every delta; the visible words stay where they are for anyone navigating to them. A
+          `log` rather than a second `status`: this is a transcript being added to, and the
+          "Tutor is writing…" mark above already holds the status role. */}
+      <span className="sr-only" role="log" aria-label="What the tutor said">
+        {announced}
+      </span>
     </div>
   );
+}
+
+/** How long the announcement is left in the status region after it has been read out, before it
+ *  is cleared so the same words are not met twice by anyone navigating the row. Long enough for
+ *  an assistive technology to pick the change up; it is not a visible duration. */
+const ANNOUNCEMENT_MS = 3000;
+
+/** The words to announce: the finished turn, exactly once, only for a turn this component saw
+ *  being written. A turn that mounts complete (a reload draws the whole transcript at once) is
+ *  never announced, or arriving would read the sitting aloud. */
+function useAnnouncedOnCompletion(words: string, streaming: boolean): string {
+  const [announced, setAnnounced] = useState("");
+  const wasStreaming = useRef(false);
+  useEffect(() => {
+    if (streaming) {
+      wasStreaming.current = true;
+      return;
+    }
+    if (!wasStreaming.current || !words) return;
+    wasStreaming.current = false;
+    setAnnounced(words);
+    const clear = setTimeout(() => setAnnounced(""), ANNOUNCEMENT_MS);
+    return () => clearTimeout(clear);
+  }, [streaming, words]);
+  return announced;
 }
 
 /** The learner's answer, as sent. AG-UI user content is a string or a list of parts; the text

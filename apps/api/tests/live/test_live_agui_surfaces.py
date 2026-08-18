@@ -78,6 +78,20 @@ def _surface_in(events: list[dict[str, Any]]) -> dict[str, Any]:
     return call_named(events, SURFACE_TOOL)
 
 
+def _surface_call_id_in(events: list[dict[str, Any]]) -> str:
+    """The id the run's card went out under."""
+    return next(
+        event["toolCallId"]
+        for event in events
+        if event["type"] == "TOOL_CALL_START" and event["toolCallName"] == SURFACE_TOOL
+    )
+
+
+def _snapshot_in(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """The state frame the run ended on."""
+    return next(event["snapshot"] for event in events if event["type"] == "STATE_SNAPSHOT")
+
+
 async def test_a_turn_carries_the_card_the_director_chose(client: httpx.AsyncClient) -> None:
     """The task's claim on the wire: the component and its props ride the run.
 
@@ -94,6 +108,33 @@ async def test_a_turn_carries_the_card_the_director_chose(client: httpx.AsyncCli
     # Assert
     reread = (await client.get(f"/api/live/sessions/{session['sessionId']}")).json()
     assert _surface_in(events) == reread["turns"][-1]["surface"]
+
+
+async def test_the_state_names_the_card_that_is_standing(client: httpx.AsyncClient) -> None:
+    """P2b T10. CopilotKit keeps every card in the thread on screen, so a browser needs to know
+    which one is the question in front of the learner and which are the record: the state frame
+    carries the tool-call id of the standing card, and only a card whose id matches is answerable
+    in place. A transport fact, so it lives on the transport's own projection rather than on the
+    session (the session has no tool calls)."""
+    # Arrange
+    session = await _session(client)
+
+    # Act
+    events = await _events(client, session["sessionId"], answer="A serious attempt.")
+
+    # Assert
+    assert _snapshot_in(events)["surfaceCallId"] == _surface_call_id_in(events)
+
+
+async def test_a_replay_names_the_card_it_replays(client: httpx.AsyncClient) -> None:
+    """A reloaded tab gets the standing card again under a fresh id (T3), so the id it is told is
+    standing has to be *that* one, not the one the live run minted."""
+    session = await _session(client)
+    await _events(client, session["sessionId"], answer="A serious attempt.")
+
+    replay = await _events(client, session["sessionId"])
+
+    assert _snapshot_in(replay)["surfaceCallId"] == _surface_call_id_in(replay)
 
 
 async def test_the_card_is_named_by_the_tool_the_browser_registers(

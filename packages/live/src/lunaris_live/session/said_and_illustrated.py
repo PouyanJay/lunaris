@@ -13,12 +13,15 @@ logger = structlog.get_logger()
 
 #: How long the words will wait for the material once they are finished.
 #:
-#: The illustration is started *with* the lesson, so on a healthy turn this is never reached — by
-#: the time a hundred words have been written a second call has usually long since answered. What
-#: this bounds is the unhealthy case, and it is short on purpose: a learner who has read their
-#: lesson should not sit in front of a finished turn waiting on a hint drawer. Tier 2 is allowed to
-#: cost money and it is not allowed to cost time.
-_GRACE_S = 2.0
+#: The illustration is started *with* the lesson, and what this bounds is the gap between the two
+#: finishing. It was 2 s on the assumption that a second call would long since have answered by
+#: the time a hundred words were written; measured against the real model (P2b T10's keyed eval)
+#: the lesson streams in about 4.7 s and the material, a longer structured answer, lands in about
+#: 6.6 to 7.5 s, so it arrives 2 to 3 s *after* the words end and 2 s lost it on more than half of
+#: all turns. 4 s keeps it on nearly every turn for a wait the learner spends reading words that
+#: are already on screen. Still bounded, and still short: Tier 2 is allowed to cost money and it is
+#: not allowed to cost much time.
+_GRACE_S = 4.0
 
 
 async def said_and_illustrated(
