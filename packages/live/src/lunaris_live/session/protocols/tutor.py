@@ -28,6 +28,11 @@ class ITutor(Protocol):
     follow: a second turn on one concept produced the first turn's words verbatim, which is the one
     thing a remediation must never be.
 
+    ``profile`` is who this learner is, in a paragraph the placement interview produced (P2c T3):
+    their background and what they want to be able to do. ``None`` when nothing is known — every
+    session opened on a map — and never required, because a tutor that could not teach without it
+    could not teach the sessions that have no interview.
+
     ``run_id`` is the turn's own run (R6), not the session's — a turn is one or more model calls,
     and what the tutor was asked has to be findable from a line in a stored transcript.
 
@@ -47,6 +52,7 @@ class ITutor(Protocol):
         topic: str,
         criterion: MasteryCriterion | None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> str: ...
 
@@ -58,6 +64,7 @@ class ITutor(Protocol):
         topic: str,
         criterion: MasteryCriterion | None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> AsyncIterator[str]:
         """The same lesson, in the order it is written.
@@ -76,6 +83,7 @@ class ITutor(Protocol):
         topic: str,
         criterion: MasteryCriterion | None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> LessonParts:
         """The material that goes *around* the lesson — Tier 2's generative half (P2b T5, U4).

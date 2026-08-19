@@ -1,10 +1,8 @@
-import asyncio
-
 import structlog
-from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 
 from ..graph.schema import ConceptNode, MasteryCriterion
 from ..model_json import parse_json_object
+from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .schema import EvidenceKind, TurnGrade
@@ -14,9 +12,6 @@ logger = structlog.get_logger()
 #: Shorter than the tutor's: this is one classification of one answer, and the learner is sitting on
 #: the other side of it waiting to find out whether they were right.
 _DEFAULT_DEADLINE_S = 20.0
-
-_TRANSIENT_ATTEMPTS = 3
-_TRANSIENT_MAX_DELAY_S = 4.0
 
 _PROMPT = """You are marking one answer from a learner in a live tutoring session. Judge ONLY \
 whether they met the specific bar below — not whether the answer is impressive, well written, or \
@@ -99,22 +94,21 @@ class ClaudeGrader:
 
     async def _ask(self, prompt: str, *, run_id: str, node_id: str) -> str:
         try:
-            async with asyncio.timeout(self._deadline_s):
-                if self._client is None:
-                    self._client = build_chat_model(self._model_name)
-                message = await retry_on_transient(
-                    lambda: self._client.ainvoke(prompt),  # type: ignore[attr-defined]
-                    max_attempts=_TRANSIENT_ATTEMPTS,
-                    max_delay_s=_TRANSIENT_MAX_DELAY_S,
-                )
-        except TimeoutError as exc:
+            return await ask_model(
+                self._client,
+                model_name=self._model_name,
+                prompt=prompt,
+                deadline_s=self._deadline_s,
+                on_client=self._keep,
+            )
+        except ModelCallTimedOutError as exc:
             logger.warning(
                 "live.grader.timed_out", run_id=run_id, node=node_id, deadline_s=self._deadline_s
             )
             raise GraderUnavailableError(f"grader timed out on {node_id}") from exc
-        except Exception as exc:
+        except ModelCallFailedError as exc:
             logger.warning("live.grader.call_failed", run_id=run_id, node=node_id, exc_info=True)
             raise GraderUnavailableError(f"grader could not score {node_id}") from exc
 
-        content = message.content
-        return content if isinstance(content, str) else str(content)
+    def _keep(self, client: object) -> None:
+        self._client = client

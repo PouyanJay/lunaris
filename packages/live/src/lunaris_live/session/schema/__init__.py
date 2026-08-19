@@ -16,6 +16,8 @@ from .lesson_parts import LessonParts
 from .mastery_meter import MasteryMeter, MeterEntry
 from .move_kind import MoveKind
 from .node_knowledge import NodeKnowledge
+from .node_prior import NodePrior
+from .placement_result import PlacementResult
 from .practice_block import PracticeBlock
 from .prose_block import ProseBlock
 from .quiz_card import QuizCard
@@ -50,6 +52,8 @@ __all__ = [
     "MeterEntry",
     "MoveKind",
     "NodeKnowledge",
+    "NodePrior",
+    "PlacementResult",
     "PracticeBlock",
     "ProseBlock",
     "QuizCard",

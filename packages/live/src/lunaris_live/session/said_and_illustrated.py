@@ -32,6 +32,7 @@ async def said_and_illustrated(
     topic: str,
     criterion: MasteryCriterion | None,
     already_said: Sequence[str],
+    profile: str | None = None,
     run_id: str,
     on_delta: ITutorDeltaSink | None = None,
 ) -> tuple[str, LessonParts]:
@@ -64,6 +65,7 @@ async def said_and_illustrated(
             topic=topic,
             criterion=criterion,
             already_said=already_said,
+            profile=profile,
             run_id=run_id,
         )
     )
@@ -75,6 +77,7 @@ async def said_and_illustrated(
             topic=topic,
             criterion=criterion,
             already_said=already_said,
+            profile=profile,
             run_id=run_id,
             on_delta=on_delta,
         )
@@ -111,6 +114,7 @@ async def _illustrated(
     topic: str,
     criterion: MasteryCriterion | None,
     already_said: Sequence[str],
+    profile: str | None = None,
     run_id: str,
 ) -> LessonParts:
     """The material, or none of it. The one place Tier 2's failures are turned into an absence.
@@ -127,6 +131,7 @@ async def _illustrated(
             topic=topic,
             criterion=criterion,
             already_said=already_said,
+            profile=profile,
             run_id=run_id,
         )
     except asyncio.CancelledError:
@@ -146,6 +151,7 @@ async def _said(
     topic: str,
     criterion: MasteryCriterion | None,
     already_said: Sequence[str],
+    profile: str | None = None,
     run_id: str,
     on_delta: ITutorDeltaSink | None,
 ) -> str:
@@ -163,12 +169,19 @@ async def _said(
             topic=topic,
             criterion=criterion,
             already_said=already_said,
+            profile=profile,
             run_id=run_id,
         )
 
     parts: list[str] = []
     async for delta in tutor.stream(
-        move, node, topic=topic, criterion=criterion, already_said=already_said, run_id=run_id
+        move,
+        node,
+        topic=topic,
+        criterion=criterion,
+        already_said=already_said,
+        profile=profile,
+        run_id=run_id,
     ):
         parts.append(delta)
         relay_delta(on_delta, delta)

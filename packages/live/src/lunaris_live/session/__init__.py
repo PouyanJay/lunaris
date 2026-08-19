@@ -11,11 +11,15 @@ moved by graded evidence, and the director reads it back.
 
 from .advance_placement import advance_placement
 from .apply_evidence import apply_evidence
+from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
+from .claim_of import claim_of
 from .claude_grader import ClaudeGrader
 from .claude_interviewer import ClaudeInterviewer
+from .claude_prior_mapper import ClaudePriorMapper
 from .claude_tutor import ClaudeTutor
 from .compose_layout import compose_layout
 from .decide_move import decide_move
+from .exchanges_of import exchanges_of
 from .grader_unavailable_error import GraderUnavailableError
 from .interviewer_unavailable_error import InterviewerUnavailableError
 from .mastery_thresholds import DECAYED, MASTERED
@@ -26,10 +30,12 @@ from .next_turn import next_turn
 from .node_of import node_of
 from .open_placement import open_placement
 from .open_session import open_session
+from .prior_mapper_unavailable_error import PriorMapperUnavailableError
 from .protocols import (
     IGrader,
     IInterviewer,
     IKnowledgeStore,
+    IPriorMapper,
     ISessionStore,
     ISimRegistry,
     ITutor,
@@ -57,6 +63,8 @@ from .schema import (
     MeterEntry,
     MoveKind,
     NodeKnowledge,
+    NodePrior,
+    PlacementResult,
     PracticeBlock,
     ProseBlock,
     QuizCard,
@@ -73,6 +81,7 @@ from .schema import (
     TurnGrade,
     WorkedExample,
 )
+from .seed_priors import seed_priors
 from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
 from .session_format_error import SessionFormatError
@@ -81,6 +90,7 @@ from .stage_criterion import stage_criterion
 from .stale_answer_error import StaleAnswerError
 from .stub_grader import StubGrader
 from .stub_interviewer import StubInterviewer
+from .stub_prior_mapper import StubPriorMapper
 from .stub_sim_path import STUB_SIM_PATH
 from .stub_sim_registry import StubSimRegistry
 from .stub_tutor import StubTutor
@@ -98,6 +108,7 @@ __all__ = [
     "STUB_SIM_PATH",
     "ClaudeGrader",
     "ClaudeInterviewer",
+    "ClaudePriorMapper",
     "ClaudeTutor",
     "ConceptMapCard",
     "CriterionCard",
@@ -110,6 +121,7 @@ __all__ = [
     "IGrader",
     "IInterviewer",
     "IKnowledgeStore",
+    "IPriorMapper",
     "ISessionStore",
     "ISimRegistry",
     "ITutor",
@@ -125,9 +137,14 @@ __all__ = [
     "MemoryKnowledgeStore",
     "MemorySessionStore",
     "MeterEntry",
+    "ModelCallFailedError",
+    "ModelCallTimedOutError",
     "MoveKind",
     "NodeKnowledge",
+    "NodePrior",
+    "PlacementResult",
     "PracticeBlock",
+    "PriorMapperUnavailableError",
     "ProseBlock",
     "QuizCard",
     "Session",
@@ -142,6 +159,7 @@ __all__ = [
     "StaleAnswerError",
     "StubGrader",
     "StubInterviewer",
+    "StubPriorMapper",
     "StubSimRegistry",
     "StubTutor",
     "SupabaseKnowledgeStore",
@@ -155,8 +173,11 @@ __all__ = [
     "WorkedExample",
     "advance_placement",
     "apply_evidence",
+    "ask_model",
+    "claim_of",
     "compose_layout",
     "decide_move",
+    "exchanges_of",
     "next_turn",
     "node_of",
     "open_placement",
@@ -165,6 +186,7 @@ __all__ = [
     "reject_unteachable_move",
     "relay_delta",
     "resolve_sim_app",
+    "seed_priors",
     "select_surface",
     "settle_placement",
     "stage_criterion",

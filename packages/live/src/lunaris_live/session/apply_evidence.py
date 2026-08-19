@@ -1,3 +1,5 @@
+from .claim_of import claim_of
+from .mastery_thresholds import MASTERED
 from .schema import EvidenceKind, LearnerModel, NodeKnowledge
 
 #: Where one piece of evidence pulls the belief. MET pulls towards certainty, NOT_MET towards
@@ -31,7 +33,7 @@ def apply_evidence(
     measured yet. It is a stand-in for a fitted model, and it is one function.
     """
     current = model.nodes.get(node_id)
-    estimate = current.estimate if current is not None else 0.0
+    estimate = _starting_from(current, kind)
     target = _TARGET[kind]
 
     updated = NodeKnowledge(
@@ -42,5 +44,27 @@ def apply_evidence(
         estimate=min(1.0, max(0.0, estimate + (target - estimate) * _PULL)),
         evidence_count=(current.evidence_count if current is not None else 0) + 1,
         last_evidence_turn=at_turn,
+        # The first evidence settles the claim either way (P2c T3): it is not carried on.
+        prior=None,
     )
     return model.model_copy(update={"nodes": {**model.nodes, node_id: updated}})
+
+
+def _starting_from(current: NodeKnowledge | None, kind: EvidenceKind) -> float:
+    """Where this piece of evidence pulls from.
+
+    Ordinarily the belief as it stands (nothing, for a concept never met). A concept the learner
+    *credibly* claimed in placement — at or above the mastery bar, the same bar the director
+    credits it at — and has no evidence about is the one exception (P2c T3, U2): a MET verification
+    starts from the claim, so one right answer lands it demonstrated — that is what makes a claim
+    worth checking rather than ignoring — while anything less starts from nothing, so a half-answer
+    cannot ride a confident claim over the bar. A hesitant claim (under the bar) is a band for Tier
+    2 and nothing more: its first evidence starts from nothing like any other, or a claim that
+    credited no skip would still buy mastery on one answer (found in review).
+    """
+    if current is None:
+        return 0.0
+    claim = claim_of(current)
+    if claim is not None and claim >= MASTERED:
+        return claim if kind is EvidenceKind.MET else 0.0
+    return current.estimate

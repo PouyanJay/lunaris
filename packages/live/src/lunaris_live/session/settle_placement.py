@@ -1,17 +1,21 @@
 import structlog
 
 from ..graph import ConceptGraph
+from .exchanges_of import exchanges_of
 from .next_turn import next_turn
-from .protocols import ISimRegistry, ITutor, ITutorDeltaSink
+from .prior_mapper_unavailable_error import PriorMapperUnavailableError
+from .protocols import IPriorMapper, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import (
     DirectorMove,
     LearnerModel,
     MoveKind,
+    PlacementResult,
     Session,
     SessionClock,
     SessionStatus,
     SessionTurn,
 )
+from .seed_priors import seed_priors
 from .turn_outcome import TurnOutcome
 
 logger = structlog.get_logger()
@@ -28,6 +32,7 @@ async def settle_placement(
     session: Session,
     turns: list[SessionTurn],
     *,
+    mapper: IPriorMapper,
     graph: ConceptGraph | None,
     failure: str | None,
     model: LearnerModel,
@@ -56,6 +61,10 @@ async def settle_placement(
         )
     if graph is None:
         return None
+    placed = await _placed(mapper, session, turns, graph, run_id=run_id)
+    model = seed_priors(model, placed.priors)
+    if placed.profile:
+        session = session.model_copy(update={"profile": placed.profile})
     return TurnOutcome(
         session=await _teaching_begins(
             session,
@@ -71,6 +80,43 @@ async def settle_placement(
         ),
         model=model,
     )
+
+
+async def _placed(
+    mapper: IPriorMapper,
+    session: Session,
+    turns: list[SessionTurn],
+    graph: ConceptGraph,
+    *,
+    run_id: str,
+) -> PlacementResult:
+    """What the interview came to (T3): the mapper's reading of it against the map, or nothing.
+
+    Nothing rather than a failed turn when the mapper cannot place: a placement with no priors is
+    a session taught from the root, which is what every session was before the interview existed,
+    and the answers are still on the row for a later build to read again.
+    """
+    exchanges = exchanges_of(turns)
+    if not exchanges:
+        return PlacementResult()
+    try:
+        placed = await mapper.map(session.topic or graph.topic, exchanges, graph, run_id=run_id)
+    except PriorMapperUnavailableError:
+        logger.warning(
+            "live.placement.mapper_unavailable",
+            run_id=run_id,
+            session_id=session.session_id,
+            exc_info=True,
+        )
+        return PlacementResult()
+    logger.info(
+        "live.placement.placed",
+        run_id=run_id,
+        session_id=session.session_id,
+        priors=len(placed.priors),
+        profiled=bool(placed.profile),
+    )
+    return placed
 
 
 async def _teaching_begins(
@@ -89,13 +135,12 @@ async def _teaching_begins(
     """The interview is over and the map is here: the director's first move, said out loud. The
     clock is the session's own (the interview was inside its budget, A1) and the first lesson's
     turn number follows the last question's."""
-    exchanges = sum(1 for t in turns if t.move.kind is MoveKind.PLACE and t.answer is not None)
     logger.info(
         "live.placement.teaching_begins",
         run_id=run_id,
         session_id=session.session_id,
         graph_id=graph.graph_id,
-        exchanges=exchanges,
+        exchanges=len(exchanges_of(turns)),
     )
     clock = SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s)
     return await next_turn(

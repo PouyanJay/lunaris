@@ -54,6 +54,7 @@ class SupabaseKnowledgeStore:
                 "estimate": known.estimate,
                 "evidence_count": known.evidence_count,
                 "last_evidence_turn": known.last_evidence_turn,
+                "prior": known.prior,
             }
             for known in model.nodes.values()
         ]
@@ -82,6 +83,8 @@ class SupabaseKnowledgeStore:
                     estimate=row["estimate"],
                     evidence_count=row["evidence_count"],
                     last_evidence_turn=row["last_evidence_turn"],
+                    # ``.get``: rows written before P2c T3 have no column value to read.
+                    prior=row.get("prior"),
                 )
                 for row in rows
             },

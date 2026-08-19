@@ -28,7 +28,7 @@ from lunaris_api.live.launched_compiles import LaunchedCompiles
 from lunaris_api.live.service import LiveGraphService
 from lunaris_api.live.session.service import LiveSessionService
 from lunaris_live.graph import ConceptGraph, GraphCompilationError, StubGraphCompiler
-from lunaris_live.session import StubInterviewer
+from lunaris_live.session import StubInterviewer, StubPriorMapper
 
 
 @pytest.fixture
@@ -422,6 +422,7 @@ async def test_a_compile_lost_to_another_process_is_given_up_after_the_deadline(
         session_budget_s=settings.live_session_budget_s,
         compiles=unaware,
         interviewer=StubInterviewer(),
+        mapper=StubPriorMapper(),
         compile_deadline_s=settings.live_compile_deadline_s,
     )
     transport = httpx.ASGITransport(app=app)
@@ -447,6 +448,75 @@ async def test_a_compile_lost_to_another_process_is_given_up_after_the_deadline(
             assert "took too long" in closed["turns"][-1]["tutor"]
     finally:
         compiler.release.set()
+
+
+async def test_a_learner_who_names_concepts_is_checked_on_them_not_taught_them(
+    client: httpx.AsyncClient,
+) -> None:
+    """T3, end to end through the API with the offline mapper. The answer names two of the map's
+    three concepts — the root ("Foundations of …") and, because the top concept is named after
+    the topic, the top itself — and not the middle one. So: the first lesson is a graded RETRIEVAL
+    of the root rather than an introduction of it; the session carries a profile; the claim is on
+    the learner's beliefs, where a later session on the same map reads it; and once the root and
+    the middle are demonstrated, the claimed top is *checked* (the boundary at the last claim,
+    with nothing left to introduce) rather than the session closing on a claim."""
+    session = (await _placement(client)).json()
+    await _compiled(client, session["graphId"])
+    url = f"/api/live/sessions/{session['sessionId']}"
+
+    response = await client.post(
+        f"{url}/turns",
+        json={
+            "answer": "I know the foundations of Bayes' theorem already, from a stats course.",
+            "answeringSeq": 1,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    taught = response.json()
+    assert taught["status"] == "active"
+    check = taught["turns"][-1]
+    assert (check["move"]["kind"], check["move"]["nodeId"]) == (
+        "retrieve",
+        "bayes-theorem-foundations",
+    )
+    assert "interview" in check["move"]["reason"].lower()
+    assert taught["profile"] and "stats course" in taught["profile"]
+
+    # The claim outlives the session: a session opened on the SAME map by id (P2a's opening) is
+    # directed by the same beliefs, so it too checks the root rather than teaching it.
+    again = await client.post("/api/live/sessions", json={"graphId": session["graphId"]})
+    assert again.status_code == 201, again.text
+    first = again.json()["turns"][0]
+    assert (first["move"]["kind"], first["move"]["nodeId"]) == (
+        "retrieve",
+        "bayes-theorem-foundations",
+    )
+
+    # Verify the root (the offline grader marks an answer that restates the criterion as MET),
+    # then get introduced to the middle and demonstrate it: the top, claimed and never checked, is
+    # then checked rather than closed over.
+    async def answer_with_the_criterion(current: dict) -> dict:
+        standing = current["turns"][-1]
+        reply = await client.post(
+            f"{url}/turns",
+            json={"answer": standing["criterion"]["statement"], "answeringSeq": standing["seq"]},
+        )
+        assert reply.status_code == 200, reply.text
+        return reply.json()
+
+    verified = await answer_with_the_criterion(taught)
+    introduced = verified["turns"][-1]
+    assert (introduced["move"]["kind"], introduced["move"]["nodeId"]) == (
+        "introduce",
+        "bayes-theorem-core",
+    )
+    # One MET from nothing is not mastery: the middle takes two.
+    once = await answer_with_the_criterion(verified)
+    assert once["turns"][-1]["move"]["nodeId"] == "bayes-theorem-core"
+    twice = await answer_with_the_criterion(once)
+    boundary = twice["turns"][-1]
+    assert (boundary["move"]["kind"], boundary["move"]["nodeId"]) == ("retrieve", "bayes-theorem")
 
 
 async def test_a_start_request_names_a_topic_or_a_map_never_both_or_neither(

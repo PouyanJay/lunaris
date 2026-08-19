@@ -28,6 +28,10 @@ class Session(LiveModel):
     #: has to know what the interview is about. Optional so every row written before P2c still
     #: parses; a session opened on a map has the map's topic instead.
     topic: str | None = Field(default=None, min_length=1, max_length=500)
+    #: Who this learner is, in a paragraph the tutor reads (P2c T3): what the placement interview
+    #: learned about their background and what they want to build. ``None`` until placed, and on
+    #: every session opened on a map.
+    profile: str | None = Field(default=None, min_length=1, max_length=2000)
     status: SessionStatus = SessionStatus.ACTIVE
     #: When the session opened, in UTC. The budget is wall time (plan §6, AD9), and wall time is the
     #: one thing a resumed session cannot recover from its own turns — so it is stamped here and

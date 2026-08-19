@@ -56,7 +56,9 @@ async def test_a_sessions_spend_is_filed_under_the_session(tmp_path: Path) -> No
     from lunaris_runtime.schema import CostProvider, CostUnit
 
     class CostlyTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             record_cost(
                 component="live_tutor",
                 provider=CostProvider.ANTHROPIC,
@@ -208,7 +210,9 @@ async def test_a_tenants_session_is_taught_on_their_own_key(tmp_path: Path) -> N
     seen: list[str | None] = []
 
     class ReportingTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             seen.append(resolve_secret("ANTHROPIC_API_KEY"))
             return f"Teaching {node.name}."
 
@@ -257,7 +261,9 @@ async def test_two_answers_at_once_pay_for_one_turn(tmp_path: Path) -> None:
     calls = 0
 
     class SlowTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             nonlocal calls
             calls += 1
             await asyncio.sleep(0.05)
@@ -311,7 +317,9 @@ async def test_an_answer_arriving_while_the_last_is_still_being_written_pays_for
     calls = 0
 
     class CountingTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             nonlocal calls
             calls += 1
             return f"Teaching {node.name}."
@@ -432,12 +440,16 @@ async def test_a_turn_taken_over_the_stream_is_metered_like_any_other(tmp_path: 
     taught_with: list[str | None] = []
 
     class CostlyTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             return "".join(
                 [fragment async for fragment in self.stream(move, node, topic=topic, run_id=run_id)]
             )
 
-        async def stream(self, move, node, *, topic, criterion=None, already_said=(), run_id=""):
+        async def stream(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id=""
+        ):
             taught_with.append(resolve_secret("ANTHROPIC_API_KEY"))
             record_cost(
                 component="live_tutor",

@@ -68,6 +68,7 @@ class StubTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> str:
         return self._lesson(move, node, criterion=criterion, already_said=already_said)
@@ -80,6 +81,7 @@ class StubTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> AsyncIterator[str]:
         """The same lesson, word by word.
@@ -100,6 +102,7 @@ class StubTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> LessonParts:
         """Tier 2's material, built from the concept's own authored notes rather than from lorem.

@@ -1,5 +1,5 @@
 from ..graph import ConceptGraph
-from .protocols import ISimRegistry, ITutor, ITutorDeltaSink
+from .protocols import IPriorMapper, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import LearnerModel, Session, SessionStatus
 from .settle_placement import settle_placement
 from .turn_outcome import TurnOutcome
@@ -8,6 +8,7 @@ from .turn_outcome import TurnOutcome
 async def advance_placement(
     session: Session,
     *,
+    mapper: IPriorMapper,
     graph: ConceptGraph | None,
     failure: str | None,
     model: LearnerModel,
@@ -30,6 +31,7 @@ async def advance_placement(
     return await settle_placement(
         session,
         list(session.turns),
+        mapper=mapper,
         graph=graph,
         failure=failure,
         model=model,

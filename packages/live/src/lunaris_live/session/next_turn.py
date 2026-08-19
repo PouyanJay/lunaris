@@ -82,6 +82,7 @@ async def next_turn(
         model=model,
         clock=clock,
         sims=sims,
+        profile=session.profile,
     )
     logger.info(
         "live.session.turn_taken",
@@ -145,6 +146,7 @@ async def _teach(
     model: LearnerModel,
     clock: SessionClock,
     sims: ISimRegistry | None,
+    profile: str | None = None,
 ) -> SessionTurn:
     """The next turn: the move, said out loud, with something staged for the learner to meet."""
     node = node_of(graph, move.node_id) if move.node_id is not None else None
@@ -167,6 +169,7 @@ async def _teach(
         topic=graph.topic,
         criterion=staged,
         already_said=already_said,
+        profile=profile,
         run_id=run_id,
         on_delta=on_delta,
     )

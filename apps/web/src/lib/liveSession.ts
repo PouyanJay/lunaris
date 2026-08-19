@@ -74,6 +74,9 @@ export interface LiveSession {
   /** What the session is about, when it opened on a topic (P2c). Absent on a session opened on a
    *  map, whose topic is the map's. */
   topic?: string | null;
+  /** Who this learner is, as the placement interview put it (P2c T3): carried for the tutor,
+   *  shown nowhere yet. Absent until placed. */
+  profile?: string | null;
   /** `placing` is a session whose map is still compiling: the learner is being interviewed, not
    *  taught, and nothing is staged. `warming` is the honest wait after the interview has run out
    *  and before the map has landed: nothing to answer, the surface advances it (P2c). */

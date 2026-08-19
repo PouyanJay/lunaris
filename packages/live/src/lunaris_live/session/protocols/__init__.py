@@ -1,6 +1,7 @@
 from .grader import IGrader
 from .interviewer import IInterviewer
 from .knowledge_store import IKnowledgeStore
+from .prior_mapper import IPriorMapper
 from .session_store import ISessionStore
 from .sim_registry import ISimRegistry
 from .tutor import ITutor
@@ -10,6 +11,7 @@ __all__ = [
     "IGrader",
     "IInterviewer",
     "IKnowledgeStore",
+    "IPriorMapper",
     "ISessionStore",
     "ISimRegistry",
     "ITutor",

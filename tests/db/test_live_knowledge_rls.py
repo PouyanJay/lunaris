@@ -174,3 +174,43 @@ def test_the_same_concept_id_on_another_map_is_a_different_belief(db: "psycopg.C
     # Assert
     db.execute("select count(*) from public.live_knowledge where user_id = %s", (owner,))
     assert db.fetchone()[0] == 2
+
+
+def test_a_claim_rides_the_belief_and_a_learner_cannot_write_one(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
+    """P2c T3: the placement interview's claim about a concept is a nullable column beside the
+    belief. Written by the server (a claim seeds a row with no evidence), readable by its owner,
+    and NOT writable by them: a learner who could set a prior could tilt Tier 2's band on a say-so
+    (the director would still check the claim before crediting it, but the write path is the
+    server's regardless)."""
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+    db.execute(
+        """
+        insert into public.live_knowledge
+            (user_id, graph_id, node_id, estimate, evidence_count, last_evidence_turn, prior)
+        values (%s, 'g1', 'a', 0.0, 0, 0, 0.8)
+        """,
+        (owner,),
+    )
+    as_user(db, owner)
+
+    db.execute("select prior from public.live_knowledge where user_id = %s", (owner,))
+    assert db.fetchone() == (0.8,)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        db.execute("update public.live_knowledge set prior = 1.0 where user_id = %s", (owner,))
+
+
+def test_a_claim_outside_the_probability_range_is_refused(db: "psycopg.Cursor") -> None:
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            """
+            insert into public.live_knowledge
+                (user_id, graph_id, node_id, estimate, prior) values (%s, 'g1', 'a', 0.0, 1.5)
+            """,
+            (owner,),
+        )

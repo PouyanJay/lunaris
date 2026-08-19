@@ -1,4 +1,5 @@
 from ..graph import ConceptGraph, ConceptNode
+from .claim_of import claim_of
 from .mastery_thresholds import DECAYED as _DECAYED
 from .mastery_thresholds import MASTERED as _MASTERED
 from .recall_of import recall_of
@@ -25,8 +26,12 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
     3. **A slipping concept interrupts new material.** Spaced retrieval only exists if it can
        interrupt — a director that introduced whenever anything was introducible would never come
        back to anything.
-    4. **Otherwise, teach something new whose prerequisites are met.**
-    5. **Nothing left worth doing is a reason to stop**, not to loop.
+    4. **A claim is checked before anything is built on it** (P2c T3, U2). The placement interview
+       lets a learner skip a chain they say they know, to its boundary; the deepest claim the next
+       concept stands on is retrieved and graded first. Held rather than trusted, because the
+       number that skips a curriculum must only ever be written by the grader.
+    5. **Otherwise, teach something new whose prerequisites are met** — or credibly claimed.
+    6. **Nothing left worth doing is a reason to stop**, not to loop.
     """
     if clock.is_spent:
         return DirectorMove(
@@ -57,6 +62,17 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
             ),
         )
 
+    if (claimed := _boundary_claim(graph, model)) is not None:
+        return DirectorMove(
+            kind=MoveKind.RETRIEVE,
+            node_id=claimed.id,
+            reason=(
+                f"{claimed.name} was named in the interview as already known, and what comes next "
+                "stands on it — a quick check before building on it, so nothing is skipped on a "
+                "guess."
+            ),
+        )
+
     if (next_up := _frontier(graph, model)) is not None:
         return DirectorMove(
             kind=MoveKind.INTRODUCE,
@@ -68,9 +84,9 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
             reason=(
                 f"{next_up.name} has been started but not yet shown, so the session stays with it "
                 "rather than moving on."
-                if next_up.id in model.nodes
-                else f"Everything {next_up.name} depends on has been demonstrated, so it is the "
-                "next thing this map can teach."
+                if _started(model, next_up.id)
+                else f"Everything {next_up.name} depends on has been demonstrated or checked, so "
+                "it is the next thing this map can teach."
             ),
         )
 
@@ -136,12 +152,102 @@ def _most_decayed(
     return min(due, key=lambda pair: pair[0])[1] if due else None
 
 
-def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
-    """The next concept worth teaching: not yet known, everything it needs already demonstrated.
+def _claimed(model: LearnerModel, node_id: str) -> bool:
+    """A concept the placement interview says the learner holds, and nothing has checked yet.
 
-    "Not yet known" is read off the undecayed belief, so a concept the learner has demonstrated is
-    never introduced a second time: whatever else the session does with it, teaching it again from
-    scratch is the one move that tells somebody their work did not count.
+    A claim credits a concept for the frontier's purposes only — the learner is not walked through
+    a chain they say they know — and it lasts exactly until the first evidence, which either makes
+    it real (``apply_evidence`` from the claim) or drops it. A hesitant claim (under the mastery
+    bar) credits nothing: it is a band for Tier 2, not a reason to skip.
+
+    Deliberately not re-validated against the concept's own ``requires`` the way ``_frontier``
+    re-validates an introduction: a claim promotes to a RETRIEVE, which grades before it credits
+    anything, whereas an INTRODUCE trusts the map's structure. A claim beneath a hole is caught by
+    the frontier walk (pinned: a claim on a concept whose prerequisite is unclaimed skips nothing).
+    """
+    claim = claim_of(model.nodes.get(node_id))
+    return claim is not None and claim >= _MASTERED
+
+
+def _credited(model: LearnerModel, node_id: str) -> bool:
+    """Demonstrated, or credibly claimed: what the frontier walks over."""
+    return _demonstrated(model, node_id) or _claimed(model, node_id)
+
+
+def _boundary_claim(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
+    """The claim to check before the frontier is taught: the deepest *unvouched* claim the next
+    concept stands on — or, when nothing is left to introduce, the deepest unvouched claim on the
+    map.
+
+    A claim is vouched for once the learner has demonstrated a concept that stands on it: a MET on
+    the top of a claimed chain is evidence for the chain, so the claims beneath it are not checked
+    one by one (found by driving the real loop: the director verified downward after the top held).
+    "Deepest" is the last in teaching order — the one the frontier directly stands on. Checking it
+    is enough to cross the boundary: if it holds, the chain beneath held well enough to get there;
+    if it does not, the frontier moves back to it and *its* deepest unvouched claim is checked next,
+    so a verification walks back down the chain until something holds. Everything claimed and
+    nothing checked is not a finished map: it is a boundary at the last claim.
+    """
+    frontier = _frontier(graph, model)
+    candidates = _unvouched_claims(
+        graph, model, frontier.requires if frontier is not None else list(graph.topo_order)
+    )
+    if not candidates:
+        return None
+    order = {node_id: index for index, node_id in enumerate(graph.topo_order)}
+    return max(candidates, key=lambda node: order.get(node.id, -1))
+
+
+def _unvouched_claims(
+    graph: ConceptGraph, model: LearnerModel, node_ids: list[str]
+) -> list[ConceptNode]:
+    """Of ``node_ids``, the concepts on the map that are claimed and that no demonstrated concept
+    stands on."""
+    by_id = {node.id: node for node in graph.nodes}
+    vouched = _vouched(graph, model)
+    return [
+        by_id[node_id]
+        for node_id in node_ids
+        if node_id in by_id and _claimed(model, node_id) and node_id not in vouched
+    ]
+
+
+def _started(model: LearnerModel, node_id: str) -> bool:
+    """Whether the learner has been taught this concept at all: real evidence, not a row. A claim
+    seeds a row with none (P2c T3), and a reason that called a claimed-and-never-taught concept
+    "started" would be the trace telling somebody something untrue (found in review)."""
+    known = model.nodes.get(node_id)
+    return known is not None and known.evidence_count > 0
+
+
+def _vouched(graph: ConceptGraph, model: LearnerModel) -> set[str]:
+    """Every concept some demonstrated concept stands on, transitively: claims there are vouched
+    for by the evidence above them and are not checked on their own."""
+    by_id = {node.id: node for node in graph.nodes}
+    vouched: set[str] = set()
+    pending = [
+        required
+        for node in graph.nodes
+        if _demonstrated(model, node.id)
+        for required in node.requires
+    ]
+    while pending:
+        node_id = pending.pop()
+        if node_id in vouched or node_id not in by_id:
+            continue
+        vouched.add(node_id)
+        pending.extend(by_id[node_id].requires)
+    return vouched
+
+
+def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
+    """The next concept worth teaching: not yet credited, everything it needs already credited.
+
+    "Credited" is demonstrated on the undecayed belief, or credibly claimed in placement (P2c T3),
+    so a concept the learner has demonstrated is never introduced a second time — whatever else the
+    session does with it, teaching it again from scratch is the one move that tells somebody their
+    work did not count — and a chain they say they know is walked over rather than through. What
+    is claimed and not checked is checked before it is built on (``_boundary_claim``).
 
     Walked in the map's own teaching order so two sessions on one map agree about what comes next,
     and so the choice inherits Phase 1's ordering rather than inventing a second one.
@@ -157,8 +263,8 @@ def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
     by_id = {node.id: node for node in graph.nodes}
     for node_id in graph.topo_order:
         node = by_id.get(node_id)
-        if node is None or _demonstrated(model, node_id):
+        if node is None or _credited(model, node_id):
             continue
-        if all(_demonstrated(model, required) for required in node.requires):
+        if all(_credited(model, required) for required in node.requires):
             return node
     return None

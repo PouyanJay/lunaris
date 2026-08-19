@@ -22,3 +22,9 @@ class NodeKnowledge(LiveModel):
     evidence_count: int = Field(default=0, ge=0)
     #: The turn the last evidence arrived on — the origin decay is measured from.
     last_evidence_turn: int = Field(default=0, ge=0)
+    #: What the placement interview said the learner already holds of this concept (P2c T3), in
+    #: [0, 1]. A *claim*, never evidence: it does not move ``estimate`` and it does not count as
+    #: demonstrated. It changes two things only — the director skips a claimed chain to its
+    #: boundary and verifies the deepest claim there before building on it, and Tier 2 reads it as
+    #: the band for a concept nothing has been shown about. Cleared by the first evidence.
+    prior: float | None = Field(default=None, ge=0.0, le=1.0)

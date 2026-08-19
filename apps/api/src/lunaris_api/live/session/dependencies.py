@@ -5,10 +5,12 @@ from fastapi import Depends
 from lunaris_live.session import (
     ClaudeGrader,
     ClaudeInterviewer,
+    ClaudePriorMapper,
     ClaudeTutor,
     IGrader,
     IInterviewer,
     IKnowledgeStore,
+    IPriorMapper,
     ISessionStore,
     ISimRegistry,
     ITutor,
@@ -16,6 +18,7 @@ from lunaris_live.session import (
     MemorySessionStore,
     StubGrader,
     StubInterviewer,
+    StubPriorMapper,
     StubSimRegistry,
     StubTutor,
     SupabaseKnowledgeStore,
@@ -100,6 +103,20 @@ def get_live_interviewer(settings: Annotated[Settings, Depends(get_settings)]) -
     return ClaudeInterviewer(resolve_strong_model())
 
 
+def get_live_prior_mapper(settings: Annotated[Settings, Depends(get_settings)]) -> IPriorMapper:
+    """The mapper that reads a finished interview against the map (P2c T3): the model-backed one,
+    or the deterministic one under ``LUNARIS_PIPELINE=stub``.
+
+    Runs on the worker tier (A3): reading a short exchange against a list of concepts is a
+    classification, not a quality surface. A dependency of its own for the reason the grader is —
+    a mapper that cannot place is the failure worth staging, and a mapper that places wrongly is
+    the mistake that skips a curriculum, which is why the director checks its claims.
+    """
+    if settings.pipeline == "stub":
+        return StubPriorMapper()
+    return ClaudePriorMapper(resolve_worker_model())
+
+
 def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGrader:
     """The model-backed grader, or the deterministic one under ``LUNARIS_PIPELINE=stub``.
 
@@ -133,6 +150,7 @@ def get_live_session_service(
     grader: Annotated[IGrader, Depends(get_live_grader)],
     sims: Annotated[ISimRegistry | None, Depends(get_live_sims)],
     interviewer: Annotated[IInterviewer, Depends(get_live_interviewer)],
+    mapper: Annotated[IPriorMapper, Depends(get_live_prior_mapper)],
     compiles: Annotated[LiveGraphService, Depends(get_live_graph_service)],
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
@@ -163,6 +181,7 @@ def get_live_session_service(
         sims=sims,
         compiles=compiles,
         interviewer=interviewer,
+        mapper=mapper,
         compile_deadline_s=settings.live_compile_deadline_s,
     )
 

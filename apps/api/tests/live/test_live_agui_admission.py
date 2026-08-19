@@ -63,11 +63,13 @@ class CountingTutor:
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+    async def teach(
+        self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+    ):
         return "".join([part async for part in self.stream(move, node, topic=topic, run_id=run_id)])
 
     async def stream(
-        self, move, node, *, topic, criterion=None, already_said=(), run_id=""
+        self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id=""
     ) -> AsyncIterator[str]:
         self.calls += 1
         if self.hold and not self.entered.is_set():

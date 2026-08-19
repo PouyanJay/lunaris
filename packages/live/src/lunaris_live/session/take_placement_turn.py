@@ -1,8 +1,9 @@
 import structlog
 
 from ..graph import ConceptGraph
+from .exchanges_of import exchanges_of
 from .interviewer_unavailable_error import InterviewerUnavailableError
-from .protocols import IInterviewer, ISimRegistry, ITutor, ITutorDeltaSink
+from .protocols import IInterviewer, IPriorMapper, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import (
     DirectorMove,
     InterviewExchange,
@@ -37,6 +38,7 @@ async def take_placement_turn(
     answer: str,
     answering_seq: int,
     interviewer: IInterviewer,
+    mapper: IPriorMapper,
     graph: ConceptGraph | None,
     failure: str | None,
     model: LearnerModel,
@@ -78,7 +80,7 @@ async def take_placement_turn(
         )
 
     turns = [*session.turns[:-1], asked.model_copy(update={"answer": answer})]
-    exchanges = _exchanges(turns)
+    exchanges = exchanges_of(turns)
     logger.info(
         "live.placement.answered",
         run_id=run_id,
@@ -90,6 +92,7 @@ async def take_placement_turn(
     settled = await settle_placement(
         session,
         turns,
+        mapper=mapper,
         graph=graph,
         failure=failure,
         model=model,
@@ -119,15 +122,6 @@ async def take_placement_turn(
 
 #: Why the loop asks another question, in the words a trace reader gets.
 _ASKING_MORE = "The map is still being built; one more thing about you first."
-
-
-def _exchanges(turns: list[SessionTurn]) -> list[InterviewExchange]:
-    """What has been asked and answered so far, oldest first: each answered interview turn."""
-    return [
-        InterviewExchange(question=turn.tutor, answer=turn.answer)
-        for turn in turns
-        if turn.move.kind is MoveKind.PLACE and turn.answer is not None
-    ]
 
 
 async def _next_question(

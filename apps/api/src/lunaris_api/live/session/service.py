@@ -10,6 +10,7 @@ from lunaris_live.session import (
     IGrader,
     IInterviewer,
     IKnowledgeStore,
+    IPriorMapper,
     ISessionStore,
     ISimRegistry,
     ITutor,
@@ -122,6 +123,7 @@ class LiveSessionService:
         sims: ISimRegistry | None = None,
         compiles: LiveGraphService | None = None,
         interviewer: IInterviewer | None = None,
+        mapper: IPriorMapper | None = None,
         compile_deadline_s: float = 0.0,
     ) -> None:
         self._graphs = graphs
@@ -149,6 +151,9 @@ class LiveSessionService:
         # needs neither; ``start_placement`` refuses to run without them rather than half-opening.
         self._compiles = compiles
         self._interviewer = interviewer
+        # Reads the finished interview against the map (P2c T3). ``None`` — a service composed for
+        # a map it already has — never runs a placement, so it never needs one.
+        self._mapper = mapper
         # How long a placing session waits for its map before calling the compile lost (P2c T2):
         # the compile plane's own deadline plus a grace, so this only ever fires when the compile
         # ran in a process this one cannot ask (a replica, a restart). 0 disables the fallback.
@@ -226,8 +231,10 @@ class LiveSessionService:
         composed without a compile plane or an interviewer, which is a wiring fault, not a learner
         one.
         """
-        if self._compiles is None or self._interviewer is None:
-            raise RuntimeError("opening on a topic needs a compile plane and an interviewer")
+        if self._compiles is None or self._interviewer is None or self._mapper is None:
+            raise RuntimeError(
+                "opening on a topic needs a compile plane, an interviewer and a mapper"
+            )
         interviewer = self._interviewer
         run_id = uuid4().hex
         graph_id = uuid4().hex
@@ -647,11 +654,13 @@ class LiveSessionService:
         elapsed_s = _elapsed_s(session)
         if session.status in (SessionStatus.PLACING, SessionStatus.WARMING):
             assert self._interviewer is not None, "a placing session needs an interviewer"
+            assert self._mapper is not None, "a placing session needs a prior mapper"
             return await take_placement_turn(
                 session,
                 answer=answer,
                 answering_seq=answering_seq,
                 interviewer=self._interviewer,
+                mapper=self._mapper,
                 graph=context.graph,
                 failure=context.map_failure,
                 model=context.known,
@@ -696,10 +705,12 @@ class LiveSessionService:
         if context.session.status is not SessionStatus.WARMING:
             return context.session
         session = context.session
+        assert self._mapper is not None, "a warming session needs a prior mapper"
         return await self._take_and_save(
             context,
             lambda: advance_placement(
                 session,
+                mapper=self._mapper,
                 graph=context.graph,
                 failure=context.map_failure,
                 model=context.known,

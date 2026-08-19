@@ -66,6 +66,7 @@ class SpyTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> str:
         self.calls.append((move, node, topic, run_id))

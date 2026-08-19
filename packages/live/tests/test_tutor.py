@@ -106,6 +106,58 @@ async def test_the_misconception_the_node_names_is_what_the_tutor_is_told_to_loo
     assert _MISCONCEPTION in model.prompts[0]
 
 
+async def test_who_the_learner_is_reaches_the_tutor_when_placement_said() -> None:
+    """P2c T3: the profile the interview produced is context for the examples the tutor reaches
+    for. Passed verbatim, bounded, and absent when there is none — a session opened on a map."""
+    model = ScriptedModel()
+
+    await ClaudeTutor("m", client=model).teach(
+        _move(),
+        _node(),
+        topic="How neural networks learn",
+        profile="A nurse who wants to read medical papers.",
+        run_id="r1",
+    )
+    without = ScriptedModel()
+    await ClaudeTutor("m", client=without).teach(
+        _move(), _node(), topic="How neural networks learn", run_id="r1"
+    )
+
+    assert "A nurse who wants to read medical papers." in model.prompts[0]
+    assert "About this learner" not in without.prompts[0]
+
+
+async def test_a_long_profile_is_trimmed_before_it_reaches_the_tutor() -> None:
+    """A profile is bounded at 2000 chars on the row and 600 in the prompt: context for the
+    examples the tutor reaches for, not a brief to recite. Pinned at the boundary, by value."""
+    model = ScriptedModel()
+    profile = "x" * 599 + "Y" + "z" * 400
+
+    await ClaudeTutor("m", client=model).teach(
+        _move(), _node(), topic="T", profile=profile, run_id="r1"
+    )
+
+    assert "x" * 599 + "Y" in model.prompts[0]
+    assert "Yz" not in model.prompts[0]
+
+
+async def test_the_directors_reason_reaches_the_tutor() -> None:
+    """The tutor is told WHY this move now, so a retrieval of a concept the learner claimed reads
+    nothing like one of a concept that is fading (P2c T3)."""
+    model = ScriptedModel()
+    move = DirectorMove(
+        kind=MoveKind.RETRIEVE,
+        node_id="gradient",
+        reason="You said you already know Gradient; a quick check before building on it.",
+    )
+
+    await ClaudeTutor("m", client=model).teach(
+        move, _node(), topic="How neural networks learn", run_id="r1"
+    )
+
+    assert "You said you already know Gradient" in model.prompts[0]
+
+
 async def test_the_tutor_teaches_this_concept_and_not_the_map_around_it() -> None:
     # Arrange
     model = ScriptedModel()

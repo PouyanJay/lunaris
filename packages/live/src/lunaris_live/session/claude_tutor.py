@@ -2,10 +2,11 @@ import asyncio
 from collections.abc import AsyncIterator, Sequence
 
 import structlog
-from lunaris_runtime.resilience import build_chat_model, retry_on_transient
+from lunaris_runtime.resilience import build_chat_model
 
 from ..graph.schema import ConceptNode, MasteryCriterion
 from ..model_json import parse_json_object
+from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
 from .reject_unteachable_move import reject_unteachable_move
 from .schema import DirectorMove, LessonParts, MoveKind, WorkedExample
 from .tutor_unavailable_error import TutorUnavailableError
@@ -18,12 +19,6 @@ logger = structlog.get_logger()
 #: the thing they are actually waiting for, not a repair happening behind the talking.
 _DEFAULT_DEADLINE_S = 30.0
 
-#: Matches the compiler's: three attempts inside a four-second ceiling survives a dropped socket
-#: without eating the deadline above. The library defaults (eight attempts, thirty seconds) are
-#: sized for a batch job and would turn a fast clean failure into a slow cancelled one.
-_TRANSIENT_ATTEMPTS = 3
-_TRANSIENT_MAX_DELAY_S = 4.0
-
 #: How long the streaming path waits for the *next* fragment before calling the stream dead. Well
 #: inside the whole-lesson deadline, because a stream that has stopped producing looks exactly like
 #: one still thinking, and the learner is watching a cursor either way. Generous enough to cover
@@ -31,10 +26,10 @@ _TRANSIENT_MAX_DELAY_S = 4.0
 _FRAGMENT_DEADLINE_S = 15.0
 
 _PROMPT = """You are tutoring one learner, one to one, in a live text session about "{topic}".
-
+{learner}
 The concept in front of you: {name} — {definition}
 {notes}{history}
-{instruction}
+{instruction} Why now: {because}
 
 Write only what you would say to them next, in your own voice, addressed to them directly. Under \
 120 words. No headings, no bullet lists, no markdown. {closing}"""
@@ -121,8 +116,10 @@ _INSTRUCTION: dict[MoveKind, str] = {
         "back at them as a mistake they have not made yet."
     ),
     MoveKind.RETRIEVE: (
-        "They met this earlier and it is fading. Do NOT re-explain it. Ask them to recall it and "
-        "use it, so the remembering is theirs — that effort is the entire point of coming back."
+        "They have met this before — earlier in this session, or before it, if they told us they "
+        "know it. Do NOT re-explain it. Ask them to recall it and use it, so the remembering is "
+        "theirs — that effort is the entire point of coming back, and it is how a claim gets "
+        "checked."
     ),
     MoveKind.REMEDIATE: (
         "They have been taught this and it has not landed. Do NOT repeat the explanation they have "
@@ -169,10 +166,11 @@ class ClaudeTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> str:
         prompt = _prompt_for(
-            move, node, topic=topic, criterion=criterion, already_said=already_said
+            move, node, topic=topic, criterion=criterion, already_said=already_said, profile=profile
         )
         said = await self._say(prompt, run_id=run_id, node_id=node.id)
 
@@ -201,6 +199,7 @@ class ClaudeTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> AsyncIterator[str]:
         """The same lesson, handed over as the model writes it (P2b A2).
@@ -212,7 +211,7 @@ class ClaudeTutor:
         the caller offers a retry that means something because nothing has been persisted yet.
         """
         prompt = _prompt_for(
-            move, node, topic=topic, criterion=criterion, already_said=already_said
+            move, node, topic=topic, criterion=criterion, already_said=already_said, profile=profile
         )
         said = 0
         async for fragment in self._fragments(prompt, run_id=run_id, node_id=node.id):
@@ -243,6 +242,7 @@ class ClaudeTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> LessonParts:
         """Tier 2's material: a worked example, a hint and prompts to think through (T5, U4).
@@ -267,9 +267,14 @@ class ClaudeTutor:
             else _PRACTICE_OPEN,
         )
         try:
-            async with asyncio.timeout(_ILLUSTRATE_DEADLINE_S):
-                said = await self._ask(prompt)
-        except Exception:
+            said = await ask_model(
+                self._client,
+                model_name=self._model_name,
+                prompt=prompt,
+                deadline_s=_ILLUSTRATE_DEADLINE_S,
+                on_client=self._keep,
+            )
+        except (ModelCallTimedOutError, ModelCallFailedError):
             # WARNING rather than INFO: the turn survives, but it survives *degraded* — the learner
             # gets the lesson without its material, and PYTHON.md puts "fallback used, degraded
             # mode entered" here. It is also the line an operator needs above the noise if a prompt
@@ -329,31 +334,30 @@ class ClaudeTutor:
 
         A learner cannot be left waiting because each individual retry was technically still inside
         its own budget, so the deadline wraps the whole call rather than one attempt — and whatever
-        comes back out of it, the caller has exactly one failure to handle.
+        comes back out of it, the caller has exactly one failure to handle. No ``max_tokens``: the
+        answer is bounded to 120 words by the prompt, which sits well inside the provider default —
+        a ceiling here would only ever truncate mid-sentence.
         """
         try:
-            async with asyncio.timeout(self._deadline_s):
-                return await self._ask(prompt)
-        except TimeoutError as exc:
+            said = await ask_model(
+                self._client,
+                model_name=self._model_name,
+                prompt=prompt,
+                deadline_s=self._deadline_s,
+                on_client=self._keep,
+            )
+        except ModelCallTimedOutError as exc:
             logger.warning(
                 "live.tutor.timed_out", run_id=run_id, node=node_id, deadline_s=self._deadline_s
             )
             raise TutorUnavailableError(f"tutor timed out on {node_id}") from exc
-        except Exception as exc:
+        except ModelCallFailedError as exc:
             logger.warning("live.tutor.call_failed", run_id=run_id, node=node_id, exc_info=True)
             raise TutorUnavailableError(f"tutor could not teach {node_id}") from exc
+        return said.strip()
 
-    async def _ask(self, prompt: str) -> str:
-        if self._client is None:
-            # No ``max_tokens``: the answer is bounded to 120 words by the prompt, which sits well
-            # inside the provider default — a ceiling here would only ever truncate mid-sentence.
-            self._client = build_chat_model(self._model_name)
-        message = await retry_on_transient(
-            lambda: self._client.ainvoke(prompt),  # type: ignore[attr-defined]
-            max_attempts=_TRANSIENT_ATTEMPTS,
-            max_delay_s=_TRANSIENT_MAX_DELAY_S,
-        )
-        return _text_of(message).strip()
+    def _keep(self, client: object) -> None:
+        self._client = client
 
 
 async def _next_chunk(chunks: AsyncIterator[object], *, run_id: str, node_id: str) -> object | None:
@@ -450,6 +454,7 @@ def _prompt_for(
     topic: str,
     criterion: MasteryCriterion | None,
     already_said: Sequence[str],
+    profile: str | None = None,
 ) -> str:
     """What the tutor is asked, for either way of answering.
 
@@ -467,9 +472,22 @@ def _prompt_for(
         definition=node.definition,
         notes=_notes_on(node),
         history=_history_of(already_said),
+        learner=_about(profile),
         instruction=instruction,
+        # The director's own reason, so the tutor knows *why* this move now — a retrieval of a
+        # concept the learner claimed reads nothing like one of a concept that is fading (P2c T3).
+        because=move.reason,
         closing=_STAGE.format(statement=criterion.statement) if criterion else _OPEN_ENDED,
     )
+
+
+#: Who the learner is, when the placement interview said (P2c T3). Kept short in the prompt: it is
+#: context for the examples the tutor reaches for, not a brief to be recited back.
+_ABOUT = "\nAbout this learner, in their own words from a short interview: {profile}\n"
+
+
+def _about(profile: str | None) -> str:
+    return _ABOUT.format(profile=profile.strip()[:600]) if profile and profile.strip() else ""
 
 
 def _history_of(already_said: Sequence[str]) -> str:

@@ -268,7 +268,9 @@ async def test_the_tutor_is_handed_what_it_already_said_about_this_concept() -> 
         def __init__(self) -> None:
             self.histories: list[tuple[str, list[str]]] = []
 
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id) -> str:
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ) -> str:
             self.histories.append((node.id, list(already_said)))
             return f"Teaching {node.name} #{len(self.histories)}."
 
@@ -363,7 +365,9 @@ async def test_a_tutor_that_cannot_speak_mid_session_moves_nothing_either() -> N
     so nothing is persisted, and the same answer can be sent again."""
 
     class SilentTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             raise TutorUnavailableError("provider is down")
 
     # Arrange

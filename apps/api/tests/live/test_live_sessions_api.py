@@ -68,6 +68,7 @@ async def client_with_a_silent_tutor(tmp_path: Path) -> AsyncIterator[httpx.Asyn
             topic: str,
             criterion: MasteryCriterion | None = None,
             already_said: Sequence[str] = (),
+            profile: str | None = None,
             run_id: str,
         ) -> str:
             raise TutorUnavailableError("provider is down")
