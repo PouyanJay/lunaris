@@ -1,14 +1,16 @@
 import { authedFetch } from "./apiClient";
+import { detailOf } from "./apiErrors";
 import type { LayoutSpec } from "./layoutSpec";
 import type { SurfaceSpec } from "./surfaceSpec";
 
 /** The server's own bound on an answer, mirrored so the box can stop a learner writing past it
  *  rather than letting the request come back 422 with the words they typed. */
 export const MAX_ANSWER_CHARS = 4000;
-import { detailOf } from "./apiErrors";
 
-/** What the director decided to do next — the plan's four moves, and only these four. */
-export type MoveKind = "introduce" | "retrieve" | "remediate" | "close";
+/** What the director decided to do next — the plan's four moves, plus `place`: the one a session
+ *  makes while its map is still compiling (P2c), a question about the learner rather than a
+ *  lesson about a concept. */
+export type MoveKind = "introduce" | "retrieve" | "remediate" | "close" | "place";
 
 /** One decision by the director, with the reasoning that produced it.
  *
@@ -16,7 +18,8 @@ export type MoveKind = "introduce" | "retrieve" | "remediate" | "close";
  *  behalf, and it is the only way to tell a good policy from a lucky one afterwards. */
 export interface DirectorMove {
   kind: MoveKind;
-  /** The concept this move is about; null only for `close`, which is about the session. */
+  /** The concept this move is about; null only for `close` (about the session) and `place`
+   *  (about the learner, before there are concepts). */
   nodeId: string | null;
   reason: string;
 }
@@ -65,8 +68,19 @@ export interface SessionTurn {
 /** A learner's run at a concept graph. Persisted server-side, so a reload resumes it. */
 export interface LiveSession {
   sessionId: string;
+  /** The map this session walks — minted before the compile when the session opened on a topic,
+   *  so a placing session already names the map it is waiting for. */
   graphId: string;
-  status: "active" | "closed";
+  /** What the session is about, when it opened on a topic (P2c). Absent on a session opened on a
+   *  map, whose topic is the map's. */
+  topic?: string | null;
+  /** Who this learner is, as the placement interview put it (P2c T3): carried for the tutor,
+   *  shown nowhere yet. Absent until placed. */
+  profile?: string | null;
+  /** `placing` is a session whose map is still compiling: the learner is being interviewed, not
+   *  taught, and nothing is staged. `warming` is the honest wait after the interview has run out
+   *  and before the map has landed: nothing to answer, the surface advances it (P2c). */
+  status: "placing" | "warming" | "active" | "closed";
   /** When the session opened (ISO 8601, UTC). The session is bounded by wall time, so this is what
    *  a surface needs to show how much of it is left — and it survives a reload because it is on the
    *  row rather than in whichever process happened to serve the request. */
@@ -83,23 +97,37 @@ export class LiveSessionError extends Error {
   }
 }
 
-/** Open a session on a compiled map. Resolves with the session already teaching its first turn —
- *  an empty shell the surface then had to poll would be a loading spinner with a row behind it. */
+/** The two ways a session opens (U1): on a map the learner already has, teaching from turn 1; or
+ *  on a topic whose map does not exist yet, interviewing while it compiles (P2c). Exactly one, and
+ *  the type says so — a request naming both or neither is refused at the door. */
+export type SessionOpening =
+  | { graphId: string; topic?: undefined }
+  | { topic: string; graphId?: undefined };
+
+/** Open a session. Resolves with the session already talking — its first lesson on a map, or the
+ *  interviewer's first question on a topic — because an empty shell the surface then had to poll
+ *  would be a loading spinner with a row behind it. */
 export async function startSession(
   apiBaseUrl: string,
-  graphId: string,
+  opening: SessionOpening,
   signal?: AbortSignal,
 ): Promise<LiveSession> {
+  // Only the named half goes out. `{ graphId: undefined, topic }` would serialise away the
+  // undefined, but spelling it out is what keeps this true when someone adds a field.
+  const body =
+    opening.topic !== undefined ? { topic: opening.topic } : { graphId: opening.graphId };
   return request(
     apiBaseUrl,
     `${apiBaseUrl}/api/live/sessions`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ graphId }),
+      body: JSON.stringify(body),
       ...(signal ? { signal } : {}),
     },
-    "Couldn't start a session on this map.",
+    opening.topic !== undefined
+      ? "Couldn't start a session on this topic."
+      : "Couldn't start a session on this map.",
   );
 }
 
@@ -143,6 +171,37 @@ export async function answerTurn(
   );
 }
 
+/** Move a warming session on, if its map has landed (P2c T2). Resolves with the session when there
+ *  was something to do (teaching began, the session closed on a failed compile, or an answer got
+ *  there first), and with `null` while it is still warming (202, no body): a distinct answer rather
+ *  than an error, "ask again in a moment". */
+export async function advanceSession(
+  apiBaseUrl: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<LiveSession | null> {
+  let response: Response;
+  try {
+    response = await authedFetch(
+      `${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}/advance`,
+      { method: "POST", ...(signal ? { signal } : {}) },
+    );
+  } catch (cause) {
+    throw new LiveSessionError("Could not reach the session.", { cause });
+  }
+  if (response.status === 202) return null;
+  if (!response.ok) {
+    throw new LiveSessionError(
+      (await detailOf(response)) ?? `Couldn't move the session on. (HTTP ${response.status})`,
+    );
+  }
+  const body: unknown = await response.json();
+  if (!isSession(body)) {
+    throw new LiveSessionError("Couldn't read the session (unexpected response).");
+  }
+  return body;
+}
+
 async function request(
   _apiBaseUrl: string,
   url: string,
@@ -178,7 +237,10 @@ function isSession(payload: unknown): payload is LiveSession {
     !!body &&
     typeof body.sessionId === "string" &&
     typeof body.graphId === "string" &&
-    (body.status === "active" || body.status === "closed") &&
+    (body.status === "placing" ||
+      body.status === "warming" ||
+      body.status === "active" ||
+      body.status === "closed") &&
     Array.isArray(body.turns) &&
     body.turns.every(
       (turn) =>

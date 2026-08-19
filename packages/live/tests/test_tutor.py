@@ -25,6 +25,8 @@ from lunaris_live.graph import (
 )
 from lunaris_live.session import (
     ClaudeTutor,
+    Covered,
+    CoveredOutcome,
     DirectorMove,
     LessonParts,
     MoveKind,
@@ -104,6 +106,88 @@ async def test_the_misconception_the_node_names_is_what_the_tutor_is_told_to_loo
     # Assert — verbatim, not paraphrased: the tutor passes the authored text through rather than
     # summarising it, so what Phase 1 wrote is what the tutor reads.
     assert _MISCONCEPTION in model.prompts[0]
+
+
+async def test_who_the_learner_is_reaches_the_tutor_when_placement_said() -> None:
+    """P2c T3: the profile the interview produced is context for the examples the tutor reaches
+    for. Passed verbatim, bounded, and absent when there is none — a session opened on a map."""
+    model = ScriptedModel()
+
+    await ClaudeTutor("m", client=model).teach(
+        _move(),
+        _node(),
+        topic="How neural networks learn",
+        profile="A nurse who wants to read medical papers.",
+        run_id="r1",
+    )
+    without = ScriptedModel()
+    await ClaudeTutor("m", client=without).teach(
+        _move(), _node(), topic="How neural networks learn", run_id="r1"
+    )
+
+    assert "A nurse who wants to read medical papers." in model.prompts[0]
+    assert "About this learner" not in without.prompts[0]
+
+
+async def test_a_long_profile_is_trimmed_before_it_reaches_the_tutor() -> None:
+    """A profile is bounded at 2000 chars on the row and 600 in the prompt: context for the
+    examples the tutor reaches for, not a brief to recite. Pinned at the boundary, by value."""
+    model = ScriptedModel()
+    profile = "x" * 599 + "Y" + "z" * 400
+
+    await ClaudeTutor("m", client=model).teach(
+        _move(), _node(), topic="T", profile=profile, run_id="r1"
+    )
+
+    assert "x" * 599 + "Y" in model.prompts[0]
+    assert "Yz" not in model.prompts[0]
+
+
+async def test_the_recap_is_briefed_with_the_record_and_says_what_the_model_wrote() -> None:
+    """P2c T5: the close's words. The record — each concept and how it stands — rides the prompt
+    verbatim, so the tutor can dress it and not revise it; what comes back is what they read."""
+    model = ScriptedModel("You showed you have Prior; Update is still forming. See you next time.")
+    covered = [
+        Covered(
+            node_id="prior", concept="Prior", outcome=CoveredOutcome.DEMONSTRATED, evidence_count=2
+        ),
+        Covered(
+            node_id="update", concept="Update", outcome=CoveredOutcome.FORMING, evidence_count=1
+        ),
+    ]
+
+    said = await ClaudeTutor("m", client=model).recap(
+        "Bayes' theorem", covered, profile="A nurse.", run_id="r1"
+    )
+
+    assert said.startswith("You showed you have Prior")
+    prompt = model.prompts[0]
+    assert "Prior: demonstrated (2 answers)" in prompt
+    assert "Update: forming (1 answer)" in prompt
+    assert "A nurse." in prompt
+    assert "Bayes' theorem" in prompt
+
+
+async def test_a_recap_the_model_leaves_blank_is_a_failure_the_close_can_degrade() -> None:
+    with pytest.raises(TutorUnavailableError):
+        await ClaudeTutor("m", client=ScriptedModel("   ")).recap("T", [], run_id="r1")
+
+
+async def test_the_directors_reason_reaches_the_tutor() -> None:
+    """The tutor is told WHY this move now, so a retrieval of a concept the learner claimed reads
+    nothing like one of a concept that is fading (P2c T3)."""
+    model = ScriptedModel()
+    move = DirectorMove(
+        kind=MoveKind.RETRIEVE,
+        node_id="gradient",
+        reason="You said you already know Gradient; a quick check before building on it.",
+    )
+
+    await ClaudeTutor("m", client=model).teach(
+        move, _node(), topic="How neural networks learn", run_id="r1"
+    )
+
+    assert "You said you already know Gradient" in model.prompts[0]
 
 
 async def test_the_tutor_teaches_this_concept_and_not_the_map_around_it() -> None:

@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 from lunaris_api.live.service import LiveGraphService
 from lunaris_live.graph import ConceptGraph, ConceptNode, MemoryGraphStore
-from lunaris_runtime.credentials import resolve_secret
+from lunaris_runtime.credentials import credentials_for, resolve_secret
 from lunaris_runtime.metering import record_cost
 from lunaris_runtime.persistence import InMemoryCostEventStore, InMemorySubjectCostStore
 from lunaris_runtime.schema import CostPocket, CostProvider, CostSubjectType, CostUnit
@@ -252,23 +252,19 @@ async def test_an_empty_vault_is_not_the_same_as_byok_being_off() -> None:
     async def resolve(user_id: str) -> dict[str, str]:
         return {}
 
-    service = LiveGraphService(
-        SpendingCompiler(),  # type: ignore[arg-type]
-        MemoryGraphStore(),
-        credential_resolver=resolve,
-    )
-
-    # Act / Assert — an empty map, not None: the compiler is bound to the tenant's (absent) keys
-    # rather than falling through to whatever the process happens to have.
-    assert await service._resolve_credentials("alice") == {}
-    # ...and with no resolver at all, None — which is what lets local dev read the environment.
-    assert (
-        await LiveGraphService(
-            SpendingCompiler(),
-            MemoryGraphStore(),  # type: ignore[arg-type]
-        )._resolve_credentials("alice")
-        is None
-    )
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-platform")
+    try:
+        # Act / Assert — inside the tenant's scope the key is ABSENT, not the platform's: the
+        # compiler is bound to the tenant's (empty) vault rather than falling through to whatever
+        # the process happens to have.
+        with await credentials_for(resolve, "alice"):
+            assert resolve_secret("ANTHROPIC_API_KEY") is None
+        # ...and with no resolver at all, the environment — which is what lets local dev run.
+        with await credentials_for(None, "alice"):
+            assert resolve_secret("ANTHROPIC_API_KEY") == "sk-platform"
+    finally:
+        monkeypatch.undo()
 
 
 async def test_a_tenant_s_own_key_pays_from_their_own_pocket() -> None:

@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Protocol
 
 from ...graph.schema import ConceptNode, MasteryCriterion
-from ..schema import DirectorMove, LessonParts
+from ..schema import Covered, DirectorMove, LessonParts
 
 
 class ITutor(Protocol):
@@ -28,6 +28,11 @@ class ITutor(Protocol):
     follow: a second turn on one concept produced the first turn's words verbatim, which is the one
     thing a remediation must never be.
 
+    ``profile`` is who this learner is, in a paragraph the placement interview produced (P2c T3):
+    their background and what they want to be able to do. ``None`` when nothing is known — every
+    session opened on a map — and never required, because a tutor that could not teach without it
+    could not teach the sessions that have no interview.
+
     ``run_id`` is the turn's own run (R6), not the session's — a turn is one or more model calls,
     and what the tutor was asked has to be findable from a line in a stored transcript.
 
@@ -47,6 +52,7 @@ class ITutor(Protocol):
         topic: str,
         criterion: MasteryCriterion | None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> str: ...
 
@@ -58,6 +64,7 @@ class ITutor(Protocol):
         topic: str,
         criterion: MasteryCriterion | None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> AsyncIterator[str]:
         """The same lesson, in the order it is written.
@@ -76,6 +83,7 @@ class ITutor(Protocol):
         topic: str,
         criterion: MasteryCriterion | None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> LessonParts:
         """The material that goes *around* the lesson — Tier 2's generative half (P2b T5, U4).
@@ -94,5 +102,22 @@ class ITutor(Protocol):
         implementation that has no material, cannot reach a provider, or is asked for something it
         does not do answers with an empty one. The lesson and the Tier 1 card are on the turn
         already; a failed illustration costs the trimmings.
+        """
+        ...
+
+    async def recap(
+        self,
+        topic: str,
+        covered: Sequence[Covered],
+        *,
+        profile: str | None = None,
+        run_id: str,
+    ) -> str:
+        """The close's words (P2c T5): a few sentences over what was covered and how it went.
+
+        Briefed with the record (``covered`` is built deterministically from the transcript and
+        the belief) and free only in how it says it; it can dress the record, never revise it. A
+        recap that cannot be written raises ``TutorUnavailableError``, and the loop closes with a
+        plain sentence instead: the ceremony is owed, the words are a nicety.
         """
         ...

@@ -63,6 +63,12 @@ export interface MeterEntrySpec {
   concept: string;
   recall: number;
   evidenceCount: number;
+  /** Where the concept stood when the session opened (P2c T5), so the meter reads as movement.
+   *  Absent for a concept first met today, and on every meter stored before it existed. */
+  recallBefore?: number | null;
+  /** When the concept is next due for review (P2c T6), ISO 8601; the close says the day. Absent
+   *  for a concept nothing scheduled, and on every meter stored before it existed. */
+  dueAt?: string | null;
 }
 
 /** What the learner demonstrated, shown when the session ends. */

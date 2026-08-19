@@ -19,6 +19,7 @@ import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_live.graph import ConceptGraph, GraphCompilationError
+from lunaris_runtime.logging import configure_logging
 
 
 @pytest.fixture
@@ -243,13 +244,18 @@ async def test_a_compile_that_fails_after_its_learner_left_is_still_traceable(
         async def extend(self, *args: object, **kwargs: object) -> ConceptGraph:
             raise NotImplementedError
 
+    configure_logging(json_output=True)
     service = LiveGraphService(FailsAfterTheFirstBeat(), MemoryGraphStore())
 
-    # Act — one frame, then walk away; the compile fails behind the departed learner.
+    # Act — one frame, then walk away; the compile fails behind the departed learner. Meeting the
+    # compile at its end (rather than sleeping past it) is what makes this deterministic: the
+    # service keeps no handle to the task, so it is found among the loop's.
     stream = service.stream("Tides", graph_id="g-lost", run_id="run-lost")
     await anext(stream)
     await stream.aclose()
-    await asyncio.sleep(0.05)
+    (compiling,) = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    with pytest.raises(GraphCompilationError):
+        await compiling
 
     # Assert — the failure is on the record, and it names the run and the map it belongs to.
     failures = [
@@ -260,6 +266,54 @@ async def test_a_compile_that_fails_after_its_learner_left_is_still_traceable(
     assert failures, "a compile failed after its stream detached and said nothing"
     assert failures[-1]["run_id"] == "run-lost"
     assert failures[-1]["graph_id"] == "g-lost"
+
+
+async def test_a_launched_compile_that_fails_is_on_the_record_too(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """P2c T1: a session opened on a topic launches its compile and walks away from it at once —
+    there is no stream to detach from, so ``launch`` has to absorb the task's result itself. A
+    compile that failed behind a placing session and said nothing would be exactly the failure a
+    learner reports as "it never started teaching", with no line for anyone to find.
+
+    Found by mutation: deleting the absorb from ``launch`` left every T1 test green.
+    """
+    # Arrange
+    from lunaris_api.live.service import LiveGraphService
+    from lunaris_live.graph import MemoryGraphStore
+
+    class Fails:
+        async def compile(
+            self, topic: str, *, graph_id: str, run_id: str, **_: object
+        ) -> ConceptGraph:
+            await asyncio.sleep(0.01)
+            raise GraphCompilationError("the model gave up while the learner was being interviewed")
+
+        async def extend(self, *args: object, **kwargs: object) -> ConceptGraph:
+            raise NotImplementedError
+
+    # Driven without ``create_app``, so the JSON logging that call configures is configured here:
+    # otherwise this test passes only when a ``client``-using test ran before it (found in review).
+    configure_logging(json_output=True)
+    service = LiveGraphService(Fails(), MemoryGraphStore())
+
+    # Act — launch and walk away, as the placement path does; then meet the task at its end. The
+    # await IS the rendezvous: no sleep, no guess about how long the fake compile takes.
+    task = service.launch("Tides", graph_id="g-placing", run_id="run-placing")
+    with pytest.raises(GraphCompilationError):
+        await task
+
+    # Assert — the failure is on the record, and it names the run and the map it belongs to. (The
+    # done-callback ran before the await returned, because callbacks are scheduled on completion
+    # and the awaiting task resumes after them.)
+    failures = [
+        line
+        for line in _json_log_lines(capsys)
+        if line.get("event") == "live.graph.detached_compile_failed"
+    ]
+    assert failures, "a launched compile failed and said nothing"
+    assert failures[-1]["run_id"] == "run-placing"
+    assert failures[-1]["graph_id"] == "g-placing"
 
 
 def _json_log_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, Any]]:

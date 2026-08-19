@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { answerTurn, loadSession, startSession, type LiveSession } from "../lib/liveSession";
+import {
+  advanceSession,
+  answerTurn,
+  loadSession,
+  startSession,
+  type LiveSession,
+  type SessionOpening,
+} from "../lib/liveSession";
+
+/** How often a warming session is asked whether its map has landed (P2c T2). A compile is under a
+ *  minute in practice and the interview absorbs most of it, so this is a handful of polls at most;
+ *  faster would be a request per second for nothing, slower would show the learner a seam. */
+export const WARMING_POLL_MS = 2000;
 
 /** A session's data states.
  *
@@ -25,24 +37,31 @@ export interface LiveSessionResult {
   refresh: () => void;
 }
 
-/** Opens a session on `graphId` and drives its loop.
+/** Opens a session — on a map the learner has, or on a topic (P2c) — and drives its loop.
  *
- *  Extracted from the surface so the view stays a rendering concern, the way `useCompileGraph` is
- *  for the compile plane. The whole session comes back from every call — an answered turn changes
- *  as well as gaining a successor — so there is one shape here and no client-side stitching that
- *  could disagree with the row behind it. */
-export function useLiveSession(apiBaseUrl: string, graphId: string): LiveSessionResult {
+ *  Extracted from the surface so the view stays a rendering concern. The whole session comes back
+ *  from every call — an answered turn changes as well as gaining a successor — so there is one
+ *  shape here and no client-side stitching that could disagree with the row behind it. */
+export function useLiveSession(apiBaseUrl: string, opening: SessionOpening): LiveSessionResult {
   const [state, setState] = useState<SessionState>({ status: "opening" });
   const [attempt, setAttempt] = useState(0);
   // Read inside `answer` without making it a dependency: re-creating the callback on every turn
   // would re-render the form and lose the caret mid-sentence.
   const current = useRef<SessionState>(state);
   current.current = state;
+  // Keyed on what the opening NAMES, never on the object that names it: a caller passing a fresh
+  // literal each render is the ordinary case, and an effect keyed on the object would open a new
+  // session on every render of the surface. The object itself is read through a ref (the way
+  // `current` is above), so the union reaches `startSession` intact rather than being rebuilt
+  // from two loose strings.
+  const { graphId, topic } = opening;
+  const named = useRef<SessionOpening>(opening);
+  named.current = opening;
 
   useEffect(() => {
     const controller = new AbortController();
     setState({ status: "opening" });
-    startSession(apiBaseUrl, graphId, controller.signal)
+    startSession(apiBaseUrl, named.current, controller.signal)
       .then((session) => {
         if (!controller.signal.aborted) setState({ status: "ready", session });
       })
@@ -52,7 +71,7 @@ export function useLiveSession(apiBaseUrl: string, graphId: string): LiveSession
         setState({ status: "failed", message: messageOf(error), session: null });
       });
     return () => controller.abort();
-  }, [apiBaseUrl, graphId, attempt]);
+  }, [apiBaseUrl, graphId, topic, attempt]);
 
   const answer = useCallback(
     (text: string) => {
@@ -77,6 +96,38 @@ export function useLiveSession(apiBaseUrl: string, graphId: string): LiveSession
     },
     [apiBaseUrl],
   );
+
+  // The honest wait (P2c T2). While the session is warming — the interview ran out before the map
+  // landed — ask the server to move it on, on an interval, until it answers with a session that is
+  // no longer warming. A failed advance is said (the learner sees why) and does not stop the
+  // asking: the next tick may find the map there. Keyed on the session's id and status only, so a
+  // re-render does not restart the interval, and stopped by the cleanup the moment the status
+  // moves on or the surface unmounts.
+  const held = state.status === "opening" ? null : state.session;
+  const warmingId = held?.status === "warming" ? held.sessionId : null;
+  useEffect(() => {
+    if (warmingId === null) return;
+    const controller = new AbortController();
+    const tick = () => {
+      advanceSession(apiBaseUrl, warmingId, controller.signal)
+        .then((next) => {
+          if (controller.signal.aborted || next === null) return;
+          setState({ status: "ready", session: next });
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          setState((previous) => {
+            const session = previous.status === "opening" ? null : previous.session;
+            return { status: "failed", message: messageOf(error), session };
+          });
+        });
+    };
+    const timer = setInterval(tick, WARMING_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [apiBaseUrl, warmingId]);
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
 

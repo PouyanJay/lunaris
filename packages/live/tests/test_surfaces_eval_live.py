@@ -198,14 +198,16 @@ async def _run(graph: ConceptGraph, profile: Profile) -> Trace:
 
     cost = ledger.scope(f"eval-{profile.name}-1")
     with enter_cost_scope(cost):
-        session = await open_session(
-            graph,
-            LearnerModel(graph_id=graph.graph_id),
-            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-            session_id=f"eval-{profile.name}",
-            run_id=f"eval-{profile.name}-1",
-            tutor=tutor,
-        )
+        session = (
+            await open_session(
+                graph,
+                LearnerModel(graph_id=graph.graph_id),
+                SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+                session_id=f"eval-{profile.name}",
+                run_id=f"eval-{profile.name}-1",
+                tutor=tutor,
+            )
+        ).session
     await drain_cost_scope(cost, ledger.events, ledger.rollup)
     spent_before = await ledger.total()
     trace = Trace(session=session)

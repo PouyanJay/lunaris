@@ -174,3 +174,102 @@ def test_the_same_concept_id_on_another_map_is_a_different_belief(db: "psycopg.C
     # Assert
     db.execute("select count(*) from public.live_knowledge where user_id = %s", (owner,))
     assert db.fetchone()[0] == 2
+
+
+def test_a_claim_rides_the_belief_and_a_learner_cannot_write_one(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
+    """P2c T3: the placement interview's claim about a concept is a nullable column beside the
+    belief. Written by the server (a claim seeds a row with no evidence), readable by its owner,
+    and NOT writable by them: a learner who could set a prior could tilt Tier 2's band on a say-so
+    (the director would still check the claim before crediting it, but the write path is the
+    server's regardless)."""
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+    db.execute(
+        """
+        insert into public.live_knowledge
+            (user_id, graph_id, node_id, estimate, evidence_count, last_evidence_turn, prior)
+        values (%s, 'g1', 'a', 0.0, 0, 0, 0.8)
+        """,
+        (owner,),
+    )
+    as_user(db, owner)
+
+    db.execute("select prior from public.live_knowledge where user_id = %s", (owner,))
+    assert db.fetchone() == (0.8,)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        db.execute("update public.live_knowledge set prior = 1.0 where user_id = %s", (owner,))
+
+
+def test_a_claim_outside_the_probability_range_is_refused(db: "psycopg.Cursor") -> None:
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            """
+            insert into public.live_knowledge
+                (user_id, graph_id, node_id, estimate, prior) values (%s, 'g1', 'a', 0.0, 1.5)
+            """,
+            (owner,),
+        )
+
+
+def test_a_learner_can_read_their_review_day_and_cannot_move_it(
+    db: "psycopg.Cursor", as_user: _AsUser
+) -> None:
+    """P2c T6: the review ladder rides the belief (rung + next review day). Written by the server at
+    a session's close, readable by its owner (the close shows it), and NOT writable by them: a
+    learner who could set their own review day could postpone every check indefinitely."""
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+    db.execute(
+        """
+        insert into public.live_knowledge
+            (user_id, graph_id, node_id, estimate, evidence_count, last_evidence_turn,
+             review_stage, due_at)
+        values (%s, 'g1', 'a', 0.7, 2, 2, 2, '2026-08-21T12:00:00+00')
+        """,
+        (owner,),
+    )
+    as_user(db, owner)
+
+    db.execute(
+        "select review_stage, due_at::text from public.live_knowledge where user_id = %s", (owner,)
+    )
+    assert db.fetchone() == (2, "2026-08-21 12:00:00+00")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        db.execute(
+            "update public.live_knowledge set due_at = '2030-01-01' where user_id = %s", (owner,)
+        )
+
+
+@pytest.mark.parametrize("rung", [-1, 8], ids=["below the ladder", "above its top"])
+def test_a_rung_off_the_ladder_is_refused(db: "psycopg.Cursor", rung: int) -> None:
+    """Both ends: the ladder grows geometrically, so a rung above the top (found in review) is as
+    much a corrupt row as one below the bottom — the Python side stops climbing at the same rung."""
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            """
+            insert into public.live_knowledge
+                (user_id, graph_id, node_id, estimate, review_stage) values (%s, 'g1', 'a', 0.0, %s)
+            """,
+            (owner, rung),
+        )
+
+
+def test_a_belief_written_before_the_schedule_reads_as_unscheduled(db: "psycopg.Cursor") -> None:
+    """The expand-only promise: a row the previous release wrote (no rung, no day) is on rung
+    zero with no review, which is what "never scheduled" means to the director."""
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+    _believe(db, owner, "g1")
+
+    db.execute(
+        "select review_stage, due_at from public.live_knowledge where user_id = %s", (owner,)
+    )
+    assert db.fetchone() == (0, None)

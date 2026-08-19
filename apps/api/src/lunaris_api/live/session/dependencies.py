@@ -4,18 +4,27 @@ from typing import Annotated
 from fastapi import Depends
 from lunaris_live.session import (
     ClaudeGrader,
+    ClaudeInterviewer,
+    ClaudePriorMapper,
     ClaudeTutor,
     IGrader,
+    IInterviewer,
     IKnowledgeStore,
+    IMaterialStore,
+    IPriorMapper,
     ISessionStore,
     ISimRegistry,
     ITutor,
     MemoryKnowledgeStore,
+    MemoryMaterialStore,
     MemorySessionStore,
     StubGrader,
+    StubInterviewer,
+    StubPriorMapper,
     StubSimRegistry,
     StubTutor,
     SupabaseKnowledgeStore,
+    SupabaseMaterialStore,
     SupabaseSessionStore,
 )
 
@@ -23,10 +32,14 @@ from ...config import Settings, get_settings
 from ...dependencies import CostEventStoreDep, SubjectCostStoreDep
 from ..dependencies import (
     get_live_credential_resolver,
+    get_live_graph_service,
     resolve_graph_store,
     resolve_strong_model,
     resolve_worker_model,
 )
+from ..service import LiveGraphService
+from .material_prefetcher import MaterialPrefetcher
+from .prefetch_registry import prefetch_registry
 from .service import LiveSessionService
 from .throttle import LiveSessionThrottle
 
@@ -34,12 +47,14 @@ from .throttle import LiveSessionThrottle
 # client is built on first write, so the singleton needs no creds and no network until then.
 _supabase_session_store = SupabaseSessionStore()
 _supabase_knowledge_store = SupabaseKnowledgeStore()
+_supabase_material_store = SupabaseMaterialStore()
 
 # The in-memory fallbacks MUST be singletons: opening a session and the next turn of it are
 # separate requests, so a per-request store would lose the session — and the learner's beliefs —
 # between them.
 _memory_session_store = MemorySessionStore()
 _memory_knowledge_store = MemoryKnowledgeStore()
+_memory_material_store = MemoryMaterialStore()
 
 
 def _resolve_session_store(settings: Settings) -> ISessionStore:
@@ -50,6 +65,11 @@ def _resolve_session_store(settings: Settings) -> ISessionStore:
 def _resolve_knowledge_store(settings: Settings) -> IKnowledgeStore:
     """Durable where Supabase is configured, in-process otherwise (offline dev and the suite)."""
     return _supabase_knowledge_store if settings.has_supabase else _memory_knowledge_store
+
+
+def _resolve_material_store(settings: Settings) -> IMaterialStore:
+    """Durable where Supabase is configured, in-process otherwise (offline dev and the suite)."""
+    return _supabase_material_store if settings.has_supabase else _memory_material_store
 
 
 def get_live_tutor(settings: Annotated[Settings, Depends(get_settings)]) -> ITutor:
@@ -80,6 +100,33 @@ def get_live_sims(settings: Annotated[Settings, Depends(get_settings)]) -> ISimR
     not notice.
     """
     return StubSimRegistry() if settings.live_sims == "stub" else None
+
+
+def get_live_interviewer(settings: Annotated[Settings, Depends(get_settings)]) -> IInterviewer:
+    """The interviewer that runs a session's placement (P2c): the model-backed one, or the
+    deterministic one under ``LUNARIS_PIPELINE=stub``.
+
+    A dependency of its own for the reason the tutor is: it is the collaborator a test wants to
+    substitute, and the failure worth staging is an interviewer that cannot ask. Runs on the strong
+    tier (A3): the interview is the first thing a learner reads, and the words have to be good.
+    """
+    if settings.pipeline == "stub":
+        return StubInterviewer()
+    return ClaudeInterviewer(resolve_strong_model())
+
+
+def get_live_prior_mapper(settings: Annotated[Settings, Depends(get_settings)]) -> IPriorMapper:
+    """The mapper that reads a finished interview against the map (P2c T3): the model-backed one,
+    or the deterministic one under ``LUNARIS_PIPELINE=stub``.
+
+    Runs on the worker tier (A3): reading a short exchange against a list of concepts is a
+    classification, not a quality surface. A dependency of its own for the reason the grader is —
+    a mapper that cannot place is the failure worth staging, and a mapper that places wrongly is
+    the mistake that skips a curriculum, which is why the director checks its claims.
+    """
+    if settings.pipeline == "stub":
+        return StubPriorMapper()
+    return ClaudePriorMapper(resolve_worker_model())
 
 
 def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGrader:
@@ -114,6 +161,9 @@ def get_live_session_service(
     tutor: Annotated[ITutor, Depends(get_live_tutor)],
     grader: Annotated[IGrader, Depends(get_live_grader)],
     sims: Annotated[ISimRegistry | None, Depends(get_live_sims)],
+    interviewer: Annotated[IInterviewer, Depends(get_live_interviewer)],
+    mapper: Annotated[IPriorMapper, Depends(get_live_prior_mapper)],
+    compiles: Annotated[LiveGraphService, Depends(get_live_graph_service)],
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
 ) -> LiveSessionService:
@@ -121,8 +171,11 @@ def get_live_session_service(
 
     Takes the *same* graph store the compile plane writes to rather than composing a second one —
     a session that read from a different store than the compiler wrote to would find no maps at all,
-    and it would look like a data problem rather than the wiring one it is.
+    and it would look like a data problem rather than the wiring one it is. And takes the compile
+    plane itself (P2c), the very service the graph routes use, so a session opened on a topic is
+    admitted by the same throttle and lands in the same store as a map compiled by hand.
     """
+    materials = _resolve_material_store(settings)
     return LiveSessionService(
         resolve_graph_store(settings),
         _resolve_session_store(settings),
@@ -139,6 +192,27 @@ def get_live_session_service(
         throttle=_get_live_session_throttle(settings),
         session_budget_usd=settings.live_session_budget_usd,
         sims=sims,
+        compiles=compiles,
+        interviewer=interviewer,
+        mapper=mapper,
+        compile_deadline_s=settings.live_compile_deadline_s,
+        compile_grace_s=settings.live_compile_grace_s,
+        interview_max_questions=settings.live_interview_max_questions,
+        materials=materials,
+        # The prefetcher shares the turn's tutor, ledger and keys, and the process-wide registry
+        # (P2c T4): a prefetch is the session's own spend, asked for on the tenant's own key, and
+        # asked for once however many requests would like it.
+        prefetcher=MaterialPrefetcher(
+            tutor,
+            materials,
+            registry=prefetch_registry(),
+            cost_event_store=cost_event_store,
+            subject_cost_store=subject_cost_store,
+            credential_resolver=get_live_credential_resolver(settings),
+            sims=sims,
+            # And under the session's ceiling (T8): a prefetch nobody awaits reads it itself.
+            session_budget_usd=settings.live_session_budget_usd,
+        ),
     )
 
 

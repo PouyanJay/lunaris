@@ -66,6 +66,7 @@ class SpyTutor:
         topic: str,
         criterion: MasteryCriterion | None = None,
         already_said: Sequence[str] = (),
+        profile: str | None = None,
         run_id: str,
     ) -> str:
         self.calls.append((move, node, topic, run_id))
@@ -85,9 +86,11 @@ async def test_a_returning_learner_does_not_start_over_at_the_root() -> None:
     known = _mastered(LearnerModel(graph_id="g1"), "a")
 
     # Act
-    session = await open_session(
-        _graph(), known, _clock(), session_id="s1", run_id="r1", tutor=StubTutor()
-    )
+    session = (
+        await open_session(
+            _graph(), known, _clock(), session_id="s1", run_id="r1", tutor=StubTutor()
+        )
+    ).session
 
     # Assert — the director's answer, not the map's first entry.
     assert session.turns[0].move.node_id == "b"
@@ -98,14 +101,16 @@ async def test_a_fresh_learner_still_opens_on_a_concept_with_nothing_before_it()
     """T1's guarantee, kept: whatever the policy becomes, a session may not open in the middle of
     the map. Phase 1's ordering exists so a learner is never shown a concept they cannot meet."""
     # Act
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id="g1"),
-        _clock(),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id="g1"),
+            _clock(),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     # Assert
     opened_on = session.turns[0].move.node_id
@@ -121,9 +126,9 @@ async def test_the_tutor_teaches_the_concept_the_director_chose() -> None:
     known = _mastered(LearnerModel(graph_id="g1"), "a")
 
     # Act
-    session = await open_session(
-        _graph(), known, _clock(), session_id="s1", run_id="r1", tutor=tutor
-    )
+    session = (
+        await open_session(_graph(), known, _clock(), session_id="s1", run_id="r1", tutor=tutor)
+    ).session
 
     # Assert
     move, node, topic, run_id = tutor.calls[0]
@@ -134,14 +139,16 @@ async def test_the_tutor_teaches_the_concept_the_director_chose() -> None:
 
 async def test_the_turn_the_learner_reads_is_the_tutors() -> None:
     # Act
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id="g1"),
-        _clock(),
-        session_id="s1",
-        run_id="r1",
-        tutor=SpyTutor(),
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id="g1"),
+            _clock(),
+            session_id="s1",
+            run_id="r1",
+            tutor=SpyTutor(),
+        )
+    ).session
 
     # Assert
     assert session.turns[0].tutor == "Teaching A."
@@ -152,14 +159,16 @@ async def test_a_turn_carries_the_run_that_produced_it() -> None:
     more model calls, and without the id on the turn there is no way to take a line out of a stored
     transcript and find what the tutor was actually asked."""
     # Act
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id="g1"),
-        _clock(),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id="g1"),
+            _clock(),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     # Assert — the turn's own id, not the session's.
     assert session.turns[0].run_id == "r1"

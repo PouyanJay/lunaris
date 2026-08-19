@@ -83,6 +83,14 @@ class Settings:
     #: this to $4 on an estimate of $0.15 to $0.20 a turn that the measurement did not bear out.)
     live_session_daily_cap: int = 20
     live_session_budget_usd: float = 2.0
+    #: The most the placement interview may ask before it stops on its own (P2c, A2). A compile's
+    #: worth of waiting is the plan's budget for it (§6); four is what a learner can answer in that
+    #: time without the interview becoming the session. Tunable because the keyed eval (T9) is
+    #: where this number gets pressure.
+    live_interview_max_questions: int = 4
+    #: How long past the compile deadline a warming session whose compile this process cannot ask
+    #: about (a replica, a restart) is still polled before it is closed as lost (P2c T2).
+    live_compile_grace_s: float = 30.0
     #: Which Tier 3 simulator registry to serve (P2b T6). ``""`` — the default — means none, and a
     #: concept whose every criterion needs a simulator keeps P2a's honest position: taught here, not
     #: checkable here. ``"stub"`` mounts the placeholder simulator, which proves the socket and
@@ -189,6 +197,8 @@ def get_settings() -> Settings:
         live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
         live_session_daily_cap=_env_int("LUNARIS_LIVE_SESSION_DAILY_CAP", default=20),
         live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=2.0),
+        live_interview_max_questions=_env_int("LUNARIS_LIVE_INTERVIEW_MAX_QUESTIONS", default=4),
+        live_compile_grace_s=_env_float("LUNARIS_LIVE_COMPILE_GRACE_S", default=30.0),
         device_bridge_liveness_s=_env_float(
             "LUNARIS_DEVICE_BRIDGE_LIVENESS_S", default=_DEFAULT_BRIDGE_LIMITS.liveness_s
         ),

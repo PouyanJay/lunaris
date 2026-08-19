@@ -18,11 +18,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_cost_event_store, get_subject_cost_store
 from lunaris_api.live.dependencies import resolve_graph_store
 from lunaris_api.live.session.dependencies import _resolve_session_store
+from lunaris_api.live.session.prefetch_registry import prefetch_registry
 from lunaris_api.live.session.throttle import LiveSessionThrottle
 from lunaris_live.session import MemoryKnowledgeStore, StubGrader
 from lunaris_runtime.metering import record_cost
@@ -56,7 +58,9 @@ async def test_a_sessions_spend_is_filed_under_the_session(tmp_path: Path) -> No
     from lunaris_runtime.schema import CostProvider, CostUnit
 
     class CostlyTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             record_cost(
                 component="live_tutor",
                 provider=CostProvider.ANTHROPIC,
@@ -110,6 +114,10 @@ async def test_a_session_that_has_spent_its_ceiling_takes_no_more_turns(tmp_path
         session = (
             await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
         ).json()
+        # The opening turn prefetches the next concept's material and drains its own scope when
+        # it ends (P2c T4), which recomputes the rollup from the ledger. Meet it first, or the
+        # planted rollup below is recomputed away under the test.
+        await prefetch_registry().settled()
         await rollup.upsert(
             cost=SubjectCost(
                 subject_type=CostSubjectType.LIVE_SESSION,
@@ -208,7 +216,9 @@ async def test_a_tenants_session_is_taught_on_their_own_key(tmp_path: Path) -> N
     seen: list[str | None] = []
 
     class ReportingTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             seen.append(resolve_secret("ANTHROPIC_API_KEY"))
             return f"Teaching {node.name}."
 
@@ -242,6 +252,62 @@ async def test_a_tenants_session_is_taught_on_their_own_key(tmp_path: Path) -> N
     assert seen == ["sk-learner-1"]
 
 
+async def test_a_tenant_with_an_empty_vault_is_not_taught_on_the_platforms_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The distinction the compile plane already held and the session plane had drifted from
+    (found in P2c T4): a tenant who has set no keys gets a scope with nothing in it, so the tutor
+    reads NO key — never the process environment's — and the call degrades honestly rather than
+    spending the platform's money on their behalf."""
+    from lunaris_api.dependencies import optional_user_id
+    from lunaris_api.live.session.dependencies import get_live_session_service, get_live_tutor
+    from lunaris_api.live.session.service import LiveSessionService
+    from lunaris_runtime.credentials import resolve_secret
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-platform")
+    seen: list[str | None] = []
+
+    class ReportingTutor:
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
+            seen.append(resolve_secret("ANTHROPIC_API_KEY"))
+            return f"Teaching {node.name}."
+
+    async def empty_vault(owner_id: str) -> dict[str, str]:
+        return {}
+
+    settings = _settings(tmp_path)
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[optional_user_id] = lambda: "learner-1"
+    app.dependency_overrides[get_live_tutor] = lambda: ReportingTutor()
+    app.dependency_overrides[get_live_session_service] = lambda: LiveSessionService(
+        resolve_graph_store(settings),
+        _resolve_session_store(settings),
+        knowledge=MemoryKnowledgeStore(),
+        tutor=ReportingTutor(),
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+        credential_resolver=empty_vault,
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        graph = await _graph(client)
+        opened = await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+        assert opened.status_code == 201, opened.text
+        # And on a turn, not only at the open: the turn's scope is built from the same rule.
+        session = opened.json()
+        answered = await client.post(
+            f"/api/live/sessions/{session['sessionId']}/turns",
+            json={"answer": "Something.", "answeringSeq": 1},
+        )
+        assert answered.status_code == 200, answered.text
+
+    assert seen == [None, None], "an empty vault reads no key, not the platform's"
+
+
 async def test_two_answers_at_once_pay_for_one_turn(tmp_path: Path) -> None:
     """The ceiling only means something if the spending is gated before it happens.
 
@@ -257,7 +323,9 @@ async def test_two_answers_at_once_pay_for_one_turn(tmp_path: Path) -> None:
     calls = 0
 
     class SlowTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             nonlocal calls
             calls += 1
             await asyncio.sleep(0.05)
@@ -311,7 +379,9 @@ async def test_an_answer_arriving_while_the_last_is_still_being_written_pays_for
     calls = 0
 
     class CountingTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             nonlocal calls
             calls += 1
             return f"Teaching {node.name}."
@@ -432,12 +502,16 @@ async def test_a_turn_taken_over_the_stream_is_metered_like_any_other(tmp_path: 
     taught_with: list[str | None] = []
 
     class CostlyTutor:
-        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+        async def teach(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+        ):
             return "".join(
                 [fragment async for fragment in self.stream(move, node, topic=topic, run_id=run_id)]
             )
 
-        async def stream(self, move, node, *, topic, criterion=None, already_said=(), run_id=""):
+        async def stream(
+            self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id=""
+        ):
             taught_with.append(resolve_secret("ANTHROPIC_API_KEY"))
             record_cost(
                 component="live_tutor",

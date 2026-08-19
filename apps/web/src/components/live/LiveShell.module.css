@@ -44,9 +44,10 @@
   padding: var(--space-8) var(--space-5);
 }
 
-/* A compiled map is read top-down, so it anchors to the top of the canvas rather than floating in
-   its middle the way the single-message states do. */
-.canvas[data-state="ready"] {
+/* A map and a session are read top-down, so they anchor to the top of the canvas rather than
+   floating in its middle the way the single-message states do. */
+.canvas[data-state="ready"],
+.canvas[data-state="session"] {
   align-items: flex-start;
 }
 

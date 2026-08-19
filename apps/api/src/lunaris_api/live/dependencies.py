@@ -20,6 +20,7 @@ from ..dependencies import (
     get_video_credential_resolver,
 )
 from .graph_throttle import LiveGraphThrottle
+from .launched_compiles import LaunchedCompiles
 from .service import LiveGraphService
 
 #: Decomposition decides what the course is made of and every later phase reads it, so it runs on
@@ -97,6 +98,17 @@ def _get_live_graph_throttle(settings: Settings) -> LiveGraphThrottle:
     )
 
 
+# One registry per process, for the reason the throttle is cached: the compile plane is built per
+# request, and a session asking how its compile ended is a later request than the one that launched
+# it. Holds task handles, not settings, so it is not keyed on them.
+_launched_compiles = LaunchedCompiles()
+
+
+def launched_compiles() -> LaunchedCompiles:
+    """The process-wide registry of launched compiles (one per process, like the throttle)."""
+    return _launched_compiles
+
+
 def get_live_credential_resolver(settings: Settings) -> CredentialResolver | None:
     """The BYOK resolver a Live compile runs on, or ``None`` when BYOK is off.
 
@@ -129,6 +141,7 @@ def get_live_graph_service(
         credential_resolver=get_live_credential_resolver(settings),
         throttle=_get_live_graph_throttle(settings),
         graph_budget_usd=settings.live_graph_budget_usd,
+        launched=_launched_compiles,
     )
 
 

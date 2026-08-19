@@ -9,6 +9,7 @@ import type {
   SimAppSpec,
   SurfaceSpec,
 } from "../../lib/surfaceSpec";
+import { reviewDayShort } from "../../lib/reviewSchedule";
 import { Button } from "../primitives/Button";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { AnswerForm } from "./AnswerForm";
@@ -78,7 +79,7 @@ export function SurfaceCard({
     case "mastery_meter":
       return <Meter spec={spec} {...frame} />;
     case "concept_map":
-      return <Placement spec={spec} {...frame} />;
+      return <WhereItSits spec={spec} {...frame} />;
     case "sim_app":
       return (
         <Simulator spec={spec} busy={busy} answerable={answerable} onAnswer={onAnswer} {...frame} />
@@ -252,6 +253,10 @@ function Quiz({ spec, busy, answerable, onAnswer, welded }: AnswerableCardProps<
  *  If that number moves, this one moves with it. */
 const HELD_RECALL = 0.6;
 
+function percent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
 function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
   return (
     <Shell eyebrow="What you showed" concept="This session" welded={welded}>
@@ -271,7 +276,11 @@ function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
                 tone={entry.recall >= HELD_RECALL ? "success" : "accent"}
               />
               <span className={styles.meterEvidence}>
+                {/* Movement, not a number: where they came in, when the row recorded it. */}
+                {entry.recallBefore != null ? `from ${percent(entry.recallBefore)} · ` : null}
                 {`${entry.evidenceCount} ${entry.evidenceCount === 1 ? "answer" : "answers"}`}
+                {/* And when it is due back (P2c T6): the day, from the row's own schedule. */}
+                {entry.dueAt ? ` · review ${reviewDayShort(entry.dueAt)}` : null}
               </span>
             </li>
           ))}
@@ -281,7 +290,7 @@ function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
   );
 }
 
-function Placement({ spec, welded }: { spec: ConceptMapSpec; welded: boolean }) {
+function WhereItSits({ spec, welded }: { spec: ConceptMapSpec; welded: boolean }) {
   return (
     <Shell eyebrow="Where this sits" concept={spec.concept} welded={welded}>
       <p className={styles.note}>

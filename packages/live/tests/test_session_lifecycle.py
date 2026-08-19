@@ -61,14 +61,16 @@ def _graph() -> ConceptGraph:
 
 
 async def _opened():
-    return await open_session(
-        _graph(),
-        LearnerModel(graph_id="g1"),
-        SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    return (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id="g1"),
+            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
 
 async def _answer(

@@ -33,6 +33,7 @@ from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_cost_event_store, get_subject_cost_store
 from lunaris_api.live.session.dependencies import get_live_tutor
+from lunaris_api.live.session.prefetch_registry import prefetch_registry
 from lunaris_runtime.persistence import InMemoryCostEventStore, InMemorySubjectCostStore
 from lunaris_runtime.schema import CostSubjectType, SubjectCost
 
@@ -63,11 +64,13 @@ class CountingTutor:
         self.entered = asyncio.Event()
         self.release = asyncio.Event()
 
-    async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+    async def teach(
+        self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id
+    ):
         return "".join([part async for part in self.stream(move, node, topic=topic, run_id=run_id)])
 
     async def stream(
-        self, move, node, *, topic, criterion=None, already_said=(), run_id=""
+        self, move, node, *, topic, criterion=None, already_said=(), profile=None, run_id=""
     ) -> AsyncIterator[str]:
         self.calls += 1
         if self.hold and not self.entered.is_set():
@@ -122,6 +125,9 @@ async def test_a_session_past_its_ceiling_is_refused_on_the_stream_with_a_status
 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         session = await _session(client)
+        # The opening turn's prefetch (P2c T4) drains its own scope when it ends, recomputing the
+        # rollup from the ledger: meet it first, or the planted rollup is recomputed away.
+        await prefetch_registry().settled()
         await rollup.upsert(
             cost=SubjectCost(
                 subject_type=CostSubjectType.LIVE_SESSION,

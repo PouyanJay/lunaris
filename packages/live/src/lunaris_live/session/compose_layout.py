@@ -1,3 +1,4 @@
+from .claim_of import claim_of
 from .mastery_thresholds import DECAYED, MASTERED
 from .schema import (
     ExampleBlock,
@@ -112,7 +113,12 @@ def _held(model: LearnerModel, node_id: str | None) -> float:
     if node_id is None:
         return MASTERED
     known = model.nodes.get(node_id)
-    return known.estimate if known is not None else 0.0
+    if known is None:
+        return 0.0
+    # A concept the learner claimed and has shown nothing about yet (P2c T3): the claim is the
+    # band, or a learner who said they know this would be handed a beginner's scaffold to prove it.
+    claim = claim_of(known)
+    return claim if claim is not None else known.estimate
 
 
 def _prompts(parts: LessonParts, held: float) -> list[str] | None:

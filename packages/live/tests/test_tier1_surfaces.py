@@ -149,13 +149,23 @@ def test_the_spec_is_decided_without_asking_anything_generative() -> None:
     that produced it, so nothing in this signature can be *asked* anything. Handing the registry in
     would move the seam inside an object where this test cannot see it, and the tier's determinism
     would then rest on a docstring — the same reasoning that kept ``graph``, ``model`` and ``clock``
-    from being bundled (AD18).
+    from being bundled (AD18). ``opening_beliefs`` (P2c T5) is a mapping the row stamped at open:
+    inert data too, and it is what makes the close's meter a delta rather than a number.
     """
     # Arrange / Act
     parameters = set(signature(select_surface).parameters)
 
     # Assert
-    assert parameters == {"move", "node", "graph", "criterion", "model", "clock", "sim"}
+    assert parameters == {
+        "move",
+        "node",
+        "graph",
+        "criterion",
+        "model",
+        "clock",
+        "sim",
+        "opening_beliefs",
+    }
     assert signature(select_surface).parameters["sim"].annotation == SimApp | None
 
 
@@ -354,14 +364,16 @@ async def test_the_turn_records_the_surface_it_put_up() -> None:
     """
     # Arrange
     graph = _graph(_node(), _node("loss"))
-    opened = await open_session(
-        graph,
-        LearnerModel(graph_id="g1"),
-        _clock(turn=1),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    opened = (
+        await open_session(
+            graph,
+            LearnerModel(graph_id="g1"),
+            _clock(turn=1),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     # Act
     outcome = await take_turn(
@@ -392,14 +404,16 @@ async def test_the_recorded_surface_is_the_one_the_rules_would_pick_again() -> N
     graph = _graph(_node())
 
     # Act
-    opened = await open_session(
-        graph,
-        LearnerModel(graph_id="g1"),
-        _clock(turn=1),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    opened = (
+        await open_session(
+            graph,
+            LearnerModel(graph_id="g1"),
+            _clock(turn=1),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     # Assert
     turn = opened.turns[0]
@@ -518,14 +532,16 @@ async def test_a_learner_who_is_genuinely_stuck_is_handed_the_quiz() -> None:
     """
     # Arrange — a shrug, then the same shrug again.
     graph = _graph(_node(), _node("beta"))
-    opened = await open_session(
-        graph,
-        LearnerModel(graph_id="g1"),
-        _clock(turn=1),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    opened = (
+        await open_session(
+            graph,
+            LearnerModel(graph_id="g1"),
+            _clock(turn=1),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
     first = await _took(opened, graph, LearnerModel(graph_id="g1"), "No idea, sorry.", run_id="r2")
 
     # Act

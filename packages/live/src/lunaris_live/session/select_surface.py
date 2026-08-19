@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from hashlib import blake2b
 
 from ..graph import ConceptGraph, ConceptNode, MasteryCriterion, prerequisites_of
@@ -42,6 +43,7 @@ def select_surface(
     model: LearnerModel,
     clock: SessionClock,
     sim: SimApp | None = None,
+    opening_beliefs: Mapping[str, float] | None = None,
 ) -> SurfaceSpec:
     """Which Tier 1 component this turn shows, and every prop in it.
 
@@ -90,7 +92,7 @@ def select_surface(
     broken assessment surface corrupting data; failing loudly is the cheap half of preventing it.
     """
     if move.kind is MoveKind.CLOSE:
-        return _meter(graph, model, clock)
+        return _meter(graph, model, clock, opening_beliefs or {})
     if node is None:
         raise ValueError(f"a {move.kind.value} move names a concept; none was given")
 
@@ -194,8 +196,14 @@ def _ordered(options: list[str]) -> list[str]:
     return sorted(options, key=lambda option: blake2b(option.encode()).digest())
 
 
-def _meter(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -> MasteryMeter:
-    """What the learner demonstrated, in the map's own teaching order.
+def _meter(
+    graph: ConceptGraph,
+    model: LearnerModel,
+    clock: SessionClock,
+    opening_beliefs: Mapping[str, float],
+) -> MasteryMeter:
+    """What the learner demonstrated, in the map's own teaching order, beside where each concept
+    stood when the session opened (P2c T5): movement, not a number.
 
     Only concepts with evidence: a meter listing every concept at zero would read as a report card
     for a course nobody enrolled in, and it would bury the part that is actually theirs.
@@ -208,6 +216,8 @@ def _meter(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -> Mas
                 concept=names.get(node_id, node_id),
                 recall=recall_of(model, node_id, at_turn=clock.turn),
                 evidence_count=model.nodes[node_id].evidence_count,
+                recall_before=opening_beliefs.get(node_id),
+                due_at=model.nodes[node_id].due_at,
             )
             for node_id in _in_teaching_order(graph, model)
         ]
@@ -221,7 +231,10 @@ def _in_teaching_order(graph: ConceptGraph, model: LearnerModel) -> list[str]:
     two sittings on one map — so the same learner's meter would tell the story differently depending
     on which way the director wandered.
     """
-    known = set(model.nodes)
+    # Evidence only: a claim seeds a row with none (P2c T3), and a meter that showed a claimed
+    # concept nothing checked as "from 70% to 0%" would be telling the learner a regression that
+    # never happened (found in review).
+    known = {node_id for node_id, held in model.nodes.items() if held.evidence_count > 0}
     ordered = [node_id for node_id in graph.topo_order if node_id in known]
     # Anything the order forgot still has to be shown: a meter silently missing a concept the
     # learner demonstrated is worse than one whose tail is out of order.

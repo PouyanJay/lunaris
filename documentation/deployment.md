@@ -171,6 +171,14 @@ and re-run the SPA build. Until step 2 the Live session surface is the REST tran
 usable, and the panel says it is not configured. Turning it off is the reverse; the app scales to
 zero on dev when idle and stays at one replica on prod.
 
+**Lunaris Live's session dials** (Phase 2c). All optional, read by the API at start: the interview
+asks at most `LUNARIS_LIVE_INTERVIEW_MAX_QUESTIONS` (4) before the map is taught from; a warming
+session whose compile this process cannot see is closed as lost `LUNARIS_LIVE_COMPILE_GRACE_S` (30)
+past `LUNARIS_LIVE_COMPILE_DEADLINE_S`; a session's whole spend, interview and prefetch included,
+is capped by `LUNARIS_LIVE_SESSION_BUDGET_USD` (2), openings per learner per day by
+`LUNARIS_LIVE_SESSION_DAILY_CAP` (20). The review ladder (a day, then ×2.5 per rung, seven rungs)
+is code, not configuration, until real sessions say otherwise.
+
 **Rotating the Supabase service_role key.** The service-role key is the API's server-side database
 credential; rotate it immediately if it ever appears in a log, transcript, or terminal. Procedure:
 
