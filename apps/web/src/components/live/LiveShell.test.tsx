@@ -43,30 +43,58 @@ const GRAPH = {
   isAcyclic: true,
 };
 
-/** A fetch that streams `frames` as SSE, exactly as the compile endpoint does.
- *
- *  `keepOpen` leaves the connection hanging after the last frame — which is what a compile still
- *  running actually looks like. Closing it instead is a *finished* compile, and one that ended
- *  without a map is a failure, so a progress-only fixture has to hold the line open or the surface
- *  under test is the error state rather than the one being asserted. */
-function streamingFetch(frames: string[], { keepOpen = false } = {}): typeof fetch {
-  return (() => {
-    const encoder = new TextEncoder();
-    const body = new ReadableStream({
-      start(controller) {
-        for (const frame of frames) controller.enqueue(encoder.encode(frame));
-        if (!keepOpen) controller.close();
-      },
-    });
-    return Promise.resolve(
-      new Response(body, {
-        headers: { "content-type": "text/event-stream", "x-run-id": "r1" },
-      }),
-    );
-  }) as unknown as typeof fetch;
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
 }
 
-const READY = [`event: graph\ndata: ${JSON.stringify(GRAPH)}\n\n`];
+/** A fetch that answers each Live route with what the API would: the graph read for a map the
+ *  learner already has, and the session open. Records every request so a test can assert what
+ *  was NOT asked for — a compile in front of the interview would be the whole thing this task
+ *  removes coming back. */
+function liveApi(overrides: { session?: Response; graph?: Response } = {}) {
+  const calls: { url: string; body: unknown }[] = [];
+  const impl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
+    // The open only (`POST …/sessions`), never a turn or a re-read: a stub answering every session
+    // route with the opened session would hand a T2 test the wrong shape without saying so.
+    if (url.endsWith("/api/live/sessions")) {
+      return Promise.resolve(overrides.session ?? json(PLACING, 201));
+    }
+    if (url.includes("/api/live/graphs/")) {
+      return Promise.resolve(overrides.graph ?? json(GRAPH));
+    }
+    return Promise.resolve(new Response("no route", { status: 404 }));
+  });
+  vi.stubGlobal("fetch", impl);
+  return calls;
+}
+
+/** A session as the placement path returns it (P2c): opened on the topic, no map yet, the
+ *  interviewer's first question in front of the learner and nothing staged. */
+const PLACING = {
+  sessionId: "s2",
+  graphId: "g-pending",
+  topic: "How neural networks learn",
+  status: "placing",
+  startedAt: "2026-08-19T09:00:00Z",
+  turns: [
+    {
+      seq: 1,
+      move: { kind: "place", nodeId: null, reason: "The map is still being built." },
+      tutor: "Before we start on how neural networks learn: what have you already met of it?",
+      runId: "r1",
+      criterion: null,
+      answer: null,
+      grade: null,
+      surface: null,
+      layout: null,
+    },
+  ],
+};
 
 /** A session as the sessions endpoint returns it — a different shape entirely from the compile's
  *  stream, which is the point: the two calls have to be told apart. */
@@ -96,19 +124,35 @@ function renderLive(topic: string) {
   );
 }
 
-describe("LiveShell — the concept map", () => {
+/** The map of a graph the learner already has: the way in that P2a/P2b's opening keeps. */
+function renderMap(graphId = "g1") {
+  return render(
+    <MemoryRouter initialEntries={[`/live?graph=${encodeURIComponent(graphId)}`]}>
+      <LiveShell apiBaseUrl="http://test" />
+    </MemoryRouter>,
+  );
+}
+
+describe("LiveShell — a topic opens a session, not a compile", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("compiles the topic it was sent and renders the concepts", async () => {
-    vi.stubGlobal("fetch", streamingFetch(READY));
+  it("opens a session on the topic it was sent and shows the first question, with no compile in front", async () => {
+    // Plan §6, U5: the moment a topic arrives the learner is being talked to. What was here before
+    // — a progress screen for the compile, then a map, then a button — is gone; the compile still
+    // happens, behind the session, where the learner cannot see it.
+    const calls = liveApi();
 
     renderLive("How neural networks learn");
 
-    expect(await screen.findByRole("button", { name: "Derivative as slope" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Gradient" })).toBeInTheDocument();
+    expect(await screen.findByText(/what have you already met of it/i)).toBeInTheDocument();
+    // The interview is answered where every turn is answered.
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+    // Exactly one request went out, and it opened a session on the topic — not a compile.
+    expect(calls.map((call) => call.url)).toEqual(["http://test/api/live/sessions"]);
+    expect(calls[0]?.body).toEqual({ topic: "How neural networks learn" });
   });
 
-  it("asks for a topic rather than compiling nothing", async () => {
+  it("asks for a topic rather than opening nothing", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
@@ -122,155 +166,16 @@ describe("LiveShell — the concept map", () => {
     await waitFor(() => expect(fetchSpy).not.toHaveBeenCalled());
   });
 
-  it("offers a way forward when the compile fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      streamingFetch([
-        'event: error\ndata: {"message":"Couldn\'t map this topic. Try again, or rephrase it.","runId":"r1"}\n\n',
-      ]),
-    );
+  it("offers a way forward when the session cannot open", async () => {
+    liveApi({
+      session: json({ detail: "You have opened as many sessions as today allows." }, 429),
+    });
 
     renderLive("Tides");
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/rephrase it/i);
+    expect(alert).toHaveTextContent(/as many sessions as today allows/i);
     expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
-  });
-});
-
-describe("LiveShell — watching the compile", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("says what it is doing before there is anything to count", async () => {
-    // Decomposition is one long call with no countable unit. A bar stuck at zero for a minute reads
-    // as a stall, so this stretch is narrated rather than measured.
-    vi.stubGlobal(
-      "fetch",
-      streamingFetch(
-        [
-          'event: progress\ndata: {"phase":"decomposing","done":0,"total":0}\n\n',
-          // …and then nothing, so the surface stays in this phase.
-        ],
-        { keepOpen: true },
-      ),
-    );
-
-    renderLive("Tides");
-
-    const status = await screen.findByRole("status");
-    await waitFor(() => expect(status).toHaveTextContent(/working out which ideas/i));
-    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
-  });
-
-  it("counts the concepts off as they are written", async () => {
-    // The whole point of streaming the compile: a real measure of a three-minute wait.
-    vi.stubGlobal(
-      "fetch",
-      streamingFetch(
-        [
-          'event: progress\ndata: {"phase":"decomposing","done":0,"total":0}\n\n',
-          'event: progress\ndata: {"phase":"authoring","done":3,"total":12}\n\n',
-        ],
-        { keepOpen: true },
-      ),
-    );
-
-    renderLive("Tides");
-
-    const bar = await screen.findByRole("progressbar");
-    expect(bar).toHaveAttribute("aria-valuenow", "25");
-    expect(await screen.findByText(/3\s*\/\s*12/)).toBeInTheDocument();
-  });
-});
-
-describe("LiveShell — a compile whose stream drops", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  it("re-reads the map on retry instead of paying for the compile a second time", async () => {
-    // A three-minute stream is a long time for a proxy to keep a connection open. The compile
-    // itself survives the drop server-side, so retrying has to try the map it was already told the
-    // id of before it spends another three minutes building the same thing.
-    const encoder = new TextEncoder();
-    const calls: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string | URL) => {
-        calls.push(String(url));
-        if (String(url).includes("/stream")) {
-          // Progress, then the connection dies without a terminal frame.
-          return Promise.resolve(
-            new Response(
-              new ReadableStream({
-                start(controller) {
-                  controller.enqueue(
-                    encoder.encode(
-                      'event: progress\ndata: {"phase":"authoring","done":2,"total":9}\n\n',
-                    ),
-                  );
-                  controller.close();
-                },
-              }),
-              {
-                headers: {
-                  "content-type": "text/event-stream",
-                  "x-run-id": "r1",
-                  "x-graph-id": "g1",
-                },
-              },
-            ),
-          );
-        }
-        return Promise.resolve(new Response(JSON.stringify(GRAPH)));
-      }),
-    );
-
-    renderLive("How neural networks learn");
-    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
-
-    // The map arrives from a plain read of the graph the dropped compile had already been given.
-    expect(await screen.findByRole("button", { name: "Gradient" })).toBeInTheDocument();
-    expect(calls.filter((url) => url.includes("/stream"))).toHaveLength(1);
-    expect(calls.at(-1)).toContain("/api/live/graphs/g1");
-  });
-
-  it("compiles again when the dropped compile never landed", async () => {
-    // The re-read is an optimisation, not a guarantee: the compile may have failed on the server
-    // too. A 404 must fall back to compiling rather than stranding the learner on an error.
-    const encoder = new TextEncoder();
-    let streams = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((url: string | URL) => {
-        if (String(url).includes("/stream")) {
-          streams += 1;
-          const frames = streams === 1 ? [] : [`event: graph\ndata: ${JSON.stringify(GRAPH)}\n\n`];
-          return Promise.resolve(
-            new Response(
-              new ReadableStream({
-                start(controller) {
-                  for (const frame of frames) controller.enqueue(encoder.encode(frame));
-                  controller.close();
-                },
-              }),
-              {
-                headers: {
-                  "content-type": "text/event-stream",
-                  "x-run-id": "r1",
-                  "x-graph-id": "g1",
-                },
-              },
-            ),
-          );
-        }
-        return Promise.resolve(new Response("Graph not found", { status: 404 }));
-      }),
-    );
-
-    renderLive("How neural networks learn");
-    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
-
-    expect(await screen.findByRole("button", { name: "Gradient" })).toBeInTheDocument();
-    expect(streams).toBe(2);
   });
 });
 
@@ -278,8 +183,8 @@ describe("LiveShell — the concept's teaching notes", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   async function openFirstConcept() {
-    vi.stubGlobal("fetch", streamingFetch(READY));
-    renderLive("How neural networks learn");
+    liveApi();
+    renderMap();
     const concept = await screen.findByRole("button", { name: "Derivative as slope" });
     fireEvent.click(concept);
     return screen.getByRole("complementary");
@@ -305,8 +210,8 @@ describe("LiveShell — the concept's teaching notes", () => {
   });
 
   it("names what the concept needs first, in the learner's language not in ids", async () => {
-    vi.stubGlobal("fetch", streamingFetch(READY));
-    renderLive("How neural networks learn");
+    liveApi();
+    renderMap();
     fireEvent.click(await screen.findByRole("button", { name: "Gradient" }));
 
     const panel = screen.getByRole("complementary");
@@ -316,8 +221,8 @@ describe("LiveShell — the concept's teaching notes", () => {
   it("says so when a concept's notes failed rather than showing an empty panel", async () => {
     // The compiler keeps a concept whose authoring call failed — losing the map over one failed
     // call would be worse. The surface has to be honest about which one that was.
-    vi.stubGlobal("fetch", streamingFetch(READY));
-    renderLive("How neural networks learn");
+    liveApi();
+    renderMap();
     fireEvent.click(await screen.findByRole("button", { name: "Gradient" }));
 
     expect(
@@ -326,8 +231,8 @@ describe("LiveShell — the concept's teaching notes", () => {
   });
 
   it("closes on Escape and returns focus to the concept it came from", async () => {
-    vi.stubGlobal("fetch", streamingFetch(READY));
-    renderLive("How neural networks learn");
+    liveApi();
+    renderMap();
     const concept = await screen.findByRole("button", { name: "Derivative as slope" });
     fireEvent.click(concept);
 
@@ -338,33 +243,29 @@ describe("LiveShell — the concept's teaching notes", () => {
   });
 });
 
-describe("LiveShell — the way into a session", () => {
+describe("LiveShell — a map the learner already has", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("offers a session on the map it just compiled, and can come back from it", async () => {
-    // The map is a map of the subject, never a route through the session — so starting one is an
-    // action on the map rather than something the compile drops the learner into.
-    //
-    // The two calls are routed apart deliberately. Serving the compile's SSE body to the session
-    // POST as well leaves the surface in its *failed* state — and because the session's landmark
-    // region renders in every state, an assertion on the landmark alone passes just as happily
-    // when starting a session is completely broken. So this waits for something only a session
-    // that actually opened can show.
-    const compile = streamingFetch(READY);
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
-        String(input).includes("/api/live/sessions")
-          ? Promise.resolve(
-              new Response(JSON.stringify(SESSION), {
-                status: 201,
-                headers: { "content-type": "application/json" },
-              }),
-            )
-          : compile(input, init),
-      ),
-    );
-    renderLive("How neural networks learn");
+  it("shows the map it was sent to", async () => {
+    liveApi();
+    renderMap();
+    expect(await screen.findByRole("button", { name: "Derivative as slope" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Gradient" })).toBeInTheDocument();
+  });
+
+  it("says so, in the server's words, when the map is not there", async () => {
+    liveApi({ graph: json({ detail: "Map not found" }, 404) });
+    renderMap("gone");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/map not found/i);
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+
+  it("offers a session on the map, opened on the map's id, and can come back to it", async () => {
+    // U1 adds a way in; it does not move the first. A session started from a map the learner
+    // already has opens on the graph id — teaching from turn 1 — and the map is still there to
+    // come back to.
+    const calls = liveApi({ session: json(SESSION, 201) });
+    renderMap();
 
     fireEvent.click(await screen.findByRole("button", { name: /start a session/i }));
 
@@ -372,6 +273,9 @@ describe("LiveShell — the way into a session", () => {
     expect(
       screen.getByRole("region", { name: /session on how neural networks learn/i }),
     ).toBeInTheDocument();
+    expect(calls.find((call) => call.url.endsWith("/api/live/sessions"))?.body).toEqual({
+      graphId: "g1",
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /back to the map/i }));
     expect(await screen.findByRole("button", { name: /start a session/i })).toBeInTheDocument();

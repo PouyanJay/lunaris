@@ -27,8 +27,10 @@ const CopilotSession = lazy(() =>
 
 interface SessionViewProps {
   apiBaseUrl: string;
-  graphId: string;
-  /** The map's topic, shown as the session's subject. */
+  /** The map to open on, when the learner already has one (P2a's opening). Absent, the session
+   *  opens on `topic` instead — placing while the map compiles behind it (P2c). */
+  graphId?: string | undefined;
+  /** The session's subject: the map's topic, or the topic being compiled. */
   topic: string;
   /** Lunaris Live's CopilotKit runtime, when the deployment has one.
    *
@@ -46,7 +48,10 @@ interface SessionViewProps {
  *  every verdict attached to the answer that earned it, and every state a session can actually be
  *  in rendered rather than assumed. */
 export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionViewProps) {
-  const { state, answer, retry, refresh } = useLiveSession(apiBaseUrl, graphId);
+  const { state, answer, retry, refresh } = useLiveSession(
+    apiBaseUrl,
+    graphId !== undefined ? { graphId } : { topic },
+  );
   // Their own words, shown the moment they send them. Optimistic about the *echo* only — never
   // about the verdict, which is the server's to give and the one thing that must not be guessed.
   const [sending, setSending] = useState<string | null>(null);
@@ -68,7 +73,9 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
       <header className={styles.header}>
         <div className={styles.identity}>
           <p className="eyebrow">Live session</p>
-          <h2 className={styles.topic}>{topic}</h2>
+          {/* The page's own heading: a session is the whole surface now (P2c, U5), and where it
+              is reached from a map, the map has been put away — so it is never a second h1. */}
+          <h1 className={styles.topic}>{topic}</h1>
         </div>
         {session ? <SessionMeta session={session} live={state.status !== "failed"} /> : null}
       </header>
@@ -187,7 +194,7 @@ function SessionMeta({ session, live }: { session: LiveSession; live: boolean })
   return (
     <div className={styles.meta}>
       <StatusDot
-        label={closed ? "closed" : "live"}
+        label={closed ? "closed" : session.status === "placing" ? "placing" : "live"}
         tone={closed ? "neutral" : "accent"}
         live={live && !closed}
       />

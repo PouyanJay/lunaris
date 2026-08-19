@@ -55,9 +55,11 @@ describe("Composer — the Studio | Live fork", () => {
     fireEvent.click(screen.getByRole("button", { name: /start (a )?(live )?session/i }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/live"));
-    // The topic rides along — Live is about to compile a graph for it.
+    // The topic rides along — Live opens a session on it the moment it lands (P2c).
     expect(new URLSearchParams(window.location.search).get("topic")).toBe("How transformers work");
-    expect(await screen.findByRole("heading", { name: "Lunaris Live" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("region", { name: /session on how transformers work/i }),
+    ).toBeInTheDocument();
   });
 
   it("turns the moon on and names the state in words, not colour alone", async () => {
@@ -162,11 +164,10 @@ describe("Composer — the Studio | Live fork", () => {
 
     render(<App />);
 
-    // Phase 1: the topic is no longer merely echoed under a product heading — it IS the heading,
-    // because Live now compiles a map of it. The round trip is what this pins either way. Wait for
-    // the settled state first: the compiling state names the topic too, and asserting on that one
-    // races the swap to the compiled map.
-    await screen.findByText(/concept map/i);
+    // The topic IS the heading: Live opens a session on it (P2c), and the session's page names its
+    // subject. The round trip is what this pins. Wait for the settled state first — the opening
+    // skeleton is on screen until the session's first turn lands.
+    await screen.findByText(/what have you already met of it/i);
     expect(
       screen.getByRole("heading", { name: "How transformers work", level: 1 }),
     ).toBeInTheDocument();
@@ -213,9 +214,9 @@ describe("Composer — the Studio | Live fork", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/live"));
     // Encoded on the way out, decoded on the way in — the learner sees exactly what they typed.
     expect(new URLSearchParams(window.location.search).get("topic")).toBe(topic);
-    // The heading of the settled map specifically: Live repeats the topic in more than one place,
-    // and a loose text match would pass on any one of them.
-    await screen.findByText(/concept map/i);
+    // The heading of the settled session specifically: Live repeats the topic in more than one
+    // place, and a loose text match would pass on any one of them.
+    await screen.findByText(/what have you already met of it/i);
     expect(screen.getByRole("heading", { name: topic, level: 1 })).toBeInTheDocument();
   });
 

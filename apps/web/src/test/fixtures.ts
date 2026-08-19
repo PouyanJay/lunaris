@@ -421,6 +421,7 @@ export function routedFetch(
     activity?: unknown;
     bookmarks?: unknown;
     liveGraph?: unknown;
+    liveSession?: unknown;
   } = {},
 ) {
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
@@ -484,20 +485,50 @@ export function routedFetch(
       };
       return Promise.resolve({ ok: true, json: async () => activity });
     }
-    // Lunaris Live's compile: a topic goes up as a query param, the map comes back over SSE. The
-    // default echoes the requested topic through a one-node graph, so a test asserting the topic
-    // survived the URL is asserting the round trip rather than a fixture constant.
-    if (url.includes("/api/live/graphs/stream")) {
-      const topic = new URL(url, "http://test").searchParams.get("topic") ?? "";
-      const fallback = {
+    // Lunaris Live's opening (P2c): a topic goes up in the body, a PLACING session comes back with
+    // the interviewer's first question — the map compiles behind it, unseen. The default echoes the
+    // requested topic, so a test asserting the topic survived the URL is asserting the round trip
+    // rather than a fixture constant.
+    if (url.endsWith("/api/live/sessions") && method === "POST") {
+      const topic = String((JSON.parse(String(init?.body ?? "{}")) as { topic?: string }).topic);
+      const session = handlers.liveSession ?? {
+        sessionId: "s-test",
         graphId: "g-test",
         topic,
+        status: "placing",
+        startedAt: "2026-08-19T09:00:00Z",
+        turns: [
+          {
+            seq: 1,
+            move: { kind: "place", nodeId: null, reason: "The map is still being built." },
+            tutor: `Before we start on ${topic}: what have you already met of it?`,
+            runId: "run-test",
+            criterion: null,
+            answer: null,
+            grade: null,
+            surface: null,
+            layout: null,
+          },
+        ],
+      };
+      return Promise.resolve(
+        new Response(JSON.stringify(session), {
+          status: 201,
+          headers: { "content-type": "application/json", "x-session-id": "s-test" },
+        }),
+      );
+    }
+    // A map the learner already has (`/live?graph=`), read by id.
+    if (/\/api\/live\/graphs\/[^/?]+$/.test(url) && method === "GET") {
+      const graph = handlers.liveGraph ?? {
+        graphId: "g-test",
+        topic: "A map",
         version: 1,
         nodes: [
           {
             id: "n1",
-            name: topic,
-            definition: `${topic}, put together.`,
+            name: "A map",
+            definition: "A map, put together.",
             requires: [],
             provenance: "compiled",
           },
@@ -505,24 +536,7 @@ export function routedFetch(
         topoOrder: ["n1"],
         isAcyclic: true,
       };
-      const graph = JSON.stringify(handlers.liveGraph ?? fallback);
-      const encoder = new TextEncoder();
-      return Promise.resolve(
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(
-                encoder.encode(
-                  `event: progress\ndata: {"phase":"authoring","done":1,"total":1}\n\n`,
-                ),
-              );
-              controller.enqueue(encoder.encode(`event: graph\ndata: ${graph}\n\n`));
-              controller.close();
-            },
-          }),
-          { headers: { "content-type": "text/event-stream", "x-run-id": "run-test" } },
-        ),
-      );
+      return Promise.resolve({ ok: true, json: async () => graph });
     }
     if (url.includes("/api/courses/stream")) {
       return Promise.resolve(handlers.build);

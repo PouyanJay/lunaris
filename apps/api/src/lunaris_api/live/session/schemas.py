@@ -1,20 +1,34 @@
 from lunaris_live.session import MAX_ANSWER_CHARS
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 
 class SessionStartRequest(BaseModel):
-    """Open a session on a map the learner already has.
+    """Open a session: on a map the learner already has, or on a topic whose map does not exist yet.
 
-    The graph id and nothing else: everything the session needs to teach is already on the map, and
-    a request carrying teaching preferences would be configuring the tutor at the door rather than
-    letting the director learn them from what the learner does (P2c's placement interview is where
-    priors come from).
+    Exactly one of the two (U1). ``graph_id`` is P2a's opening — everything the session needs to
+    teach is already on the map, and it starts teaching from turn 1. ``topic`` is P2c's: the compile
+    is launched *and* the learner is interviewed while it runs, so nobody watches a progress bar,
+    and the interview is what seeds the learner model with priors (T3). Neither request carries
+    teaching preferences: the director learns those from what the learner does and says, not from
+    a form at the door.
+
+    Both named would have to pick one; neither has nothing to open. Both are refused here rather
+    than resolved by a default, because a default here would be a policy nobody chose.
     """
 
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+    model_config = ConfigDict(
+        alias_generator=to_camel, populate_by_name=True, str_strip_whitespace=True
+    )
 
-    graph_id: str = Field(min_length=1, max_length=100)
+    graph_id: str | None = Field(default=None, min_length=1, max_length=100)
+    topic: str | None = Field(default=None, min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def _exactly_one_opening(self) -> "SessionStartRequest":
+        if (self.graph_id is None) == (self.topic is None):
+            raise ValueError("name exactly one of graphId or topic")
+        return self
 
 
 class AnswerRequest(BaseModel):

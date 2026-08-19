@@ -14,6 +14,7 @@ class DirectorMove(LiveModel):
     """
 
     kind: MoveKind
-    #: The concept this move is about; ``None`` only for ``CLOSE``, which is about the session.
+    #: The concept this move is about; ``None`` only for ``CLOSE`` (about the session) and ``PLACE``
+    #: (about the learner, before there are concepts).
     node_id: str | None = None
     reason: str = Field(min_length=1, max_length=500)

@@ -20,6 +20,26 @@ const SESSION = {
   ],
 };
 
+/** A session as the placement path returns it: no map yet, one question, nothing staged. */
+const PLACING = {
+  sessionId: "s2",
+  graphId: "g-pending",
+  topic: "Bayes' theorem",
+  status: "placing",
+  startedAt: "2026-08-19T09:00:00Z",
+  turns: [
+    {
+      seq: 1,
+      move: { kind: "place", nodeId: null, reason: "The map is still being built." },
+      tutor: "Before we start on Bayes' theorem: what have you already met of it, and where?",
+      runId: "r1",
+      criterion: null,
+      answer: null,
+      grade: null,
+    },
+  ],
+};
+
 function withFetch<T>(response: Response, run: () => Promise<T>): Promise<T> {
   const original = globalThis.fetch;
   globalThis.fetch = (() => Promise.resolve(response)) as unknown as typeof fetch;
@@ -37,7 +57,7 @@ function json(body: unknown, status = 200): Response {
 
 describe("liveSession — opening and resuming a session", () => {
   it("returns a session that is already teaching", async () => {
-    const session = await withFetch(json(SESSION, 201), () => startSession("", "g1"));
+    const session = await withFetch(json(SESSION, 201), () => startSession("", { graphId: "g1" }));
 
     expect(session.sessionId).toBe("s1");
     // The move rides every turn: without it the transcript is prose nobody can explain the
@@ -45,6 +65,29 @@ describe("liveSession — opening and resuming a session", () => {
     const [first] = session.turns;
     expect(first?.move.kind).toBe("introduce");
     expect(first?.move.reason).toBe("Opening concept.");
+  });
+
+  it("opens on a topic by naming it, and accepts a session that is still placing", async () => {
+    // P2c: a session can be born before its map — the request carries the topic, nothing else,
+    // and what comes back is placing with the interviewer's first question. Pinned on the body
+    // that went out, because a client that quietly sent `{ graphId: undefined, topic }` would be
+    // refused at the door for naming neither.
+    let sent: unknown = null;
+    const original = globalThis.fetch;
+    globalThis.fetch = ((_: unknown, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return Promise.resolve(json(PLACING, 201));
+    }) as unknown as typeof fetch;
+    try {
+      const session = await startSession("", { topic: "Bayes' theorem" });
+
+      expect(sent).toEqual({ topic: "Bayes' theorem" });
+      expect(session.status).toBe("placing");
+      expect(session.topic).toBe("Bayes' theorem");
+      expect(session.turns[0]?.move.kind).toBe("place");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 
   it("sends an answer and gets the session back with the turn it produced", async () => {
@@ -88,13 +131,17 @@ describe("liveSession — opening and resuming a session", () => {
     // "Map not found" and "storage is down" have different next steps for the learner, and a
     // status code has neither.
     await expect(
-      withFetch(json({ detail: "Map not found" }, 404), () => startSession("", "gone")),
+      withFetch(json({ detail: "Map not found" }, 404), () =>
+        startSession("", { graphId: "gone" }),
+      ),
     ).rejects.toThrow(/Map not found/);
   });
 
   it("falls back to the status when a failure carries no message of ours", async () => {
     await expect(
-      withFetch(new Response("nginx said no", { status: 502 }), () => startSession("", "g1")),
+      withFetch(new Response("nginx said no", { status: 502 }), () =>
+        startSession("", { graphId: "g1" }),
+      ),
     ).rejects.toThrow(/HTTP 502/);
   });
 
@@ -112,7 +159,7 @@ describe("liveSession — opening and resuming a session", () => {
     const original = globalThis.fetch;
     globalThis.fetch = (() => Promise.reject(new Error("offline"))) as unknown as typeof fetch;
     try {
-      await expect(startSession("", "g1")).rejects.toBeInstanceOf(LiveSessionError);
+      await expect(startSession("", { graphId: "g1" })).rejects.toBeInstanceOf(LiveSessionError);
     } finally {
       globalThis.fetch = original;
     }

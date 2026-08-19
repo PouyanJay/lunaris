@@ -19,9 +19,12 @@ from .mastery_thresholds import DECAYED, MASTERED
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
+from .open_placement import open_placement
 from .open_session import open_session
+from .placement_not_answerable_error import PlacementNotAnswerableError
 from .protocols import (
     IGrader,
+    IInterviewer,
     IKnowledgeStore,
     ISessionStore,
     ISimRegistry,
@@ -40,6 +43,7 @@ from .schema import (
     ExampleBlock,
     ExplainBack,
     HintBlock,
+    InterviewExchange,
     LayoutBlock,
     LayoutComponent,
     LayoutSpec,
@@ -71,6 +75,7 @@ from .session_format_error import SessionFormatError
 from .stage_criterion import stage_criterion
 from .stale_answer_error import StaleAnswerError
 from .stub_grader import StubGrader
+from .stub_interviewer import StubInterviewer
 from .stub_sim_path import STUB_SIM_PATH
 from .stub_sim_registry import StubSimRegistry
 from .stub_tutor import StubTutor
@@ -96,11 +101,13 @@ __all__ = [
     "GraderUnavailableError",
     "HintBlock",
     "IGrader",
+    "IInterviewer",
     "IKnowledgeStore",
     "ISessionStore",
     "ISimRegistry",
     "ITutor",
     "ITutorDeltaSink",
+    "InterviewExchange",
     "LayoutBlock",
     "LayoutComponent",
     "LayoutSpec",
@@ -112,6 +119,7 @@ __all__ = [
     "MeterEntry",
     "MoveKind",
     "NodeKnowledge",
+    "PlacementNotAnswerableError",
     "PracticeBlock",
     "ProseBlock",
     "QuizCard",
@@ -126,6 +134,7 @@ __all__ = [
     "StackBlock",
     "StaleAnswerError",
     "StubGrader",
+    "StubInterviewer",
     "StubSimRegistry",
     "StubTutor",
     "SupabaseKnowledgeStore",
@@ -140,6 +149,7 @@ __all__ = [
     "apply_evidence",
     "compose_layout",
     "decide_move",
+    "open_placement",
     "open_session",
     "recall_of",
     "reject_unteachable_move",

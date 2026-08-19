@@ -50,6 +50,15 @@ def _absorb_detached_compile(
         )
 
 
+def _absorb_when_done(
+    compiling: "asyncio.Task[ConceptGraph]", *, run_id: str, graph_id: str
+) -> None:
+    """Arrange for a compile nobody will await to be absorbed when it ends (see above)."""
+    compiling.add_done_callback(
+        lambda task: _absorb_detached_compile(task, run_id=run_id, graph_id=graph_id)
+    )
+
+
 #: What the drain is allowed to take out of a request's budget. Persisting a handful of ledger rows
 #: is fast, but it is store I/O, and C1's promise is about the wall clock a learner waits — so it is
 #: reserved for rather than added on top of the deadline, and a slow store costs telemetry, not the
@@ -113,6 +122,33 @@ class LiveGraphService:
         # the ledger's rollup. 0 (the default) is uncapped; it is a runaway guard, not a ration.
         self._graph_budget_usd = graph_budget_usd
 
+    def launch(
+        self,
+        topic: str,
+        *,
+        graph_id: str,
+        run_id: str,
+        owner_id: str | None = None,
+        on_progress: ICompileProgressSink | None = None,
+    ) -> "asyncio.Task[ConceptGraph]":
+        """Admit and start a compile that nothing will wait on, and hand back the task.
+
+        The placement path (P2c): a session opens on a topic, the compile is launched under the
+        graph id the session already carries, and the learner is interviewed while it runs. Nobody
+        awaits the task — the map is found later by re-reading the store — so its result is absorbed
+        here, and a failure past this point is a logged, correlated warning rather than an
+        unretrieved-exception message with nothing to attach it to.
+
+        Admission happens *now*, synchronously, for the reason ``stream`` gives: a refusal has to
+        raise while the caller can still answer with a status. The compile slot is released by the
+        task, never by the caller (the compile is still spending after the caller has moved on).
+        """
+        compiling = self._launch(
+            topic, graph_id=graph_id, run_id=run_id, owner_id=owner_id, on_progress=on_progress
+        )
+        _absorb_when_done(compiling, run_id=run_id, graph_id=graph_id)
+        return compiling
+
     def stream(
         self, topic: str, *, graph_id: str, run_id: str, owner_id: str | None = None
     ) -> AsyncIterator[tuple[str, CompileProgress | ConceptGraph]]:
@@ -132,34 +168,55 @@ class LiveGraphService:
         the surface reads as "the compile failed" rather than "we did not start one". So a refusal
         (:class:`LiveWorkRefusedError`) raises from here, while the response is still a status.
         """
+        queue: asyncio.Queue[CompileProgress] = asyncio.Queue()
+        # `put_nowait` on an unbounded queue never blocks and never awaits, which is exactly the
+        # contract ICompileProgressSink asks of a sink.
+        compiling = self._launch(
+            topic, graph_id=graph_id, run_id=run_id, owner_id=owner_id, on_progress=queue.put_nowait
+        )
+        return self._beats(compiling, queue, run_id=run_id, graph_id=graph_id)
+
+    def _launch(
+        self,
+        topic: str,
+        *,
+        graph_id: str,
+        run_id: str,
+        owner_id: str | None,
+        on_progress: ICompileProgressSink | None,
+    ) -> "asyncio.Task[ConceptGraph]":
+        """Reserve this owner's compile slot and start the compile as its own task.
+
+        Shared by the two entry points that do not wait for the compile (``stream`` relays it,
+        ``launch`` walks away from it), so admission and the slot's release cannot drift between
+        them.
+        """
         slot = self._reserve_compile(owner_id)
         # Everything from here to the release callback is guarded: this is the one stretch where a
         # slot is held by nothing. Every other path frees it (``compile``'s finally, the callback
         # below), so a raise in here would strand it until the process restarted — and the learner
         # it stranded would be locked out of Live with no way to tell why.
         try:
-            queue: asyncio.Queue[CompileProgress] = asyncio.Queue()
-            # `put_nowait` on an unbounded queue never blocks and never awaits, which is exactly the
-            # contract ICompileProgressSink asks of a sink.
             compiling = asyncio.create_task(
                 self._compile_and_save(
                     topic,
                     graph_id=graph_id,
                     run_id=run_id,
                     owner_id=owner_id,
-                    on_progress=queue.put_nowait,
+                    on_progress=on_progress,
                 )
             )
-            # The slot is freed by the compile, never by the stream. A dropped connection does not
-            # stop the compile (see the detach branch below), and a compile that is still running is
-            # still spending — so releasing when the stream ends would let one learner start a
-            # second three-minute compile while the first is still billing them for the same map.
+            # The slot is freed by the compile, never by the caller. A dropped connection does not
+            # stop the compile (see the detach branch in ``_beats``), and a compile that is still
+            # running is still spending — so releasing when the stream ends would let one learner
+            # start a second three-minute compile while the first is still billing them for the
+            # same map.
             if slot is not None:
                 compiling.add_done_callback(lambda _: self._release_compile(slot))
         except BaseException:
             self._release_compile(slot)
             raise
-        return self._beats(compiling, queue, run_id=run_id, graph_id=graph_id)
+        return compiling
 
     async def _beats(
         self,
@@ -193,9 +250,7 @@ class LiveGraphService:
                 # re-readable. Its result has to be consumed somewhere, though, or a failure past
                 # this point surfaces as an unretrieved-exception warning with no context.
                 logger.info("live.graph.stream_detached", run_id=run_id, graph_id=graph_id)
-                compiling.add_done_callback(
-                    lambda task: _absorb_detached_compile(task, run_id=run_id, graph_id=graph_id)
-                )
+                _absorb_when_done(compiling, run_id=run_id, graph_id=graph_id)
 
     async def compile(
         self, topic: str, *, run_id: str, owner_id: str | None = None

@@ -1,4 +1,5 @@
 import { authedFetch } from "./apiClient";
+import { detailOf } from "./apiErrors";
 
 /** Where a concept came from — a cold compile, or a learner's mid-session request (C1). */
 export type NodeProvenance = "compiled" | "extended";
@@ -63,16 +64,13 @@ export class LiveGraphError extends Error {
   }
 }
 
-/** Re-read a map that has already been compiled.
+/** Read a map that has already been compiled — the one a session walks, or the one a learner comes
+ *  back to (`/live?graph=`).
  *
- *  The compile survives the connection that asked for it — the server does not cancel a compile
- *  when its stream drops, and it persists the result under the id it handed over in a header before
- *  the body. So a learner whose three-minute stream died to a proxy timeout can have the finished
- *  map for the price of one GET, instead of paying for the same compile twice.
- *
- *  Rejects with `LiveGraphError`, including on 404 — a map that is genuinely not there yet is a
- *  normal outcome here (the compile may have failed server-side too), and the caller's answer to
- *  that is to compile again. */
+ *  Rejects with `LiveGraphError`, including on 404, carrying the server's own words where it has
+ *  any: "map not found" and "storage is down" have different next steps for the learner, and a
+ *  status code has neither. A map that is genuinely not there yet is a normal outcome here — a
+ *  session opened on a topic names its map before the compile has landed it. */
 export async function loadGraph(
   apiBaseUrl: string,
   graphId: string,
@@ -88,7 +86,9 @@ export async function loadGraph(
     throw new LiveGraphError("Could not reach the compiler.", { cause });
   }
   if (!response.ok) {
-    throw new LiveGraphError(`Couldn't read that map (HTTP ${response.status}).`);
+    throw new LiveGraphError(
+      (await detailOf(response)) ?? `Couldn't read that map (HTTP ${response.status}).`,
+    );
   }
   const body: unknown = await response.json();
   if (!isConceptGraph(body)) {
@@ -103,8 +103,8 @@ export async function loadGraph(
  *  missing it would throw a raw TypeError inside render rather than surfacing as the recoverable
  *  `LiveGraphError` this boundary promises.
  *
- *  Exported because the compile arrives two ways — awaited here, streamed by `streamGraph` — and a
- *  second copy of this check is how one of the two paths quietly stops guarding. */
+ *  Exported so any other reader of a map (the compile once streamed here; the session's map view
+ *  is next) shares this one check — a second copy is how one path quietly stops guarding. */
 export function isConceptGraph(payload: unknown): payload is ConceptGraph {
   const body = payload as ConceptGraph | null;
   return (

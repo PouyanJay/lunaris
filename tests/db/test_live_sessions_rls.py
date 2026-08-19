@@ -158,3 +158,56 @@ def test_a_session_status_is_constrained_to_the_two_it_can_be(db: "psycopg.Curso
             """,
             (uuid.uuid4().hex, owner),
         )
+
+
+def test_a_placing_session_is_a_status_the_table_accepts(db: "psycopg.Cursor") -> None:
+    """P2c T1: a session now opens *placing* — on a map that has not been compiled yet — and the
+    row's status CHECK has to admit it, or the first topic-opened session in production fails at
+    the write with a constraint error nothing upstream can translate. Expand-only: the two
+    statuses that existed keep their meaning."""
+    # Arrange
+    owner = str(uuid.uuid4())
+    session_id = uuid.uuid4().hex
+    _seed_user(db, owner)
+
+    # Act — written as the loop writes it (the service role, or here the local superuser: both
+    # bypass RLS, neither bypasses a CHECK): a placing session, one interview turn.
+    payload = {
+        "sessionId": session_id,
+        "graphId": "g-pending",
+        "topic": "Bayes' theorem",
+        "status": "placing",
+        "turns": [
+            {
+                "seq": 1,
+                "move": {"kind": "place", "nodeId": None, "reason": "Nothing to teach from yet."},
+                "tutor": "What have you already met of Bayes' theorem?",
+            }
+        ],
+    }
+    db.execute(
+        """
+        insert into public.live_sessions (id, user_id, graph_id, status, turn_count, payload)
+        values (%s, %s, %s, 'placing', 1, %s)
+        """,
+        (session_id, owner, "g-pending", json.dumps(payload)),
+    )
+
+    # Assert — it is there, as written.
+    db.execute("select status from public.live_sessions where id = %s", (session_id,))
+    assert db.fetchone() == ("placing",)
+
+
+def test_an_unknown_status_is_still_refused(db: "psycopg.Cursor") -> None:
+    """Widening the CHECK for ``placing`` must not have turned it into "anything goes"."""
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+
+    with pytest.raises(psycopg.errors.CheckViolation):
+        db.execute(
+            """
+            insert into public.live_sessions (id, user_id, graph_id, status, turn_count, payload)
+            values (%s, %s, 'g1', 'paused', 1, '{}')
+            """,
+            (uuid.uuid4().hex, owner),
+        )

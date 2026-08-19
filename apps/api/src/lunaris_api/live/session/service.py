@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Coroutine, Mapping
+from collections.abc import AsyncIterator, Callable, Coroutine, Mapping
 from contextlib import AbstractContextManager, ExitStack, nullcontext
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -8,18 +8,21 @@ import structlog
 from lunaris_live.graph import ConceptGraph, IGraphStore
 from lunaris_live.session import (
     IGrader,
+    IInterviewer,
     IKnowledgeStore,
     ISessionStore,
     ISimRegistry,
     ITutor,
     ITutorDeltaSink,
     LearnerModel,
+    PlacementNotAnswerableError,
     Session,
     SessionClock,
     SessionClosedError,
     SessionStatus,
     StaleAnswerError,
     TurnOutcome,
+    open_placement,
     open_session,
     take_turn,
 )
@@ -34,6 +37,7 @@ from lunaris_runtime.metering import (
 from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, PersistenceError
 from lunaris_runtime.schema import CostSubjectType
 
+from ..service import LiveGraphService
 from .throttle import LiveSessionBudgetExhaustedError, LiveSessionThrottle
 from .turn_beat import TurnBeat
 from .turn_context import TurnContext
@@ -96,6 +100,8 @@ class LiveSessionService:
         throttle: LiveSessionThrottle | None = None,
         session_budget_usd: float = 0.0,
         sims: ISimRegistry | None = None,
+        compiles: LiveGraphService | None = None,
+        interviewer: IInterviewer | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
@@ -117,6 +123,11 @@ class LiveSessionService:
         # Ceiling on one session's whole spend, read from the ledger's rollup. 0 is uncapped; it is
         # a runaway guard, not a ration — the clock is what bounds an ordinary sitting.
         self._session_budget_usd = session_budget_usd
+        # The compile plane and the interviewer, both needed only to open a session on a *topic*
+        # (P2c). Optional so a service composed for a map it already has — every suite before P2c —
+        # needs neither; ``start_placement`` refuses to run without them rather than half-opening.
+        self._compiles = compiles
+        self._interviewer = interviewer
 
     async def start(
         self, graph_id: str, *, session_id: str, owner_id: str | None = None
@@ -151,35 +162,109 @@ class LiveSessionService:
         # learned — the director cannot adapt to a model nobody read.
         known = await asyncio.to_thread(self._knowledge.load, graph_id, owner_id=owner_id)
 
-        credentials = await self._resolve_credentials(owner_id)
-        cost = self._cost_scope(run_id=run_id, session_id=session_id, owner_id=owner_id)
-        try:
-            # The credential scope has to wrap the turn, not merely be resolved before it: the model
-            # client is built on first use *inside* the tutor, and it reads the tenant's key off
-            # this contextvar. Without it a BYOK tenant is taught on the platform's key — money
-            # spent on their behalf that they never authorized and cannot see.
-            with self._credential_scope(credentials), enter_cost_scope(cost):
-                session = await open_session(
-                    graph,
-                    known,
-                    SessionClock(turn=1, elapsed_s=0.0, budget_s=self._session_budget_s),
-                    session_id=session_id,
-                    run_id=run_id,
-                    tutor=self._tutor,
-                    sims=self._sims,
-                )
-        finally:
-            # Drained even when the turn failed: a tutor call that timed out after the tokens went
-            # out really spent them, and a ledger recording only successes would under-report
-            # exactly the runs somebody needs to go and look at.
-            await self._drain(cost, run_id=run_id, session_id=session_id)
-        # After the turn, deliberately: a session row written before the tutor spoke would be a
-        # resumable transcript with nothing in it if the tutor then failed.
-        await asyncio.to_thread(self._sessions.save, session, owner_id=owner_id)
+        session = await self._open_and_save(
+            lambda: open_session(
+                graph,
+                known,
+                SessionClock(turn=1, elapsed_s=0.0, budget_s=self._session_budget_s),
+                session_id=session_id,
+                run_id=run_id,
+                tutor=self._tutor,
+                sims=self._sims,
+            ),
+            run_id=run_id,
+            session_id=session_id,
+            owner_id=owner_id,
+        )
 
         # No explicit ids: this line rides the contextvars binding above, so the correlation test
         # proves propagation rather than proving they were threaded through by hand.
         logger.info("live.session.started", turn_count=len(session.turns))
+        return session
+
+    async def start_placement(
+        self, topic: str, *, session_id: str, owner_id: str | None = None
+    ) -> Session:
+        """Open a session on a topic whose map does not exist yet, and ask the first question.
+
+        Plan §6, made literal: the compile is launched under a graph id minted here, the session
+        is born ``PLACING`` on that same id, and the learner is interviewed while the map is built.
+        Nothing here waits for the compile — a later turn finds the map by re-reading the store
+        (T2) — so a learner who reloads keeps their session and the compile keeps its slot until
+        it is done, exactly as a dropped compile stream does.
+
+        Two runs, on purpose (R5): the interview turn's and the compile's. They are different work,
+        they fail differently, and a line in either has to be findable from the session — so the
+        session id is bound *before* the compile task is created, and the task inherits it.
+
+        Raises whatever admission raises, before any work; ``RuntimeError`` if this service was
+        composed without a compile plane or an interviewer, which is a wiring fault, not a learner
+        one.
+        """
+        if self._compiles is None or self._interviewer is None:
+            raise RuntimeError("opening on a topic needs a compile plane and an interviewer")
+        interviewer = self._interviewer
+        run_id = uuid4().hex
+        graph_id = uuid4().hex
+        bind_run_id(run_id, graph_id=graph_id, session_id=session_id)
+        logger.info("live.session.placing_started", topic=topic)
+
+        # Before any work, and before the compile: a refused opening should cost a lookup, not a
+        # three-minute compile. The compile's own admission runs next, inside ``launch``; a refusal
+        # there raises before the session exists, and the opening it counted is the price of asking
+        # (T8 owns whether that ratio is right).
+        if self._throttle is not None:
+            self._throttle.admit_open(owner_id)
+        # Detached on purpose. Its context is a copy of this one, so ``session_id`` rides every
+        # line the compile logs; ``_compile_and_save`` rebinds ``run_id`` to the compile's own.
+        self._compiles.launch(topic, graph_id=graph_id, run_id=uuid4().hex, owner_id=owner_id)
+
+        session = await self._open_and_save(
+            lambda: open_placement(
+                topic,
+                graph_id=graph_id,
+                session_id=session_id,
+                run_id=run_id,
+                interviewer=interviewer,
+            ),
+            run_id=run_id,
+            session_id=session_id,
+            owner_id=owner_id,
+        )
+
+        # No explicit ids: this line rides the contextvars binding above (the correlation test
+        # proves propagation, not hand-threading).
+        logger.info("live.session.placing", turn_count=len(session.turns))
+        return session
+
+    async def _open_and_save(
+        self,
+        opener: Callable[[], Coroutine[object, object, Session]],
+        *,
+        run_id: str,
+        session_id: str,
+        owner_id: str | None,
+    ) -> Session:
+        """The opening ceremony both openings share: keys, ledger, the first turn, the row.
+
+        One function for the same reason ``_take_and_save`` is: the order here is a correctness
+        decision, and a second copy is a second place to get it wrong. The credential scope has to
+        wrap the opener, not merely be resolved before it: the model client is built on first use
+        *inside* the tutor or the interviewer, and it reads the tenant's key off this contextvar.
+        Without it a BYOK tenant is served on the platform's key — money spent on their behalf that
+        they never authorized and cannot see. The ledger is drained even when the turn failed: a
+        call that timed out after the tokens went out really spent them. And the row is written
+        after the turn, deliberately: a session saved before its first words would be a resumable
+        transcript with nothing in it if the tutor then failed.
+        """
+        credentials = await self._resolve_credentials(owner_id)
+        cost = self._cost_scope(run_id=run_id, session_id=session_id, owner_id=owner_id)
+        try:
+            with self._credential_scope(credentials), enter_cost_scope(cost):
+                session = await opener()
+        finally:
+            await self._drain(cost, run_id=run_id, session_id=session_id)
+        await asyncio.to_thread(self._sessions.save, session, owner_id=owner_id)
         return session
 
     async def answer(
@@ -250,10 +335,12 @@ class LiveSessionService:
         """
         bind_run_id(run_id, session_id=session_id)
         context = await self._ready(session_id, owner_id)
-        if context.session.status is not SessionStatus.ACTIVE:
+        if context.session.status is SessionStatus.CLOSED:
             # ``take_turn`` checks this too, and that check stays: it is the loop's own invariant.
             # This one exists so the refusal is a 409 rather than an error frame on a 200 — the same
             # sentence the REST surface gives, which is what ``failure_mapping`` exists to hold.
+            # ``CLOSED`` by name, not "anything but active": a placing session was refused, in its
+            # own words, by ``_ready`` before this line (P2c T1).
             raise SessionClosedError(f"session {session_id} has already closed")
         answering_seq = self._resolve_answering_seq(context, answering_seq)
         # ``put_nowait`` on an unbounded queue never blocks and never awaits, which is exactly what
@@ -392,6 +479,12 @@ class LiveSessionService:
         """
         await self._refuse_if_budget_spent(session_id, owner_id)
         session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
+        if session.status is SessionStatus.PLACING:
+            # Before the graph is read, because a placing session's map may not have landed yet:
+            # read first, a learner answering the interview would be told the *session* was not
+            # found (404) for the whole compile window. T1's honest refusal on both transports;
+            # T2 turns this branch into the interview path and deletes the error.
+            raise PlacementNotAnswerableError(f"session {session_id} is still placing")
         graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
         known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
         return TurnContext(

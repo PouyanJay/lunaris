@@ -22,9 +22,11 @@ import pytest
 from _agui_frames import call_named
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
+from lunaris_api.live.dependencies import get_live_graph_service
 from lunaris_api.live.session.agui.surface_tool import SURFACE_TOOL
 from lunaris_api.live.session.dependencies import (
     get_live_grader,
+    get_live_interviewer,
     get_live_session_service,
     get_live_sims,
     get_live_tutor,
@@ -181,6 +183,8 @@ def _service_from_the_container(tmp_path: Path, *, sims: str) -> LiveSessionServ
         tutor=get_live_tutor(settings),
         grader=get_live_grader(settings),
         sims=get_live_sims(settings),
+        interviewer=get_live_interviewer(settings),
+        compiles=get_live_graph_service(settings, cost_event_store=None, subject_cost_store=None),
         cost_event_store=None,
         subject_cost_store=None,
     )

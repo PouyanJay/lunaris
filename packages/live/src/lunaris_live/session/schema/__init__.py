@@ -7,6 +7,7 @@ from .evidence_kind import EvidenceKind
 from .example_block import ExampleBlock
 from .explain_back import ExplainBack
 from .hint_block import HintBlock
+from .interview_exchange import InterviewExchange
 from .layout_block import LayoutBlock
 from .layout_component import LayoutComponent
 from .layout_spec import LayoutSpec
@@ -39,6 +40,7 @@ __all__ = [
     "ExampleBlock",
     "ExplainBack",
     "HintBlock",
+    "InterviewExchange",
     "LayoutBlock",
     "LayoutComponent",
     "LayoutSpec",

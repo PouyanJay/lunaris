@@ -6,6 +6,7 @@ from .compose_layout import compose_layout
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
+from .placement_not_answerable_error import PlacementNotAnswerableError
 from .protocols import IGrader, ISimRegistry, ITutor, ITutorDeltaSink
 from .resolve_sim_app import resolve_sim_app
 from .said_and_illustrated import said_and_illustrated
@@ -78,6 +79,9 @@ async def take_turn(
     in which case nothing has moved and the caller can offer the learner a retry that means
     something.
     """
+    if session.status is SessionStatus.PLACING:
+        # T1's honest refusal; T2 routes this to the interviewer instead and deletes it.
+        raise PlacementNotAnswerableError(f"session {session.session_id} is still placing")
     if session.status is not SessionStatus.ACTIVE:
         raise SessionClosedError(f"session {session.session_id} has already closed")
     if not session.turns:

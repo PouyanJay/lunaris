@@ -6,6 +6,7 @@ from lunaris_live.session import (
     ClaudeGrader,
     ClaudeTutor,
     IGrader,
+    IInterviewer,
     IKnowledgeStore,
     ISessionStore,
     ISimRegistry,
@@ -13,6 +14,7 @@ from lunaris_live.session import (
     MemoryKnowledgeStore,
     MemorySessionStore,
     StubGrader,
+    StubInterviewer,
     StubSimRegistry,
     StubTutor,
     SupabaseKnowledgeStore,
@@ -23,10 +25,12 @@ from ...config import Settings, get_settings
 from ...dependencies import CostEventStoreDep, SubjectCostStoreDep
 from ..dependencies import (
     get_live_credential_resolver,
+    get_live_graph_service,
     resolve_graph_store,
     resolve_strong_model,
     resolve_worker_model,
 )
+from ..service import LiveGraphService
 from .service import LiveSessionService
 from .throttle import LiveSessionThrottle
 
@@ -82,6 +86,19 @@ def get_live_sims(settings: Annotated[Settings, Depends(get_settings)]) -> ISimR
     return StubSimRegistry() if settings.live_sims == "stub" else None
 
 
+def get_live_interviewer(settings: Annotated[Settings, Depends(get_settings)]) -> IInterviewer:
+    """The interviewer that opens a session on a topic (P2c T1): the deterministic one under
+    ``LUNARIS_PIPELINE=stub``, and — until T2 lands the model-backed one — the same one everywhere,
+    so the walking skeleton crosses every layer with the plainest voice it can.
+
+    A dependency of its own for the reason the tutor is: it is the collaborator a test wants to
+    substitute, and the failure worth staging is an interviewer with nothing to ask.
+    """
+    # T2 keys this on ``settings.pipeline`` the way the tutor and grader are.
+    del settings
+    return StubInterviewer()
+
+
 def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGrader:
     """The model-backed grader, or the deterministic one under ``LUNARIS_PIPELINE=stub``.
 
@@ -114,6 +131,8 @@ def get_live_session_service(
     tutor: Annotated[ITutor, Depends(get_live_tutor)],
     grader: Annotated[IGrader, Depends(get_live_grader)],
     sims: Annotated[ISimRegistry | None, Depends(get_live_sims)],
+    interviewer: Annotated[IInterviewer, Depends(get_live_interviewer)],
+    compiles: Annotated[LiveGraphService, Depends(get_live_graph_service)],
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
 ) -> LiveSessionService:
@@ -121,7 +140,9 @@ def get_live_session_service(
 
     Takes the *same* graph store the compile plane writes to rather than composing a second one —
     a session that read from a different store than the compiler wrote to would find no maps at all,
-    and it would look like a data problem rather than the wiring one it is.
+    and it would look like a data problem rather than the wiring one it is. And takes the compile
+    plane itself (P2c), the very service the graph routes use, so a session opened on a topic is
+    admitted by the same throttle and lands in the same store as a map compiled by hand.
     """
     return LiveSessionService(
         resolve_graph_store(settings),
@@ -139,6 +160,8 @@ def get_live_session_service(
         throttle=_get_live_session_throttle(settings),
         session_budget_usd=settings.live_session_budget_usd,
         sims=sims,
+        compiles=compiles,
+        interviewer=interviewer,
     )
 
 

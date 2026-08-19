@@ -19,6 +19,7 @@ from lunaris_live.session import (
     MoveKind,
     Session,
     SessionFormatError,
+    SessionStatus,
     SessionTurn,
     StaleAnswerError,
     SupabaseSessionStore,
@@ -136,6 +137,39 @@ def test_saving_the_same_session_again_replaces_its_head() -> None:
 
     # Assert
     assert [turn.seq for turn in store.load("s1", owner_id="learner-1").turns] == [1, 2]
+
+
+def test_a_placing_session_round_trips_with_its_topic() -> None:
+    """A placement is a session whose map has not landed yet (P2c T1). Its status and its topic
+    have to survive the store: a reload mid-interview knows what the interview is about only from
+    the row, because there is no graph to read it off."""
+    # Arrange
+    store = MemorySessionStore()
+    placing = Session(
+        session_id="s-placing",
+        graph_id="g-pending",
+        topic="Bayes' theorem",
+        status=SessionStatus.PLACING,
+        started_at=datetime(2026, 8, 19, 9, 0, tzinfo=UTC),
+        turns=[
+            SessionTurn(
+                seq=1,
+                move=DirectorMove(kind=MoveKind.PLACE, reason="Nothing to teach from yet."),
+                tutor="What have you already met of Bayes' theorem?",
+                run_id="r1",
+            )
+        ],
+    )
+    store.save(placing, owner_id="learner-1")
+
+    # Act
+    loaded = store.load("s-placing", owner_id="learner-1")
+
+    # Assert — pinned by value, not merely "round-tripped": a store that dropped the topic or
+    # coerced the status to ACTIVE would still return a Session.
+    assert loaded.status is SessionStatus.PLACING
+    assert loaded.topic == "Bayes' theorem"
+    assert loaded.turns[0].move.kind is MoveKind.PLACE
 
 
 # ── a row this build cannot read ───────────────────────────────────────────────────────────────

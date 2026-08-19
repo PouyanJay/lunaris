@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import { CompilingState } from "./CompilingState";
 import { ConceptMap } from "./ConceptMap";
 import { ConceptSpecPanel } from "./ConceptSpecPanel";
 import { SessionView } from "./SessionView";
-import { useCompileGraph } from "../../hooks/useCompileGraph";
+import { useLiveGraph } from "../../hooks/useLiveGraph";
 import { type ConceptGraph } from "../../lib/liveGraph";
 import { ROUTES } from "../../lib/routes";
 import { BrandMark } from "../shell/BrandMark";
@@ -18,15 +17,16 @@ interface LiveShellProps {
 
 /** Lunaris Live's app shell.
  *
- *  A topic arrives from the composer and Live builds its concept map — what the subject is made of,
- *  what has to be learned before what, and what each concept expects a learner to end up able to
- *  do. Nothing teaches yet; the session loop is Phase 2, and this surface is how the map is
- *  inspected before there is one.
+ *  A topic arrives from the composer and a session opens on it at once (P2c, U5): the tutor is
+ *  talking within seconds, the map compiles behind the conversation, and nobody watches a progress
+ *  bar. A map the learner already has (`?graph=`) is the other way in — read it, then start a
+ *  session on it — which is the opening P2a and P2b built and U1 keeps.
  *
  *  Loaded lazily by {@link ProductRouter} so Live's dependencies never reach Studio's bundle. */
 export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
-  const topic = useSearchParams()[0].get("topic")?.trim();
-  const { state, retry } = useCompileGraph(apiBaseUrl, topic);
+  const [params] = useSearchParams();
+  const topic = params.get("topic")?.trim();
+  const graphId = params.get("graph")?.trim();
 
   useEffect(() => {
     const previous = document.title;
@@ -44,23 +44,44 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
           <span className={styles.wordmark}>Lunaris</span>
         </div>
       </header>
-      <main className={styles.canvas} data-state={state.status}>
-        {state.status === "idle" ? <IdleState /> : null}
-        {state.status === "compiling" ? (
-          <CompilingState topic={topic ?? ""} progress={state.progress} />
-        ) : null}
-        {state.status === "failed" ? <FailedState message={state.message} onRetry={retry} /> : null}
-        {state.status === "ready" ? (
-          <MapWorkspace graph={state.graph} apiBaseUrl={apiBaseUrl} />
-        ) : null}
-      </main>
+      {topic ? (
+        <main className={styles.canvas} data-state="session">
+          <div className={styles.teaching}>
+            <SessionView
+              apiBaseUrl={apiBaseUrl}
+              topic={topic}
+              copilotUrl={import.meta.env.VITE_COPILOT_URL}
+            />
+          </div>
+        </main>
+      ) : graphId ? (
+        <MapEntry apiBaseUrl={apiBaseUrl} graphId={graphId} />
+      ) : (
+        <main className={styles.canvas} data-state="idle">
+          <IdleState />
+        </main>
+      )}
     </div>
   );
 }
 
-/** The compiled map beside the notes for whichever concept is open — and the way into a session on
- *  it. The map is a map of the subject, never a route through the session: it is what a learner
- *  reads *before* being taught, and what keeps score once they are. */
+/** A map the learner already has, read from the store, and the way into a session on it. */
+function MapEntry({ apiBaseUrl, graphId }: { apiBaseUrl: string; graphId: string }) {
+  const { state, retry } = useLiveGraph(apiBaseUrl, graphId);
+  return (
+    <main className={styles.canvas} data-state={state.status}>
+      {state.status === "loading" ? <LoadingMap /> : null}
+      {state.status === "failed" ? <FailedState message={state.message} onRetry={retry} /> : null}
+      {state.status === "ready" ? (
+        <MapWorkspace graph={state.graph} apiBaseUrl={apiBaseUrl} />
+      ) : null}
+    </main>
+  );
+}
+
+/** The map beside the notes for whichever concept is open — and the way into a session on it. The
+ *  map is a map of the subject, never a route through the session: it is what a learner reads
+ *  *before* being taught, and what keeps score once they are. */
 function MapWorkspace({ graph, apiBaseUrl }: { graph: ConceptGraph; apiBaseUrl: string }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [teaching, setTeaching] = useState(false);
@@ -106,15 +127,15 @@ function MapWorkspace({ graph, apiBaseUrl }: { graph: ConceptGraph; apiBaseUrl: 
   );
 }
 
-/** No topic yet — Live cannot compile nothing, so it says what it needs and where to say it. */
+/** No topic yet — Live cannot open a session on nothing, so it says what it needs and where. */
 function IdleState() {
   return (
     <div className={styles.empty}>
-      <p className={`eyebrow ${styles.eyebrow}`}>Nothing to build yet</p>
+      <p className={`eyebrow ${styles.eyebrow}`}>Nothing to start yet</p>
       <h1 className={styles.title}>Lunaris Live</h1>
       <p className={styles.body}>
-        Name a topic and Live works out what it is made of — every idea in it, and what you need to
-        understand before what.
+        Name a topic and Live starts a session on it straight away — a few questions about you while
+        it works out what the subject is made of, then the teaching begins.
       </p>
       <Link to={ROUTES.home} className={styles.action}>
         Name a topic
@@ -123,11 +144,20 @@ function IdleState() {
   );
 }
 
-/** A failed compile is recoverable — the topic is still known, so retrying is one press. */
+/** The gap between asking for a map and having it: one read, so a sentence rather than a bar. */
+function LoadingMap() {
+  return (
+    <p className={styles.body} role="status">
+      Opening the map…
+    </p>
+  );
+}
+
+/** A map that could not be read is recoverable — the id is still known, so retrying is one press. */
 function FailedState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className={styles.empty}>
-      <p className={`eyebrow ${styles.eyebrow}`}>Couldn&rsquo;t build the map</p>
+      <p className={`eyebrow ${styles.eyebrow}`}>Couldn&rsquo;t open the map</p>
       <p className={styles.body} role="alert">
         {message}
       </p>

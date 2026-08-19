@@ -19,7 +19,15 @@ class Session(LiveModel):
     """
 
     session_id: str = Field(min_length=1, max_length=100)
+    #: The map this session walks. Minted *before* the compile when a session opens on a topic
+    #: (P2c), so a placing session names the map it is waiting for and a later turn can find it by
+    #: re-reading the store rather than by holding process state.
     graph_id: str = Field(min_length=1, max_length=100)
+    #: What the session is about, in the learner's words. Carried on the row rather than read off
+    #: the graph because while placing there is no graph to read it off, and a reload mid-interview
+    #: has to know what the interview is about. Optional so every row written before P2c still
+    #: parses; a session opened on a map has the map's topic instead.
+    topic: str | None = Field(default=None, min_length=1, max_length=500)
     status: SessionStatus = SessionStatus.ACTIVE
     #: When the session opened, in UTC. The budget is wall time (plan §6, AD9), and wall time is the
     #: one thing a resumed session cannot recover from its own turns — so it is stamped here and

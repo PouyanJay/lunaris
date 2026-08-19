@@ -13,6 +13,7 @@ import structlog
 from fastapi import HTTPException, status
 from lunaris_live.session import (
     GraderUnavailableError,
+    PlacementNotAnswerableError,
     SessionClosedError,
     SessionFormatError,
     StaleAnswerError,
@@ -70,6 +71,13 @@ def translate_failure(exc: Exception, correlated: dict[str, str]) -> HTTPExcepti
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="That question has already been answered. Reload to catch up.",
+            headers=correlated,
+        )
+    if isinstance(exc, PlacementNotAnswerableError):
+        # T1's honest 409 for an answer to the interview this build cannot read yet; T2 removes it.
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The interview isn't taking answers yet.",
             headers=correlated,
         )
     if isinstance(exc, SessionClosedError):

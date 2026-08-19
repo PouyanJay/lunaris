@@ -37,6 +37,25 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+const PLACING = {
+  sessionId: "s2",
+  graphId: "g-pending",
+  topic: "Bayes' theorem",
+  status: "placing" as const,
+  startedAt: "2026-08-19T09:00:00Z",
+  turns: [
+    {
+      seq: 1,
+      move: { kind: "place", nodeId: null, reason: "The map is still being built." },
+      tutor: "Before we start on Bayes' theorem: what have you already met of it, and where?",
+      runId: "r1",
+      criterion: null,
+      answer: null,
+      grade: null,
+    },
+  ],
+};
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe("useLiveSession — the loop's client side", () => {
@@ -50,7 +69,7 @@ describe("useLiveSession — the loop's client side", () => {
       .mockResolvedValueOnce(json(OPENED));
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useLiveSession("", "g1"));
+    const { result } = renderHook(() => useLiveSession("", { graphId: "g1" }));
     await waitFor(() => expect(result.current.state.status).toBe("ready"));
 
     act(() => result.current.answer("A step size scales the move."));
@@ -71,7 +90,7 @@ describe("useLiveSession — the loop's client side", () => {
       .mockImplementationOnce(() => new Promise(() => {}));
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useLiveSession("", "g1"));
+    const { result } = renderHook(() => useLiveSession("", { graphId: "g1" }));
     await waitFor(() => expect(result.current.state.status).toBe("ready"));
 
     act(() => result.current.answer("First."));
@@ -86,12 +105,31 @@ describe("useLiveSession — the loop's client side", () => {
       vi.fn().mockResolvedValueOnce(json({ ...OPENED, status: "closed" }, 201)),
     );
 
-    const { result } = renderHook(() => useLiveSession("", "g1"));
+    const { result } = renderHook(() => useLiveSession("", { graphId: "g1" }));
     await waitFor(() => expect(result.current.state.status).toBe("ready"));
 
     act(() => result.current.answer("One more thing?"));
 
     expect(result.current.state.status).toBe("ready");
+  });
+
+  it("opens on a topic when it is given one, and holds the placing session it gets back", async () => {
+    // P2c: the same hook, the other opening. What is pinned is the request that went out — a hook
+    // that sent `{ graphId: undefined }` alongside would be refused at the door — and that a
+    // placing session is a session it will hold, not a shape it rejects.
+    const fetchMock = vi.fn().mockResolvedValueOnce(json(PLACING, 201));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useLiveSession("", { topic: "Bayes' theorem" }));
+
+    await waitFor(() => expect(result.current.state.status).toBe("ready"));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      topic: "Bayes' theorem",
+    });
+    expect(result.current.state).toMatchObject({ session: { status: "placing" } });
+    // One open, not one per render: the opening is keyed on what it names, not on the object
+    // that names it, or every re-render of the surface would open another session.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("abandons an open the learner has walked away from", async () => {
@@ -106,7 +144,7 @@ describe("useLiveSession — the loop's client side", () => {
       }),
     );
 
-    const { unmount } = renderHook(() => useLiveSession("", "g1"));
+    const { unmount } = renderHook(() => useLiveSession("", { graphId: "g1" }));
     await waitFor(() => expect(signals).toHaveLength(1));
 
     unmount();
@@ -124,7 +162,7 @@ describe("useLiveSession — the loop's client side", () => {
       vi.fn(() => new Promise<Response>((resolve) => settle.push(resolve))),
     );
 
-    const { result } = renderHook(() => useLiveSession("", "g1"));
+    const { result } = renderHook(() => useLiveSession("", { graphId: "g1" }));
     await waitFor(() => expect(settle).toHaveLength(1));
 
     act(() => result.current.retry());

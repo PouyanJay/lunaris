@@ -20,12 +20,13 @@ async def start_session(
     response: Response,
     owner_id: OptionalUserIdDep,
 ) -> Session:
-    """Open a session on a compiled map and hand back its first turn.
+    """Open a session and hand back its first turn: on a compiled map, or on a topic (U1).
 
-    Answers 201 with the session already teaching rather than an empty shell the surface then has to
+    Answers 201 with the session already talking rather than an empty shell the surface then has to
     poll: a session that opens with nothing to show is a loading spinner with a database row behind
-    it. ``X-Session-Id`` rides the response so a learner reporting "it went wrong" can name the
-    session across every layer's logs.
+    it. On a map, that first turn is a lesson; on a topic, it is the interviewer's first question
+    while the map compiles behind it (plan §6). ``X-Session-Id`` rides the response so a learner
+    reporting "it went wrong" can name the session across every layer's logs.
     """
     # Minted here, and put on the response before the work: a header set only after success is
     # absent from exactly the failures somebody needs to report. Every raise below carries it
@@ -34,6 +35,12 @@ async def start_session(
     response.headers["X-Session-Id"] = session_id
     correlated = {"X-Session-Id": session_id}
     try:
+        if payload.topic is not None:
+            return await service.start_placement(
+                payload.topic, session_id=session_id, owner_id=owner_id
+            )
+        # The contract admits exactly one of the two, so a request without a topic has a map.
+        assert payload.graph_id is not None
         return await service.start(payload.graph_id, session_id=session_id, owner_id=owner_id)
     except FileNotFoundError as exc:
         raise HTTPException(
