@@ -1,6 +1,9 @@
+from datetime import datetime
+
 from pydantic import Field
 
 from ...graph.schema.base import LiveModel
+from ..review_ladder import LAST_RUNG
 
 
 class NodeKnowledge(LiveModel):
@@ -28,3 +31,10 @@ class NodeKnowledge(LiveModel):
     #: boundary and verifies the deepest claim there before building on it, and Tier 2 reads it as
     #: the band for a concept nothing has been shown about. Cleared by the first evidence.
     prior: float | None = Field(default=None, ge=0.0, le=1.0)
+    #: The rung of the review ladder this concept is on (P2c T6): how many closes in a row it has
+    #: held at. Zero for a concept never held at a close, and after one it slipped at.
+    review_stage: int = Field(default=0, ge=0, le=LAST_RUNG)
+    #: When the concept is next due for a review, set at the session's close from the rung and
+    #: how the concept stood; cleared by the evidence that answers the review. ``None`` on a
+    #: concept never scheduled, and on every row written before the schedule existed.
+    due_at: datetime | None = None

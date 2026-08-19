@@ -256,6 +256,17 @@ function percent(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
+/** The day a review is due, as the learner is told it: "Thu 20 Aug". The day and never the time,
+ *  because the ladder is measured in days and a minute would promise a precision it does not have.
+ *  Read in UTC, as the server set it: the schedule is a day on the map's calendar, not a local
+ *  moment, and a learner opening the app across midnight must not see the day slide. */
+const reviewDay = new Intl.DateTimeFormat("en-GB", {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
 function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
   return (
     <Shell eyebrow="What you showed" concept="This session" welded={welded}>
@@ -278,6 +289,8 @@ function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
                 {/* Movement, not a number: where they came in, when the row recorded it. */}
                 {entry.recallBefore != null ? `from ${percent(entry.recallBefore)} · ` : null}
                 {`${entry.evidenceCount} ${entry.evidenceCount === 1 ? "answer" : "answers"}`}
+                {/* And when it is due back (P2c T6): the day, from the row's own schedule. */}
+                {entry.dueAt ? ` · review ${reviewDay.format(new Date(entry.dueAt))}` : null}
               </span>
             </li>
           ))}

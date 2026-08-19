@@ -150,7 +150,7 @@ async def test_a_first_turn_on_a_node_uses_its_prefetched_material_and_asks_for_
     tutor = CountingTutor()
     session = _session()
 
-    advanced, consumed = await next_turn(
+    outcome = await next_turn(
         session,
         _graph(),
         LearnerModel(graph_id="g1"),
@@ -161,8 +161,8 @@ async def test_a_first_turn_on_a_node_uses_its_prefetched_material_and_asks_for_
         prefetched={"a": _parts("From the store")},
     )
 
-    assert consumed == "a"
-    lesson = advanced.turns[-1]
+    assert outcome.consumed_material == "a"
+    lesson = outcome.session.turns[-1]
     assert lesson.move.node_id == "a"
     assert tutor.illustrated == [], "the material was there; the tutor was not asked for it"
     assert lesson.layout is not None
@@ -186,7 +186,7 @@ async def test_a_second_turn_on_the_same_node_generates_fresh_material() -> None
     session = _session(first)
     model = apply_evidence(LearnerModel(graph_id="g1"), "a", EvidenceKind.NOT_MET, at_turn=1)
 
-    advanced, consumed = await next_turn(
+    outcome = await next_turn(
         session,
         _graph(),
         model,
@@ -197,8 +197,8 @@ async def test_a_second_turn_on_the_same_node_generates_fresh_material() -> None
         prefetched={"a": _parts("Stale")},
     )
 
-    assert advanced.turns[-1].move.node_id == "a"
-    assert consumed is None
+    assert outcome.session.turns[-1].move.node_id == "a"
+    assert outcome.consumed_material is None
     assert tutor.illustrated == ["a"], "a second pass asks the tutor, prefetched or not"
 
 

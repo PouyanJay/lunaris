@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import StrEnum
 
 from pydantic import Field
@@ -28,3 +29,6 @@ class Covered(LiveModel):
     concept: str = Field(min_length=1, max_length=200)
     outcome: CoveredOutcome
     evidence_count: int = Field(ge=0)
+    #: When it is next due for review (P2c T6), once the close has scheduled it: the recap names
+    #: the day. ``None`` before scheduling, and for a concept nothing was graded on.
+    due_at: datetime | None = None

@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from datetime import datetime
 
 import structlog
 
@@ -8,6 +9,7 @@ from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .next_turn import next_turn
 from .node_of import node_of
+from .on_the_wall import on_the_wall
 from .protocols import IGrader, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import (
     LearnerModel,
@@ -84,11 +86,12 @@ async def take_turn(
 
     # Written before the director looks: a move decided against the pre-answer belief would be one
     # turn behind the learner, which is exactly the lag adaptive teaching exists to remove.
-    model = _moved_by(model, asked, graded)
     turns = [*session.turns[:-1], asked.model_copy(update={"answer": said, "grade": graded})]
-
-    clock = SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s)
-    advanced, consumed = await next_turn(
+    clock = on_the_wall(
+        SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s), session
+    )
+    model = _moved_by(model, asked, graded, on=clock.at)
+    outcome = await next_turn(
         session,
         graph,
         model,
@@ -109,14 +112,16 @@ async def take_turn(
         # somebody being taught, and this is enough to read a session's shape from the outside.
         graded=graded.kind.value if graded else None,
     )
-    return TurnOutcome(session=advanced, model=model, consumed_material=consumed)
+    return outcome
 
 
-def _moved_by(model: LearnerModel, asked: SessionTurn, graded: TurnGrade | None) -> LearnerModel:
+def _moved_by(
+    model: LearnerModel, asked: SessionTurn, graded: TurnGrade | None, *, on: datetime | None
+) -> LearnerModel:
     """The belief after this answer — unchanged when there was nothing to score it against."""
     if graded is None or asked.move.node_id is None:
         return model
-    return apply_evidence(model, asked.move.node_id, graded.kind, at_turn=asked.seq)
+    return apply_evidence(model, asked.move.node_id, graded.kind, at_turn=asked.seq, on=on)
 
 
 async def _grade(

@@ -24,15 +24,20 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
     2. **A stuck learner is not walked away from.** There is nearly always other material available;
        leaving somebody stranded on the concept they just failed twice to reach for something easier
        is the single worst thing this policy could do.
-    3. **A slipping concept interrupts new material.** Spaced retrieval only exists if it can
+    3. **A review that has come due is taken before new material** (P2c T6). The close put a
+       date on every concept the session graded — held or still forming; a session opened on or
+       after that date checks it first, longest overdue first. This is the only cross-session
+       pull there is: beliefs do not decay between sittings, the ladder is what brings a concept
+       back.
+    4. **A slipping concept interrupts new material.** Spaced retrieval only exists if it can
        interrupt — a director that introduced whenever anything was introducible would never come
        back to anything.
-    4. **A claim is checked before anything is built on it** (P2c T3, U2). The placement interview
+    5. **A claim is checked before anything is built on it** (P2c T3, U2). The placement interview
        lets a learner skip a chain they say they know, to its boundary; the deepest claim the next
        concept stands on is retrieved and graded first. Held rather than trusted, because the
        number that skips a curriculum must only ever be written by the grader.
-    5. **Otherwise, teach something new whose prerequisites are met** — or credibly claimed.
-    6. **Nothing left worth doing is a reason to stop**, not to loop.
+    6. **Otherwise, teach something new whose prerequisites are met** — or credibly claimed.
+    7. **Nothing left worth doing is a reason to stop**, not to loop.
     """
     if clock.is_spent:
         return DirectorMove(
@@ -50,6 +55,22 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
             reason=(
                 f"{stuck.name} has been missed {_STUCK_AFTER} times running, so the explanation is "
                 "not landing. Trying it a different way rather than pressing on."
+            ),
+        )
+
+    if (due := _longest_overdue(graph, model, clock)) is not None:
+        return DirectorMove(
+            kind=MoveKind.RETRIEVE,
+            node_id=due.id,
+            # Two readings, because the trace is read by a human: a concept on the ladder was held
+            # at a close; one at the bottom (rung zero) was still forming when the day was set.
+            reason=(
+                f"{due.name} is due for review: it was held when a session last closed and the "
+                "day set for checking it has come round. A quick retrieval before anything new."
+                if model.nodes[due.id].review_stage > 0
+                else f"{due.name} is due for review: it was still forming when a session last "
+                "closed, and today is the day set for coming back to it. Checking where it stands "
+                "before anything new."
             ),
         )
 
@@ -150,6 +171,28 @@ def _most_decayed(
     ]
     due = [(recall, node) for recall, node in candidates if recall < _DECAYED]
     return min(due, key=lambda pair: pair[0])[1] if due else None
+
+
+def _longest_overdue(
+    graph: ConceptGraph, model: LearnerModel, clock: SessionClock
+) -> ConceptNode | None:
+    """The concept whose scheduled review is furthest past ``clock.at``, if any is due at all.
+
+    Read against the turn's wall time and nothing else: with no wall time (a replay, the prefetch
+    prediction) nothing is due, because a ladder measured in days has no day to be read on. Ties
+    fall to the map's teaching order, so two sittings on one map ask in the same order.
+    """
+    if clock.at is None:
+        return None
+    order = {node_id: index for index, node_id in enumerate(graph.topo_order)}
+    due = [
+        (known.due_at, order.get(node.id, len(order)), node)
+        for node in graph.nodes
+        if (known := model.nodes.get(node.id)) is not None
+        and known.due_at is not None
+        and known.due_at <= clock.at
+    ]
+    return min(due, key=lambda entry: entry[:2])[2] if due else None
 
 
 def _claimed(model: LearnerModel, node_id: str) -> bool:

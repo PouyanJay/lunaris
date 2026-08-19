@@ -50,6 +50,8 @@ class SupabaseKnowledgeStore:
                 "evidence_count": known.evidence_count,
                 "last_evidence_turn": known.last_evidence_turn,
                 "prior": known.prior,
+                "review_stage": known.review_stage,
+                "due_at": known.due_at.isoformat() if known.due_at is not None else None,
             }
             for known in model.nodes.values()
         ]
@@ -80,6 +82,9 @@ class SupabaseKnowledgeStore:
                     last_evidence_turn=row["last_evidence_turn"],
                     # ``.get``: rows written before P2c T3 have no column value to read.
                     prior=row.get("prior"),
+                    # And before T6, no schedule.
+                    review_stage=row.get("review_stage", 0),
+                    due_at=row.get("due_at"),
                 )
                 for row in rows
             },

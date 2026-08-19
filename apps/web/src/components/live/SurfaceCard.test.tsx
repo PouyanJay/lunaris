@@ -216,6 +216,22 @@ describe("the mastery meter", () => {
     expect(rows[1]).not.toHaveTextContent(/from/i);
   });
 
+  it("says the day a concept is due back, and only for the ones with one", () => {
+    // P2c T6: the schedule, shown at close. Per row, so the two cannot swap; the day, not the
+    // time, because the ladder is measured in days.
+    renderCard({
+      ...METER,
+      entries: [
+        { ...METER.entries[0]!, dueAt: "2026-08-20T12:00:00+00:00" },
+        { ...METER.entries[1]!, dueAt: null },
+      ],
+    });
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent(/review Thu 20 Aug/i);
+    expect(rows[1]).not.toHaveTextContent(/review/i);
+  });
+
   it("says nothing was marked rather than showing an empty frame", () => {
     // A session can close with no evidence at all — every answer ungraded, or the clock spent
     // before anything was staged. A heading over a blank list reads as a rendering failure.

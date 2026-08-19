@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import Field
@@ -25,6 +26,9 @@ class MeterEntry(LiveModel):
     #: Where the concept stood when the session opened (P2c T5), so the meter reads as movement:
     #: ``None`` for a concept first met today, and on every meter stored before this existed.
     recall_before: float | None = Field(default=None, ge=0.0, le=1.0)
+    #: When the concept is next due for review (P2c T6), so the close can say "come back Thursday
+    #: for X"; ``None`` for a concept nothing scheduled, and on every meter stored before.
+    due_at: datetime | None = None
 
 
 class MasteryMeter(LiveModel):

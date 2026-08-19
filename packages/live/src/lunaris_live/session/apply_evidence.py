@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from .claim_of import claim_of
 from .mastery_thresholds import MASTERED
+from .review_ladder import review_interval
 from .schema import EvidenceKind, LearnerModel, NodeKnowledge
 
 #: Where one piece of evidence pulls the belief. MET pulls towards certainty, NOT_MET towards
@@ -20,7 +23,12 @@ _PULL = 0.45
 
 
 def apply_evidence(
-    model: LearnerModel, node_id: str, kind: EvidenceKind, *, at_turn: int
+    model: LearnerModel,
+    node_id: str,
+    kind: EvidenceKind,
+    *,
+    at_turn: int,
+    on: datetime | None = None,
 ) -> LearnerModel:
     """The learner model after one graded answer about ``node_id``.
 
@@ -31,6 +39,14 @@ def apply_evidence(
     the loop actually depends on — evidence moves the belief in its own direction, and repeated
     evidence moves it further than one piece does — without pretending to a precision nobody has
     measured yet. It is a stand-in for a fitted model, and it is one function.
+
+    ``on`` is the wall time of the answer (P2c T6). A review answered is no longer due — or the
+    director would ask it again on the very next turn — so the date moves: to the bottom of the
+    ladder (tomorrow) when the day is known, a provisional date the close replaces with the real
+    one; to nothing when it is not (a replay). Provisional rather than cleared, because a session
+    that never closes (a crash, a tab left open) would otherwise drop the concept off the ladder for
+    good; due tomorrow errs the way an unfinished session should — reviewed sooner, not lost (found
+    in review). The rung is kept: it is the close's input.
     """
     current = model.nodes.get(node_id)
     estimate = _starting_from(current, kind)
@@ -46,6 +62,8 @@ def apply_evidence(
         last_evidence_turn=at_turn,
         # The first evidence settles the claim either way (P2c T3): it is not carried on.
         prior=None,
+        review_stage=current.review_stage if current is not None else 0,
+        due_at=on + review_interval(1) if on is not None else None,
     )
     return model.model_copy(update={"nodes": {**model.nodes, node_id: updated}})
 

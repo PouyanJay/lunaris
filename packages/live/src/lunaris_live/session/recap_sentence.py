@@ -1,5 +1,8 @@
 from collections.abc import Sequence
+from datetime import datetime
 
+from .earliest_due import earliest_due
+from .review_day import review_day
 from .schema import Covered, CoveredOutcome
 
 #: The plain recap: what a session says over itself when there is no tutor to say it better (the
@@ -27,7 +30,20 @@ def recap_sentence(topic: str, covered: Sequence[Covered]) -> str:
         parts.append(f"We opened {_joined(introduced)} and did not get to check {pronoun} yet.")
     if forming or introduced:
         parts.append(f"Next time we pick up {(forming + introduced)[0]} first.")
+    if (first := _first_review(covered)) is not None:
+        day, names = first
+        parts.append(f"Your first review is on {review_day(day)}: {_joined(names)}.")
     return " ".join(parts)
+
+
+def _first_review(covered: Sequence[Covered]) -> tuple[datetime, list[str]] | None:
+    """The earliest review day and what is due on it, in the order covered came (the map's)."""
+    day = earliest_due(c.due_at for c in covered)
+    if day is None:
+        return None
+    return day, [
+        c.concept for c in covered if c.due_at is not None and c.due_at.date() == day.date()
+    ]
 
 
 def _joined(names: Sequence[str]) -> str:

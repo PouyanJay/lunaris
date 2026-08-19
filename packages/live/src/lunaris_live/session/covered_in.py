@@ -31,7 +31,11 @@ def covered_in(
             outcome = CoveredOutcome.INTRODUCED
         covered.append(
             Covered(
-                node_id=node_id, concept=names[node_id], outcome=outcome, evidence_count=evidence
+                node_id=node_id,
+                concept=names[node_id],
+                outcome=outcome,
+                evidence_count=evidence,
+                due_at=known.due_at if known is not None else None,
             )
         )
     return covered

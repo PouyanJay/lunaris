@@ -16,6 +16,7 @@ tutor behind the turn, both real implementations of their protocols.
 
 import json
 from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -35,6 +36,7 @@ from lunaris_live.session import (
     GraderUnavailableError,
     LessonParts,
     MemoryKnowledgeStore,
+    MemorySessionStore,
     Session,
     SessionFormatError,
     StubGrader,
@@ -294,6 +296,15 @@ async def test_a_tutor_that_cannot_speak_leaves_no_session_behind(
     assert resumed.status_code == 404
 
 
+def _backdate(sessions: MemorySessionStore, session_id: str, *, by_s: float) -> None:
+    """Move a stored session's start back by ``by_s`` seconds, so its elapsed time is spent
+    without waiting for it: the service reads elapsed from the row's own ``started_at``."""
+    session = sessions.load(session_id)
+    sessions.save(
+        session.model_copy(update={"started_at": session.started_at - timedelta(seconds=by_s)})
+    )
+
+
 async def _answer(
     client: httpx.AsyncClient, session_id: str, answer: str, *, seq: int = 1
 ) -> httpx.Response:
@@ -448,6 +459,134 @@ async def test_the_close_recaps_what_was_covered_and_shows_the_movement_since_th
     assert entries[root]["recallBefore"] == closed["openingBeliefs"][root]
     assert entries[second_concept]["recallBefore"] is None, "first met today: nothing to show"
     assert entries[second_concept]["recall"] > 0.0
+
+
+async def test_the_close_shows_a_review_day_and_a_due_row_is_retrieved_first_through_the_api(
+    tmp_path: Path,
+) -> None:
+    """P2c T6, through the API. A session that closes with a concept graded shows the day it is due
+    back (the meter carries ``dueAt``, the goodbye names the day), and the belief keeps it. Then:
+    a due row on the same map is retrieved before anything is introduced, so both transports'
+    opening honours the ladder. The second half moves the row's ``due_at`` to now rather than
+    waiting until tomorrow, so it proves the wiring (a due row is read and acted on over HTTP);
+    the closed loop with a controlled clock — the close's own date being what the next session
+    honours — is pinned in the package
+    (``test_a_session_opened_after_a_review_is_due_asks_it_first``)."""
+    # Arrange — a map, and a session that grades the root once and closes on the clock.
+    app = create_app()
+    settings = Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    knowledge, sessions = MemoryKnowledgeStore(), MemorySessionStore()
+    # One service, so its stores outlive a request: a per-call service would forget the session.
+    service = LiveSessionService(
+        resolve_graph_store(settings),
+        sessions,
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+    )
+    app.dependency_overrides[get_live_session_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        graph = await _graph(client)
+        root = graph["topoOrder"][0]
+        response = await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+        assert response.status_code == 201, response.text
+        opened = response.json()
+        # The clock runs out: the row's start is moved back past the budget, rather than a budget
+        # so small that a fast enough roundtrip beats it (it did, at a millisecond).
+        _backdate(sessions, opened["sessionId"], by_s=settings.live_session_budget_s + 1)
+        standing = opened["turns"][-1]
+        response = await _answer(
+            client, opened["sessionId"], standing["criterion"]["statement"], seq=standing["seq"]
+        )
+        assert response.status_code == 200, response.text
+        closed = response.json()
+
+        # Assert — shown at close: the meter says when the root is due; the goodbye names the day.
+        assert closed["status"] == "closed"
+        goodbye = closed["turns"][-1]
+        (entry,) = [e for e in goodbye["surface"]["entries"] if e["nodeId"] == root]
+        assert entry["dueAt"] is not None
+        due = datetime.fromisoformat(entry["dueAt"])
+        assert due - datetime.fromisoformat(closed["startedAt"]) >= timedelta(days=1)
+        assert f"{due:%A}" in goodbye["tutor"], "the plain recap names the day"
+        kept = knowledge.load(graph["graphId"], owner_id=None).nodes[root]
+        assert kept.due_at == due, "the belief keeps what the meter showed"
+
+        # Act — the day comes: the same learner opens a new session on the map.
+        knowledge.save(
+            kept_model := knowledge.load(graph["graphId"], owner_id=None).model_copy(
+                update={
+                    "nodes": {
+                        root: kept.model_copy(
+                            update={"due_at": datetime.now(UTC) - timedelta(minutes=1)}
+                        )
+                    }
+                }
+            ),
+            owner_id=None,
+        )
+        assert kept_model.nodes[root].due_at is not None
+        later = (await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})).json()
+
+    # Assert — honoured: the first move is a retrieval of the due concept, and says why.
+    first = later["turns"][0]
+    assert (first["move"]["kind"], first["move"]["nodeId"]) == ("retrieve", root)
+    assert "due for review" in first["move"]["reason"]
+
+
+async def test_a_finished_map_reopened_before_its_review_day_is_refused_and_told_the_day(
+    tmp_path: Path,
+) -> None:
+    """Found driving T6 on a real process: a learner who finished a map and came back before
+    anything was due got a 500 (the package refuses to open a session by closing it, and the
+    router had no word for that). Now a 409 that names the day the close promised, so the surface
+    can say "come back Thursday" instead of "something went wrong"."""
+    app = create_app()
+    settings = Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    knowledge, sessions = MemoryKnowledgeStore(), MemorySessionStore()
+    service = LiveSessionService(
+        resolve_graph_store(settings),
+        sessions,
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+    )
+    app.dependency_overrides[get_live_session_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        graph = await _graph(client)
+        session = (
+            await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+        ).json()
+        # Every concept demonstrated: the map is exhausted and the director closes it.
+        while session["status"] != "closed":
+            standing = session["turns"][-1]
+            session = (
+                await _answer(
+                    client,
+                    session["sessionId"],
+                    standing["criterion"]["statement"],
+                    seq=standing["seq"],
+                )
+            ).json()
+
+        refused = await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+
+    assert refused.status_code == 409, refused.text
+    due = min(
+        datetime.fromisoformat(e["dueAt"]) for e in session["turns"][-1]["surface"]["entries"]
+    )
+    assert f"{due:%A} {due.day} {due:%B}" in refused.json()["detail"]
+    assert "X-Session-Id" in refused.headers
 
 
 async def test_a_session_that_has_closed_does_not_take_another_answer(

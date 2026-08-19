@@ -3,7 +3,9 @@ from datetime import UTC, datetime
 
 from ..graph import ConceptGraph
 from .decide_move import decide_move
+from .earliest_due import earliest_due
 from .next_turn import next_turn
+from .nothing_to_teach_error import NothingToTeachError
 from .opening_beliefs_of import opening_beliefs_of
 from .protocols import ISimRegistry, ITutor
 from .schema import LearnerModel, LessonParts, MoveKind, Session, SessionClock
@@ -33,25 +35,33 @@ async def open_session(
     second, slightly different way of taking a turn — and what it consumed is on the outcome, for
     the caller to let the store go of.
 
-    Raises ``ValueError`` when the map has nothing to teach: an empty graph, or one whose teaching
-    order names concepts it does not contain, leaves the director with nothing to introduce and its
-    first move is to close. Handing a learner a session that opens on "we're done" is worse than
-    telling the caller the map is broken.
+    Raises ``NothingToTeachError`` (a ``ValueError``) when the map has nothing to teach: an empty
+    graph, one whose teaching order names concepts it does not contain, or a finished map whose
+    reviews are not yet due (T6) leaves the director with nothing to do and its first move is to
+    close. Handing a learner a session that opens on "we're done" is worse than telling the caller
+    so — and telling them the day the next review is due, when there is one.
 
     Raises ``TutorUnavailableError`` when the tutor cannot speak — the turn did not happen, so
     neither did the session.
     """
+    # Stamped once, here, at the only moment a session is born: the wall time the caller opened it
+    # at (a session opened "on Thursday" starts on Thursday, T6), else now. Every later read
+    # carries it, and every later turn's wall time is derived from it.
+    started_at = clock.at or datetime.now(UTC)
+    clock = clock.model_copy(update={"at": started_at})
     if decide_move(graph, model, clock).kind is MoveKind.CLOSE:
-        raise ValueError(f"graph {graph.graph_id} has nothing to teach")
+        raise NothingToTeachError(
+            graph.graph_id,
+            next_review_at=earliest_due(known.due_at for known in model.nodes.values()),
+        )
     shell = Session(
         session_id=session_id,
         graph_id=graph.graph_id,
-        # Stamped once, here, at the only moment a session is born. Every later read carries it.
-        started_at=datetime.now(UTC),
+        started_at=started_at,
         # And what the learner came in holding (P2c T5): the mastery delta's zero line.
         opening_beliefs=opening_beliefs_of(model),
     )
-    session, consumed = await next_turn(
+    return await next_turn(
         shell,
         graph,
         model,
@@ -62,4 +72,3 @@ async def open_session(
         sims=sims,
         prefetched=prefetched,
     )
-    return TurnOutcome(session=session, model=model, consumed_material=consumed)

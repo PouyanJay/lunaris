@@ -8,6 +8,7 @@ from ..graph.schema import ConceptNode, MasteryCriterion
 from ..model_json import parse_json_object
 from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
 from .reject_unteachable_move import reject_unteachable_move
+from .review_day import review_day
 from .schema import Covered, DirectorMove, LessonParts, MoveKind, WorkedExample
 from .tutor_unavailable_error import TutorUnavailableError
 
@@ -108,7 +109,8 @@ your own words, warmly, but do not upgrade or downgrade any of it):
 {covered}
 
 Write what you would say to close, addressed to them directly: three to five sentences. Name what
-they showed, name what is still forming and that you will pick it up first next time, and stop.
+they showed, name what is still forming and that you will pick it up first next time, and where a
+concept has a review day, tell them the day. Then stop.
 No headings, no bullet lists, no markdown, no questions."""
 
 #: The practice prompts are aimed at the bar the learner is actually about to be marked against,
@@ -396,6 +398,7 @@ class ClaudeTutor:
                     if c.evidence_count
                     else ""
                 )
+                + (f"; review due {review_day(c.due_at)}" if c.due_at is not None else "")
                 for c in covered
             )
             or "- nothing: the session ended before a concept was reached",

@@ -30,6 +30,7 @@ from .memory_material_store import MemoryMaterialStore
 from .memory_session_store import MemorySessionStore
 from .next_turn import next_turn
 from .node_of import node_of
+from .nothing_to_teach_error import NothingToTeachError
 from .open_placement import open_placement
 from .open_session import open_session
 from .opening_beliefs_of import opening_beliefs_of
@@ -51,6 +52,9 @@ from .recap_sentence import recap_sentence
 from .reject_unteachable_move import reject_unteachable_move
 from .relay_delta import relay_delta
 from .resolve_sim_app import resolve_sim_app
+from .review_day import review_day
+from .review_ladder import LAST_RUNG, review_interval
+from .schedule_reviews import schedule_reviews
 from .schema import (
     ConceptMapCard,
     Covered,
@@ -112,6 +116,7 @@ from .tutor_unavailable_error import TutorUnavailableError
 
 __all__ = [
     "DECAYED",
+    "LAST_RUNG",
     "MASTERED",
     "MAX_ANSWER_CHARS",
     "STUB_SIM_PATH",
@@ -155,6 +160,7 @@ __all__ = [
     "MoveKind",
     "NodeKnowledge",
     "NodePrior",
+    "NothingToTeachError",
     "PlacementResult",
     "PracticeBlock",
     "PriorMapperUnavailableError",
@@ -204,6 +210,9 @@ __all__ = [
     "reject_unteachable_move",
     "relay_delta",
     "resolve_sim_app",
+    "review_day",
+    "review_interval",
+    "schedule_reviews",
     "seed_priors",
     "select_surface",
     "settle_placement",

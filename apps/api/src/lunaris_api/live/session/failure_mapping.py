@@ -13,10 +13,12 @@ import structlog
 from fastapi import HTTPException, status
 from lunaris_live.session import (
     GraderUnavailableError,
+    NothingToTeachError,
     SessionClosedError,
     SessionFormatError,
     StaleAnswerError,
     TutorUnavailableError,
+    review_day,
 )
 from lunaris_runtime.persistence import PersistenceError
 
@@ -38,6 +40,15 @@ _GRADER_UNAVAILABLE = "Live could not score that answer just now. Try sending it
 #: A row this build cannot parse never becomes readable by waiting, so it must not read as an
 #: outage: "try again" on a permanently unreadable session is an invitation to reload forever.
 _UNREADABLE = "This session was saved in a format Live can no longer read."
+
+
+def _nothing_to_teach(exc: NothingToTeachError) -> str:
+    if exc.next_review_at is None:
+        return "There is nothing on this map to teach."
+    return (
+        "You have shown everything on this map for now. "
+        f"Your next review is on {review_day(exc.next_review_at)}."
+    )
 
 
 def translate_failure(exc: Exception, correlated: dict[str, str]) -> HTTPException | None:
@@ -70,6 +81,15 @@ def translate_failure(exc: Exception, correlated: dict[str, str]) -> HTTPExcepti
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="That question has already been answered. Reload to catch up.",
+            headers=correlated,
+        )
+    if isinstance(exc, NothingToTeachError):
+        # The map is real and the request is fine; there is nothing to open on today. A finished
+        # map is the ordinary case (P2c T6): the close named the day to come back, and this says it
+        # again rather than reading as an outage.
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_nothing_to_teach(exc),
             headers=correlated,
         )
     if isinstance(exc, SessionClosedError):

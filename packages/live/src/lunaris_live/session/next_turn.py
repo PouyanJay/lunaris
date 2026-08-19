@@ -7,10 +7,12 @@ from .compose_layout import compose_layout
 from .covered_in import covered_in
 from .decide_move import decide_move
 from .node_of import node_of
+from .on_the_wall import on_the_wall
 from .protocols import ISimRegistry, ITutor, ITutorDeltaSink
 from .recap_sentence import recap_sentence
 from .resolve_sim_app import resolve_sim_app
 from .said_and_illustrated import said_and_illustrated
+from .schedule_reviews import schedule_reviews
 from .schema import (
     DirectorMove,
     LayoutSpec,
@@ -25,6 +27,7 @@ from .schema import (
 )
 from .select_surface import select_surface
 from .stage_criterion import stage_criterion
+from .turn_outcome import TurnOutcome
 from .tutor_unavailable_error import TutorUnavailableError
 
 logger = structlog.get_logger()
@@ -42,7 +45,7 @@ async def next_turn(
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
     prefetched: Mapping[str, LessonParts] | None = None,
-) -> tuple[Session, str | None]:
+) -> TurnOutcome:
     """What happens next on this map, said out loud: the director decides, and the turn is taken.
 
     The half of the loop that comes *after* an answer has been dealt with, shared by the two places
@@ -57,14 +60,19 @@ async def next_turn(
 
     ``prefetched`` is first-turn material by concept, read from the store by the caller (P2c T4).
     A first turn on a concept whose material is there uses it and asks the tutor for words only;
-    the second value returned names that concept, so the caller can let the store go of it. A later
-    turn on a concept never reads it: a remediation generates fresh.
+    the outcome names that concept, so the caller can let the store go of it. A later turn on a
+    concept never reads it: a remediation generates fresh.
+
+    Returns the whole outcome — session, model, consumed material — because a close moves the
+    model too (T6: the schedule is written at close), and a caller handed the session alone would
+    persist a learner whose transcript says "come back Thursday" and whose beliefs say nothing.
     """
+    clock = on_the_wall(clock, session)
     move = decide_move(graph, model, clock)
     if move.kind is MoveKind.CLOSE:
         return await _close(
             session, graph, model, turns, move, clock=clock, tutor=tutor, run_id=run_id
-        ), None
+        )
 
     taught, consumed = await _teach(
         graph,
@@ -87,9 +95,12 @@ async def next_turn(
         move=move.kind.value,
         node=move.node_id,
     )
-    return (
-        session.model_copy(update={"turns": [*turns, taught], "status": SessionStatus.ACTIVE}),
-        consumed,
+    return TurnOutcome(
+        session=session.model_copy(
+            update={"turns": [*turns, taught], "status": SessionStatus.ACTIVE}
+        ),
+        model=model,
+        consumed_material=consumed,
     )
 
 
@@ -103,11 +114,25 @@ async def _close(
     clock: SessionClock,
     tutor: ITutor,
     run_id: str,
-) -> Session:
+) -> TurnOutcome:
     """The session, ended with its ceremony (P2c T5): the meter of what was demonstrated beside
     where each concept stood at open (the delta), the recap over what was covered, and the
     director's reason. The surface is chosen from the same inputs the move was (T3), so a close
-    shows what the learner did rather than an empty card."""
+    shows what the learner did rather than an empty card.
+
+    The schedule is written first (T6): every concept graded this session gets its next review
+    date, and the meter and the recap read the scheduled model, so what the learner is shown is
+    what the next session's director will honour — one model, not a shown one and a kept one."""
+    assert clock.at is not None, "next_turn puts the clock on the wall before a close"
+    model = schedule_reviews(model, graph, turns, at=clock.at)
+    due = [known.due_at for known in model.nodes.values() if known.due_at is not None]
+    logger.info(
+        "live.session.reviews_scheduled",
+        run_id=run_id,
+        session_id=session.session_id,
+        scheduled=len(due),
+        next_review_at=min(due).isoformat() if due else None,
+    )
     closing = select_surface(
         move,
         None,
@@ -117,7 +142,7 @@ async def _close(
         clock=clock,
         opening_beliefs=session.opening_beliefs,
     )
-    return _closed(
+    ended = _closed(
         session,
         turns,
         move,
@@ -130,6 +155,7 @@ async def _close(
         # hold a second way of drawing a turn.
         layout=compose_layout(LessonParts(), node_id=None, model=model),
     )
+    return TurnOutcome(session=ended, model=model)
 
 
 async def _recap(
@@ -180,9 +206,8 @@ def _closed(
     same explanation the trace gets and two wordings of one decision is how the two come to
     disagree.
 
-    The spaced-retrieval schedule is T6's part of the ceremony. What is owed here is that a session
-    which has run out of material or out of time stops rather than looping, ends visibly, says what
-    it covered, and says why it stopped.
+    What is owed here is that a session which has run out of material or out of time stops rather
+    than looping, ends visibly, says what it covered, and says why it stopped.
     """
     logger.info(
         "live.session.closed",

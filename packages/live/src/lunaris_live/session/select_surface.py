@@ -217,6 +217,7 @@ def _meter(
                 recall=recall_of(model, node_id, at_turn=clock.turn),
                 evidence_count=model.nodes[node_id].evidence_count,
                 recall_before=opening_beliefs.get(node_id),
+                due_at=model.nodes[node_id].due_at,
             )
             for node_id in _in_teaching_order(graph, model)
         ]

@@ -73,7 +73,7 @@ async def settle_placement(
     session = session.model_copy(update={"opening_beliefs": opening_beliefs_of(model)})
     if placed.profile:
         session = session.model_copy(update={"profile": placed.profile})
-    taught, consumed = await _teaching_begins(
+    return await _teaching_begins(
         session,
         graph,
         model,
@@ -86,7 +86,6 @@ async def settle_placement(
         sims=sims,
         prefetched=prefetched,
     )
-    return TurnOutcome(session=taught, model=model, consumed_material=consumed)
 
 
 async def _placed(
@@ -139,7 +138,7 @@ async def _teaching_begins(
     on_delta: ITutorDeltaSink | None,
     sims: ISimRegistry | None,
     prefetched: Mapping[str, LessonParts] | None,
-) -> tuple[Session, str | None]:
+) -> TurnOutcome:
     """The interview is over and the map is here: the director's first move, said out loud. The
     clock is the session's own (the interview was inside its budget, A1) and the first lesson's
     turn number follows the last question's."""
