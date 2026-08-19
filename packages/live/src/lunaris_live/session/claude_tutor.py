@@ -8,7 +8,7 @@ from ..graph.schema import ConceptNode, MasteryCriterion
 from ..model_json import parse_json_object
 from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
 from .reject_unteachable_move import reject_unteachable_move
-from .schema import DirectorMove, LessonParts, MoveKind, WorkedExample
+from .schema import Covered, DirectorMove, LessonParts, MoveKind, WorkedExample
 from .tutor_unavailable_error import TutorUnavailableError
 
 logger = structlog.get_logger()
@@ -97,6 +97,19 @@ prompts.
 Respond with ONLY a JSON object, no prose:
 {{"workedExample": {{"title": "...", "steps": ["...", "..."]}}, "hint": "...", \
 "practice": ["...", "..."]}}"""
+
+#: The close (P2c T5). The record rides the prompt as a list; the tutor may dress it, not revise it:
+#: a recap that promoted a forming concept to "you've got this" would be the one moment the trace
+#: and the learner disagree about what happened.
+_RECAP = """You are closing a live one-to-one tutoring session about "{topic}".
+{learner}
+What the session covered, and how each concept stands as it ends (this is the record; say it in
+your own words, warmly, but do not upgrade or downgrade any of it):
+{covered}
+
+Write what you would say to close, addressed to them directly: three to five sentences. Name what
+they showed, name what is still forming and that you will pick it up first next time, and stop.
+No headings, no bullet lists, no markdown, no questions."""
 
 #: The practice prompts are aimed at the bar the learner is actually about to be marked against,
 #: because scaffolding pointed somewhere else is scaffolding for a different question.
@@ -329,7 +342,9 @@ class ClaudeTutor:
             # learner closed the tab — would otherwise leave it open until the client was collected.
             await getattr(chunks, "aclose", _nothing_to_close)()
 
-    async def _say(self, prompt: str, *, run_id: str, node_id: str) -> str:
+    async def _say(
+        self, prompt: str, *, run_id: str, node_id: str | None, phase: str = "lesson"
+    ) -> str:
         """One bounded attempt at speaking, with every way it can fail named the same way.
 
         A learner cannot be left waiting because each individual retry was technically still inside
@@ -348,13 +363,49 @@ class ClaudeTutor:
             )
         except ModelCallTimedOutError as exc:
             logger.warning(
-                "live.tutor.timed_out", run_id=run_id, node=node_id, deadline_s=self._deadline_s
+                "live.tutor.timed_out",
+                run_id=run_id,
+                node=node_id,
+                phase=phase,
+                deadline_s=self._deadline_s,
             )
-            raise TutorUnavailableError(f"tutor timed out on {node_id}") from exc
+            raise TutorUnavailableError(f"tutor timed out ({phase}, {node_id})") from exc
         except ModelCallFailedError as exc:
-            logger.warning("live.tutor.call_failed", run_id=run_id, node=node_id, exc_info=True)
-            raise TutorUnavailableError(f"tutor could not teach {node_id}") from exc
+            logger.warning(
+                "live.tutor.call_failed", run_id=run_id, node=node_id, phase=phase, exc_info=True
+            )
+            raise TutorUnavailableError(f"tutor could not speak ({phase}, {node_id})") from exc
         return said.strip()
+
+    async def recap(
+        self,
+        topic: str,
+        covered: Sequence[Covered],
+        *,
+        profile: str | None = None,
+        run_id: str,
+    ) -> str:
+        """The close's words (P2c T5), over the record and only the record."""
+        prompt = _RECAP.format(
+            topic=topic,
+            learner=_about(profile),
+            covered="\n".join(
+                f"- {c.concept}: {c.outcome.value}"
+                + (
+                    f" ({c.evidence_count} answer{'s' if c.evidence_count != 1 else ''})"
+                    if c.evidence_count
+                    else ""
+                )
+                for c in covered
+            )
+            or "- nothing: the session ended before a concept was reached",
+        )
+        said = await self._say(prompt, run_id=run_id, node_id=None, phase="recap")
+        if not said:
+            logger.warning("live.tutor.recap_empty", run_id=run_id)
+            raise TutorUnavailableError("tutor wrote no recap")
+        logger.info("live.tutor.recapped", run_id=run_id, covered=len(covered), chars=len(said))
+        return said
 
     def _keep(self, client: object) -> None:
         self._client = client

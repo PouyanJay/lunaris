@@ -200,6 +200,22 @@ describe("the mastery meter", () => {
     expect(rows[1]).toHaveTextContent(/1 answer\b/i);
   });
 
+  it("shows where a concept stood when the session opened, and only for the ones that did", () => {
+    // P2c T5: the delta. A concept the learner came in holding shows its zero line beside the
+    // count; a concept first met today shows none. Per row, so the two cannot swap.
+    renderCard({
+      ...METER,
+      entries: [
+        { ...METER.entries[0]!, recallBefore: 0.55 },
+        { ...METER.entries[1]!, recallBefore: null },
+      ],
+    });
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent(/from 55%/i);
+    expect(rows[1]).not.toHaveTextContent(/from/i);
+  });
+
   it("says nothing was marked rather than showing an empty frame", () => {
     // A session can close with no evidence at all — every answer ungraded, or the clock spent
     // before anything was staged. A heading over a blank list reads as a rendering failure.

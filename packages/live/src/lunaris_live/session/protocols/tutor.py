@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator, Sequence
 from typing import Protocol
 
 from ...graph.schema import ConceptNode, MasteryCriterion
-from ..schema import DirectorMove, LessonParts
+from ..schema import Covered, DirectorMove, LessonParts
 
 
 class ITutor(Protocol):
@@ -102,5 +102,22 @@ class ITutor(Protocol):
         implementation that has no material, cannot reach a provider, or is asked for something it
         does not do answers with an empty one. The lesson and the Tier 1 card are on the turn
         already; a failed illustration costs the trimmings.
+        """
+        ...
+
+    async def recap(
+        self,
+        topic: str,
+        covered: Sequence[Covered],
+        *,
+        profile: str | None = None,
+        run_id: str,
+    ) -> str:
+        """The close's words (P2c T5): a few sentences over what was covered and how it went.
+
+        Briefed with the record (``covered`` is built deterministically from the transcript and
+        the belief) and free only in how it says it; it can dress the record, never revise it. A
+        recap that cannot be written raises ``TutorUnavailableError``, and the loop closes with a
+        plain sentence instead: the ceremony is owed, the words are a nicety.
         """
         ...

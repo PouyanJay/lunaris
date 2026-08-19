@@ -149,13 +149,23 @@ def test_the_spec_is_decided_without_asking_anything_generative() -> None:
     that produced it, so nothing in this signature can be *asked* anything. Handing the registry in
     would move the seam inside an object where this test cannot see it, and the tier's determinism
     would then rest on a docstring — the same reasoning that kept ``graph``, ``model`` and ``clock``
-    from being bundled (AD18).
+    from being bundled (AD18). ``opening_beliefs`` (P2c T5) is a mapping the row stamped at open:
+    inert data too, and it is what makes the close's meter a delta rather than a number.
     """
     # Arrange / Act
     parameters = set(signature(select_surface).parameters)
 
     # Assert
-    assert parameters == {"move", "node", "graph", "criterion", "model", "clock", "sim"}
+    assert parameters == {
+        "move",
+        "node",
+        "graph",
+        "criterion",
+        "model",
+        "clock",
+        "sim",
+        "opening_beliefs",
+    }
     assert signature(select_surface).parameters["sim"].annotation == SimApp | None
 
 

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from ..graph import ConceptGraph
 from .decide_move import decide_move
 from .next_turn import next_turn
+from .opening_beliefs_of import opening_beliefs_of
 from .protocols import ISimRegistry, ITutor
 from .schema import LearnerModel, LessonParts, MoveKind, Session, SessionClock
 from .turn_outcome import TurnOutcome
@@ -47,6 +48,8 @@ async def open_session(
         graph_id=graph.graph_id,
         # Stamped once, here, at the only moment a session is born. Every later read carries it.
         started_at=datetime.now(UTC),
+        # And what the learner came in holding (P2c T5): the mastery delta's zero line.
+        opening_beliefs=opening_beliefs_of(model),
     )
     session, consumed = await next_turn(
         shell,

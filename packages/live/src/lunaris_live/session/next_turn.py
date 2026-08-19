@@ -4,9 +4,11 @@ import structlog
 
 from ..graph import ConceptGraph
 from .compose_layout import compose_layout
+from .covered_in import covered_in
 from .decide_move import decide_move
 from .node_of import node_of
 from .protocols import ISimRegistry, ITutor, ITutorDeltaSink
+from .recap_sentence import recap_sentence
 from .resolve_sim_app import resolve_sim_app
 from .said_and_illustrated import said_and_illustrated
 from .schema import (
@@ -23,13 +25,9 @@ from .schema import (
 )
 from .select_surface import select_surface
 from .stage_criterion import stage_criterion
+from .tutor_unavailable_error import TutorUnavailableError
 
 logger = structlog.get_logger()
-
-#: How a session signs off. Deliberately plain and deliberately not generated: a goodbye is the one
-#: turn with nothing to teach, and P2c replaces it with the real ceremony (recap, mastery delta,
-#: what to come back to) rather than with better prose.
-_CLOSING = "That's where we'll stop for today."
 
 
 async def next_turn(
@@ -64,24 +62,9 @@ async def next_turn(
     """
     move = decide_move(graph, model, clock)
     if move.kind is MoveKind.CLOSE:
-        # The surface is chosen from the same three inputs the move was (T3), so a close shows what
-        # the learner demonstrated rather than an empty card.
-        closing = select_surface(move, None, graph=graph, criterion=None, model=model, clock=clock)
-        return (
-            _closed(
-                session,
-                turns,
-                move,
-                run_id=run_id,
-                surface=closing,
-                # A goodbye names no concept and asked no tutor for material, so the lean layout
-                # is all there is to arrange: the sign-off and the meter. Composed rather than left
-                # ``None`` so that "every turn has a layout" is true of the last one too, and a
-                # renderer never has to hold a second way of drawing a turn.
-                layout=compose_layout(LessonParts(), node_id=None, model=model),
-            ),
-            None,
-        )
+        return await _close(
+            session, graph, model, turns, move, clock=clock, tutor=tutor, run_id=run_id
+        ), None
 
     taught, consumed = await _teach(
         graph,
@@ -110,12 +93,81 @@ async def next_turn(
     )
 
 
+async def _close(
+    session: Session,
+    graph: ConceptGraph,
+    model: LearnerModel,
+    turns: list[SessionTurn],
+    move: DirectorMove,
+    *,
+    clock: SessionClock,
+    tutor: ITutor,
+    run_id: str,
+) -> Session:
+    """The session, ended with its ceremony (P2c T5): the meter of what was demonstrated beside
+    where each concept stood at open (the delta), the recap over what was covered, and the
+    director's reason. The surface is chosen from the same inputs the move was (T3), so a close
+    shows what the learner did rather than an empty card."""
+    closing = select_surface(
+        move,
+        None,
+        graph=graph,
+        criterion=None,
+        model=model,
+        clock=clock,
+        opening_beliefs=session.opening_beliefs,
+    )
+    return _closed(
+        session,
+        turns,
+        move,
+        run_id=run_id,
+        recap=await _recap(tutor, session, graph, model, turns, run_id=run_id),
+        surface=closing,
+        # A goodbye names no concept and asked no tutor for material, so the lean layout is all
+        # there is to arrange: the sign-off and the meter. Composed rather than left ``None`` so
+        # that "every turn has a layout" is true of the last one too, and a renderer never has to
+        # hold a second way of drawing a turn.
+        layout=compose_layout(LessonParts(), node_id=None, model=model),
+    )
+
+
+async def _recap(
+    tutor: ITutor,
+    session: Session,
+    graph: ConceptGraph,
+    model: LearnerModel,
+    turns: list[SessionTurn],
+    *,
+    run_id: str,
+) -> str:
+    """The recap in the tutor's words, or the plain sentence when it cannot speak (P2c T5).
+
+    Briefed with the record (``covered_in``), which the tutor may dress and never revise. A tutor
+    that cannot write it does not fail the close: the ceremony is owed and the words are a nicety,
+    so the plain recap stands in and the failure is a warning worth seeing, not a session that
+    ended in an error.
+    """
+    covered = covered_in(turns, graph, model)
+    try:
+        return await tutor.recap(graph.topic, covered, profile=session.profile, run_id=run_id)
+    except TutorUnavailableError:
+        logger.warning(
+            "live.session.recap_unavailable",
+            run_id=run_id,
+            session_id=session.session_id,
+            exc_info=True,
+        )
+        return recap_sentence(graph.topic, covered)
+
+
 def _closed(
     session: Session,
     turns: list[SessionTurn],
     move: DirectorMove,
     *,
     run_id: str,
+    recap: str,
     surface: SurfaceSpec,
     layout: LayoutSpec,
 ) -> Session:
@@ -123,12 +175,14 @@ def _closed(
 
     The goodbye is a turn rather than only a status, because ``status`` is a field and the
     transcript is what the learner reads: a session that ended by going quiet is indistinguishable
-    from one that crashed. It is written deterministically rather than by the tutor, which teaches
-    concepts and is deliberately refused a CLOSE — a close is about the session, not a concept.
+    from one that crashed. ``recap`` is the tutor's over the record, or the plain sentence (P2c
+    T5); the director's own reason still closes it, verbatim, because the learner is owed the
+    same explanation the trace gets and two wordings of one decision is how the two come to
+    disagree.
 
-    The recap, the mastery delta and the spaced-retrieval schedule are P2c's ceremony. What is owed
-    here is that a session which has run out of material or out of time stops rather than looping,
-    ends visibly, and says why.
+    The spaced-retrieval schedule is T6's part of the ceremony. What is owed here is that a session
+    which has run out of material or out of time stops rather than looping, ends visibly, says what
+    it covered, and says why it stopped.
     """
     logger.info(
         "live.session.closed",
@@ -140,9 +194,7 @@ def _closed(
     goodbye = SessionTurn(
         seq=len(turns) + 1,
         move=move,
-        # The director's own reason, verbatim: the learner is owed the same explanation the trace
-        # gets, and two wordings of one decision is how the two come to disagree.
-        tutor=f"{_CLOSING} {move.reason}",
+        tutor=f"{recap.strip()} {move.reason}",
         run_id=run_id,
         surface=surface,
         layout=layout,

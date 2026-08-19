@@ -449,6 +449,21 @@ async def test_the_warming_seam_is_mapped_too() -> None:
     assert (lesson.move.kind, lesson.move.node_id) == (MoveKind.RETRIEVE, "prior")
 
 
+async def test_the_placed_sessions_zero_line_records_the_claims_it_came_in_with() -> None:
+    """T5 on the placement seam: the mastery delta's zero line is stamped once the claims are on
+    the model, so a claimed concept shows "you came in claiming this" at the close, not "from
+    nothing" — and a session that placed nobody opens with an empty zero line."""
+    mapper = ScriptedMapper(
+        PlacementResult(profile="Knows priors.", priors=[NodePrior(node_id="prior", prior=0.8)])
+    )
+    interviewer = ScriptedInterviewer("Q1?", "Q2?")
+    session = await _placing(interviewer)
+
+    outcome = await _answered(session, interviewer, answer="A1", graph=_graph(), mapper=mapper)
+
+    assert outcome.session.opening_beliefs == {"prior": 0.8}
+
+
 async def test_a_mapper_that_cannot_speak_places_nobody_and_teaching_still_begins() -> None:
     interviewer = ScriptedInterviewer("Q1?", "Q2?")
     session = await _placing(interviewer)

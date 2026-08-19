@@ -32,6 +32,10 @@ class Session(LiveModel):
     #: learned about their background and what they want to build. ``None`` until placed, and on
     #: every session opened on a map.
     profile: str | None = Field(default=None, min_length=1, max_length=2000)
+    #: What the learner was believed to hold of each concept when this session opened (P2c T5):
+    #: the mastery delta's zero line, stamped once, so the close can show movement rather than a
+    #: number. Concepts with nothing recorded then are absent. Empty on every row written before.
+    opening_beliefs: dict[str, float] = Field(default_factory=dict)
     status: SessionStatus = SessionStatus.ACTIVE
     #: When the session opened, in UTC. The budget is wall time (plan §6, AD9), and wall time is the
     #: one thing a resumed session cannot recover from its own turns — so it is stamped here and

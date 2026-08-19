@@ -1,6 +1,7 @@
 """The session's contracts — what a turn is, and what the director decided to make it."""
 
 from .concept_map_card import ConceptMapCard
+from .covered import Covered, CoveredOutcome
 from .criterion_card import CriterionCard
 from .director_move import DirectorMove
 from .evidence_kind import EvidenceKind
@@ -36,6 +37,8 @@ from .worked_example import WorkedExample
 
 __all__ = [
     "ConceptMapCard",
+    "Covered",
+    "CoveredOutcome",
     "CriterionCard",
     "DirectorMove",
     "EvidenceKind",

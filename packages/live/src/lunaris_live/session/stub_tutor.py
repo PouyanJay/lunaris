@@ -2,8 +2,9 @@ import re
 from collections.abc import AsyncIterator, Sequence
 
 from ..graph.schema import ConceptNode, MasteryCriterion
+from .recap_sentence import recap_sentence
 from .reject_unteachable_move import reject_unteachable_move
-from .schema import DirectorMove, LessonParts, MoveKind, WorkedExample
+from .schema import Covered, DirectorMove, LessonParts, MoveKind, WorkedExample
 
 #: One phrasing per move, because a stub that said the same thing for every move would let a
 #: surface be built — and reviewed, and shipped — against a session that never appeared to adapt.
@@ -157,3 +158,15 @@ class StubTutor:
         if criterion is not None:
             said += _ASK.format(statement=criterion.statement)
         return said
+
+    async def recap(
+        self,
+        topic: str,
+        covered: Sequence[Covered],
+        *,
+        profile: str | None = None,
+        run_id: str,
+    ) -> str:
+        """The close, offline: names every concept covered and how it stands, so the surface and a
+        review can see a recap that differs by session without a provider."""
+        return recap_sentence(topic, covered)

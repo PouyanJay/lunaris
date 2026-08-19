@@ -5,6 +5,7 @@ import structlog
 from ..graph import ConceptGraph
 from .exchanges_of import exchanges_of
 from .next_turn import next_turn
+from .opening_beliefs_of import opening_beliefs_of
 from .prior_mapper_unavailable_error import PriorMapperUnavailableError
 from .protocols import IPriorMapper, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import (
@@ -67,6 +68,9 @@ async def settle_placement(
         return None
     placed = await _placed(mapper, session, turns, graph, run_id=run_id)
     model = seed_priors(model, placed.priors)
+    # The delta's zero line (T5), stamped once the claims are on the model: a claim the learner
+    # came in with is where they came in, not nothing.
+    session = session.model_copy(update={"opening_beliefs": opening_beliefs_of(model)})
     if placed.profile:
         session = session.model_copy(update={"profile": placed.profile})
     taught, consumed = await _teaching_begins(

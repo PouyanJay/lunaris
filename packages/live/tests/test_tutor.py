@@ -25,6 +25,8 @@ from lunaris_live.graph import (
 )
 from lunaris_live.session import (
     ClaudeTutor,
+    Covered,
+    CoveredOutcome,
     DirectorMove,
     LessonParts,
     MoveKind,
@@ -139,6 +141,36 @@ async def test_a_long_profile_is_trimmed_before_it_reaches_the_tutor() -> None:
 
     assert "x" * 599 + "Y" in model.prompts[0]
     assert "Yz" not in model.prompts[0]
+
+
+async def test_the_recap_is_briefed_with_the_record_and_says_what_the_model_wrote() -> None:
+    """P2c T5: the close's words. The record — each concept and how it stands — rides the prompt
+    verbatim, so the tutor can dress it and not revise it; what comes back is what they read."""
+    model = ScriptedModel("You showed you have Prior; Update is still forming. See you next time.")
+    covered = [
+        Covered(
+            node_id="prior", concept="Prior", outcome=CoveredOutcome.DEMONSTRATED, evidence_count=2
+        ),
+        Covered(
+            node_id="update", concept="Update", outcome=CoveredOutcome.FORMING, evidence_count=1
+        ),
+    ]
+
+    said = await ClaudeTutor("m", client=model).recap(
+        "Bayes' theorem", covered, profile="A nurse.", run_id="r1"
+    )
+
+    assert said.startswith("You showed you have Prior")
+    prompt = model.prompts[0]
+    assert "Prior: demonstrated (2 answers)" in prompt
+    assert "Update: forming (1 answer)" in prompt
+    assert "A nurse." in prompt
+    assert "Bayes' theorem" in prompt
+
+
+async def test_a_recap_the_model_leaves_blank_is_a_failure_the_close_can_degrade() -> None:
+    with pytest.raises(TutorUnavailableError):
+        await ClaudeTutor("m", client=ScriptedModel("   ")).recap("T", [], run_id="r1")
 
 
 async def test_the_directors_reason_reaches_the_tutor() -> None:

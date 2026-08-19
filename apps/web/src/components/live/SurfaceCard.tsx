@@ -252,6 +252,10 @@ function Quiz({ spec, busy, answerable, onAnswer, welded }: AnswerableCardProps<
  *  If that number moves, this one moves with it. */
 const HELD_RECALL = 0.6;
 
+function percent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
 function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
   return (
     <Shell eyebrow="What you showed" concept="This session" welded={welded}>
@@ -271,6 +275,8 @@ function Meter({ spec, welded }: { spec: MasteryMeterSpec; welded: boolean }) {
                 tone={entry.recall >= HELD_RECALL ? "success" : "accent"}
               />
               <span className={styles.meterEvidence}>
+                {/* Movement, not a number: where they came in, when the row recorded it. */}
+                {entry.recallBefore != null ? `from ${percent(entry.recallBefore)} · ` : null}
                 {`${entry.evidenceCount} ${entry.evidenceCount === 1 ? "answer" : "answers"}`}
               </span>
             </li>

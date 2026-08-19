@@ -1,5 +1,6 @@
 from ..graph import ConceptGraph, ConceptNode
 from .claim_of import claim_of
+from .is_demonstrated import is_demonstrated
 from .mastery_thresholds import DECAYED as _DECAYED
 from .mastery_thresholds import MASTERED as _MASTERED
 from .recall_of import recall_of
@@ -115,8 +116,7 @@ def _demonstrated(model: LearnerModel, node_id: str) -> bool:
     again would be a second place to keep the same rule true. That relationship is what
     ``test_one_right_answer_does_not_unlock_the_next_concept`` pins.
     """
-    known = model.nodes.get(node_id)
-    return known is not None and known.estimate >= _MASTERED
+    return is_demonstrated(model.nodes.get(node_id))
 
 
 def _stuck_on(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
@@ -146,7 +146,7 @@ def _most_decayed(
     candidates = [
         (recall_of(model, node.id, at_turn=clock.turn), node)
         for node in graph.nodes
-        if (known := model.nodes.get(node.id)) is not None and known.estimate >= _MASTERED
+        if is_demonstrated(model.nodes.get(node.id))
     ]
     due = [(recall, node) for recall, node in candidates if recall < _DECAYED]
     return min(due, key=lambda pair: pair[0])[1] if due else None

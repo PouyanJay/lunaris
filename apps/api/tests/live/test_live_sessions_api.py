@@ -378,6 +378,78 @@ async def test_a_session_out_of_time_says_goodbye_rather_than_going_quiet(
     assert session["turns"][-2]["answer"] == "Anything."
 
 
+async def test_the_close_recaps_what_was_covered_and_shows_the_movement_since_the_open(
+    tmp_path: Path,
+) -> None:
+    """P2c T5, through the API. A first session demonstrates the root; a second session on the same
+    map (the beliefs outlive the session) opens with that on its zero line, works, and closes on
+    the clock: the goodbye is a recap over what THIS session covered (the offline tutor names the
+    concepts and how they stand) with the director's reason behind it, and the meter carries each
+    concept's recall beside where it stood at open — a number for the root the learner came in
+    holding, nothing for a concept first met today."""
+    # Arrange — session one: two METs on the root, so it is demonstrated and the belief outlives it.
+    app = create_app()
+    settings = Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+    )
+    app.dependency_overrides[get_settings] = lambda: settings
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        graph = await _graph(client)
+        first = (await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})).json()
+        for _ in range(2):
+            standing = first["turns"][-1]
+            first = (
+                await _answer(
+                    client,
+                    first["sessionId"],
+                    standing["criterion"]["statement"],
+                    seq=standing["seq"],
+                )
+            ).json()
+        root = graph["topoOrder"][0]
+        assert first["turns"][-1]["move"]["nodeId"] == graph["topoOrder"][1], "root demonstrated"
+
+    # Session two, on the same map, with no time left after its first answer.
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(),
+        env_file=tmp_path / ".env",
+        live_session_budget_s=0.001,
+    )
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        second = (
+            await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+        ).json()
+        # Act — the second concept is answered once (MET from nothing), then the clock is spent.
+        standing = second["turns"][-1]
+        closed = (
+            await _answer(
+                client,
+                second["sessionId"],
+                standing["criterion"]["statement"],
+                seq=standing["seq"],
+            )
+        ).json()
+
+    # Assert — the ceremony.
+    assert closed["status"] == "closed"
+    goodbye = closed["turns"][-1]
+    second_concept = graph["topoOrder"][1]
+    concept_name = next(n["name"] for n in graph["nodes"] if n["id"] == second_concept)
+    assert concept_name in goodbye["tutor"], "the recap names what this session covered"
+    assert "still forming" in goodbye["tutor"], "one MET is not mastery, and the recap says so"
+    assert "minutes are up" in goodbye["tutor"], "the director's reason still closes it"
+    meter = goodbye["surface"]
+    assert meter["kind"] == "mastery_meter"
+    entries = {entry["nodeId"]: entry for entry in meter["entries"]}
+    assert entries[root]["recallBefore"] is not None, "the root came in held: its zero line shows"
+    assert entries[root]["recallBefore"] == closed["openingBeliefs"][root]
+    assert entries[second_concept]["recallBefore"] is None, "first met today: nothing to show"
+    assert entries[second_concept]["recall"] > 0.0
+
+
 async def test_a_session_that_has_closed_does_not_take_another_answer(
     client: httpx.AsyncClient,
 ) -> None:

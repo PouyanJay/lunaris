@@ -18,6 +18,7 @@ from .claude_interviewer import ClaudeInterviewer
 from .claude_prior_mapper import ClaudePriorMapper
 from .claude_tutor import ClaudeTutor
 from .compose_layout import compose_layout
+from .covered_in import covered_in
 from .decide_move import decide_move
 from .exchanges_of import exchanges_of
 from .grader_unavailable_error import GraderUnavailableError
@@ -31,6 +32,7 @@ from .next_turn import next_turn
 from .node_of import node_of
 from .open_placement import open_placement
 from .open_session import open_session
+from .opening_beliefs_of import opening_beliefs_of
 from .predict_next import predict_next
 from .prior_mapper_unavailable_error import PriorMapperUnavailableError
 from .protocols import (
@@ -45,11 +47,14 @@ from .protocols import (
     ITutorDeltaSink,
 )
 from .recall_of import recall_of
+from .recap_sentence import recap_sentence
 from .reject_unteachable_move import reject_unteachable_move
 from .relay_delta import relay_delta
 from .resolve_sim_app import resolve_sim_app
 from .schema import (
     ConceptMapCard,
+    Covered,
+    CoveredOutcome,
     CriterionCard,
     DirectorMove,
     EvidenceKind,
@@ -115,6 +120,8 @@ __all__ = [
     "ClaudePriorMapper",
     "ClaudeTutor",
     "ConceptMapCard",
+    "Covered",
+    "CoveredOutcome",
     "CriterionCard",
     "DirectorMove",
     "EvidenceKind",
@@ -183,14 +190,17 @@ __all__ = [
     "ask_model",
     "claim_of",
     "compose_layout",
+    "covered_in",
     "decide_move",
     "exchanges_of",
     "next_turn",
     "node_of",
     "open_placement",
     "open_session",
+    "opening_beliefs_of",
     "predict_next",
     "recall_of",
+    "recap_sentence",
     "reject_unteachable_move",
     "relay_delta",
     "resolve_sim_app",
