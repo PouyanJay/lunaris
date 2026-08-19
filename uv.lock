@@ -23,6 +23,18 @@ members = [
 constraints = [{ name = "langsmith", specifier = ">=0.8.18" }]
 
 [[package]]
+name = "ag-ui-protocol"
+version = "0.1.19"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a7/10/4ad299267a7d04b89935aa99eef62979758fcf95aee9f8bb5d70c35b1be1/ag_ui_protocol-0.1.19.tar.gz", hash = "sha256:43c27f60d41712dcad0e9e0a203cbdf1c8e248b22417374c5c68321c448af4ea", size = 10720, upload-time = "2026-06-02T17:26:15.627Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/0a/bcad8116eb058e4b4a305e3fc37ebd7efc879deeb86b854f1c5b8b6e97dd/ag_ui_protocol-0.1.19-py3-none-any.whl", hash = "sha256:898843b1410d378824da0c6a776486288b9c5828689d0bf563118868e37f390f", size = 13490, upload-time = "2026-06-02T17:26:16.313Z" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1528,6 +1540,7 @@ dev = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -1539,6 +1552,7 @@ dev = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", specifier = ">=0.7" },
 ]
 
@@ -1555,6 +1569,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langgraph" },
     { name = "lunaris-graph" },
+    { name = "lunaris-grounding" },
     { name = "lunaris-runtime" },
     { name = "mcp" },
     { name = "structlog" },
@@ -1570,6 +1585,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=0.2" },
     { name = "langgraph", specifier = ">=0.2" },
     { name = "lunaris-graph", editable = "packages/graph" },
+    { name = "lunaris-grounding", editable = "packages/grounding" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "structlog", specifier = ">=24.4" },
@@ -1580,12 +1596,14 @@ name = "lunaris-api"
 version = "0.0.0"
 source = { editable = "apps/api" }
 dependencies = [
+    { name = "ag-ui-protocol" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "lunaris-agent" },
     { name = "lunaris-covers" },
     { name = "lunaris-grounding" },
+    { name = "lunaris-live" },
     { name = "lunaris-runtime" },
     { name = "lunaris-video" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -1601,12 +1619,14 @@ render = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ag-ui-protocol", specifier = ">=0.1.19" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "lunaris-agent", editable = "packages/agent" },
     { name = "lunaris-covers", editable = "packages/covers" },
     { name = "lunaris-grounding", editable = "packages/grounding" },
+    { name = "lunaris-live", editable = "packages/live" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "lunaris-video", editable = "packages/video" },
     { name = "lunaris-video", extras = ["render"], marker = "extra == 'render'", editable = "packages/video" },

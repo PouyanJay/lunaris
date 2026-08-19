@@ -94,6 +94,19 @@ jobs:
             --image "lunaris-cover-worker:${{ steps.sha.outputs.value }}" \
             --force
 
+      # Promote the dev-built CopilotKit runtime image the same way (live-generative-surfaces T8) —
+      # only when Live's generative surface is on for prod. The exact SHA cd-dev built must exist in
+      # the dev ACR.
+      - name: Promote CopilotKit runtime image (dev ACR -> prod ACR, same tag)
+        if: vars.LIVE_RUNTIME_ENABLED == 'true'
+        run: |
+          az acr import \
+            --name "${{ vars.ACR_NAME }}" \
+            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
+            --source "lunaris-copilot:${{ steps.sha.outputs.value }}" \
+            --image "lunaris-copilot:${{ steps.sha.outputs.value }}" \
+            --force
+
       - name: Setup Supabase CLI
         if: vars.SUPABASE_DB_POOLER_HOST != ''
         uses: supabase/setup-cli@v1
@@ -204,6 +217,38 @@ jobs:
               withByok="${{ vars.WITH_BYOK || 'false' }}" \
               coverJobsDbConnection="$PG_CONN"
 
+      # The CopilotKit runtime Container App (copilot.bicep) — the browser's AG-UI hop into the API's
+      # session loop, promoted from the same SHA. Forwards to the prod API app just deployed (its
+      # public FQDN, or the custom domain when one is bound — the same host the browser uses); allowed
+      # browser origins are the SPA's CORS origins. Holds no credential (AD3), so nothing from Key
+      # Vault. Its FQDN is what the prod SPA needs as VITE_COPILOT_URL (printed below).
+      - name: Deploy CopilotKit runtime (copilot.bicep, prod)
+        if: vars.LIVE_RUNTIME_ENABLED == 'true'
+        id: copilot
+        run: |
+          set -euo pipefail
+          API_HOST="${{ vars.API_CUSTOM_DOMAIN }}"
+          if [ -z "$API_HOST" ]; then
+            API_HOST=$(az containerapp show -g "${{ vars.RESOURCE_GROUP }}" -n lunaris-prod-api \
+              --query properties.configuration.ingress.fqdn -o tsv)
+          fi
+          FQDN=$(az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-prod-copilot-${{ github.run_number }}" \
+            --template-file infra/copilot.bicep \
+            --parameters \
+              env=prod \
+              location="${{ vars.LOCATION }}" \
+              image="${{ vars.ACR_LOGIN_SERVER }}/lunaris-copilot:${{ steps.sha.outputs.value }}" \
+              managedEnvironmentId="${{ vars.ACA_ENV_ID }}" \
+              managedIdentityResourceId="${{ vars.MI_RESOURCE_ID }}" \
+              acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+              apiBaseUrl="https://$API_HOST" \
+              allowedOrigins="${{ vars.CORS_ORIGINS }}" \
+            --query properties.outputs.fqdn.value -o tsv)
+          echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+          echo "CopilotKit runtime at https://$FQDN"
+
       # app.bicep's ingress block doesn't carry customDomains, so a deploy resets ingress and drops
       # the api.lunaris.pouyan.ai binding — restore it here (idempotent). DNS (CNAME + asuid TXT) and
       # the managed cert already exist on the env, so add+bind just re-attach them. The add is only
@@ -298,6 +343,23 @@ jobs:
             fi
           done
 
+      # A green promote must mean a serving runtime too: poll its /healthz, or fail the run.
+      - name: Smoke test CopilotKit runtime (prod)
+        if: vars.LIVE_RUNTIME_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          FQDN="${{ steps.copilot.outputs.fqdn }}"
+          echo "Probing https://$FQDN/healthz"
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "https://$FQDN/healthz" >/dev/null 2>&1; then
+              echo "✅ prod CopilotKit runtime healthy (attempt $i)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::https://$FQDN/healthz did not return 200 within 5 minutes after deploy."
+          exit 1
+
       # Prod-operations control plane (prod-ops-admin, AD-3): the always-on app the on/off switch
       # calls, since stopping prod stops the API itself. Deployed LAST and non-fatally — it must never
       # block the API promote or the custom-domain restore above (an earlier failure here once dropped
@@ -338,8 +400,14 @@ jobs:
             echo "| Promoted SHA | \`${{ steps.sha.outputs.value }}\` |"
             echo "| URL | https://$FQDN |"
             echo "| Prod-ops control plane | ${{ steps.prodops_control.outputs.url }} |"
+            if [ -n "${{ steps.copilot.outputs.fqdn }}" ]; then
+              echo "| CopilotKit runtime | https://${{ steps.copilot.outputs.fqdn }} |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::notice::Set the GitHub var VITE_PROD_CONTROL_URL to ${{ steps.prodops_control.outputs.url }} (then re-run the SPA build) so the prod-ops on/off switch targets the control plane."
+          if [ -n "${{ steps.copilot.outputs.fqdn }}" ] && [ "${{ vars.VITE_COPILOT_URL }}" != "https://${{ steps.copilot.outputs.fqdn }}" ]; then
+            echo "::notice::Set the GitHub var VITE_COPILOT_URL to https://${{ steps.copilot.outputs.fqdn }} (then re-run the SPA build) so the Live session surface talks to this runtime; until then the transcript surface answers."
+          fi
 
   web:
     name: Build & deploy SPA (prod)
@@ -371,6 +439,10 @@ jobs:
           # prod environment: dev can run Live while prod stays Studio-only. Unset or anything but
           # "true" keeps Lunaris as Studio alone.
           VITE_LIVE_ENABLED: ${{ vars.VITE_LIVE_ENABLED }}
+          # Where Live's CopilotKit runtime answers (the lunaris-prod-copilot app's URL, printed by the
+          # promote job). Baked in at build time; scoped to the prod environment. Unset, the Live
+          # session surface is the REST transcript and the generative panel says it is not configured.
+          VITE_COPILOT_URL: ${{ vars.VITE_COPILOT_URL }}
       - name: Deploy to Static Web Apps (prod)
         uses: Azure/static-web-apps-deploy@v1
         with:

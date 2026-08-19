@@ -1,0 +1,84 @@
+# syntax=docker/dockerfile:1
+#
+# Container image for the Lunaris Live CopilotKit runtime (apps/copilot → `dist/main.js`): the
+# AG-UI transport hop between the browser and the FastAPI session loop. It holds no business logic
+# and no credential (it forwards the learner's own bearer token), so this is the leanest of the
+# images: a Node runtime, the production dependency closure, and the compiled `dist/`.
+#
+# Multi-stage: a builder installs the full dependency set (TypeScript included) and compiles; the
+# runtime stage installs production dependencies only, copies `dist/`, runs as non-root, and
+# liveness-probes /healthz. Built in CI (no push) and, from T8, pushed to ACR and run on Azure
+# Container Apps like the API.
+
+# ── builder: install everything, compile TypeScript ─────────────────────────────────────────────
+# `.nvmrc` pins 22 for the workspace; the image tracks it. Debian slim over alpine so the OS
+# package layer matches the other three images (same apt security posture, same Trivy behaviour).
+FROM node:22-slim AS builder
+
+WORKDIR /app
+
+# Manifests first so the dependency layer caches independently of the source.
+COPY apps/copilot/package.json apps/copilot/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+COPY apps/copilot/tsconfig.json ./
+COPY apps/copilot/src/ ./src/
+RUN npm run build
+
+# ── runtime: production dependencies + dist, non-root ───────────────────────────────────────────
+FROM node:22-slim AS runtime
+
+ENV NODE_ENV=production \
+    PORT=8100
+
+# Apply Debian security updates to the base image's OS packages before dropping privileges — the
+# same reason and the same shape as Dockerfile.api: the slim base lags Debian's security point
+# releases, and CI gates the build on fixable HIGH/CRITICAL CVEs (Trivy).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Production closure only — `npm ci --omit=dev` installs `dependencies` and nothing else, which is
+# what makes the build-time assertion below meaningful (a package used at runtime but declared
+# under devDependencies is present in the builder and absent here).
+#
+# Then the package manager itself is removed. CMD is `node dist/main.js`; nothing at run time needs
+# npm, npx or corepack, and the npm the base image bundles carries its own dependency tree
+# (tar, brace-expansion, sigstore, …) that Trivy scans like any other — the first local scan of this
+# image failed on a CRITICAL in *npm's* tar, in a container that never runs npm. Removed in the same
+# layer as the install so no layer keeps a copy.
+COPY apps/copilot/package.json apps/copilot/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev \
+    && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
+COPY --from=builder /app/dist/ ./dist/
+
+# The official image ships an unprivileged `node` user (uid 1000); the container never needs root.
+RUN chown -R node:node /app
+USER node
+
+EXPOSE 8100
+
+# Fail the BUILD if the runtime cannot load, rather than the deploy. Importing `endpoint.js` pulls
+# in `@copilotkit/runtime`, the MCP Apps middleware and the AG-UI client — the whole production
+# closure — without binding a port, so a dependency that is importable in the builder (dev deps
+# present) but missing from this stage dies here instead of at the first learner's run in Azure.
+# Runs after `USER node`, as the identity CMD runs as. (Dockerfile.api's `import lunaris_api.main`
+# is the same check for the same reason; T0 of live-generative-surfaces is why every image has one.)
+RUN node -e "import('./dist/endpoint.js').then(() => console.log('copilot runtime ok'))"
+
+# Liveness probe — the runtime's own /healthz ({"status":"ok"}), answered outside CopilotKit's
+# routing so a broken route reads as a broken route and not as a dead container. Node 22 has
+# global fetch; no curl in the image.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/healthz').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+# LUNARIS_API_URL and LUNARIS_COPILOT_ORIGINS are required at run time (main.ts refuses to boot
+# without the first and allows no origin without the second) — supplied by infra/copilot.bicep.
+CMD ["node", "dist/main.js"]

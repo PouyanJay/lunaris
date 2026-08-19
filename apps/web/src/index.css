@@ -12,7 +12,11 @@
   --gray-200: #e2e5ea;
   --gray-300: #cbd0d9;
   --gray-400: #9aa1ad;
-  --gray-500: #6b7280;
+  /* The muted-text step. Tuned (from #6b7280) so `--text-muted` clears WCAG AA text contrast on
+     EVERY neutral ground it is painted on — the recessed composer field (`--field-sub`, 4.52:1)
+     and the hover step (`--bg-muted`, 4.69:1) included — not only on white. Pinned by
+     `designTokens.contrast.test.ts`, both themes. */
+  --gray-500: #646b79;
   --gray-600: #4b5563;
   --gray-700: #374151;
   --gray-800: #1f242e;
@@ -161,7 +165,11 @@
   --frame-top: #262b33;
   --text: #e9ebee;
   --text-secondary: #8a909b;
-  --text-muted: #565c66;
+  /* Was #565c66, which measured 2.81:1 on `--bg-subtle` — a WCAG AA failure carried by every
+     `.eyebrow` in both products. #7c828e clears 4.5:1 on every dark ground (`--field` is the
+     tightest at 4.56:1) while staying below `--text-secondary` so the three text weights keep
+     their order. Pinned by `designTokens.contrast.test.ts`. */
+  --text-muted: #7c828e;
   --accent-500: #e0a23c;
   --accent-600: #c8860f;
   /* In dark, "stronger on soft" = the 600 itself (it already clears AA on --accent-soft); the

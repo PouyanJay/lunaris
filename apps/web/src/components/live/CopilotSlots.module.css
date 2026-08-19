@@ -1,0 +1,55 @@
+/* The panel's slots. One panel region: turns welded by hairlines rather than floating bubbles,
+   because a session is a single continuous record and it should read as one here exactly as it
+   does in the transcript. */
+
+.turn {
+  composes: turn from "./Speech.module.css";
+}
+
+/* Whatever leads a row sits flush with its top edge; the spacing tokens below are for what follows. */
+.turn > :first-child {
+  margin-top: 0;
+}
+
+/* The Tier 1 card / Tier 2 layout under the tutor's words. The card carries its own border, so
+   this is spacing only — a second box around it would be the cards-in-cards look. */
+.surface {
+  margin-top: var(--space-4);
+}
+
+/* Welded to the message list above by a hairline; the panel's own border is the outer edge, so the
+   embedded form (no chrome of its own) sits inside padding here. */
+.composer {
+  flex: none;
+  padding: var(--space-4) var(--space-5);
+  border-top: var(--border-width) solid var(--border);
+  background: var(--surface-raised);
+}
+
+.fault {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.faultLead {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+/* Standing alone — the kit's activity slot between the learner's send and the tutor's first word —
+   the working line is a row of its own, welded like any other. The kit wraps it in an inline span,
+   so the row is a block and the hairline is unconditional. */
+.pending {
+  composes: turn from "./Speech.module.css";
+  display: block;
+  border-top: var(--border-width) solid var(--border);
+}
+
+.pending > p {
+  margin-top: 0;
+}

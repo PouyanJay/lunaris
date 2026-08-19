@@ -76,9 +76,19 @@ class Settings:
     #: *opening* is rationed per owner per day — a runaway starts by opening sessions in a loop, and
     #: capping turns would end sittings that were going well for a reason nobody could explain.
     #: ``live_session_budget_usd`` is the ceiling on one session's whole spend, read from the
-    #: ledger's rollup: a runaway guard, not a ration — 0 turns it off.
+    #: ledger's rollup: a runaway guard, not a ration, 0 turns it off. Sized from measurement (P2b
+    #: T10's keyed eval, at the ledger's own price book): a keyed turn, two strong-tier model calls
+    #: (the lesson and its material) plus a worker-tier grade, costs about $0.02 to $0.026, so a
+    #: 30-turn sitting is under $1 and $2 binds only a runaway of eighty-odd turns. (T9 had doubled
+    #: this to $4 on an estimate of $0.15 to $0.20 a turn that the measurement did not bear out.)
     live_session_daily_cap: int = 20
     live_session_budget_usd: float = 2.0
+    #: Which Tier 3 simulator registry to serve (P2b T6). ``""`` — the default — means none, and a
+    #: concept whose every criterion needs a simulator keeps P2a's honest position: taught here, not
+    #: checkable here. ``"stub"`` mounts the placeholder simulator, which proves the socket and
+    #: teaches nothing, so it is a dev and eval switch rather than something to leave on in front of
+    #: learners. Phase 3 replaces the value with a registry of sims that have actually been built.
+    live_sims: str = ""
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
     # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
@@ -175,6 +185,7 @@ def get_settings() -> Settings:
         live_compile_max_concurrent=_env_int("LUNARIS_LIVE_COMPILE_MAX_CONCURRENT", default=1),
         live_extend_daily_cap=_env_int("LUNARIS_LIVE_EXTEND_DAILY_CAP", default=50),
         live_graph_budget_usd=_env_float("LUNARIS_LIVE_GRAPH_BUDGET_USD", default=10.0),
+        live_sims=os.getenv("LUNARIS_LIVE_SIMS", "").strip().lower(),
         live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
         live_session_daily_cap=_env_int("LUNARIS_LIVE_SESSION_DAILY_CAP", default=20),
         live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=2.0),

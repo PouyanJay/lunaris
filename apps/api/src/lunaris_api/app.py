@@ -27,7 +27,9 @@ from .dependencies import (
     get_video_storage,
 )
 from .live import router as live_router
+from .live.session import agui_router as live_agui_router
 from .live.session import router as live_session_router
+from .live.session import sims_router as live_sims_router
 from .routers import (
     activity,
     admin_users,
@@ -135,6 +137,8 @@ def _register_routers(app: FastAPI) -> None:
     # Live's region, mounted as a whole; Studio's app never names lunaris_live itself.
     app.include_router(live_router)
     app.include_router(live_session_router)
+    app.include_router(live_agui_router)
+    app.include_router(live_sims_router)
     app.include_router(briefs.router)
     app.include_router(runs.router)
     app.include_router(bridge.router)

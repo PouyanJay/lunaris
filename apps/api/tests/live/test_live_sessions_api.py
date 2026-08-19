@@ -15,7 +15,7 @@ tutor behind the turn, both real implementations of their protocols.
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
 
 import httpx
@@ -33,6 +33,7 @@ from lunaris_live.graph import ConceptNode, MasteryCriterion
 from lunaris_live.session import (
     DirectorMove,
     GraderUnavailableError,
+    LessonParts,
     MemoryKnowledgeStore,
     Session,
     SessionFormatError,
@@ -66,8 +67,15 @@ async def client_with_a_silent_tutor(tmp_path: Path) -> AsyncIterator[httpx.Asyn
             *,
             topic: str,
             criterion: MasteryCriterion | None = None,
+            already_said: Sequence[str] = (),
             run_id: str,
         ) -> str:
+            raise TutorUnavailableError("provider is down")
+
+        async def illustrate(self, *args: object, **kwargs: object) -> LessonParts:
+            """Down for Tier 2's material as well — one provider, one outage. It has to be here at
+            all because the loop asks for the material *beside* the words (T5), and a stub narrower
+            than ``ITutor`` would fail with a ``TypeError`` that looks nothing like an outage."""
             raise TutorUnavailableError("provider is down")
 
     app = create_app()

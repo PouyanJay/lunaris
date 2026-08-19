@@ -1,0 +1,28 @@
+/* The mount is a region of the card, not a card of its own: one border level per region, and the
+   card around it already owns one. */
+.mount {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* A fixed aspect rather than a fixed height, so the frame keeps its shape from a phone to a wide
+   desktop without the simulator inside it having to know anything about the host. The minimum stops
+   an extreme aspect ratio squeezing it to a strip. */
+.frame {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 220px;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  /* The document inside sets its own background from `prefers-color-scheme`; this is what shows
+     while it loads, so it matches rather than flashing white on an ink theme. */
+  background: var(--bg-subtle);
+}
+
+.status {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: var(--lh-xs);
+  color: var(--text-secondary);
+}

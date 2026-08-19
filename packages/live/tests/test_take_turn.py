@@ -20,6 +20,7 @@ from lunaris_live.graph import (
 from lunaris_live.session import (
     EvidenceKind,
     GraderUnavailableError,
+    LayoutComponent,
     LearnerModel,
     MoveKind,
     Session,
@@ -240,6 +241,18 @@ async def test_a_map_with_nothing_left_to_teach_closes_rather_than_looping() -> 
     assert session.status is SessionStatus.CLOSED
     assert session.turns[-1].move.kind is MoveKind.CLOSE
     assert session.turns[-2].answer is not None
+
+    # The goodbye is laid out too (P2b T5). Asserted at the *call site* rather than only against
+    # the composer, because the close branch builds its own turn: it names no concept and asks the
+    # tutor for nothing, so it is the one path where "every turn has a layout" could quietly stop
+    # being true and leave a renderer holding a turn it has a second way to draw.
+    goodbye = session.turns[-1].layout
+    assert goodbye is not None
+    assert [block.component for block in goodbye.blocks] == [
+        LayoutComponent.STACK,
+        LayoutComponent.PROSE,
+        LayoutComponent.SURFACE,
+    ]
 
 
 # ── the tutor is told what it has already said ─────────────────────────────────────────────────

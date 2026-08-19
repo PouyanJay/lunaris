@@ -26,6 +26,7 @@ from lunaris_live.graph import (
 from lunaris_live.session import (
     ClaudeTutor,
     DirectorMove,
+    LessonParts,
     MoveKind,
     StubTutor,
     TutorUnavailableError,
@@ -447,3 +448,223 @@ async def test_the_stub_teaches_a_concept_with_no_notes_at_all() -> None:
     # Assert
     assert taught.strip()
     assert "Gradient" in taught
+
+
+# ── the material around the lesson (P2b T5) ────────────────────────────────────────────────────
+
+_MATERIAL = """{
+  "workedExample": {
+    "title": "One step downhill",
+    "steps": ["Stand on the curve.", "Read the slope.", "Step the other way."]
+  },
+  "hint": "The sign is the direction; the size is how far.",
+  "practice": ["Which way at a positive slope?", "What happens at a flat spot?"]
+}"""
+
+
+async def _illustrated(
+    model: object,
+    *,
+    criterion: MasteryCriterion | None = None,
+    node: ConceptNode | None = None,
+    already_said: list[str] | None = None,
+) -> LessonParts:
+    return await ClaudeTutor("m", client=model).illustrate(
+        _move(),
+        node or _node(),
+        topic="How neural networks learn",
+        criterion=criterion,
+        already_said=already_said or [],
+        run_id="r1",
+    )
+
+
+async def test_the_material_the_model_wrote_arrives_whole() -> None:
+    """Tier 2's generative half. The composer arranges what comes back here and rewrites none of
+    it, so what this parses is exactly what a learner reads."""
+    # Arrange
+    model = ScriptedModel(_MATERIAL)
+
+    # Act
+    parts = await _illustrated(model)
+
+    # Assert
+    assert parts.worked_example is not None
+    assert parts.worked_example.title == "One step downhill"
+    assert parts.worked_example.steps == [
+        "Stand on the curve.",
+        "Read the slope.",
+        "Step the other way.",
+    ]
+    assert parts.hint == "The sign is the direction; the size is how far."
+    assert parts.practice == ["Which way at a positive slope?", "What happens at a flat spot?"]
+
+
+async def test_the_material_is_written_about_this_concept_and_its_authored_notes() -> None:
+    """The same claim the lesson's own prompt test makes, and it has to be made twice: this is a
+    second call with a second prompt, and a template pointed at the wrong node would produce
+    plausible material about something the learner is not being taught."""
+    # Arrange
+    model = ScriptedModel(_MATERIAL)
+    node = _node()
+
+    # Act
+    await _illustrated(model, node=node)
+
+    # Assert
+    prompt = model.prompts[0]
+    assert node.name in prompt
+    assert node.definition in prompt
+    assert _MISCONCEPTION in prompt
+
+
+async def test_the_practice_prompts_are_aimed_at_the_bar_the_learner_will_be_marked_on() -> None:
+    """Scaffolding pointed somewhere else is scaffolding for a different question."""
+    # Arrange
+    model = ScriptedModel(_MATERIAL)
+    criterion = MasteryCriterion(
+        kind=MasteryCriterionKind.PREDICT, statement="Say which way a weight should move."
+    )
+
+    # Act
+    await _illustrated(model, criterion=criterion)
+
+    # Assert
+    assert criterion.statement in model.prompts[0]
+
+
+async def test_a_concept_with_nothing_checkable_asks_for_something_else() -> None:
+    """No staged criterion means there is no bar to lead towards, so the prompts are asked to lead
+    somewhere else rather than at one that does not exist."""
+    # Arrange
+    model = ScriptedModel(_MATERIAL)
+
+    # Act
+    await _illustrated(model, criterion=None)
+
+    # Assert
+    assert "another side" in model.prompts[0]
+
+
+async def test_the_material_avoids_the_words_the_lesson_has_already_spent() -> None:
+    """A remediation whose worked example reopens with the analogy that just failed is the same
+    explanation in a different font."""
+    # Arrange
+    model = ScriptedModel(_MATERIAL)
+
+    # Act
+    await _illustrated(model, already_said=[_TEACHING])
+
+    # Assert
+    assert _TEACHING[:60] in model.prompts[0]
+
+
+async def test_prose_where_json_was_asked_for_costs_the_trimmings_and_not_the_turn() -> None:
+    """The failure this path exists to absorb. Every field of ``LessonParts`` is optional precisely
+    so an unusable answer degrades to an unadorned lesson rather than to a failed turn."""
+    # Arrange
+    model = ScriptedModel("Sure! Here is a worked example: stand on the curve and step downhill.")
+
+    # Act
+    parts = await _illustrated(model)
+
+    # Assert
+    assert parts == LessonParts()
+
+
+async def test_a_worked_example_that_came_back_as_a_paragraph_is_not_offered() -> None:
+    """A disclosure needs a body it can hide. One long paragraph collapsed behind a title is a
+    title — and the hint beside it survives, because these are three independent offers."""
+    # Arrange
+    model = ScriptedModel(
+        '{"workedExample": {"title": "One step", "steps": "Stand on the curve and step downhill."},'
+        ' "hint": "The sign is the direction.", "practice": "Think about it."}'
+    )
+
+    # Act
+    parts = await _illustrated(model)
+
+    # Assert — the malformed example is dropped, the usable hint is kept, and a bare string where
+    # an array was asked for is not read as a one-item list.
+    assert parts.worked_example is None
+    assert parts.hint == "The sign is the direction."
+    assert parts.practice == []
+
+
+async def test_an_over_long_field_is_trimmed_rather_than_thrown_away() -> None:
+    """The contract caps these too, so an untrimmed field would fail validation and take the whole
+    offer with it — the near side of the same wall is where a usable answer is salvaged."""
+    # Arrange
+    model = ScriptedModel(
+        f'{{"workedExample": {{"title": "{"t" * 400}", "steps": ["{"s" * 600}"]}},'
+        f' "hint": "{"h" * 900}", "practice": ["ok"]}}'
+    )
+
+    # Act
+    parts = await _illustrated(model)
+
+    # Assert
+    assert parts.worked_example is not None
+    assert len(parts.worked_example.title) == 200
+    assert len(parts.worked_example.steps[0]) == 300
+    assert parts.hint is not None
+    assert len(parts.hint) == 500
+
+
+async def test_more_steps_and_prompts_than_asked_for_are_cut_to_the_bound() -> None:
+    # Arrange
+    steps = ", ".join(f'"step {i}"' for i in range(12))
+    prompts = ", ".join(f'"prompt {i}"' for i in range(12))
+    model = ScriptedModel(
+        f'{{"workedExample": {{"title": "Long", "steps": [{steps}]}}, "practice": [{prompts}]}}'
+    )
+
+    # Act
+    parts = await _illustrated(model)
+
+    # Assert — bounded to what the schema accepts, keeping the front of each list.
+    assert parts.worked_example is not None
+    assert parts.worked_example.steps == [f"step {i}" for i in range(6)]
+    assert parts.practice == [f"prompt {i}" for i in range(4)]
+
+
+async def test_a_provider_that_never_answers_costs_the_trimmings_and_not_the_turn() -> None:
+    """Bounded by its own deadline, well under the lesson's: this runs beside the words rather than
+    in front of them, so the only thing a slow illustration may spend is itself."""
+
+    # Arrange
+    class Hanging:
+        async def ainvoke(self, prompt: str) -> AIMessage:
+            await asyncio.sleep(3600)
+            raise AssertionError("unreachable")
+
+    tutor = ClaudeTutor("m", client=Hanging())
+
+    # Act — the illustration's own deadline is 20 s, so this is driven with a fake clock rather
+    # than by waiting for it: what is under test is that the timeout is *caught*, not its value.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr("lunaris_live.session.claude_tutor._ILLUSTRATE_DEADLINE_S", 0.05)
+        parts = await tutor.illustrate(
+            _move(), _node(), topic="t", criterion=None, already_said=[], run_id="r1"
+        )
+
+    # Assert
+    assert parts == LessonParts()
+
+
+async def test_a_provider_that_refuses_costs_the_trimmings_and_not_the_turn() -> None:
+    """Unlike ``teach``, which raises: a turn with nothing said is not a turn, and a turn with no
+    worked example is a turn."""
+
+    # Arrange
+    class Refusing:
+        async def ainvoke(self, prompt: str) -> AIMessage:
+            raise RuntimeError("provider is down")
+
+    # Act
+    parts = await ClaudeTutor("m", client=Refusing()).illustrate(
+        _move(), _node(), topic="t", criterion=None, already_said=[], run_id="r1"
+    )
+
+    # Assert
+    assert parts == LessonParts()

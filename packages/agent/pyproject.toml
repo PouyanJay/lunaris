@@ -6,6 +6,12 @@ requires-python = ">=3.12"
 dependencies = [
     "lunaris-runtime",
     "lunaris-graph",
+    # The verifier moat and the grounding corpus. Named by 18 modules across the harness, the
+    # composition root, the MCP registry and the subagents — it was imported without being declared
+    # for a long time, and nothing noticed because `apps/api` declared both, so the package was
+    # present by coincidence rather than because this manifest was right. That coincidence would
+    # have lasted exactly until a second app consumed lunaris-agent.
+    "lunaris-grounding",
     "langchain-anthropic>=0.3",
     "langchain-openai>=0.2",
     "langchain>=0.3",
@@ -30,3 +36,4 @@ packages = ["src/lunaris_agent"]
 [tool.uv.sources]
 lunaris-runtime = { workspace = true }
 lunaris-graph = { workspace = true }
+lunaris-grounding = { workspace = true }

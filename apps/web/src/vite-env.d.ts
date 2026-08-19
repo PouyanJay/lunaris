@@ -12,6 +12,11 @@ interface ImportMetaEnv {
   /** "true" offers Lunaris Live (the gateway, the product switcher, the /live route-space). Unset
    *  or anything else keeps Lunaris as Studio alone — the default until Live's Phase 2 exit. */
   readonly VITE_LIVE_ENABLED?: string;
+  /** Base URL of Lunaris Live's CopilotKit runtime (e.g. http://localhost:8100). A separate host
+   *  from `VITE_API_URL` because it is a separate service: Node, not Python. Unset → the generative
+   *  session surface is unavailable and Live falls back to P2a's plain transcript, which still
+   *  works because the REST endpoints it uses never went away. */
+  readonly VITE_COPILOT_URL?: string;
 }
 
 interface ImportMeta {

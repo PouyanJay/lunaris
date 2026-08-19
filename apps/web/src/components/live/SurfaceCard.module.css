@@ -1,0 +1,227 @@
+/* The Tier 1 card: hairline border, no floating card, no second border level inside. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Welded to the transcript above it, where there is one: the card is part of the session's record,
+   not a widget parked beside it. Dropped when the card renders on its own — inside the generative
+   panel's message stream it has nothing above it, and a missing top edge there reads as broken
+   rather than as continuous. */
+.card[data-welded="true"] {
+  border-top: none;
+  border-radius: 0;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.concept {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* The do-statement, or the question. The one sentence the learner is answering, so it carries the
+   weight — the body text around it stays secondary. */
+.ask {
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  color: var(--text);
+}
+
+.note,
+.chainEmpty {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+/* ── the quiz ─────────────────────────────────────────────────────────────────────────────── */
+
+.quizForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  /* ≥32px of hit area in a dense surface, and the whole row is the target rather than the dot. */
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text);
+  background: var(--bg);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+/* Interaction increases contrast rather than washing it out. */
+.option:hover {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+}
+
+/* The ring lives on the row, not the 16px dot inside it — otherwise keyboard focus is a speck. */
+.option:focus-within {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.option:has(.radio:checked) {
+  border-color: var(--border-strong);
+  background: var(--bg-muted);
+}
+
+.options:disabled .option {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.radio {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 2px 0 0;
+  accent-color: var(--accent-500);
+}
+
+/* The label text wraps rather than truncating: an option is a sentence, and a clipped one changes
+   what is being asked. */
+.optionText {
+  min-width: 0;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.hint[role="alert"] {
+  color: var(--danger);
+}
+
+/* ── the meter ────────────────────────────────────────────────────────────────────────────── */
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.meterRow {
+  display: grid;
+  /* The concept, the bar, the count — a continuous band split by rhythm rather than by rules. */
+  grid-template-columns: minmax(0, 10rem) 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.meterConcept {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meterEvidence {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+/* ── the prerequisite chain ───────────────────────────────────────────────────────────────── */
+
+.chainLabel {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chainItem {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  background: var(--bg-muted);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 40rem) {
+  .meterRow {
+    /* The bar keeps its own row rather than being squeezed to a stub. */
+    grid-template-columns: 1fr auto;
+  }
+
+  .meterRow > [role="progressbar"] {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .option {
+    transition: none;
+  }
+}

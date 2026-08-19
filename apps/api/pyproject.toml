@@ -9,6 +9,13 @@ dependencies = [
     "lunaris-grounding",
     "lunaris-video",
     "lunaris-covers",
+    # Lunaris Live. One FastAPI app serves both products, so the API host mounts Live's routers
+    # (see src/lunaris_api/live/) and must therefore carry Live's package in its image closure.
+    # Declaring it here does NOT weaken the one-way product boundary — that is about which modules
+    # may *import* which (tests/test_product_boundary.py), and it still holds: only the live/
+    # region names lunaris_live. It adds nothing to the image beyond what is already there, since
+    # Live's own closure is lunaris-runtime + pydantic + structlog.
+    "lunaris-live",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "structlog>=24.4",
@@ -22,6 +29,7 @@ dependencies = [
     # than moved: it was a "not vetted yet" marker, not a known incompatibility, and re-capping at
     # <51 would just recreate the same block on the next advisory.
     "cryptography>=50.0.0",
+    "ag-ui-protocol>=0.1.19",
 ]
 
 [project.optional-dependencies]
@@ -45,3 +53,4 @@ lunaris-runtime = { workspace = true }
 lunaris-grounding = { workspace = true }
 lunaris-video = { workspace = true }
 lunaris-covers = { workspace = true }
+lunaris-live = { workspace = true }

@@ -19,6 +19,7 @@ flowchart TB
         SWA["Azure Static Web Apps<br/>React SPA (Vite build)"]
         subgraph ACAENV["Container Apps environment"]
             API["lunaris-api<br/>FastAPI / uvicorn · agent<br/>min 1 – max ~3 replicas<br/>scale on HTTP concurrency<br/>build runs inline, streamed over SSE"]
+            COP["lunaris-copilot<br/>Node · CopilotKit runtime (Live)<br/>AG-UI hop, no credential<br/>scale on open SSE streams"]
             INF["inference<br/>Qwen · CPU · scale-to-0"]
             EMB["embeddings<br/>BGE · CPU · scale-to-0"]
         end
@@ -44,6 +45,8 @@ flowchart TB
     User -->|"HTTPS — load SPA"| SWA
     User <-->|"login"| AUTH
     SWA -->|"HTTPS + Bearer JWT<br/>start / stream a build (SSE)"| API
+    SWA -->|"Live: AG-UI run (SSE)<br/>+ Bearer JWT, forwarded"| COP
+    COP -->|"POST /api/live/sessions/{id}/agui"| API
 
     API -->|"validate JWT (JWKS)"| AUTH
     API -->|"per-user — RLS enforced"| TUSER
@@ -138,13 +141,17 @@ server's orchestration and embeddings).
 
 ## CI / CD
 
-GitHub Actions builds the API image once and promotes it across environments: `cd-dev` deploys on
+GitHub Actions builds each image once and promotes it across environments: `cd-dev` deploys on
 merge to the default branch, `cd-prod` is a one-click promote, and `cd-inference` builds the local
-model images (and rebuilds them automatically when `infra/inference/` changes). The image is
-scanned for fixable high/critical vulnerabilities before it ships. Every deploy ends with a smoke
-test — the run only goes green once `/api/healthz` answers on the deployed host (the custom domain
-included on prod) — and CI boots a disposable local Postgres to apply every migration, lint the
-schema, and run the row-level-security suite against the real policies.
+model images (and rebuilds them automatically when `infra/inference/` changes). Every root
+`Dockerfile.*` (API, video worker, cover worker, Live's CopilotKit runtime) is built and scanned
+for fixable high/critical vulnerabilities in CI, on the pull request, before it can reach a deploy;
+`tests/test_deploy_wiring.py` fails the suite if a Dockerfile is added without that CI build, or
+pushed by `cd-dev` without a matching `cd-prod` promotion. Every deploy ends with a smoke test — the
+run only goes green once `/api/healthz` answers on the deployed host (the custom domain included on
+prod), and `/healthz` on the CopilotKit runtime where it is on — and CI boots a disposable local
+Postgres to apply every migration, lint the schema, and run the row-level-security suite against
+the real policies.
 
 ## Operations
 
@@ -152,6 +159,17 @@ schema, and run the row-level-security suite against the real policies.
 deploy also apply `infra/alerts.bicep`: an action group plus metric alerts on the API container app
 for an HTTP 5xx burst, replica crash-loop restarts, and sustained memory above 85% of the 2 Gi cap.
 Leave it unset and the deploy warns that no alerting is configured.
+
+**Turning on Lunaris Live's generative surface.** Live's session panel talks to a separate Node
+Container App, `lunaris-<env>-copilot` (`infra/copilot.bicep`, image `lunaris-copilot`), which
+holds no credential and forwards the learner's own bearer token to the API. It is a two-step
+rollout per environment, like the prod-ops control plane: (1) set the GitHub environment variable
+`LIVE_RUNTIME_ENABLED=true` and deploy — the workflow builds (dev) or promotes (prod) the image,
+deploys the app pointed at that environment's API with the SPA's `CORS_ORIGINS` as its allowed
+origins, and prints the runtime's URL in the run summary; (2) set `VITE_COPILOT_URL` to that URL
+and re-run the SPA build. Until step 2 the Live session surface is the REST transcript, fully
+usable, and the panel says it is not configured. Turning it off is the reverse; the app scales to
+zero on dev when idle and stays at one replica on prod.
 
 **Rotating the Supabase service_role key.** The service-role key is the API's server-side database
 credential; rotate it immediately if it ever appears in a log, transcript, or terminal. Procedure:

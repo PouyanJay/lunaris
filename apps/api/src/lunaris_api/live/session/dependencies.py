@@ -8,10 +8,12 @@ from lunaris_live.session import (
     IGrader,
     IKnowledgeStore,
     ISessionStore,
+    ISimRegistry,
     ITutor,
     MemoryKnowledgeStore,
     MemorySessionStore,
     StubGrader,
+    StubSimRegistry,
     StubTutor,
     SupabaseKnowledgeStore,
     SupabaseSessionStore,
@@ -64,6 +66,22 @@ def get_live_tutor(settings: Annotated[Settings, Depends(get_settings)]) -> ITut
     return StubTutor() if settings.pipeline == "stub" else ClaudeTutor(resolve_strong_model())
 
 
+def get_live_sims(settings: Annotated[Settings, Depends(get_settings)]) -> ISimRegistry | None:
+    """Which Tier 3 simulators this deployment can mount, or ``None`` for none (P2b T6).
+
+    **Off unless asked for**, and that is the honest default rather than a timid one. The only
+    registry that exists today is the stub, which mounts a placeholder that proves the socket and
+    teaches nothing — and its report becomes evidence through the ordinary answer path, so leaving
+    it on would grade learners on a placeholder. With no registry, a concept whose every criterion
+    needs a simulator keeps P2a's position: taught here, not checkable here.
+
+    A dependency of its own, like the tutor and grader, because it is the collaborator a test wants
+    to substitute: what Phase 3 changes is which sims exist, and every seam above this one should
+    not notice.
+    """
+    return StubSimRegistry() if settings.live_sims == "stub" else None
+
+
 def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGrader:
     """The model-backed grader, or the deterministic one under ``LUNARIS_PIPELINE=stub``.
 
@@ -95,6 +113,7 @@ def get_live_session_service(
     settings: Annotated[Settings, Depends(get_settings)],
     tutor: Annotated[ITutor, Depends(get_live_tutor)],
     grader: Annotated[IGrader, Depends(get_live_grader)],
+    sims: Annotated[ISimRegistry | None, Depends(get_live_sims)],
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
 ) -> LiveSessionService:
@@ -119,6 +138,7 @@ def get_live_session_service(
         credential_resolver=get_live_credential_resolver(settings),
         throttle=_get_live_session_throttle(settings),
         session_budget_usd=settings.live_session_budget_usd,
+        sims=sims,
     )
 
 

@@ -6,12 +6,15 @@ the same thing either way. This is where the two real collaborators land — T3'
 tutor — behind the same entry point, so nothing above has to know a session got smarter.
 """
 
+from collections.abc import Sequence
+
 import pytest
 from lunaris_live.graph import ConceptGraph, ConceptNode, MasteryCriterion
 from lunaris_live.session import (
     DirectorMove,
     EvidenceKind,
     LearnerModel,
+    LessonParts,
     MoveKind,
     SessionClock,
     StubTutor,
@@ -45,7 +48,12 @@ def _mastered(model: LearnerModel, node_id: str) -> LearnerModel:
 
 
 class SpyTutor:
-    """Records what it was asked to teach; answers something the learner could read."""
+    """Records what it was asked to teach; answers something the learner could read.
+
+    ``already_said`` is accepted rather than omitted because ``ITutor`` declares it: a stub narrower
+    than the protocol passes only for as long as no caller uses the part it left out, and opening a
+    session now asks for Tier 2's material beside the words (T5).
+    """
 
     def __init__(self) -> None:
         self.calls: list[tuple[DirectorMove, ConceptNode, str, str]] = []
@@ -57,10 +65,16 @@ class SpyTutor:
         *,
         topic: str,
         criterion: MasteryCriterion | None = None,
+        already_said: Sequence[str] = (),
         run_id: str,
     ) -> str:
         self.calls.append((move, node, topic, run_id))
         return f"Teaching {node.name}."
+
+    async def illustrate(self, *args: object, **kwargs: object) -> LessonParts:
+        """No material. The layout then degrades to the lesson and the card, which is what these
+        tests are about — what the *tutor* was asked, not what was arranged around it."""
+        return LessonParts()
 
 
 async def test_a_returning_learner_does_not_start_over_at_the_root() -> None:

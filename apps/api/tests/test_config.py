@@ -5,10 +5,11 @@ orchestrator. ``make run`` still guards on a reachable key and falls back to the
 in-process default the API resolves when nothing is set."""
 
 from collections.abc import Iterator
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
-from lunaris_api.config import get_settings
+from lunaris_api.config import Settings, get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -61,3 +62,22 @@ def test_env_file_override_is_honored(monkeypatch: pytest.MonkeyPatch) -> None:
 
     # Assert
     assert settings.env_file == Path("/tmp/throwaway.env")
+
+
+def test_a_live_sessions_ceiling_is_a_runaway_guard_sized_from_measurement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lunaris Live, Phase 2b T10. The per-session USD ceiling is a runaway guard, not a ration
+    (P2a): the clock bounds an ordinary sitting, and the ceiling only binds when something is
+    wrong. T10's keyed eval measured a keyed turn (two strong-tier model calls plus a worker-tier
+    grade) at $0.02 to $0.026 at the ledger's own price book, so a 30-turn sitting is under $1 and
+    $2 binds only a runaway. Pinned in both places the number lives (the env reader's default and
+    the dataclass default, as every field here does) so the two cannot drift, and so the next
+    tier that adds a call has to look here."""
+    monkeypatch.delenv("LUNARIS_LIVE_SESSION_BUDGET_USD", raising=False)
+
+    settings = get_settings()
+
+    assert settings.live_session_budget_usd == 2.0
+    declared = {field.name: field.default for field in fields(Settings)}
+    assert declared["live_session_budget_usd"] == 2.0

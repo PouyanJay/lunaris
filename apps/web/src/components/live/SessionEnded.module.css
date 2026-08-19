@@ -1,0 +1,8 @@
+/* The ending, as text: quiet and secondary. Where it sits, and on what ground (under the
+   transcript's card, or in the composer's place inside the panel), is the surface's to add. */
+.ended {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}

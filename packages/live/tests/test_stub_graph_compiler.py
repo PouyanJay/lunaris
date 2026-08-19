@@ -129,3 +129,34 @@ async def test_an_extension_never_reuses_an_id_the_map_already_has() -> None:
     ids = [node.id for node in extended.nodes]
     assert len(ids) == len(set(ids))
     assert len(extended.topo_order) == len(extended.nodes)
+
+
+async def test_a_stub_map_stages_more_than_one_kind_of_do_statement() -> None:
+    """P2b T10. The director's card rules key on the *kind* of criterion staged, and a map of
+    nothing but EXPLAIN could never reach the criterion card through the real path. The second
+    concept asks for a prediction; the first and the topic itself still ask to be explained back,
+    so every earlier session test that echoes an explanation still lands where it did.
+    """
+    graph = await _compiled()
+
+    kinds = [node.mastery_criteria[0].kind.value for node in graph.nodes]
+    assert kinds == ["explain", "predict", "explain"]
+    assert not any(
+        criterion.needs_sim for node in graph.nodes for criterion in node.mastery_criteria
+    )
+
+
+async def test_a_hands_on_topic_ends_in_a_concept_only_a_simulator_can_check() -> None:
+    """Opt-in by wording, deliberately: a session that ends on an uncheckable concept ends
+    differently, and every earlier task's tests read the three-concept map. Asking for it puts a
+    fourth concept after the topic itself with a single simulator-only criterion, which is what
+    lets a stub session reach the concept-map card and, with a registry mounted, the simulator."""
+    plain = await _compiled("Pendulums")
+    hands_on = await _compiled("Hands-on with pendulums")
+
+    assert len(plain.nodes) == 3
+    assert len(hands_on.nodes) == 4
+    practice = hands_on.nodes[-1]
+    assert practice.requires == [hands_on.nodes[-2].id]
+    assert all(criterion.needs_sim for criterion in practice.mastery_criteria)
+    assert hands_on.topo_order[-1] == practice.id

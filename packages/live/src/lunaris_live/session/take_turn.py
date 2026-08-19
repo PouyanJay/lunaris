@@ -2,20 +2,27 @@ import structlog
 
 from ..graph import ConceptGraph, ConceptNode
 from .apply_evidence import apply_evidence
+from .compose_layout import compose_layout
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
-from .protocols import IGrader, ITutor
+from .protocols import IGrader, ISimRegistry, ITutor, ITutorDeltaSink
+from .resolve_sim_app import resolve_sim_app
+from .said_and_illustrated import said_and_illustrated
 from .schema import (
     DirectorMove,
+    LayoutSpec,
     LearnerModel,
+    LessonParts,
     MoveKind,
     Session,
     SessionClock,
     SessionStatus,
     SessionTurn,
+    SurfaceSpec,
     TurnGrade,
 )
+from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
 from .stage_criterion import stage_criterion
 from .stale_answer_error import StaleAnswerError
@@ -41,6 +48,8 @@ async def take_turn(
     run_id: str,
     elapsed_s: float,
     budget_s: float,
+    on_delta: ITutorDeltaSink | None = None,
+    sims: ISimRegistry | None = None,
 ) -> TurnOutcome:
     """The loop, once: score what the learner just said, move the belief, decide what happens next.
 
@@ -57,6 +66,11 @@ async def take_turn(
     ``answering_seq`` is the turn the learner was looking at when they answered. It is named rather
     than assumed, because a duplicate submit would otherwise be graded against the question that
     replaced it — recorded under a criterion it was never written for.
+
+    ``on_delta`` is where the tutor's words go *while* they are being written (P2b A2). Passing one
+    switches the tutor to its streaming path; leaving it ``None`` is P2a's turn exactly, single call
+    and all, which is what the REST endpoint keeps. It is deliberately not the loop's business
+    whether anybody is listening: a failing sink costs a fragment and never the turn.
 
     Raises ``StaleAnswerError`` when the named turn is not the one in front of the learner,
     ``SessionClosedError`` on a session the director has already ended, and
@@ -86,9 +100,36 @@ async def take_turn(
     clock = SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s)
     move = decide_move(graph, model, clock)
     if move.kind is MoveKind.CLOSE:
-        return TurnOutcome(session=_closed(session, turns, move, run_id=run_id), model=model)
+        # The surface is chosen from the same three inputs the move was (T3), so a close shows what
+        # the learner demonstrated rather than an empty card.
+        closing = select_surface(move, None, graph=graph, criterion=None, model=model, clock=clock)
+        return TurnOutcome(
+            session=_closed(
+                session,
+                turns,
+                move,
+                run_id=run_id,
+                surface=closing,
+                # A goodbye names no concept and asked no tutor for material, so the lean layout is
+                # all there is to arrange: the sign-off and the meter. Composed rather than left
+                # ``None`` so that "every turn has a layout" is true of the last one too, and a
+                # renderer never has to hold a second way of drawing a turn.
+                layout=compose_layout(LessonParts(), node_id=None, model=model),
+            ),
+            model=model,
+        )
 
-    taught = await _teach(graph, move, turns, tutor=tutor, run_id=run_id)
+    taught = await _teach(
+        graph,
+        move,
+        turns,
+        tutor=tutor,
+        run_id=run_id,
+        on_delta=on_delta,
+        model=model,
+        clock=clock,
+        sims=sims,
+    )
     logger.info(
         "live.session.turn_taken",
         run_id=run_id,
@@ -111,7 +152,13 @@ def _moved_by(model: LearnerModel, asked: SessionTurn, graded: TurnGrade | None)
 
 
 def _closed(
-    session: Session, turns: list[SessionTurn], move: DirectorMove, *, run_id: str
+    session: Session,
+    turns: list[SessionTurn],
+    move: DirectorMove,
+    *,
+    run_id: str,
+    surface: SurfaceSpec,
+    layout: LayoutSpec,
 ) -> Session:
     """The session, ended — and said out loud.
 
@@ -138,6 +185,8 @@ def _closed(
         # gets, and two wordings of one decision is how the two come to disagree.
         tutor=f"{_CLOSING} {move.reason}",
         run_id=run_id,
+        surface=surface,
+        layout=layout,
     )
     return session.model_copy(update={"turns": [*turns, goodbye], "status": SessionStatus.CLOSED})
 
@@ -149,6 +198,10 @@ async def _teach(
     *,
     tutor: ITutor,
     run_id: str,
+    on_delta: ITutorDeltaSink | None,
+    model: LearnerModel,
+    clock: SessionClock,
+    sims: ISimRegistry | None,
 ) -> SessionTurn:
     """The next turn: the move, said out loud, with something staged for the learner to meet."""
     node = _node_of(graph, move.node_id) if move.node_id is not None else None
@@ -158,22 +211,35 @@ async def _teach(
         # one would otherwise surface as an AttributeError from inside the tutor.
         raise ValueError(f"{move.node_id} is not a concept on graph {graph.graph_id}")
 
-    staged = stage_criterion(node)
+    staged = stage_criterion(node, sims=sims)
+    app = resolve_sim_app(sims, node, staged)
+    # Only this concept's history: a tutor told everything it has ever said would spend the prompt
+    # on material the learner is not being taught right now.
+    already_said = [turn.tutor for turn in turns if turn.move.node_id == node.id]
+
+    said, parts = await said_and_illustrated(
+        tutor,
+        move,
+        node,
+        topic=graph.topic,
+        criterion=staged,
+        already_said=already_said,
+        run_id=run_id,
+        on_delta=on_delta,
+    )
     return SessionTurn(
         seq=len(turns) + 1,
         move=move,
-        tutor=await tutor.teach(
-            move,
-            node,
-            topic=graph.topic,
-            criterion=staged,
-            # Only this concept's history: a tutor told everything it has ever said would spend the
-            # prompt on material the learner is not being taught right now.
-            already_said=[turn.tutor for turn in turns if turn.move.node_id == node.id],
-            run_id=run_id,
-        ),
+        tutor=said,
         run_id=run_id,
         criterion=staged,
+        # Chosen from the move, the concept and the belief — never from what the tutor happened to
+        # say. Plan §8 makes that mandatory for this tier: these components feed the learner model.
+        surface=select_surface(
+            move, node, graph=graph, criterion=staged, model=model, clock=clock, sim=app
+        ),
+        # Tier 2 (T5): the tutor wrote the material, the rules decide what this learner sees of it.
+        layout=compose_layout(parts, node_id=node.id, model=model),
     )
 
 

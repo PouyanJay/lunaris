@@ -13,6 +13,7 @@ could explain to the learner.
 """
 
 import asyncio
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_cost_event_store, get_subject_cost_store
 from lunaris_api.live.dependencies import resolve_graph_store
 from lunaris_api.live.session.dependencies import _resolve_session_store
+from lunaris_api.live.session.throttle import LiveSessionThrottle
 from lunaris_live.session import MemoryKnowledgeStore, StubGrader
 from lunaris_runtime.metering import record_cost
 from lunaris_runtime.persistence import InMemoryCostEventStore, InMemorySubjectCostStore
@@ -285,6 +287,86 @@ async def test_two_answers_at_once_pay_for_one_turn(tmp_path: Path) -> None:
     assert calls - opening_calls == 1
 
 
+async def test_an_answer_arriving_while_the_last_is_still_being_written_pays_for_nothing(
+    tmp_path: Path,
+) -> None:
+    """The slot has to cover the writes, not only the billed calls (P2b T9, from review).
+
+    Between the tutor answering and the session row landing there are three awaits (the ledger
+    drain and two store writes). Released after the model calls alone, the slot is free in that
+    window: a retry arriving then reads the *old* head, passes every check made against it, finds
+    the slot free, and pays a second grader and tutor for the same turn, and only then loses the
+    compare-and-set. The money is gone before the write is refused. So the slot is held until the
+    turn is fully persisted, and a retry in that window is told the last answer is still being
+    marked (409), which is also true.
+
+    A rendezvous rather than a sleep: the store's ``save`` parks until the second answer has been
+    refused, so the second answer provably arrives inside the window whatever the machine's speed.
+    """
+    # Arrange, a session store whose first save waits to be released, and a counting tutor.
+    from lunaris_api.live.session.dependencies import get_live_session_service, get_live_tutor
+    from lunaris_api.live.session.service import LiveSessionService
+    from lunaris_live.session import MemorySessionStore
+
+    calls = 0
+
+    class CountingTutor:
+        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+            nonlocal calls
+            calls += 1
+            return f"Teaching {node.name}."
+
+    saving = threading.Event()
+    release = threading.Event()
+
+    class ParkingStore(MemorySessionStore):
+        def save(self, session, *, owner_id=None, expect_turns=None):  # type: ignore[override]
+            # Only the turn's save parks; the opening's goes straight through.
+            if expect_turns is not None and not saving.is_set():
+                saving.set()
+                assert release.wait(5), "the test never released the store"
+            return super().save(session, owner_id=owner_id, expect_turns=expect_turns)
+
+    settings = _settings(tmp_path)
+    tutor = CountingTutor()
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_live_tutor] = lambda: tutor
+    service = LiveSessionService(
+        resolve_graph_store(settings),
+        ParkingStore(),
+        knowledge=MemoryKnowledgeStore(),
+        tutor=tutor,
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+        throttle=LiveSessionThrottle(open_daily_cap=0),
+    )
+    app.dependency_overrides[get_live_session_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        graph = await _graph(client)
+        session = (
+            await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+        ).json()
+        opening_calls = calls
+        answer = {"answer": "It points downhill.", "answeringSeq": 1}
+        url = f"/api/live/sessions/{session['sessionId']}/turns"
+
+        # Act, the first answer, then a second one sent only once the first is inside its save.
+        first = asyncio.create_task(client.post(url, json=answer))
+        await asyncio.to_thread(saving.wait, 5)
+        second = await client.post(url, json=answer)
+        release.set()
+        first_response = await first
+
+    # Assert, the retry was refused as busy and paid for nothing.
+    assert first_response.status_code == 200, first_response.text
+    assert second.status_code == 409, second.text
+    assert "still being marked" in second.json()["detail"]
+    assert calls - opening_calls == 1
+
+
 async def test_a_ledger_that_hangs_does_not_hang_the_turn(tmp_path: Path) -> None:
     """Worse than a ledger that fails is one that never answers.
 
@@ -326,3 +408,110 @@ async def test_a_ledger_that_hangs_does_not_hang_the_turn(tmp_path: Path) -> Non
             )
 
     assert answered.status_code == 200, answered.text
+
+
+async def test_a_turn_taken_over_the_stream_is_metered_like_any_other(tmp_path: Path) -> None:
+    """The new transport must not be a way to be taught for free (Phase 2b, T2, A4).
+
+    Worth its own test rather than trusting the shared code path, because T2 changed *where the turn
+    runs*: `stream_answer` hands `_take_and_save` to `asyncio.create_task`, and a task snapshots the
+    context at creation. Cost scoping and BYOK both ride contextvars, so "the same function, called
+    from a task instead of awaited inline" is exactly the shape that can silently stop attributing
+    spend while every other assertion about the turn still passes.
+
+    Both halves are checked: the money lands under this session, and the *tenant's* key is what paid
+    for it.
+    """
+    # Arrange — a tutor that costs something, and reports which key it was handed.
+    from lunaris_api.dependencies import optional_user_id
+    from lunaris_api.live.session.dependencies import get_live_session_service, get_live_tutor
+    from lunaris_api.live.session.service import LiveSessionService
+    from lunaris_runtime.credentials import resolve_secret
+    from lunaris_runtime.schema import CostProvider, CostUnit
+
+    taught_with: list[str | None] = []
+
+    class CostlyTutor:
+        async def teach(self, move, node, *, topic, criterion=None, already_said=(), run_id):
+            return "".join(
+                [fragment async for fragment in self.stream(move, node, topic=topic, run_id=run_id)]
+            )
+
+        async def stream(self, move, node, *, topic, criterion=None, already_said=(), run_id=""):
+            taught_with.append(resolve_secret("ANTHROPIC_API_KEY"))
+            record_cost(
+                component="live_tutor",
+                provider=CostProvider.ANTHROPIC,
+                model="claude-opus-4-8",
+                usage={CostUnit.INPUT_TOKENS: 1000.0, CostUnit.OUTPUT_TOKENS: 500.0},
+            )
+            yield f"Teaching {node.name}. "
+            yield "Now you try."
+
+    events, rollup = InMemoryCostEventStore(), InMemorySubjectCostStore()
+    settings = _settings(tmp_path)
+    tutor = CostlyTutor()
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[optional_user_id] = lambda: "learner-1"
+    app.dependency_overrides[get_cost_event_store] = lambda: events
+    app.dependency_overrides[get_subject_cost_store] = lambda: rollup
+    app.dependency_overrides[get_live_tutor] = lambda: tutor
+    app.dependency_overrides[get_live_session_service] = lambda: LiveSessionService(
+        resolve_graph_store(settings),
+        _resolve_session_store(settings),
+        knowledge=MemoryKnowledgeStore(),
+        tutor=tutor,
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+        cost_event_store=events,
+        subject_cost_store=rollup,
+        credential_resolver=_tenant_key,
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        graph = await _graph(client)
+        session = (
+            await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
+        ).json()
+        opening_spend = await rollup.get(
+            subject_type=CostSubjectType.LIVE_SESSION,
+            subject_id=session["sessionId"],
+            owner_id="learner-1",
+        )
+        assert opening_spend is not None
+
+        # Act — the same turn, over AG-UI rather than over POST /turns.
+        response = await client.post(
+            f"/api/live/sessions/{session['sessionId']}/agui",
+            json={
+                "threadId": "t",
+                "runId": "r",
+                "state": {},
+                "messages": [{"id": "m1", "role": "user", "content": "Downhill, I think."}],
+                "tools": [],
+                "context": [],
+                "forwardedProps": {},
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    # Assert — the streamed turn added to this session's total, and paid on the tenant's key.
+    spend = await rollup.get(
+        subject_type=CostSubjectType.LIVE_SESSION,
+        subject_id=session["sessionId"],
+        owner_id="learner-1",
+    )
+    assert spend is not None
+    assert spend.total_amount > opening_spend.total_amount, (
+        "a turn taken over the stream spent nothing, so the new transport is untolled"
+    )
+    assert taught_with[-1] == "sk-learner-1", (
+        "the streamed turn ran outside the credential scope — a BYOK tenant would be taught on the "
+        "platform's key, money spent on their behalf they never authorised and cannot see"
+    )
+
+
+async def _tenant_key(owner_id: str) -> dict[str, str]:
+    return {"ANTHROPIC_API_KEY": f"sk-{owner_id}"}
