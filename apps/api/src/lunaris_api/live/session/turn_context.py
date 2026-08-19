@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from lunaris_live.graph import ConceptGraph
-from lunaris_live.session import LearnerModel, Session
+from lunaris_live.session import LearnerModel, LessonParts, Session
 
 #: The tenant's own model keys for this turn, or ``None`` to run on the process environment.
 type TurnCredentials = dict[str, str] | None
@@ -31,3 +32,5 @@ class TurnContext:
     #: Why the map will never come, when the compile has failed and the session does not know yet
     #: (P2c). ``None`` while it is still running, or once it has landed.
     map_failure: str | None = None
+    #: First-turn material kept for this map, by concept (P2c T4). Empty when nothing is kept.
+    prefetched: Mapping[str, LessonParts] = field(default_factory=dict)

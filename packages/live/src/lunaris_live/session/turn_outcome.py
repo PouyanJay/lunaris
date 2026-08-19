@@ -18,3 +18,6 @@ class TurnOutcome:
 
     session: Session
     model: LearnerModel
+    #: The concept whose prefetched first-turn material this turn used, if any (P2c T4), so the
+    #: caller can let the store go of it: consumed once, generated fresh after.
+    consumed_material: str | None = None

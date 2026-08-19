@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import structlog
 
 from ..graph import ConceptGraph
@@ -9,6 +11,7 @@ from .node_of import node_of
 from .protocols import IGrader, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import (
     LearnerModel,
+    LessonParts,
     Session,
     SessionClock,
     SessionStatus,
@@ -36,6 +39,7 @@ async def take_turn(
     budget_s: float,
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
+    prefetched: Mapping[str, LessonParts] | None = None,
 ) -> TurnOutcome:
     """The loop, once: score what the learner just said, move the belief, decide what happens next.
 
@@ -84,7 +88,7 @@ async def take_turn(
     turns = [*session.turns[:-1], asked.model_copy(update={"answer": said, "grade": graded})]
 
     clock = SessionClock(turn=len(turns) + 1, elapsed_s=elapsed_s, budget_s=budget_s)
-    advanced = await next_turn(
+    advanced, consumed = await next_turn(
         session,
         graph,
         model,
@@ -94,6 +98,7 @@ async def take_turn(
         run_id=run_id,
         on_delta=on_delta,
         sims=sims,
+        prefetched=prefetched,
     )
     logger.info(
         "live.session.turn_graded",
@@ -104,7 +109,7 @@ async def take_turn(
         # somebody being taught, and this is enough to read a session's shape from the outside.
         graded=graded.kind.value if graded else None,
     )
-    return TurnOutcome(session=advanced, model=model)
+    return TurnOutcome(session=advanced, model=model, consumed_material=consumed)
 
 
 def _moved_by(model: LearnerModel, asked: SessionTurn, graded: TurnGrade | None) -> LearnerModel:

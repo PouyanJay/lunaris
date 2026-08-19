@@ -354,14 +354,16 @@ async def test_the_turn_records_the_surface_it_put_up() -> None:
     """
     # Arrange
     graph = _graph(_node(), _node("loss"))
-    opened = await open_session(
-        graph,
-        LearnerModel(graph_id="g1"),
-        _clock(turn=1),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    opened = (
+        await open_session(
+            graph,
+            LearnerModel(graph_id="g1"),
+            _clock(turn=1),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     # Act
     outcome = await take_turn(
@@ -392,14 +394,16 @@ async def test_the_recorded_surface_is_the_one_the_rules_would_pick_again() -> N
     graph = _graph(_node())
 
     # Act
-    opened = await open_session(
-        graph,
-        LearnerModel(graph_id="g1"),
-        _clock(turn=1),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    opened = (
+        await open_session(
+            graph,
+            LearnerModel(graph_id="g1"),
+            _clock(turn=1),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     # Assert
     turn = opened.turns[0]
@@ -518,14 +522,16 @@ async def test_a_learner_who_is_genuinely_stuck_is_handed_the_quiz() -> None:
     """
     # Arrange — a shrug, then the same shrug again.
     graph = _graph(_node(), _node("beta"))
-    opened = await open_session(
-        graph,
-        LearnerModel(graph_id="g1"),
-        _clock(turn=1),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    opened = (
+        await open_session(
+            graph,
+            LearnerModel(graph_id="g1"),
+            _clock(turn=1),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
     first = await _took(opened, graph, LearnerModel(graph_id="g1"), "No idea, sorry.", run_id="r2")
 
     # Act

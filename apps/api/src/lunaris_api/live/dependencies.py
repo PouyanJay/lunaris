@@ -104,6 +104,11 @@ def _get_live_graph_throttle(settings: Settings) -> LiveGraphThrottle:
 _launched_compiles = LaunchedCompiles()
 
 
+def launched_compiles() -> LaunchedCompiles:
+    """The process-wide registry of launched compiles (one per process, like the throttle)."""
+    return _launched_compiles
+
+
 def get_live_credential_resolver(settings: Settings) -> CredentialResolver | None:
     """The BYOK resolver a Live compile runs on, or ``None`` when BYOK is off.
 

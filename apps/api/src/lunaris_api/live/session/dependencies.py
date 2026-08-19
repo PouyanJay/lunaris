@@ -10,11 +10,13 @@ from lunaris_live.session import (
     IGrader,
     IInterviewer,
     IKnowledgeStore,
+    IMaterialStore,
     IPriorMapper,
     ISessionStore,
     ISimRegistry,
     ITutor,
     MemoryKnowledgeStore,
+    MemoryMaterialStore,
     MemorySessionStore,
     StubGrader,
     StubInterviewer,
@@ -22,6 +24,7 @@ from lunaris_live.session import (
     StubSimRegistry,
     StubTutor,
     SupabaseKnowledgeStore,
+    SupabaseMaterialStore,
     SupabaseSessionStore,
 )
 
@@ -35,6 +38,8 @@ from ..dependencies import (
     resolve_worker_model,
 )
 from ..service import LiveGraphService
+from .material_prefetcher import MaterialPrefetcher
+from .prefetch_registry import prefetch_registry
 from .service import LiveSessionService
 from .throttle import LiveSessionThrottle
 
@@ -42,12 +47,14 @@ from .throttle import LiveSessionThrottle
 # client is built on first write, so the singleton needs no creds and no network until then.
 _supabase_session_store = SupabaseSessionStore()
 _supabase_knowledge_store = SupabaseKnowledgeStore()
+_supabase_material_store = SupabaseMaterialStore()
 
 # The in-memory fallbacks MUST be singletons: opening a session and the next turn of it are
 # separate requests, so a per-request store would lose the session — and the learner's beliefs —
 # between them.
 _memory_session_store = MemorySessionStore()
 _memory_knowledge_store = MemoryKnowledgeStore()
+_memory_material_store = MemoryMaterialStore()
 
 
 def _resolve_session_store(settings: Settings) -> ISessionStore:
@@ -58,6 +65,11 @@ def _resolve_session_store(settings: Settings) -> ISessionStore:
 def _resolve_knowledge_store(settings: Settings) -> IKnowledgeStore:
     """Durable where Supabase is configured, in-process otherwise (offline dev and the suite)."""
     return _supabase_knowledge_store if settings.has_supabase else _memory_knowledge_store
+
+
+def _resolve_material_store(settings: Settings) -> IMaterialStore:
+    """Durable where Supabase is configured, in-process otherwise (offline dev and the suite)."""
+    return _supabase_material_store if settings.has_supabase else _memory_material_store
 
 
 def get_live_tutor(settings: Annotated[Settings, Depends(get_settings)]) -> ITutor:
@@ -163,6 +175,7 @@ def get_live_session_service(
     plane itself (P2c), the very service the graph routes use, so a session opened on a topic is
     admitted by the same throttle and lands in the same store as a map compiled by hand.
     """
+    materials = _resolve_material_store(settings)
     return LiveSessionService(
         resolve_graph_store(settings),
         _resolve_session_store(settings),
@@ -183,6 +196,19 @@ def get_live_session_service(
         interviewer=interviewer,
         mapper=mapper,
         compile_deadline_s=settings.live_compile_deadline_s,
+        materials=materials,
+        # The prefetcher shares the turn's tutor, ledger and keys, and the process-wide registry
+        # (P2c T4): a prefetch is the session's own spend, asked for on the tenant's own key, and
+        # asked for once however many requests would like it.
+        prefetcher=MaterialPrefetcher(
+            tutor,
+            materials,
+            registry=prefetch_registry(),
+            cost_event_store=cost_event_store,
+            subject_cost_store=subject_cost_store,
+            credential_resolver=get_live_credential_resolver(settings),
+            sims=sims,
+        ),
     )
 
 

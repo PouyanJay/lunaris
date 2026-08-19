@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import structlog
 
 from ..graph import ConceptGraph
@@ -8,6 +10,7 @@ from .protocols import IPriorMapper, ISimRegistry, ITutor, ITutorDeltaSink
 from .schema import (
     DirectorMove,
     LearnerModel,
+    LessonParts,
     MoveKind,
     PlacementResult,
     Session,
@@ -42,6 +45,7 @@ async def settle_placement(
     budget_s: float,
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
+    prefetched: Mapping[str, LessonParts] | None = None,
 ) -> TurnOutcome | None:
     """What a placement does once its map's fate is known: teach from it, or close over its loss.
 
@@ -65,21 +69,20 @@ async def settle_placement(
     model = seed_priors(model, placed.priors)
     if placed.profile:
         session = session.model_copy(update={"profile": placed.profile})
-    return TurnOutcome(
-        session=await _teaching_begins(
-            session,
-            graph,
-            model,
-            turns,
-            tutor=tutor,
-            run_id=run_id,
-            elapsed_s=elapsed_s,
-            budget_s=budget_s,
-            on_delta=on_delta,
-            sims=sims,
-        ),
-        model=model,
+    taught, consumed = await _teaching_begins(
+        session,
+        graph,
+        model,
+        turns,
+        tutor=tutor,
+        run_id=run_id,
+        elapsed_s=elapsed_s,
+        budget_s=budget_s,
+        on_delta=on_delta,
+        sims=sims,
+        prefetched=prefetched,
     )
+    return TurnOutcome(session=taught, model=model, consumed_material=consumed)
 
 
 async def _placed(
@@ -131,7 +134,8 @@ async def _teaching_begins(
     budget_s: float,
     on_delta: ITutorDeltaSink | None,
     sims: ISimRegistry | None,
-) -> Session:
+    prefetched: Mapping[str, LessonParts] | None,
+) -> tuple[Session, str | None]:
     """The interview is over and the map is here: the director's first move, said out loud. The
     clock is the session's own (the interview was inside its budget, A1) and the first lesson's
     turn number follows the last question's."""
@@ -153,6 +157,7 @@ async def _teaching_begins(
         run_id=run_id,
         on_delta=on_delta,
         sims=sims,
+        prefetched=prefetched,
     )
 
 

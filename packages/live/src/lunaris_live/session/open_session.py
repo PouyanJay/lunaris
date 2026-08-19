@@ -1,14 +1,12 @@
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from ..graph import ConceptGraph
-from .compose_layout import compose_layout
 from .decide_move import decide_move
+from .next_turn import next_turn
 from .protocols import ISimRegistry, ITutor
-from .resolve_sim_app import resolve_sim_app
-from .said_and_illustrated import said_and_illustrated
-from .schema import LearnerModel, Session, SessionClock, SessionTurn
-from .select_surface import select_surface
-from .stage_criterion import stage_criterion
+from .schema import LearnerModel, LessonParts, MoveKind, Session, SessionClock
+from .turn_outcome import TurnOutcome
 
 
 async def open_session(
@@ -20,13 +18,19 @@ async def open_session(
     run_id: str,
     tutor: ITutor,
     sims: ISimRegistry | None = None,
-) -> Session:
+    prefetched: Mapping[str, LessonParts] | None = None,
+) -> TurnOutcome:
     """Open a session on ``graph`` and take its first turn.
 
     Both halves of the turn are real here: the director picks the move from what this learner is
     believed to know (T2, T3), and the tutor says it (T4). The learner model is why a returning
     learner does not start over at the root — a session that always opened on ``topo_order[0]``
     would be correctly wired and would re-teach somebody the thing they came back having learned.
+
+    The first turn is ``next_turn`` on an empty session (P2c T4): the same deciding, the same
+    teaching, the same reading of kept material as every turn after it, so an opening cannot be a
+    second, slightly different way of taking a turn — and what it consumed is on the outcome, for
+    the caller to let the store go of.
 
     Raises ``ValueError`` when the map has nothing to teach: an empty graph, or one whose teaching
     order names concepts it does not contain, leaves the director with nothing to introduce and its
@@ -36,40 +40,23 @@ async def open_session(
     Raises ``TutorUnavailableError`` when the tutor cannot speak — the turn did not happen, so
     neither did the session.
     """
-    move = decide_move(graph, model, clock)
-    node = next((n for n in graph.nodes if n.id == move.node_id), None)
-    if node is None:
+    if decide_move(graph, model, clock).kind is MoveKind.CLOSE:
         raise ValueError(f"graph {graph.graph_id} has nothing to teach")
-
-    # Staged now rather than when the answer arrives: the tutor has to ask for it in its own words
-    # as part of the teaching, and the turn has to record what was asked (U1).
-    staged = stage_criterion(node, sims=sims)
-    app = resolve_sim_app(sims, node, staged)
-    said, parts = await said_and_illustrated(
-        tutor,
-        move,
-        node,
-        topic=graph.topic,
-        criterion=staged,
-        already_said=(),
-        run_id=run_id,
-    )
-    return Session(
+    shell = Session(
         session_id=session_id,
         graph_id=graph.graph_id,
         # Stamped once, here, at the only moment a session is born. Every later read carries it.
         started_at=datetime.now(UTC),
-        turns=[
-            SessionTurn(
-                seq=clock.turn,
-                move=move,
-                tutor=said,
-                run_id=run_id,
-                criterion=staged,
-                surface=select_surface(
-                    move, node, graph=graph, criterion=staged, model=model, clock=clock, sim=app
-                ),
-                layout=compose_layout(parts, node_id=node.id, model=model),
-            )
-        ],
     )
+    session, consumed = await next_turn(
+        shell,
+        graph,
+        model,
+        [],
+        clock=clock,
+        tutor=tutor,
+        run_id=run_id,
+        sims=sims,
+        prefetched=prefetched,
+    )
+    return TurnOutcome(session=session, model=model, consumed_material=consumed)

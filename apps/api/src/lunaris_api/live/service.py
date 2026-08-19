@@ -1,6 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Mapping
-from contextlib import AbstractContextManager, nullcontext
+from collections.abc import AsyncIterator, Callable
 from uuid import uuid4
 
 import structlog
@@ -11,7 +10,7 @@ from lunaris_live.graph import (
     IGraphCompiler,
     IGraphStore,
 )
-from lunaris_runtime.credentials import CredentialResolver, run_credentials
+from lunaris_runtime.credentials import CredentialResolver, credentials_for
 from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.metering import (
     CostScope,
@@ -48,6 +47,25 @@ def _absorb_detached_compile(
             run_id=run_id,
             graph_id=graph_id,
             error=str(error),
+        )
+
+
+def _on_landed(
+    task: "asyncio.Task[ConceptGraph]",
+    on_landed: Callable[[ConceptGraph], None],
+    *,
+    run_id: str,
+    graph_id: str,
+) -> None:
+    """Hand a landed map to the caller's ``on_landed``; nothing for a compile that did not land.
+    Its failure is a correlated warning, never a compile's concern."""
+    if task.cancelled() or task.exception() is not None:
+        return
+    try:
+        on_landed(task.result())
+    except Exception:
+        logger.warning(
+            "live.graph.on_landed_failed", run_id=run_id, graph_id=graph_id, exc_info=True
         )
 
 
@@ -136,6 +154,7 @@ class LiveGraphService:
         run_id: str,
         owner_id: str | None = None,
         on_progress: ICompileProgressSink | None = None,
+        on_landed: Callable[[ConceptGraph], None] | None = None,
     ) -> "asyncio.Task[ConceptGraph]":
         """Admit and start a compile that nothing will wait on, and hand back the task.
 
@@ -148,6 +167,11 @@ class LiveGraphService:
         Admission happens *now*, synchronously, for the reason ``stream`` gives: a refusal has to
         raise while the caller can still answer with a status. The compile slot is released by the
         task, never by the caller (the compile is still spending after the caller has moved on).
+
+        ``on_landed`` is called with the map once the compile has persisted it (P2c T4: the session
+        plane schedules the root's material there, so the first lesson is full). Never with a
+        failure — a failed compile has nothing to land — and synchronous by contract: it should
+        *schedule* work, not do it, because it runs in the compile's done-callback.
         """
         compiling = self._launch(
             topic, graph_id=graph_id, run_id=run_id, owner_id=owner_id, on_progress=on_progress
@@ -155,6 +179,13 @@ class LiveGraphService:
         _absorb_when_done(compiling, run_id=run_id, graph_id=graph_id)
         if self._launched is not None:
             self._launched.remember(graph_id, compiling)
+        if on_landed is not None:
+            # Registered HERE, before the task is handed to anyone: done-callbacks run in the order
+            # they were added, so whoever later awaits this task (a test meeting the compile at its
+            # end) resumes after ``on_landed`` has run — the rendezvous depends on this order.
+            compiling.add_done_callback(
+                lambda task: _on_landed(task, on_landed, run_id=run_id, graph_id=graph_id)
+            )
         return compiling
 
     def failure_of(self, graph_id: str) -> str | None:
@@ -316,14 +347,14 @@ class LiveGraphService:
         bind_run_id(run_id, graph_id=graph_id)
         logger.info("live.graph.compile_started", topic=topic, graph_id=graph_id, run_id=run_id)
 
-        credentials = await self._resolve_credentials(owner_id)
         cost = self._make_cost_scope(run_id=run_id, graph_id=graph_id, owner_id=owner_id)
         try:
             # The credential scope has to wrap the compiler, not just be resolved before it: the
             # model client is built on first use *inside* the compile, and it reads the tenant's
             # key off this contextvar. Without it a BYOK tenant's map is built on the platform's
             # key — money spent on their behalf that they never authorized and cannot see.
-            with self._credential_scope(credentials), enter_cost_scope(cost):
+            scope = await credentials_for(self._credential_resolver, owner_id)
+            with scope, enter_cost_scope(cost):
                 graph = await self._compiler.compile(
                     topic, graph_id=graph_id, run_id=run_id, on_progress=on_progress
                 )
@@ -438,27 +469,6 @@ class LiveGraphService:
                 spent=spent.total_amount, cap=self._graph_budget_usd
             )
 
-    async def _resolve_credentials(self, owner_id: str | None) -> Mapping[str, str] | None:
-        """The owner's BYOK keys for this run, or ``None`` to run on the process environment.
-
-        ``None`` for an unowned request (auth off) or with BYOK unwired — both keep today's
-        behaviour, where the compiler reads ``os.environ``.
-        """
-        if owner_id is None or self._credential_resolver is None:
-            return None
-        return await self._credential_resolver(owner_id)
-
-    @staticmethod
-    def _credential_scope(
-        credentials: Mapping[str, str] | None,
-    ) -> AbstractContextManager[None]:
-        """The run's credential context: the tenant's keys when present, else a no-op (env
-        fallback). Mirrors the course build's scope so one tenant's key can never outlive its own
-        request."""
-        if credentials is None:
-            return nullcontext()
-        return run_credentials(credentials)
-
     async def extend(
         self,
         graph_id: str,
@@ -495,8 +505,8 @@ class LiveGraphService:
             # this scope is work the budget does not actually bound, which is the same defect T5
             # fixed here once already for the store load and save.
             async with asyncio.timeout(self._work_deadline()):
-                credentials = await self._resolve_credentials(owner_id)
-                with self._credential_scope(credentials), enter_cost_scope(cost):
+                scope = await credentials_for(self._credential_resolver, owner_id)
+                with scope, enter_cost_scope(cost):
                     graph = await asyncio.to_thread(self._store.load, graph_id, owner_id=owner_id)
                     extended = await self._compiler.extend(
                         graph, request=request, anchors=anchors, run_id=run_id

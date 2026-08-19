@@ -10,11 +10,14 @@ from lunaris_live.session import (
     IGrader,
     IInterviewer,
     IKnowledgeStore,
+    IMaterialStore,
     IPriorMapper,
     ISessionStore,
     ISimRegistry,
     ITutor,
     ITutorDeltaSink,
+    LearnerModel,
+    LessonParts,
     Session,
     SessionClock,
     SessionClosedError,
@@ -27,7 +30,7 @@ from lunaris_live.session import (
     take_placement_turn,
     take_turn,
 )
-from lunaris_runtime.credentials import CredentialResolver, run_credentials
+from lunaris_runtime.credentials import CredentialResolver, credentials_for, run_credentials
 from lunaris_runtime.logging import bind_request_id, bind_run_id
 from lunaris_runtime.metering import (
     CostScope,
@@ -39,6 +42,8 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, Pers
 from lunaris_runtime.schema import CostSubjectType
 
 from ..service import LiveGraphService
+from .material_prefetcher import MaterialPrefetcher
+from .prefetch_registry import prefetch_registry
 from .throttle import LiveSessionBudgetExhaustedError, LiveSessionThrottle
 from .turn_beat import TurnBeat
 from .turn_context import TurnContext
@@ -125,6 +130,8 @@ class LiveSessionService:
         interviewer: IInterviewer | None = None,
         mapper: IPriorMapper | None = None,
         compile_deadline_s: float = 0.0,
+        materials: IMaterialStore | None = None,
+        prefetcher: MaterialPrefetcher | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
@@ -158,6 +165,10 @@ class LiveSessionService:
         # the compile plane's own deadline plus a grace, so this only ever fires when the compile
         # ran in a process this one cannot ask (a replica, a restart). 0 disables the fallback.
         self._compile_deadline_s = compile_deadline_s
+        # First-turn material kept one node ahead (P2c T4), and the thing that asks for it. Both
+        # optional: without them every turn asks for its material beside the lesson, as before.
+        self._materials = materials
+        self._prefetcher = prefetcher
 
     async def start(
         self, graph_id: str, *, session_id: str, owner_id: str | None = None
@@ -192,7 +203,8 @@ class LiveSessionService:
         # learned — the director cannot adapt to a model nobody read.
         known = await asyncio.to_thread(self._knowledge.load, graph_id, owner_id=owner_id)
 
-        session = await self._open_and_save(
+        prefetched = await self._load_materials(graph_id, owner_id)
+        opened = await self._open_and_save(
             lambda: open_session(
                 graph,
                 known,
@@ -201,11 +213,14 @@ class LiveSessionService:
                 run_id=run_id,
                 tutor=self._tutor,
                 sims=self._sims,
+                prefetched=prefetched,
             ),
             run_id=run_id,
             session_id=session_id,
             owner_id=owner_id,
         )
+        session = opened.session
+        self._materials_after(opened, graph, prefetched, owner_id=owner_id)
 
         # No explicit ids: this line rides the contextvars binding above, so the correlation test
         # proves propagation rather than proving they were threaded through by hand.
@@ -249,34 +264,144 @@ class LiveSessionService:
             self._throttle.admit_open(owner_id)
         # Detached on purpose. Its context is a copy of this one, so ``session_id`` rides every
         # line the compile logs; ``_compile_and_save`` rebinds ``run_id`` to the compile's own.
-        self._compiles.launch(topic, graph_id=graph_id, run_id=uuid4().hex, owner_id=owner_id)
+        # When the map lands, the root's material is asked for at once (P2c T4): "teaching begins
+        # the moment the first node's materials exist" (plan §6), and the first lesson is full.
+        self._compiles.launch(
+            topic,
+            graph_id=graph_id,
+            run_id=uuid4().hex,
+            owner_id=owner_id,
+            on_landed=lambda graph: self._on_map_landed(session_id, graph, owner_id=owner_id),
+        )
 
-        session = await self._open_and_save(
-            lambda: open_placement(
+        async def placing() -> TurnOutcome:
+            # An opening is a turn's outcome like any other; a placement's moves no belief and
+            # consumes no material, so the outcome carries an empty model and nothing consumed.
+            placed = await open_placement(
                 topic,
                 graph_id=graph_id,
                 session_id=session_id,
                 run_id=run_id,
                 interviewer=interviewer,
-            ),
-            run_id=run_id,
-            session_id=session_id,
-            owner_id=owner_id,
-        )
+            )
+            return TurnOutcome(session=placed, model=LearnerModel(graph_id=graph_id))
+
+        session = (
+            await self._open_and_save(
+                placing, run_id=run_id, session_id=session_id, owner_id=owner_id
+            )
+        ).session
 
         # No explicit ids: this line rides the contextvars binding above (the correlation test
         # proves propagation, not hand-threading).
         logger.info("live.session.placing", turn_count=len(session.turns))
         return session
 
+    def _materials_after(
+        self,
+        outcome: TurnOutcome,
+        graph: ConceptGraph | None,
+        kept: Mapping[str, LessonParts],
+        *,
+        owner_id: str | None,
+    ) -> None:
+        """Let the store go of what this turn used, and ask for the next concept's (P2c T4).
+
+        After the turn's real writes, and guarded: this is best-effort work on behalf of the *next*
+        turn, and a fault in it must not turn a turn that has already been saved into a failure the
+        learner sees (found in review). The prefetch itself is a task; what can raise here is only
+        the scheduling — a store that cannot forget, a prediction that trips.
+        """
+        try:
+            if self._materials is not None and outcome.consumed_material is not None:
+                self._materials.forget(
+                    outcome.session.graph_id, outcome.consumed_material, owner_id=owner_id
+                )
+            if outcome.session.status is not SessionStatus.ACTIVE or graph is None:
+                return
+            still_kept = {k: v for k, v in kept.items() if k != outcome.consumed_material}
+            self._material_ahead(
+                outcome.session, graph, outcome.model, still_kept, owner_id=owner_id
+            )
+        except Exception:
+            logger.warning(
+                "live.material.after_turn_failed",
+                session_id=outcome.session.session_id,
+                exc_info=True,
+            )
+
+    async def _load_materials(
+        self, graph_id: str, owner_id: str | None
+    ) -> Mapping[str, LessonParts]:
+        """Everything kept for this map, or nothing when no store is wired."""
+        if self._materials is None:
+            return {}
+        return await asyncio.to_thread(self._materials.load, graph_id, owner_id=owner_id)
+
+    def _material_ahead(
+        self,
+        session: Session,
+        graph: ConceptGraph,
+        model: LearnerModel,
+        kept: Mapping[str, LessonParts],
+        *,
+        owner_id: str | None,
+    ) -> None:
+        """One node ahead of where the session now is, if the prefetcher is wired."""
+        if self._prefetcher is None or not session.turns:
+            return
+        current = session.turns[-1].move.node_id
+        if current is None:
+            return
+        self._prefetcher.prefetch_ahead_of(
+            session.session_id,
+            graph,
+            model,
+            current=current,
+            kept=kept,
+            owner_id=owner_id,
+            profile=session.profile,
+        )
+
+    def _on_map_landed(self, session_id: str, graph: ConceptGraph, *, owner_id: str | None) -> None:
+        """The map has landed behind a placing session (called from the compile's done-callback):
+        schedule the root's material, as work the prefetch registry holds and can be met at."""
+        if self._prefetcher is None:
+            return
+        prefetch_registry().lead(self._root_material(session_id, graph, owner_id=owner_id))
+
+    async def _root_material(
+        self, session_id: str, graph: ConceptGraph, *, owner_id: str | None
+    ) -> None:
+        """The map has landed behind a placing session: ask for its root's material now.
+
+        The root by teaching order, which is where an un-placed learner starts. A learner the
+        interview then places past the root starts elsewhere (a boundary check, a deeper
+        frontier), and this material waits unused until it is swept (T4's known approximation:
+        the interview has not settled when the map lands, and waiting for it would forfeit the
+        window that makes the first lesson full for everyone else). Guarded and logged: a task
+        nobody awaits must not fail silently.
+        """
+        if self._prefetcher is None or not graph.topo_order:
+            return
+        try:
+            kept = await self._load_materials(graph.graph_id, owner_id)
+            self._prefetcher.prefetch_for_node(
+                session_id, graph, graph.topo_order[0], kept=kept, owner_id=owner_id
+            )
+        except Exception:
+            logger.warning(
+                "live.material.root_prefetch_failed", session_id=session_id, exc_info=True
+            )
+
     async def _open_and_save(
         self,
-        opener: Callable[[], Coroutine[object, object, Session]],
+        opener: Callable[[], Coroutine[object, object, TurnOutcome]],
         *,
         run_id: str,
         session_id: str,
         owner_id: str | None,
-    ) -> Session:
+    ) -> TurnOutcome:
         """The opening ceremony both openings share: keys, ledger, the first turn, the row.
 
         One function for the same reason ``_take_and_save`` is: the order here is a correctness
@@ -289,15 +414,15 @@ class LiveSessionService:
         after the turn, deliberately: a session saved before its first words would be a resumable
         transcript with nothing in it if the tutor then failed.
         """
-        credentials = await self._resolve_credentials(owner_id)
         cost = self._cost_scope(run_id=run_id, session_id=session_id, owner_id=owner_id)
         try:
-            with self._credential_scope(credentials), enter_cost_scope(cost):
-                session = await opener()
+            scope = await credentials_for(self._credential_resolver, owner_id)
+            with scope, enter_cost_scope(cost):
+                opened = await opener()
         finally:
             await self._drain(cost, run_id=run_id, session_id=session_id)
-        await asyncio.to_thread(self._sessions.save, session, owner_id=owner_id)
-        return session
+        await asyncio.to_thread(self._sessions.save, opened.session, owner_id=owner_id)
+        return opened
 
     async def answer(
         self, session_id: str, answer: str, *, answering_seq: int, owner_id: str | None = None
@@ -523,12 +648,14 @@ class LiveSessionService:
             graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
             failure = None
         known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
+        prefetched = await self._load_materials(session.graph_id, owner_id)
         return TurnContext(
             session=session,
             graph=graph,
             known=known,
             credentials=await self._resolve_credentials(owner_id),
             map_failure=failure,
+            prefetched=prefetched,
         )
 
     async def _graph_if_landed(self, session: Session, owner_id: str | None) -> ConceptGraph | None:
@@ -621,6 +748,7 @@ class LiveSessionService:
                 # The close is on the row; the compile plane need not remember the failure for us.
                 assert self._compiles is not None
                 self._compiles.forget_failure(session.graph_id)
+            self._materials_after(outcome, context.graph, context.prefetched, owner_id=owner_id)
 
         logger.info(
             "live.session.answered",
@@ -670,6 +798,7 @@ class LiveSessionService:
                 budget_s=self._session_budget_s,
                 on_delta=on_delta,
                 sims=self._sims,
+                prefetched=context.prefetched,
             )
         assert context.graph is not None, "an active session always has its map"
         return await take_turn(
@@ -685,6 +814,7 @@ class LiveSessionService:
             elapsed_s=elapsed_s,
             budget_s=self._session_budget_s,
             on_delta=on_delta,
+            prefetched=context.prefetched,
         )
 
     async def advance(self, session_id: str, *, owner_id: str | None = None) -> Session | None:
@@ -719,6 +849,7 @@ class LiveSessionService:
                 elapsed_s=_elapsed_s(session),
                 budget_s=self._session_budget_s,
                 sims=self._sims,
+                prefetched=context.prefetched,
             ),
             run_id=run_id,
             owner_id=owner_id,
@@ -801,9 +932,11 @@ class LiveSessionService:
     def _credential_scope(
         credentials: Mapping[str, str] | None,
     ) -> AbstractContextManager[None]:
-        """The turn's credential context: the tenant's keys when present, else a no-op (env
-        fallback). Mirrors the compile plane's, so one tenant's key never outlives its request."""
-        return run_credentials(credentials) if credentials else nullcontext()
+        """The turn's credential context: the tenant's keys when BYOK is on for them, else a no-op
+        (env fallback). An EMPTY vault is a scope with nothing in it, not the env: a tenant who
+        has set no keys must not be taught on the platform's (the compile plane's rule; the
+        session plane read ``if credentials`` and let an empty vault fall through, found in T4)."""
+        return nullcontext() if credentials is None else run_credentials(credentials)
 
     async def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Re-read a session so a reloaded tab lands back in it (U2).

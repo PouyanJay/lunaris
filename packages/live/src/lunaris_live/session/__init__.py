@@ -25,16 +25,19 @@ from .interviewer_unavailable_error import InterviewerUnavailableError
 from .mastery_thresholds import DECAYED, MASTERED
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .memory_knowledge_store import MemoryKnowledgeStore
+from .memory_material_store import MemoryMaterialStore
 from .memory_session_store import MemorySessionStore
 from .next_turn import next_turn
 from .node_of import node_of
 from .open_placement import open_placement
 from .open_session import open_session
+from .predict_next import predict_next
 from .prior_mapper_unavailable_error import PriorMapperUnavailableError
 from .protocols import (
     IGrader,
     IInterviewer,
     IKnowledgeStore,
+    IMaterialStore,
     IPriorMapper,
     ISessionStore,
     ISimRegistry,
@@ -95,6 +98,7 @@ from .stub_sim_path import STUB_SIM_PATH
 from .stub_sim_registry import StubSimRegistry
 from .stub_tutor import StubTutor
 from .supabase_knowledge_store import SupabaseKnowledgeStore
+from .supabase_material_store import SupabaseMaterialStore
 from .supabase_session_store import SupabaseSessionStore
 from .take_placement_turn import take_placement_turn
 from .take_turn import take_turn
@@ -121,6 +125,7 @@ __all__ = [
     "IGrader",
     "IInterviewer",
     "IKnowledgeStore",
+    "IMaterialStore",
     "IPriorMapper",
     "ISessionStore",
     "ISimRegistry",
@@ -135,6 +140,7 @@ __all__ = [
     "LessonParts",
     "MasteryMeter",
     "MemoryKnowledgeStore",
+    "MemoryMaterialStore",
     "MemorySessionStore",
     "MeterEntry",
     "ModelCallFailedError",
@@ -163,6 +169,7 @@ __all__ = [
     "StubSimRegistry",
     "StubTutor",
     "SupabaseKnowledgeStore",
+    "SupabaseMaterialStore",
     "SupabaseSessionStore",
     "SurfaceBlock",
     "SurfaceKind",
@@ -182,6 +189,7 @@ __all__ = [
     "node_of",
     "open_placement",
     "open_session",
+    "predict_next",
     "recall_of",
     "reject_unteachable_move",
     "relay_delta",

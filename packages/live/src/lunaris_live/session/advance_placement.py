@@ -1,6 +1,8 @@
+from collections.abc import Mapping
+
 from ..graph import ConceptGraph
 from .protocols import IPriorMapper, ISimRegistry, ITutor, ITutorDeltaSink
-from .schema import LearnerModel, Session, SessionStatus
+from .schema import LearnerModel, LessonParts, Session, SessionStatus
 from .settle_placement import settle_placement
 from .turn_outcome import TurnOutcome
 
@@ -18,6 +20,7 @@ async def advance_placement(
     budget_s: float,
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
+    prefetched: Mapping[str, LessonParts] | None = None,
 ) -> TurnOutcome | None:
     """Move a warming session on, if there is anywhere for it to go yet (P2c).
 
@@ -41,4 +44,5 @@ async def advance_placement(
         budget_s=budget_s,
         on_delta=on_delta,
         sims=sims,
+        prefetched=prefetched,
     )

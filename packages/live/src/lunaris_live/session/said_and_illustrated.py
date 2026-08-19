@@ -35,8 +35,12 @@ async def said_and_illustrated(
     profile: str | None = None,
     run_id: str,
     on_delta: ITutorDeltaSink | None = None,
+    prefetched: LessonParts | None = None,
 ) -> tuple[str, LessonParts]:
     """What the tutor says, and the material that goes around it — asked for at the same time.
+
+    Unless the material is already here (``prefetched``, P2c T4): then only the words are asked
+    for, and the material is what was prefetched — no second call, no grace, nothing to lose late.
 
     Concurrent rather than sequential, and that is the whole reason this function exists. Tier 2's
     material does not depend on the lesson's words (the layout holds a *slot* for them, never a
@@ -57,6 +61,22 @@ async def said_and_illustrated(
     anything (A2): passing one relays fragments as they are written, leaving it ``None`` is P2a's
     single call.
     """
+    if prefetched is not None:
+        logger.info("live.tutor.material_prefetched", run_id=run_id, node=node.id)
+        return (
+            await _said(
+                tutor,
+                move,
+                node,
+                topic=topic,
+                criterion=criterion,
+                already_said=already_said,
+                profile=profile,
+                run_id=run_id,
+                on_delta=on_delta,
+            ),
+            prefetched,
+        )
     illustrating = asyncio.create_task(
         _illustrated(
             tutor,

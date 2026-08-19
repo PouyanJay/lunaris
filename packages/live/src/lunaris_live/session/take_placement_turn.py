@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import structlog
 
 from ..graph import ConceptGraph
@@ -8,6 +10,7 @@ from .schema import (
     DirectorMove,
     InterviewExchange,
     LearnerModel,
+    LessonParts,
     MoveKind,
     Session,
     SessionStatus,
@@ -48,6 +51,7 @@ async def take_placement_turn(
     budget_s: float,
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
+    prefetched: Mapping[str, LessonParts] | None = None,
 ) -> TurnOutcome:
     """The interview, once: keep what the learner said, then ask the next question or stop.
 
@@ -102,6 +106,7 @@ async def take_placement_turn(
         budget_s=budget_s,
         on_delta=on_delta,
         sims=sims,
+        prefetched=prefetched,
     )
     if settled is not None:
         return settled

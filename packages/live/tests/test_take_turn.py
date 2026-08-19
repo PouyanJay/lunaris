@@ -65,14 +65,16 @@ def _graph() -> ConceptGraph:
 
 
 async def _opened() -> Session:
-    return await open_session(
-        _graph(),
-        LearnerModel(graph_id="g1"),
-        SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    return (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id="g1"),
+            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
 
 async def _answered(answer: str, *, model: LearnerModel | None = None):
@@ -208,14 +210,16 @@ async def test_a_map_with_nothing_left_to_teach_closes_rather_than_looping() -> 
         topo_order=["a"],
         is_acyclic=True,
     )
-    session = await open_session(
-        single,
-        LearnerModel(graph_id="g1"),
-        SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    session = (
+        await open_session(
+            single,
+            LearnerModel(graph_id="g1"),
+            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
     model = LearnerModel(graph_id="g1")
 
     # Act — answer well until the director has nothing left to introduce.
@@ -275,14 +279,16 @@ async def test_the_tutor_is_handed_what_it_already_said_about_this_concept() -> 
             return f"Teaching {node.name} #{len(self.histories)}."
 
     tutor = SpyTutor()
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id="g1"),
-        SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-        session_id="s1",
-        run_id="r1",
-        tutor=tutor,
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id="g1"),
+            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+            session_id="s1",
+            run_id="r1",
+            tutor=tutor,
+        )
+    ).session
 
     # Act — one wrong answer, so the director stays on the same concept.
     outcome = await take_turn(
@@ -442,14 +448,16 @@ async def test_a_turn_that_asked_nothing_gradeable_still_moves_the_session_on() 
         topo_order=["a"],
         is_acyclic=True,
     )
-    session = await open_session(
-        sim_only,
-        LearnerModel(graph_id="g1"),
-        SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    session = (
+        await open_session(
+            sim_only,
+            LearnerModel(graph_id="g1"),
+            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
     assert session.turns[0].criterion is None
 
     # Act

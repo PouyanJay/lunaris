@@ -450,14 +450,16 @@ def _graph() -> ConceptGraph:
 
 
 async def _opened(tutor: StubTutor) -> object:
-    return await open_session(
-        _graph(),
-        LearnerModel(graph_id=_GRAPH_ID),
-        _clock(),
-        session_id="s-1",
-        run_id="r-1",
-        tutor=tutor,
-    )
+    return (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id=_GRAPH_ID),
+            _clock(),
+            session_id="s-1",
+            run_id="r-1",
+            tutor=tutor,
+        )
+    ).session
 
 
 @pytest.mark.asyncio

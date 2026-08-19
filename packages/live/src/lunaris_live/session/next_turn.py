@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+
 import structlog
 
 from ..graph import ConceptGraph
@@ -41,7 +43,8 @@ async def next_turn(
     run_id: str,
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
-) -> Session:
+    prefetched: Mapping[str, LessonParts] | None = None,
+) -> tuple[Session, str | None]:
     """What happens next on this map, said out loud: the director decides, and the turn is taken.
 
     The half of the loop that comes *after* an answer has been dealt with, shared by the two places
@@ -53,26 +56,34 @@ async def next_turn(
     ``turns`` is the transcript as it stands after the answer was recorded; the new turn is
     appended to it. A ``CLOSE`` move ends the session and says why; anything else teaches, and the
     session is ``ACTIVE`` from then on (a placing session becomes an active one here).
+
+    ``prefetched`` is first-turn material by concept, read from the store by the caller (P2c T4).
+    A first turn on a concept whose material is there uses it and asks the tutor for words only;
+    the second value returned names that concept, so the caller can let the store go of it. A later
+    turn on a concept never reads it: a remediation generates fresh.
     """
     move = decide_move(graph, model, clock)
     if move.kind is MoveKind.CLOSE:
         # The surface is chosen from the same three inputs the move was (T3), so a close shows what
         # the learner demonstrated rather than an empty card.
         closing = select_surface(move, None, graph=graph, criterion=None, model=model, clock=clock)
-        return _closed(
-            session,
-            turns,
-            move,
-            run_id=run_id,
-            surface=closing,
-            # A goodbye names no concept and asked no tutor for material, so the lean layout is
-            # all there is to arrange: the sign-off and the meter. Composed rather than left
-            # ``None`` so that "every turn has a layout" is true of the last one too, and a
-            # renderer never has to hold a second way of drawing a turn.
-            layout=compose_layout(LessonParts(), node_id=None, model=model),
+        return (
+            _closed(
+                session,
+                turns,
+                move,
+                run_id=run_id,
+                surface=closing,
+                # A goodbye names no concept and asked no tutor for material, so the lean layout
+                # is all there is to arrange: the sign-off and the meter. Composed rather than left
+                # ``None`` so that "every turn has a layout" is true of the last one too, and a
+                # renderer never has to hold a second way of drawing a turn.
+                layout=compose_layout(LessonParts(), node_id=None, model=model),
+            ),
+            None,
         )
 
-    taught = await _teach(
+    taught, consumed = await _teach(
         graph,
         move,
         turns,
@@ -83,6 +94,7 @@ async def next_turn(
         clock=clock,
         sims=sims,
         profile=session.profile,
+        prefetched=prefetched or {},
     )
     logger.info(
         "live.session.turn_taken",
@@ -92,7 +104,10 @@ async def next_turn(
         move=move.kind.value,
         node=move.node_id,
     )
-    return session.model_copy(update={"turns": [*turns, taught], "status": SessionStatus.ACTIVE})
+    return (
+        session.model_copy(update={"turns": [*turns, taught], "status": SessionStatus.ACTIVE}),
+        consumed,
+    )
 
 
 def _closed(
@@ -147,8 +162,10 @@ async def _teach(
     clock: SessionClock,
     sims: ISimRegistry | None,
     profile: str | None = None,
-) -> SessionTurn:
-    """The next turn: the move, said out loud, with something staged for the learner to meet."""
+    prefetched: Mapping[str, LessonParts],
+) -> tuple[SessionTurn, str | None]:
+    """The next turn: the move, said out loud, with something staged for the learner to meet, and
+    the concept whose prefetched material it used (or ``None``)."""
     node = node_of(graph, move.node_id) if move.node_id is not None else None
     if node is None:
         # Unreachable from ``decide_move``, which only ever names a concept it read off this graph.
@@ -161,6 +178,9 @@ async def _teach(
     # Only this concept's history: a tutor told everything it has ever said would spend the prompt
     # on material the learner is not being taught right now.
     already_said = [turn.tutor for turn in turns if turn.move.node_id == node.id]
+    # First-turn material only (P2c T4): a second pass over a concept generates fresh, because
+    # coming at a stuck concept a different way each time is what the P2a eval showed works.
+    material = prefetched.get(node.id) if not already_said else None
 
     said, parts = await said_and_illustrated(
         tutor,
@@ -172,6 +192,7 @@ async def _teach(
         profile=profile,
         run_id=run_id,
         on_delta=on_delta,
+        prefetched=material,
     )
     return SessionTurn(
         seq=len(turns) + 1,
@@ -186,4 +207,4 @@ async def _teach(
         ),
         # Tier 2 (T5): the tutor wrote the material, the rules decide what this learner sees of it.
         layout=compose_layout(parts, node_id=node.id, model=model),
-    )
+    ), (node.id if material is not None else None)

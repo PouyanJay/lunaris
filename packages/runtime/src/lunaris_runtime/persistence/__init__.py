@@ -19,6 +19,7 @@ from .persistence_error import PersistenceError
 from .run_event_store_protocol import IRunEventStore
 from .run_store_protocol import IRunStore
 from .subject_cost_store_protocol import ISubjectCostStore
+from .supabase_client import supabase_client
 from .supabase_cost_event_store import SupabaseCostEventStore
 from .supabase_course_store import SupabaseCourseStore
 from .supabase_cover_job_queue import SupabaseCoverJobQueue
@@ -66,4 +67,5 @@ __all__ = [
     "SupabaseVideoJobQueue",
     "SupabaseVideoStorage",
     "VideoArtifactPaths",
+    "supabase_client",
 ]

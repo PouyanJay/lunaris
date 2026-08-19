@@ -90,14 +90,16 @@ def _graph(nodes: list[ConceptNode], order: list[str] | None = None) -> ConceptG
 
 
 async def _opened(graph: ConceptGraph, model: LearnerModel | None = None):
-    return await open_session(
-        graph,
-        model or LearnerModel(graph_id="g1"),
-        SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    return (
+        await open_session(
+            graph,
+            model or LearnerModel(graph_id="g1"),
+            SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
 
 async def _answer(session, graph, model, text: str, *, elapsed_s: float = 1.0):

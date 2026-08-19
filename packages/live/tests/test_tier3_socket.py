@@ -306,15 +306,17 @@ def test_the_card_carries_the_words_the_learner_will_be_marked_against() -> None
 async def test_a_session_opens_on_a_concept_only_a_simulator_can_check() -> None:
     """The whole point of the socket, end to end through the real loop: a map that P2a could only
     talk about now opens with something the learner can act in."""
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id=_GRAPH_ID),
-        _clock(),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-        sims=StubSimRegistry(),
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id=_GRAPH_ID),
+            _clock(),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+            sims=StubSimRegistry(),
+        )
+    ).session
 
     standing = session.turns[-1]
     assert standing.surface is not None
@@ -329,15 +331,17 @@ async def test_what_the_simulator_reports_is_graded_like_any_other_answer() -> N
     answer path, is scored by the *same separate grader* against the *same staged criterion*, and
     moves the belief the same way — so Tier 3 adds a surface and not a second way to be assessed.
     """
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id=_GRAPH_ID),
-        _clock(),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-        sims=StubSimRegistry(),
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id=_GRAPH_ID),
+            _clock(),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+            sims=StubSimRegistry(),
+        )
+    ).session
 
     outcome = await take_turn(
         session,
@@ -366,14 +370,16 @@ async def test_what_the_simulator_reports_is_graded_like_any_other_answer() -> N
 async def test_a_session_without_a_registry_behaves_exactly_as_it_did_before() -> None:
     """P2a and every session already stored. The registry is optional at the seam, so a deployment
     with no sims — which is every deployment today — is not a deployment with a broken loop."""
-    session = await open_session(
-        _graph(),
-        LearnerModel(graph_id=_GRAPH_ID),
-        _clock(),
-        session_id="s1",
-        run_id="r1",
-        tutor=StubTutor(),
-    )
+    session = (
+        await open_session(
+            _graph(),
+            LearnerModel(graph_id=_GRAPH_ID),
+            _clock(),
+            session_id="s1",
+            run_id="r1",
+            tutor=StubTutor(),
+        )
+    ).session
 
     standing = session.turns[-1]
     assert standing.criterion is None

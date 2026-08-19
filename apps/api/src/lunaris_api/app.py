@@ -30,6 +30,7 @@ from .live import router as live_router
 from .live.session import agui_router as live_agui_router
 from .live.session import router as live_session_router
 from .live.session import sims_router as live_sims_router
+from .live.session.prefetch_registry import prefetch_registry
 from .routers import (
     activity,
     admin_users,
@@ -56,6 +57,10 @@ from .routers import (
 from .routers import settings as settings_router
 
 _logger = structlog.get_logger()
+
+
+#: How long shutdown waits for in-flight material prefetches to land (P2c T4).
+_PREFETCH_DRAIN_S = 5.0
 
 
 @asynccontextmanager
@@ -125,6 +130,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     for supervisor in supervisors:
         with contextlib.suppress(asyncio.CancelledError):
             await supervisor
+    # Live's material prefetches are fire-and-forget tasks (P2c T4): give the ones in flight a
+    # bounded moment to land their write rather than tearing the loop down under them. Bounded,
+    # because a prefetch is a model call and shutdown must not wait on a provider.
+    with contextlib.suppress(TimeoutError):
+        await asyncio.wait_for(prefetch_registry().settled(), timeout=_PREFETCH_DRAIN_S)
 
 
 def _register_routers(app: FastAPI) -> None:

@@ -1,5 +1,4 @@
-import os
-
+from lunaris_runtime.persistence import supabase_client
 from lunaris_runtime.persistence.guard import guard
 from pydantic import ValidationError
 
@@ -39,15 +38,11 @@ class SupabaseSessionStore:
 
     def _ensure_client(self) -> object:
         if self._client is None:
-            from supabase import create_client
-
-            url = os.environ.get(self._url_env)
-            key = os.environ.get(self._service_key_env)
-            if not url or not key:
-                raise RuntimeError(
-                    f"{self._url_env} / {self._service_key_env} not set; cannot persist sessions"
-                )
-            self._client = create_client(url, key)
+            self._client = supabase_client(
+                url_env=self._url_env,
+                service_key_env=self._service_key_env,
+                purpose="persist sessions",
+            )
         return self._client
 
     @guard("live_sessions upsert")
