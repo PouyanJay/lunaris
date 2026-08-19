@@ -13,7 +13,7 @@ recorded at open and the beliefs now; only the recap's words are the tutor's.
 
 from collections.abc import Sequence
 
-from lunaris_live.graph import ConceptGraph, ConceptNode, MasteryCriterion, MasteryCriterionKind
+from _bayes_map import bayes_map
 from lunaris_live.session import (
     Covered,
     CoveredOutcome,
@@ -30,31 +30,6 @@ from lunaris_live.session import (
     open_session,
     take_turn,
 )
-
-
-def _graph() -> ConceptGraph:
-    def node(node_id: str, name: str, *requires: str) -> ConceptNode:
-        return ConceptNode(
-            id=node_id,
-            name=name,
-            definition=f"The idea {name}.",
-            requires=list(requires),
-            mastery_criteria=[
-                MasteryCriterion(kind=MasteryCriterionKind.EXPLAIN, statement=f"Explain {name}.")
-            ],
-        )
-
-    return ConceptGraph(
-        graph_id="g1",
-        topic="Bayes' theorem",
-        nodes=[
-            node("prior", "Prior"),
-            node("update", "Update", "prior"),
-            node("odds", "Odds", "update"),
-        ],
-        topo_order=["prior", "update", "odds"],
-        is_acyclic=True,
-    )
 
 
 class RecapSpy(StubTutor):
@@ -82,7 +57,7 @@ _BUDGET_S = 100.0
 
 async def _opened(tutor: StubTutor, model: LearnerModel | None = None) -> Session:
     outcome = await open_session(
-        _graph(),
+        bayes_map(),
         model or LearnerModel(graph_id="g1"),
         SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
         session_id="s1",
@@ -97,7 +72,7 @@ async def _answered(
 ):
     return await take_turn(
         session,
-        _graph(),
+        bayes_map(),
         model or LearnerModel(graph_id="g1"),
         answer=answer,
         answering_seq=session.turns[-1].seq,
@@ -261,12 +236,10 @@ async def test_a_claim_never_checked_is_not_on_the_meter() -> None:
     from lunaris_live.session import NodePrior, seed_priors
 
     tutor = StubTutor()
-    known = seed_priors(
-        LearnerModel(graph_id="g1"),
-        [NodePrior(node_id="odds", prior=0.8)],
-    )
+    # A hesitant claim (T9: a credible one is checked first, and checked is graded).
+    known = seed_priors(LearnerModel(graph_id="g1"), [NodePrior(node_id="odds", prior=0.3)])
     session = await _opened(tutor, model=known)
-    assert session.opening_beliefs == {"odds": 0.8}, "the claim is still the zero line"
+    assert session.opening_beliefs == {"odds": 0.3}, "the claim is still the zero line"
     closed = await _answered(
         session, tutor, answer="Something.", elapsed_s=_BUDGET_S + 1, model=known
     )

@@ -254,6 +254,70 @@ def test_a_claim_beneath_a_demonstrated_concept_is_vouched_for_and_not_checked()
     assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "d")
 
 
+def test_a_claim_credits_the_chain_beneath_it_so_the_root_is_not_taught_first() -> None:
+    """Found by the keyed eval (P2c T9): a fluent learner's interview put claims on gradient,
+    the chain rule and backpropagation, and none on the map's root ("slope and derivative", which
+    they had never been asked about) — and the director introduced the root. If you know the
+    gradient you know what a slope is: a credible claim credits what it stands on, and the check
+    before the frontier is the claim that implies it. Here only c is claimed: a and b are credited
+    by implication, the frontier is d, and c — the claim d stands on — is checked first."""
+    move = decide_move(_chain(), _claimed("c"), _clock())
+
+    assert (move.kind, move.node_id) == (MoveKind.RETRIEVE, "c")
+
+
+def test_the_claim_that_implies_a_prerequisite_is_checked_before_building_on_it() -> None:
+    """A branch: c stands on b, and so does d. Only c is claimed; b and a are implied by it. The
+    frontier is d (b credited by implication) — and d must not be introduced on an implication
+    nobody checked: the claim that implies b, c, is retrieved first."""
+    branch = ConceptGraph(
+        graph_id="g1",
+        topic="A subject",
+        nodes=[
+            *_chain().nodes[:3],
+            _chain().nodes[3].model_copy(update={"requires": ["b"]}),
+        ],
+        topo_order=["a", "b", "c", "d"],
+        is_acyclic=True,
+    )
+
+    move = decide_move(branch, _claimed("c"), _clock())
+
+    assert (move.kind, move.node_id) == (MoveKind.RETRIEVE, "c")
+
+
+def test_an_implied_credit_falls_with_the_claim_that_implied_it() -> None:
+    """Only c is claimed; it is checked and does not hold. Its claim is gone, so nothing credits a
+    or b any more, and teaching starts where it should: at the root, not on top of an implication
+    that has just been shown false."""
+    model = apply_evidence(_claimed("c"), "c", EvidenceKind.NOT_MET, at_turn=1)
+
+    move = decide_move(_chain(), model, _clock(2))
+
+    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "a")
+
+
+def test_a_hesitant_claim_credits_nothing_beneath_it() -> None:
+    """A claim under the bar is a band for Tier 2 and no more (T3): it does not credit its own
+    concept, so it cannot credit the chain beneath it either. Only c is claimed, hesitantly: the
+    root is taught."""
+    move = decide_move(_chain(), _claimed("c", prior=0.3), _clock())
+
+    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "a")
+
+
+def test_a_checked_claim_that_holds_keeps_the_chain_beneath_it_credited() -> None:
+    """Found in review: the implied credit was seeded from claims alone, and a MET clears the
+    claim (T3) — so the learner who had just explained c, the deepest claim, was walked back to a
+    on the very next turn, the identical move to c having FAILED. A demonstration credits downward
+    as a claim does (a MET on top is evidence for the chain, AD12): after c holds, d is next."""
+    model = apply_evidence(_claimed("c"), "c", EvidenceKind.MET, at_turn=1)
+
+    move = decide_move(_chain(), model, _clock(2))
+
+    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "d")
+
+
 def test_when_everything_is_claimed_and_the_top_holds_the_map_is_done() -> None:
     """All four claimed, d verified: the chain beneath is vouched for, nothing is left to teach or
     to check, and the session closes as exhausted rather than walking back down the claims."""
@@ -271,12 +335,15 @@ def test_a_prior_below_mastery_credits_nothing() -> None:
     assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "a")
 
 
-def test_a_claim_on_a_concept_whose_prerequisite_is_unclaimed_does_not_skip_it() -> None:
-    """A claim on b alone: a is neither demonstrated nor claimed, so a is the frontier and there is
-    nothing to verify beneath it. Claims do not let a learner skip over a hole."""
+def test_a_claim_on_a_concept_whose_prerequisite_is_unclaimed_checks_the_claim_first() -> None:
+    """A claim on b alone: a is neither demonstrated nor claimed. T3 taught a here ("claims do not
+    let a learner skip over a hole"); T9's eval showed that hole is usually the interview never
+    having asked about a — so the claim credits a by implication and is CHECKED before anything is
+    built on either (the hole is answered for, not skipped blindly). Should b not hold, a is taught
+    (``test_an_implied_credit_falls_with_the_claim_that_implied_it``)."""
     move = decide_move(_chain(), _claimed("b"), _clock())
 
-    assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "a")
+    assert (move.kind, move.node_id) == (MoveKind.RETRIEVE, "b")
 
 
 # ── Tier 2 reads the claim ──────────────────────────────────────────────────────────────────────

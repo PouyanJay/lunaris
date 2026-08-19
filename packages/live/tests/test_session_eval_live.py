@@ -24,14 +24,22 @@ import pytest
 from lunaris_live.graph import ClaudeGraphCompiler, ConceptGraph
 from lunaris_live.session import (
     ClaudeGrader,
+    ClaudeInterviewer,
+    ClaudePriorMapper,
     ClaudeTutor,
+    DirectorMove,
     EvidenceKind,
     LearnerModel,
     MoveKind,
     Session,
     SessionClock,
     SessionStatus,
+    advance_placement,
+    compose_layout,
+    node_of,
+    open_placement,
     open_session,
+    take_placement_turn,
     take_turn,
 )
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
@@ -356,3 +364,163 @@ async def test_a_specific_wrong_idea_is_caught_rather_than_waved_past(
         f"backwards: {trace.moves}"
     )
     _assert_auditable(trace)
+
+
+# ── P2c: placement, and Tier 2 across two learners ──────────────────────────────────────────────
+
+
+async def _placed(graph: ConceptGraph, profile: Profile) -> tuple[Session, LearnerModel]:
+    """A whole placement, played by ``profile``: the real interviewer asks, the learner answers,
+    the interview runs out (the map is withheld until then, as a slow compile would withhold it),
+    and the real mapper places them; teaching begins from what it seeded. What comes back is the
+    session with its first lesson, and the model the director opened on."""
+    interviewer, mapper, tutor = (
+        ClaudeInterviewer(_STRONG),
+        ClaudePriorMapper(_WORKER),
+        ClaudeTutor(_STRONG),
+    )
+    learner = SimulatedLearner(profile)
+    session = await open_placement(
+        _TOPIC,
+        graph_id=graph.graph_id,
+        session_id=f"eval-place-{profile.name}",
+        run_id=f"eval-place-{profile.name}-1",
+        interviewer=interviewer,
+    )
+    model = LearnerModel(graph_id=graph.graph_id)
+    turn = 1
+    while session.status is SessionStatus.PLACING:
+        turn += 1
+        head = session.turns[-1]
+        outcome = await take_placement_turn(
+            session,
+            answer=await learner.answer(head.tutor, None),
+            answering_seq=head.seq,
+            interviewer=interviewer,
+            mapper=mapper,
+            graph=None,
+            failure=None,
+            model=model,
+            tutor=tutor,
+            run_id=f"eval-place-{profile.name}-{turn}",
+            elapsed_s=float(turn) * 30.0,
+            budget_s=_BUDGET_S,
+        )
+        session, model = outcome.session, outcome.model
+    assert session.status is SessionStatus.WARMING, session.status
+    advanced = await advance_placement(
+        session,
+        mapper=mapper,
+        graph=graph,
+        failure=None,
+        model=model,
+        tutor=tutor,
+        run_id=f"eval-place-{profile.name}-landed",
+        elapsed_s=float(turn + 1) * 30.0,
+        budget_s=_BUDGET_S,
+    )
+    assert advanced is not None
+    _write_placement_digest(profile, advanced.session, advanced.model)
+    return advanced.session, advanced.model
+
+
+def _write_placement_digest(profile: Profile, session: Session, model: LearnerModel) -> None:
+    out = os.path.join(os.getcwd(), ".eval", "live-session")
+    os.makedirs(out, exist_ok=True)
+    with open(os.path.join(out, f"placement-{profile.name}.json"), "w", encoding="utf-8") as h:
+        json.dump(
+            {
+                "profile": profile.name,
+                "learner_profile": session.profile,
+                "priors": {
+                    node_id: known.prior
+                    for node_id, known in model.nodes.items()
+                    if known.prior is not None
+                },
+                "turns": [
+                    {
+                        "seq": t.seq,
+                        "move": t.move.kind.value,
+                        "node": t.move.node_id,
+                        "why": t.move.reason,
+                        "tutor": t.tutor,
+                        "answer": t.answer,
+                    }
+                    for t in session.turns
+                ],
+            },
+            h,
+            indent=2,
+        )
+
+
+@pytest.fixture(scope="module")
+async def placed_fluent(compiled_map: ConceptGraph) -> tuple[Session, LearnerModel]:
+    """One real placement of the fluent learner, shared by the two tests that read it: an
+    interview and a mapping cost real money, and both tests are about what it produced."""
+    return await _placed(compiled_map, _FLUENT)
+
+
+async def test_a_fluent_learner_is_placed_past_the_root(
+    compiled_map: ConceptGraph, placed_fluent: tuple[Session, LearnerModel]
+) -> None:
+    """P2c U1/U2: the interview lets a learner skip a chain they say they know. Somebody fluent
+    must not be introduced to the map's root: the mapper reads real claims off their answers, and
+    the director's first move is a check at the boundary or a lesson deeper in — never the
+    beginner's opening."""
+    session, model = placed_fluent
+
+    first_lesson = next(t for t in session.turns if t.move.kind is not MoveKind.PLACE)
+    root = compiled_map.topo_order[0]
+    assert any(k.prior is not None for k in model.nodes.values()), (
+        "a fluent learner's interview seeded no claim at all"
+    )
+    assert (first_lesson.move.kind, first_lesson.move.node_id) != (MoveKind.INTRODUCE, root), (
+        f"a fluent learner was introduced to the root: {first_lesson.move}"
+    )
+    assert session.profile, "the mapper wrote no profile for the tutor to read"
+
+
+async def test_two_learners_on_one_concept_get_material_in_different_bands(
+    compiled_map: ConceptGraph, placed_fluent: tuple[Session, LearnerModel]
+) -> None:
+    """Plan §8's Tier 2 claim, in the wild: the same concept is composed differently for two
+    learners who know different amounts. The fluent learner's placement (a real interview, a real
+    mapper) puts a claim on the root; a fresh learner has nothing. The band is arithmetic over the
+    two models — the fluent one is scaffolded less — and the tutor's own material, briefed with each
+    learner's profile, is not the same words either."""
+    placed_session, placed = placed_fluent
+    fresh = LearnerModel(graph_id=compiled_map.graph_id)
+    root = compiled_map.topo_order[0]
+    node = node_of(compiled_map, root)
+    assert node is not None
+    tutor = ClaudeTutor(_STRONG)
+    move = DirectorMove(kind=MoveKind.INTRODUCE, node_id=root, reason="Eval: the same concept.")
+
+    for_fluent = await tutor.illustrate(
+        move,
+        node,
+        topic=compiled_map.topic,
+        # The profile the real mapper wrote from the real interview, not a hand-written one.
+        profile=placed_session.profile,
+        run_id="eval-band-fluent",
+    )
+    for_fresh = await tutor.illustrate(
+        move, node, topic=compiled_map.topic, profile=None, run_id="eval-band-fresh"
+    )
+
+    scaffold_fluent = compose_layout(for_fluent, node_id=root, model=placed)
+    scaffold_fresh = compose_layout(for_fresh, node_id=root, model=fresh)
+
+    def kinds(layout) -> list[str]:
+        return sorted(block.component.value for block in layout.blocks)
+
+    assert kinds(scaffold_fresh) != kinds(scaffold_fluent), (
+        f"the same scaffold for both: {kinds(scaffold_fresh)}"
+    )
+    assert len(scaffold_fresh.blocks) > len(scaffold_fluent.blocks), (
+        "the fresh learner is scaffolded more, not less"
+    )
+    assert (for_fluent.hint, for_fluent.practice) != (for_fresh.hint, for_fresh.practice), (
+        "two learners, one profile's worth of material"
+    )

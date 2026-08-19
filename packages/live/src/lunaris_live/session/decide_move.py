@@ -212,9 +212,35 @@ def _claimed(model: LearnerModel, node_id: str) -> bool:
     return claim is not None and claim >= _MASTERED
 
 
-def _credited(model: LearnerModel, node_id: str) -> bool:
-    """Demonstrated, or credibly claimed: what the frontier walks over."""
-    return _demonstrated(model, node_id) or _claimed(model, node_id)
+def _credited(graph: ConceptGraph, model: LearnerModel) -> set[str]:
+    """What the frontier walks over: every concept demonstrated or credibly claimed, and every
+    concept one of those stands on, transitively (P2c T9).
+
+    The downward part is the one the keyed eval found missing: a fluent learner's interview put
+    claims on the gradient, the chain rule and backpropagation and none on the map's root — "slope
+    and derivative", which nobody had asked them about — and the director introduced the root. If
+    you know the gradient you know what a slope is: a credible claim credits what it stands on, and
+    the check before the frontier is the claim that implies it (``_boundary_claim``). And a
+    demonstration credits downward the same way, or the credit would vanish the moment the claim
+    was checked and HELD (a MET clears the claim, T3) and the learner who had just explained the
+    deepest concept in the chain would be walked back to its root — the identical move to the
+    check having failed (found in review). It is AD12's own rule: a MET on the top of a chain is
+    evidence for the chain. A hesitant claim credits nothing, itself included (T3). A prerequisite
+    C1 grows beneath an already-demonstrated concept is therefore not taught either; that is the
+    trade this makes, recorded rather than hidden.
+    """
+    by_id = {node.id: node for node in graph.nodes}
+    credited: set[str] = set()
+    pending = [
+        node.id for node in graph.nodes if _demonstrated(model, node.id) or _claimed(model, node.id)
+    ]
+    while pending:
+        node_id = pending.pop()
+        if node_id in credited or node_id not in by_id:
+            continue
+        credited.add(node_id)
+        pending.extend(by_id[node_id].requires)
+    return credited
 
 
 def _boundary_claim(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
@@ -232,13 +258,43 @@ def _boundary_claim(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | N
     nothing checked is not a finished map: it is a boundary at the last claim.
     """
     frontier = _frontier(graph, model)
-    candidates = _unvouched_claims(
-        graph, model, frontier.requires if frontier is not None else list(graph.topo_order)
-    )
+    if frontier is None:
+        candidates = _unvouched_claims(graph, model, list(graph.topo_order))
+    else:
+        # What the frontier stands on: a claim there is the candidate; a prerequisite credited only
+        # by implication (T9) is answered for by the claim that implies it, so that claim is.
+        standing_on = [
+            claim
+            for required in frontier.requires
+            for claim in (
+                [required] if _claimed(model, required) else _claims_over(graph, model, required)
+            )
+        ]
+        candidates = _unvouched_claims(graph, model, standing_on)
     if not candidates:
         return None
     order = {node_id: index for index, node_id in enumerate(graph.topo_order)}
     return max(candidates, key=lambda node: order.get(node.id, -1))
+
+
+def _claims_over(graph: ConceptGraph, model: LearnerModel, node_id: str) -> list[str]:
+    """The credibly claimed concepts that stand on ``node_id``, directly or through others: the
+    claims whose credit reaches it by implication."""
+    by_id = {node.id: node for node in graph.nodes}
+    over: list[str] = []
+    for node in graph.nodes:
+        if not _claimed(model, node.id):
+            continue
+        beneath, pending = set(), list(node.requires)
+        while pending:
+            required = pending.pop()
+            if required in beneath or required not in by_id:
+                continue
+            beneath.add(required)
+            pending.extend(by_id[required].requires)
+        if node_id in beneath:
+            over.append(node.id)
+    return over
 
 
 def _unvouched_claims(
@@ -286,8 +342,9 @@ def _vouched(graph: ConceptGraph, model: LearnerModel) -> set[str]:
 def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
     """The next concept worth teaching: not yet credited, everything it needs already credited.
 
-    "Credited" is demonstrated on the undecayed belief, or credibly claimed in placement (P2c T3),
-    so a concept the learner has demonstrated is never introduced a second time — whatever else the
+    "Credited" is demonstrated on the undecayed belief, credibly claimed in placement (P2c T3), or
+    beneath a credible claim (T9), so a concept the learner has demonstrated is never introduced a
+    second time — whatever else the
     session does with it, teaching it again from scratch is the one move that tells somebody their
     work did not count — and a chain they say they know is walked over rather than through. What
     is claimed and not checked is checked before it is built on (``_boundary_claim``).
@@ -304,10 +361,11 @@ def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
     ``test_a_lying_teaching_order_cannot_smuggle_a_concept_past_its_prerequisites``.
     """
     by_id = {node.id: node for node in graph.nodes}
+    credited = _credited(graph, model)
     for node_id in graph.topo_order:
         node = by_id.get(node_id)
-        if node is None or _credited(model, node_id):
+        if node is None or node_id in credited:
             continue
-        if all(_credited(model, required) for required in node.requires):
+        if all(required in credited for required in node.requires):
             return node
     return None

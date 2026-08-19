@@ -12,7 +12,7 @@ is due", which is what spaced retrieval spanning more than one sitting needs.
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from lunaris_live.graph import ConceptGraph, ConceptNode, MasteryCriterion, MasteryCriterionKind
+from _bayes_map import bayes_map, held
 from lunaris_live.session import (
     LAST_RUNG,
     Covered,
@@ -46,48 +46,13 @@ _DAY = timedelta(days=1)
 _BUDGET_S = 100.0
 
 
-def _graph() -> ConceptGraph:
-    def node(node_id: str, name: str, *requires: str) -> ConceptNode:
-        return ConceptNode(
-            id=node_id,
-            name=name,
-            definition=f"The idea {name}.",
-            requires=list(requires),
-            mastery_criteria=[
-                MasteryCriterion(kind=MasteryCriterionKind.EXPLAIN, statement=f"Explain {name}.")
-            ],
-        )
-
-    return ConceptGraph(
-        graph_id="g1",
-        topic="Bayes' theorem",
-        nodes=[
-            node("prior", "Prior"),
-            node("update", "Update", "prior"),
-            node("odds", "Odds", "update"),
-        ],
-        topo_order=["prior", "update", "odds"],
-        is_acyclic=True,
-    )
-
-
-def _held(
-    model: LearnerModel, node_id: str, *, stage: int = 0, due_at: datetime | None = None
-) -> LearnerModel:
-    """Two METs (demonstrated), at the given rung of the ladder."""
-    for turn in (1, 2):
-        model = apply_evidence(model, node_id, EvidenceKind.MET, at_turn=turn)
-    known = model.nodes[node_id].model_copy(update={"review_stage": stage, "due_at": due_at})
-    return model.model_copy(update={"nodes": {**model.nodes, node_id: known}})
-
-
 async def _closed_over(
     model: LearnerModel, *, answer: str, at: datetime = _NOON, tutor: StubTutor | None = None
 ):
     """Open at ``at``, answer once, and let the clock run out: the close's own outcome."""
     tutor = tutor or StubTutor()
     opened = await open_session(
-        _graph(),
+        bayes_map(),
         model,
         SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S, at=at),
         session_id="s1",
@@ -96,7 +61,7 @@ async def _closed_over(
     )
     return await take_turn(
         opened.session,
-        _graph(),
+        bayes_map(),
         opened.model,
         answer=answer,
         answering_seq=opened.session.turns[-1].seq,
@@ -128,7 +93,7 @@ def test_the_ladder_has_a_top_and_a_concept_held_there_stays_there() -> None:
     assert review_interval(LAST_RUNG) == _DAY * 2.5 ** (LAST_RUNG - 1)
     with pytest.raises(ValueError):
         review_interval(LAST_RUNG + 1)
-    at_the_top = _held(LearnerModel(graph_id="g1"), "prior", stage=LAST_RUNG, due_at=_NOON - _DAY)
+    at_the_top = held(LearnerModel(graph_id="g1"), "prior", stage=LAST_RUNG, due_at=_NOON - _DAY)
     held_turn = SessionTurn(
         seq=1,
         move=DirectorMove(kind=MoveKind.RETRIEVE, node_id="prior", reason="Due."),
@@ -136,7 +101,7 @@ def test_the_ladder_has_a_top_and_a_concept_held_there_stays_there() -> None:
         run_id="r1",
     )
 
-    scheduled = schedule_reviews(at_the_top, _graph(), [held_turn], at=_NOON)
+    scheduled = schedule_reviews(at_the_top, bayes_map(), [held_turn], at=_NOON)
 
     assert scheduled.nodes["prior"].review_stage == LAST_RUNG
     assert scheduled.nodes["prior"].due_at == _NOON + review_interval(LAST_RUNG)
@@ -148,7 +113,7 @@ def test_the_ladder_has_a_top_and_a_concept_held_there_stays_there() -> None:
 async def test_a_concept_demonstrated_today_is_due_tomorrow() -> None:
     """The close writes the schedule: a MET verification of a held root (one answer lands it,
     the claim rule aside — here two METs already hold it) is due back in a day, on rung one."""
-    known = _held(LearnerModel(graph_id="g1"), "prior")  # the director moves on to Update
+    known = held(LearnerModel(graph_id="g1"), "prior")  # the director moves on to Update
 
     closed = await _closed_over(known, answer="Explain Update. Explain Update.")
 
@@ -161,7 +126,7 @@ async def test_a_concept_demonstrated_today_is_due_tomorrow() -> None:
 
 async def test_a_concept_held_at_the_close_climbs_a_rung() -> None:
     """Prior was checked (a due review, say) and held: its next review is further out."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
 
     closed = await _closed_over(known, answer="Explain Prior. Explain Prior.")
 
@@ -174,10 +139,10 @@ async def test_a_concept_held_at_the_close_climbs_a_rung() -> None:
 async def test_a_concept_that_slipped_restarts_its_ladder() -> None:
     """A demonstrated concept on rung three, missed twice at its review, is forming again: due
     tomorrow, from the bottom. The ladder is a record of what held, not of what was once held."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=3, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=3, due_at=_NOON - _DAY)
     tutor = StubTutor()
     opened = await open_session(
-        _graph(),
+        bayes_map(),
         known,
         SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S, at=_NOON),
         session_id="s1",
@@ -186,7 +151,7 @@ async def test_a_concept_that_slipped_restarts_its_ladder() -> None:
     )
     missed = await take_turn(
         opened.session,
-        _graph(),
+        bayes_map(),
         opened.model,
         answer="No idea.",
         answering_seq=1,
@@ -198,7 +163,7 @@ async def test_a_concept_that_slipped_restarts_its_ladder() -> None:
     )
     closed = await take_turn(
         missed.session,
-        _graph(),
+        bayes_map(),
         missed.model,
         answer="Still no.",
         answering_seq=missed.session.turns[-1].seq,
@@ -229,22 +194,23 @@ def test_a_concept_only_introduced_is_not_scheduled() -> None:
     # to schedule on and the rule has to decline on the outcome, not on the row's absence.
     claimed = seed_priors(LearnerModel(graph_id="g1"), [NodePrior(node_id="prior", prior=0.3)])
 
-    scheduled = schedule_reviews(claimed, _graph(), [introduced], at=_NOON)
+    scheduled = schedule_reviews(claimed, bayes_map(), [introduced], at=_NOON)
 
     assert scheduled.nodes["prior"].due_at is None
     assert scheduled.nodes["prior"].review_stage == 0
 
 
 async def test_a_concept_untouched_this_session_keeps_its_date() -> None:
-    """Odds' review is next week; a session that never came near it must not move it."""
+    """Prior's review is next week; a session that works on Update and never comes near Prior
+    must not move it."""
     next_week = _NOON + 7 * _DAY
-    known = _held(LearnerModel(graph_id="g1"), "prior")
-    known = _held(known, "odds", stage=2, due_at=next_week)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=next_week)
 
     closed = await _closed_over(known, answer="Explain Update. Explain Update.")
 
-    assert closed.model.nodes["odds"].due_at == next_week
-    assert closed.model.nodes["odds"].review_stage == 2
+    assert closed.session.turns[0].move.node_id == "update", "the session was about Update"
+    assert closed.model.nodes["prior"].due_at == next_week
+    assert closed.model.nodes["prior"].review_stage == 2
 
 
 def test_answering_a_review_moves_its_date_to_tomorrow_until_the_close_sets_the_real_one() -> None:
@@ -252,7 +218,7 @@ def test_answering_a_review_moves_its_date_to_tomorrow_until_the_close_sets_the_
     turn, and the next, until the close. Provisionally tomorrow rather than cleared (found in
     review): a session that never closes must not drop the concept off the ladder for good. The
     rung is kept: it is the close's input."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON - _DAY)
 
     answered = apply_evidence(known, "prior", EvidenceKind.MET, at_turn=3, on=_NOON)
 
@@ -262,7 +228,7 @@ def test_answering_a_review_moves_its_date_to_tomorrow_until_the_close_sets_the_
 
 def test_evidence_with_no_day_leaves_no_date() -> None:
     """A replay has no wall time; a date invented from nothing would be a date read as real."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON - _DAY)
 
     assert apply_evidence(known, "prior", EvidenceKind.MET, at_turn=3).nodes["prior"].due_at is None
 
@@ -270,10 +236,10 @@ def test_evidence_with_no_day_leaves_no_date() -> None:
 async def test_a_review_answered_is_not_asked_again_on_the_next_turn() -> None:
     """The loop, end to end: the due review is asked, answered, and the next move is not the same
     review — the date moved, and the director reads the moved date."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
     tutor = StubTutor()
     opened = await open_session(
-        _graph(),
+        bayes_map(),
         known,
         SessionClock(turn=1, elapsed_s=0.0, budget_s=1800.0, at=_NOON),
         session_id="s1",
@@ -284,7 +250,7 @@ async def test_a_review_answered_is_not_asked_again_on_the_next_turn() -> None:
 
     answered = await take_turn(
         opened.session,
-        _graph(),
+        bayes_map(),
         opened.model,
         answer="Explain Prior. Explain Prior.",
         answering_seq=1,
@@ -304,7 +270,7 @@ async def test_a_review_answered_is_not_asked_again_on_the_next_turn() -> None:
 
 
 async def test_the_close_meter_says_when_each_concept_is_due() -> None:
-    known = _held(LearnerModel(graph_id="g1"), "prior")
+    known = held(LearnerModel(graph_id="g1"), "prior")
 
     closed = await _closed_over(known, answer="Explain Update. Explain Update.")
 
@@ -328,7 +294,7 @@ class PassthroughRecapSpy(StubTutor):
 async def test_the_recap_is_briefed_with_the_schedule() -> None:
     """So the tutor's words can name the day, and the plain sentence does when the tutor cannot."""
     tutor = PassthroughRecapSpy()
-    known = _held(LearnerModel(graph_id="g1"), "prior")
+    known = held(LearnerModel(graph_id="g1"), "prior")
 
     closed = await _closed_over(known, answer="Explain Update. Explain Update.", tutor=tutor)
 
@@ -372,9 +338,9 @@ def _clock_at(at: datetime | None) -> SessionClock:
 
 
 def test_a_review_that_has_come_due_is_retrieved_before_anything_new() -> None:
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
 
-    move = decide_move(_graph(), known, _clock_at(_NOON))
+    move = decide_move(bayes_map(), known, _clock_at(_NOON))
 
     assert (move.kind, move.node_id) == (MoveKind.RETRIEVE, "prior")
     assert "due" in move.reason
@@ -383,38 +349,38 @@ def test_a_review_that_has_come_due_is_retrieved_before_anything_new() -> None:
 def test_the_reason_says_whether_the_due_concept_was_held_or_still_forming() -> None:
     """The trace is read by a human (found in review): a concept at the bottom of the ladder was
     not "held when a session last closed", and the reason must not say it was."""
-    held = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    holding = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
     forming = apply_evidence(LearnerModel(graph_id="g1"), "prior", EvidenceKind.NOT_MET, at_turn=1)
     forming = forming.model_copy(
         update={"nodes": {"prior": forming.nodes["prior"].model_copy(update={"due_at": _NOON})}}
     )
 
-    assert "was held" in decide_move(_graph(), held, _clock_at(_NOON)).reason
-    reason = decide_move(_graph(), forming, _clock_at(_NOON)).reason
+    assert "was held" in decide_move(bayes_map(), holding, _clock_at(_NOON)).reason
+    reason = decide_move(bayes_map(), forming, _clock_at(_NOON)).reason
     assert "still forming" in reason and "was held" not in reason
 
 
 def test_a_review_not_yet_due_does_not_interrupt() -> None:
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON + _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON + _DAY)
 
-    move = decide_move(_graph(), known, _clock_at(_NOON))
+    move = decide_move(bayes_map(), known, _clock_at(_NOON))
 
     assert (move.kind, move.node_id) == (MoveKind.INTRODUCE, "update")
 
 
 def test_a_review_due_this_very_minute_counts_as_due() -> None:
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON)
 
-    assert decide_move(_graph(), known, _clock_at(_NOON)).kind is MoveKind.RETRIEVE
+    assert decide_move(bayes_map(), known, _clock_at(_NOON)).kind is MoveKind.RETRIEVE
 
 
 def test_of_two_due_reviews_the_longer_overdue_comes_first() -> None:
     """Deterministic, and by lateness rather than by teaching order: Update, two days late,
     before Prior, one day late — the ladder is what put them there."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
-    known = _held(known, "update", stage=1, due_at=_NOON - 2 * _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    known = held(known, "update", stage=1, due_at=_NOON - 2 * _DAY)
 
-    move = decide_move(_graph(), known, _clock_at(_NOON))
+    move = decide_move(bayes_map(), known, _clock_at(_NOON))
 
     assert (move.kind, move.node_id) == (MoveKind.RETRIEVE, "update")
 
@@ -422,12 +388,12 @@ def test_of_two_due_reviews_the_longer_overdue_comes_first() -> None:
 def test_a_due_review_waits_for_a_stuck_learner() -> None:
     """The order of concerns holds: a learner failing Update twice running is not walked away from
     to review Prior."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
     for turn in (3, 4):
         known = apply_evidence(known, "update", EvidenceKind.NOT_MET, at_turn=turn)
 
     move = decide_move(
-        _graph(), known, SessionClock(turn=5, elapsed_s=60.0, budget_s=1800.0, at=_NOON)
+        bayes_map(), known, SessionClock(turn=5, elapsed_s=60.0, budget_s=1800.0, at=_NOON)
     )
 
     assert (move.kind, move.node_id) == (MoveKind.REMEDIATE, "update")
@@ -436,21 +402,21 @@ def test_a_due_review_waits_for_a_stuck_learner() -> None:
 def test_nothing_is_due_when_the_turn_has_no_wall_time() -> None:
     """A clock without a wall time (a replay, the prediction) judges no review due: the ladder is
     read against a day, and there is no day to read it against."""
-    known = _held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
+    known = held(LearnerModel(graph_id="g1"), "prior", stage=1, due_at=_NOON - _DAY)
 
-    assert decide_move(_graph(), known, _clock_at(None)).kind is MoveKind.INTRODUCE
+    assert decide_move(bayes_map(), known, _clock_at(None)).kind is MoveKind.INTRODUCE
 
 
 async def test_a_session_opened_after_a_review_is_due_asks_it_first() -> None:
     """T6's acceptance, end to end in the package: a concept MET on day 0 is due on day 1, and a
     session opened on day 1 retrieves it before introducing anything."""
-    day0 = _held(LearnerModel(graph_id="g1"), "prior")
+    day0 = held(LearnerModel(graph_id="g1"), "prior")
     closed = await _closed_over(day0, answer="Explain Update. Explain Update.", at=_NOON)
     due = closed.model.nodes["update"].due_at
     assert due is not None
 
     later = await open_session(
-        _graph(),
+        bayes_map(),
         closed.model,
         SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S, at=due),
         session_id="s2",
@@ -466,7 +432,7 @@ async def test_a_session_opened_after_a_review_is_due_asks_it_first() -> None:
 async def test_a_session_opened_with_no_wall_time_starts_now() -> None:
     before = datetime.now(UTC)
     opened = await open_session(
-        _graph(),
+        bayes_map(),
         LearnerModel(graph_id="g1"),
         SessionClock(turn=1, elapsed_s=0.0, budget_s=_BUDGET_S),
         session_id="s1",
@@ -480,7 +446,7 @@ async def test_a_turn_handed_no_wall_time_reads_the_day_off_the_sessions_own_rec
     """The one derivation (AD21): a caller that builds a bare clock — a placement's first
     teaching turn does — still closes with a schedule, dated from the session's start plus the
     seconds since, so no turn ever reads a wall clock of its own."""
-    known = _held(LearnerModel(graph_id="g1"), "prior")
+    known = held(LearnerModel(graph_id="g1"), "prior")
     answered = SessionTurn(
         seq=1,
         move=DirectorMove(kind=MoveKind.INTRODUCE, node_id="update", reason="Next."),
@@ -499,7 +465,7 @@ async def test_a_turn_handed_no_wall_time_reads_the_day_off_the_sessions_own_rec
 
     outcome = await next_turn(
         session,
-        _graph(),
+        bayes_map(),
         known,
         [answered],
         clock=SessionClock(turn=2, elapsed_s=_BUDGET_S + 1, budget_s=_BUDGET_S),
@@ -516,7 +482,7 @@ async def test_a_turn_handed_no_wall_time_reads_the_day_off_the_sessions_own_rec
 
 def test_the_schedule_survives_the_store() -> None:
     store = MemoryKnowledgeStore()
-    store.save(_held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON), owner_id="u1")
+    store.save(held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON), owner_id="u1")
 
     known = store.load("g1", owner_id="u1").nodes["prior"]
     assert (known.review_stage, known.due_at) == (2, _NOON)
@@ -584,7 +550,7 @@ def test_the_durable_store_writes_the_schedule_and_reads_it_back() -> None:
 
     client = FakeSupabase()
     store = SupabaseKnowledgeStore(client=client)
-    store.save(_held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON), owner_id="u1")
+    store.save(held(LearnerModel(graph_id="g1"), "prior", stage=2, due_at=_NOON), owner_id="u1")
 
     (row,) = client.rows
     assert row["review_stage"] == 2

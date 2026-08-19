@@ -430,13 +430,15 @@ async def test_a_compile_lost_to_another_process_is_given_up_after_the_deadline(
 async def test_a_learner_who_names_concepts_is_checked_on_them_not_taught_them(
     client: httpx.AsyncClient,
 ) -> None:
-    """T3, end to end through the API with the offline mapper. The answer names two of the map's
-    three concepts — the root ("Foundations of …") and, because the top concept is named after
-    the topic, the top itself — and not the middle one. So: the first lesson is a graded RETRIEVAL
-    of the root rather than an introduction of it; the session carries a profile; the claim is on
-    the learner's beliefs, where a later session on the same map reads it; and once the root and
-    the middle are demonstrated, the claimed top is *checked* (the boundary at the last claim,
-    with nothing left to introduce) rather than the session closing on a claim."""
+    """T3 (and T9's rule), end to end through the API with the offline mapper. The answer names two
+    of the map's three concepts — the root ("Foundations of …") and, because the top concept is
+    named after the topic, the top itself — and not the middle one. The top's claim credits the
+    middle beneath it (T9: if you know the whole you know its parts, until checked), so nothing is
+    left to introduce and the deepest claim on the map, the top, is CHECKED first rather than the
+    root being taught or the session closing on a claim; the session carries a profile; the claim
+    is on the learner's beliefs, where a later session on the same map reads it. Once the top
+    holds, its demonstration is evidence for the chain beneath it (AD12, AD27): the map is done,
+    and neither the root nor the middle is taught to somebody who has just explained the whole."""
     session = (await _placement(client)).json()
     await _compiled(client, session["graphId"])
     url = f"/api/live/sessions/{session['sessionId']}"
@@ -453,47 +455,30 @@ async def test_a_learner_who_names_concepts_is_checked_on_them_not_taught_them(
     taught = response.json()
     assert taught["status"] == "active"
     check = taught["turns"][-1]
-    assert (check["move"]["kind"], check["move"]["nodeId"]) == (
-        "retrieve",
-        "bayes-theorem-foundations",
-    )
+    assert (check["move"]["kind"], check["move"]["nodeId"]) == ("retrieve", "bayes-theorem")
     assert "interview" in check["move"]["reason"].lower()
     assert taught["profile"] and "stats course" in taught["profile"]
 
     # The claim outlives the session: a session opened on the SAME map by id (P2a's opening) is
-    # directed by the same beliefs, so it too checks the root rather than teaching it.
+    # directed by the same beliefs, so it too checks the top rather than teaching the root.
     again = await client.post("/api/live/sessions", json={"graphId": session["graphId"]})
     assert again.status_code == 201, again.text
     first = again.json()["turns"][0]
-    assert (first["move"]["kind"], first["move"]["nodeId"]) == (
-        "retrieve",
-        "bayes-theorem-foundations",
-    )
+    assert (first["move"]["kind"], first["move"]["nodeId"]) == ("retrieve", "bayes-theorem")
 
-    # Verify the root (the offline grader marks an answer that restates the criterion as MET),
-    # then get introduced to the middle and demonstrate it: the top, claimed and never checked, is
-    # then checked rather than closed over.
-    async def answer_with_the_criterion(current: dict) -> dict:
-        standing = current["turns"][-1]
-        reply = await client.post(
-            f"{url}/turns",
-            json={"answer": standing["criterion"]["statement"], "answeringSeq": standing["seq"]},
-        )
-        assert reply.status_code == 200, reply.text
-        return reply.json()
-
-    verified = await answer_with_the_criterion(taught)
-    introduced = verified["turns"][-1]
-    assert (introduced["move"]["kind"], introduced["move"]["nodeId"]) == (
-        "introduce",
-        "bayes-theorem-core",
+    # Verify the top (the offline grader marks an answer that restates the criterion as MET): the
+    # map is then done — the chain beneath a held top is vouched for, not taught.
+    standing = taught["turns"][-1]
+    reply = await client.post(
+        f"{url}/turns",
+        json={"answer": standing["criterion"]["statement"], "answeringSeq": standing["seq"]},
     )
-    # One MET from nothing is not mastery: the middle takes two.
-    once = await answer_with_the_criterion(verified)
-    assert once["turns"][-1]["move"]["nodeId"] == "bayes-theorem-core"
-    twice = await answer_with_the_criterion(once)
-    boundary = twice["turns"][-1]
-    assert (boundary["move"]["kind"], boundary["move"]["nodeId"]) == ("retrieve", "bayes-theorem")
+    assert reply.status_code == 200, reply.text
+    done = reply.json()
+    assert done["status"] == "closed"
+    assert "Nothing on this map is left" in done["turns"][-1]["move"]["reason"]
+    taught_nodes = {t["move"]["nodeId"] for t in done["turns"] if t["move"]["kind"] == "introduce"}
+    assert taught_nodes == set(), f"taught {taught_nodes} to a learner who explained the whole"
 
 
 async def test_a_start_request_names_a_topic_or_a_map_never_both_or_neither(
