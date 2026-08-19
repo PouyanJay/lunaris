@@ -28,8 +28,10 @@ import {
   TurnError,
   TutorMessage,
 } from "./CopilotSlots";
+import type { NextReview } from "../../lib/reviewSchedule";
 import { LessonLayout } from "./LessonLayout";
 import { SessionEnded } from "./SessionEnded";
+import { Warming } from "./SkeletonNotice";
 import { SurfaceCard } from "./SurfaceCard";
 import styles from "./CopilotSession.module.css";
 import slotStyles from "./CopilotSlots.module.css";
@@ -50,6 +52,10 @@ interface CopilotSessionProps {
   /** Called each time the panel's own runs move the session on to a new turn (T10). The host
    *  re-reads the session so the transcript beside the panel stays the record it claims to be. */
   onTurnTaken?: (() => void) | undefined;
+  /** What the close scheduled, once the host has re-read the closed session (P2c T7): the ending
+   *  in the composer's place says the day. From the host because the composer slot cannot see the
+   *  meter the kit rendered as a card, and the state frame does not carry it. */
+  nextReview?: NextReview | null | undefined;
 }
 
 /** What the agent's state says, as the last `STATE_SNAPSHOT` left it (`SessionSnapshot` on the
@@ -83,6 +89,8 @@ const NOBODY = { current: () => {} };
 const NOT_YET: ComposerBridge = { send: NOBODY, busy: false, ready: false };
 const ComposerContext = createContext<ComposerBridge>(NOT_YET);
 const ReportComposerContext = createContext<(report: ComposerReport) => void>(() => {});
+/** The host's word on when to come back (P2c T7), for the ending the composer slot renders. */
+const NextReviewContext = createContext<NextReview | null>(null);
 
 /** The composer's side of the bridge, held above the kit: the cards read `bridge`, the composer
  *  calls `report`. Its own hook so `CopilotSession` composes it beside the answered-turn state
@@ -139,6 +147,7 @@ export function CopilotSession({
   standingTurn,
   standingSeq,
   onTurnTaken,
+  nextReview = null,
 }: CopilotSessionProps) {
   // Which turn the panel's next send is answering (T9): the turn the last state frame named for
   // *this* session, else the one the panel mounted with. Held per session id so a panel re-used
@@ -210,12 +219,13 @@ export function CopilotSession({
         <LayoutTool />
         <ComposerContext.Provider value={composer}>
           <ReportComposerContext.Provider value={reportComposer}>
-            {/* Sized by our own wrapper rather than by the kit's `className` prop: the prop is
+            <NextReviewContext.Provider value={nextReview}>
+              {/* Sized by our own wrapper rather than by the kit's `className` prop: the prop is
                 typed as a required string, and a CSS-module lookup is `string | undefined` under
                 `exactOptionalPropertyTypes`. The wrapper is also where the kit's own structural
                 classes are laid out. */}
-            <div className={styles.chat}>
-              {/* Seeded with the turn the learner is standing on, because a message sent here takes a
+              <div className={styles.chat}>
+                {/* Seeded with the turn the learner is standing on, because a message sent here takes a
               real turn and is graded against *that* turn's criterion. An empty chat would invite an
               answer to a question they had never been shown, and the verdict would then look
               arbitrary. Omitted rather than passed empty when there is nothing standing: an empty
@@ -223,16 +233,17 @@ export function CopilotSession({
 
               `suggestions="manual"` with none set: the kit would otherwise offer generated
               "suggested replies", which is the surface answering for the learner. */}
-              <CopilotChat
-                {...(standingTurn ? { labels: { initial: standingTurn } } : {})}
-                icons={ICONS}
-                suggestions="manual"
-                AssistantMessage={TutorMessage}
-                UserMessage={LearnerMessage}
-                Input={PanelComposer}
-                ErrorMessage={TurnError}
-              />
-            </div>
+                <CopilotChat
+                  {...(standingTurn ? { labels: { initial: standingTurn } } : {})}
+                  icons={ICONS}
+                  suggestions="manual"
+                  AssistantMessage={TutorMessage}
+                  UserMessage={LearnerMessage}
+                  Input={PanelComposer}
+                  ErrorMessage={TurnError}
+                />
+              </div>
+            </NextReviewContext.Provider>
           </ReportComposerContext.Provider>
         </ComposerContext.Provider>
       </CopilotKit>
@@ -292,13 +303,28 @@ const LAYOUT_RENDERER = {
 export function PanelComposer(props: InputProps) {
   const { onSend, inProgress, chatReady = false } = props;
   const report = useContext(ReportComposerContext);
+  const nextReview = useContext(NextReviewContext);
   const { state } = useCoAgent<PanelState>({ name: LIVE_AGENT });
   const closed = state.status === "closed";
+  // The interview ran out before the map landed (P2c T7): the API refuses an answer here, so no
+  // box is offered and no card can send; the host's poll moves the session on.
+  const warming = state.status === "warming";
   useEffect(() => {
-    report({ send: (text) => void onSend(text), busy: inProgress, ready: chatReady && !closed });
-  }, [report, onSend, inProgress, chatReady, closed]);
+    report({
+      send: (text) => void onSend(text),
+      busy: inProgress,
+      ready: chatReady && !closed && !warming,
+    });
+  }, [report, onSend, inProgress, chatReady, closed, warming]);
   if (closed) {
-    return <SessionEnded className={slotStyles.composer} />;
+    return <SessionEnded nextReview={nextReview} className={slotStyles.composer} />;
+  }
+  if (warming) {
+    return (
+      <div className={slotStyles.composer}>
+        <Warming />
+      </div>
+    );
   }
   return <TurnComposer {...props} />;
 }

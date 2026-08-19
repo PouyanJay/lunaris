@@ -11,6 +11,17 @@ const GRADE_TONE: Record<TurnGrade["kind"], StatusTone> = {
   not_met: "danger",
 };
 
+/** The director's moves, in words a learner can read (P2c T7). The trace's kinds are the API's
+ *  vocabulary; "PLACE" over an interview question told a learner nothing. Uppercase mono still:
+ *  the label of a row is data, and its style is the transcript's own. */
+const MOVE_LABEL: Record<SessionTurn["move"]["kind"], string> = {
+  introduce: "INTRODUCE",
+  retrieve: "RECALL",
+  remediate: "ANOTHER WAY",
+  close: "CLOSE",
+  place: "GETTING TO KNOW YOU",
+};
+
 const GRADE_LABEL: Record<TurnGrade["kind"], string> = {
   met: "met",
   partial: "partial",
@@ -50,7 +61,7 @@ function Turn({ turn }: { turn: SessionTurn }) {
   return (
     <>
       <p className={styles.move}>
-        <span className={styles.moveKind}>{turn.move.kind.replace("_", " ").toUpperCase()}</span>
+        <span className={styles.moveKind}>{MOVE_LABEL[turn.move.kind]}</span>
         {/* The director emits its reasoning into the trace so every move is auditable (plan §7).
             Shown to the learner too: a session is dozens of choices made on their behalf, and the
             only thing that makes that feel like teaching rather than being steered is being told. */}

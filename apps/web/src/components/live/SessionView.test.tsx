@@ -1,18 +1,38 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { WARMING_POLL_MS } from "../../hooks/useLiveSession";
 import { SessionView } from "./SessionView";
 
 // The generative panel is the kit's whole module graph; what this file needs from it is only its
 // contract with the host: it is mounted with a runtime configured, and it reports each turn it
 // takes. A stand-in that renders one button proves both without booting the kit.
-vi.mock("./CopilotSession", () => ({
-  CopilotSession: ({ onTurnTaken }: { onTurnTaken?: () => void }) => (
-    <button type="button" onClick={() => onTurnTaken?.()}>
-      turn taken
-    </button>
-  ),
-}));
+vi.mock("./CopilotSession", async () => {
+  const { useEffect } = await import("react");
+  return {
+    CopilotSession: ({
+      onTurnTaken,
+      standingTurn,
+      nextReview,
+    }: {
+      onTurnTaken?: () => void;
+      standingTurn: string | null;
+      nextReview?: { day: string; concepts: string[] } | null;
+    }) => {
+      // Counts mounts, so a test can tell "the panel was rebuilt" from "the panel re-rendered".
+      useEffect(() => {
+        panelMounts += 1;
+      }, []);
+      return (
+        <button type="button" onClick={() => onTurnTaken?.()}>
+          turn taken: {standingTurn}
+          {nextReview ? ` (come back ${nextReview.day})` : ""}
+        </button>
+      );
+    },
+  };
+});
+let panelMounts = 0;
 
 /** A session as the API returns it: one turn, already teaching, with something staged to answer. */
 const OPENED = {
@@ -247,6 +267,69 @@ describe("SessionView — the plainest surface a session can have", () => {
     expect(await screen.findByText(/that's where we'll stop/i)).toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: /your answer/i })).not.toBeInTheDocument();
     expect(screen.getByText("CLOSED")).toBeInTheDocument();
+  });
+
+  it("tells the learner when to come back, and for what, once the session has closed", async () => {
+    // P2c T7: the close scheduled Gradient for review; the ending under the meter says the day
+    // (the same day the meter row shows), so nobody has to read a date off a table.
+    const scheduled = {
+      ...CLOSED,
+      turns: [
+        CLOSED.turns[0]!,
+        {
+          ...CLOSED.turns[1]!,
+          surface: {
+            kind: "mastery_meter" as const,
+            entries: [
+              {
+                nodeId: "gradient",
+                concept: "Gradient",
+                recall: 0.51,
+                evidenceCount: 2,
+                dueAt: "2026-08-20T12:00:00Z",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(scheduled, 201));
+
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="How neural networks learn" />);
+
+    const ending = await screen.findByRole("status", { name: /session ended/i });
+    expect(ending).toHaveTextContent(/come back on Thursday 20 August for Gradient/i);
+  });
+
+  it("labels the director's moves in words a learner can read", async () => {
+    // The trace's move kinds are the API's vocabulary; a learner reads "GETTING TO KNOW YOU"
+    // over an interview question, not "PLACE". Uppercase mono still: it is data, the label of a
+    // row, and its style is the transcript's own.
+    const placing = {
+      ...OPENED,
+      status: "placing" as const,
+      topic: "How neural networks learn",
+      turns: [
+        {
+          seq: 1,
+          move: { kind: "place" as const, nodeId: null, reason: "The map is still being built." },
+          tutor: "Before we start: what have you already met of this?",
+          runId: "r1",
+          criterion: null,
+          answer: null,
+          grade: null,
+          surface: null,
+          layout: null,
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(placing, 201));
+
+    render(<SessionView apiBaseUrl="" topic="How neural networks learn" />);
+
+    const transcript = await screen.findByRole("list", { name: /transcript/i });
+    expect(within(transcript).getByText("GETTING TO KNOW YOU")).toBeInTheDocument();
+    expect(within(transcript).queryByText("PLACE")).not.toBeInTheDocument();
   });
 
   it("interviews in the same box a lesson is answered in, while the session is placing", async () => {
@@ -555,6 +638,106 @@ describe("the Tier 1 card (T4)", () => {
     await screen.findByText(/session has ended/i);
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("rebuilds the panel when teaching begins, so it opens on the first lesson", async () => {
+    // P2c T7: the panel's thread opens on the turn it mounted with, and the first lesson arrives
+    // through the host's poll (advance), not through a run of the panel's own — so a panel mounted
+    // during the interview would keep showing the last question over a session that has moved
+    // on. Across the placing → teaching boundary the panel is rebuilt; within a phase it is not.
+    // Fake timers, as the hook's own tests drive the poll: the interval is advanced, not waited.
+    vi.useFakeTimers();
+    try {
+      panelMounts = 0;
+      const warming = {
+        ...OPENED,
+        status: "warming" as const,
+        topic: "Neural networks",
+        turns: [
+          {
+            seq: 1,
+            move: { kind: "place" as const, nodeId: null, reason: "The interview is over." },
+            tutor: "Thanks, the map is nearly ready.",
+            runId: "r1",
+            criterion: null,
+            answer: "Not much.",
+            grade: null,
+            surface: null,
+            layout: null,
+          },
+        ],
+      };
+      const taught = { ...OPENED, turns: [{ ...OPENED.turns[0]!, seq: 2 }] };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(warming), {
+            status: 201,
+            headers: { "content-type": "application/json" },
+          }),
+        )
+        .mockResolvedValue(
+          new Response(JSON.stringify(taught), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      render(
+        <SessionView apiBaseUrl="" topic="Neural networks" copilotUrl="http://runtime.test" />,
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText(/turn taken: Thanks, the map is nearly ready/i)).toBeInTheDocument();
+      expect(panelMounts).toBe(1);
+
+      // The poll advances the session; the panel is rebuilt on the first lesson.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(WARMING_POLL_MS + 500);
+      });
+      expect(screen.getByText(/turn taken: Picture the loss as a hillside/i)).toBeInTheDocument();
+      expect(panelMounts).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hands the panel the day to come back, so its ending can say it too", async () => {
+    // P2c T7: the panel's composer slot cannot see the meter the kit drew as a card; the host,
+    // which re-reads the closed session, tells it.
+    const scheduled = {
+      ...CLOSED,
+      turns: [
+        CLOSED.turns[0]!,
+        {
+          ...CLOSED.turns[1]!,
+          surface: {
+            kind: "mastery_meter" as const,
+            entries: [
+              {
+                nodeId: "gradient",
+                concept: "Gradient",
+                recall: 0.51,
+                evidenceCount: 2,
+                dueAt: "2026-08-20T12:00:00Z",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(scheduled, 201));
+    render(
+      <SessionView
+        apiBaseUrl=""
+        graphId="g1"
+        topic="Neural networks"
+        copilotUrl="http://runtime.test"
+      />,
+    );
+
+    expect(await screen.findByText(/come back Thursday 20 August/i)).toBeInTheDocument();
   });
 
   it("offers exactly one place to answer when the generative runtime is configured", async () => {

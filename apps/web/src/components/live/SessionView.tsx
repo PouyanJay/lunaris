@@ -4,9 +4,11 @@ import { useLiveSession } from "../../hooks/useLiveSession";
 import type { LiveSession, SessionTurn } from "../../lib/liveSession";
 import { Button } from "../primitives/Button";
 import { StatusDot } from "../primitives/StatusDot";
+import { nextReviewOf, type NextReview } from "../../lib/reviewSchedule";
 import { AnswerForm } from "./AnswerForm";
 import { LessonLayout } from "./LessonLayout";
 import { SessionEnded } from "./SessionEnded";
+import { SkeletonNotice, Warming } from "./SkeletonNotice";
 import { SessionTranscript } from "./SessionTranscript";
 import { SurfaceCard } from "./SurfaceCard";
 import styles from "./SessionView.module.css";
@@ -60,6 +62,11 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
   // its criterion, the generative panel opens on its words — and the Python side calls the same
   // thing `standing` (`SessionSnapshot.of`), so the concept keeps one name across the wire.
   const standing = session?.turns.at(-1) ?? null;
+  // What the close scheduled (P2c T7), read off the goodbye turn's meter: the ending says the day
+  // on both surfaces, so it is derived once here and handed to each. The meter is only ever the
+  // goodbye's card, so "there is a meter standing" is "the session closed".
+  const nextReview: NextReview | null =
+    standing?.surface?.kind === "mastery_meter" ? nextReviewOf(standing.surface.entries) : null;
   // Exactly one live answer path. With a runtime configured the CopilotKit panel owns answering and
   // this side is the record; without one, this side is the whole session.
   const answerHere = !copilotUrl;
@@ -96,6 +103,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
           <TurnFooter
             standing={standing}
             closed={session.status === "closed"}
+            nextReview={nextReview}
             warming={session.status === "warming"}
             answerHere={answerHere}
             busy={state.status === "answering"}
@@ -107,11 +115,18 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
       {session && copilotUrl ? (
         <Suspense fallback={<p className={styles.ended}>Loading the live session surface…</p>}>
           <CopilotSession
+            // Remounted when teaching begins (P2c T7): the panel's thread opens on the turn it
+            // mounted with, and the first lesson arrives through the host's poll, not through a
+            // run of the panel's own — so a placing panel would otherwise keep showing the last
+            // interview question over a session that has moved on. The interview stays in the
+            // transcript beside it, which is the record.
+            key={`${session.sessionId}:${phaseOf(session)}`}
             runtimeUrl={copilotUrl}
             sessionId={session.sessionId}
             topic={topic}
             standingTurn={standing?.tutor ?? null}
             standingSeq={standing?.seq ?? null}
+            nextReview={nextReview}
             onTurnTaken={refresh}
           />
         </Suspense>
@@ -140,6 +155,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
 function TurnFooter({
   standing,
   closed,
+  nextReview,
   warming,
   answerHere,
   busy,
@@ -147,6 +163,8 @@ function TurnFooter({
 }: {
   standing: SessionTurn | null;
   closed: boolean;
+  /** What the close scheduled, for the ending to say (P2c T7). */
+  nextReview: NextReview | null;
   /** The interview has ended and the map has not landed (P2c T2): nothing to answer, the hook is
    *  polling, and the surface says so rather than offering a box. */
   warming: boolean;
@@ -180,7 +198,7 @@ function TurnFooter({
         }
       />
       {closed ? (
-        <SessionEnded className={styles.ended} />
+        <SessionEnded nextReview={nextReview} className={styles.ended} />
       ) : answerHere && !standing?.surface ? (
         // Every session P2a stored has no card. The plain box keeps that history answerable rather
         // than making the tier's arrival a migration.
@@ -194,9 +212,10 @@ function TurnFooter({
   );
 }
 
-/** The honest wait (P2c T2): the interview has run out and the map is not there yet. */
-function Warming() {
-  return <SkeletonNotice lead="Almost ready. Setting up your first lesson…" lines={2} />;
+/** Which of a session's two lives it is in: being placed (interview, and the wait for the map) or
+ *  being taught. The panel is remounted across the boundary (see its `key`), and nowhere else. */
+function phaseOf(session: LiveSession): "placing" | "teaching" {
+  return session.status === "placing" || session.status === "warming" ? "placing" : "teaching";
 }
 
 /** How far in, and whether it is still going. Mono, because these are data. */
@@ -219,23 +238,4 @@ function SessionMeta({ session, live }: { session: LiveSession; live: boolean })
 /** The gap between asking for a session and the first thing to read. */
 function Opening() {
   return <SkeletonNotice lead="Opening your session…" lines={3} />;
-}
-
-/** A wait, shaped like the transcript it stands in for, so nothing jumps when the real thing lands
- *  (a spinner where a transcript will be is a blank flash). Live to assistive tech once, on arrival,
- *  through the status role; the skeleton lines are decoration. */
-function SkeletonNotice({ lead, lines }: { lead: string; lines: number }) {
-  return (
-    <div className={styles.opening} role="status">
-      <p className={styles.openingLead}>{lead}</p>
-      <div className={styles.skeletonLines} aria-hidden="true">
-        {Array.from({ length: lines }, (_, index) => (
-          <span
-            key={index}
-            className={index === lines - 1 ? styles.skeletonShort : styles.skeleton}
-          />
-        ))}
-      </div>
-    </div>
-  );
 }

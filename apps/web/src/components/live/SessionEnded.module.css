@@ -6,3 +6,9 @@
   line-height: var(--lh-sm);
   color: var(--text-secondary);
 }
+
+/* The day to come back: the one thing in the ending a learner acts on, so it is the one thing in
+   it set in the primary text tone. Same face, same size; tone is the whole difference. */
+.comeBack {
+  color: var(--text);
+}

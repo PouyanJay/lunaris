@@ -1,0 +1,44 @@
+/* Loading: the shape of a turn, not a spinner where a transcript will be. */
+.notice {
+  padding: var(--space-5);
+  background: var(--surface);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.lead {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.line,
+.short {
+  height: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  animation: pulse 1.6s var(--ease) infinite;
+}
+
+.short {
+  width: 60%;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .line,
+  .short {
+    animation: none;
+  }
+}

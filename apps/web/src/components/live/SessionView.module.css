@@ -45,51 +45,6 @@
   color: var(--text-muted);
 }
 
-/* Loading: the shape of a turn, not a spinner where a transcript will be. */
-.opening {
-  padding: var(--space-5);
-  background: var(--surface);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-.openingLead {
-  margin: 0 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-
-.skeletonLines {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.skeleton,
-.skeletonShort {
-  height: 10px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-muted);
-  animation: pulse 1.6s var(--ease) infinite;
-}
-
-.skeletonShort {
-  width: 60%;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.5;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .skeleton,
-  .skeletonShort {
-    animation: none;
-  }
-}
-
 /* A failure that happened *inside* a running session: explained above the answer box, with the
    transcript still on screen behind it. */
 .failure {

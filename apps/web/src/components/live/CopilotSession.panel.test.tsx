@@ -136,6 +136,64 @@ describe("the Tier 1 card inside the generative panel, answered in place", () =>
     expect(within(group.closest("form")!).queryByRole("button", { name: /send/i })).toBeNull();
   });
 
+  it("says when to come back once the session has closed, when the host knows the day", async () => {
+    // P2c T7: the ending in the composer's place is the same ending the transcript surface shows,
+    // review day included. The day comes from the host (it re-reads the closed session), because
+    // the composer slot cannot see the meter the kit rendered as a card.
+    stubCopilotRuntime((body) =>
+      turnWithCard(body, {
+        callId: "call-1",
+        card: { kind: "mastery_meter", entries: [] },
+        turn: 2,
+        status: "closed",
+        words: "That is time.",
+      }),
+    );
+    mountPanel({ nextReview: { day: "Thursday 20 August", concepts: ["Gradient"] } });
+    await sendFromComposer("Downhill.");
+
+    const ending = await screen.findByRole("status", { name: /session ended/i });
+    expect(ending).toHaveTextContent(/come back on Thursday 20 August for Gradient/i);
+  });
+
+  it("waits visibly, offering no box, while the session is warming", async () => {
+    // P2c T7: the interview's last answer leaves the session warming (the map has not landed).
+    // The API refuses an answer here (409), so the composer is replaced by the honest wait the
+    // transcript surface shows; the host's poll moves the session on and remounts the panel.
+    stubCopilotRuntime(() => [
+      { type: "TEXT_MESSAGE_START", messageId: "m1", role: "assistant" },
+      { type: "TEXT_MESSAGE_CONTENT", messageId: "m1", delta: "Thanks, the map is nearly ready." },
+      { type: "TEXT_MESSAGE_END", messageId: "m1" },
+      {
+        type: "STATE_SNAPSHOT",
+        snapshot: { sessionId: "sess-1", status: "warming", turn: 2, criterion: null, grade: null },
+      },
+    ]);
+    mountPanel({ standingTurn: "What have you met of this before?" });
+    await sendFromComposer("Not much.");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: /your answer/i })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/almost ready|first lesson/i);
+  });
+
+  it("offers no answer through a card while warming, even one that could take it", async () => {
+    // Plants a state the API never produces (a warming session with a quiz standing) so the one
+    // rule, "nothing sends while warming", is observable on the cards as well as the composer.
+    stubCopilotRuntime((body) =>
+      turnWithCard(body, { callId: "call-1", card: QUIZ, turn: 2, status: "warming" }),
+    );
+    mountPanel();
+    await sendFromComposer("Downhill.");
+
+    const group = await screen.findByRole("radiogroup", { name: QUIZ.question });
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: /your answer/i })).not.toBeInTheDocument(),
+    );
+    expect(within(group).getByRole("radio", { name: QUIZ.options[0]! })).toBeDisabled();
+  });
+
   it("tells its host each time a turn is taken, so the record can be re-read", async () => {
     // With a runtime configured the transcript below the panel is the record (T4), and it never
     // re-read: after the first turn it was stale. The panel reports each turn the state frames
