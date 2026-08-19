@@ -81,12 +81,23 @@ class LiveSessionThrottle:
         """
         if self._open_daily_cap <= 0:
             return
-        key = _key(owner_id)
         # Checked before counting, so a refused opening does not spend the allowance it was refused
         # by — otherwise a learner who hit the cap could never get back under it.
-        if self._opens.used(key) >= self._open_daily_cap:
+        self.check_open(owner_id)
+        self._opens.count(_key(owner_id))
+
+    def check_open(self, owner_id: str | None) -> None:
+        """Refuse an opening the allowance would not admit, without counting one (P2c T8).
+
+        For an opening that has a second gate to pass before it exists (a topic-open's compile,
+        admitted by the compile plane): checked here first, so a refusal from either gate spends
+        nothing, and counted with ``admit_open`` once both have said yes. Synchronous, like the
+        rest of the throttle, so nothing can slip between the check and the count.
+        """
+        if self._open_daily_cap <= 0:
+            return
+        if self._opens.used(_key(owner_id)) >= self._open_daily_cap:
             raise LiveSessionDailyCapReachedError(self._open_daily_cap)
-        self._opens.count(key)
 
     @contextmanager
     def taking_turn(self, session_id: str) -> Iterator[None]:

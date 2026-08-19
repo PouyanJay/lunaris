@@ -21,13 +21,14 @@ from pathlib import Path
 
 import httpx
 import pytest
+from _live_stack import GatedCompiler, agui_answer
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.live.dependencies import get_live_graph_service, resolve_graph_store
 from lunaris_api.live.launched_compiles import LaunchedCompiles
 from lunaris_api.live.service import LiveGraphService
 from lunaris_api.live.session.service import LiveSessionService
-from lunaris_live.graph import ConceptGraph, GraphCompilationError, StubGraphCompiler
+from lunaris_live.graph import ConceptGraph, GraphCompilationError
 from lunaris_live.session import StubInterviewer, StubPriorMapper
 
 
@@ -150,29 +151,6 @@ async def test_the_session_and_its_detached_compile_are_correlated_by_one_sessio
     assert compile_run_ids != {turn_run_id}, "a compile is its own run, not the interview turn's"
 
 
-class GatedCompiler:
-    """The stub compiler, held at the door until the test lets it through.
-
-    A rendezvous rather than a sleep: an answer sent while ``entered`` is set and ``release`` is
-    not is an answer sent *during* the compile, whatever the machine's speed. Found in review: the
-    first version of the test below answered after a stub compile that had already landed, so it
-    never exercised the window it claimed to.
-    """
-
-    def __init__(self) -> None:
-        self.entered = asyncio.Event()
-        self.release = asyncio.Event()
-        self._inner = StubGraphCompiler()
-
-    async def compile(self, topic: str, **kwargs: object) -> ConceptGraph:
-        self.entered.set()
-        await asyncio.wait_for(self.release.wait(), 5)
-        return await self._inner.compile(topic, **kwargs)  # type: ignore[arg-type]
-
-    async def extend(self, *args: object, **kwargs: object) -> ConceptGraph:
-        raise NotImplementedError
-
-
 @pytest.fixture
 async def client_with_a_gated_compile(
     tmp_path: Path,
@@ -236,7 +214,7 @@ async def test_an_answer_over_agui_after_the_map_landed_begins_teaching(
 
     response = await client.post(
         f"/api/live/sessions/{session['sessionId']}/agui",
-        json=_agui_answer("I had a biology class once.", run_id="r-place"),
+        json=agui_answer("I had a biology class once.", run_id="r-place"),
     )
 
     assert response.status_code == 200, response.text
@@ -275,7 +253,7 @@ async def test_the_interview_that_runs_out_first_warms_and_advances_when_the_map
     stale = await client.post(f"{url}/turns", json={"answer": "More?", "answeringSeq": 4})
     assert stale.status_code == 409, stale.text
     # And over AG-UI, the same refusal as a *status*, not an error frame on a 200 (P2b AD9).
-    over_agui = await client.post(f"{url}/agui", json=_agui_answer("More?", run_id="r-warm"))
+    over_agui = await client.post(f"{url}/agui", json=agui_answer("More?", run_id="r-warm"))
     assert over_agui.status_code == 409, over_agui.text
     assert over_agui.json()["detail"] == stale.json()["detail"]
     still = await client.post(f"{url}/advance")
@@ -385,22 +363,20 @@ async def test_a_poll_that_arrives_before_the_session_can_act_does_not_eat_the_f
 
 
 async def test_a_compile_lost_to_another_process_is_given_up_after_the_deadline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     """The fallback for a compile this process cannot ask about (a replica, a restart): past the
     compile plane's own deadline plus a grace, a warming session is closed rather than left to poll
     forever. Staged with a compile plane that never learns of the launch (a second registry, the
     way a replica is) and a session row aged past the deadline."""
-    from lunaris_api.live.session import service as service_module
-
     settings = Settings(
         pipeline="stub",
         course_dir=tmp_path,
         cors_origins=(),
         env_file=tmp_path / ".env",
         live_compile_deadline_s=1.0,
+        live_compile_grace_s=0.0,
     )
-    monkeypatch.setattr(service_module, "_COMPILE_GRACE_S", 0.0)
     compiler = GatedCompiler()
     launching = LiveGraphService(
         compiler, resolve_graph_store(settings), launched=LaunchedCompiles()
@@ -424,6 +400,7 @@ async def test_a_compile_lost_to_another_process_is_given_up_after_the_deadline(
         interviewer=StubInterviewer(),
         mapper=StubPriorMapper(),
         compile_deadline_s=settings.live_compile_deadline_s,
+        compile_grace_s=settings.live_compile_grace_s,
     )
     transport = httpx.ASGITransport(app=app)
     try:
@@ -556,19 +533,6 @@ def _json_log_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object
         for line in capsys.readouterr().out.splitlines()
         if line.startswith("{") and line.endswith("}")
     ]
-
-
-def _agui_answer(text: str, *, run_id: str = "r1") -> dict:
-    """The body the Node runtime POSTs for one run answering with ``text``."""
-    return {
-        "threadId": "t",
-        "runId": run_id,
-        "state": {},
-        "messages": [{"id": "m1", "role": "user", "content": text}],
-        "tools": [],
-        "context": [],
-        "forwardedProps": {},
-    }
 
 
 def _events(body: str) -> list[dict]:

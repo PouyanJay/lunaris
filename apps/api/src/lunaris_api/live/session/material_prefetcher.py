@@ -21,6 +21,7 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
 from .prefetch_registry import PrefetchRegistry
+from .spent_past_ceiling import spent_past_ceiling
 
 logger = structlog.get_logger()
 
@@ -37,8 +38,9 @@ class MaterialPrefetcher:
     the next concept, and unless its material is already kept or already being asked for, one
     illustrate call is made for it — under the session's own cost scope and the tenant's own keys,
     as its own run, and drained by itself when it ends. It can never cost the turn that scheduled it
-    (nothing awaits it) and it can never cost anything but the session's money (the ceiling is read
-    by the caller before scheduling).
+    (nothing awaits it) and it can never cost anything but the session's money: the ceiling is read
+    by the prefetch itself, at the moment it would spend (T8), because nothing awaits it and the
+    turn that scheduled it may have been the one that crossed the line.
 
     Built per request like the service, over a registry that is process-wide, so two requests do
     not ask for the same concept twice.
@@ -54,6 +56,7 @@ class MaterialPrefetcher:
         subject_cost_store: ISubjectCostStore | None = None,
         credential_resolver: CredentialResolver | None = None,
         sims: ISimRegistry | None = None,
+        session_budget_usd: float = 0.0,
     ) -> None:
         self._tutor = tutor
         self._materials = materials
@@ -62,6 +65,7 @@ class MaterialPrefetcher:
         self._subject_cost_store = subject_cost_store
         self._credential_resolver = credential_resolver
         self._sims = sims
+        self._session_budget_usd = session_budget_usd
 
     def prefetch_ahead_of(
         self,
@@ -128,6 +132,23 @@ class MaterialPrefetcher:
         bind_run_id(run_id, session_id=session_id, graph_id=graph.graph_id)
         node = node_of(graph, node_id)
         if node is None:
+            return
+        spent = await spent_past_ceiling(
+            self._subject_cost_store,
+            session_id=session_id,
+            owner_id=owner_id,
+            ceiling_usd=self._session_budget_usd,
+        )
+        if spent is not None:
+            # Quietly: nobody is waiting for this, and the turn that reaches the concept will be
+            # refused with a status of its own. Logged, so a session that stopped being prefetched
+            # can be read back to the ceiling that stopped it.
+            logger.info(
+                "live.material.prefetch_refused",
+                node=node_id,
+                spent=spent,
+                cap=self._session_budget_usd,
+            )
             return
         move = DirectorMove(kind=MoveKind.INTRODUCE, node_id=node_id, reason=_AHEAD)
         cost = make_cost_scope(

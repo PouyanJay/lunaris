@@ -7,6 +7,7 @@ from uuid import uuid4
 import structlog
 from lunaris_live.graph import ConceptGraph, IGraphStore
 from lunaris_live.session import (
+    DEFAULT_MAX_QUESTIONS,
     IGrader,
     IInterviewer,
     IKnowledgeStore,
@@ -38,12 +39,13 @@ from lunaris_runtime.metering import (
     enter_cost_scope,
     make_cost_scope,
 )
-from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, PersistenceError
+from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
 from ..service import LiveGraphService
 from .material_prefetcher import MaterialPrefetcher
 from .prefetch_registry import prefetch_registry
+from .spent_past_ceiling import spent_past_ceiling
 from .throttle import LiveSessionBudgetExhaustedError, LiveSessionThrottle
 from .turn_beat import TurnBeat
 from .turn_context import TurnContext
@@ -76,7 +78,6 @@ def _absorb_detached_turn(task: "asyncio.Task[Session]", *, run_id: str, session
 #: with no recovery path and nothing above it imposes a timeout. So a slow ledger costs telemetry,
 #: never the answer a learner is waiting on.
 _DRAIN_TIMEOUT_S = 2.0
-_BUDGET_CHECK_TIMEOUT_S = 1.0
 
 
 def _elapsed_s(session: Session) -> float:
@@ -130,6 +131,8 @@ class LiveSessionService:
         interviewer: IInterviewer | None = None,
         mapper: IPriorMapper | None = None,
         compile_deadline_s: float = 0.0,
+        compile_grace_s: float = _COMPILE_GRACE_S,
+        interview_max_questions: int = DEFAULT_MAX_QUESTIONS,
         materials: IMaterialStore | None = None,
         prefetcher: MaterialPrefetcher | None = None,
     ) -> None:
@@ -165,6 +168,8 @@ class LiveSessionService:
         # the compile plane's own deadline plus a grace, so this only ever fires when the compile
         # ran in a process this one cannot ask (a replica, a restart). 0 disables the fallback.
         self._compile_deadline_s = compile_deadline_s
+        self._compile_grace_s = compile_grace_s
+        self._interview_max_questions = interview_max_questions
         # First-turn material kept one node ahead (P2c T4), and the thing that asks for it. Both
         # optional: without them every turn asks for its material beside the lesson, as before.
         self._materials = materials
@@ -257,11 +262,12 @@ class LiveSessionService:
         logger.info("live.session.placing_started", topic=topic)
 
         # Before any work, and before the compile: a refused opening should cost a lookup, not a
-        # three-minute compile. The compile's own admission runs next, inside ``launch``; a refusal
-        # there raises before the session exists, and the opening it counted is the price of asking
-        # (T8 owns whether that ratio is right).
+        # three-minute compile. Checked here and COUNTED after the compile is admitted (T8): a
+        # topic-open consumes a compile slot and an opening, and it consumes both or neither — a
+        # learner whose compile was refused (one already building) must not also have spent an
+        # opening on nothing. Both gates are synchronous, so nothing slips between them.
         if self._throttle is not None:
-            self._throttle.admit_open(owner_id)
+            self._throttle.check_open(owner_id)
         # Detached on purpose. Its context is a copy of this one, so ``session_id`` rides every
         # line the compile logs; ``_compile_and_save`` rebinds ``run_id`` to the compile's own.
         # When the map lands, the root's material is asked for at once (P2c T4): "teaching begins
@@ -273,6 +279,10 @@ class LiveSessionService:
             owner_id=owner_id,
             on_landed=lambda graph: self._on_map_landed(session_id, graph, owner_id=owner_id),
         )
+        if self._throttle is not None:
+            # Counts (and re-checks: ``admit_open`` is the whole gate for ``start``, and a second
+            # look at a synchronous counter is free), now that the compile has been admitted.
+            self._throttle.admit_open(owner_id)
 
         async def placing() -> TurnOutcome:
             # An opening is a turn's outcome like any other; a placement's moves no belief and
@@ -681,7 +691,7 @@ class LiveSessionService:
         if self._compile_deadline_s <= 0:
             return None
         waited_s = (datetime.now(UTC) - session.started_at).total_seconds()
-        if waited_s > self._compile_deadline_s + _COMPILE_GRACE_S:
+        if waited_s > self._compile_deadline_s + self._compile_grace_s:
             return "The map took too long to build."
         return None
 
@@ -799,6 +809,7 @@ class LiveSessionService:
                 on_delta=on_delta,
                 sims=self._sims,
                 prefetched=context.prefetched,
+                max_questions=self._interview_max_questions,
             )
         assert context.graph is not None, "an active session always has its map"
         return await take_turn(
@@ -897,30 +908,24 @@ class LiveSessionService:
     async def _refuse_if_budget_spent(self, session_id: str, owner_id: str | None) -> None:
         """Stop a session that has reached its ceiling, before it spends past it.
 
-        Read from the ledger's rollup rather than counted again in memory: the number already
-        exists, and a second count would be a second truth. Fails **open** — a rollup that cannot
-        be read refuses nobody, because a telemetry outage must not end somebody's lesson.
+        The reading is ``spent_past_ceiling``'s, shared with the prefetch (T8), so a session is
+        refused a turn and refused material on the same number; what is this method's is the
+        refusal — a status the learner reads, in ``failure_mapping``'s words.
         """
-        if self._subject_cost_store is None or self._session_budget_usd <= 0:
-            return
-        try:
-            async with asyncio.timeout(_BUDGET_CHECK_TIMEOUT_S):
-                spent = await self._subject_cost_store.get(
-                    subject_type=CostSubjectType.LIVE_SESSION,
-                    subject_id=session_id,
-                    owner_id=owner_id,
-                )
-        except (PersistenceError, TimeoutError):
-            logger.warning("live.session.budget_unreadable", session_id=session_id, exc_info=True)
-            return
-        if spent is not None and spent.total_amount >= self._session_budget_usd:
+        spent = await spent_past_ceiling(
+            self._subject_cost_store,
+            session_id=session_id,
+            owner_id=owner_id,
+            ceiling_usd=self._session_budget_usd,
+        )
+        if spent is not None:
             logger.info(
                 "live.session.budget_exhausted",
                 session_id=session_id,
-                spent=spent.total_amount,
+                spent=spent,
                 cap=self._session_budget_usd,
             )
-            raise LiveSessionBudgetExhaustedError(spent.total_amount, self._session_budget_usd)
+            raise LiveSessionBudgetExhaustedError(spent, self._session_budget_usd)
 
     async def _resolve_credentials(self, owner_id: str | None) -> Mapping[str, str] | None:
         """The owner's BYOK keys for this turn, or ``None`` to run on the process environment."""

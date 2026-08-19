@@ -196,6 +196,8 @@ def get_live_session_service(
         interviewer=interviewer,
         mapper=mapper,
         compile_deadline_s=settings.live_compile_deadline_s,
+        compile_grace_s=settings.live_compile_grace_s,
+        interview_max_questions=settings.live_interview_max_questions,
         materials=materials,
         # The prefetcher shares the turn's tutor, ledger and keys, and the process-wide registry
         # (P2c T4): a prefetch is the session's own spend, asked for on the tenant's own key, and
@@ -208,6 +210,8 @@ def get_live_session_service(
             subject_cost_store=subject_cost_store,
             credential_resolver=get_live_credential_resolver(settings),
             sims=sims,
+            # And under the session's ceiling (T8): a prefetch nobody awaits reads it itself.
+            session_budget_usd=settings.live_session_budget_usd,
         ),
     )
 

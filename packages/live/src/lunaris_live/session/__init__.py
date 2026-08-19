@@ -109,13 +109,14 @@ from .stub_tutor import StubTutor
 from .supabase_knowledge_store import SupabaseKnowledgeStore
 from .supabase_material_store import SupabaseMaterialStore
 from .supabase_session_store import SupabaseSessionStore
-from .take_placement_turn import take_placement_turn
+from .take_placement_turn import DEFAULT_MAX_QUESTIONS, take_placement_turn
 from .take_turn import take_turn
 from .turn_outcome import TurnOutcome
 from .tutor_unavailable_error import TutorUnavailableError
 
 __all__ = [
     "DECAYED",
+    "DEFAULT_MAX_QUESTIONS",
     "LAST_RUNG",
     "MASTERED",
     "MAX_ANSWER_CHARS",

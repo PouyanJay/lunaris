@@ -23,10 +23,11 @@ from .turn_outcome import TurnOutcome
 
 logger = structlog.get_logger()
 
-#: The most the interview may ask before it stops on its own (A2). A compile's worth of waiting is
-#: the plan's budget for it (§6), and a compile is under a minute in practice; four is what a
-#: learner can answer in that time without the interview becoming the session.
-_MAX_QUESTIONS = 4
+#: The most the interview may ask before it stops on its own (A2), unless the caller says
+#: otherwise. A compile's worth of waiting is the plan's budget for it (§6), and a compile is
+#: under a minute in practice; four is what a learner can answer in that time without the
+#: interview becoming the session. The API reads its own setting for it (T8).
+DEFAULT_MAX_QUESTIONS = 4
 
 #: What the learner reads when the interview has ended and the map has not landed (WARMING). Asks
 #: nothing, on purpose: the surface polls, and an answer here would have nothing to be an answer to.
@@ -52,6 +53,7 @@ async def take_placement_turn(
     on_delta: ITutorDeltaSink | None = None,
     sims: ISimRegistry | None = None,
     prefetched: Mapping[str, LessonParts] | None = None,
+    max_questions: int = DEFAULT_MAX_QUESTIONS,
 ) -> TurnOutcome:
     """The interview, once: keep what the learner said, then ask the next question or stop.
 
@@ -63,7 +65,7 @@ async def take_placement_turn(
     * the map has **landed** (``graph``): the interview ends here and the very same turn answers
       with the first lesson, so the learner never sees the seam;
     * otherwise the interviewer is asked for the next question, unless it has asked its share
-      (``_MAX_QUESTIONS``) or says it has heard enough, in which case the session **warms**: an
+      (``max_questions``) or says it has heard enough, in which case the session **warms**: an
       honest wait for the map, which ``advance_placement`` ends.
 
     An interviewer that cannot speak ends the interview rather than the turn: by now the answer is
@@ -111,7 +113,9 @@ async def take_placement_turn(
     if settled is not None:
         return settled
 
-    question = await _next_question(interviewer, session, exchanges, run_id=run_id)
+    question = await _next_question(
+        interviewer, session, exchanges, run_id=run_id, max_questions=max_questions
+    )
     if question is None:
         return TurnOutcome(session=_warming(session, turns, run_id=run_id), model=model)
     following = SessionTurn(
@@ -135,10 +139,11 @@ async def _next_question(
     exchanges: list[InterviewExchange],
     *,
     run_id: str,
+    max_questions: int,
 ) -> str | None:
     """The interviewer's next question, or ``None`` when the interview is over: because it has
     asked its share, because it has heard enough, or because it could not speak."""
-    if len(exchanges) >= _MAX_QUESTIONS:
+    if len(exchanges) >= max_questions:
         logger.info(
             "live.placement.interview_bounded", run_id=run_id, session_id=session.session_id
         )
