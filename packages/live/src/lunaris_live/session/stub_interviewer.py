@@ -26,7 +26,6 @@ class StubInterviewer:
         topic: str,
         *,
         exchanges: Sequence[InterviewExchange] = (),
-        graph_has_landed: bool = False,
         run_id: str,
     ) -> str | None:
         if len(exchanges) >= len(_QUESTIONS):

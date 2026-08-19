@@ -96,6 +96,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
           <TurnFooter
             standing={standing}
             closed={session.status === "closed"}
+            warming={session.status === "warming"}
             answerHere={answerHere}
             busy={state.status === "answering"}
             onAnswer={send}
@@ -139,17 +140,22 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
 function TurnFooter({
   standing,
   closed,
+  warming,
   answerHere,
   busy,
   onAnswer,
 }: {
   standing: SessionTurn | null;
   closed: boolean;
+  /** The interview has ended and the map has not landed (P2c T2): nothing to answer, the hook is
+   *  polling, and the surface says so rather than offering a box. */
+  warming: boolean;
   /** False when the generative panel owns answering, so this side is the record (T4). */
   answerHere: boolean;
   busy: boolean;
   onAnswer: (text: string) => void;
 }) {
+  if (warming) return <Warming />;
   return (
     <>
       {/* Tier 2 (T5). The layout says where the card goes and what supporting material sits around
@@ -188,13 +194,18 @@ function TurnFooter({
   );
 }
 
+/** The honest wait (P2c T2): the interview has run out and the map is not there yet. */
+function Warming() {
+  return <SkeletonNotice lead="Almost ready. Setting up your first lesson…" lines={2} />;
+}
+
 /** How far in, and whether it is still going. Mono, because these are data. */
 function SessionMeta({ session, live }: { session: LiveSession; live: boolean }) {
   const closed = session.status === "closed";
   return (
     <div className={styles.meta}>
       <StatusDot
-        label={closed ? "closed" : session.status === "placing" ? "placing" : "live"}
+        label={closed ? "closed" : session.status === "active" ? "live" : session.status}
         tone={closed ? "neutral" : "accent"}
         live={live && !closed}
       />
@@ -205,16 +216,25 @@ function SessionMeta({ session, live }: { session: LiveSession; live: boolean })
   );
 }
 
-/** The gap between asking for a session and the first thing to read. Shaped like the transcript it
- *  is standing in for, so nothing jumps when the first turn lands. */
+/** The gap between asking for a session and the first thing to read. */
 function Opening() {
+  return <SkeletonNotice lead="Opening your session…" lines={3} />;
+}
+
+/** A wait, shaped like the transcript it stands in for, so nothing jumps when the real thing lands
+ *  (a spinner where a transcript will be is a blank flash). Live to assistive tech once, on arrival,
+ *  through the status role; the skeleton lines are decoration. */
+function SkeletonNotice({ lead, lines }: { lead: string; lines: number }) {
   return (
     <div className={styles.opening} role="status">
-      <p className={styles.openingLead}>Opening your session…</p>
+      <p className={styles.openingLead}>{lead}</p>
       <div className={styles.skeletonLines} aria-hidden="true">
-        <span className={styles.skeleton} />
-        <span className={styles.skeleton} />
-        <span className={styles.skeletonShort} />
+        {Array.from({ length: lines }, (_, index) => (
+          <span
+            key={index}
+            className={index === lines - 1 ? styles.skeletonShort : styles.skeleton}
+          />
+        ))}
       </div>
     </div>
   );

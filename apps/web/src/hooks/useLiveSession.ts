@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  advanceSession,
   answerTurn,
   loadSession,
   startSession,
   type LiveSession,
   type SessionOpening,
 } from "../lib/liveSession";
+
+/** How often a warming session is asked whether its map has landed (P2c T2). A compile is under a
+ *  minute in practice and the interview absorbs most of it, so this is a handful of polls at most;
+ *  faster would be a request per second for nothing, slower would show the learner a seam. */
+export const WARMING_POLL_MS = 2000;
 
 /** A session's data states.
  *
@@ -90,6 +96,38 @@ export function useLiveSession(apiBaseUrl: string, opening: SessionOpening): Liv
     },
     [apiBaseUrl],
   );
+
+  // The honest wait (P2c T2). While the session is warming — the interview ran out before the map
+  // landed — ask the server to move it on, on an interval, until it answers with a session that is
+  // no longer warming. A failed advance is said (the learner sees why) and does not stop the
+  // asking: the next tick may find the map there. Keyed on the session's id and status only, so a
+  // re-render does not restart the interval, and stopped by the cleanup the moment the status
+  // moves on or the surface unmounts.
+  const held = state.status === "opening" ? null : state.session;
+  const warmingId = held?.status === "warming" ? held.sessionId : null;
+  useEffect(() => {
+    if (warmingId === null) return;
+    const controller = new AbortController();
+    const tick = () => {
+      advanceSession(apiBaseUrl, warmingId, controller.signal)
+        .then((next) => {
+          if (controller.signal.aborted || next === null) return;
+          setState({ status: "ready", session: next });
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          setState((previous) => {
+            const session = previous.status === "opening" ? null : previous.session;
+            return { status: "failed", message: messageOf(error), session };
+          });
+        });
+    };
+    const timer = setInterval(tick, WARMING_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [apiBaseUrl, warmingId]);
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
 

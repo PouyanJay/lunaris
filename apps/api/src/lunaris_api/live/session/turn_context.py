@@ -23,6 +23,11 @@ class TurnContext:
     """
 
     session: Session
-    graph: ConceptGraph
+    #: The map the session walks. ``None`` only while the session is placing or warming (P2c) and
+    #: the compile has not landed it yet; an active session always has one.
+    graph: ConceptGraph | None
     known: LearnerModel
     credentials: TurnCredentials
+    #: Why the map will never come, when the compile has failed and the session does not know yet
+    #: (P2c). ``None`` while it is still running, or once it has landed.
+    map_failure: str | None = None

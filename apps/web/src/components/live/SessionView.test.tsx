@@ -249,6 +249,89 @@ describe("SessionView — the plainest surface a session can have", () => {
     expect(screen.getByText("CLOSED")).toBeInTheDocument();
   });
 
+  it("interviews in the same box a lesson is answered in, while the session is placing", async () => {
+    // P2c: an interview turn is a question with nothing staged. It is answered where every turn
+    // is answered, and the surface says which state the session is in rather than "live".
+    const placing = {
+      ...OPENED,
+      status: "placing" as const,
+      topic: "How neural networks learn",
+      turns: [
+        {
+          seq: 1,
+          move: { kind: "place" as const, nodeId: null, reason: "The map is still being built." },
+          tutor: "Before we start: what have you already met of this?",
+          runId: "r1",
+          criterion: null,
+          answer: null,
+          grade: null,
+          surface: null,
+          layout: null,
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(placing, 201));
+
+    render(<SessionView apiBaseUrl="" topic="How neural networks learn" />);
+
+    expect(await screen.findByText(/what have you already met of this/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /your answer/i })).toBeInTheDocument();
+    expect(screen.getByText("PLACING")).toBeInTheDocument();
+  });
+
+  it("waits visibly, with nothing to answer, while the session is warming", async () => {
+    // P2c T2: the interview ran out before the map landed. No composer (an answer would have
+    // nothing to be an answer to), a status region that says what is happening, and the hook
+    // polling behind it (the second call is the advance).
+    const warming = {
+      ...OPENED,
+      status: "warming" as const,
+      topic: "How neural networks learn",
+      turns: [
+        {
+          seq: 1,
+          move: { kind: "place" as const, nodeId: null, reason: "The map is still being built." },
+          tutor: "Before we start: what have you already met of this?",
+          runId: "r1",
+          criterion: null,
+          answer: "Not much.",
+          grade: null,
+          surface: null,
+          layout: null,
+        },
+        {
+          seq: 2,
+          move: { kind: "place" as const, nodeId: null, reason: "The interview is over." },
+          tutor:
+            "Thanks, that's what I needed. The map is nearly ready; I'll start the moment it is.",
+          runId: "r2",
+          criterion: null,
+          answer: null,
+          grade: null,
+          surface: null,
+          layout: null,
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(warming), {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SessionView apiBaseUrl="" topic="How neural networks learn" />);
+
+    expect(await screen.findByText(/nearly ready/i)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/almost ready|first lesson/i);
+    expect(screen.getByText("WARMING")).toBeInTheDocument();
+  });
+
   it("surfaces the server's own words when a session cannot be opened, and offers a way back", async () => {
     vi.stubGlobal(
       "fetch",

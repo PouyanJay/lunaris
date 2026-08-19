@@ -1,7 +1,13 @@
 from datetime import UTC, datetime
 
+import structlog
+
+from .interviewer_unavailable_error import InterviewerUnavailableError
 from .protocols import IInterviewer
 from .schema import DirectorMove, MoveKind, Session, SessionStatus, SessionTurn
+from .stub_interviewer import StubInterviewer
+
+logger = structlog.get_logger()
 
 #: Why the first turn is a question rather than a lesson, in the words a trace reader gets. Every
 #: other move's reason is the director's; this one is the loop's, because there is no director yet.
@@ -24,14 +30,12 @@ async def open_placement(
     ``PLACE`` — so every surface and every store treats a placement as the beginning of a session
     rather than as a second kind of thing that later has to be stitched to the first.
 
-    Raises whatever the interviewer raises: a placement whose first question could not be asked is
-    not a session, exactly as an opening whose first turn could not be taught is not (P2a).
-    Raises ``ValueError`` if the interviewer has nothing to ask on an empty interview, which is a
-    broken interviewer rather than a finished interview.
+    An interviewer that cannot open (down, timed out, nothing to ask) does not stop the session
+    opening: by the time it is asked, the caller has launched the compile, and a session that
+    failed at the door would leave a compile running for nobody. The opening question is then the
+    plain one the offline path asks, and the interview goes on from there or ends on the next turn.
     """
-    question = await interviewer.ask(topic, exchanges=(), graph_has_landed=False, run_id=run_id)
-    if question is None:
-        raise ValueError("an interviewer with nothing to ask cannot open a placement")
+    question = await _opening_question(interviewer, topic, run_id=run_id)
     return Session(
         session_id=session_id,
         graph_id=graph_id,
@@ -49,3 +53,20 @@ async def open_placement(
             )
         ],
     )
+
+
+async def _opening_question(interviewer: IInterviewer, topic: str, *, run_id: str) -> str:
+    """The first question, or the plain one when the interviewer cannot give its own."""
+    try:
+        question = await interviewer.ask(topic, exchanges=(), run_id=run_id)
+    except InterviewerUnavailableError:
+        logger.warning(
+            "live.placement.interviewer_unavailable_at_open", run_id=run_id, exc_info=True
+        )
+        question = None
+    if question is None:
+        # ``None`` at the door is "nothing to ask" from an interviewer that has heard nothing, which
+        # is a broken interviewer rather than a finished interview; the plain question stands in.
+        question = await StubInterviewer().ask(topic, run_id=run_id)
+    assert question is not None, "the offline interviewer always has an opening question"
+    return question

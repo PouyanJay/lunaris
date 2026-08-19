@@ -1,11 +1,11 @@
 import { authedFetch } from "./apiClient";
+import { detailOf } from "./apiErrors";
 import type { LayoutSpec } from "./layoutSpec";
 import type { SurfaceSpec } from "./surfaceSpec";
 
 /** The server's own bound on an answer, mirrored so the box can stop a learner writing past it
  *  rather than letting the request come back 422 with the words they typed. */
 export const MAX_ANSWER_CHARS = 4000;
-import { detailOf } from "./apiErrors";
 
 /** What the director decided to do next — the plan's four moves, plus `place`: the one a session
  *  makes while its map is still compiling (P2c), a question about the learner rather than a
@@ -75,8 +75,9 @@ export interface LiveSession {
    *  map, whose topic is the map's. */
   topic?: string | null;
   /** `placing` is a session whose map is still compiling: the learner is being interviewed, not
-   *  taught, and nothing is staged. */
-  status: "placing" | "active" | "closed";
+   *  taught, and nothing is staged. `warming` is the honest wait after the interview has run out
+   *  and before the map has landed: nothing to answer, the surface advances it (P2c). */
+  status: "placing" | "warming" | "active" | "closed";
   /** When the session opened (ISO 8601, UTC). The session is bounded by wall time, so this is what
    *  a surface needs to show how much of it is left — and it survives a reload because it is on the
    *  row rather than in whichever process happened to serve the request. */
@@ -167,6 +168,37 @@ export async function answerTurn(
   );
 }
 
+/** Move a warming session on, if its map has landed (P2c T2). Resolves with the session when there
+ *  was something to do (teaching began, the session closed on a failed compile, or an answer got
+ *  there first), and with `null` while it is still warming (202, no body): a distinct answer rather
+ *  than an error, "ask again in a moment". */
+export async function advanceSession(
+  apiBaseUrl: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<LiveSession | null> {
+  let response: Response;
+  try {
+    response = await authedFetch(
+      `${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}/advance`,
+      { method: "POST", ...(signal ? { signal } : {}) },
+    );
+  } catch (cause) {
+    throw new LiveSessionError("Could not reach the session.", { cause });
+  }
+  if (response.status === 202) return null;
+  if (!response.ok) {
+    throw new LiveSessionError(
+      (await detailOf(response)) ?? `Couldn't move the session on. (HTTP ${response.status})`,
+    );
+  }
+  const body: unknown = await response.json();
+  if (!isSession(body)) {
+    throw new LiveSessionError("Couldn't read the session (unexpected response).");
+  }
+  return body;
+}
+
 async function request(
   _apiBaseUrl: string,
   url: string,
@@ -202,7 +234,10 @@ function isSession(payload: unknown): payload is LiveSession {
     !!body &&
     typeof body.sessionId === "string" &&
     typeof body.graphId === "string" &&
-    (body.status === "placing" || body.status === "active" || body.status === "closed") &&
+    (body.status === "placing" ||
+      body.status === "warming" ||
+      body.status === "active" ||
+      body.status === "closed") &&
     Array.isArray(body.turns) &&
     body.turns.every(
       (turn) =>

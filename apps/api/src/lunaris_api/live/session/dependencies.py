@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import Depends
 from lunaris_live.session import (
     ClaudeGrader,
+    ClaudeInterviewer,
     ClaudeTutor,
     IGrader,
     IInterviewer,
@@ -87,16 +88,16 @@ def get_live_sims(settings: Annotated[Settings, Depends(get_settings)]) -> ISimR
 
 
 def get_live_interviewer(settings: Annotated[Settings, Depends(get_settings)]) -> IInterviewer:
-    """The interviewer that opens a session on a topic (P2c T1): the deterministic one under
-    ``LUNARIS_PIPELINE=stub``, and — until T2 lands the model-backed one — the same one everywhere,
-    so the walking skeleton crosses every layer with the plainest voice it can.
+    """The interviewer that runs a session's placement (P2c): the model-backed one, or the
+    deterministic one under ``LUNARIS_PIPELINE=stub``.
 
     A dependency of its own for the reason the tutor is: it is the collaborator a test wants to
-    substitute, and the failure worth staging is an interviewer with nothing to ask.
+    substitute, and the failure worth staging is an interviewer that cannot ask. Runs on the strong
+    tier (A3): the interview is the first thing a learner reads, and the words have to be good.
     """
-    # T2 keys this on ``settings.pipeline`` the way the tutor and grader are.
-    del settings
-    return StubInterviewer()
+    if settings.pipeline == "stub":
+        return StubInterviewer()
+    return ClaudeInterviewer(resolve_strong_model())
 
 
 def get_live_grader(settings: Annotated[Settings, Depends(get_settings)]) -> IGrader:
@@ -162,6 +163,7 @@ def get_live_session_service(
         sims=sims,
         compiles=compiles,
         interviewer=interviewer,
+        compile_deadline_s=settings.live_compile_deadline_s,
     )
 
 

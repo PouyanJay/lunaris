@@ -1,10 +1,18 @@
--- Let a Lunaris Live session be PLACING: opened on a topic whose map is still compiling (P2c T1).
+-- Let a Lunaris Live session be PLACING or WARMING: opened on a topic whose map is still compiling
+-- (P2c T1), and waiting for that map once the interview has run out (P2c T2).
 --
 -- Plan §6: the moment a topic arrives, the compile starts and the tutor opens a placement
 -- conversation, so the learner never sees a progress bar. That session exists before its map does,
 -- and it is neither `active` (nothing is being taught) nor `closed` (it has barely begun). It is a
--- status of its own, and the row's CHECK has to admit it — or the first topic-opened session in
--- production fails at the write with a constraint error nothing upstream can translate.
+-- status of its own — `placing` — and the row's CHECK has to admit it, or the first topic-opened
+-- session in production fails at the write with a constraint error nothing upstream can translate.
+-- Plan §15: "Stage 2 shows a warming state honestly rather than blocking" — when the interview runs
+-- out before the map lands, the session waits, visibly, as `warming`, and the surface polls it on;
+-- its own status for the same reason (a surface must know to poll rather than to show a composer).
+--
+-- One migration for both, because neither had shipped when the second arrived (folded in T2's
+-- review): the same constraint would otherwise have been dropped and re-validated twice in one
+-- deploy for an intermediate state production never observes.
 --
 -- EXPAND ONLY, and safe in both deploy directions. CD pushes migrations BEFORE the new image, so
 -- the previous release runs against this constraint for the length of a deploy: it only ever
@@ -22,14 +30,14 @@
 -- for the catalog change, and VALIDATE scans under ShareUpdateExclusive, which concurrent writes do
 -- not wait on. Both existing values are unchanged, so nothing stored can fail the validation.
 --
--- To reverse: drop the constraint and re-add it without 'placing' (only safe once no placing rows
--- exist, which is why the reverse is not automatic).
+-- To reverse: drop the constraint and re-add it without 'placing' and 'warming' (only safe once no
+-- such rows exist, which is why the reverse is not automatic).
 
 alter table public.live_sessions
     drop constraint if exists live_sessions_status_check;
 
 alter table public.live_sessions
     add constraint live_sessions_status_check
-        check (status in ('placing', 'active', 'closed')) not valid;
+        check (status in ('placing', 'warming', 'active', 'closed')) not valid;
 
 alter table public.live_sessions validate constraint live_sessions_status_check;

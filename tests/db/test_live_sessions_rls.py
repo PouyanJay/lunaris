@@ -160,11 +160,13 @@ def test_a_session_status_is_constrained_to_the_two_it_can_be(db: "psycopg.Curso
         )
 
 
-def test_a_placing_session_is_a_status_the_table_accepts(db: "psycopg.Cursor") -> None:
-    """P2c T1: a session now opens *placing* — on a map that has not been compiled yet — and the
-    row's status CHECK has to admit it, or the first topic-opened session in production fails at
-    the write with a constraint error nothing upstream can translate. Expand-only: the two
-    statuses that existed keep their meaning."""
+@pytest.mark.parametrize("status", ["placing", "warming"])
+def test_a_placement_status_is_one_the_table_accepts(db: "psycopg.Cursor", status: str) -> None:
+    """P2c: a session now opens *placing* (T1) — on a map that has not been compiled yet — and
+    *warms* (T2) when its interview runs out before the map lands. The row's status CHECK has to
+    admit both, or the first topic-opened session in production fails at the write with a
+    constraint error nothing upstream can translate. Expand-only: the statuses that existed keep
+    their meaning."""
     # Arrange
     owner = str(uuid.uuid4())
     session_id = uuid.uuid4().hex
@@ -176,7 +178,7 @@ def test_a_placing_session_is_a_status_the_table_accepts(db: "psycopg.Cursor") -
         "sessionId": session_id,
         "graphId": "g-pending",
         "topic": "Bayes' theorem",
-        "status": "placing",
+        "status": status,
         "turns": [
             {
                 "seq": 1,
@@ -188,18 +190,18 @@ def test_a_placing_session_is_a_status_the_table_accepts(db: "psycopg.Cursor") -
     db.execute(
         """
         insert into public.live_sessions (id, user_id, graph_id, status, turn_count, payload)
-        values (%s, %s, %s, 'placing', 1, %s)
+        values (%s, %s, %s, %s, 1, %s)
         """,
-        (session_id, owner, "g-pending", json.dumps(payload)),
+        (session_id, owner, "g-pending", status, json.dumps(payload)),
     )
 
     # Assert — it is there, as written.
     db.execute("select status from public.live_sessions where id = %s", (session_id,))
-    assert db.fetchone() == ("placing",)
+    assert db.fetchone() == (status,)
 
 
 def test_an_unknown_status_is_still_refused(db: "psycopg.Cursor") -> None:
-    """Widening the CHECK for ``placing`` must not have turned it into "anything goes"."""
+    """Widening the CHECK for ``placing`` and ``warming`` must not have made it "anything goes"."""
     owner = str(uuid.uuid4())
     _seed_user(db, owner)
 

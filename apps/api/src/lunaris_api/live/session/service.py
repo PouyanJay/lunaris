@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Callable, Coroutine, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from contextlib import AbstractContextManager, ExitStack, nullcontext
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -14,16 +14,16 @@ from lunaris_live.session import (
     ISimRegistry,
     ITutor,
     ITutorDeltaSink,
-    LearnerModel,
-    PlacementNotAnswerableError,
     Session,
     SessionClock,
     SessionClosedError,
     SessionStatus,
     StaleAnswerError,
     TurnOutcome,
+    advance_placement,
     open_placement,
     open_session,
+    take_placement_turn,
     take_turn,
 )
 from lunaris_runtime.credentials import CredentialResolver, run_credentials
@@ -73,6 +73,26 @@ _DRAIN_TIMEOUT_S = 2.0
 _BUDGET_CHECK_TIMEOUT_S = 1.0
 
 
+def _elapsed_s(session: Session) -> float:
+    """How long the session has been open, read off its row, never below zero.
+
+    From the row rather than anything held in the process: a session outlives the request that
+    opened it and every process that has served it since, and a clock that reset on a reload would
+    let a learner extend a bounded session forever by refreshing. Clamped because
+    ``SessionClock.elapsed_s`` is ``ge=0`` and a host whose clock steps backwards (an NTP
+    correction, a container resync) would otherwise fail the turn on a validation error the router
+    cannot translate — the same guard ``recall_of`` applies to its own elapsed count.
+    """
+    return max(0.0, (datetime.now(UTC) - session.started_at).total_seconds())
+
+
+#: How much longer than the compile plane's own deadline a placing session waits for its map before
+#: calling the compile lost (P2c T2). Generous on purpose: this fallback exists for a compile that
+#: ran where this process cannot see it, and the cost of firing early is a session closed on a map
+#: that was about to land.
+_COMPILE_GRACE_S = 30.0
+
+
 class LiveSessionService:
     """Opens and re-reads a learner's sessions.
 
@@ -102,6 +122,7 @@ class LiveSessionService:
         sims: ISimRegistry | None = None,
         compiles: LiveGraphService | None = None,
         interviewer: IInterviewer | None = None,
+        compile_deadline_s: float = 0.0,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
@@ -128,6 +149,10 @@ class LiveSessionService:
         # needs neither; ``start_placement`` refuses to run without them rather than half-opening.
         self._compiles = compiles
         self._interviewer = interviewer
+        # How long a placing session waits for its map before calling the compile lost (P2c T2):
+        # the compile plane's own deadline plus a grace, so this only ever fires when the compile
+        # ran in a process this one cannot ask (a replica, a restart). 0 disables the fallback.
+        self._compile_deadline_s = compile_deadline_s
 
     async def start(
         self, graph_id: str, *, session_id: str, owner_id: str | None = None
@@ -294,14 +319,15 @@ class LiveSessionService:
         run_id = uuid4().hex
         bind_run_id(run_id, session_id=session_id)
         context = await self._ready(session_id, owner_id)
-        return await self._take_and_save(
+        session = await self._take_and_save(
             context,
-            answer,
-            answering_seq=answering_seq,
+            lambda: self._take(context, answer, answering_seq, run_id),
             run_id=run_id,
             owner_id=owner_id,
             slot=self._turn_slot(session_id),
         )
+        assert session is not None, "an answered turn always writes"
+        return session
 
     async def stream_answer(
         self,
@@ -336,12 +362,13 @@ class LiveSessionService:
         bind_run_id(run_id, session_id=session_id)
         context = await self._ready(session_id, owner_id)
         if context.session.status is SessionStatus.CLOSED:
-            # ``take_turn`` checks this too, and that check stays: it is the loop's own invariant.
+            # The loop checks this too, and that check stays: it is the loop's own invariant.
             # This one exists so the refusal is a 409 rather than an error frame on a 200 — the same
             # sentence the REST surface gives, which is what ``failure_mapping`` exists to hold.
-            # ``CLOSED`` by name, not "anything but active": a placing session was refused, in its
-            # own words, by ``_ready`` before this line (P2c T1).
             raise SessionClosedError(f"session {session_id} has already closed")
+        if context.session.status is SessionStatus.WARMING:
+            # Same reasoning, same words as REST: nothing is open on a warming session (P2c T2).
+            raise StaleAnswerError(f"nothing is open on session {session_id}; it is warming")
         answering_seq = self._resolve_answering_seq(context, answering_seq)
         # ``put_nowait`` on an unbounded queue never blocks and never awaits, which is exactly what
         # ``ITutorDeltaSink`` asks of a sink: the tutor must never wait on the surface reading it.
@@ -350,11 +377,11 @@ class LiveSessionService:
             session_id,
             self._take_and_save(
                 context,
-                answer,
-                answering_seq=answering_seq,
+                lambda: self._take(
+                    context, answer, answering_seq, run_id, on_delta=queue.put_nowait
+                ),
                 run_id=run_id,
                 owner_id=owner_id,
-                on_delta=queue.put_nowait,
                 # The slot is already ours (below), so the turn is told not to claim one.
                 slot=nullcontext(),
             ),
@@ -479,32 +506,60 @@ class LiveSessionService:
         """
         await self._refuse_if_budget_spent(session_id, owner_id)
         session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
-        if session.status is SessionStatus.PLACING:
-            # Before the graph is read, because a placing session's map may not have landed yet:
-            # read first, a learner answering the interview would be told the *session* was not
-            # found (404) for the whole compile window. T1's honest refusal on both transports;
-            # T2 turns this branch into the interview path and deletes the error.
-            raise PlacementNotAnswerableError(f"session {session_id} is still placing")
-        graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
+        if session.status in (SessionStatus.PLACING, SessionStatus.WARMING):
+            # A placing session's map may not have landed yet, and that is not an error: it is the
+            # state the interview exists to fill. Read the map if it is there, and ask the compile
+            # plane whether it will ever be (P2c T2).
+            graph = await self._graph_if_landed(session, owner_id)
+            failure = None if graph is not None else self._map_failure(session)
+        else:
+            graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
+            failure = None
         known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
         return TurnContext(
             session=session,
             graph=graph,
             known=known,
             credentials=await self._resolve_credentials(owner_id),
+            map_failure=failure,
         )
+
+    async def _graph_if_landed(self, session: Session, owner_id: str | None) -> ConceptGraph | None:
+        """The placing session's map, or ``None`` while the compile has not landed it."""
+        try:
+            return await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
+        except FileNotFoundError:
+            return None
+
+    def _map_failure(self, session: Session) -> str | None:
+        """Why a placing session's map will never come, or ``None`` while it still might.
+
+        Two sources, because the compile may not have run here. The compile plane knows about a
+        task it launched in this process (a failure with its own reason). Failing that, a compile
+        that has been running longer than its own deadline plus a grace did not run in a process we
+        can ask, or is lost — either way the learner should not be interviewed for a map that will
+        not come, and the honest thing is to say so and stop.
+        """
+        if self._compiles is not None:
+            reason = self._compiles.failure_of(session.graph_id)
+            if reason is not None:
+                return reason
+        if self._compile_deadline_s <= 0:
+            return None
+        waited_s = (datetime.now(UTC) - session.started_at).total_seconds()
+        if waited_s > self._compile_deadline_s + _COMPILE_GRACE_S:
+            return "The map took too long to build."
+        return None
 
     async def _take_and_save(
         self,
         context: TurnContext,
-        answer: str,
+        take: Callable[[], Awaitable[TurnOutcome | None]],
         *,
-        answering_seq: int,
         run_id: str,
         owner_id: str | None,
         slot: AbstractContextManager[None],
-        on_delta: ITutorDeltaSink | None = None,
-    ) -> Session:
+    ) -> Session | None:
         """One turn, metered, and both of its writes. The whole of what the two entry points share.
 
         Kept as one function rather than duplicated per transport for the reason the whole session
@@ -537,17 +592,13 @@ class LiveSessionService:
         with slot:
             try:
                 with self._credential_scope(context.credentials), enter_cost_scope(cost):
-                    outcome = await self._take(
-                        session,
-                        context.graph,
-                        context.known,
-                        answer,
-                        answering_seq,
-                        run_id,
-                        on_delta=on_delta,
-                    )
+                    outcome = await take()
             finally:
                 await self._drain(cost, run_id=run_id, session_id=session.session_id)
+            if outcome is None:
+                # Nothing happened (a warming session polled before its map landed): nothing to
+                # write, and the caller says so rather than pretending a turn was taken.
+                return None
             # Conditional on the session still being the length this request read. Two answers in
             # flight at once both pass ``take_turn``'s check (they loaded the same head) and only
             # the store can settle which one lands. The loser is a stale answer, which is what the
@@ -559,6 +610,10 @@ class LiveSessionService:
                 expect_turns=len(session.turns),
             )
             await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
+            if context.map_failure is not None and outcome.session.status is SessionStatus.CLOSED:
+                # The close is on the row; the compile plane need not remember the failure for us.
+                assert self._compiles is not None
+                self._compiles.forget_failure(session.graph_id)
 
         logger.info(
             "live.session.answered",
@@ -575,9 +630,7 @@ class LiveSessionService:
 
     async def _take(
         self,
-        session: Session,
-        graph: ConceptGraph,
-        known: LearnerModel,
+        context: TurnContext,
         answer: str,
         answering_seq: int,
         run_id: str,
@@ -586,24 +639,79 @@ class LiveSessionService:
     ) -> TurnOutcome:
         """One turn of the loop, with the session's own clock read off its row.
 
-        Clamped: ``SessionClock.elapsed_s`` is ``ge=0``, and a host whose clock steps backwards
-        between opening a session and answering in it (an NTP correction, a container resync) would
-        otherwise fail the turn on a validation error the router cannot translate. The same guard
-        ``recall_of`` applies to its own elapsed count.
+        Two loops, one door (P2c T2): a placing session's answer goes to the interview, an active
+        session's to the lesson. The clock is the same either way — the interview is inside the
+        session's budget (A1) — and it is the row's (``_elapsed_s``).
         """
+        session = context.session
+        elapsed_s = _elapsed_s(session)
+        if session.status in (SessionStatus.PLACING, SessionStatus.WARMING):
+            assert self._interviewer is not None, "a placing session needs an interviewer"
+            return await take_placement_turn(
+                session,
+                answer=answer,
+                answering_seq=answering_seq,
+                interviewer=self._interviewer,
+                graph=context.graph,
+                failure=context.map_failure,
+                model=context.known,
+                tutor=self._tutor,
+                run_id=run_id,
+                elapsed_s=elapsed_s,
+                budget_s=self._session_budget_s,
+                on_delta=on_delta,
+                sims=self._sims,
+            )
+        assert context.graph is not None, "an active session always has its map"
         return await take_turn(
             session,
-            graph,
-            known,
+            context.graph,
+            context.known,
             answer=answer,
             answering_seq=answering_seq,
             grader=self._grader,
             tutor=self._tutor,
             sims=self._sims,
             run_id=run_id,
-            elapsed_s=max(0.0, (datetime.now(UTC) - session.started_at).total_seconds()),
+            elapsed_s=elapsed_s,
             budget_s=self._session_budget_s,
             on_delta=on_delta,
+        )
+
+    async def advance(self, session_id: str, *, owner_id: str | None = None) -> Session | None:
+        """Move a warming session on if its map has landed (or its compile has failed) — P2c T2.
+
+        The way out of the honest wait: the surface polls this while a session is warming. Answers
+        with the session when there was something to do (teaching began, or the session closed on a
+        failed compile) — and also when the session is not warming at all, which a poll can meet
+        when an answer got there first: the current row, unchanged. ``None`` means still warming,
+        which the router says as a 202 rather than as a turn.
+
+        Under the same slot, ceiling and ledger as a turn, because when it does something it IS a
+        turn: the first lesson, taught and paid for.
+        """
+        run_id = uuid4().hex
+        bind_run_id(run_id, session_id=session_id)
+        context = await self._ready(session_id, owner_id)
+        if context.session.status is not SessionStatus.WARMING:
+            return context.session
+        session = context.session
+        return await self._take_and_save(
+            context,
+            lambda: advance_placement(
+                session,
+                graph=context.graph,
+                failure=context.map_failure,
+                model=context.known,
+                tutor=self._tutor,
+                run_id=run_id,
+                elapsed_s=_elapsed_s(session),
+                budget_s=self._session_budget_s,
+                sims=self._sims,
+            ),
+            run_id=run_id,
+            owner_id=owner_id,
+            slot=self._turn_slot(session_id),
         )
 
     def _cost_scope(

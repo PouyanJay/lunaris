@@ -1,3 +1,4 @@
+from typing import NoReturn
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Response, status
@@ -42,12 +43,8 @@ async def start_session(
         # The contract admits exactly one of the two, so a request without a topic has a map.
         assert payload.graph_id is not None
         return await service.start(payload.graph_id, session_id=session_id, owner_id=owner_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Map not found", headers=correlated
-        ) from exc
     except Exception as exc:
-        raise_translated(exc, correlated, "live.session.start_failed", session_id=session_id)
+        _refuse(exc, correlated, "live.session.start_failed", session_id=session_id, missing="Map")
 
 
 @router.post("/{session_id}/turns", response_model=Session)
@@ -69,12 +66,38 @@ async def answer_turn(
         session = await service.answer(
             session_id, payload.answer, answering_seq=payload.answering_seq, owner_id=owner_id
         )
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found", headers=correlated
-        ) from exc
     except Exception as exc:
-        raise_translated(exc, correlated, "live.session.answer_failed", session_id=session_id)
+        _refuse(
+            exc, correlated, "live.session.answer_failed", session_id=session_id, missing="Session"
+        )
+    response.headers["X-Session-Id"] = session_id
+    return session
+
+
+@router.post("/{session_id}/advance", response_model=Session)
+async def advance_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> Session | Response:
+    """Move a warming session on, if its map has landed (P2c T2).
+
+    The way out of the honest wait: while a session is warming (the interview is over, the map is
+    not there yet) the surface polls this. 200 with the session when there was something to do —
+    teaching began, or the session closed on a compile that failed — and also when the session is
+    not warming at all (an answer got there first): the current row. **202 with no body** while it
+    is still warming: not a turn, not an error, "ask again in a moment".
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        session = await service.advance(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.advance_failed", session_id=session_id, missing="Session"
+        )
+    if session is None:
+        return Response(status_code=status.HTTP_202_ACCEPTED, headers=correlated)
     response.headers["X-Session-Id"] = session_id
     return session
 
@@ -94,11 +117,27 @@ async def read_session(
     correlated = {"X-Session-Id": session_id}
     try:
         session = await service.load(session_id, owner_id=owner_id)
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found", headers=correlated
-        ) from exc
     except Exception as exc:
-        raise_translated(exc, correlated, "live.session.read_failed", session_id=session_id)
+        _refuse(
+            exc, correlated, "live.session.read_failed", session_id=session_id, missing="Session"
+        )
     response.headers["X-Session-Id"] = session_id
     return session
+
+
+def _refuse(
+    exc: Exception,
+    correlated: dict[str, str],
+    event: str,
+    *,
+    session_id: str,
+    missing: str = "Session",
+) -> NoReturn:
+    """The one shape every session endpoint refuses in: not-found is 404 in the endpoint's own noun
+    (a map, a session), and everything else is ``raise_translated``'s. Four endpoints carried this
+    verbatim before the fourth arrived (P2c T2)."""
+    if isinstance(exc, FileNotFoundError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"{missing} not found", headers=correlated
+        ) from exc
+    raise_translated(exc, correlated, event, session_id=session_id)

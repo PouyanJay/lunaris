@@ -9,19 +9,23 @@ deterministic implementation for the offline path). The learner model is what co
 moved by graded evidence, and the director reads it back.
 """
 
+from .advance_placement import advance_placement
 from .apply_evidence import apply_evidence
 from .claude_grader import ClaudeGrader
+from .claude_interviewer import ClaudeInterviewer
 from .claude_tutor import ClaudeTutor
 from .compose_layout import compose_layout
 from .decide_move import decide_move
 from .grader_unavailable_error import GraderUnavailableError
+from .interviewer_unavailable_error import InterviewerUnavailableError
 from .mastery_thresholds import DECAYED, MASTERED
 from .max_answer_chars import MAX_ANSWER_CHARS
 from .memory_knowledge_store import MemoryKnowledgeStore
 from .memory_session_store import MemorySessionStore
+from .next_turn import next_turn
+from .node_of import node_of
 from .open_placement import open_placement
 from .open_session import open_session
-from .placement_not_answerable_error import PlacementNotAnswerableError
 from .protocols import (
     IGrader,
     IInterviewer,
@@ -72,6 +76,7 @@ from .schema import (
 from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
 from .session_format_error import SessionFormatError
+from .settle_placement import settle_placement
 from .stage_criterion import stage_criterion
 from .stale_answer_error import StaleAnswerError
 from .stub_grader import StubGrader
@@ -81,6 +86,7 @@ from .stub_sim_registry import StubSimRegistry
 from .stub_tutor import StubTutor
 from .supabase_knowledge_store import SupabaseKnowledgeStore
 from .supabase_session_store import SupabaseSessionStore
+from .take_placement_turn import take_placement_turn
 from .take_turn import take_turn
 from .turn_outcome import TurnOutcome
 from .tutor_unavailable_error import TutorUnavailableError
@@ -91,6 +97,7 @@ __all__ = [
     "MAX_ANSWER_CHARS",
     "STUB_SIM_PATH",
     "ClaudeGrader",
+    "ClaudeInterviewer",
     "ClaudeTutor",
     "ConceptMapCard",
     "CriterionCard",
@@ -108,6 +115,7 @@ __all__ = [
     "ITutor",
     "ITutorDeltaSink",
     "InterviewExchange",
+    "InterviewerUnavailableError",
     "LayoutBlock",
     "LayoutComponent",
     "LayoutSpec",
@@ -119,7 +127,6 @@ __all__ = [
     "MeterEntry",
     "MoveKind",
     "NodeKnowledge",
-    "PlacementNotAnswerableError",
     "PracticeBlock",
     "ProseBlock",
     "QuizCard",
@@ -146,9 +153,12 @@ __all__ = [
     "TurnOutcome",
     "TutorUnavailableError",
     "WorkedExample",
+    "advance_placement",
     "apply_evidence",
     "compose_layout",
     "decide_move",
+    "next_turn",
+    "node_of",
     "open_placement",
     "open_session",
     "recall_of",
@@ -156,6 +166,8 @@ __all__ = [
     "relay_delta",
     "resolve_sim_app",
     "select_surface",
+    "settle_placement",
     "stage_criterion",
+    "take_placement_turn",
     "take_turn",
 ]

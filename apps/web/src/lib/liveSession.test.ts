@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { answerTurn, loadSession, LiveSessionError, startSession } from "./liveSession";
+import {
+  advanceSession,
+  answerTurn,
+  loadSession,
+  LiveSessionError,
+  startSession,
+} from "./liveSession";
 
 const SESSION = {
   sessionId: "s1",
@@ -125,6 +131,27 @@ describe("liveSession — opening and resuming a session", () => {
     const session = await withFetch(json(SESSION), () => loadSession("", "s1"));
 
     expect(session.turns).toHaveLength(1);
+  });
+
+  it("advances a warming session, and reads 'still warming' as no session yet", async () => {
+    // P2c T2: the way out of the honest wait. 202 with no body is "ask again in a moment", which
+    // is a distinct answer from a session — null — rather than an error or a half-shape.
+    const still = await withFetch(new Response(null, { status: 202 }), () =>
+      advanceSession("", "s2"),
+    );
+    expect(still).toBeNull();
+
+    const taught = await withFetch(json({ ...PLACING, status: "active" }), () =>
+      advanceSession("", "s2"),
+    );
+    expect(taught?.status).toBe("active");
+  });
+
+  it("accepts a warming session", async () => {
+    const session = await withFetch(json({ ...PLACING, status: "warming" }, 200), () =>
+      loadSession("", "s2"),
+    );
+    expect(session.status).toBe("warming");
   });
 
   it("surfaces the server's own words when it refuses", async () => {

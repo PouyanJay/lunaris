@@ -24,6 +24,7 @@ from lunaris_runtime.schema import CostSubjectType
 
 from ..local_owner_key import LOCAL_OWNER_KEY
 from .graph_throttle import CompileSlot, LiveGraphBudgetExhaustedError, LiveGraphThrottle
+from .launched_compiles import LaunchedCompiles
 
 logger = structlog.get_logger()
 
@@ -105,6 +106,7 @@ class LiveGraphService:
         extend_deadline_s: float = _DEFAULT_EXTEND_DEADLINE_S,
         throttle: LiveGraphThrottle | None = None,
         graph_budget_usd: float = 0.0,
+        launched: LaunchedCompiles | None = None,
     ) -> None:
         self._compiler = compiler
         self._store = store
@@ -121,6 +123,10 @@ class LiveGraphService:
         # Ceiling on what one map may spend across its compile and every later extension, read from
         # the ledger's rollup. 0 (the default) is uncapped; it is a runaway guard, not a ration.
         self._graph_budget_usd = graph_budget_usd
+        # Where the compiles ``launch`` starts are remembered (P2c), so a session that opened on
+        # one can ask how it ended. Process-wide, wired by the composition root, like the throttle;
+        # ``None`` (the suites that predate P2c) means nobody asks.
+        self._launched = launched
 
     def launch(
         self,
@@ -147,7 +153,19 @@ class LiveGraphService:
             topic, graph_id=graph_id, run_id=run_id, owner_id=owner_id, on_progress=on_progress
         )
         _absorb_when_done(compiling, run_id=run_id, graph_id=graph_id)
+        if self._launched is not None:
+            self._launched.remember(graph_id, compiling)
         return compiling
+
+    def failure_of(self, graph_id: str) -> str | None:
+        """Why a compile launched here for ``graph_id`` failed, or ``None`` (see
+        :class:`LaunchedCompiles`; ``None`` also when nothing remembers launches)."""
+        return self._launched.failure_of(graph_id) if self._launched is not None else None
+
+    def forget_failure(self, graph_id: str) -> None:
+        """The failure has been acted on: the session that opened on it has closed and said so."""
+        if self._launched is not None:
+            self._launched.forget(graph_id)
 
     def stream(
         self, topic: str, *, graph_id: str, run_id: str, owner_id: str | None = None

@@ -28,17 +28,16 @@ class SpyInterviewer:
     """Records what it was asked and answers a fixed opening question."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[InterviewExchange, ...], bool, str]] = []
+        self.calls: list[tuple[str, tuple[InterviewExchange, ...], str]] = []
 
     async def ask(
         self,
         topic: str,
         *,
         exchanges: Sequence[InterviewExchange] = (),
-        graph_has_landed: bool = False,
         run_id: str,
     ) -> str | None:
-        self.calls.append((topic, tuple(exchanges), graph_has_landed, run_id))
+        self.calls.append((topic, tuple(exchanges), run_id))
         return "What have you already met of this?"
 
 
@@ -88,10 +87,8 @@ async def test_the_first_turn_is_the_interviewers_question_about_the_learner() -
     assert turn.criterion is None
     assert turn.surface is None
     assert turn.run_id == "r1"
-    # The interviewer was asked about THIS topic, with nothing yet exchanged and no map landed —
-    # pinned by value, because an interviewer told the map had landed would be closing the
-    # interview it was meant to open.
-    assert interviewer.calls == [("Bayes' theorem", (), False, "r1")]
+    # The interviewer was asked about THIS topic, with nothing yet exchanged: pinned by value.
+    assert interviewer.calls == [("Bayes' theorem", (), "r1")]
 
 
 async def test_the_stub_interviewer_opens_with_a_question_a_learner_can_answer() -> None:

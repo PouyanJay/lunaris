@@ -132,6 +132,91 @@ describe("useLiveSession — the loop's client side", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("polls a warming session on, and stops the moment it is taught", async () => {
+    // P2c T2: the interview ran out before the map landed. The hook advances the session on an
+    // interval; 202 keeps it warming, a session ends the wait, and once teaching has begun no
+    // further poll goes out (a poll after that would be a request per tick for the whole session).
+    vi.useFakeTimers();
+    try {
+      const warming = { ...PLACING, status: "warming" as const };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(json(warming, 201))
+        .mockResolvedValueOnce(new Response(null, { status: 202 }))
+        .mockResolvedValueOnce(json({ ...PLACING, status: "active" as const }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const { result } = renderHook(() => useLiveSession("", { topic: "Bayes' theorem" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state).toMatchObject({
+        status: "ready",
+        session: { status: "warming" },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(fetchMock.mock.calls[1]?.[0])).toMatch(/\/api\/live\/sessions\/s2\/advance$/);
+      expect(result.current.state).toMatchObject({ session: { status: "warming" } });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(result.current.state).toMatchObject({
+        status: "ready",
+        session: { status: "active" },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps polling through a failed advance, and says what happened", async () => {
+    vi.useFakeTimers();
+    try {
+      const warming = { ...PLACING, status: "warming" as const };
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(json(warming, 201))
+        .mockResolvedValueOnce(json({ detail: "The tutor is unavailable." }, 503))
+        .mockResolvedValueOnce(json({ ...PLACING, status: "active" as const }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const { result } = renderHook(() => useLiveSession("", { topic: "Bayes' theorem" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state).toMatchObject({ session: { status: "warming" } });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(result.current.state).toMatchObject({
+        status: "failed",
+        message: "The tutor is unavailable.",
+        session: { status: "warming" },
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(result.current.state).toMatchObject({
+        status: "ready",
+        session: { status: "active" },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("abandons an open the learner has walked away from", async () => {
     // The request is aborted on unmount: a session nobody is watching should not keep a connection
     // open, and on the retry path below the abort is what stops two opens from racing.

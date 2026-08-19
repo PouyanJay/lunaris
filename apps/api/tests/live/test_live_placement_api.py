@@ -16,6 +16,7 @@ compiler and the stub interviewer, both real implementations of their protocols.
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -23,8 +24,11 @@ import pytest
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.live.dependencies import get_live_graph_service, resolve_graph_store
+from lunaris_api.live.launched_compiles import LaunchedCompiles
 from lunaris_api.live.service import LiveGraphService
-from lunaris_live.graph import ConceptGraph, StubGraphCompiler
+from lunaris_api.live.session.service import LiveSessionService
+from lunaris_live.graph import ConceptGraph, GraphCompilationError, StubGraphCompiler
+from lunaris_live.session import StubInterviewer
 
 
 @pytest.fixture
@@ -192,57 +196,257 @@ async def client_with_a_gated_compile(
         compiler.release.set()
 
 
-async def test_an_answer_during_the_compile_is_refused_honestly_not_as_not_found(
+async def test_an_answer_during_the_compile_continues_the_interview(
     client_with_a_gated_compile: tuple[httpx.AsyncClient, GatedCompiler],
 ) -> None:
-    """T1 asks; T2 listens. Between the two, an answer typed into the interview must be refused
-    in words that are true — and *during* the compile there is no map to read, so a session
-    plane that read the map before looking at the status would say "Session not found" (404) to a
-    learner whose session it had just opened. Found in review; T2 replaces this test with the
-    interview actually continuing."""
+    """T2: the interview reads the answer, keeps it on the question that asked it, grades nothing,
+    and asks the next question — while the compile is still in flight (a rendezvous, not a fast
+    stub that has already landed). A reload mid-interview finds all of it on the row."""
     client, compiler = client_with_a_gated_compile
     session = (await _placement(client)).json()
     await asyncio.wait_for(compiler.entered.wait(), 5)
-    assert not compiler.release.is_set(), "the fixture must answer while the compile is in flight"
 
     response = await client.post(
         f"/api/live/sessions/{session['sessionId']}/turns",
         json={"answer": "I had a biology class once.", "answeringSeq": 1},
     )
 
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"] == "The interview isn't taking answers yet."
-    # And the session is untouched: still placing, still one turn, no answer recorded.
+    assert response.status_code == 200, response.text
+    advanced = response.json()
+    assert advanced["status"] == "placing"
+    asked, following = advanced["turns"]
+    assert asked["answer"] == "I had a biology class once."
+    assert asked["grade"] is None
+    assert following["seq"] == 2
+    assert following["move"]["kind"] == "place"
+    assert following["tutor"].strip().endswith("?")
+    assert following["tutor"] != asked["tutor"], "the next question is a different question"
+    # The row is the transcript: a reload mid-interview lands back here.
     reread = (await client.get(f"/api/live/sessions/{session['sessionId']}")).json()
-    assert reread["status"] == "placing"
-    assert [turn["answer"] for turn in reread["turns"]] == [None]
+    assert [turn["answer"] for turn in reread["turns"]] == ["I had a biology class once.", None]
 
 
-async def test_an_answer_over_agui_after_the_map_landed_is_refused_in_the_same_words(
+async def test_an_answer_over_agui_after_the_map_landed_begins_teaching(
     client: httpx.AsyncClient,
 ) -> None:
-    """The other transport, the other moment. Once the map has landed a placing session's graph
-    reads fine, and the AG-UI path had its own "not active means closed" guard ahead of the loop's —
-    which would have told a CopilotKit learner their session "has already ended" one question in.
-    The sentence a learner reads must not depend on which client they speak (P2b AD9)."""
+    """The other transport, the seam the learner never sees: the answer that closes the interview
+    is met with the first lesson, streamed as any turn is, and the state frame says ``active``."""
     session = (await _placement(client)).json()
     await _compiled(client, session["graphId"])
 
     response = await client.post(
         f"/api/live/sessions/{session['sessionId']}/agui",
-        json={
-            "threadId": "t",
-            "runId": "r-place",
-            "state": {},
-            "messages": [{"id": "m1", "role": "user", "content": "I had a biology class once."}],
-            "tools": [],
-            "context": [],
-            "forwardedProps": {},
-        },
+        json=_agui_answer("I had a biology class once.", run_id="r-place"),
     )
 
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"] == "The interview isn't taking answers yet."
+    assert response.status_code == 200, response.text
+    events = _events(response.text)
+    kinds = [event["type"] for event in events]
+    assert kinds[0] == "RUN_STARTED" and kinds[-1] == "RUN_FINISHED"
+    assert "TEXT_MESSAGE_CONTENT" in kinds
+    snapshot = next(event for event in events if event["type"] == "STATE_SNAPSHOT")["snapshot"]
+    assert snapshot["status"] == "active"
+    reread = (await client.get(f"/api/live/sessions/{session['sessionId']}")).json()
+    assert reread["status"] == "active"
+    assert reread["turns"][0]["answer"] == "I had a biology class once."
+    assert reread["turns"][-1]["move"]["kind"] == "introduce"
+    assert reread["turns"][-1]["criterion"] is not None
+
+
+async def test_the_interview_that_runs_out_first_warms_and_advances_when_the_map_lands(
+    client_with_a_gated_compile: tuple[httpx.AsyncClient, GatedCompiler],
+) -> None:
+    """The honest wait (plan §15). The offline interviewer asks three questions and stops; with
+    the compile still held, the session WARMS: nothing is asked, an answer into it is stale, and
+    ``advance`` says 202 until the map lands, then teaches."""
+    client, compiler = client_with_a_gated_compile
+    session = (await _placement(client)).json()
+    await asyncio.wait_for(compiler.entered.wait(), 5)
+    url = f"/api/live/sessions/{session['sessionId']}"
+    for seq in (1, 2, 3):
+        response = await client.post(
+            f"{url}/turns", json={"answer": f"A{seq}", "answeringSeq": seq}
+        )
+        assert response.status_code == 200, response.text
+    session = response.json()
+
+    assert session["status"] == "warming"
+    assert not session["turns"][-1]["tutor"].rstrip().endswith("?")
+    stale = await client.post(f"{url}/turns", json={"answer": "More?", "answeringSeq": 4})
+    assert stale.status_code == 409, stale.text
+    # And over AG-UI, the same refusal as a *status*, not an error frame on a 200 (P2b AD9).
+    over_agui = await client.post(f"{url}/agui", json=_agui_answer("More?", run_id="r-warm"))
+    assert over_agui.status_code == 409, over_agui.text
+    assert over_agui.json()["detail"] == stale.json()["detail"]
+    still = await client.post(f"{url}/advance")
+    assert still.status_code == 202, still.text
+    assert still.headers["X-Session-Id"] == session["sessionId"]
+
+    compiler.release.set()
+    await _compiled(client, session["graphId"])
+    advanced = await client.post(f"{url}/advance")
+
+    assert advanced.status_code == 200, advanced.text
+    taught = advanced.json()
+    assert taught["status"] == "active"
+    assert taught["turns"][-1]["move"]["kind"] == "introduce"
+    assert taught["turns"][-1]["seq"] == 5
+    # Advancing again is idempotent: the row as it stands, not another lesson.
+    again = await client.post(f"{url}/advance")
+    assert again.status_code == 200
+    assert len(again.json()["turns"]) == 5
+
+
+@pytest.fixture
+async def client_with_a_failing_compile(
+    tmp_path: Path,
+) -> AsyncIterator[tuple[httpx.AsyncClient, LaunchedCompiles]]:
+    """The same app, its compile plane failing every topic — the model giving up, mid-interview."""
+
+    class Fails:
+        async def compile(self, topic: str, **kwargs: object) -> ConceptGraph:
+            # A tick, so the launch has returned (and the session exists) before the failure.
+            await asyncio.sleep(0)
+            raise GraphCompilationError("The model could not decompose this topic.")
+
+        async def extend(self, *args: object, **kwargs: object) -> ConceptGraph:
+            raise NotImplementedError
+
+    settings = Settings(
+        pipeline="stub", course_dir=tmp_path, cors_origins=(), env_file=tmp_path / ".env"
+    )
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    # One registry across the per-request instances, as the composition root wires it: the launch
+    # and the answer that learns of the failure are different requests.
+    launched = LaunchedCompiles()
+    app.dependency_overrides[get_live_graph_service] = lambda: LiveGraphService(
+        Fails(), resolve_graph_store(settings), launched=launched
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as http_client:
+        yield http_client, launched
+
+
+async def _failed(launched: LaunchedCompiles, graph_id: str) -> None:
+    """Meet the failing compile at its end (a rendezvous on the task, not a guess at ticks)."""
+    compiling = launched.compiling(graph_id)
+    assert compiling is not None, "the compile was launched here and is still running"
+    with pytest.raises(GraphCompilationError):
+        await compiling
+
+
+async def test_a_compile_that_fails_closes_the_session_at_the_next_answer(
+    client_with_a_failing_compile: tuple[httpx.AsyncClient, LaunchedCompiles],
+) -> None:
+    """A learner must not be interviewed for a map that will never come. The failure is learned
+    from the compile plane (same process, in-process registry) and said in the goodbye, with the
+    compile's own reason and the answer that arrived kept where it belongs."""
+    client, launched = client_with_a_failing_compile
+    session = (await _placement(client)).json()
+    await _failed(launched, session["graphId"])
+
+    response = await client.post(
+        f"/api/live/sessions/{session['sessionId']}/turns",
+        json={"answer": "Not much.", "answeringSeq": 1},
+    )
+
+    assert response.status_code == 200, response.text
+    closed = response.json()
+    assert closed["status"] == "closed"
+    assert closed["turns"][0]["answer"] == "Not much."
+    goodbye = closed["turns"][-1]
+    assert goodbye["move"]["kind"] == "close"
+    assert "could not decompose" in goodbye["tutor"]
+    assert "Bayes' theorem" in goodbye["tutor"]
+
+
+async def test_a_poll_that_arrives_before_the_session_can_act_does_not_eat_the_failure(
+    client_with_a_failing_compile: tuple[httpx.AsyncClient, LaunchedCompiles],
+) -> None:
+    """Found in review: a compile failure handed over on first read was consumed by an ``advance``
+    that met a still-placing session (a duplicate poll, a retry) and had nothing to do with it —
+    the next answer then went on interviewing for a map that would never come. The failure stays
+    readable until the session that owns it has closed and said so."""
+    client, launched = client_with_a_failing_compile
+    session = (await _placement(client)).json()
+    await _failed(launched, session["graphId"])
+    url = f"/api/live/sessions/{session['sessionId']}"
+
+    early = await client.post(f"{url}/advance")
+    assert early.status_code == 200 and early.json()["status"] == "placing"
+
+    response = await client.post(f"{url}/turns", json={"answer": "Not much.", "answeringSeq": 1})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "closed"
+    # And once said, the compile plane is done remembering it.
+    assert launched.failure_of(session["graphId"]) is None
+
+
+async def test_a_compile_lost_to_another_process_is_given_up_after_the_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback for a compile this process cannot ask about (a replica, a restart): past the
+    compile plane's own deadline plus a grace, a warming session is closed rather than left to poll
+    forever. Staged with a compile plane that never learns of the launch (a second registry, the
+    way a replica is) and a session row aged past the deadline."""
+    from lunaris_api.live.session import service as service_module
+
+    settings = Settings(
+        pipeline="stub",
+        course_dir=tmp_path,
+        cors_origins=(),
+        env_file=tmp_path / ".env",
+        live_compile_deadline_s=1.0,
+    )
+    monkeypatch.setattr(service_module, "_COMPILE_GRACE_S", 0.0)
+    compiler = GatedCompiler()
+    launching = LiveGraphService(
+        compiler, resolve_graph_store(settings), launched=LaunchedCompiles()
+    )
+    unaware = LiveGraphService(compiler, resolve_graph_store(settings), launched=LaunchedCompiles())
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_live_graph_service] = lambda: launching
+    from lunaris_api.live.session.dependencies import get_live_session_service, get_live_tutor
+    from lunaris_live.session import MemoryKnowledgeStore, MemorySessionStore, StubGrader
+
+    sessions = MemorySessionStore()
+    app.dependency_overrides[get_live_session_service] = lambda: LiveSessionService(
+        resolve_graph_store(settings),
+        sessions,
+        knowledge=MemoryKnowledgeStore(),
+        tutor=get_live_tutor(settings),
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+        compiles=unaware,
+        interviewer=StubInterviewer(),
+        compile_deadline_s=settings.live_compile_deadline_s,
+    )
+    transport = httpx.ASGITransport(app=app)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            # ``launching`` is not the service the session plane holds, so a launch has to go
+            # through it by hand: the session's compile is then one this session plane never saw.
+            session = (await _placement(client)).json()
+            # Age the row rather than wait on the wall clock: the deadline reads ``started_at``.
+            row = sessions.load(session["sessionId"])
+            sessions.save(
+                row.model_copy(update={"started_at": row.started_at - timedelta(hours=1)})
+            )
+
+            response = await client.post(
+                f"/api/live/sessions/{session['sessionId']}/turns",
+                json={"answer": "Not much.", "answeringSeq": 1},
+            )
+
+            assert response.status_code == 200, response.text
+            closed = response.json()
+            assert closed["status"] == "closed"
+            assert "took too long" in closed["turns"][-1]["tutor"]
+    finally:
+        compiler.release.set()
 
 
 async def test_a_start_request_names_a_topic_or_a_map_never_both_or_neither(
@@ -281,4 +485,27 @@ def _json_log_lines(capsys: pytest.CaptureFixture[str]) -> list[dict[str, object
         json.loads(line)
         for line in capsys.readouterr().out.splitlines()
         if line.startswith("{") and line.endswith("}")
+    ]
+
+
+def _agui_answer(text: str, *, run_id: str = "r1") -> dict:
+    """The body the Node runtime POSTs for one run answering with ``text``."""
+    return {
+        "threadId": "t",
+        "runId": run_id,
+        "state": {},
+        "messages": [{"id": "m1", "role": "user", "content": text}],
+        "tools": [],
+        "context": [],
+        "forwardedProps": {},
+    }
+
+
+def _events(body: str) -> list[dict]:
+    """Every AG-UI event in a run's SSE body. Frames carry no ``event:`` line — the type is a field
+    inside the payload — so this reads ``data:`` lines only (the encoder's format)."""
+    return [
+        json.loads(line.removeprefix("data:").strip())
+        for line in body.splitlines()
+        if line.startswith("data:")
     ]
