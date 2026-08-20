@@ -48,6 +48,7 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
 from ..service import LiveGraphService
+from ..work_refused import LiveWorkRefusedError
 from .material_prefetcher import MaterialPrefetcher
 from .prefetch_registry import prefetch_registry
 from .spent_past_ceiling import spent_past_ceiling
@@ -66,6 +67,14 @@ logger = structlog.get_logger()
 _ASKED_TO_STOP = (
     "You asked to finish here, so this is the ending rather than an interruption: what you "
     "covered, where it leaves you, and when to come back to it."
+)
+
+#: The director's reason when the clock, rather than the learner or the material, ended it. Distinct
+#: wording from ``_ASKED_TO_STOP`` because a trace that read the same for both would lose the only
+#: thing telling three different endings apart.
+_TIME_UP = (
+    "The session's minutes ran out while it was idle, so this is where it ends: what you covered, "
+    "where it leaves you, and when to come back to it."
 )
 
 #: The statuses nothing more happens to. Named once because two verbs and the loop all ask.
@@ -97,6 +106,11 @@ def _absorb_detached_turn(task: "asyncio.Task[Session]", *, run_id: str, session
 #: with no recovery path and nothing above it imposes a timeout. So a slow ledger costs telemetry,
 #: never the answer a learner is waiting on.
 _DRAIN_TIMEOUT_S = 2.0
+
+
+def _now() -> datetime:
+    """The wall clock, in one place, so a listing and a session read agree about what "now" is."""
+    return datetime.now(UTC)
 
 
 def _elapsed_s(session: Session) -> float:
@@ -1055,6 +1069,89 @@ class LiveSessionService:
         )
         return left
 
+    async def _closed_if_spent(self, session: Session, *, owner_id: str | None) -> Session:
+        """The session, ended if its clock ran out while nobody was looking (T6).
+
+        A Live session is bounded by design (plan §6), and that bound used to be noticed only from
+        inside a turn: ``SessionClock.is_spent`` is read by ``decide_move``, which runs when a
+        learner answers. Walk away and the row stayed ``active`` for ever. A bounded session that
+        only notices its own bound when somebody acts is not bounded.
+
+        Lazy rather than swept (U3): a look is what closes it, so there is no new deployed component
+        and nothing that can silently stop running. The accepted cost is that a session nobody
+        revisits keeps its stale status until something touches it.
+
+        **Wordless, and therefore free.** A GET that spent money on a tutor call would be a
+        surprising thing for a page load to do, and the words would be written for a learner who is
+        not there. The schedule is still written and the meter is still built; only the prose is the
+        plain one. A session whose map never landed is abandoned instead, for the reason ``end``
+        gives: a ceremony about nothing is worse than no ceremony.
+
+        Returns the session unchanged when it is terminal, inside its budget, or could not be
+        closed. Never raises: this runs inside reads, and a session that cannot be ended tidily is
+        not a reason to refuse a learner the transcript they asked for.
+        """
+        if session.status in _TERMINAL or _elapsed_s(session) < self._session_budget_s:
+            return session
+        run_id = uuid4().hex
+        try:
+            # The slot, for the third time in this journey and the same reason (AD15, AD17): this
+            # write is unconditional, so a turn in flight either loses its own compare-and-set to
+            # the goodbye written under it, or lands after and overwrites the goodbye. Busy means
+            # somebody IS in this session, so it is not abandoned at all and the next look can
+            # close it: a read must never fail because a tidy-up could not get a lock.
+            slot = self._turn_slot(session.session_id)
+            slot.__enter__()
+        except LiveWorkRefusedError:
+            return session
+        try:
+            if session.status is not SessionStatus.ACTIVE:
+                return await self._abandon(session, owner_id=owner_id, run_id=run_id)
+            graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
+            model = await asyncio.to_thread(
+                self._knowledge.load, session.graph_id, owner_id=owner_id
+            )
+            outcome = await close_session(
+                session,
+                graph,
+                model,
+                list(session.turns),
+                DirectorMove(kind=MoveKind.CLOSE, reason=_TIME_UP),
+                clock=on_the_wall(
+                    SessionClock(
+                        turn=len(session.turns) + 1,
+                        elapsed_s=_elapsed_s(session),
+                        budget_s=self._session_budget_s,
+                    ),
+                    session,
+                ),
+                # No words: see above.
+                tutor=None,
+                run_id=run_id,
+            )
+            await asyncio.to_thread(self._sessions.save, outcome.session, owner_id=owner_id)
+            await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
+        except Exception:
+            # A map that has been purged, or a store having a bad minute. The session keeps its
+            # stale status and the next look tries again; refusing the read instead would make a
+            # tidy-up the reason a learner cannot see their own transcript.
+            logger.warning(
+                "live.session.expiry_close_failed",
+                run_id=run_id,
+                session_id=session.session_id,
+                exc_info=True,
+            )
+            return session
+        finally:
+            slot.__exit__(None, None, None)
+        logger.info(
+            "live.session.expired",
+            run_id=run_id,
+            session_id=session.session_id,
+            turn_count=len(outcome.session.turns),
+        )
+        return outcome.session
+
     async def forget(self, graph_id: str, *, owner_id: str | None = None) -> None:
         """Clear what this learner has demonstrated about one map (T5).
 
@@ -1113,8 +1210,38 @@ class LiveSessionService:
         list of twenty would otherwise be twenty transcripts on the wire to draw twenty rows.
         """
         listed = await asyncio.to_thread(self._sessions.recent, owner_id=owner_id)
+        # The list is the screen a learner meets an abandoned session on, so it is the one that has
+        # to be truthful: a row reading "in progress" three days after the session ended is the
+        # product lying about itself in the one place it summarises itself (T6). Only sessions this
+        # page already named are touched, and only those whose clock has actually run out — which
+        # in practice is none of them, because a look closes each one exactly once. The listing is
+        # re-read rather than patched in place, so its ordering and timestamps stay the store's.
+        if await self._close_the_spent(listed, owner_id=owner_id):
+            listed = await asyncio.to_thread(self._sessions.recent, owner_id=owner_id)
         logger.info("live.session.listed", count=len(listed))
         return listed
+
+    async def _close_the_spent(self, listed: list[SessionSummary], *, owner_id: str | None) -> bool:
+        """End every session on this page whose time is up. True when anything changed.
+
+        Each is loaded on its own because a summary is deliberately not enough to close from: the
+        ceremony needs the transcript, the map and the beliefs. That cost is paid once per session
+        ever, not once per listing, since a closed session is never a candidate again.
+        """
+        spent = [
+            summary
+            for summary in listed
+            if summary.status not in _TERMINAL
+            and (_now() - summary.started_at).total_seconds() >= self._session_budget_s
+        ]
+        changed = False
+        for summary in spent:
+            session = await asyncio.to_thread(
+                self._sessions.load, summary.session_id, owner_id=owner_id
+            )
+            closed = await self._closed_if_spent(session, owner_id=owner_id)
+            changed = changed or closed.status is not session.status
+        return changed
 
     async def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Re-read a session so a reloaded tab lands back in it (U2).
@@ -1126,5 +1253,7 @@ class LiveSessionService:
         """
         bind_request_id(session_id, session_id=session_id)
         session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
+        # A look is what ends a session whose clock ran out while nobody was watching (T6).
+        session = await self._closed_if_spent(session, owner_id=owner_id)
         logger.info("live.session.resumed", turn_count=len(session.turns))
         return session

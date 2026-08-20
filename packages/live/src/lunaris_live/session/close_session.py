@@ -32,7 +32,7 @@ async def close_session(
     move: DirectorMove,
     *,
     clock: SessionClock,
-    tutor: ITutor,
+    tutor: ITutor | None,
     run_id: str,
 ) -> TurnOutcome:
     """The session, ended with its ceremony (P2c T5): the meter of what was demonstrated beside
@@ -42,7 +42,15 @@ async def close_session(
 
     The schedule is written first (T6): every concept graded this session gets its next review
     date, and the meter and the recap read the scheduled model, so what the learner is shown is
-    what the next session's director will honour — one model, not a shown one and a kept one."""
+    what the next session's director will honour — one model, not a shown one and a kept one.
+
+    ``tutor=None`` closes it **without words**: the schedule is still written, the meter is still
+    built, and the recap is the plain one. That is the close a session gets when nobody is present
+    to be spoken to, which is what an expired session found by a page load actually is (journey
+    live-session-lifecycle, T6). Free by construction rather than by luck: a GET that spent money
+    on a tutor call would be a surprising thing for a page load to do. Everything that *matters*
+    out of an ending survives it, because the meter and the schedule are computed from the record
+    rather than written by a model."""
     assert clock.at is not None, "next_turn puts the clock on the wall before a close"
     model = schedule_reviews(model, graph, turns, at=clock.at)
     due = [known.due_at for known in model.nodes.values() if known.due_at is not None]
@@ -79,7 +87,7 @@ async def close_session(
 
 
 async def _recap(
-    tutor: ITutor,
+    tutor: ITutor | None,
     session: Session,
     graph: ConceptGraph,
     model: LearnerModel,
@@ -95,6 +103,9 @@ async def _recap(
     ended in an error.
     """
     covered = covered_in(turns, graph, model)
+    if tutor is None:
+        # Nobody to speak to and nobody to pay for: the plain recap is the whole of the words.
+        return recap_sentence(graph.topic, covered)
     try:
         return await tutor.recap(graph.topic, covered, profile=session.profile, run_id=run_id)
     except TutorUnavailableError:
