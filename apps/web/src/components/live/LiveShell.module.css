@@ -1,6 +1,6 @@
 /* Lunaris Live's shell: the same inverted-L chrome idiom as Studio's AgentShell (full-width top
-   bar over the canvas), so crossing between products never feels like leaving the product family.
-   Live has no sidebar yet — the canvas takes the full lower region. */
+   bar over a two-pane lower region), so crossing between products never feels like leaving the
+   product family. The rail is Studio's, wearing Live's destinations (T7). */
 .shell {
   height: 100%;
   min-height: 0;
@@ -32,6 +32,32 @@
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text);
+}
+
+/* The lower region: rail beside canvas, welded by the rail's own right hairline. */
+.lower {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.rail {
+  flex: none;
+  width: var(--sidebar-width);
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-subtle);
+  border-right: var(--border-width) solid var(--border);
+  transition: width var(--dur) var(--ease);
+}
+
+/* Width comes from the shell as an inline custom property, exactly as Studio's frame sets it, so
+   both products collapse to the same mini-rail size rather than to two that nearly agree. */
+
+@media (prefers-reduced-motion: reduce) {
+  .rail {
+    transition: none;
+  }
 }
 
 .canvas {

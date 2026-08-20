@@ -1,20 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 
 import { ConceptMap } from "./ConceptMap";
 import { ConceptSpecPanel } from "./ConceptSpecPanel";
+import { LiveRail } from "./LiveRail";
+import { LIVE_SESSIONS_PATH } from "./liveRoutes";
 import { SessionList } from "./SessionList";
 import { SessionView } from "./SessionView";
 import { useLiveGraph } from "../../hooks/useLiveGraph";
+import { SIDEBAR_RAIL_WIDTH, useSidebarLayout } from "../../hooks/useSidebarLayout";
+import { useTheme } from "../../hooks/useTheme";
 import { type ConceptGraph } from "../../lib/liveGraph";
 import { ROUTES } from "../../lib/routes";
 import { BrandMark } from "../shell/BrandMark";
 import styles from "./LiveShell.module.css";
-
-/** Where a learner's own sessions are listed. Lives beside the shell that routes to it rather than
- *  in `routes.ts`, which is Studio's route table: `resolveProductRoute` already claims everything
- *  under `/live`, so this is Live's own business. */
-export const LIVE_SESSIONS_PATH = "/live/sessions";
 
 interface LiveShellProps {
   /** Where the API lives — threaded from the app root, as every other request surface is. */
@@ -38,6 +37,28 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   // exactly two destinations and a router for two is more machinery than either of them needs.
   const listing = pathname === LIVE_SESSIONS_PATH || pathname === `${LIVE_SESSIONS_PATH}/`;
 
+  const layout = useSidebarLayout();
+  const { theme, toggle: toggleTheme } = useTheme();
+  // A session is a focus surface, so the rail starts as the mini icon column there whatever the
+  // stored preference says, and expands on a click (U-decision, T7). Kept as its own state rather
+  // than by writing the shared preference, because collapsing the rail to teach somebody should
+  // not quietly collapse it in Studio tomorrow. Keyed on the session so a new one starts folded
+  // again.
+  const teaching = Boolean(topic ?? graphId);
+  const [openedInSession, setOpenedInSession] = useState(false);
+  const [railKey, setRailKey] = useState(topic ?? graphId ?? null);
+  if (railKey !== (topic ?? graphId ?? null)) {
+    setRailKey(topic ?? graphId ?? null);
+    setOpenedInSession(false);
+  }
+  const collapsed = teaching ? !openedInSession : layout.collapsed;
+  const toggleCollapsed = teaching
+    ? () => setOpenedInSession((open) => !open)
+    : layout.toggleCollapsed;
+  const frame = {
+    "--sidebar-width": `${collapsed ? SIDEBAR_RAIL_WIDTH : layout.width}px`,
+  } as CSSProperties;
+
   useEffect(() => {
     const previous = document.title;
     document.title = topic ? `${topic} · Lunaris Live` : "Lunaris Live";
@@ -47,34 +68,44 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   }, [topic]);
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} style={frame}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
       </header>
-      {listing ? (
-        <main className={styles.canvas} data-state="sessions">
-          <SessionList apiBaseUrl={apiBaseUrl} />
-        </main>
-      ) : topic ? (
-        <main className={styles.canvas} data-state="session">
-          <div className={styles.teaching}>
-            <SessionView
-              apiBaseUrl={apiBaseUrl}
-              topic={topic}
-              copilotUrl={import.meta.env.VITE_COPILOT_URL}
-            />
-          </div>
-        </main>
-      ) : graphId ? (
-        <MapEntry apiBaseUrl={apiBaseUrl} graphId={graphId} />
-      ) : (
-        <main className={styles.canvas} data-state="idle">
-          <IdleState />
-        </main>
-      )}
+      <div className={styles.lower}>
+        <div className={styles.rail}>
+          <LiveRail
+            collapsed={collapsed}
+            onToggleCollapsed={toggleCollapsed}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
+        </div>
+        {listing ? (
+          <main className={styles.canvas} data-state="sessions">
+            <SessionList apiBaseUrl={apiBaseUrl} />
+          </main>
+        ) : topic ? (
+          <main className={styles.canvas} data-state="session">
+            <div className={styles.teaching}>
+              <SessionView
+                apiBaseUrl={apiBaseUrl}
+                topic={topic}
+                copilotUrl={import.meta.env.VITE_COPILOT_URL}
+              />
+            </div>
+          </main>
+        ) : graphId ? (
+          <MapEntry apiBaseUrl={apiBaseUrl} graphId={graphId} />
+        ) : (
+          <main className={styles.canvas} data-state="idle">
+            <IdleState />
+          </main>
+        )}
+      </div>
     </div>
   );
 }
