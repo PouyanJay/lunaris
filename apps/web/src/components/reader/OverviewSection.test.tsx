@@ -103,6 +103,10 @@ describe("OverviewSection", () => {
     await screen.findByRole("button", { name: /play the topic overview/i });
     const headings = screen.getAllByRole("heading").map((h) => h.textContent);
     expect(headings).toEqual(["What this course covers", "What this topic is and why it matters"]);
+
+    // The black covers use the constant "What?" / "Why?" title cards for the two slots.
+    expect(screen.getByText("What?")).toBeInTheDocument();
+    expect(screen.getByText("Why?")).toBeInTheDocument();
   });
 
   it("plays a course video's signed MP4 in place", async () => {
