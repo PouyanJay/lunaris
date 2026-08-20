@@ -1,7 +1,8 @@
+from collections.abc import Sequence
 from typing import Protocol
 
 from ...graph.schema import ConceptNode, MasteryCriterion
-from ..schema import TurnGrade
+from ..schema import PriorAttempt, TurnGrade
 
 
 class IGrader(Protocol):
@@ -15,8 +16,20 @@ class IGrader(Protocol):
     ``criterion`` is passed rather than looked up from ``node``: the map can grow and change
     mid-session (C1), so the thing being graded has to be the thing that was actually staged. The
     node comes too, because a criterion read without its concept is a sentence with no subject.
+
+    ``previously`` is what this learner already tried against this same criterion, in order, with
+    the verdicts they were given (T8). It exists so the grader can be consistent with itself: an
+    answer marked "partial, you are missing X" and a later answer that adds X must not score lower.
+    Optional with an empty default, because the first attempt at anything has no history and every
+    stub grader predates it.
     """
 
     async def grade(
-        self, answer: str, *, criterion: MasteryCriterion, node: ConceptNode, run_id: str
+        self,
+        answer: str,
+        *,
+        criterion: MasteryCriterion,
+        node: ConceptNode,
+        run_id: str,
+        previously: Sequence[PriorAttempt] = (),
     ) -> TurnGrade: ...

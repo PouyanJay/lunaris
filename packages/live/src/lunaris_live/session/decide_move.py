@@ -11,6 +11,19 @@ from .schema import DirectorMove, LearnerModel, MoveKind, SessionClock
 #: the same concept means the explanation is not landing, and saying it louder will not help.
 _STUCK_AFTER = 2
 
+#: How many pieces of evidence a concept gets before the session stops trying to land it today.
+#:
+#: The bar has already come down by then: two misses switch the ask from production to recognition
+#: (``select_surface`` rule 4), which is a real and weaker instrument, and a correct pick banks
+#: PARTIAL rather than nothing. What this bounds is the *pressing on*. Without an upper end a
+#: concept below the mastery band is remediated on every turn for the rest of the session, and the
+#: first real browser session spent six turns on concept one of about twenty (U4).
+#:
+#: Five rather than three: a learner who takes four goes and gets there has done the thing this
+#: whole loop exists for, and cutting them off at three would be the system giving up before they
+#: did. Provisional, like ``_PULL`` — the keyed eval is what should move it.
+_GIVE_UP_AFTER = 5
+
 
 def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -> DirectorMove:
     """What the session should do next, and why.
@@ -112,6 +125,19 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
             ),
         )
 
+    if parked := [node for node in graph.nodes if _parked(model, node.id)]:
+        # Distinct from the close below, and not a nicety: "nothing is left to introduce" would be
+        # untrue here. Something *is* left, and the session chose to stop pressing on it (U4). A
+        # trace that reported the two the same way would hide the one decision a reader would most
+        # want to question.
+        return DirectorMove(
+            kind=MoveKind.CLOSE,
+            reason=(
+                f"{parked[0].name} has not landed today and everything else here stands on it, so "
+                "it is better left for another day than pressed on. It will come round again."
+            ),
+        )
+
     return DirectorMove(
         kind=MoveKind.CLOSE,
         reason=(
@@ -147,10 +173,18 @@ def _stuck_on(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
     was hard once must not be remediated forever, or the session never moves. A learner is stuck
     when they have real evidence about a concept and that evidence has left the belief where a
     string of misses would — nowhere near mastery.
+
+    Bounded above by ``_GIVE_UP_AFTER`` (U4). Past it the concept is not "unstuck", it is *left for
+    another day*: the session moves on to something teachable, the belief is untouched (so nothing
+    is credited that was not demonstrated, and dependents stay shut), and the close puts it on the
+    review ladder like any other concept with evidence. A learner who cannot clear one bar must
+    still be able to reach the other nineteen concepts on the map.
     """
     for node in graph.nodes:
         known = model.nodes.get(node.id)
-        if known is not None and known.evidence_count >= _STUCK_AFTER and known.estimate < _DECAYED:
+        if known is None or known.estimate >= _DECAYED:
+            continue
+        if _STUCK_AFTER <= known.evidence_count < _GIVE_UP_AFTER:
             return node
     return None
 
@@ -364,8 +398,27 @@ def _frontier(graph: ConceptGraph, model: LearnerModel) -> ConceptNode | None:
     credited = _credited(graph, model)
     for node_id in graph.topo_order:
         node = by_id.get(node_id)
-        if node is None or node_id in credited:
+        if node is None or node_id in credited or _parked(model, node_id):
             continue
         if all(required in credited for required in node.requires):
             return node
     return None
+
+
+def _parked(model: LearnerModel, node_id: str) -> bool:
+    """Whether this concept has been left for another day (U4, T8).
+
+    A concept the session has stopped pressing on is not a candidate to introduce again, or the
+    give-up rule would only change which *kind* of move keeps landing on it: remediation stops and
+    "started but not yet shown" takes over on the very next turn, which is the same loop wearing a
+    different label. Found exactly that way.
+
+    Not credited, though. Being moved on from and having shown it are different claims: the belief
+    stays where the evidence left it, dependents stay shut, and the close puts the concept on the
+    review ladder like any other one with evidence. Parked is a fact about *this* session; the next
+    one reads the same belief and starts over with the bar back up.
+    """
+    known = model.nodes.get(node_id)
+    if known is None:
+        return False
+    return known.evidence_count >= _GIVE_UP_AFTER and known.estimate < _DECAYED

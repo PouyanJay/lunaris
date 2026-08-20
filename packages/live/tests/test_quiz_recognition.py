@@ -68,7 +68,13 @@ class _RefusingGrader:
         self.calls = 0
 
     async def grade(
-        self, answer: str, *, criterion: MasteryCriterion, node: ConceptNode, run_id: str
+        self,
+        answer: str,
+        *,
+        criterion: MasteryCriterion,
+        node: ConceptNode,
+        run_id: str,
+        previously: object = (),
     ) -> TurnGrade:
         self.calls += 1
         return TurnGrade(

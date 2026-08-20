@@ -20,6 +20,7 @@ from .node_knowledge import NodeKnowledge
 from .node_prior import NodePrior
 from .placement_result import PlacementResult
 from .practice_block import PracticeBlock
+from .prior_attempt import PriorAttempt
 from .prose_block import ProseBlock
 from .quiz_card import QuizCard
 from .session import Session
@@ -59,6 +60,7 @@ __all__ = [
     "NodePrior",
     "PlacementResult",
     "PracticeBlock",
+    "PriorAttempt",
     "ProseBlock",
     "QuizCard",
     "Session",
