@@ -93,6 +93,7 @@ from .schema import (
     TurnGrade,
     WorkedExample,
 )
+from .score_quiz_pick import score_quiz_pick
 from .seed_priors import seed_priors
 from .select_surface import select_surface
 from .session_closed_error import SessionClosedError
@@ -214,6 +215,7 @@ __all__ = [
     "review_day",
     "review_interval",
     "schedule_reviews",
+    "score_quiz_pick",
     "seed_priors",
     "select_surface",
     "settle_placement",

@@ -20,6 +20,7 @@ from .schema import (
     SessionTurn,
     TurnGrade,
 )
+from .score_quiz_pick import score_quiz_pick
 from .session_closed_error import SessionClosedError
 from .stale_answer_error import StaleAnswerError
 from .turn_outcome import TurnOutcome
@@ -132,6 +133,12 @@ async def _grade(
     A grader that cannot answer is *not* a wrong answer — ``GraderUnavailableError`` is left to
     propagate rather than folded into NOT_MET, because a bad minute for the provider must never
     teach the system that a learner does not understand a concept.
+
+    A pick off a standing quiz card is marked here without a model call at all (T1). Recognition is
+    an equality, not a judgement: sending it to the grader marks the concept's own definition
+    against a criterion demanding the learner's own words, and refuses the correct answer. Reached
+    inside the criterion guard because a remediation target always has one: the invariant
+    ``select_surface`` rule 4 already leans on.
     """
     if asked.criterion is None or asked.move.node_id is None:
         return None
@@ -143,4 +150,15 @@ async def _grade(
             "live.grader.node_gone", run_id=run_id, node=asked.move.node_id, seq=asked.seq
         )
         raise GraderUnavailableError(f"{asked.move.node_id} is no longer on the map")
+    if (picked := score_quiz_pick(said, surface=asked.surface, node=node)) is not None:
+        logger.info(
+            "live.session.pick_marked",
+            run_id=run_id,
+            seq=asked.seq,
+            node=node.id,
+            # The verdict, never the option: an operational log is not the place for a transcript
+            # of somebody being taught (the same rule ``turn_graded`` holds itself to).
+            graded=picked.kind.value,
+        )
+        return picked
     return await grader.grade(said, criterion=asked.criterion, node=node, run_id=run_id)
