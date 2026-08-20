@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from ..schema import Session
+from ..schema import Session, SessionSummary
 
 
 class ISessionStore(Protocol):
@@ -28,3 +28,11 @@ class ISessionStore(Protocol):
     ) -> None: ...
 
     def load(self, session_id: str, *, owner_id: str | None = None) -> Session: ...
+
+    def recent(self, *, owner_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
+        """This owner's sessions, most recently moved first, as summaries rather than transcripts.
+
+        Scoped the same way ``load`` is, and for a sharper reason: a list is where a scoping mistake
+        shows a learner somebody else's teaching history all at once rather than one row of it.
+        """
+        ...

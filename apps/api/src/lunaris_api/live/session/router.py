@@ -4,7 +4,9 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Response, status
 from lunaris_live.session import (
     Session,
+    SessionSummary,
 )
+from lunaris_runtime.logging import bind_request_id
 
 from ...dependencies import OptionalUserIdDep
 from .dependencies import LiveSessionServiceDep
@@ -100,6 +102,29 @@ async def advance_session(
         return Response(status_code=status.HTTP_202_ACCEPTED, headers=correlated)
     response.headers["X-Session-Id"] = session_id
     return session
+
+
+@router.get("", response_model=list[SessionSummary])
+async def list_sessions(
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> list[SessionSummary]:
+    """This learner's own sessions, newest first (T2).
+
+    Summaries, never transcripts: a learner looking over their sessions wants to recognise them,
+    and sending twenty full teaching histories to draw twenty rows would be the wrong trade in
+    every direction. Registered above ``/{session_id}`` for readability only; the paths cannot
+    collide, since an empty id is not a path.
+
+    No ``X-Session-Id`` here because it names no session. A fresh ``X-Request-Id`` carries the
+    correlation instead, the way every other route that fans out does it, so a learner reporting
+    "my sessions did not load" can still be found in the logs.
+    """
+    request_id = uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
+    return await service.recent(owner_id=owner_id)
 
 
 @router.get("/{session_id}", response_model=Session)

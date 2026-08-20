@@ -25,6 +25,7 @@ from .quiz_card import QuizCard
 from .session import Session
 from .session_clock import SessionClock
 from .session_status import SessionStatus
+from .session_summary import SessionSummary
 from .session_turn import SessionTurn
 from .sim_app import SimApp
 from .sim_app_card import SimAppCard
@@ -63,6 +64,7 @@ __all__ = [
     "Session",
     "SessionClock",
     "SessionStatus",
+    "SessionSummary",
     "SessionTurn",
     "SimApp",
     "SimAppCard",

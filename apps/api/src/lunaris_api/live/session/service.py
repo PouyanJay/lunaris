@@ -23,6 +23,7 @@ from lunaris_live.session import (
     SessionClock,
     SessionClosedError,
     SessionStatus,
+    SessionSummary,
     StaleAnswerError,
     TurnOutcome,
     advance_placement,
@@ -942,6 +943,17 @@ class LiveSessionService:
         has set no keys must not be taught on the platform's (the compile plane's rule; the
         session plane read ``if credentials`` and let an empty vault fall through, found in T4)."""
         return nullcontext() if credentials is None else run_credentials(credentials)
+
+    async def recent(self, *, owner_id: str | None = None) -> list[SessionSummary]:
+        """This learner's sessions, newest first (T2).
+
+        The one session route that names no session, which is why it takes no ``session_id`` to
+        correlate by and leaves the request's own id to do it. Summaries rather than sessions: a
+        list of twenty would otherwise be twenty transcripts on the wire to draw twenty rows.
+        """
+        listed = await asyncio.to_thread(self._sessions.recent, owner_id=owner_id)
+        logger.info("live.session.listed", count=len(listed))
+        return listed
 
     async def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Re-read a session so a reloaded tab lands back in it (U2).

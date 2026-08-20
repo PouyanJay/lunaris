@@ -1,0 +1,154 @@
+/* A learner's sessions, as a hairline-divided region rather than a deck of floating cards: the
+   rows are one list of one kind of thing, and a border per row would say they were not. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-5);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--text-xl);
+  line-height: var(--lh-lg);
+  color: var(--text);
+}
+
+/* ── the rows ──────────────────────────────────────────────────────────────────────────────── */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: var(--border-width) solid var(--border);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-4) 0;
+  border-bottom: var(--border-width) solid var(--border);
+}
+
+.topic {
+  align-self: flex-start;
+  font-size: var(--text-base);
+  line-height: var(--lh-base);
+  color: var(--text);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.topic:hover {
+  text-decoration: underline;
+}
+
+.topic:focus-visible {
+  outline: none;
+  /* A ring rather than an outline, so it follows the radius (the idiom AnswerForm settled). */
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+/* The shape of what happened, in the data face the rest of the product sets identifiers,
+   numerals and timestamps in. */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.separator {
+  color: var(--border-strong);
+}
+
+/* A session still going is the one thing in a row worth the accent; everything else is quiet.
+   One signature colour, used sparingly, is the whole rule. */
+.status[data-status="active"],
+.status[data-status="placing"],
+.status[data-status="warming"] {
+  color: var(--accent-600);
+}
+
+/* ── the states that are not rows ──────────────────────────────────────────────────────────── */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+  border-top: var(--border-width) solid var(--border);
+}
+
+.emptyLead,
+.failedMessage {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+}
+
+.start {
+  font-size: var(--text-sm);
+  color: var(--accent-600);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.start:hover {
+  text-decoration: underline;
+}
+
+.start:focus-visible,
+.retry:focus-visible {
+  outline: none;
+  /* A ring rather than an outline, so it follows the radius (the idiom AnswerForm settled). */
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+  border-top: var(--border-width) solid var(--border);
+}
+
+.retry {
+  padding: var(--space-2) var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text);
+  background: var(--bg-subtle);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.retry:hover {
+  background: var(--bg-muted);
+  border-color: var(--border-strong);
+}
+
+.retry:active {
+  background: var(--bg-muted);
+}

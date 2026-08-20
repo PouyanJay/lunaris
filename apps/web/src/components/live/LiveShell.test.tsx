@@ -124,6 +124,15 @@ function renderLive(topic: string) {
   );
 }
 
+/** A learner's own sessions: Live's first sub-route (T2). */
+function onTheSessionsRoute() {
+  return render(
+    <MemoryRouter initialEntries={["/live/sessions"]}>
+      <LiveShell apiBaseUrl="http://test" />
+    </MemoryRouter>,
+  );
+}
+
 /** The map of a graph the learner already has: the way in that P2a/P2b's opening keeps. */
 function renderMap(graphId = "g1") {
   return render(
@@ -279,5 +288,38 @@ describe("LiveShell — a map the learner already has", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /back to the map/i }));
     expect(await screen.findByRole("button", { name: /start a session/i })).toBeInTheDocument();
+  });
+});
+
+describe("the sessions route", () => {
+  it("lists the learner's sessions rather than opening one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                sessionId: "s1",
+                graphId: "g1",
+                topic: "How neural networks learn",
+                status: "active",
+                turnCount: 6,
+                startedAt: "2026-08-19T09:00:00Z",
+                updatedAt: "2026-08-19T09:40:00Z",
+              },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    onTheSessionsRoute();
+
+    // The route is the assertion: a path under /live must reach Live's own screen and never fall
+    // through to the idle state, which is what an unrouted sub-path would do.
+    expect(await screen.findByRole("heading", { name: /your sessions/i })).toBeInTheDocument();
+    expect(await screen.findByRole("listitem")).toHaveTextContent("How neural networks learn");
   });
 });

@@ -1,14 +1,20 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link, useLocation, useSearchParams } from "react-router";
 
 import { ConceptMap } from "./ConceptMap";
 import { ConceptSpecPanel } from "./ConceptSpecPanel";
+import { SessionList } from "./SessionList";
 import { SessionView } from "./SessionView";
 import { useLiveGraph } from "../../hooks/useLiveGraph";
 import { type ConceptGraph } from "../../lib/liveGraph";
 import { ROUTES } from "../../lib/routes";
 import { BrandMark } from "../shell/BrandMark";
 import styles from "./LiveShell.module.css";
+
+/** Where a learner's own sessions are listed. Lives beside the shell that routes to it rather than
+ *  in `routes.ts`, which is Studio's route table: `resolveProductRoute` already claims everything
+ *  under `/live`, so this is Live's own business. */
+export const LIVE_SESSIONS_PATH = "/live/sessions";
 
 interface LiveShellProps {
   /** Where the API lives — threaded from the app root, as every other request surface is. */
@@ -25,8 +31,12 @@ interface LiveShellProps {
  *  Loaded lazily by {@link ProductRouter} so Live's dependencies never reach Studio's bundle. */
 export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   const [params] = useSearchParams();
+  const { pathname } = useLocation();
   const topic = params.get("topic")?.trim();
   const graphId = params.get("graph")?.trim();
+  // Live's first sub-route. Read here rather than through a nested router because the shell has
+  // exactly two destinations and a router for two is more machinery than either of them needs.
+  const listing = pathname === LIVE_SESSIONS_PATH || pathname === `${LIVE_SESSIONS_PATH}/`;
 
   useEffect(() => {
     const previous = document.title;
@@ -44,7 +54,11 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
           <span className={styles.wordmark}>Lunaris</span>
         </div>
       </header>
-      {topic ? (
+      {listing ? (
+        <main className={styles.canvas} data-state="sessions">
+          <SessionList apiBaseUrl={apiBaseUrl} />
+        </main>
+      ) : topic ? (
         <main className={styles.canvas} data-state="session">
           <div className={styles.teaching}>
             <SessionView

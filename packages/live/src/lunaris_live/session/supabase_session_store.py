@@ -2,7 +2,7 @@ from lunaris_runtime.persistence import supabase_client
 from lunaris_runtime.persistence.guard import guard
 from pydantic import ValidationError
 
-from .schema import Session
+from .schema import Session, SessionSummary
 from .session_format_error import SessionFormatError
 from .stale_answer_error import StaleAnswerError
 
@@ -105,3 +105,42 @@ class SupabaseSessionStore:
             # "storage is having trouble" a reload is the right answer to. Live under a rolling
             # deploy, and the turn schema is still growing (T4 added ``run_id``; T5, T6 add more).
             raise SessionFormatError(f"session {session_id} is not in a readable format") from exc
+
+    @guard("live_sessions recent")
+    def recent(self, *, owner_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
+        """This owner's sessions, newest first, read through the index built for exactly this.
+
+        ``live_sessions_user_idx`` on ``(user_id, updated_at desc)`` has been there since Phase 2a
+        and has never been read. The columns lifted out of the payload are what makes this a list
+        query rather than twenty transcripts parsed to draw twenty rows: ``status`` and
+        ``turn_count`` are already up here, and only ``topic`` and ``startedAt`` have to be reached
+        for inside the json.
+        """
+        client = self._ensure_client()
+        query = client.table(_TABLE).select(  # type: ignore[attr-defined]
+            "id, graph_id, status, turn_count, updated_at, payload->>topic, payload->>startedAt"
+        )
+        # Scoped in the query, either way, for the reason ``load`` gives: the service-role client
+        # bypasses RLS, so this is the only thing between one learner's history and another's.
+        query = query.is_("user_id", None) if owner_id is None else query.eq("user_id", owner_id)
+        rows = query.order("updated_at", desc=True).limit(limit).execute().data
+        try:
+            return [_summary_of(row) for row in rows]
+        except (ValidationError, KeyError, TypeError) as exc:
+            # Same split ``load`` makes, and the same reason: a row this build cannot read is not an
+            # outage, and a reload is not the answer to it.
+            raise SessionFormatError("a session row is not in a readable format") from exc
+
+
+def _summary_of(row: dict) -> SessionSummary:
+    """One selected row as a summary. ``startedAt`` keeps its camelCase: the payload is the wire
+    JSON, so a json path into it reads the wire's own field names, not Python's."""
+    return SessionSummary(
+        session_id=row["id"],
+        graph_id=row["graph_id"],
+        topic=row["topic"],
+        status=row["status"],
+        turn_count=row["turn_count"],
+        started_at=row["startedAt"],
+        updated_at=row["updated_at"],
+    )
