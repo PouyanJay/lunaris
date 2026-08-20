@@ -37,10 +37,52 @@
 
 .row {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
   padding: var(--space-4) 0;
   border-bottom: var(--border-width) solid var(--border);
+}
+
+/* What the row is about, which gets the space; the verbs sit to its right and never squeeze it. */
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* The verbs. Always present rather than revealed on hover: an action a keyboard or touch user
+   cannot find is an action they do not have. Wraps under the row on narrow widths rather than
+   pushing the topic out of its own line. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* A verb that failed outside a dialog. Sits at the foot of the panel, in the danger tone, because
+   a destructive action that failed silently is the worst of both: the learner believes it
+   happened, and it did not. */
+.verbFailed {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
 }
 
 .topic {
@@ -117,8 +159,7 @@
   text-decoration: underline;
 }
 
-.start:focus-visible,
-.retry:focus-visible {
+.start:focus-visible {
   outline: none;
   /* A ring rather than an outline, so it follows the radius (the idiom AnswerForm settled). */
   box-shadow: 0 0 0 2px var(--focus-ring);
@@ -133,22 +174,4 @@
   border-top: var(--border-width) solid var(--border);
 }
 
-.retry {
-  padding: var(--space-2) var(--space-3);
-  font: inherit;
-  font-size: var(--text-sm);
-  color: var(--text);
-  background: var(--bg-subtle);
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-}
-
-.retry:hover {
-  background: var(--bg-muted);
-  border-color: var(--border-strong);
-}
-
-.retry:active {
-  background: var(--bg-muted);
-}
+/* The retry is the Button primitive now — one definition of what an action looks like. */

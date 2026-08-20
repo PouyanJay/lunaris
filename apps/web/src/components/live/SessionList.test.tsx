@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -131,5 +131,184 @@ describe("SessionList", () => {
     // which is a different and wrong answer.
     expect(screen.getByRole("status")).toHaveTextContent(/reading your sessions/i);
     expect(screen.queryByRole("listitem")).not.toBeInTheDocument();
+  });
+
+  describe("the verbs", () => {
+    it("offers ending and leaving only while a session is still going", async () => {
+      vi.stubGlobal("fetch", answering(LISTED));
+
+      shown();
+
+      const rows = await screen.findAllByRole("listitem");
+      // The live one.
+      expect(within(rows[0]!).getByRole("button", { name: /finish/i })).toBeInTheDocument();
+      expect(within(rows[0]!).getByRole("button", { name: /leave/i })).toBeInTheDocument();
+      // The finished one: there is nothing left to finish or leave.
+      expect(within(rows[1]!).queryByRole("button", { name: /finish/i })).not.toBeInTheDocument();
+      expect(within(rows[1]!).queryByRole("button", { name: /leave/i })).not.toBeInTheDocument();
+    });
+
+    it("offers forgetting a topic only once its session has ended", async () => {
+      vi.stubGlobal("fetch", answering(LISTED));
+
+      shown();
+
+      const rows = await screen.findAllByRole("listitem");
+      // The API refuses a reset while a session on that map is going, because the session would
+      // write its beliefs back over it. The surface teaches the rule rather than hiding a 409.
+      expect(within(rows[1]!).getByRole("button", { name: /forget/i })).toBeInTheDocument();
+      expect(within(rows[0]!).queryByRole("button", { name: /forget/i })).not.toBeInTheDocument();
+    });
+
+    it("can always delete a session, going or not", async () => {
+      vi.stubGlobal("fetch", answering(LISTED));
+
+      shown();
+
+      const rows = await screen.findAllByRole("listitem");
+      for (const row of rows) {
+        expect(within(row).getByRole("button", { name: /delete/i })).toBeInTheDocument();
+      }
+    });
+
+    it("asks before deleting, and does nothing if the learner backs out", async () => {
+      const methods: string[] = [];
+      const fetchMock = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        methods.push(init?.method ?? "GET");
+        return Promise.resolve(
+          new Response(JSON.stringify(LISTED), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      shown();
+      const rows = await screen.findAllByRole("listitem");
+      fireEvent.click(within(rows[1]!).getByRole("button", { name: /delete/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+
+      // Confirm-before, never optimistic: an irreversible action must not have already happened by
+      // the time the learner is asked about it.
+      expect(methods).not.toContain("DELETE");
+    });
+
+    it("deletes the session the learner confirmed", async () => {
+      const calls: { url: string; method: string }[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          calls.push({ url, method: init?.method ?? "GET" });
+          if (init?.method === "DELETE")
+            return Promise.resolve(new Response(null, { status: 204 }));
+          return Promise.resolve(
+            new Response(JSON.stringify(LISTED), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }),
+      );
+
+      shown();
+      const rows = await screen.findAllByRole("listitem");
+      fireEvent.click(within(rows[1]!).getByRole("button", { name: /delete/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^delete session$/i }));
+
+      await waitFor(() =>
+        expect(
+          calls.some((call) => call.method === "DELETE" && call.url.endsWith("/sessions/s1")),
+        ).toBe(true),
+      );
+    });
+
+    it("names the topic in the confirmation, so nobody deletes the wrong one", async () => {
+      vi.stubGlobal("fetch", answering(LISTED));
+
+      shown();
+      const rows = await screen.findAllByRole("listitem");
+      fireEvent.click(within(rows[1]!).getByRole("button", { name: /delete/i }));
+
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toHaveTextContent("How vaccines train the immune system");
+    });
+
+    it("says what forgetting a topic costs, which is not the same as deleting it", async () => {
+      vi.stubGlobal("fetch", answering(LISTED));
+
+      shown();
+      const rows = await screen.findAllByRole("listitem");
+      fireEvent.click(within(rows[1]!).getByRole("button", { name: /forget/i }));
+
+      const dialog = await screen.findByRole("dialog");
+      // The two verbs remove different things, and a learner has to be able to tell which one they
+      // are about to press.
+      expect(dialog).toHaveTextContent(/progress|demonstrated|knows about you/i);
+    });
+
+    it("finishing a session needs no confirmation, because nothing is lost", async () => {
+      const calls: string[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          if (init?.method === "POST") {
+            calls.push(url);
+            return Promise.resolve(
+              new Response(JSON.stringify({}), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify(LISTED), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }),
+      );
+
+      shown();
+      const rows = await screen.findAllByRole("listitem");
+      fireEvent.click(within(rows[0]!).getByRole("button", { name: /finish/i }));
+
+      await waitFor(() => expect(calls.some((url) => url.endsWith("/s2/end"))).toBe(true));
+    });
+
+    it("shows why a verb failed and keeps the row", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+          if (init?.method === "DELETE") {
+            return Promise.resolve(
+              new Response(JSON.stringify({ detail: "Storage is having trouble." }), {
+                status: 503,
+                headers: { "content-type": "application/json" },
+              }),
+            );
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify(LISTED), {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            }),
+          );
+        }),
+      );
+
+      shown();
+      const rows = await screen.findAllByRole("listitem");
+      fireEvent.click(within(rows[1]!).getByRole("button", { name: /delete/i }));
+      fireEvent.click(await screen.findByRole("button", { name: /^delete session$/i }));
+
+      // A destructive action that failed silently is the worst of both: the learner believes it
+      // happened and it did not.
+      expect(await screen.findByText(/storage is having trouble/i)).toBeInTheDocument();
+      expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    });
   });
 });

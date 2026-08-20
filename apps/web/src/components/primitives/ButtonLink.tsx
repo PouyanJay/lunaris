@@ -4,7 +4,7 @@ import { Link, type LinkProps } from "react-router";
 import styles from "./Button.module.css";
 
 type ButtonLinkProps = LinkProps & {
-  variant?: "primary" | "secondary" | "accent" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "accent" | "danger";
 };
 
 /** A destination that looks like an action.

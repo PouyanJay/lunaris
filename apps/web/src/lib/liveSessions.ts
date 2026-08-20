@@ -3,7 +3,7 @@ import { detailOf } from "./apiErrors";
 
 /** Where a session is in its life. Mirrors `SessionStatus` server-side, and the set is closed for
  *  the same reason it is there: every surface is forced to notice a new one. */
-export type LiveSessionStatus = "placing" | "warming" | "active" | "closed";
+export type LiveSessionStatus = "placing" | "warming" | "active" | "closed" | "abandoned";
 
 /** One session as a list shows it: enough to recognise, far too little to resume from.
  *
@@ -47,4 +47,57 @@ export async function loadSessions(
     );
   }
   return (await response.json()) as LiveSessionSummary[];
+}
+
+/** Whether anything more can happen in a session. The wire's own vocabulary, kept in one place so
+ *  no surface has to remember which two of the four statuses mean "done". */
+export function isFinished(status: LiveSessionStatus): boolean {
+  return status === "closed" || status === "abandoned";
+}
+
+/** Finish a session deliberately: the recap, the mastery delta, and the day to come back. */
+export async function endSession(
+  apiBaseUrl: string,
+  sessionId: string,
+): Promise<LiveSessionSummary | null> {
+  return act(`${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}/end`, "POST");
+}
+
+/** Leave a session without a ceremony. Not a delete: the transcript is still the learner's. */
+export async function discardSession(apiBaseUrl: string, sessionId: string): Promise<null> {
+  await act(`${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}/discard`, "POST");
+  return null;
+}
+
+/** Remove a session and its transcript. What the learner demonstrated survives (see below). */
+export async function deleteSession(apiBaseUrl: string, sessionId: string): Promise<null> {
+  await act(`${apiBaseUrl}/api/live/sessions/${encodeURIComponent(sessionId)}`, "DELETE");
+  return null;
+}
+
+/** Forget what Lunaris concluded about this learner on one topic. The other half of the pair:
+ *  deleting a session stops keeping what they said, this stops keeping what was concluded. */
+export async function forgetTopic(apiBaseUrl: string, graphId: string): Promise<null> {
+  await act(`${apiBaseUrl}/api/live/knowledge/${encodeURIComponent(graphId)}`, "DELETE");
+  return null;
+}
+
+/** One verb against the session plane, with the API's own sentence when it refuses.
+ *
+ *  The refusals here are worth reading rather than swallowing: "a turn is in flight" and "you still
+ *  have a session going on this topic" are both instructions, and a surface that replaced them with
+ *  "something went wrong" would take the fix away from the learner. */
+async function act(url: string, method: "POST" | "DELETE"): Promise<LiveSessionSummary | null> {
+  let response: Response;
+  try {
+    response = await authedFetch(url, { method });
+  } catch (cause) {
+    throw new LiveSessionsError("Could not reach your sessions.", { cause });
+  }
+  if (!response.ok) {
+    throw new LiveSessionsError(
+      (await detailOf(response)) ?? `That didn't go through (HTTP ${response.status}).`,
+    );
+  }
+  return response.status === 204 ? null : ((await response.json()) as LiveSessionSummary);
 }
