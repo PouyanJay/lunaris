@@ -153,6 +153,28 @@ async def discard_session(
     return session
 
 
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    owner_id: OptionalUserIdDep,
+) -> Response:
+    """Remove a session and its transcript (T4).
+
+    204 with no body: there is nothing left to describe. The transcript goes and nothing else — what
+    the learner demonstrated survives, because forgetting that is a separate and deliberate act
+    (U2), and a learner tidying their history should not silently lose the progress it earned them.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        await service.delete(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.delete_failed", session_id=session_id, missing="Session"
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=correlated)
+
+
 @router.get("", response_model=list[SessionSummary])
 async def list_sessions(
     service: LiveSessionServiceDep,

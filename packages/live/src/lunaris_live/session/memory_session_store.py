@@ -56,6 +56,17 @@ class MemorySessionStore:
             raise FileNotFoundError(session_id)
         return session
 
+    def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
+        with self._lock:
+            # Scoped exactly as ``load`` is, and checked before anything is removed: an unscoped
+            # delete must not be able to reach an owned session, and a wrong owner must not be
+            # able to learn that the id exists by watching what the call does.
+            if self._owners.get(session_id) != owner_id or session_id not in self._sessions:
+                raise FileNotFoundError(session_id)
+            del self._sessions[session_id]
+            del self._owners[session_id]
+            self._touched.pop(session_id, None)
+
     def recent(self, *, owner_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
         with self._lock:
             mine = [

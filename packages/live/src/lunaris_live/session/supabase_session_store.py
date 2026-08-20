@@ -106,6 +106,27 @@ class SupabaseSessionStore:
             # deploy, and the turn schema is still growing (T4 added ``run_id``; T5, T6 add more).
             raise SessionFormatError(f"session {session_id} is not in a readable format") from exc
 
+    @guard("live_sessions delete")
+    def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
+        """Remove one session row, scoped to its owner.
+
+        Scoped in the DELETE itself rather than after a read, and either way, for the reason
+        ``load`` gives at length: the service-role client bypasses RLS, so this predicate is the
+        only thing standing between one learner's delete and another learner's transcript. A
+        delete that only matched on the id would be a way to remove somebody else's session by
+        guessing an id.
+
+        The returned rows are what say whether anything matched, which is how a missing session
+        becomes ``FileNotFoundError`` here rather than a silent success. Only the session row goes:
+        `live_knowledge`, `live_materials` and `live_graphs` are keyed by graph, not by session,
+        and forgetting what a learner demonstrated is its own verb (U2).
+        """
+        client = self._ensure_client()
+        query = client.table(_TABLE).delete().eq("id", session_id)  # type: ignore[attr-defined]
+        query = query.is_("user_id", None) if owner_id is None else query.eq("user_id", owner_id)
+        if not query.execute().data:
+            raise FileNotFoundError(session_id)
+
     @guard("live_sessions recent")
     def recent(self, *, owner_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
         """This owner's sessions, newest first, read through the index built for exactly this.

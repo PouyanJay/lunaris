@@ -1051,6 +1051,29 @@ class LiveSessionService:
         )
         return left
 
+    async def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
+        """Remove a session, transcript and all (T4).
+
+        The privacy verb. Everything a learner types is otherwise kept for ever, and the only way to
+        be rid of it was to delete the auth user and let the cascade take it.
+
+        **The transcript goes and nothing else (U2).** What the learner demonstrated lives in
+        `live_knowledge`, keyed by graph and node with no session id in it, so a delete that tried
+        to unpick "what this session taught them" would be guessing. Forgetting a topic is T5's own
+        verb; a learner tidying their history must not silently lose the progress it earned them.
+
+        Under the turn slot, though it pays for nothing: the store's save is an upsert on the id, so
+        a turn landing after a delete would write the row straight back, and a learner's deleted
+        transcript would be resurrected by a call that was already in flight when they pressed the
+        button. The same guard a discard needs, for the same reason.
+
+        Raises ``FileNotFoundError`` when there is no such session for this learner.
+        """
+        bind_request_id(session_id, session_id=session_id)
+        with self._turn_slot(session_id):
+            await asyncio.to_thread(self._sessions.delete, session_id, owner_id=owner_id)
+        logger.info("live.session.deleted", session_id=session_id)
+
     async def recent(self, *, owner_id: str | None = None) -> list[SessionSummary]:
         """This learner's sessions, newest first (T2).
 

@@ -172,6 +172,91 @@ def test_a_placing_session_round_trips_with_its_topic() -> None:
     assert loaded.turns[0].move.kind is MoveKind.PLACE
 
 
+# ── deleting, and listing, are scoped like every other read (T4, T2) ───────────────────────────
+
+
+def test_a_session_is_deleted_only_by_its_own_owner() -> None:
+    """The delete verb's whole safety property. Unscoped, a learner could remove somebody else's
+    transcript by guessing an id, and would learn the id existed by watching it succeed."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("mine"), owner_id="learner-a")
+
+    # Act / Assert: another learner cannot reach it, and neither can an unscoped caller.
+    with pytest.raises(FileNotFoundError):
+        store.delete("mine", owner_id="learner-b")
+    with pytest.raises(FileNotFoundError):
+        store.delete("mine")
+    # And it is still there afterwards, which is the half a refusal alone would not prove.
+    assert store.load("mine", owner_id="learner-a").session_id == "mine"
+
+    # Act: its owner can.
+    store.delete("mine", owner_id="learner-a")
+
+    # Assert
+    with pytest.raises(FileNotFoundError):
+        store.load("mine", owner_id="learner-a")
+
+
+def test_deleting_a_session_that_was_never_there_is_not_found() -> None:
+    """So a caller cannot tell "already gone" from "never existed" by the shape of the answer."""
+    # Arrange
+    store = MemorySessionStore()
+
+    # Act / Assert
+    with pytest.raises(FileNotFoundError):
+        store.delete("nope", owner_id="learner-a")
+
+
+def test_a_learner_lists_only_their_own_sessions() -> None:
+    """A list is where a scoping mistake shows somebody else's teaching history all at once rather
+    than one row of it, which is why this is proved at the store and not only at the API."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("mine"), owner_id="learner-a")
+    store.save(_session("theirs"), owner_id="learner-b")
+    store.save(_session("nobodys"))
+
+    # Act
+    listed = store.recent(owner_id="learner-a")
+
+    # Assert
+    assert [summary.session_id for summary in listed] == ["mine"]
+
+
+def test_the_newest_session_is_listed_first() -> None:
+    """Ordering is the store's job, so both implementations answer the same way and no surface has
+    to re-sort. Two saves inside one clock tick is the case a wall clock alone would get wrong."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("older"), owner_id="learner-a")
+    store.save(_session("newer"), owner_id="learner-a")
+
+    # Act
+    listed = store.recent(owner_id="learner-a")
+
+    # Assert
+    assert [summary.session_id for summary in listed] == ["newer", "older"]
+
+
+def test_a_re_saved_session_moves_to_the_front() -> None:
+    """ "Newest" means last moved, not first opened: a learner coming back wants the thing they were
+    last doing. A turn re-saves the session, so this is what every answer does to the list."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("first"), owner_id="learner-a")
+    store.save(_session("second"), owner_id="learner-a")
+
+    # Act: the older one takes a turn.
+    store.save(_session("first"), owner_id="learner-a")
+
+    # Assert
+    assert [summary.session_id for summary in store.recent(owner_id="learner-a")] == [
+        "first",
+        "second",
+    ]
+
+
 # ── a row this build cannot read ───────────────────────────────────────────────────────────────
 
 

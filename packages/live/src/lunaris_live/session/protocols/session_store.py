@@ -29,6 +29,16 @@ class ISessionStore(Protocol):
 
     def load(self, session_id: str, *, owner_id: str | None = None) -> Session: ...
 
+    def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
+        """Remove this owner's session, transcript and all.
+
+        Raises ``FileNotFoundError`` when there is no such session **for that owner**, so a delete
+        cannot be used to discover that somebody else's session exists. Removes the session row and
+        nothing else: what the learner demonstrated lives in the knowledge store, keyed by graph and
+        node with no session id in it, and forgetting that is its own deliberate verb (U2).
+        """
+        ...
+
     def recent(self, *, owner_id: str | None = None, limit: int = 50) -> list[SessionSummary]:
         """This owner's sessions, most recently moved first, as summaries rather than transcripts.
 
