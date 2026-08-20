@@ -20,3 +20,7 @@ class MemoryKnowledgeStore:
         # Absent is empty, not an error — a first session is the common case. The key includes the
         # owner, so an unscoped read simply misses an owned model rather than reaching it.
         return self._models.get((owner_id, graph_id)) or LearnerModel(graph_id=graph_id)
+
+    def forget(self, graph_id: str, *, owner_id: str | None = None) -> None:
+        # Keyed by both, so this reaches exactly one learner's record of one map and no other.
+        self._models.pop((owner_id, graph_id), None)

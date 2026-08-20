@@ -2,8 +2,11 @@ import threading
 from datetime import UTC, datetime
 from itertools import count
 
-from .schema import Session, SessionSummary
+from .schema import Session, SessionStatus, SessionSummary
 from .stale_answer_error import StaleAnswerError
+
+#: The statuses a session is done in. Nothing more is taught, and nothing more will be written.
+_FINISHED = frozenset({SessionStatus.CLOSED, SessionStatus.ABANDONED})
 
 
 class MemorySessionStore:
@@ -55,6 +58,14 @@ class MemorySessionStore:
         if self._owners.get(session_id) != owner_id:
             raise FileNotFoundError(session_id)
         return session
+
+    def has_open_on(self, graph_id: str, *, owner_id: str | None = None) -> bool:
+        with self._lock:
+            return any(
+                session.graph_id == graph_id and session.status not in _FINISHED
+                for session_id, session in self._sessions.items()
+                if self._owners.get(session_id) == owner_id
+            )
 
     def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         with self._lock:

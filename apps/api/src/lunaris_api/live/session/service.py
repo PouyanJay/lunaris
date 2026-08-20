@@ -51,7 +51,11 @@ from ..service import LiveGraphService
 from .material_prefetcher import MaterialPrefetcher
 from .prefetch_registry import prefetch_registry
 from .spent_past_ceiling import spent_past_ceiling
-from .throttle import LiveSessionBudgetExhaustedError, LiveSessionThrottle
+from .throttle import (
+    LiveSessionBudgetExhaustedError,
+    LiveSessionStillOpenError,
+    LiveSessionThrottle,
+)
 from .turn_beat import TurnBeat
 from .turn_context import TurnContext
 
@@ -1050,6 +1054,33 @@ class LiveSessionService:
             turn_count=len(session.turns),
         )
         return left
+
+    async def forget(self, graph_id: str, *, owner_id: str | None = None) -> None:
+        """Clear what this learner has demonstrated about one map (T5).
+
+        The other half of the delete pair (U2). Deleting a session is "stop keeping what I said";
+        this is "forget what you concluded about me". Neither can do the other's job: beliefs are
+        keyed by graph and node with no session id in them, and transcripts carry no beliefs.
+
+        It is also the repair verb. A learner whose record was moved by a broken assessment surface
+        keeps being taught around a belief nobody meant them to have, and without this the fix is
+        invisible to everyone who already met the bug.
+
+        **Refuses while a session on this map is still going**, rather than racing it. A session in
+        progress holds the model in memory and writes it back at the end of every turn, so a reset
+        underneath one would be silently undone by the next turn: the learner's clearing lost to a
+        session they were still in. Refusing is both correct and the honest instruction, and the
+        block is per map rather than per learner so one unfinished session cannot freeze every other
+        topic.
+
+        Silent when there is nothing to forget: a learner pressing it twice must not meet an error
+        the second time.
+        """
+        bind_request_id(uuid4().hex, graph_id=graph_id)
+        if await asyncio.to_thread(self._sessions.has_open_on, graph_id, owner_id=owner_id):
+            raise LiveSessionStillOpenError(graph_id)
+        await asyncio.to_thread(self._knowledge.forget, graph_id, owner_id=owner_id)
+        logger.info("live.knowledge.forgotten", graph_id=graph_id)
 
     async def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         """Remove a session, transcript and all (T4).

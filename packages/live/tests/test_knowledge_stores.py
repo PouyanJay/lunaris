@@ -85,3 +85,65 @@ def test_saving_again_replaces_the_belief_rather_than_appending_to_it() -> None:
 
     # Assert
     assert store.load("g1", owner_id="learner-1").nodes["a"].evidence_count == 2
+
+
+# ── forgetting a topic (T5) ────────────────────────────────────────────────────────────────────
+
+
+def test_forgetting_a_topic_clears_only_that_learner() -> None:
+    """The reset verb's safety property, and the one the API suite structurally cannot prove: it
+    runs with auth unconfigured, so ``owner_id`` is ``None`` in every test in it. Unscoped, "forget
+    this topic" would clear every learner's progress on it, with no way to get it back."""
+    # Arrange
+    store = MemoryKnowledgeStore()
+    store.save(_model(), owner_id="learner-1")
+    store.save(_model(), owner_id="learner-2")
+
+    # Act
+    store.forget("g1", owner_id="learner-1")
+
+    # Assert
+    assert store.load("g1", owner_id="learner-1").nodes == {}
+    assert store.load("g1", owner_id="learner-2").nodes != {}
+
+
+def test_forgetting_a_topic_clears_only_that_map() -> None:
+    """Node ids are graph-local, so two maps are unrelated records. A reset that reached past its
+    own map would take away progress the learner never asked about."""
+    # Arrange
+    store = MemoryKnowledgeStore()
+    store.save(_model(), owner_id="learner-1")
+    store.save(
+        apply_evidence(LearnerModel(graph_id="g2"), "a", EvidenceKind.MET, at_turn=1),
+        owner_id="learner-1",
+    )
+
+    # Act
+    store.forget("g1", owner_id="learner-1")
+
+    # Assert
+    assert store.load("g2", owner_id="learner-1").nodes != {}
+
+
+def test_an_unscoped_reset_cannot_reach_an_owned_record() -> None:
+    """The mirror of ``test_an_owned_model_is_not_served_to_an_unscoped_read``: unscoped means
+    *unowned*, never *everyone*, on the way out as much as on the way in."""
+    # Arrange
+    store = MemoryKnowledgeStore()
+    store.save(_model(), owner_id="learner-1")
+
+    # Act
+    store.forget("g1")
+
+    # Assert
+    assert store.load("g1", owner_id="learner-1").nodes != {}
+
+
+def test_forgetting_a_topic_with_nothing_to_forget_is_quiet() -> None:
+    """Idempotent by contract: a learner pressing it twice must not meet an error the second time,
+    and the first press on a topic never taught is the same non-event."""
+    # Arrange
+    store = MemoryKnowledgeStore()
+
+    # Act / Assert: no exception is the assertion.
+    store.forget("never-taught", owner_id="learner-1")

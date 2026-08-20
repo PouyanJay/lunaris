@@ -10,6 +10,9 @@ _URL_ENV = "SUPABASE_URL"
 _SERVICE_KEY_ENV = "SUPABASE_SERVICE_ROLE_KEY"
 _TABLE = "live_sessions"
 
+#: The statuses a session is done in: nothing more is taught and nothing more will be written.
+_FINISHED = ("closed", "abandoned")
+
 
 class SupabaseSessionStore:
     """The durable session store: Supabase Postgres, ``jsonb`` payload, lazy service-role client.
@@ -105,6 +108,20 @@ class SupabaseSessionStore:
             # "storage is having trouble" a reload is the right answer to. Live under a rolling
             # deploy, and the turn schema is still growing (T4 added ``run_id``; T5, T6 add more).
             raise SessionFormatError(f"session {session_id} is not in a readable format") from exc
+
+    @guard("live_sessions has_open_on")
+    def has_open_on(self, graph_id: str, *, owner_id: str | None = None) -> bool:
+        """Whether this owner has an unfinished session on this map (T5).
+
+        Read through ``live_sessions_graph_idx`` on ``(user_id, graph_id)``, and asked as its own
+        question rather than by filtering a listing: the answer gates a destructive act, and a limit
+        that hid one open session would make the guard a coin toss. One column, one row at most.
+        """
+        client = self._ensure_client()
+        query = client.table(_TABLE).select("id").eq("graph_id", graph_id)  # type: ignore[attr-defined]
+        query = query.is_("user_id", None) if owner_id is None else query.eq("user_id", owner_id)
+        rows = query.not_.in_("status", list(_FINISHED)).limit(1).execute().data
+        return bool(rows)
 
     @guard("live_sessions delete")
     def delete(self, session_id: str, *, owner_id: str | None = None) -> None:

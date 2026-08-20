@@ -257,6 +257,45 @@ def test_a_re_saved_session_moves_to_the_front() -> None:
     ]
 
 
+def test_an_open_session_is_only_seen_by_its_own_owner() -> None:
+    """``has_open_on`` gates a destructive act (T5's reset), so a wrong answer either blocks a
+    learner from clearing their own record or lets them clear it out from under a live session."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("theirs"), owner_id="learner-b")
+
+    # Act / Assert
+    assert store.has_open_on("g1", owner_id="learner-b") is True
+    assert store.has_open_on("g1", owner_id="learner-a") is False
+    assert store.has_open_on("g1") is False
+
+
+def test_a_finished_session_is_not_an_open_one() -> None:
+    """Both terminal statuses, because a learner who *left* a session must be as free to reset the
+    topic as one who finished it: the guard exists to stop a live session overwriting the reset, and
+    neither of these will ever write again."""
+    # Arrange
+    store = MemorySessionStore()
+    open_one = _session("s1")
+    store.save(open_one, owner_id="learner-a")
+    assert store.has_open_on("g1", owner_id="learner-a") is True
+
+    # Act / Assert
+    for done in (SessionStatus.CLOSED, SessionStatus.ABANDONED):
+        store.save(open_one.model_copy(update={"status": done}), owner_id="learner-a")
+        assert store.has_open_on("g1", owner_id="learner-a") is False
+
+
+def test_an_open_session_on_another_map_does_not_count() -> None:
+    """The block is per map. One unfinished session must not freeze every other topic's reset."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("elsewhere").model_copy(update={"graph_id": "g2"}), owner_id="learner-a")
+
+    # Act / Assert
+    assert store.has_open_on("g1", owner_id="learner-a") is False
+
+
 # ── a row this build cannot read ───────────────────────────────────────────────────────────────
 
 

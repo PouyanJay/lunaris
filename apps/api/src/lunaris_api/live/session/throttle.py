@@ -53,6 +53,26 @@ class LiveSessionBudgetExhaustedError(LiveWorkRefusedError):
         super().__init__(self.detail)
 
 
+class LiveSessionStillOpenError(LiveWorkRefusedError):
+    """A topic cannot be forgotten while a session on it is still going (T5).
+
+    Not a throttle and not a race lost: a session in progress holds the learner model in memory and
+    writes it back at the end of every turn, so clearing the beliefs underneath one would be undone
+    by the next turn, silently. Refusing is the only answer that stays true a second later, and the
+    detail says what to do about it rather than only that it did not happen.
+    """
+
+    status_code = 409
+
+    def __init__(self, graph_id: str) -> None:
+        self.graph_id = graph_id
+        self.detail = (
+            "You still have a session going on this topic. Finish it or leave it first, then "
+            "clearing what Lunaris knows about you here will stick."
+        )
+        super().__init__(self.detail)
+
+
 class LiveSessionThrottle:
     """Admission control for the session plane.
 

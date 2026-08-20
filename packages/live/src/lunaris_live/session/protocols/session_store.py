@@ -29,6 +29,15 @@ class ISessionStore(Protocol):
 
     def load(self, session_id: str, *, owner_id: str | None = None) -> Session: ...
 
+    def has_open_on(self, graph_id: str, *, owner_id: str | None = None) -> bool:
+        """Whether this owner has a session on ``graph_id`` that is not finished (T5).
+
+        Its own question rather than a filter over ``recent``, because a limit that hid one open
+        session would turn this from a guard into a coin toss, and the answer gates a destructive
+        act. Served by ``live_sessions_graph_idx`` on ``(user_id, graph_id)``.
+        """
+        ...
+
     def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         """Remove this owner's session, transcript and all.
 
