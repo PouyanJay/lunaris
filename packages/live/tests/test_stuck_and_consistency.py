@@ -423,3 +423,23 @@ def test_the_prompt_forbids_scoring_a_fuller_answer_lower() -> None:
     # Assert
     assert "lower" in _PROMPT_WITH_HISTORY.lower()
     assert "{previously}" in _PROMPT_WITH_HISTORY
+
+
+def test_the_remediation_reason_does_not_claim_a_miss_count_it_never_counted() -> None:
+    """A wording bug from the first real session, and a small lesson about traces.
+
+    `_stuck_on` reads the *belief*, deliberately, so that a breakthrough clears it. The reason it
+    produced said "missed 2 times running", which is a different claim and was untrue of the learner
+    who met it: they had got the concept once and then lost it. A trace that describes a rule the
+    code does not implement is worse than one that says nothing, because it will be believed.
+    """
+    # Arrange: met once, then missed — two pieces of evidence, no run of misses.
+    model = apply_evidence(LearnerModel(graph_id="g1"), "a", EvidenceKind.MET, at_turn=1)
+    model = apply_evidence(model, "a", EvidenceKind.NOT_MET, at_turn=2)
+
+    # Act
+    move = decide_move(_graph(), model, _clock())
+
+    # Assert
+    assert move.kind is MoveKind.REMEDIATE
+    assert "times running" not in move.reason

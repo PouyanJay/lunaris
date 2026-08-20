@@ -65,9 +65,13 @@ def decide_move(graph: ConceptGraph, model: LearnerModel, clock: SessionClock) -
         return DirectorMove(
             kind=MoveKind.REMEDIATE,
             node_id=stuck.id,
+            # Worded off the rule that actually fired. The rule is belief-based, not a miss
+            # counter (see ``_stuck_on``), so "missed 2 times running" was untrue of a learner who
+            # got it once and then lost it — which is exactly the sequence the first real session
+            # produced, and the trace said something that had not happened.
             reason=(
-                f"{stuck.name} has been missed {_STUCK_AFTER} times running, so the explanation is "
-                "not landing. Trying it a different way rather than pressing on."
+                f"{stuck.name} is not holding: enough has been asked about it to tell, and it is "
+                "still not there. Trying it a different way rather than pressing on."
             ),
         )
 

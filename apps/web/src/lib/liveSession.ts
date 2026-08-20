@@ -80,12 +80,35 @@ export interface LiveSession {
   /** `placing` is a session whose map is still compiling: the learner is being interviewed, not
    *  taught, and nothing is staged. `warming` is the honest wait after the interview has run out
    *  and before the map has landed: nothing to answer, the surface advances it (P2c). */
-  status: "placing" | "warming" | "active" | "closed";
+  status: LiveSessionStatus;
   /** When the session opened (ISO 8601, UTC). The session is bounded by wall time, so this is what
    *  a surface needs to show how much of it is left — and it survives a reload because it is on the
    *  row rather than in whichever process happened to serve the request. */
   startedAt: string;
   turns: SessionTurn[];
+}
+
+/** Every status the wire can carry, in one list.
+ *
+ *  One list rather than a type here and a hand-written guard below, because they drifted the moment
+ *  a status was added: `abandoned` (a session the learner left) reached the API and not this file,
+ *  and `isSession` then *rejected* every session anybody had left — a learner reopening one met
+ *  "couldn't read the session" rather than their own transcript. A closed set is right (each status
+ *  is a real decision about what a surface shows), but it has to be closed in exactly one place. */
+export const LIVE_SESSION_STATUSES = [
+  "placing",
+  "warming",
+  "active",
+  "closed",
+  "abandoned",
+] as const;
+
+export type LiveSessionStatus = (typeof LIVE_SESSION_STATUSES)[number];
+
+/** Whether anything more can happen in a session: it ended well, or the learner left it. Asked in
+ *  four places, so it is a function rather than four comparisons that fall out of step. */
+export function isFinished(status: LiveSessionStatus): boolean {
+  return status === "closed" || status === "abandoned";
 }
 
 /** Every way a session request can fail, as one error type — so the surface has one failure state
@@ -237,10 +260,7 @@ function isSession(payload: unknown): payload is LiveSession {
     !!body &&
     typeof body.sessionId === "string" &&
     typeof body.graphId === "string" &&
-    (body.status === "placing" ||
-      body.status === "warming" ||
-      body.status === "active" ||
-      body.status === "closed") &&
+    LIVE_SESSION_STATUSES.includes(body.status) &&
     Array.isArray(body.turns) &&
     body.turns.every(
       (turn) =>

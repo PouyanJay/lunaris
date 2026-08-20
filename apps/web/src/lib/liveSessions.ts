@@ -1,9 +1,11 @@
 import { authedFetch } from "./apiClient";
+import type { LiveSessionStatus } from "./liveSession";
 import { detailOf } from "./apiErrors";
 
-/** Where a session is in its life. Mirrors `SessionStatus` server-side, and the set is closed for
- *  the same reason it is there: every surface is forced to notice a new one. */
-export type LiveSessionStatus = "placing" | "warming" | "active" | "closed" | "abandoned";
+/** Where a session is in its life. Re-exported from the session module rather than declared again:
+ *  two hand-written copies of one wire enum is how the web came to reject a status the API had been
+ *  sending for a week. */
+export type { LiveSessionStatus } from "./liveSession";
 
 /** One session as a list shows it: enough to recognise, far too little to resume from.
  *
@@ -49,11 +51,7 @@ export async function loadSessions(
   return (await response.json()) as LiveSessionSummary[];
 }
 
-/** Whether anything more can happen in a session. The wire's own vocabulary, kept in one place so
- *  no surface has to remember which two of the four statuses mean "done". */
-export function isFinished(status: LiveSessionStatus): boolean {
-  return status === "closed" || status === "abandoned";
-}
+export { isFinished } from "./liveSession";
 
 /** Finish a session deliberately: the recap, the mastery delta, and the day to come back. */
 export async function endSession(

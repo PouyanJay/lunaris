@@ -1,7 +1,7 @@
 import { Suspense, lazy, useState } from "react";
 
 import { useLiveSession } from "../../hooks/useLiveSession";
-import type { LiveSession, SessionTurn } from "../../lib/liveSession";
+import { isFinished, type LiveSession, type SessionTurn } from "../../lib/liveSession";
 import { Button } from "../primitives/Button";
 import { StatusDot } from "../primitives/StatusDot";
 import { nextReviewOf, type NextReview } from "../../lib/reviewSchedule";
@@ -102,7 +102,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
           ) : null}
           <TurnFooter
             standing={standing}
-            closed={session.status === "closed"}
+            closed={isFinished(session.status)}
             nextReview={nextReview}
             warming={session.status === "warming"}
             answerHere={answerHere}
@@ -162,6 +162,8 @@ function TurnFooter({
   onAnswer,
 }: {
   standing: SessionTurn | null;
+  /** Whether the session is over — closed *or* left. Both mean nothing more can be answered, and
+   *  testing only for "closed" handed a learner who had left one a card they could still submit. */
   closed: boolean;
   /** What the close scheduled, for the ending to say (P2c T7). */
   nextReview: NextReview | null;
@@ -220,11 +222,14 @@ function phaseOf(session: LiveSession): "placing" | "teaching" {
 
 /** How far in, and whether it is still going. Mono, because these are data. */
 function SessionMeta({ session, live }: { session: LiveSession; live: boolean }) {
-  const closed = session.status === "closed";
+  const closed = isFinished(session.status);
   return (
     <div className={styles.meta}>
+      {/* The wire's own word for a finished session, except "active", which reads as "live" to a
+          learner. A session that was left says so rather than borrowing "closed": ending well and
+          walking out are different facts, which is the whole reason they are different statuses. */}
       <StatusDot
-        label={closed ? "closed" : session.status === "active" ? "live" : session.status}
+        label={session.status === "active" ? "live" : session.status}
         tone={closed ? "neutral" : "accent"}
         live={live && !closed}
       />
