@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { LiveSessionStatus } from "../../lib/liveSessions";
 import { SessionList } from "./SessionList";
 
 /** Two sessions as the API returns them, newest first (the server does the ordering). */
@@ -310,5 +311,51 @@ describe("SessionList", () => {
       expect(await screen.findByText(/storage is having trouble/i)).toBeInTheDocument();
       expect(screen.getAllByRole("listitem")).toHaveLength(2);
     });
+  });
+
+  describe("every state a row can be in", () => {
+    /** Which verbs a row offers, per status. The mirror of the API's own table (T10): the surface
+     *  and the service have to agree about what is possible, and two tables that can drift are how
+     *  a learner meets a button that answers 409. */
+    const OFFERS: Record<
+      LiveSessionStatus,
+      { finish: boolean; leave: boolean; forget: boolean; remove: boolean }
+    > = {
+      placing: { finish: true, leave: true, forget: false, remove: true },
+      warming: { finish: true, leave: true, forget: false, remove: true },
+      active: { finish: true, leave: true, forget: false, remove: true },
+      closed: { finish: false, leave: false, forget: true, remove: true },
+      abandoned: { finish: false, leave: false, forget: true, remove: true },
+    };
+
+    it.each(Object.keys(OFFERS) as LiveSessionStatus[])(
+      "offers the right verbs on a %s session",
+      async (status) => {
+        vi.stubGlobal("fetch", answering([{ ...LISTED[0], status }]));
+
+        shown();
+
+        const row = await screen.findByRole("listitem");
+        const offered = OFFERS[status];
+        expect(!!within(row).queryByRole("button", { name: /finish/i })).toBe(offered.finish);
+        expect(!!within(row).queryByRole("button", { name: /leave/i })).toBe(offered.leave);
+        expect(!!within(row).queryByRole("button", { name: /forget/i })).toBe(offered.forget);
+        expect(!!within(row).queryByRole("button", { name: /delete/i })).toBe(offered.remove);
+      },
+    );
+
+    it.each(Object.keys(OFFERS) as LiveSessionStatus[])(
+      "names the %s state in words rather than in the wire's",
+      async (status) => {
+        vi.stubGlobal("fetch", answering([{ ...LISTED[0], status }]));
+
+        shown();
+
+        const row = await screen.findByRole("listitem");
+        // The status label table is exhaustive by type, so this asserts the other half: none of
+        // those labels is the raw wire value handed straight through.
+        expect(row).not.toHaveTextContent(new RegExp(`\\b${status}\\b`));
+      },
+    );
   });
 });
