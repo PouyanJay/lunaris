@@ -8,6 +8,7 @@ import structlog
 from lunaris_live.graph import ConceptGraph, IGraphStore
 from lunaris_live.session import (
     DEFAULT_MAX_QUESTIONS,
+    DirectorMove,
     IGrader,
     IInterviewer,
     IKnowledgeStore,
@@ -19,6 +20,7 @@ from lunaris_live.session import (
     ITutorDeltaSink,
     LearnerModel,
     LessonParts,
+    MoveKind,
     Session,
     SessionClock,
     SessionClosedError,
@@ -27,6 +29,8 @@ from lunaris_live.session import (
     StaleAnswerError,
     TurnOutcome,
     advance_placement,
+    close_session,
+    on_the_wall,
     open_placement,
     open_session,
     take_placement_turn,
@@ -52,6 +56,16 @@ from .turn_beat import TurnBeat
 from .turn_context import TurnContext
 
 logger = structlog.get_logger()
+
+#: The director's reason when the learner asked to finish. Read by a human auditing a session, so a
+#: close somebody chose and a close the clock forced must not read identically.
+_ASKED_TO_STOP = (
+    "You asked to finish here, so this is the ending rather than an interruption: what you "
+    "covered, where it leaves you, and when to come back to it."
+)
+
+#: The statuses nothing more happens to. Named once because two verbs and the loop all ask.
+_TERMINAL = frozenset({SessionStatus.CLOSED, SessionStatus.ABANDONED})
 
 
 def _absorb_detached_turn(task: "asyncio.Task[Session]", *, run_id: str, session_id: str) -> None:
@@ -943,6 +957,99 @@ class LiveSessionService:
         has set no keys must not be taught on the platform's (the compile plane's rule; the
         session plane read ``if credentials`` and let an empty vault fall through, found in T4)."""
         return nullcontext() if credentials is None else run_credentials(credentials)
+
+    async def end(self, session_id: str, *, owner_id: str | None = None) -> Session:
+        """Close a session because the learner asked to, with the ceremony intact (T3).
+
+        The same ending the clock would have produced, asked for rather than waited for. A stop
+        button that merely marked the row closed would take the recap, the mastery delta and the
+        review schedule away from the learner who *chose* to stop and leave them only for the one
+        who ran out of time, which is the wrong way round: choosing to finish is the better habit.
+
+        Terminal already means done. A stop button is a thing people double-click, and this one
+        costs a model call, so a second press returns the session that already ended rather than
+        paying for a second goodbye. Under the turn slot, the ceiling and the ledger, because it
+        *is* a turn: words written and paid for.
+
+        A session still being placed or warming has nothing to end well: no map has landed, nothing
+        has been taught, and a meter of an empty session is a ceremony about nothing. Those are
+        abandoned instead, which is what leaving one honestly looks like.
+        """
+        run_id = uuid4().hex
+        bind_run_id(run_id, session_id=session_id)
+        context = await self._ready(session_id, owner_id)
+        if context.session.status in _TERMINAL:
+            return context.session
+        if context.session.status in (SessionStatus.PLACING, SessionStatus.WARMING):
+            return await self._abandon(context.session, owner_id=owner_id, run_id=run_id)
+
+        session = context.session
+        model = context.known
+        graph = context.graph
+        assert graph is not None, "an active session has a map"
+        ended = await self._take_and_save(
+            context,
+            lambda: close_session(
+                session,
+                graph,
+                model,
+                list(session.turns),
+                DirectorMove(kind=MoveKind.CLOSE, reason=_ASKED_TO_STOP),
+                clock=on_the_wall(
+                    SessionClock(
+                        turn=len(session.turns) + 1,
+                        elapsed_s=_elapsed_s(session),
+                        budget_s=self._session_budget_s,
+                    ),
+                    session,
+                ),
+                tutor=self._tutor,
+                run_id=run_id,
+            ),
+            run_id=run_id,
+            owner_id=owner_id,
+            slot=self._turn_slot(session_id),
+        )
+        assert ended is not None, "a close always writes"
+        return ended
+
+    async def discard(self, session_id: str, *, owner_id: str | None = None) -> Session:
+        """Leave a session, without a ceremony (T3).
+
+        Nothing is recapped, nothing is scheduled, and no model is called: leaving is not a teaching
+        moment, and a learner who wants out gets out at no cost and with no words written at them on
+        the way. The row is marked abandoned, which is its own status precisely so that a session
+        somebody walked out of is never counted as one that ended well.
+
+        Not a delete (U2). The transcript survives until the learner says otherwise, which is what
+        makes deleting it a separate and deliberate act rather than a side effect of leaving.
+        """
+        bind_request_id(session_id, session_id=session_id)
+        # Under the turn slot, though it pays for nothing. A discard writes unconditionally (there
+        # is no answer to lose a compare-and-set to), so a turn landing after it would write the
+        # session back to ACTIVE and bring a session the learner had just left back to life. The
+        # slot makes leaving and teaching mutually exclusive; a learner who tries to leave mid-turn
+        # is refused with "a turn is in flight" rather than silently ignored, which is the honest
+        # half of a stop button that cannot cancel a call already paid for.
+        with self._turn_slot(session_id):
+            session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
+            if session.status in _TERMINAL:
+                return session
+            return await self._abandon(session, owner_id=owner_id, run_id=None)
+
+    async def _abandon(
+        self, session: Session, *, owner_id: str | None, run_id: str | None
+    ) -> Session:
+        """Mark a session abandoned and write it. No turn, no model call, no schedule."""
+        left = session.model_copy(update={"status": SessionStatus.ABANDONED})
+        await asyncio.to_thread(self._sessions.save, left, owner_id=owner_id)
+        logger.info(
+            "live.session.abandoned",
+            run_id=run_id,
+            session_id=session.session_id,
+            turn_count=len(session.turns),
+        )
+        return left
 
     async def recent(self, *, owner_id: str | None = None) -> list[SessionSummary]:
         """This learner's sessions, newest first (T2).

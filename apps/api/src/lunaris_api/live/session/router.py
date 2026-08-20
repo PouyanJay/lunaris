@@ -104,6 +104,55 @@ async def advance_session(
     return session
 
 
+@router.post("/{session_id}/end", response_model=Session)
+async def end_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> Session:
+    """Finish a session deliberately, with the ceremony intact (T3).
+
+    200 with the closed session, whose last turn carries the recap, the mastery delta and the day
+    to come back. Idempotent: a second press returns the session that already ended rather than
+    paying for a second goodbye, because a stop button is a thing people double-click and this one
+    costs a model call.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        session = await service.end(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.end_failed", session_id=session_id, missing="Session"
+        )
+    response.headers["X-Session-Id"] = session_id
+    return session
+
+
+@router.post("/{session_id}/discard", response_model=Session)
+async def discard_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> Session:
+    """Leave a session, without a ceremony (T3).
+
+    200 with the abandoned session. Nothing is recapped, nothing is scheduled and no model is
+    called: leaving is not a teaching moment. Not a delete (U2) — the transcript is still the
+    learner's to read, and removing it is its own deliberate act.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        session = await service.discard(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.discard_failed", session_id=session_id, missing="Session"
+        )
+    response.headers["X-Session-Id"] = session_id
+    return session
+
+
 @router.get("", response_model=list[SessionSummary])
 async def list_sessions(
     service: LiveSessionServiceDep,

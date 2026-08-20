@@ -17,6 +17,7 @@ from .claude_grader import ClaudeGrader
 from .claude_interviewer import ClaudeInterviewer
 from .claude_prior_mapper import ClaudePriorMapper
 from .claude_tutor import ClaudeTutor
+from .close_session import close_session
 from .compose_layout import compose_layout
 from .covered_in import covered_in
 from .decide_move import decide_move
@@ -31,6 +32,7 @@ from .memory_session_store import MemorySessionStore
 from .next_turn import next_turn
 from .node_of import node_of
 from .nothing_to_teach_error import NothingToTeachError
+from .on_the_wall import on_the_wall
 from .open_placement import open_placement
 from .open_session import open_session
 from .opening_beliefs_of import opening_beliefs_of
@@ -199,12 +201,14 @@ __all__ = [
     "apply_evidence",
     "ask_model",
     "claim_of",
+    "close_session",
     "compose_layout",
     "covered_in",
     "decide_move",
     "exchanges_of",
     "next_turn",
     "node_of",
+    "on_the_wall",
     "open_placement",
     "open_session",
     "opening_beliefs_of",
