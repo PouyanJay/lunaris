@@ -38,6 +38,16 @@ class ISessionStore(Protocol):
         """
         ...
 
+    def session_ids_on(self, graph_id: str, *, owner_id: str | None = None) -> tuple[str, ...]:
+        """Every session this owner has on ``graph_id``, finished or not.
+
+        Distinct from ``has_open_on``, which answers about *status*. This answers about identity,
+        because a session that has just gone terminal may still be mid-write, and the only way to
+        ask "is anything happening to this map right now" is to name the sessions and ask about
+        each. Served by ``live_sessions_graph_idx``.
+        """
+        ...
+
     def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         """Remove this owner's session, transcript and all.
 

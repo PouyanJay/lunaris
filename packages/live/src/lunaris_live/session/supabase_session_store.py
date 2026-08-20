@@ -123,6 +123,18 @@ class SupabaseSessionStore:
         rows = query.not_.in_("status", list(_FINISHED)).limit(1).execute().data
         return bool(rows)
 
+    @guard("live_sessions ids_on")
+    def session_ids_on(self, graph_id: str, *, owner_id: str | None = None) -> tuple[str, ...]:
+        """Every session id this owner has on one map, through ``live_sessions_graph_idx``.
+
+        One column, no payload: this is asked to decide whether anything is happening to the map
+        right now, not to show anybody anything.
+        """
+        client = self._ensure_client()
+        query = client.table(_TABLE).select("id").eq("graph_id", graph_id)  # type: ignore[attr-defined]
+        query = query.is_("user_id", None) if owner_id is None else query.eq("user_id", owner_id)
+        return tuple(row["id"] for row in query.execute().data or [])
+
     @guard("live_sessions delete")
     def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         """Remove one session row, scoped to its owner.

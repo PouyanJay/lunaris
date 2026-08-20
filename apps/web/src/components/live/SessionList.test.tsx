@@ -115,7 +115,7 @@ describe("SessionList", () => {
     shown();
     const retry = await screen.findByRole("button", { name: /try again/i });
     vi.stubGlobal("fetch", answering(LISTED));
-    retry.click();
+    fireEvent.click(retry);
 
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
   });

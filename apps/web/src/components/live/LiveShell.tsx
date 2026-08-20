@@ -8,7 +8,7 @@ import { LIVE_SESSIONS_PATH } from "./liveRoutes";
 import { SessionList } from "./SessionList";
 import { SessionView } from "./SessionView";
 import { useLiveGraph } from "../../hooks/useLiveGraph";
-import { SIDEBAR_RAIL_WIDTH, useSidebarLayout } from "../../hooks/useSidebarLayout";
+import { useTeachingRail } from "../../hooks/useTeachingRail";
 import { useTheme } from "../../hooks/useTheme";
 import { type ConceptGraph } from "../../lib/liveGraph";
 import { ROUTES } from "../../lib/routes";
@@ -37,27 +37,9 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   // exactly two destinations and a router for two is more machinery than either of them needs.
   const listing = pathname === LIVE_SESSIONS_PATH || pathname === `${LIVE_SESSIONS_PATH}/`;
 
-  const layout = useSidebarLayout();
   const { theme, toggle: toggleTheme } = useTheme();
-  // A session is a focus surface, so the rail starts as the mini icon column there whatever the
-  // stored preference says, and expands on a click (U-decision, T7). Kept as its own state rather
-  // than by writing the shared preference, because collapsing the rail to teach somebody should
-  // not quietly collapse it in Studio tomorrow. Keyed on the session so a new one starts folded
-  // again.
-  const teaching = Boolean(topic ?? graphId);
-  const [openedInSession, setOpenedInSession] = useState(false);
-  const [railKey, setRailKey] = useState(topic ?? graphId ?? null);
-  if (railKey !== (topic ?? graphId ?? null)) {
-    setRailKey(topic ?? graphId ?? null);
-    setOpenedInSession(false);
-  }
-  const collapsed = teaching ? !openedInSession : layout.collapsed;
-  const toggleCollapsed = teaching
-    ? () => setOpenedInSession((open) => !open)
-    : layout.toggleCollapsed;
-  const frame = {
-    "--sidebar-width": `${collapsed ? SIDEBAR_RAIL_WIDTH : layout.width}px`,
-  } as CSSProperties;
+  const rail = useTeachingRail(topic ?? graphId ?? null);
+  const frame = { "--sidebar-width": `${rail.width}px` } as CSSProperties;
 
   useEffect(() => {
     const previous = document.title;
@@ -78,8 +60,8 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
       <div className={styles.lower}>
         <div className={styles.rail}>
           <LiveRail
-            collapsed={collapsed}
-            onToggleCollapsed={toggleCollapsed}
+            collapsed={rail.collapsed}
+            onToggleCollapsed={rail.toggleCollapsed}
             theme={theme}
             onToggleTheme={toggleTheme}
           />

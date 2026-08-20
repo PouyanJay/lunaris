@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 from lunaris_live.graph import ClaudeGraphCompiler, ConceptGraph
 from lunaris_live.session import (
+    MASTERED,
     ClaudeGrader,
     ClaudeTutor,
     EvidenceKind,
@@ -36,6 +37,7 @@ from lunaris_live.session import (
     open_session,
     take_turn,
 )
+from lunaris_live.session.decide_move import _GIVE_UP_AFTER
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 
 pytestmark = [
@@ -126,10 +128,23 @@ async def test_a_learner_who_cannot_land_one_concept_still_reaches_another(
 
     # Assert
     taught = [node for node in touched if node is not None]
+    first = taught[0]
     moved_on = len(set(taught)) > 1
     closed_deliberately = session.turns[-1].move.kind is MoveKind.CLOSE
     assert moved_on or closed_deliberately, (
         f"a learner who cannot land one concept was held on it for the whole session: {touched}"
+    )
+    # And it happened for the RIGHT reason (review finding). The simulated learner is *asked* to be
+    # wrong, not forced to be: at temperature 1.0 it can slip, answer well enough to be marked MET,
+    # and be advanced by the ordinary frontier rule — passing the assertion above without the
+    # give-up path ever running. Requiring the evidence to have piled up on the first concept is
+    # what tells "gave up correctly" from "got lucky and progressed normally".
+    known = model.nodes.get(first)
+    assert known is not None, f"the session moved on from {first} without ever grading it"
+    assert known.evidence_count >= _GIVE_UP_AFTER or known.estimate >= MASTERED, (
+        f"{first} was left after only {known.evidence_count} pieces of evidence at "
+        f"{known.estimate:.2f}: the learner was not stuck, so this run proves nothing about the "
+        "give-up rule"
     )
 
 

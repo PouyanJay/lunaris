@@ -67,6 +67,14 @@ class MemorySessionStore:
                 if self._owners.get(session_id) == owner_id
             )
 
+    def session_ids_on(self, graph_id: str, *, owner_id: str | None = None) -> tuple[str, ...]:
+        with self._lock:
+            return tuple(
+                session_id
+                for session_id, session in self._sessions.items()
+                if session.graph_id == graph_id and self._owners.get(session_id) == owner_id
+            )
+
     def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         with self._lock:
             # Scoped exactly as ``load`` is, and checked before anything is removed: an unscoped

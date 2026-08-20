@@ -8,7 +8,13 @@ Same owner-scoping bar as the session store, and for a sharper reason: this is a
 somebody does and does not understand.
 """
 
-from lunaris_live.session import EvidenceKind, LearnerModel, MemoryKnowledgeStore, apply_evidence
+from lunaris_live.session import (
+    EvidenceKind,
+    LearnerModel,
+    MemoryKnowledgeStore,
+    SupabaseKnowledgeStore,
+    apply_evidence,
+)
 
 
 def _model() -> LearnerModel:
@@ -147,3 +153,84 @@ def test_forgetting_a_topic_with_nothing_to_forget_is_quiet() -> None:
 
     # Act / Assert: no exception is the assertion.
     store.forget("never-taught", owner_id="learner-1")
+
+
+# ── the durable store, where the predicate actually lives ──────────────────────────────────────
+
+
+class RecordingSupabase:
+    """A fake that FILTERS, so the store's own predicates decide the answer.
+
+    The review's one important finding was that every owner-scoping mutation in this journey ran
+    against the memory twin — a dict lookup — while production is a query-builder chain where a
+    dropped ``.eq()`` would be caught by nothing. `SupabaseKnowledgeStore.forget` had no coverage of
+    any kind. This is still a fake and not Postgres; what it proves is that the store asks the right
+    questions, which is exactly where a mis-keyed predicate lives.
+    """
+
+    def __init__(self, rows: list[dict]) -> None:
+        self.rows = rows
+        self._matched: list[dict] = []
+
+    def table(self, _name: str) -> "RecordingSupabase":
+        self._matched = list(self.rows)
+        return self
+
+    def delete(self) -> "RecordingSupabase":
+        return self
+
+    def eq(self, column: str, value: object) -> "RecordingSupabase":
+        self._matched = [row for row in self._matched if row.get(column) == value]
+        return self
+
+    def is_(self, column: str, value: object) -> "RecordingSupabase":
+        self._matched = [row for row in self._matched if row.get(column) is value]
+        return self
+
+    def execute(self) -> object:
+        for row in self._matched:
+            self.rows.remove(row)
+        return type("Result", (), {"data": list(self._matched)})()
+
+
+def _belief(*, owner: str | None, graph: str = "g1") -> dict:
+    return {"user_id": owner, "graph_id": graph, "node_id": "a", "estimate": 0.9}
+
+
+def test_the_durable_store_forgets_only_that_learners_record() -> None:
+    """Unscoped, "forget this topic" would clear every learner's progress on it, irrecoverably."""
+    # Arrange
+    rows = [_belief(owner="learner-1"), _belief(owner="learner-2")]
+    store = SupabaseKnowledgeStore(client=RecordingSupabase(rows))
+
+    # Act
+    store.forget("g1", owner_id="learner-1")
+
+    # Assert
+    assert rows == [_belief(owner="learner-2")]
+
+
+def test_the_durable_store_forgets_only_that_map() -> None:
+    """Node ids are graph-local, so two maps are unrelated records."""
+    # Arrange
+    rows = [_belief(owner="learner-1"), _belief(owner="learner-1", graph="g2")]
+    store = SupabaseKnowledgeStore(client=RecordingSupabase(rows))
+
+    # Act
+    store.forget("g1", owner_id="learner-1")
+
+    # Assert
+    assert rows == [_belief(owner="learner-1", graph="g2")]
+
+
+def test_an_unscoped_durable_reset_cannot_reach_an_owned_record() -> None:
+    """Unscoped means *unowned*, never *everyone*, on the way out as much as on the way in."""
+    # Arrange
+    rows = [_belief(owner="learner-1")]
+    store = SupabaseKnowledgeStore(client=RecordingSupabase(rows))
+
+    # Act
+    store.forget("g1")
+
+    # Assert
+    assert rows == [_belief(owner="learner-1")]

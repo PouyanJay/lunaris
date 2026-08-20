@@ -1,9 +1,9 @@
 import { forwardRef, type ComponentProps } from "react";
 
-import styles from "./Button.module.css";
+import { buttonClassName, type ButtonVariant } from "./buttonVariants";
 
 type ButtonProps = ComponentProps<"button"> & {
-  variant?: "primary" | "secondary" | "ghost" | "accent" | "danger";
+  variant?: ButtonVariant;
 };
 
 /** Neutral-by-default action. The primary variant is graphite (not the accent) so the
@@ -15,6 +15,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { variant = "secondary", className, type = "button", ...props },
   ref,
 ) {
-  const classes = `${styles.button} ${styles[variant]} ${className ?? ""}`.trim();
-  return <button ref={ref} type={type} className={classes} {...props} />;
+  return (
+    <button ref={ref} type={type} className={buttonClassName(variant, className)} {...props} />
+  );
 });

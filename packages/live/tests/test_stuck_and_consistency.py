@@ -22,6 +22,7 @@ on with the concept scheduled for review rather than marked mastered.
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+import pytest
 from lunaris_live.graph import (
     ConceptGraph,
     ConceptNode,
@@ -94,6 +95,29 @@ def test_two_misses_remediate_rather_than_pressing_on() -> None:
     # Assert
     assert move.kind is MoveKind.REMEDIATE
     assert move.node_id == "a"
+
+
+@pytest.mark.parametrize(
+    ("evidence", "still_trying"),
+    [(2, True), (3, True), (4, True), (5, False), (6, False)],
+    ids=["two", "three", "four", "the-bound", "past-it"],
+)
+def test_where_exactly_the_session_stops_pressing_on_a_concept(
+    evidence: int, still_trying: bool
+) -> None:
+    """The bound itself, triangulated (review finding).
+
+    Without a case either side of it, `_GIVE_UP_AFTER` could be 3, 4, 5 or 6 and every test would
+    still pass — verified by the reviewer, who reverted it to 3 and saw the suite stay green. The
+    constant's own comment argues for 5 *specifically* ("a learner who takes four goes and gets
+    there has done the thing this whole loop exists for"), so the number deserves a test that would
+    notice it moving.
+    """
+    # Act
+    move = decide_move(_graph(), _missed(evidence), _clock())
+
+    # Assert
+    assert (move.kind is MoveKind.REMEDIATE) is still_trying
 
 
 def test_a_concept_that_will_not_land_is_eventually_left_alone() -> None:

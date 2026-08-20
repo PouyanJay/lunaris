@@ -16,6 +16,7 @@ session on that map is still going, rather than racing it.
 """
 
 import asyncio
+import threading
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -27,9 +28,11 @@ from lunaris_api.config import get_settings
 from lunaris_api.live.dependencies import resolve_graph_store
 from lunaris_api.live.session.dependencies import get_live_session_service
 from lunaris_api.live.session.service import LiveSessionService
+from lunaris_api.live.session.throttle import LiveSessionThrottle
 from lunaris_live.session import (
     MemoryKnowledgeStore,
     MemorySessionStore,
+    SessionStatus,
     StubGrader,
     StubTutor,
 )
@@ -269,3 +272,75 @@ async def test_concurrent_resets_of_the_same_topic_both_answer(
 
     # Assert
     assert {first.status_code, second.status_code} == {204}
+
+
+async def test_a_reset_cannot_land_between_a_close_and_its_belief_write(tmp_path: Path) -> None:
+    """The window the status check alone does not cover (found in review).
+
+    A turn writes twice: the session row first, then the learner model. The session row is what
+    flips to a terminal status, so between those two writes ``has_open_on`` already answers False
+    while the model write is still to come. A reset landing there is overwritten by it moments
+    later: the learner's clearing undone by the very turn that ended their session.
+
+    A rendezvous, never a sleep. The store is held open *inside* the session write, which is exactly
+    the gap, so this fails deterministically without the throttle check rather than on unlucky
+    timing.
+    """
+
+    class HeldSessionStore(MemorySessionStore):
+        """The memory store, held at the door on the write that closes a session."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            # Threading events, not asyncio ones: ``save`` is synchronous and the service hops it
+            # onto a worker thread, so the wait below really is a blocking wait off the loop.
+            self.entered = threading.Event()
+            self.release = threading.Event()
+            self.hold_on_close = False
+
+        def save(self, session, *, owner_id=None, expect_turns=None):  # type: ignore[no-untyped-def]
+            if self.hold_on_close and session.status is SessionStatus.CLOSED:
+                # Written first, then held: the row is already terminal to anybody else looking,
+                # which is the whole point of the window.
+                super().save(session, owner_id=owner_id, expect_turns=expect_turns)
+                self.entered.set()
+                # Blocking is correct here: this is a worker thread, the event loop keeps running,
+                # and the test's own request is what releases it.
+                assert self.release.wait(timeout=5)
+                return
+            super().save(session, owner_id=owner_id, expect_turns=expect_turns)
+
+    settings = settings_for(tmp_path)
+    store, knowledge = HeldSessionStore(), MemoryKnowledgeStore()
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: settings
+    service = LiveSessionService(
+        resolve_graph_store(settings),
+        store,
+        knowledge=knowledge,
+        tutor=StubTutor(),
+        grader=StubGrader(),
+        session_budget_s=settings.live_session_budget_s,
+        throttle=LiveSessionThrottle(open_daily_cap=0),
+    )
+    app.dependency_overrides[get_live_session_service] = lambda: service
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Arrange: a taught session, then a close held between its two writes.
+        session = await _taught(client)
+        before = knowledge.load(session["graphId"]).nodes
+        assert before, "the arrangement is pointless if the answer moved no belief"
+        store.hold_on_close = True
+        ending = asyncio.create_task(client.post(f"/api/live/sessions/{session['sessionId']}/end"))
+        assert await asyncio.to_thread(store.entered.wait, 5)
+
+        # Act: the session row already reads closed, so the status check alone would allow this.
+        refused = await client.delete(f"/api/live/knowledge/{session['graphId']}")
+
+        # Assert
+        assert refused.status_code == 409
+        store.release.set()
+        assert (await ending).status_code == 200
+        # And the beliefs the close wrote are still there, which is what a learner who was NOT
+        # allowed to clear them must find.
+        assert knowledge.load(session["graphId"]).nodes

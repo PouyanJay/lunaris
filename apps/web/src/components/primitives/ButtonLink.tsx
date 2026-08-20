@@ -1,10 +1,10 @@
 import { forwardRef } from "react";
 import { Link, type LinkProps } from "react-router";
 
-import styles from "./Button.module.css";
+import { buttonClassName, type ButtonVariant } from "./buttonVariants";
 
 type ButtonLinkProps = LinkProps & {
-  variant?: "primary" | "secondary" | "ghost" | "accent" | "danger";
+  variant?: ButtonVariant;
 };
 
 /** A destination that looks like an action.
@@ -20,6 +20,5 @@ export const ButtonLink = forwardRef<HTMLAnchorElement, ButtonLinkProps>(functio
   { variant = "secondary", className, ...props },
   ref,
 ) {
-  const classes = `${styles.button} ${styles[variant]} ${className ?? ""}`.trim();
-  return <Link ref={ref} className={classes} {...props} />;
+  return <Link ref={ref} className={buttonClassName(variant, className)} {...props} />;
 });

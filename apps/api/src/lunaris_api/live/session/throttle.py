@@ -119,6 +119,15 @@ class LiveSessionThrottle:
         if self._opens.used(_key(owner_id)) >= self._open_daily_cap:
             raise LiveSessionDailyCapReachedError(self._open_daily_cap)
 
+    def is_taking_turn(self, session_id: str) -> bool:
+        """Whether a turn is in flight for this session right now.
+
+        Asked by ``forget``, which cannot claim the slot itself because it is keyed by session and
+        a reset is keyed by map. A turn holds its slot across **both** of its writes, so this is
+        what closes the window between them (see ``LiveSessionService.forget``).
+        """
+        return session_id in self._in_flight
+
     @contextmanager
     def taking_turn(self, session_id: str) -> Iterator[None]:
         """Hold this session's single turn slot for the length of a turn.
