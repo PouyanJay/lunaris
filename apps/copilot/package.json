@@ -37,7 +37,6 @@
   },
   "overrides": {
     "undici": "^6.27.0",
-    "_comment_fast_uri": "Four HIGH SSRF/host-confusion CVEs in 3.1.5, fixed in 3.1.6. Pulled in transitively and unreachable from this runtime's own code, but the Trivy gate is on fixable HIGHs and does not care: the recurring tax of a green main turning a fresh PR red.",
     "fast-uri": "^3.1.6"
   }
 }
