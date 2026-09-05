@@ -65,7 +65,10 @@ async def compiled_map() -> ConceptGraph:
 
 
 async def _says(prompt: str) -> str:
-    client = build_chat_model(_WORKER, temperature=1.0)
+    """One line from the simulated learner. Same construction the P2a eval uses: the hardened
+    client takes no temperature (opus rejects the parameter outright), so the variation comes from
+    the prompt rather than from a dial."""
+    client = build_chat_model(_WORKER)
     message = await retry_on_transient(
         lambda: client.ainvoke(prompt), max_attempts=3, max_delay_s=4.0
     )
@@ -135,8 +138,8 @@ async def test_a_learner_who_cannot_land_one_concept_still_reaches_another(
         f"a learner who cannot land one concept was held on it for the whole session: {touched}"
     )
     # And it happened for the RIGHT reason (review finding). The simulated learner is *asked* to be
-    # wrong, not forced to be: at temperature 1.0 it can slip, answer well enough to be marked MET,
-    # and be advanced by the ordinary frontier rule — passing the assertion above without the
+    # wrong, not forced to be: it can slip, answer well enough to be marked MET, and be advanced by
+    # the ordinary frontier rule — passing the assertion above without the
     # give-up path ever running. Requiring the evidence to have piled up on the first concept is
     # what tells "gave up correctly" from "got lucky and progressed normally".
     known = model.nodes.get(first)
@@ -174,11 +177,13 @@ async def test_adding_what_the_grader_asked_for_never_scores_lower(
     head = session.turns[-1]
 
     thin = await _says(
-        "You are a learner having a first go at explaining something you half understand. "
+        "You are a learner who has only half grasped this and is having a first go at saying it. "
         f'Your tutor just said:\n"{head.tutor}"\n\n'
         f'They asked you to: "{head.criterion.statement if head.criterion else ""}"\n\n'
-        "Give a SHORT, partial answer: the general shape of the idea with the mechanism left out. "
-        "Two sentences. Write ONLY your reply."
+        "Answer in ONE short sentence that names the general idea and deliberately leaves out HOW "
+        "it works: no mechanism, no steps, no numbers, nothing about what changes or why. You are "
+        "trying to sound like somebody who has heard of this and cannot yet explain it. Write ONLY "
+        "your reply."
     )
 
     # Act: first attempt.
@@ -197,6 +202,17 @@ async def test_adding_what_the_grader_asked_for_never_scores_lower(
     session, model = first.session, first.model
     graded_first = session.turns[-2].grade
     assert graded_first is not None, "the first attempt was not graded, so there is nothing to test"
+    # The precondition, stated loudly rather than passed over. Monotonicity is only *testable* when
+    # the first attempt left something out and was told so: with a MET first verdict there is no
+    # feedback to follow, the comparison below holds trivially, and the run proves nothing. The
+    # first real run of this eval did exactly that — the "thin" answer was marked MET — which is
+    # why this guard exists and why it fails rather than skips: a paid eval that quietly measured
+    # nothing is worse than one that says it could not.
+    assert graded_first.kind is not EvidenceKind.MET, (
+        "INCONCLUSIVE, not a defect: the deliberately-partial first answer was marked MET, so "
+        "there was no missing piece for the learner to add and monotonicity was never exercised. "
+        f"Re-run, or make the first answer thinner.\nfirst: {thin}\nverdict: {graded_first.reason}"
+    )
 
     # The learner does the thing feedback exists for: keeps what they said and adds what was named.
     fuller = await _says(
