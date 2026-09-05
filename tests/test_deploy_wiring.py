@@ -1,20 +1,25 @@
 """Every image this repo ships is built where a break is cheap and promoted where it was built.
 
-Two rules, both learned the expensive way in Lunaris Live's Phase 2b (T0: ``cd-dev`` failed at an
-image build for two merges running, and nothing before the deploy had built that image):
+Two rules, both learned the expensive way in Lunaris Live's Phase 2b (T0: the deploy workflow
+failed at an image build for two merges running, and nothing before it had built that image):
 
 1. **Every root ``Dockerfile.*`` is built and vulnerability-*gated* by ``ci.yml``.** CI is where an
-   image break costs a red check on a pull request; ``cd-dev`` is where it costs a broken deploy of
-   ``main``, hours later, with the code already merged. An image that only ``cd-*`` builds is an
-   image whose first build of a change happens after review. "Gated" means the Trivy step in the
-   *same job* runs with ``--exit-code 1``: a scan that logs and never fails is not a gate.
+   image break costs a red check on a pull request; ``cd-prod`` is where it costs a failed release
+   of ``main`` with the code already merged and somebody already at the gate. An image that only
+   ``cd-*`` builds is an image whose first build of a change happens after review. "Gated" means the
+   Trivy step in the *same job* runs with ``--exit-code 1``: a scan that logs and never fails is not
+   a gate.
 
-2. **Every image ``cd-dev.yml`` pushes, ``cd-prod.yml`` promotes** (``az acr import`` of the same
-   repository name), build-once-promote. An image dev builds and prod does not import is a service
-   that silently never reaches production, or that prod rebuilds from source, which is the one thing
-   the promotion design exists to prevent. And every root Dockerfile is one ``cd-dev`` pushes: a
-   file CI builds but CD never ships is a service that passes review and runs nowhere (the state
-   ``apps/copilot`` was in from T1 to T7).
+2. **Every root ``Dockerfile.*`` is pushed by ``cd-prod.yml``.** A file CI builds but CD never
+   ships is a service that passes review and runs nowhere — the state ``apps/copilot`` was in from
+   T1 to T7, and the reason this rule exists at all.
+
+   This rule used to read "every image ``cd-dev`` pushes, ``cd-prod`` promotes", which was
+   build-once-promote across two environments. Dev was retired (2026-09-05): prod is the only
+   deployed environment, so it builds its own images inside the gated job and there is no
+   intermediate registry to stage through. Rule 1 is what still catches a broken image before
+   merge, and it matters more now than it did — it is the only build that happens before a human
+   approves the release.
 
 Read from the workflow files as data (their ``uses:``/``with:``/``run:`` blocks), not from
 comments, so a step commented out still fails here.
@@ -41,7 +46,7 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 ROOT_IMAGES = {"Dockerfile.api", "Dockerfile.copilot", "Dockerfile.cover", "Dockerfile.worker"}
 
 # `echo "name=value" >> "$GITHUB_OUTPUT"`: how a step publishes an output another step reads back
-# as `${{ steps.<id>.outputs.<name> }}`; cd-dev computes the API image reference this way.
+# as `${{ steps.<id>.outputs.<name> }}`; the release computes its image SHA this way.
 _STEP_OUTPUT_ECHO = re.compile(r'echo\s+"?(\w+)=([^"\n]+?)"?\s*>>\s*"?\$GITHUB_OUTPUT')
 # `az acr import … --source "<repository>:<tag>"`: cd-prod's promotion of a dev-built image.
 _ACR_IMPORT_SOURCE = re.compile(r'az\s+acr\s+import\b[^;&|]*?--source\s+"?([\w-]+):')
@@ -122,7 +127,7 @@ def _pushed_builds(workflow: dict) -> list[dict]:
 
 
 def _pushed_repositories(workflow: dict) -> set[str]:
-    """Repository names (``lunaris-api`` in ``<acr>/lunaris-api:<sha>``) cd-dev pushes."""
+    """Repository names (``lunaris-api`` in ``<acr>/lunaris-api:<sha>``) a workflow pushes."""
     outputs = _step_outputs(workflow)
     repositories: set[str] = set()
     for build in _pushed_builds(workflow):
@@ -133,8 +138,12 @@ def _pushed_repositories(workflow: dict) -> set[str]:
     return repositories
 
 
-def _promoted_repositories(workflow: dict) -> set[str]:
-    """Repository names cd-prod imports with ``az acr import --source <repo>:<tag>``."""
+def _imported_repositories(workflow: dict) -> set[str]:
+    """Repository names a workflow pulls in with ``az acr import --source <repo>:<tag>``.
+
+    Kept after the dev retirement so the *absence* of these can be asserted: staging production
+    images through another environment's registry is the shape this repo has deliberately left.
+    """
     return {
         match.group(1)
         for step in _steps(workflow)
@@ -170,17 +179,40 @@ def test_every_image_ci_builds_is_trivy_gated_in_the_same_job() -> None:
     assert ungated == [], f"images ci.yml builds without a failing Trivy scan: {ungated}"
 
 
-def test_every_root_dockerfile_is_pushed_by_cd_dev() -> None:
-    shipped = {str(build["file"]) for build in _pushed_builds(_workflow("cd-dev.yml"))}
+def test_every_root_dockerfile_is_pushed_by_cd_prod() -> None:
+    shipped = {str(build["file"]) for build in _pushed_builds(_workflow("cd-prod.yml"))}
 
     unshipped = sorted(_root_dockerfiles() - shipped)
-    assert unshipped == [], f"Dockerfiles cd-dev.yml never pushes: {unshipped}"
+    assert unshipped == [], f"Dockerfiles cd-prod.yml never pushes: {unshipped}"
 
 
-def test_every_image_cd_dev_pushes_is_promoted_by_cd_prod() -> None:
-    pushed = _pushed_repositories(_workflow("cd-dev.yml"))
-    promoted = _promoted_repositories(_workflow("cd-prod.yml"))
+def test_the_release_builds_every_image_it_deploys() -> None:
+    """The repository names pushed have to be the ones the deploy steps run.
 
-    assert pushed, "cd-dev.yml pushes no images: the workflow shape this guard reads has changed"
-    unpromoted = sorted(pushed - promoted)
-    assert unpromoted == [], f"images cd-dev pushes that cd-prod never imports: {unpromoted}"
+    Guards the half the file/Dockerfile check cannot see: a build whose tag names one repository
+    while the Container App is rolled from another would deploy a stale image for ever, and both
+    halves would look correct read on their own.
+    """
+    workflow = _workflow("cd-prod.yml")
+    pushed = _pushed_repositories(workflow)
+    assert pushed, "cd-prod.yml pushes no images: the workflow shape this guard reads has changed"
+
+    deployed = {
+        _repository_of(match)
+        for step in _steps(workflow)
+        for match in re.findall(r"lunaris-[a-z-]+:\$\{\{[^}]+\}\}", _flattened_run(step))
+    }
+    undeployed = sorted(pushed - deployed - {"lunaris-api"})
+    assert undeployed == [], f"images cd-prod pushes but never rolls: {undeployed}"
+
+
+def test_production_images_are_not_staged_through_another_environment() -> None:
+    """The dev retirement, pinned (2026-09-05).
+
+    Prod used to import dev-built images, which made a second environment's registry a hard
+    dependency of every production release: delete it and prod cannot deploy at all. Re-introducing
+    an import here would quietly re-introduce that coupling, and the failure would only show up the
+    next time somebody tried to tear an environment down.
+    """
+    imported = sorted(_imported_repositories(_workflow("cd-prod.yml")))
+    assert imported == [], f"cd-prod imports images from another registry: {imported}"

@@ -5,7 +5,7 @@
 // Key Vault + ACR pull), and a Static Web App for the SPA. The Container App itself is deployed
 // separately by app.bicep (per image, by CD) — this file owns only the platform.
 //
-// Deploy:  az deployment group create -g rg-lunaris-dev -f infra/main.bicep -p infra/main.dev.bicepparam
+// Deploy:  az deployment group create -g rg-lunaris-prod -f infra/main.bicep -p infra/main.prod.bicepparam
 
 targetScope = 'resourceGroup'
 
