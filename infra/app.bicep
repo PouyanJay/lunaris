@@ -3,7 +3,7 @@
 // secret reads, and pulls its secret values from Key Vault at deploy time.
 //
 // Deploy (dev):
-//   az deployment group create -g rg-lunaris-dev -f infra/app.bicep \
+//   az deployment group create -g rg-lunaris-prod -f infra/app.bicep \
 //     -p env=dev managedEnvironmentId=<...> managedIdentityResourceId=<...> \
 //        acrLoginServer=<...> keyVaultUri=<...> supabaseUrl=<...> image=<acr>/lunaris-api:<tag>
 

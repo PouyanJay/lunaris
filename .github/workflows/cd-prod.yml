@@ -1,8 +1,13 @@
 name: CD (prod)
 
-# Gated promotion to PROD. Build-once-promote (§5): this workflow NEVER rebuilds — it copies the
-# exact image already built & validated in dev (by commit SHA) from the dev ACR into the prod ACR via
-# `az acr import`, then rolls a prod Container App revision from that same artifact.
+# Gated release to PROD, which is the only deployed environment (2026-09-05). This workflow builds
+# every image by commit SHA, pushes them to the prod ACR, and rolls a Container App revision from
+# each — all inside the gated job, so nothing reaches the production registry without a human
+# approving the release first.
+#
+# It used to import dev-built images instead (build-once-promote across two environments). Dev was
+# retired: with one environment there is no earlier deploy to promote *from*, and the only way to
+# have images waiting before the gate would be a standing credential with push rights to prod.
 #
 # Gated by the `prod` GitHub Environment (required reviewer), so a human approves every prod release.
 # Auth is OIDC federated to `environment:prod`.
@@ -10,16 +15,17 @@ name: CD (prod)
 # PREREQUISITES (land in Phase-1 NEXT STEP 4, once Supabase Pro billing is on):
 #   • rg-lunaris-prod platform deployed (main.bicep env=prod) → fills the prod env vars below.
 #   • prod SP (lunaris-github-cd-prod) granted: Contributor on rg-lunaris-prod, AcrPush on prod ACR,
-#     and AcrPull on the DEV ACR (so `az acr import` can read the source image).
+#     (AcrPush on the prod ACR is what the build steps below need; the old AcrPull on the dev ACR
+#     is no longer used and can be revoked).
 #   • prod env secrets: AZURE_CLIENT_ID (done), SUPABASE_DB_PASSWORD, SUPABASE_ACCESS_TOKEN.
 #   • prod env vars: RESOURCE_GROUP, ACR_NAME, ACR_LOGIN_SERVER, ACA_ENV_ID, MI_RESOURCE_ID,
-#     KEYVAULT_URI, SUPABASE_URL, SUPABASE_PROJECT_REF, PIPELINE_MODE, CORS_ORIGINS, DEV_ACR_LOGIN_SERVER.
+#     KEYVAULT_URI, SUPABASE_URL, SUPABASE_PROJECT_REF, PIPELINE_MODE, CORS_ORIGINS.
 
 on:
   workflow_dispatch:
     inputs:
       image_sha:
-        description: "Commit SHA of the dev-validated image to promote (defaults to current main)."
+        description: "Commit SHA to build and release (defaults to current main). Full 40-char sha."
         required: false
         default: ""
   release:
@@ -39,9 +45,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
     steps:
+      # The named commit, not just the workflow's ref. This workflow BUILDS now rather than
+      # importing, so checking out main and tagging the image with somebody's older `image_sha`
+      # would put new code in the registry under an old commit's name. The tag has to be a fact
+      # about the bytes.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # full history — the inference staleness check tests commit ancestry
+          ref: ${{ github.event.inputs.image_sha || github.sha }}
 
       - name: Resolve image SHA
         id: sha
@@ -57,55 +68,71 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      # Cross-registry import in the same AD tenant: pass the SOURCE registry via --registry (its
-      # resource ID) so az authenticates the source pull with the caller's AAD identity (the prod SP
-      # has AcrPull on the dev ACR). Without --registry, --source <loginServer>/... is treated as an
-      # external/credentialless source and 401s for an SP. --source is then repo:tag (no host).
-      - name: Promote image (dev ACR -> prod ACR, same tag)
-        run: |
-          az acr import \
-            --name "${{ vars.ACR_NAME }}" \
-            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
-            --source "lunaris-api:${{ steps.sha.outputs.value }}" \
-            --image "lunaris-api:${{ steps.sha.outputs.value }}" \
-            --force
+      # Built here, in the gated job, rather than imported from another environment's registry.
+      #
+      # Prod is the only deployed environment (2026-09-05), so there is no dev build to promote and
+      # nothing would have run this artifact before prod does. The old design was build-once-promote
+      # across two environments: cd-dev built, prod imported the exact bytes dev had been running.
+      # With one environment that trade no longer exists, and the alternative — an unattended build
+      # workflow pushing straight into the production registry — buys a permanent credential with
+      # push rights to prod in exchange for having images ready a few minutes earlier.
+      #
+      # What still catches a bad image before this point: CI builds all four on every pull request
+      # and fails on fixable HIGH/CRITICAL CVEs (`tests/test_deploy_wiring.py` holds that rule), so
+      # the scan is not deferred to the gate even though the push is.
+      - name: ACR login
+        run: az acr login --name "${{ vars.ACR_NAME }}"
 
-      # Promote the dev-built video-worker image the same way (explainer-video V7) — only when video
-      # is on for prod (the V7-T5 rollout). The exact SHA cd-dev built must exist in the dev ACR.
-      - name: Promote video-worker image (dev ACR -> prod ACR, same tag)
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build & push API image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.api
+          platforms: linux/amd64 # ACA runs amd64; the GitHub runner is amd64-native
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Gated on the per-env flag, like the deploy step below it, so an environment with video off
+      # pays nothing to build a worker it will not run.
+      - name: Build & push video-worker image (linux/amd64)
         if: vars.VIDEO_GENERATION_ENABLED == 'true'
-        run: |
-          az acr import \
-            --name "${{ vars.ACR_NAME }}" \
-            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
-            --source "lunaris-video-worker:${{ steps.sha.outputs.value }}" \
-            --image "lunaris-video-worker:${{ steps.sha.outputs.value }}" \
-            --force
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-video-worker:${{ steps.sha.outputs.value }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
 
-      # Promote the dev-built cover-worker image the same way (course-cover-images) — only when covers
-      # are on for prod. The exact SHA cd-dev built must exist in the dev ACR.
-      - name: Promote cover-worker image (dev ACR -> prod ACR, same tag)
+      - name: Build & push cover-worker image (linux/amd64)
         if: vars.COVER_GENERATION_ENABLED == 'true'
-        run: |
-          az acr import \
-            --name "${{ vars.ACR_NAME }}" \
-            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
-            --source "lunaris-cover-worker:${{ steps.sha.outputs.value }}" \
-            --image "lunaris-cover-worker:${{ steps.sha.outputs.value }}" \
-            --force
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.cover
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-cover-worker:${{ steps.sha.outputs.value }}
+          cache-from: type=gha,scope=cover-worker
+          cache-to: type=gha,mode=max,scope=cover-worker
 
-      # Promote the dev-built CopilotKit runtime image the same way (live-generative-surfaces T8) —
-      # only when Live's generative surface is on for prod. The exact SHA cd-dev built must exist in
-      # the dev ACR.
-      - name: Promote CopilotKit runtime image (dev ACR -> prod ACR, same tag)
+      - name: Build & push CopilotKit runtime image (linux/amd64)
         if: vars.LIVE_RUNTIME_ENABLED == 'true'
-        run: |
-          az acr import \
-            --name "${{ vars.ACR_NAME }}" \
-            --registry "${{ vars.DEV_ACR_RESOURCE_ID }}" \
-            --source "lunaris-copilot:${{ steps.sha.outputs.value }}" \
-            --image "lunaris-copilot:${{ steps.sha.outputs.value }}" \
-            --force
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.copilot
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-copilot:${{ steps.sha.outputs.value }}
+          cache-from: type=gha,scope=copilot
+          cache-to: type=gha,mode=max,scope=copilot
 
       - name: Setup Supabase CLI
         if: vars.SUPABASE_DB_POOLER_HOST != ''

@@ -6,16 +6,18 @@ name: CD (inference images)
 # NOT on every push: these images bundle a model download and change rarely, so building them on
 # every main push would bloat each deploy. They rebuild exactly when their inputs change — a push
 # that touches infra/inference/** — plus on demand (workflow_dispatch), so they can't silently go
-# stale while the Draft tier serves from them (cd-dev/cd-prod also warn when the running image
+# stale while the Draft tier serves from them (cd-prod also warns when the running image
 # predates the last inference change).
 #
 # After pushing, the dev Container Apps are rolled to the new images when they exist. The FIRST
 # deploy of the apps is still manual (see infra/inference/README.md) — but on CPU it needs no
-# special quota. Prod stays a manual promote (az acr import + az containerapp update), surfaced by
+# special quota. It now rolls prod directly (no manual promote step), surfaced by
 # cd-prod's staleness warning.
 #
-# Auth is GitHub OIDC federation scoped to `environment: dev` (same as cd-dev), so the ACR push
-# reuses the dev federated identity.
+# Auth is GitHub OIDC federation scoped to `environment: prod`, so this is gated like every other
+# push into the production registry. It used to run unattended against dev and leave prod a manual
+# `az acr import` + `az containerapp update`; with dev retired there is no intermediate registry to
+# stage through, and the manual step it existed to feed is gone with it.
 
 on:
   workflow_dispatch:
@@ -36,7 +38,7 @@ jobs:
   build:
     name: Build & push inference images
     runs-on: ubuntu-latest
-    environment: dev
+    environment: prod
     steps:
       - uses: actions/checkout@v4
 
@@ -96,8 +98,8 @@ jobs:
               echo "::warning::$app does not exist yet — image pushed but not deployed (first deploy is manual, see infra/inference/README.md)."
             fi
           }
-          roll lunaris-dev-inference  "${{ steps.image.outputs.chat }}"
-          roll lunaris-dev-embeddings "${{ steps.image.outputs.embeddings }}"
+          roll lunaris-prod-inference  "${{ steps.image.outputs.chat }}"
+          roll lunaris-prod-embeddings "${{ steps.image.outputs.embeddings }}"
 
       - name: Summary
         run: |

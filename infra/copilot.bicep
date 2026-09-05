@@ -27,7 +27,7 @@ param managedEnvironmentId string
 param managedIdentityResourceId string
 param acrLoginServer string
 
-@description('Base URL of the Lunaris API this runtime forwards runs to, e.g. https://lunaris-dev-api.<region>.azurecontainerapps.io — resolved by CD from the API app that was just deployed.')
+@description('Base URL of the Lunaris API this runtime forwards runs to, e.g. https://lunaris-prod-api.<region>.azurecontainerapps.io — resolved by CD from the API app that was just deployed.')
 param apiBaseUrl string
 
 @description('Browser origin(s) allowed to call this runtime, comma-separated — the SPA origin(s), the same value app.bicep receives as corsOrigins. Empty allows no origin.')

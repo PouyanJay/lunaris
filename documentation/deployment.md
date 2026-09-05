@@ -141,13 +141,22 @@ server's orchestration and embeddings).
 
 ## CI / CD
 
-GitHub Actions builds each image once and promotes it across environments: `cd-dev` deploys on
-merge to the default branch, `cd-prod` is a one-click promote, and `cd-inference` builds the local
-model images (and rebuilds them automatically when `infra/inference/` changes). Every root
-`Dockerfile.*` (API, video worker, cover worker, Live's CopilotKit runtime) is built and scanned
-for fixable high/critical vulnerabilities in CI, on the pull request, before it can reach a deploy;
-`tests/test_deploy_wiring.py` fails the suite if a Dockerfile is added without that CI build, or
-pushed by `cd-dev` without a matching `cd-prod` promotion. Every deploy ends with a smoke test — the
+**Production is the only deployed environment** (since 2026-09-05; before that a `dev` environment
+ran every merge to the default branch and prod promoted its images). Everything else is local.
+
+`cd-prod` is the one deploy workflow: a manual, gated release that builds each image by commit SHA,
+pushes it to the production registry and rolls each Container App from it — all inside the gated
+job, so nothing reaches the production registry without a human approving the release. Passing an
+`image_sha` checks that commit out, so the tag is always a fact about the bytes. `cd-inference`
+builds the local model images the same way (and rebuilds them when `infra/inference/` changes).
+
+Because prod is the first place a merge runs deployed, **CI on the pull request is the only build
+that happens before approval**, and it carries more weight than it used to: every root
+`Dockerfile.*` (API, video worker, cover worker, Live's CopilotKit runtime) is built there and
+scanned for fixable high/critical vulnerabilities before it can reach a deploy.
+`tests/test_deploy_wiring.py` fails the suite if a Dockerfile is added without that CI build, if
+`cd-prod` never pushes it, or if a release starts staging images through another environment's
+registry again. Every deploy ends with a smoke test — the
 run only goes green once `/api/healthz` answers on the deployed host (the custom domain included on
 prod), and `/healthz` on the CopilotKit runtime where it is on — and CI boots a disposable local
 Postgres to apply every migration, lint the schema, and run the row-level-security suite against
@@ -163,13 +172,13 @@ Leave it unset and the deploy warns that no alerting is configured.
 **Turning on Lunaris Live's generative surface.** Live's session panel talks to a separate Node
 Container App, `lunaris-<env>-copilot` (`infra/copilot.bicep`, image `lunaris-copilot`), which
 holds no credential and forwards the learner's own bearer token to the API. It is a two-step
-rollout per environment, like the prod-ops control plane: (1) set the GitHub environment variable
-`LIVE_RUNTIME_ENABLED=true` and deploy — the workflow builds (dev) or promotes (prod) the image,
+rollout, like the prod-ops control plane: (1) set the GitHub environment variable
+`LIVE_RUNTIME_ENABLED=true` and deploy — the workflow builds the image,
 deploys the app pointed at that environment's API with the SPA's `CORS_ORIGINS` as its allowed
 origins, and prints the runtime's URL in the run summary; (2) set `VITE_COPILOT_URL` to that URL
 and re-run the SPA build. Until step 2 the Live session surface is the REST transcript, fully
-usable, and the panel says it is not configured. Turning it off is the reverse; the app scales to
-zero on dev when idle and stays at one replica on prod.
+usable, and the panel says it is not configured. Turning it off is the reverse; the app stays at
+one replica on prod.
 
 **Lunaris Live's session dials** (Phase 2c). All optional, read by the API at start: the interview
 asks at most `LUNARIS_LIVE_INTERVIEW_MAX_QUESTIONS` (4) before the map is taught from; a warming
@@ -187,7 +196,7 @@ credential; rotate it immediately if it ever appears in a log, transcript, or te
    zero-downtime; legacy JWT-style keys rotate via "JWT secret" and invalidate immediately).
 2. Update the `supabase-service-role-key` secret in the environment's Key Vault
    (`az keyvault secret set --vault-name <kv> --name supabase-service-role-key --value <new>`).
-3. Re-run the environment's deploy workflow (cd-dev / cd-prod) — the Container App reads Key Vault
+3. Re-run `cd-prod` — the Container App reads Key Vault
    secrets at deploy time, so a new revision picks up the new key; the smoke test verifies it.
 4. Update `SUPABASE_SERVICE_ROLE_KEY` in the local `.env` if your machine talks to that project.
 
