@@ -796,3 +796,58 @@ describe("the Tier 1 card (T4)", () => {
     expect(reads.map(([input]) => String(input))).toContain("/api/live/sessions/s1");
   });
 });
+
+describe("a session the learner left", () => {
+  /** The same opened session, in whatever state the server says it is in.
+   *
+   *  201, like a real open: answering with 200 puts the hook straight into its failure state, and
+   *  every assertion below would then be about an error screen rather than about a session (found
+   *  by writing them wrong first). */
+  function opened(status: string) {
+    return jsonAlways({ ...OPENED, status }, 201);
+  }
+
+  it("is not offered a composer, because it cannot be answered", async () => {
+    // The defect this pins: three surfaces tested `status === "closed"` and none of them knew about
+    // `abandoned`, the status added when leaving a session became possible. A learner reopening one
+    // they had left was handed a box whose every submission the API refuses.
+    vi.stubGlobal("fetch", opened("abandoned"));
+
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="How neural networks learn" />);
+
+    await screen.findByRole("heading", { name: "How neural networks learn" });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText(/this session has ended/i)).toBeInTheDocument();
+  });
+
+  it("says it has ended rather than showing itself as live", async () => {
+    vi.stubGlobal("fetch", opened("abandoned"));
+
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="How neural networks learn" />);
+
+    await screen.findByRole("heading", { name: "How neural networks learn" });
+    // A left session reading as live is the surface disagreeing with the row behind it — and
+    // borrowing "closed" for it would say the learner finished something they walked out of.
+    expect(screen.getByText(/abandoned/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^live$/i)).not.toBeInTheDocument();
+  });
+
+  it.each(["placing", "warming", "active", "closed", "abandoned"])(
+    "renders something a learner can read in the %s state",
+    async (status) => {
+      // The blank-canvas guard. Every status the wire can carry has to put *something* on screen:
+      // an empty surface under a topbar is indistinguishable from a broken app, and it is the one
+      // failure a learner cannot report usefully.
+      vi.stubGlobal("fetch", opened(status));
+
+      const { container } = render(
+        <SessionView apiBaseUrl="" graphId="g1" topic="How neural networks learn" />,
+      );
+
+      await screen.findByRole("heading", { name: "How neural networks learn" });
+      expect(container.textContent?.trim().length ?? 0).toBeGreaterThan(
+        "How neural networks learn".length,
+      );
+    },
+  );
+});

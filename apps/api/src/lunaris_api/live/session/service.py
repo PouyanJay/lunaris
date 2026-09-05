@@ -8,6 +8,7 @@ import structlog
 from lunaris_live.graph import ConceptGraph, IGraphStore
 from lunaris_live.session import (
     DEFAULT_MAX_QUESTIONS,
+    DirectorMove,
     IGrader,
     IInterviewer,
     IKnowledgeStore,
@@ -19,13 +20,17 @@ from lunaris_live.session import (
     ITutorDeltaSink,
     LearnerModel,
     LessonParts,
+    MoveKind,
     Session,
     SessionClock,
     SessionClosedError,
     SessionStatus,
+    SessionSummary,
     StaleAnswerError,
     TurnOutcome,
     advance_placement,
+    close_session,
+    on_the_wall,
     open_placement,
     open_session,
     take_placement_turn,
@@ -43,14 +48,28 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
 from ..service import LiveGraphService
+from .lifecycle import SessionLifecycle
 from .material_prefetcher import MaterialPrefetcher
 from .prefetch_registry import prefetch_registry
 from .spent_past_ceiling import spent_past_ceiling
-from .throttle import LiveSessionBudgetExhaustedError, LiveSessionThrottle
+from .throttle import (
+    LiveSessionBudgetExhaustedError,
+    LiveSessionThrottle,
+)
 from .turn_beat import TurnBeat
 from .turn_context import TurnContext
 
 logger = structlog.get_logger()
+
+#: The director's reason when the learner asked to finish. Read by a human auditing a session, so a
+#: close somebody chose and a close the clock forced must not read identically.
+_ASKED_TO_STOP = (
+    "You asked to finish here, so this is the ending rather than an interruption: what you "
+    "covered, where it leaves you, and when to come back to it."
+)
+
+#: The statuses nothing more happens to. Named once because two verbs and the loop all ask.
+_TERMINAL = frozenset({SessionStatus.CLOSED, SessionStatus.ABANDONED})
 
 
 def _absorb_detached_turn(task: "asyncio.Task[Session]", *, run_id: str, session_id: str) -> None:
@@ -150,6 +169,13 @@ class LiveSessionService:
         self._credential_resolver = credential_resolver
         # None leaves openings unrationed, which is what the suites predating this compose.
         self._throttle = throttle
+        self._lifecycle = SessionLifecycle(
+            graphs,
+            sessions,
+            knowledge=knowledge,
+            session_budget_s=session_budget_s,
+            throttle=throttle,
+        )
         # None means this deployment mounts no simulators (T6), which is the default and which
         # leaves a sim-only concept exactly where P2a left it: taught here, not checkable here.
         self._sims = sims
@@ -943,6 +969,84 @@ class LiveSessionService:
         session plane read ``if credentials`` and let an empty vault fall through, found in T4)."""
         return nullcontext() if credentials is None else run_credentials(credentials)
 
+    async def end(self, session_id: str, *, owner_id: str | None = None) -> Session:
+        """Close a session because the learner asked to, with the ceremony intact (T3).
+
+        The same ending the clock would have produced, asked for rather than waited for. A stop
+        button that merely marked the row closed would take the recap, the mastery delta and the
+        review schedule away from the learner who *chose* to stop and leave them only for the one
+        who ran out of time, which is the wrong way round: choosing to finish is the better habit.
+
+        Terminal already means done. A stop button is a thing people double-click, and this one
+        costs a model call, so a second press returns the session that already ended rather than
+        paying for a second goodbye. Under the turn slot, the ceiling and the ledger, because it
+        *is* a turn: words written and paid for.
+
+        A session still being placed or warming has nothing to end well: no map has landed, nothing
+        has been taught, and a meter of an empty session is a ceremony about nothing. Those are
+        abandoned instead, which is what leaving one honestly looks like.
+        """
+        run_id = uuid4().hex
+        bind_run_id(run_id, session_id=session_id)
+        context = await self._ready(session_id, owner_id)
+        if context.session.status in _TERMINAL:
+            return context.session
+        if context.session.status in (SessionStatus.PLACING, SessionStatus.WARMING):
+            return await self._lifecycle.abandon(context.session, owner_id=owner_id, run_id=run_id)
+
+        session = context.session
+        model = context.known
+        graph = context.graph
+        assert graph is not None, "an active session has a map"
+        ended = await self._take_and_save(
+            context,
+            lambda: close_session(
+                session,
+                graph,
+                model,
+                list(session.turns),
+                DirectorMove(kind=MoveKind.CLOSE, reason=_ASKED_TO_STOP),
+                clock=on_the_wall(
+                    SessionClock(
+                        turn=len(session.turns) + 1,
+                        elapsed_s=_elapsed_s(session),
+                        budget_s=self._session_budget_s,
+                    ),
+                    session,
+                ),
+                tutor=self._tutor,
+                run_id=run_id,
+            ),
+            run_id=run_id,
+            owner_id=owner_id,
+            slot=self._turn_slot(session_id),
+        )
+        assert ended is not None, "a close always writes"
+        return ended
+
+    # ── the lifecycle, delegated ────────────────────────────────────────────────────────────────
+    #
+    # Leaving, deleting, forgetting a topic and listing are not turns: none of them calls a model,
+    # resolves credentials or touches the cost scope. They live in ``SessionLifecycle`` because they
+    # change for their own reasons, and this class had accreted five unrelated jobs (review
+    # finding). Delegated rather than moved off the service so the router keeps one dependency.
+
+    async def discard(self, session_id: str, *, owner_id: str | None = None) -> Session:
+        """Leave a session, without a ceremony (T3). See ``SessionLifecycle.discard``."""
+        return await self._lifecycle.discard(session_id, owner_id=owner_id)
+
+    async def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
+        """Remove a session, transcript and all (T4). See ``SessionLifecycle.delete``."""
+        await self._lifecycle.delete(session_id, owner_id=owner_id)
+
+    async def forget(self, graph_id: str, *, owner_id: str | None = None) -> None:
+        """Clear what this learner demonstrated on one map (T5). See ``SessionLifecycle.forget``."""
+        await self._lifecycle.forget(graph_id, owner_id=owner_id)
+
+    async def recent(self, *, owner_id: str | None = None) -> list[SessionSummary]:
+        """This learner's sessions, newest first (T2). See ``SessionLifecycle.recent``."""
+        return await self._lifecycle.recent(owner_id=owner_id)
+
     async def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Re-read a session so a reloaded tab lands back in it (U2).
 
@@ -953,5 +1057,7 @@ class LiveSessionService:
         """
         bind_request_id(session_id, session_id=session_id)
         session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
+        # A look is what ends a session whose clock ran out while nobody was watching (T6).
+        session = await self._lifecycle.close_if_spent(session, owner_id=owner_id)
         logger.info("live.session.resumed", turn_count=len(session.turns))
         return session

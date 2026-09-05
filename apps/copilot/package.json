@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Lunaris Live's CopilotKit runtime — the AG-UI transport hop between the browser and the FastAPI session loop. Holds no business logic.",
+  "description": "Lunaris Live's CopilotKit runtime \u2014 the AG-UI transport hop between the browser and the FastAPI session loop. Holds no business logic.",
   "engines": {
     "node": ">=20"
   },
@@ -36,6 +36,7 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "undici": "^6.27.0"
+    "undici": "^6.27.0",
+    "fast-uri": "^3.1.6"
   }
 }

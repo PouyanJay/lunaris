@@ -147,6 +147,7 @@ async def client_with_a_broken_grader(tmp_path: Path) -> AsyncIterator[httpx.Asy
             criterion: MasteryCriterion,
             node: ConceptNode,
             run_id: str,
+            previously: object = (),
         ) -> TurnGrade:
             raise GraderUnavailableError("provider is down")
 

@@ -4,7 +4,9 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Response, status
 from lunaris_live.session import (
     Session,
+    SessionSummary,
 )
+from lunaris_runtime.logging import bind_request_id
 
 from ...dependencies import OptionalUserIdDep
 from .dependencies import LiveSessionServiceDep
@@ -100,6 +102,100 @@ async def advance_session(
         return Response(status_code=status.HTTP_202_ACCEPTED, headers=correlated)
     response.headers["X-Session-Id"] = session_id
     return session
+
+
+@router.post("/{session_id}/end", response_model=Session)
+async def end_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> Session:
+    """Finish a session deliberately, with the ceremony intact (T3).
+
+    200 with the closed session, whose last turn carries the recap, the mastery delta and the day
+    to come back. Idempotent: a second press returns the session that already ended rather than
+    paying for a second goodbye, because a stop button is a thing people double-click and this one
+    costs a model call.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        session = await service.end(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.end_failed", session_id=session_id, missing="Session"
+        )
+    response.headers["X-Session-Id"] = session_id
+    return session
+
+
+@router.post("/{session_id}/discard", response_model=Session)
+async def discard_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> Session:
+    """Leave a session, without a ceremony (T3).
+
+    200 with the abandoned session. Nothing is recapped, nothing is scheduled and no model is
+    called: leaving is not a teaching moment. Not a delete (U2) — the transcript is still the
+    learner's to read, and removing it is its own deliberate act.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        session = await service.discard(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.discard_failed", session_id=session_id, missing="Session"
+        )
+    response.headers["X-Session-Id"] = session_id
+    return session
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    owner_id: OptionalUserIdDep,
+) -> Response:
+    """Remove a session and its transcript (T4).
+
+    204 with no body: there is nothing left to describe. The transcript goes and nothing else — what
+    the learner demonstrated survives, because forgetting that is a separate and deliberate act
+    (U2), and a learner tidying their history should not silently lose the progress it earned them.
+    """
+    correlated = {"X-Session-Id": session_id}
+    try:
+        await service.delete(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(
+            exc, correlated, "live.session.delete_failed", session_id=session_id, missing="Session"
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=correlated)
+
+
+@router.get("", response_model=list[SessionSummary])
+async def list_sessions(
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> list[SessionSummary]:
+    """This learner's own sessions, newest first (T2).
+
+    Summaries, never transcripts: a learner looking over their sessions wants to recognise them,
+    and sending twenty full teaching histories to draw twenty rows would be the wrong trade in
+    every direction. Registered above ``/{session_id}`` for readability only; the paths cannot
+    collide, since an empty id is not a path.
+
+    No ``X-Session-Id`` here because it names no session. A fresh ``X-Request-Id`` carries the
+    correlation instead, the way every other route that fans out does it, so a learner reporting
+    "my sessions did not load" can still be found in the logs.
+    """
+    request_id = uuid4().hex
+    bind_request_id(request_id)
+    response.headers["X-Request-Id"] = request_id
+    return await service.recent(owner_id=owner_id)
 
 
 @router.get("/{session_id}", response_model=Session)

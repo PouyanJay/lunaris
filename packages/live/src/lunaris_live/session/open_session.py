@@ -57,6 +57,10 @@ async def open_session(
     shell = Session(
         session_id=session_id,
         graph_id=graph.graph_id,
+        # The map's own topic, which is what the schema has always said a map-opened session
+        # carries and what a list of sessions is recognised by (T2). A session named only by its
+        # ids is a row a learner cannot pick their own work out of.
+        topic=graph.topic,
         started_at=started_at,
         # And what the learner came in holding (P2c T5): the mastery delta's zero line.
         opening_beliefs=opening_beliefs_of(model),

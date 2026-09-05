@@ -89,3 +89,18 @@ class SupabaseKnowledgeStore:
                 for row in rows
             },
         )
+
+    @guard("live_knowledge forget")
+    def forget(self, graph_id: str, *, owner_id: str | None = None) -> None:
+        """Clear this owner's beliefs about one map (T5).
+
+        Scoped in the DELETE itself and either way, for the reason ``load`` gives: the service-role
+        client bypasses RLS, so this predicate is the only thing keeping a reset inside its own
+        owner. Silent when nothing matched, unlike the session store's delete — "forget this" on a
+        topic with nothing to forget has already happened, and a learner pressing it twice must not
+        meet an error the second time.
+        """
+        client = self._ensure_client()
+        query = client.table(_TABLE).delete().eq("graph_id", graph_id)  # type: ignore[attr-defined]
+        query = query.is_("user_id", None) if owner_id is None else query.eq("user_id", owner_id)
+        query.execute()

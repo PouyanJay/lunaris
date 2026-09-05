@@ -19,6 +19,7 @@ import uuid
 from collections.abc import Callable
 
 import pytest
+from lunaris_live.session import SessionStatus
 
 psycopg = pytest.importorskip("psycopg")
 
@@ -142,21 +143,53 @@ def test_truncate_is_not_reachable_by_a_user(db: "psycopg.Cursor", as_user: _AsU
         db.execute("truncate public.live_sessions")
 
 
-def test_a_session_status_is_constrained_to_the_two_it_can_be(db: "psycopg.Cursor") -> None:
-    """``SessionStatus`` is a closed set in Python; the column has to agree, or a bad write reaches
-    the surface as a status the web has no branch for."""
+@pytest.mark.parametrize("status", [status.value for status in SessionStatus])
+def test_every_status_python_can_write_is_one_the_column_admits(
+    db: "psycopg.Cursor", status: str
+) -> None:
+    """``SessionStatus`` is a closed set in Python; the column has to admit exactly it.
+
+    Parametrized over the enum rather than over a hand-written list, because the hand-written
+    version went stale the moment the set grew: this test used to prove the column REJECTED
+    ``'abandoned'``, having picked it as an obviously-invalid example, and the journey that made
+    leaving a session possible turned that example into a real status. A list written out by hand
+    is a second place for the set to be recorded, and the second place is always the one that
+    drifts (the same lesson `LIVE_SESSION_STATUSES` carries on the web).
+    """
     # Arrange
     owner = str(uuid.uuid4())
     _seed_user(db, owner)
 
-    # Act / Assert — service_role bypasses RLS but not a check constraint.
+    # Act — the loop writes through the service role, which bypasses RLS and not a CHECK.
+    db.execute(
+        """
+        insert into public.live_sessions (id, user_id, graph_id, status, payload)
+        values (%s, %s, 'g1', %s, '{}'::jsonb)
+        """,
+        (uuid.uuid4().hex, owner, status),
+    )
+
+    # Assert: reaching here is the assertion — a status Python can produce and Postgres refuses is
+    # a write that fails in production with an error nothing upstream can translate.
+
+
+def test_a_status_no_python_enum_member_names_is_refused(db: "psycopg.Cursor") -> None:
+    """The other half: the column is a closed set too, so a typo or a rolled-back release cannot
+    put a value on the row that every surface has no branch for."""
+    # Arrange
+    owner = str(uuid.uuid4())
+    _seed_user(db, owner)
+    invented = "definitely-not-a-session-status"
+    assert invented not in {status.value for status in SessionStatus}
+
+    # Act / Assert
     with pytest.raises(psycopg.errors.CheckViolation):
         db.execute(
             """
             insert into public.live_sessions (id, user_id, graph_id, status, payload)
-            values (%s, %s, 'g1', 'abandoned', '{}'::jsonb)
+            values (%s, %s, 'g1', %s, '{}'::jsonb)
             """,
-            (uuid.uuid4().hex, owner),
+            (uuid.uuid4().hex, owner, invented),
         )
 
 

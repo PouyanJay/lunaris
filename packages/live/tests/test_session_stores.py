@@ -172,6 +172,130 @@ def test_a_placing_session_round_trips_with_its_topic() -> None:
     assert loaded.turns[0].move.kind is MoveKind.PLACE
 
 
+# ── deleting, and listing, are scoped like every other read (T4, T2) ───────────────────────────
+
+
+def test_a_session_is_deleted_only_by_its_own_owner() -> None:
+    """The delete verb's whole safety property. Unscoped, a learner could remove somebody else's
+    transcript by guessing an id, and would learn the id existed by watching it succeed."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("mine"), owner_id="learner-a")
+
+    # Act / Assert: another learner cannot reach it, and neither can an unscoped caller.
+    with pytest.raises(FileNotFoundError):
+        store.delete("mine", owner_id="learner-b")
+    with pytest.raises(FileNotFoundError):
+        store.delete("mine")
+    # And it is still there afterwards, which is the half a refusal alone would not prove.
+    assert store.load("mine", owner_id="learner-a").session_id == "mine"
+
+    # Act: its owner can.
+    store.delete("mine", owner_id="learner-a")
+
+    # Assert
+    with pytest.raises(FileNotFoundError):
+        store.load("mine", owner_id="learner-a")
+
+
+def test_deleting_a_session_that_was_never_there_is_not_found() -> None:
+    """So a caller cannot tell "already gone" from "never existed" by the shape of the answer."""
+    # Arrange
+    store = MemorySessionStore()
+
+    # Act / Assert
+    with pytest.raises(FileNotFoundError):
+        store.delete("nope", owner_id="learner-a")
+
+
+def test_a_learner_lists_only_their_own_sessions() -> None:
+    """A list is where a scoping mistake shows somebody else's teaching history all at once rather
+    than one row of it, which is why this is proved at the store and not only at the API."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("mine"), owner_id="learner-a")
+    store.save(_session("theirs"), owner_id="learner-b")
+    store.save(_session("nobodys"))
+
+    # Act
+    listed = store.recent(owner_id="learner-a")
+
+    # Assert
+    assert [summary.session_id for summary in listed] == ["mine"]
+
+
+def test_the_newest_session_is_listed_first() -> None:
+    """Ordering is the store's job, so both implementations answer the same way and no surface has
+    to re-sort. Two saves inside one clock tick is the case a wall clock alone would get wrong."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("older"), owner_id="learner-a")
+    store.save(_session("newer"), owner_id="learner-a")
+
+    # Act
+    listed = store.recent(owner_id="learner-a")
+
+    # Assert
+    assert [summary.session_id for summary in listed] == ["newer", "older"]
+
+
+def test_a_re_saved_session_moves_to_the_front() -> None:
+    """ "Newest" means last moved, not first opened: a learner coming back wants the thing they were
+    last doing. A turn re-saves the session, so this is what every answer does to the list."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("first"), owner_id="learner-a")
+    store.save(_session("second"), owner_id="learner-a")
+
+    # Act: the older one takes a turn.
+    store.save(_session("first"), owner_id="learner-a")
+
+    # Assert
+    assert [summary.session_id for summary in store.recent(owner_id="learner-a")] == [
+        "first",
+        "second",
+    ]
+
+
+def test_an_open_session_is_only_seen_by_its_own_owner() -> None:
+    """``has_open_on`` gates a destructive act (T5's reset), so a wrong answer either blocks a
+    learner from clearing their own record or lets them clear it out from under a live session."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("theirs"), owner_id="learner-b")
+
+    # Act / Assert
+    assert store.has_open_on("g1", owner_id="learner-b") is True
+    assert store.has_open_on("g1", owner_id="learner-a") is False
+    assert store.has_open_on("g1") is False
+
+
+def test_a_finished_session_is_not_an_open_one() -> None:
+    """Both terminal statuses, because a learner who *left* a session must be as free to reset the
+    topic as one who finished it: the guard exists to stop a live session overwriting the reset, and
+    neither of these will ever write again."""
+    # Arrange
+    store = MemorySessionStore()
+    open_one = _session("s1")
+    store.save(open_one, owner_id="learner-a")
+    assert store.has_open_on("g1", owner_id="learner-a") is True
+
+    # Act / Assert
+    for done in (SessionStatus.CLOSED, SessionStatus.ABANDONED):
+        store.save(open_one.model_copy(update={"status": done}), owner_id="learner-a")
+        assert store.has_open_on("g1", owner_id="learner-a") is False
+
+
+def test_an_open_session_on_another_map_does_not_count() -> None:
+    """The block is per map. One unfinished session must not freeze every other topic's reset."""
+    # Arrange
+    store = MemorySessionStore()
+    store.save(_session("elsewhere").model_copy(update={"graph_id": "g2"}), owner_id="learner-a")
+
+    # Act / Assert
+    assert store.has_open_on("g1", owner_id="learner-a") is False
+
+
 # ── a row this build cannot read ───────────────────────────────────────────────────────────────
 
 
@@ -201,6 +325,182 @@ class FakeSupabase:
             data = [] if self._row is None else [self._row]
 
         return Result()
+
+
+class RecordingSupabase:
+    """A fake that actually FILTERS, so the store's own predicates are what decide the answer.
+
+    ``FakeSupabase`` above returns its one row whatever is asked, which is right for testing how a
+    corrupt payload is reported and useless for testing scoping: every owner predicate the store
+    applies is discarded. That gap was the review's one important finding — the owner-scoping
+    mutations in this journey all ran against ``MemorySessionStore``, a dict lookup, while the code
+    that actually runs in production is a query-builder chain where a dropped ``.eq()`` would be
+    caught by nothing.
+
+    So this one keeps the rows and applies each call as a real filter. It is still a fake and not
+    Postgres: what it proves is that the store *asks the right questions*, which is exactly where a
+    dropped or mis-keyed predicate lives.
+    """
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.rows = rows
+        self._matched: list[dict[str, Any]] = []
+        self._verb = "select"
+        self._order: tuple[str, bool] | None = None
+        self._limit: int | None = None
+        self.not_ = _Not(self)
+
+    def table(self, _name: str) -> "RecordingSupabase":
+        self._matched = list(self.rows)
+        self._verb = "select"
+        self._order = None
+        self._limit = None
+        return self
+
+    def select(self, *_columns: str) -> "RecordingSupabase":
+        return self
+
+    def delete(self) -> "RecordingSupabase":
+        self._verb = "delete"
+        return self
+
+    def eq(self, column: str, value: object) -> "RecordingSupabase":
+        self._matched = [row for row in self._matched if row.get(column) == value]
+        return self
+
+    def is_(self, column: str, value: object) -> "RecordingSupabase":
+        self._matched = [row for row in self._matched if row.get(column) is value]
+        return self
+
+    def order(self, column: str, desc: bool = False) -> "RecordingSupabase":
+        self._matched.sort(key=lambda row: row[column], reverse=desc)
+        return self
+
+    def limit(self, count: int) -> "RecordingSupabase":
+        self._limit = count
+        return self
+
+    def execute(self) -> Any:
+        matched = self._matched[: self._limit] if self._limit is not None else self._matched
+        if self._verb == "delete":
+            for row in matched:
+                self.rows.remove(row)
+
+        return type("Result", (), {"data": list(matched)})()
+
+
+class _Not:
+    """``query.not_.in_(column, values)``, which is how postgrest-py spells a negated filter."""
+
+    def __init__(self, parent: RecordingSupabase) -> None:
+        self._parent = parent
+
+    def in_(self, column: str, values: list[object]) -> RecordingSupabase:
+        self._parent._matched = [
+            row for row in self._parent._matched if row.get(column) not in values
+        ]
+        return self._parent
+
+
+def _row(session_id: str, *, owner: str | None, graph: str = "g1", status: str = "active") -> dict:
+    """One ``live_sessions`` row as the durable store reads it, payload and all."""
+    return {
+        "id": session_id,
+        "user_id": owner,
+        "graph_id": graph,
+        "status": status,
+        "turn_count": 1,
+        "updated_at": "2026-08-20T09:00:00+00:00",
+        "topic": "A subject",
+        "startedAt": "2026-08-20T08:00:00+00:00",
+        "payload": _session(session_id).model_dump(mode="json", by_alias=True),
+    }
+
+
+def _durable(rows: list[dict[str, Any]]) -> SupabaseSessionStore:
+    return SupabaseSessionStore(client=RecordingSupabase(rows))
+
+
+def test_the_durable_store_lists_only_its_own_owners_sessions() -> None:
+    """The predicate the docstrings call "the only thing standing between one learner's history and
+    another's", exercised where it actually lives: the query chain, not its in-memory twin."""
+    # Arrange
+    store = _durable([_row("mine", owner="learner-a"), _row("theirs", owner="learner-b")])
+
+    # Act / Assert
+    assert [summary.session_id for summary in store.recent(owner_id="learner-a")] == ["mine"]
+    assert [summary.session_id for summary in store.recent(owner_id="learner-b")] == ["theirs"]
+    # Unscoped means UNOWNED, never everyone.
+    assert store.recent() == []
+
+
+def test_the_durable_store_deletes_only_its_own_owners_session() -> None:
+    """A delete that only matched on the id would remove somebody else's transcript by guessing."""
+    # Arrange
+    rows = [_row("mine", owner="learner-a")]
+    store = _durable(rows)
+
+    # Act / Assert
+    with pytest.raises(FileNotFoundError):
+        store.delete("mine", owner_id="learner-b")
+    with pytest.raises(FileNotFoundError):
+        store.delete("mine")
+    assert rows, "the row was removed by a caller who did not own it"
+
+    store.delete("mine", owner_id="learner-a")
+    assert rows == []
+
+
+def test_the_durable_store_reads_the_topic_and_start_out_of_the_payload() -> None:
+    """The one piece of new PostgREST syntax in this journey (``payload->>topic``), which aliases
+    the response key to the JSON key name. A list keyed on ids is a list nobody can pick their own
+    work out of, so this is what makes the summary a summary."""
+    # Arrange
+    store = _durable([_row("mine", owner="learner-a")])
+
+    # Act
+    listed = store.recent(owner_id="learner-a")
+
+    # Assert
+    assert listed[0].topic == "A subject"
+    assert listed[0].started_at.year == 2026
+
+
+def test_the_durable_store_sees_only_its_own_owners_open_session() -> None:
+    """``has_open_on`` gates a destructive act, so a wrong answer either blocks a learner from
+    clearing their own record or lets them clear it out from under a live session."""
+    # Arrange
+    store = _durable([_row("theirs", owner="learner-b")])
+
+    # Act / Assert
+    assert store.has_open_on("g1", owner_id="learner-b") is True
+    assert store.has_open_on("g1", owner_id="learner-a") is False
+    assert store.has_open_on("g1") is False
+
+
+def test_the_durable_store_does_not_count_a_finished_session_as_open() -> None:
+    """Both terminal statuses, through the real ``not_.in_`` filter rather than a Python set."""
+    # Arrange / Act / Assert
+    for done in ("closed", "abandoned"):
+        store = _durable([_row("mine", owner="learner-a", status=done)])
+        assert store.has_open_on("g1", owner_id="learner-a") is False
+
+
+def test_the_durable_store_names_only_its_own_owners_sessions_on_a_map() -> None:
+    """``session_ids_on`` decides whether a reset may proceed, so it must not see across owners."""
+    # Arrange
+    store = _durable(
+        [
+            _row("mine", owner="learner-a"),
+            _row("elsewhere", owner="learner-a", graph="g2"),
+            _row("theirs", owner="learner-b"),
+        ]
+    )
+
+    # Act / Assert
+    assert store.session_ids_on("g1", owner_id="learner-a") == ("mine",)
+    assert store.session_ids_on("g1", owner_id="learner-b") == ("theirs",)
+    assert store.session_ids_on("g1") == ()
 
 
 def test_a_session_this_build_cannot_parse_is_not_an_outage() -> None:

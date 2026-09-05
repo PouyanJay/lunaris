@@ -337,7 +337,7 @@ async def test_a_grader_that_cannot_answer_moves_nothing() -> None:
     provider's side, and the turn would be recorded as scored when nothing scored it."""
 
     class BrokenGrader:
-        async def grade(self, answer, *, criterion, node, run_id):
+        async def grade(self, answer, *, criterion, node, run_id, previously=()):
             raise GraderUnavailableError("provider is down")
 
     # Arrange

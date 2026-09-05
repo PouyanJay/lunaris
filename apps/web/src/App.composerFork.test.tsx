@@ -288,4 +288,14 @@ describe("Composer — the Studio | Live fork", () => {
     // A whitespace-only param must not render "You asked to learn ." with nothing in it.
     expect(screen.queryByText(/you asked to learn/i)).not.toBeInTheDocument();
   });
+  it("opens the composer already in Live mode when the URL says so", async () => {
+    // Live's rail links here. A "new session" that landed in Studio's composer would be a rail
+    // sending a learner out of the product they were standing in (journey
+    // live-session-lifecycle, T7).
+    window.history.pushState(null, "", "/new?mode=live");
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: /live mode, on/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start (a )?(live )?session/i })).toBeInTheDocument();
+  });
 });

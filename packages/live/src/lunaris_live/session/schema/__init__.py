@@ -20,11 +20,13 @@ from .node_knowledge import NodeKnowledge
 from .node_prior import NodePrior
 from .placement_result import PlacementResult
 from .practice_block import PracticeBlock
+from .prior_attempt import PriorAttempt
 from .prose_block import ProseBlock
 from .quiz_card import QuizCard
 from .session import Session
 from .session_clock import SessionClock
 from .session_status import SessionStatus
+from .session_summary import SessionSummary
 from .session_turn import SessionTurn
 from .sim_app import SimApp
 from .sim_app_card import SimAppCard
@@ -58,11 +60,13 @@ __all__ = [
     "NodePrior",
     "PlacementResult",
     "PracticeBlock",
+    "PriorAttempt",
     "ProseBlock",
     "QuizCard",
     "Session",
     "SessionClock",
     "SessionStatus",
+    "SessionSummary",
     "SessionTurn",
     "SimApp",
     "SimAppCard",

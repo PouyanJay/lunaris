@@ -2,6 +2,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// The shell now carries the rail, whose footer reads the signed-in user for the account row.
+// Stubbed so these tests need no AuthProvider, the same way Studio's rail test does.
+vi.mock("../../hooks/useAuth", () => ({
+  useAuth: () => ({ user: { email: "pj@example.com", user_metadata: { display_name: "Pouyan" } } }),
+}));
+
 import LiveShell from "./LiveShell";
 
 const NODES = [
@@ -119,6 +125,15 @@ const SESSION = {
 function renderLive(topic: string) {
   return render(
     <MemoryRouter initialEntries={[`/live?topic=${encodeURIComponent(topic)}`]}>
+      <LiveShell apiBaseUrl="http://test" />
+    </MemoryRouter>,
+  );
+}
+
+/** A learner's own sessions: Live's first sub-route (T2). */
+function onTheSessionsRoute() {
+  return render(
+    <MemoryRouter initialEntries={["/live/sessions"]}>
       <LiveShell apiBaseUrl="http://test" />
     </MemoryRouter>,
   );
@@ -279,5 +294,78 @@ describe("LiveShell — a map the learner already has", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /back to the map/i }));
     expect(await screen.findByRole("button", { name: /start a session/i })).toBeInTheDocument();
+  });
+});
+
+describe("the sessions route", () => {
+  it("lists the learner's sessions rather than opening one", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                sessionId: "s1",
+                graphId: "g1",
+                topic: "How neural networks learn",
+                status: "active",
+                turnCount: 6,
+                startedAt: "2026-08-19T09:00:00Z",
+                updatedAt: "2026-08-19T09:40:00Z",
+              },
+            ]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+        ),
+      ),
+    );
+
+    onTheSessionsRoute();
+
+    // The route is the assertion: a path under /live must reach Live's own screen and never fall
+    // through to the idle state, which is what an unrouted sub-path would do.
+    expect(await screen.findByRole("heading", { name: /your sessions/i })).toBeInTheDocument();
+    expect(await screen.findByRole("listitem")).toHaveTextContent("How neural networks learn");
+  });
+});
+
+describe("the rail", () => {
+  it("is the mini icon column while a session is being taught", async () => {
+    liveApi();
+
+    renderLive("How neural networks learn");
+
+    // A session is a focus surface: a full-width nav beside it competes with the teaching. The
+    // learner still sees where they are and how to get out, which is the whole point of it being
+    // there at all.
+    expect(await screen.findByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
+  });
+
+  it("is expanded on a surface that is not a session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        ),
+      ),
+    );
+
+    onTheSessionsRoute();
+
+    expect(await screen.findByRole("button", { name: /collapse sidebar/i })).toBeInTheDocument();
+  });
+
+  it("opens when the learner asks for it, mid-session", async () => {
+    liveApi();
+
+    renderLive("How neural networks learn");
+    fireEvent.click(await screen.findByRole("button", { name: /expand sidebar/i }));
+
+    expect(screen.getByRole("button", { name: /collapse sidebar/i })).toBeInTheDocument();
   });
 });

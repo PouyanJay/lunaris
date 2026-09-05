@@ -19,3 +19,8 @@ class SessionStatus(StrEnum):
     ACTIVE = "active"
     #: The director closed it deliberately. Distinct from abandoned: this one ended *well*.
     CLOSED = "closed"
+    #: The learner walked away from it (T3). No recap, no schedule, no goodbye: leaving is not a
+    #: teaching moment. Its own status rather than ``CLOSED`` because a session somebody left and
+    #: one that ended well are different facts about a learner, and collapsing them would make
+    #: every count of "sessions finished" a lie. Terminal, like ``CLOSED``: nothing more is taught.
+    ABANDONED = "abandoned"

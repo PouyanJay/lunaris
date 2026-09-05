@@ -1,10 +1,15 @@
-import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useEffect, useState, type CSSProperties } from "react";
+import { Link, useLocation, useSearchParams } from "react-router";
 
 import { ConceptMap } from "./ConceptMap";
 import { ConceptSpecPanel } from "./ConceptSpecPanel";
+import { LiveRail } from "./LiveRail";
+import { LIVE_SESSIONS_PATH } from "./liveRoutes";
+import { SessionList } from "./SessionList";
 import { SessionView } from "./SessionView";
 import { useLiveGraph } from "../../hooks/useLiveGraph";
+import { useTeachingRail } from "../../hooks/useTeachingRail";
+import { useTheme } from "../../hooks/useTheme";
 import { type ConceptGraph } from "../../lib/liveGraph";
 import { ROUTES } from "../../lib/routes";
 import { BrandMark } from "../shell/BrandMark";
@@ -25,8 +30,16 @@ interface LiveShellProps {
  *  Loaded lazily by {@link ProductRouter} so Live's dependencies never reach Studio's bundle. */
 export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   const [params] = useSearchParams();
+  const { pathname } = useLocation();
   const topic = params.get("topic")?.trim();
   const graphId = params.get("graph")?.trim();
+  // Live's first sub-route. Read here rather than through a nested router because the shell has
+  // exactly two destinations and a router for two is more machinery than either of them needs.
+  const listing = pathname === LIVE_SESSIONS_PATH || pathname === `${LIVE_SESSIONS_PATH}/`;
+
+  const { theme, toggle: toggleTheme } = useTheme();
+  const rail = useTeachingRail(topic ?? graphId ?? null);
+  const frame = { "--sidebar-width": `${rail.width}px` } as CSSProperties;
 
   useEffect(() => {
     const previous = document.title;
@@ -37,30 +50,44 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   }, [topic]);
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} style={frame}>
       <header className={styles.topbar}>
         <div className={styles.brand}>
           <BrandMark size={24} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
       </header>
-      {topic ? (
-        <main className={styles.canvas} data-state="session">
-          <div className={styles.teaching}>
-            <SessionView
-              apiBaseUrl={apiBaseUrl}
-              topic={topic}
-              copilotUrl={import.meta.env.VITE_COPILOT_URL}
-            />
-          </div>
-        </main>
-      ) : graphId ? (
-        <MapEntry apiBaseUrl={apiBaseUrl} graphId={graphId} />
-      ) : (
-        <main className={styles.canvas} data-state="idle">
-          <IdleState />
-        </main>
-      )}
+      <div className={styles.lower}>
+        <div className={styles.rail}>
+          <LiveRail
+            collapsed={rail.collapsed}
+            onToggleCollapsed={rail.toggleCollapsed}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
+        </div>
+        {listing ? (
+          <main className={styles.canvas} data-state="sessions">
+            <SessionList apiBaseUrl={apiBaseUrl} />
+          </main>
+        ) : topic ? (
+          <main className={styles.canvas} data-state="session">
+            <div className={styles.teaching}>
+              <SessionView
+                apiBaseUrl={apiBaseUrl}
+                topic={topic}
+                copilotUrl={import.meta.env.VITE_COPILOT_URL}
+              />
+            </div>
+          </main>
+        ) : graphId ? (
+          <MapEntry apiBaseUrl={apiBaseUrl} graphId={graphId} />
+        ) : (
+          <main className={styles.canvas} data-state="idle">
+            <IdleState />
+          </main>
+        )}
+      </div>
     </div>
   );
 }

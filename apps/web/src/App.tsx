@@ -43,6 +43,7 @@ import { AccountLayout } from "./components/account/AccountLayout";
 import { CanvasNotice } from "./components/states/CanvasNotice";
 import { GraphSkeleton } from "./components/states/GraphSkeleton";
 import { IdleCourseSetup } from "./components/configurator/IdleCourseSetup";
+import type { Product } from "./lib/product";
 import { useCourse } from "./hooks/useCourse";
 import { useCourseProgress } from "./hooks/useCourseProgress";
 import { useBeforeUnloadGuard } from "./hooks/useBeforeUnloadGuard";
@@ -191,6 +192,10 @@ function StudioApp({
   const location = useLocation();
   const navigate = useNavigate();
   const route = resolveRoute(location.pathname);
+  // Which product the composer opens in. Live's rail links to `/new?mode=live` so its primary
+  // action stays inside Live; read here rather than in the composer, which then needs no router.
+  const composerMode: Product =
+    new URLSearchParams(location.search).get("mode") === "live" ? "live" : "studio";
   const settingsOpen = route.kind === "settings";
   // Leave a nav view toward wherever the user came from; a cold deep-link falls back to home.
   const closeNavView = useCallback(() => {
@@ -758,6 +763,7 @@ function StudioApp({
         body: (
           <IdleCourseSetup
             apiBaseUrl={apiBaseUrl}
+            initialMode={composerMode}
             onStartLive={
               forked
                 ? (topic) => navigate(`${PRODUCT_ROUTES.live}?topic=${encodeURIComponent(topic)}`)

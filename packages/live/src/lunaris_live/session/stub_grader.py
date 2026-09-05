@@ -1,7 +1,8 @@
 import re
+from collections.abc import Sequence
 
 from ..graph.schema import ConceptNode, MasteryCriterion
-from .schema import EvidenceKind, TurnGrade
+from .schema import EvidenceKind, PriorAttempt, TurnGrade
 
 #: Words that carry no signal about whether a bar was met. Tokens under four characters go the same
 #: way, which takes out most of English's connective tissue for free.
@@ -51,8 +52,16 @@ class StubGrader:
     """
 
     async def grade(
-        self, answer: str, *, criterion: MasteryCriterion, node: ConceptNode, run_id: str
+        self,
+        answer: str,
+        *,
+        criterion: MasteryCriterion,
+        node: ConceptNode,
+        run_id: str,
+        previously: Sequence[PriorAttempt] = (),
     ) -> TurnGrade:
+        # The history is ignored on purpose: this measures vocabulary overlap, which is already
+        # monotonic in what an answer contains. Accepted so the stub still satisfies ``IGrader``.
         asked = _content_words(criterion.statement)
         said = _content_words(answer)
         touched = asked & said

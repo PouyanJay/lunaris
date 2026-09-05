@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 import structlog
 
 from ..graph.schema import ConceptNode, MasteryCriterion
@@ -5,7 +7,7 @@ from ..model_json import parse_json_object
 from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
 from .grader_unavailable_error import GraderUnavailableError
 from .max_answer_chars import MAX_ANSWER_CHARS
-from .schema import EvidenceKind, TurnGrade
+from .schema import EvidenceKind, PriorAttempt, TurnGrade
 
 logger = structlog.get_logger()
 
@@ -33,10 +35,47 @@ Respond with ONLY a JSON object, no prose:
 {{"verdict": "met", "reason": "One sentence, addressed to the learner, saying what they did or \
 missed."}}"""
 
+#: The prompt when the learner has already had a go at this same bar (T8).
+#:
+#: The rule it adds is monotonicity, and it is there because the first real session broke it: an
+#: answer was marked partial and told it was missing "adjusts many small numbers (weights)", a later
+#: answer said exactly that, and it was marked NOT met for "restating the definition". A grader that
+#: scores a learner lower for following its own feedback teaches them to stop reading it.
+#:
+#: Their earlier words, never the earlier *reasons*: feeding a model its own prose back is how a
+#: grader talks itself into a position rather than re-reading the answer in front of it.
+_PROMPT_WITH_HISTORY = (
+    _PROMPT
+    + """
+
+What they have already tried at this same bar, oldest first:
+{previously}
+
+Two rules about that history, and they matter more than anything else here:
+- An answer that says everything an earlier one said, plus more, must NEVER be scored lower than \
+that earlier answer was. If they added what they were told was missing, that is progress and it is \
+scored as progress.
+- Judge THIS answer against the bar, not against how many goes it has taken. A learner who gets \
+there on the fourth attempt has got there."""
+)
+
 #: What the grader is allowed to have decided. An unrecognised verdict is refused rather than
 #: coerced: the belief this moves is what the director gates progress on, so guessing which side of
 #: the line "mostly" falls on is guessing with somebody's curriculum.
 _VERDICTS = {kind.value: kind for kind in EvidenceKind}
+
+
+def _history(previously: Sequence[PriorAttempt]) -> str:
+    """The learner's earlier goes at this bar, oldest first, one per line.
+
+    Their words and the verdict, never the earlier reason (see ``PriorAttempt``). Each answer is
+    bounded the same way the current one is: it reached the prompt as learner input once already,
+    and a history of four unbounded answers is four times the exposure.
+    """
+    return "\n".join(
+        f'- "{attempt.answer.strip()[:MAX_ANSWER_CHARS]}" → {attempt.kind.value}'
+        for attempt in previously
+    )
 
 
 class ClaudeGrader:
@@ -61,15 +100,26 @@ class ClaudeGrader:
         self._deadline_s = deadline_s
 
     async def grade(
-        self, answer: str, *, criterion: MasteryCriterion, node: ConceptNode, run_id: str
+        self,
+        answer: str,
+        *,
+        criterion: MasteryCriterion,
+        node: ConceptNode,
+        run_id: str,
+        previously: Sequence[PriorAttempt] = (),
     ) -> TurnGrade:
-        prompt = _PROMPT.format(
+        # Two prompts rather than one with an empty history: "here is what they tried before:
+        # nothing" invites a model to reason about an absence, and the first attempt at any bar is
+        # the common case (T8).
+        template = _PROMPT_WITH_HISTORY if previously else _PROMPT
+        prompt = template.format(
             name=node.name,
             definition=node.definition,
             statement=criterion.statement,
             # Bounded here rather than trusted: the answer is learner input arriving at a model
             # prompt, and an unbounded one would be a cost and a truncation risk at once.
             answer=answer.strip()[:MAX_ANSWER_CHARS],
+            previously=_history(previously),
         )
         payload = parse_json_object(await self._ask(prompt, run_id=run_id, node_id=node.id))
 

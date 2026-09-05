@@ -39,6 +39,20 @@
   border-color: var(--text-muted);
 }
 
+/* Quiet: no ground and no border until it is reached for. For secondary actions that must be
+   present but must not compete — a row of verbs beside a row's own content, where four bordered
+   buttons would read as four equally-weighted choices. Interaction still *increases* contrast:
+   hover fills, focus rings, so it never becomes a control you cannot find. */
+.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+.ghost:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
 /* The brand-amber hero CTA. Amber is a light hue, so the label is dark ink (--accent-text), not
    white — white fails AA on it. Reserved for the primary call-to-action (see Button.tsx). */
 .accent {

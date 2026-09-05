@@ -33,6 +33,11 @@ interface IdleCourseSetupProps {
    *  array, so without this the first-run explainer would flash up and vanish for every returning
    *  user. */
   runsLoaded?: boolean;
+  /** Which product the composer opens in. Studio unless the caller says otherwise — Live's own rail
+   *  opens it in Live mode (`/new?mode=live`) so its primary action does not send a learner out of
+   *  the product they are standing in (journey live-session-lifecycle, T7). The URL is read by the
+   *  shell rather than here, so this component still needs no router. */
+  initialMode?: Product;
 }
 
 /**
@@ -53,10 +58,11 @@ export function IdleCourseSetup({
   onOpenSettings,
   runs = [],
   runsLoaded = false,
+  initialMode = "studio",
 }: IdleCourseSetupProps) {
   const [topic, setTopic] = useState("");
   // Which product the topic goes to. Studio is the default, so the existing path is untouched.
-  const [mode, setMode] = useState<Product>("studio");
+  const [mode, setMode] = useState<Product>(initialMode);
   const [depth, setDepth] = useState<DiscoveryDepth>("standard");
   // The composer's quick options bar: target level (mapped onto the brief's clarification) and the
   // per-build "Official sources only" trust switch. Level "recommended" = today's inferred default.
