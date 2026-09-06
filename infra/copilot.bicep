@@ -36,8 +36,8 @@ param allowedOrigins string = ''
 @description('Tier 3 simulator registry switch, mirroring the API\'s LUNARIS_LIVE_SIMS. Empty (the default) registers nothing; "stub" serves the placeholder simulator. Set the same value on both apps or the socket disagrees with itself.')
 param liveSims string = ''
 
-@description('dev scales to zero to save cost; prod should be >=1 so a learner\'s first turn does not pay a cold start.')
-param minReplicas int = (env == 'prod') ? 1 : 0
+@description('Replica floor. Zero by default: this runtime is a stateless proxy — every request it takes is forwarded to the API and awaited, so nothing outlives a request and a scaled-to-zero app loses no work. The cold start it costs is a second or two in front of a turn that already waits several seconds on a model, so nobody perceives it. Raise to 1 when there are customers whose first impression is worth ~$3.50/month (2026-09-05: that was the measured cost of holding it warm).')
+param minReplicas int = 0
 param maxReplicas int = 3
 
 @description('vCPU/memory per replica. The runtime is a streaming proxy — no model calls, no rendering — so half a vCPU and 1Gi is ample.')
