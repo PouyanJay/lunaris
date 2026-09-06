@@ -62,8 +62,8 @@ param prodOpsSubscriptionId string = ''
 @description('Resource group the prod-operations dashboard reports on (defaults to this deployment RG).')
 param prodOpsResourceGroup string = ''
 
-@description('dev scales to zero to save cost; prod should be >=1 so in-flight builds survive.')
-param minReplicas int = (env == 'prod') ? 1 : 0
+@description('Replica floor. ONE, and not zero, for a reason that is not about latency: this app runs work that deliberately outlives the request that started it — a course build, a Live graph compile, a material prefetch — and the only scale rule is HTTP concurrency, which counts none of it. Scale to zero and a build whose learner closed the tab is killed mid-flight after the cooldown, silently, having already spent the model tokens. That a dropped stream does NOT cancel the work behind it is a promise this product makes on purpose (Phase 1: the graph id ships before the body so a retry re-reads rather than paying twice). Moving those to ACA Jobs is what would make a zero floor safe here; until then this is ~$7.60/month buying a guarantee.')
+param minReplicas int = 1
 param maxReplicas int = 3
 param cpu string = '1.0'
 param memory string = '2Gi'
