@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A linear relationship</title>
+<style>
+  :root { color-scheme: light dark; --paper:#f7f8fa; --ink:#12151c; --line:#6b7280;
+    --space:16px; --radius:5px; --control:44px; }
+  @media(prefers-color-scheme:dark) { :root { --paper:#0f1115; --ink:#e9ebee; --line:#8a909b; } }
+  body { margin:0; padding:var(--space); color:var(--ink); background:var(--paper);
+    font:16px/1.5 system-ui,sans-serif; }
+  label,output { display:block; margin-block:var(--space); }
+  input { width:100%; min-height:var(--control); }
+  button { color:var(--ink); background:var(--paper); border:1px solid var(--line);
+    border-radius:var(--radius); padding-inline:var(--space); min-height:var(--control); font:inherit; }
+  button:hover { border-color:var(--ink); }
+  button:focus-visible,input:focus-visible { outline:none; box-shadow:0 0 0 2px var(--ink); }
+  button:disabled { opacity:.5; }
+</style>
+<h1>Explore y = 2x</h1>
+<p>Move x and compare the change in y. Ask your tutor to show a contrasting position.</p>
+<label for="x">x</label><input id="x" type="range" min="0" max="10" step="1" value="2">
+<output id="y" for="x" aria-live="polite">y = 4</output>
+<button id="ask" disabled>Discuss this change</button>
+<script>
+  let host = null;
+  const x = document.getElementById('x');
+  const y = document.getElementById('y');
+  const ask = document.getElementById('ask');
+  function draw() { y.textContent = 'y = ' + Number(x.value) * 2; }
+  x.addEventListener('input', draw);
+  window.addEventListener('message', event => {
+    if (event.source !== parent || !event.data || event.data.version !== 1) return;
+    const data = event.data;
+    if (data.type === 'lunaris.sim.init') host = data;
+    if (!host || data.instanceId !== host.instanceId) return;
+    if (data.type === 'lunaris.sim.availability') { ask.disabled = !data.active; return; }
+    if (data.type === 'lunaris.sim.init' || data.type === 'lunaris.sim.command') {
+      if (typeof data.state?.x !== 'number' || data.state.x < 0 || data.state.x > 10) return;
+      x.value = String(data.state.x); draw(); ask.disabled = !data.active;
+    }
+  });
+  ask.addEventListener('click', () => {
+    if (!host) return;
+    parent.postMessage({type:'lunaris.sim.event',version:1,instanceId:host.instanceId,
+      appId:host.appId,kind:'param_changed',state:{x:Number(x.value)}}, '*');
+  });
+  parent.postMessage({type:'lunaris.sim.ready',version:1}, '*');
+</script>
+</html>

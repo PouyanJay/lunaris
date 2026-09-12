@@ -2,6 +2,7 @@ from pydantic import Field
 
 from ...graph.schema.base import LiveModel
 from ...graph.schema.mastery_criterion import MasteryCriterion
+from ...sims.schema.exchange import SimExchange
 from ..max_answer_chars import MAX_ANSWER_CHARS
 from .director_move import DirectorMove
 from .layout_spec import LayoutSpec
@@ -60,3 +61,4 @@ class SessionTurn(LiveModel):
     #: Optional, like ``surface`` and for the same reason (R4): every row written before P2b has
     #: none, and a turn whose material could not be written has none either.
     layout: LayoutSpec | None = None
+    sim_exchanges: list[SimExchange] = Field(default_factory=list, max_length=20)

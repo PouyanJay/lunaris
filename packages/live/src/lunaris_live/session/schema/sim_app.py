@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from pydantic import Field, field_validator
 
 from ...graph.schema.base import LiveModel
+from ...sims.schema.contract import SimContract
 
 #: Absolute schemes a simulator may be loaded over.
 #:
@@ -63,6 +64,7 @@ class SimApp(LiveModel):
     #: Stable identity, so a session's history says which simulator a learner actually used even
     #: after the registry has rebuilt it somewhere else.
     app_id: str = Field(min_length=1, max_length=100)
+    contract: SimContract | None = None
     #: Where the frame loads it from — an ``http(s)`` URL or a root-relative, same-origin path.
     url: str = Field(min_length=1, max_length=500)
     #: What to call it on screen. The learner is being sent somewhere; an unlabelled frame is a

@@ -11,6 +11,7 @@ import { SessionEnded } from "./SessionEnded";
 import { SkeletonNotice, Warming } from "./SkeletonNotice";
 import { SessionTranscript } from "./SessionTranscript";
 import { SurfaceCard } from "./SurfaceCard";
+import { SimSessionContext } from "./SimSessionContext";
 import styles from "./SessionView.module.css";
 
 /** CopilotKit's whole module graph, kept out of Live's chunk until a deployment actually has a
@@ -76,73 +77,87 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
   };
 
   return (
-    <section className={styles.session} aria-label={`Session on ${topic}`}>
-      <header className={styles.header}>
-        <div className={styles.identity}>
-          <p className="eyebrow">Live session</p>
-          {/* The page's own heading: a session is the whole surface now (P2c, U5), and where it
+    <SimSessionContext.Provider
+      value={
+        session && standing
+          ? {
+              apiBaseUrl,
+              sessionId: session.sessionId,
+              turnSeq: standing.seq,
+              instanceId: standing.runId,
+              exchanges: standing.simExchanges ?? [],
+            }
+          : null
+      }
+    >
+      <section className={styles.session} aria-label={`Session on ${topic}`}>
+        <header className={styles.header}>
+          <div className={styles.identity}>
+            <p className="eyebrow">Live session</p>
+            {/* The page's own heading: a session is the whole surface now (P2c, U5), and where it
               is reached from a map, the map has been put away — so it is never a second h1. */}
-          <h1 className={styles.topic}>{topic}</h1>
-        </div>
-        {session ? <SessionMeta session={session} live={state.status !== "failed"} /> : null}
-      </header>
+            <h1 className={styles.topic}>{topic}</h1>
+          </div>
+          {session ? <SessionMeta session={session} live={state.status !== "failed"} /> : null}
+        </header>
 
-      {state.status === "opening" ? <Opening /> : null}
+        {state.status === "opening" ? <Opening /> : null}
 
-      {session ? (
-        <>
-          <SessionTranscript
-            session={session}
-            pending={state.status === "answering" ? sending : null}
-          />
-          {state.status === "failed" ? (
-            <p className={styles.failure} role="alert">
+        {session ? (
+          <>
+            <SessionTranscript
+              session={session}
+              pending={state.status === "answering" ? sending : null}
+            />
+            {state.status === "failed" ? (
+              <p className={styles.failure} role="alert">
+                {state.message}
+              </p>
+            ) : null}
+            <TurnFooter
+              standing={standing}
+              closed={isFinished(session.status)}
+              nextReview={nextReview}
+              warming={session.status === "warming"}
+              answerHere={answerHere}
+              busy={state.status === "answering"}
+              onAnswer={send}
+            />
+          </>
+        ) : null}
+
+        {session && copilotUrl ? (
+          <Suspense fallback={<p className={styles.ended}>Loading the live session surface…</p>}>
+            <CopilotSession
+              // Remounted when teaching begins (P2c T7): the panel's thread opens on the turn it
+              // mounted with, and the first lesson arrives through the host's poll, not through a
+              // run of the panel's own — so a placing panel would otherwise keep showing the last
+              // interview question over a session that has moved on. The interview stays in the
+              // transcript beside it, which is the record.
+              key={`${session.sessionId}:${phaseOf(session)}`}
+              runtimeUrl={copilotUrl}
+              sessionId={session.sessionId}
+              topic={topic}
+              standingTurn={standing?.tutor ?? null}
+              standingSeq={standing?.seq ?? null}
+              nextReview={nextReview}
+              onTurnTaken={refresh}
+            />
+          </Suspense>
+        ) : null}
+
+        {state.status === "failed" && !session ? (
+          <div className={styles.failed}>
+            <p className={styles.failureLead} role="alert">
               {state.message}
             </p>
-          ) : null}
-          <TurnFooter
-            standing={standing}
-            closed={isFinished(session.status)}
-            nextReview={nextReview}
-            warming={session.status === "warming"}
-            answerHere={answerHere}
-            busy={state.status === "answering"}
-            onAnswer={send}
-          />
-        </>
-      ) : null}
-
-      {session && copilotUrl ? (
-        <Suspense fallback={<p className={styles.ended}>Loading the live session surface…</p>}>
-          <CopilotSession
-            // Remounted when teaching begins (P2c T7): the panel's thread opens on the turn it
-            // mounted with, and the first lesson arrives through the host's poll, not through a
-            // run of the panel's own — so a placing panel would otherwise keep showing the last
-            // interview question over a session that has moved on. The interview stays in the
-            // transcript beside it, which is the record.
-            key={`${session.sessionId}:${phaseOf(session)}`}
-            runtimeUrl={copilotUrl}
-            sessionId={session.sessionId}
-            topic={topic}
-            standingTurn={standing?.tutor ?? null}
-            standingSeq={standing?.seq ?? null}
-            nextReview={nextReview}
-            onTurnTaken={refresh}
-          />
-        </Suspense>
-      ) : null}
-
-      {state.status === "failed" && !session ? (
-        <div className={styles.failed}>
-          <p className={styles.failureLead} role="alert">
-            {state.message}
-          </p>
-          <Button variant="primary" onClick={retry}>
-            Try again
-          </Button>
-        </div>
-      ) : null}
-    </section>
+            <Button variant="primary" onClick={retry}>
+              Try again
+            </Button>
+          </div>
+        ) : null}
+      </section>
+    </SimSessionContext.Provider>
   );
 }
 

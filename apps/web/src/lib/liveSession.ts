@@ -40,6 +40,7 @@ export interface StagedCriterion {
 
 /** One beat of the loop: what the director chose, and what the tutor said about it. */
 export interface SessionTurn {
+  simExchanges?: import("./simContract").SimExchange[];
   /** 1-based, monotonic — the order the learner lived it. */
   seq: number;
   move: DirectorMove;

@@ -120,6 +120,7 @@ def select_surface(
             app_id=sim.app_id,
             url=sim.url,
             title=sim.title,
+            contract=sim.contract,
             statement=criterion.statement,
             asks=criterion.kind,
         )

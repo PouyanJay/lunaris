@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useContext, useId, useState } from "react";
 
 import type {
   ConceptMapSpec,
@@ -14,6 +14,8 @@ import { Button } from "../primitives/Button";
 import { ProgressBar } from "../primitives/ProgressBar";
 import { AnswerForm } from "./AnswerForm";
 import { SimFrame } from "./SimFrame";
+import { InteractiveSimFrame } from "./InteractiveSimFrame";
+import { SimSessionContext } from "./SimSessionContext";
 import styles from "./SurfaceCard.module.css";
 
 /** What every answerable card is handed.
@@ -96,17 +98,35 @@ export function SurfaceCard({
  *  being asked. Only the instrument differs — the learner acts in the frame instead of writing, and
  *  the simulator reports what they did through the ordinary answer path. */
 function Simulator({ spec, busy, answerable, onAnswer, welded }: AnswerableCardProps<SimAppSpec>) {
+  const simSession = useContext(SimSessionContext);
   return (
     <Shell eyebrow={ASK_LABELS[spec.asks]} concept={spec.concept} welded={welded}>
       <p className={styles.ask}>{spec.statement}</p>
-      <SimFrame
-        url={spec.url}
-        title={spec.title}
-        appId={spec.appId}
-        answerable={answerable}
-        busy={busy}
-        onAnswer={onAnswer}
-      />
+      {spec.contract ? (
+        <>
+          <InteractiveSimFrame
+            key={`${simSession?.instanceId}:${spec.appId}`}
+            url={spec.url}
+            title={spec.title}
+            appId={spec.appId}
+            contract={spec.contract}
+            answerable={answerable}
+            busy={busy}
+          />
+          {answerable ? (
+            <AnswerForm criterion={spec.statement} busy={busy} onAnswer={onAnswer} embedded />
+          ) : null}
+        </>
+      ) : (
+        <SimFrame
+          url={spec.url}
+          title={spec.title}
+          appId={spec.appId}
+          answerable={answerable}
+          busy={busy}
+          onAnswer={onAnswer}
+        />
+      )}
     </Shell>
   );
 }

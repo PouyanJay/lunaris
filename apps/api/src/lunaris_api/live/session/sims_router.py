@@ -1,3 +1,5 @@
+from importlib.resources import files
+
 from fastapi import APIRouter, HTTPException, Response, status
 from lunaris_live.session import STUB_SIM_PATH
 
@@ -38,11 +40,15 @@ async def get_sim_app(app_id: str) -> Response:
     unknown id would show a learner a blank simulator and let the turn go on to ask them to
     demonstrate a criterion in it.
     """
-    if app_id != _STUB_ID:
+    if app_id == "linear-reference":
+        content = files("lunaris_live.sims").joinpath("reference.html").read_text()
+    elif app_id == _STUB_ID:
+        content = STUB_SIM_HTML
+    else:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such simulator")
 
     return Response(
-        content=STUB_SIM_HTML,
+        content=content,
         media_type="text/html; charset=utf-8",
         headers={
             "Content-Security-Policy": _CSP,

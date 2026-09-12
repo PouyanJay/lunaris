@@ -4,6 +4,7 @@ from pydantic import Field
 
 from ...graph.schema.base import LiveModel
 from ...graph.schema.mastery_criterion_kind import MasteryCriterionKind
+from ...sims.schema.contract import SimContract
 from .surface_kind import SurfaceKind
 
 
@@ -33,3 +34,4 @@ class SimAppCard(LiveModel):
     #: What shape of evidence this asks for. Always a doing-shaped one in practice — a criterion
     #: that needed a simulator to demonstrate is not one somebody explains their way through.
     asks: MasteryCriterionKind
+    contract: SimContract | None = None
