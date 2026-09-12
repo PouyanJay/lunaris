@@ -1,0 +1,527 @@
+[
+  {
+    "artifact": "initial-result.json",
+    "status": "rejected",
+    "reason": "Independent verification rejected the candidate.",
+    "elapsed_ms": 75220,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v1",
+        "inputTokens": 1014,
+        "outputTokens": 590,
+        "reservedTokens": 6055,
+        "costUsd": 0.0039640000000000005,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v1",
+        "inputTokens": 669,
+        "outputTokens": 5225,
+        "reservedTokens": 8195,
+        "costUsd": 0.026794000000000002,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v1",
+        "inputTokens": 5532,
+        "outputTokens": 5173,
+        "reservedTokens": 21713,
+        "costUsd": 0.031397,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "67f81b4571d4d8a2d05fb9e9039fac9d5acc40f0b58186065697b9cc587ac6ce",
+        "specHash": "48e374e00532322660e4a394d9caa3a110a4c03ceef9416bf90b8e1bc14d604c",
+        "approved": false,
+        "checksPassed": 0,
+        "reasons": [
+          "Browser verification failed: TimeoutError."
+        ],
+        "elapsedMs": 2638
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "1469e2e4dee242fc13eb047f1c67af6a41ffe5bf320a3c2ec08d2ef038175e11",
+        "specHash": "48e374e00532322660e4a394d9caa3a110a4c03ceef9416bf90b8e1bc14d604c",
+        "approved": false,
+        "checksPassed": 0,
+        "reasons": [
+          "Browser verification failed: TimeoutError."
+        ],
+        "elapsedMs": 2634
+      }
+    ],
+    "visual_reviews": []
+  },
+  {
+    "artifact": "second-result.json",
+    "status": "rejected",
+    "reason": "Independent verification rejected the candidate.",
+    "elapsed_ms": 94378,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v1",
+        "inputTokens": 1014,
+        "outputTokens": 609,
+        "reservedTokens": 6055,
+        "costUsd": 0.004059,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v1",
+        "inputTokens": 665,
+        "outputTokens": 4814,
+        "reservedTokens": 8223,
+        "costUsd": 0.024735,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v1",
+        "inputTokens": 5167,
+        "outputTokens": 4930,
+        "reservedTokens": 21431,
+        "costUsd": 0.029817000000000003,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "20f2e3305c00a9cc5a563759717fbe51d1b76314efeabbec6b22aabef5e0c72a",
+        "specHash": "ed58603a9c0bb62fda99f89b27977134a610688ecdaa6cdec9dde1bd39493946",
+        "approved": false,
+        "checksPassed": 2,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to have text 'Starting point'\nActual value: No change \nCall log:\n  - Expect \"to_have_text\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"change_from_prev"
+        ],
+        "elapsedMs": 5599
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "efcb9a9fe4ac75881a376039f48cdba680422cbe53e0f9b0aeb54e3747dc6484",
+        "specHash": "ed58603a9c0bb62fda99f89b27977134a610688ecdaa6cdec9dde1bd39493946",
+        "approved": false,
+        "checksPassed": 2,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to have text 'Starting point'\nActual value: No change \nCall log:\n  - Expect \"to_have_text\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"change_from_prev"
+        ],
+        "elapsedMs": 5643
+      }
+    ],
+    "visual_reviews": []
+  },
+  {
+    "artifact": "behavior-only-result.json",
+    "status": "approved",
+    "reason": null,
+    "elapsed_ms": 85493,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v2",
+        "inputTokens": 1064,
+        "outputTokens": 683,
+        "reservedTokens": 6305,
+        "costUsd": 0.004479,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v2",
+        "inputTokens": 817,
+        "outputTokens": 4389,
+        "reservedTokens": 8688,
+        "costUsd": 0.022762,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v2",
+        "inputTokens": 4900,
+        "outputTokens": 4612,
+        "reservedTokens": 20863,
+        "costUsd": 0.02796,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "87c69b3cc2207eeba6ee1e2d5b725053660113ec26ce46c12469c30bbe4c0fac",
+        "specHash": "af57af68985df3edf88aadcd6793db3bb19e6466909e6350e26525e07d847af0",
+        "approved": false,
+        "checksPassed": 1,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to be visible\nActual value: None\nError: element(s) not found \nCall log:\n  - Expect \"to_be_visible\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"y_label\\"
+        ],
+        "elapsedMs": 5790
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "21f2f3b807a628f4e55b7d956a248e353211adc805733b443a9b69ebd5c17e67",
+        "specHash": "af57af68985df3edf88aadcd6793db3bb19e6466909e6350e26525e07d847af0",
+        "approved": true,
+        "checksPassed": 25,
+        "reasons": [],
+        "elapsedMs": 924
+      }
+    ],
+    "visual_reviews": []
+  },
+  {
+    "artifact": "snapshot-failed-result.json",
+    "status": "rejected",
+    "reason": "Independent verification rejected the candidate.",
+    "elapsed_ms": 148190,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 1064,
+        "outputTokens": 778,
+        "reservedTokens": 6305,
+        "costUsd": 0.004954,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 884,
+        "outputTokens": 5984,
+        "reservedTokens": 8911,
+        "costUsd": 0.030804,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 6506,
+        "outputTokens": 6000,
+        "reservedTokens": 25552,
+        "costUsd": 0.036506000000000004,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 6396,
+        "outputTokens": 6000,
+        "reservedTokens": 25225,
+        "costUsd": 0.036396000000000005,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "e68f986c6d6f4e9450ec2c3f72c873ad3446f683c54773157f02a2a737b34b4a",
+        "specHash": "e2e00062e69c274693028a105f35315b5f8b0983f7dab87208d3a25debe48b87",
+        "approved": false,
+        "checksPassed": 1,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to have text '0'\nActual value: -10 \nCall log:\n  - Expect \"to_have_text\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"change_in_y\\\"]\")\n    14 \u00d7 locator r"
+        ],
+        "elapsedMs": 5687
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "6667a33263a97e681b95cf18c6c88efa19b3b6206389cd733084c36f87522b51",
+        "specHash": "e2e00062e69c274693028a105f35315b5f8b0983f7dab87208d3a25debe48b87",
+        "approved": false,
+        "checksPassed": 9,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to have text '2'\nActual value: 4 \nCall log:\n  - Expect \"to_have_text\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"change_in_y\\\"]\")\n    14 \u00d7 locator res"
+        ],
+        "elapsedMs": 5912
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "c9ddafa31d73d05b0541da95232f0db13114747f24686d1e4c845c2d9ef67537",
+        "specHash": "e2e00062e69c274693028a105f35315b5f8b0983f7dab87208d3a25debe48b87",
+        "approved": false,
+        "checksPassed": 9,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to have text '2'\nActual value: 4 \nCall log:\n  - Expect \"to_have_text\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"change_in_y\\\"]\")\n    14 \u00d7 locator res"
+        ],
+        "elapsedMs": 5809
+      }
+    ],
+    "visual_reviews": []
+  },
+  {
+    "artifact": "cropped-visual-result.json",
+    "status": "rejected",
+    "reason": "Critical axis limit mismatch: The y-axis maximum is labeled as 16, but according to the definition and specification, when x ranges from 0 to 10, y should range from 0 to 20 (since y = 2x). At x = 10, y must equal 20. The visible diagram clips the line before it reaches y = 20, showing only y up to approximately 16. This truncated y-axis (0 to 16 instead of 0 to 20) misrepresents the full relationship and prevents students from seeing the complete behavior of the function over the specified domain. The line appears to continue beyond the plotted area, indicating information is clipped. While the plotted portion shows correct slope and intercept, the incomplete visualization teaches an incorrect model of the relationship's range.",
+    "elapsed_ms": 117265,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 1115,
+        "outputTokens": 547,
+        "reservedTokens": 6512,
+        "costUsd": 0.00385,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 731,
+        "outputTokens": 4682,
+        "reservedTokens": 8558,
+        "costUsd": 0.024141,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 5036,
+        "outputTokens": 4691,
+        "reservedTokens": 21790,
+        "costUsd": 0.028491000000000002,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "review",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 2775,
+        "outputTokens": 234,
+        "reservedTokens": 8910,
+        "costUsd": 0.003945,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 5228,
+        "outputTokens": 5033,
+        "reservedTokens": 22422,
+        "costUsd": 0.030393000000000003,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "review",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 2775,
+        "outputTokens": 202,
+        "reservedTokens": 8910,
+        "costUsd": 0.0037849999999999997,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "f1af0c39728a46671e2faf7b190538f104a4275e96401f4bbdc63cb8bd05d36c",
+        "specHash": "e08d3b997e8e8c36c6aa4bbc4956cde9db090e87fe7e39a976829354d6532f6a",
+        "approved": false,
+        "checksPassed": 2,
+        "reasons": [
+          "Browser verification failed: TimeoutError. Page.wait_for_function: Timeout 2000ms exceeded."
+        ],
+        "elapsedMs": 2811
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "1c0da72985c4a2f060e6fcb4fbaa1739830af041f84d82019b1460aab26c0dd7",
+        "specHash": "e08d3b997e8e8c36c6aa4bbc4956cde9db090e87fe7e39a976829354d6532f6a",
+        "approved": true,
+        "checksPassed": 13,
+        "reasons": [],
+        "elapsedMs": 1211
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "b1e2859ca3a42c2b44e4009cd8532f87f52d02f0c0b31e6723a715b4c26f2563",
+        "specHash": "e08d3b997e8e8c36c6aa4bbc4956cde9db090e87fe7e39a976829354d6532f6a",
+        "approved": true,
+        "checksPassed": 13,
+        "reasons": [],
+        "elapsedMs": 1230
+      }
+    ],
+    "visual_reviews": [
+      {
+        "passed": false,
+        "contentHash": "1c0da72985c4a2f060e6fcb4fbaa1739830af041f84d82019b1460aab26c0dd7",
+        "explanation": "The y-axis is mislabeled and contradicts the definition. The axis label reads 'y (0 to 20)' but the visible tick marks show 0, 5, 10, 15 only\u2014the maximum tick mark visible is 15, not 20. According to the definition and specification, when x = 10, y should equal 20. The line does appear to reach approximately y = 20 at x = 10, but the y-axis maximum label '(0 to 20)' is contradicted by the plotted scale which appears to stop at 15 on the visible ticks. The axis limits are inconsistent with what is actually displayed. Additionally, the y-axis label '(0 to 20)' is rotated/vertical and partially obscured. The diagram teaches the correct linear relationship visually (doubling behavior), but the axis labeling error and limit mismatch fail the specification for accuracy and legibility."
+      },
+      {
+        "passed": false,
+        "contentHash": "b1e2859ca3a42c2b44e4009cd8532f87f52d02f0c0b31e6723a715b4c26f2563",
+        "explanation": "Critical axis limit mismatch: The y-axis maximum is labeled as 16, but according to the definition and specification, when x ranges from 0 to 10, y should range from 0 to 20 (since y = 2x). At x = 10, y must equal 20. The visible diagram clips the line before it reaches y = 20, showing only y up to approximately 16. This truncated y-axis (0 to 16 instead of 0 to 20) misrepresents the full relationship and prevents students from seeing the complete behavior of the function over the specified domain. The line appears to continue beyond the plotted area, indicating information is clipped. While the plotted portion shows correct slope and intercept, the incomplete visualization teaches an incorrect model of the relationship's range."
+      }
+    ]
+  },
+  {
+    "artifact": "truncated-result.json",
+    "status": "rejected",
+    "reason": "Model returned an invalid simulator bundle.",
+    "elapsed_ms": 32130,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 1115,
+        "outputTokens": 508,
+        "reservedTokens": 6512,
+        "costUsd": 0.0036550000000000003,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 764,
+        "outputTokens": 6000,
+        "reservedTokens": 8791,
+        "costUsd": 0.030764000000000003,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [],
+    "visual_reviews": []
+  },
+  {
+    "artifact": "haiku-final-result.json",
+    "status": "rejected",
+    "reason": "Screenshot 1 (x=10.0): The graph shows a blue dot positioned at approximately (9, 20) rather than at (10, 20). The point should be at the far right edge of the visible x-axis range (x=10), but it appears truncated or positioned before the x=10 gridline. The x-axis appears to extend only to approximately x=9.5 in the visible plot area, cutting off the complete range specified in the contract (x minimum 0.0, maximum 10.0). This means the visualization fails to show the full domain and the actual point at x=10, y=20 is clipped or misplaced. Screenshot 2 (x=0.0): Correctly displays the point at the origin (0, 0) and the line passes through the origin. However, this does not resolve the fundamental issue in Screenshot 1. The teaching mechanism in Screenshot 1 is compromised because it does not properly display the endpoint of the specified range, preventing learners from observing the complete behavior of y = 2x from x=0 to x=10.",
+    "elapsed_ms": 93889,
+    "calls": [
+      {
+        "stage": "plan",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 1115,
+        "outputTokens": 550,
+        "reservedTokens": 6512,
+        "costUsd": 0.0038650000000000004,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 822,
+        "outputTokens": 3158,
+        "reservedTokens": 10985,
+        "costUsd": 0.016612000000000002,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 4003,
+        "outputTokens": 3374,
+        "reservedTokens": 19642,
+        "costUsd": 0.020873000000000003,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "generate",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 4214,
+        "outputTokens": 3270,
+        "reservedTokens": 20116,
+        "costUsd": 0.020564,
+        "outcome": "succeeded"
+      },
+      {
+        "stage": "review",
+        "model": "claude-haiku-4-5-20251001",
+        "promptVersion": "sim-factory-v3",
+        "inputTokens": 3581,
+        "outputTokens": 268,
+        "reservedTokens": 8955,
+        "costUsd": 0.004921,
+        "outcome": "succeeded"
+      }
+    ],
+    "reports": [
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "a607b4f6a334af0398e8dca9f0ad73d487dcb67adc0d3b57bf8875336a78ffb3",
+        "specHash": "8b3330487bafa0ea097e18d9c3d78c5783778ba2acc4c6a1d887de8ff10384b9",
+        "approved": false,
+        "checksPassed": 1,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to be visible\nActual value: None\nError: element(s) not found \nCall log:\n  - Expect \"to_be_visible\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"x_label\\"
+        ],
+        "elapsedMs": 5697
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "5d3aec3f403d58d1d0f8459f5d98eaf87c5b1e958cdb912b0da1ea0b63f7ca24",
+        "specHash": "8b3330487bafa0ea097e18d9c3d78c5783778ba2acc4c6a1d887de8ff10384b9",
+        "approved": false,
+        "checksPassed": 15,
+        "reasons": [
+          "Browser verification failed: AssertionError. Locator expected to have Value '0'\nActual value: 10 \nCall log:\n  - Expect \"to_have_value\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-param=\\\"x\\\"]\")\n    14 \u00d7 locator resolved to"
+        ],
+        "elapsedMs": 6182
+      },
+      {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v1",
+        "contentHash": "fa6f04375a70ccf9d0661888ce888cdb58450490f4222f3b04317a4a65bd79bf",
+        "specHash": "8b3330487bafa0ea097e18d9c3d78c5783778ba2acc4c6a1d887de8ff10384b9",
+        "approved": true,
+        "checksPassed": 19,
+        "reasons": [],
+        "elapsedMs": 1200
+      }
+    ],
+    "visual_reviews": [
+      {
+        "passed": false,
+        "contentHash": "fa6f04375a70ccf9d0661888ce888cdb58450490f4222f3b04317a4a65bd79bf",
+        "explanation": "Screenshot 1 (x=10.0): The graph shows a blue dot positioned at approximately (9, 20) rather than at (10, 20). The point should be at the far right edge of the visible x-axis range (x=10), but it appears truncated or positioned before the x=10 gridline. The x-axis appears to extend only to approximately x=9.5 in the visible plot area, cutting off the complete range specified in the contract (x minimum 0.0, maximum 10.0). This means the visualization fails to show the full domain and the actual point at x=10, y=20 is clipped or misplaced. Screenshot 2 (x=0.0): Correctly displays the point at the origin (0, 0) and the line passes through the origin. However, this does not resolve the fundamental issue in Screenshot 1. The teaching mechanism in Screenshot 1 is compromised because it does not properly display the endpoint of the specified range, preventing learners from observing the complete behavior of y = 2x from x=0 to x=10."
+      }
+    ]
+  }
+]
