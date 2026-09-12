@@ -28,10 +28,15 @@ from lunaris_live.session import (
     SupabaseSessionStore,
 )
 from lunaris_live.session.transactions.supabase_backend import SupabaseGraphTransactions
+from lunaris_live.sims.claude_model import ClaudeSimModel
+from lunaris_live.sims.grounded_coach import GroundedSimCoach
 from lunaris_live.sims.reference_coach import ReferenceSimCoach
+from lunaris_live.sims.registry.supabase_asset_store import SupabaseSimAssetStore
+from lunaris_live.sims.runtime.materials import SimMaterials
+from lunaris_live.sims.runtime.supabase_queue import SupabaseSimQueue
 
 from ...config import Settings, get_settings
-from ...dependencies import CostEventStoreDep, SubjectCostStoreDep
+from ...dependencies import CostEventStoreDep, OptionalUserIdDep, SubjectCostStoreDep
 from ..dependencies import (
     get_live_credential_resolver,
     get_live_graph_service,
@@ -58,6 +63,8 @@ _memory_session_store = MemorySessionStore()
 _memory_knowledge_store = MemoryKnowledgeStore()
 _memory_material_store = MemoryMaterialStore()
 _supabase_transactions = SupabaseGraphTransactions()
+_sim_assets = SupabaseSimAssetStore()
+_sim_queue = SupabaseSimQueue()
 
 
 def _resolve_session_store(settings: Settings) -> ISessionStore:
@@ -90,18 +97,7 @@ def get_live_tutor(settings: Annotated[Settings, Depends(get_settings)]) -> ITut
 
 
 def get_live_sims(settings: Annotated[Settings, Depends(get_settings)]) -> ISimRegistry | None:
-    """Which Tier 3 simulators this deployment can mount, or ``None`` for none (P2b T6).
-
-    **Off unless asked for**, and that is the honest default rather than a timid one. The only
-    registry that exists today is the stub, which mounts a placeholder that proves the socket and
-    teaches nothing — and its report becomes evidence through the ordinary answer path, so leaving
-    it on would grade learners on a placeholder. With no registry, a concept whose every criterion
-    needs a simulator keeps P2a's position: taught here, not checkable here.
-
-    A dependency of its own, like the tutor and grader, because it is the collaborator a test wants
-    to substitute: what Phase 3 changes is which sims exist, and every seam above this one should
-    not notice.
-    """
+    """The offline reference registry; factory assets are preloaded from the learner's graph."""
     return StubSimRegistry() if settings.live_sims == "stub" else None
 
 
@@ -169,6 +165,7 @@ def get_live_session_service(
     compiles: Annotated[LiveGraphService, Depends(get_live_graph_service)],
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
+    owner_id: OptionalUserIdDep = None,
 ) -> LiveSessionService:
     """Live's session plane as a request dependency.
 
@@ -179,6 +176,16 @@ def get_live_session_service(
     admitted by the same throttle and lands in the same store as a map compiled by hand.
     """
     materials = _resolve_material_store(settings)
+    sim_materials = (
+        SimMaterials(_sim_assets, _sim_queue)
+        if (settings.has_supabase and settings.live_sims == "factory")
+        else None
+    )
+    coach = ReferenceSimCoach() if settings.pipeline == "stub" else None
+    if sim_materials is not None:
+        coach = GroundedSimCoach(
+            ClaudeSimModel(resolve_strong_model()), _sim_assets, owner_id=owner_id
+        )
     return LiveSessionService(
         resolve_graph_store(settings),
         _resolve_session_store(settings),
@@ -196,7 +203,8 @@ def get_live_session_service(
         throttle=_get_live_session_throttle(settings),
         session_budget_usd=settings.live_session_budget_usd,
         sims=sims,
-        sim_coach=ReferenceSimCoach() if settings.pipeline == "stub" else None,
+        sim_coach=coach,
+        sim_materials=sim_materials,
         compiles=compiles,
         interviewer=interviewer,
         mapper=mapper,
@@ -215,6 +223,7 @@ def get_live_session_service(
             subject_cost_store=subject_cost_store,
             credential_resolver=get_live_credential_resolver(settings),
             sims=sims,
+            sim_materials=sim_materials,
             # And under the session's ceiling (T8): a prefetch nobody awaits reads it itself.
             session_budget_usd=settings.live_session_budget_usd,
         ),

@@ -11,6 +11,7 @@ import { SessionEnded } from "./SessionEnded";
 import { SkeletonNotice, Warming } from "./SkeletonNotice";
 import { SessionTranscript } from "./SessionTranscript";
 import { SurfaceCard } from "./SurfaceCard";
+import { SimPreparationNotice } from "./SimPreparationNotice";
 import { SimSessionContext } from "./SimSessionContext";
 import styles from "./SessionView.module.css";
 
@@ -113,6 +114,13 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
               <p className={styles.failure} role="alert">
                 {state.message}
               </p>
+            ) : null}
+            {session.status === "active" && standing && !standing.criterion ? (
+              <SimPreparationNotice
+                apiBaseUrl={apiBaseUrl}
+                sessionId={session.sessionId}
+                turnSeq={standing.seq}
+              />
             ) : null}
             <TurnFooter
               standing={standing}

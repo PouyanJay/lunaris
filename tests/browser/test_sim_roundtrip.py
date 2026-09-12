@@ -22,16 +22,21 @@ def _port():
 
 
 @pytest.fixture
-def servers(tmp_path):
+def servers(tmp_path, request):
     api_port, web_port = _port(), _port()
     env = {**os.environ, "VITE_SUPABASE_URL": "", "VITE_SUPABASE_ANON_KEY": ""}
+    config = getattr(request, "param", {})
+    if config.get("auth"):
+        env.update(
+            VITE_SUPABASE_URL="https://identity.test", VITE_SUPABASE_ANON_KEY="public-test-key"
+        )
     commands = [
         (
             [
                 "uv",
                 "run",
                 "uvicorn",
-                "sim_app:app",
+                config.get("app", "sim_app") + ":app",
                 "--app-dir",
                 "tests/browser",
                 "--port",

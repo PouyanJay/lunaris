@@ -7,6 +7,7 @@ from lunaris_live.session import (
     SessionSummary,
 )
 from lunaris_live.sims.invalid_state import InvalidSimStateError
+from lunaris_live.sims.runtime.schema.availability import SimAvailability
 from lunaris_live.sims.schema.event import SimEvent
 from lunaris_live.sims.schema.exchange import SimExchange
 from lunaris_runtime.logging import bind_request_id
@@ -17,6 +18,25 @@ from .failure_mapping import raise_translated
 from .schemas import AnswerRequest, SessionStartRequest
 
 router = APIRouter(prefix="/api/live/sessions", tags=["live"])
+
+
+@router.get("/{session_id}/sim-status", response_model=SimAvailability)
+async def simulator_status(
+    session_id: str,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> SimAvailability:
+    request_id = uuid4().hex
+    bind_request_id(request_id)
+    correlated = {"X-Session-Id": session_id, "X-Request-Id": request_id}
+    try:
+        result = await service.sim_availability(session_id, owner_id=owner_id)
+    except Exception as exc:
+        _refuse(exc, correlated, "live.sim.status_failed", session_id=session_id, missing="Session")
+    response.headers.update(correlated)
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 @router.post("/{session_id}/sim", response_model=SimExchange)
