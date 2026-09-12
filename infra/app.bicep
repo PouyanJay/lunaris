@@ -53,6 +53,9 @@ param videoGenerationEnabled bool = false
 @description('Course-cover-image generation operator kill-switch (course-cover-images). False (the default) keeps the API from enqueuing any cover jobs, so the dedicated cover worker stays scaled to zero. True lets keyed+owned builds auto-enqueue covers.')
 param coverGenerationEnabled bool = false
 
+@description('Enable verified simulators only after the trusted supervisor is ready.')
+param liveSimsEnabled bool = false
+
 @description('Comma-separated emails allowed to manage the signup invite-gate (LUNARIS_ADMIN_EMAILS). Empty (the default) means no admins, so the admin endpoints 403 everyone.')
 param adminEmails string = ''
 
@@ -122,6 +125,7 @@ var baseEnv = [
   { name: 'SUPABASE_URL', value: supabaseUrl }
   { name: 'SUPABASE_SERVICE_ROLE_KEY', secretRef: supabaseServiceRoleSecret }
   { name: 'LUNARIS_PIPELINE', value: pipeline }
+  { name: 'LUNARIS_LIVE_SIMS', value: liveSimsEnabled ? 'factory' : 'off' }
   { name: 'LUNARIS_CORS_ORIGINS', value: corsOrigins }
   { name: 'LUNARIS_ENV', value: env }
   { name: 'LUNARIS_DRAFT_TIER_ENABLED', value: string(draftTierEnabled) }

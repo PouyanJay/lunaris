@@ -134,6 +134,32 @@ jobs:
           cache-from: type=gha,scope=copilot
           cache-to: type=gha,mode=max,scope=copilot
 
+      - name: Build & push simulator supervisor (linux/amd64)
+        id: sim_worker
+        if: vars.LIVE_SIMS_ENABLED == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.sim-worker
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-sim-worker:${{ steps.sha.outputs.value }}
+          cache-from: type=gha,scope=sim_worker
+          cache-to: type=gha,mode=max,scope=sim_worker
+
+      - name: Build & push simulator verifier (linux/amd64)
+        id: sim_verifier
+        if: vars.LIVE_SIMS_ENABLED == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/sim-verifier/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-sim-verifier:${{ steps.sha.outputs.value }}
+          cache-from: type=gha,scope=sim_verifier
+          cache-to: type=gha,mode=max,scope=sim_verifier
+
       - name: Setup Supabase CLI
         if: vars.SUPABASE_DB_POOLER_HOST != ''
         uses: supabase/setup-cli@v1
@@ -149,6 +175,60 @@ jobs:
           ENCPW=$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['PGPW'],safe=''))")
           URL="postgresql://postgres.${{ vars.SUPABASE_PROJECT_REF }}:${ENCPW}@${{ vars.SUPABASE_DB_POOLER_HOST }}:5432/postgres?sslmode=require"
           supabase db push --db-url "$URL"
+
+      - name: Deploy simulator supervisor host
+        if: vars.LIVE_SIMS_ENABLED == 'true'
+        env:
+          SIM_WORKER_IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-sim-worker@${{ steps.sim_worker.outputs.digest }}
+          SIM_VERIFIER_IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-sim-verifier@${{ steps.sim_verifier.outputs.digest }}
+          SIM_VAULT_URI: ${{ vars.KEYVAULT_URI }}
+          SIM_IDENTITY: ${{ vars.MI_RESOURCE_ID }}
+          SIM_TENANT: ${{ secrets.AZURE_TENANT_ID }}
+          SIM_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SIM_WITH_BYOK: ${{ vars.WITH_BYOK || 'false' }}
+          SIM_INSTALL_SCRIPT: /tmp/lunaris-sim-install.sh
+          SIM_SSH_PUBLIC_KEY: ${{ vars.SIM_WORKER_SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$SIM_SSH_PUBLIC_KEY"
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name "lunaris-prod-sim-${{ github.run_number }}" \
+            --template-file infra/sim-worker.bicep \
+            --parameters location="${{ vars.LOCATION }}" \
+              managedIdentityResourceId="$SIM_IDENTITY" sshPublicKey="$SIM_SSH_PUBLIC_KEY" \
+            --output none
+          python3 infra/sim-worker/install.py
+          az vm run-command invoke --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --name lunaris-prod-sim-worker --command-id RunShellScript \
+            --scripts @"$SIM_INSTALL_SCRIPT" --output json > /tmp/lunaris-sim-install-result.json
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/lunaris-sim-install-result.json').read_text())
+          if not any('LUNARIS_SIM_SUPERVISOR_READY' in entry.get('message', '') for entry in result.get('value', [])):
+              raise SystemExit('Simulator host installation failed; inspect Azure Run Command status.')
+          PYCODE
+
+      - name: Stop simulator admissions when disabled
+        if: vars.LIVE_SIMS_ENABLED != 'true'
+        run: |
+          set -euo pipefail
+          COUNT=$(az vm list --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --query "[?name=='lunaris-prod-sim-worker'] | length(@)" -o tsv)
+          if [ "$COUNT" != "0" ]; then
+            az vm run-command invoke --resource-group "${{ vars.RESOURCE_GROUP }}" \
+              --name lunaris-prod-sim-worker --command-id RunShellScript \
+              --scripts 'set -e; systemctl disable --now lunaris-sim.service; if systemctl is-active --quiet lunaris-sim.service || systemctl is-enabled --quiet lunaris-sim.service; then exit 1; fi; echo LUNARIS_SIM_SUPERVISOR_STOPPED' \
+              --output json > /tmp/lunaris-sim-stop-result.json
+            python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/lunaris-sim-stop-result.json').read_text())
+          if not any('LUNARIS_SIM_SUPERVISOR_STOPPED' in entry.get('message', '') for entry in result.get('value', [])):
+              raise SystemExit('Simulator supervisor did not stop cleanly.')
+          PYCODE
+          fi
 
       - name: Deploy Container App (app.bicep, prod)
         run: |
@@ -167,6 +247,7 @@ jobs:
               supabaseUrl="${{ vars.SUPABASE_URL }}" \
               corsOrigins="${{ vars.CORS_ORIGINS }}" \
               pipeline="${{ vars.PIPELINE_MODE }}" \
+              liveSimsEnabled="${{ vars.LIVE_SIMS_ENABLED || 'false' }}" \
               withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}" \
               withByok="${{ vars.WITH_BYOK || 'false' }}" \
               draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \

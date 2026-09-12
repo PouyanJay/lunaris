@@ -43,7 +43,13 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 # The images this repo ships from its root, spelled out so the sweep is proven to *find* them: every
 # other assertion here is of the form "nothing missing", which a sweep that found no Dockerfiles
 # satisfies trivially. Adding an image means adding it here as well as wiring it, deliberately.
-ROOT_IMAGES = {"Dockerfile.api", "Dockerfile.copilot", "Dockerfile.cover", "Dockerfile.worker"}
+ROOT_IMAGES = {
+    "Dockerfile.api",
+    "Dockerfile.copilot",
+    "Dockerfile.cover",
+    "Dockerfile.worker",
+    "Dockerfile.sim-worker",
+}
 
 # `echo "name=value" >> "$GITHUB_OUTPUT"`: how a step publishes an output another step reads back
 # as `${{ steps.<id>.outputs.<name> }}`; the release computes its image SHA this way.
@@ -115,7 +121,7 @@ def _step_outputs(workflow: dict) -> dict[str, str]:
 
 def _repository_of(reference: str) -> str:
     """``lunaris-api`` from ``<acr>/lunaris-api:<sha>`` (host and tag may be expressions)."""
-    return reference.rsplit("/", 1)[-1].split(":", 1)[0]
+    return reference.rsplit("/", 1)[-1].split(":", 1)[0].split("@", 1)[0]
 
 
 def _pushed_builds(workflow: dict) -> list[dict]:
@@ -200,7 +206,10 @@ def test_the_release_builds_every_image_it_deploys() -> None:
     deployed = {
         _repository_of(match)
         for step in _steps(workflow)
-        for match in re.findall(r"lunaris-[a-z-]+:\$\{\{[^}]+\}\}", _flattened_run(step))
+        for match in re.findall(
+            r"lunaris-[a-z-]+(?::|@)\$\{\{[^}]+\}\}",
+            _flattened_run(step) + " " + " ".join(str(v) for v in step.get("env", {}).values()),
+        )
     }
     undeployed = sorted(pushed - deployed - {"lunaris-api"})
     assert undeployed == [], f"images cd-prod pushes but never rolls: {undeployed}"

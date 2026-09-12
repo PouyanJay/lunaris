@@ -207,6 +207,29 @@ jobs:
             --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
             --scanners vuln --no-progress lunaris-cover-worker:ci
 
+  sim-worker-build:
+    name: Simulator supervisor image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.sim-worker
+          push: false
+          load: true
+          tags: lunaris-sim-worker:ci
+          cache-from: type=gha,scope=sim-worker
+          cache-to: type=gha,mode=max,scope=sim-worker
+      - name: Trivy image scan (fail on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy:0.71.0 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --scanners vuln --no-progress lunaris-sim-worker:ci
+
+
   copilot-build:
     name: CopilotKit runtime image builds
     runs-on: ubuntu-latest

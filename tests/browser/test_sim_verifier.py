@@ -115,3 +115,13 @@ async def test_independent_relationship_and_safety_checks(mutation, approved):
             VerifiedBundle(
                 candidate=SimCandidate(html=html), spec=spec, report=report, visual_verdict=verdict
             )
+
+
+async def test_production_worker_startup_checks_real_container_boundary():
+    from lunaris_api.live.verify_sim_worker import verify_worker_environment
+
+    await verify_worker_environment(
+        ContainerSimVerifier(
+            image="lunaris-sim-verifier:test", seccomp=ROOT / "infra/sim-verifier/seccomp.json"
+        )
+    )
