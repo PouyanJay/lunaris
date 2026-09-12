@@ -93,6 +93,13 @@ jobs:
       - run: uv sync --frozen --all-packages
       - run: npm --prefix apps/web ci
       - run: uv run playwright install --with-deps chromium
+      - run: docker build -f infra/sim-verifier/Dockerfile -t lunaris-sim-verifier:test .
+      - name: Verifier image vulnerability gate
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy:0.71.0 image \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 \
+            --scanners vuln --no-progress lunaris-sim-verifier:test
       - run: uv run pytest tests/browser -m browser -q
 
   copilot:

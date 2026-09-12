@@ -327,6 +327,8 @@ async def test_the_document_declares_what_it_is_allowed_to_do(client: httpx.Asyn
 
     policy = served.headers["content-security-policy"]
     assert "default-src 'none'" in policy
+    assert "sandbox allow-scripts" in policy
+    assert "worker-src 'none'" in policy
     assert "form-action 'none'" in policy
     assert served.headers["x-content-type-options"] == "nosniff"
 

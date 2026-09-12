@@ -2,6 +2,7 @@ from importlib.resources import files
 
 from fastapi import APIRouter, HTTPException, Response, status
 from lunaris_live.session import STUB_SIM_PATH
+from lunaris_live.sims.sandbox_policy import SIM_CSP
 
 from .stub_sim_app import STUB_SIM_HTML
 
@@ -20,9 +21,7 @@ router = APIRouter(prefix="/api/live/sims", tags=["live"])
 #: document needs — everything it uses is inlined, and nothing external may load. `frame-ancestors`
 #: is deliberately *not* narrowed here: the SPA's origin differs per environment and is not known to
 #: the API, and the frame's own opaque origin is what actually contains the document.
-_CSP = (
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'none'"
-)
+_CSP = SIM_CSP
 
 _STUB_ID = STUB_SIM_PATH.rsplit("/", 1)[-1]
 
