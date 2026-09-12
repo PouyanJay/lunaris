@@ -5,6 +5,7 @@ from ..content_hash import content_hash
 from .candidate import SimCandidate
 from .teaching_spec import TeachingSpec
 from .verification_report import VerificationReport
+from .visual_verdict import SimVisualVerdict
 
 
 class VerifiedBundle(LiveModel):
@@ -13,9 +14,14 @@ class VerifiedBundle(LiveModel):
     candidate: SimCandidate
     spec: TeachingSpec
     report: VerificationReport
+    visual_verdict: SimVisualVerdict
 
     @model_validator(mode="after")
     def verified_content(self) -> "VerifiedBundle":
+        if not self.visual_verdict.passed or self.visual_verdict.content_hash != content_hash(
+            self.candidate.html
+        ):
+            raise ValueError("Visual approval must match the candidate.")
         minimum_checks = 1 + sum(len(case.outputs) for case in self.spec.cases)
         if (
             not self.report.approved

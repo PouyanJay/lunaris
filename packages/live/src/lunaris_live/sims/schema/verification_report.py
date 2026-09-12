@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -14,3 +14,6 @@ class VerificationReport(LiveModel):
     checks_passed: int = Field(ge=0)
     reasons: list[str] = Field(default_factory=list, max_length=20)
     elapsed_ms: int = Field(ge=0)
+    screenshots: list[Annotated[str, Field(min_length=1, max_length=5_000_000)]] = Field(
+        default_factory=list, max_length=2
+    )

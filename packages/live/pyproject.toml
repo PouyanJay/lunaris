@@ -4,6 +4,7 @@ version = "0.0.0"
 description = "Lunaris Live — runtime-generated tutoring sessions over a concept graph"
 requires-python = ">=3.12"
 dependencies = [
+    "langgraph>=1.2.2,<2",
     # Live builds on Studio's foundations (persistence guard, logging/correlation); the boundary is
     # one-way — Studio must never depend on Live. See tests/test_product_boundary.py.
     "lunaris-runtime",

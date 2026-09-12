@@ -32,6 +32,7 @@ class ContainerSimVerifier:
             checks_passed=result.get("checks_passed", 0),
             reasons=result.get("reasons", ["Verifier returned no evidence."]),
             elapsed_ms=int((monotonic() - started) * 1000),
+            screenshots=result.get("screenshots", []),
         )
         structlog.get_logger().info(
             "live.sim.verified",

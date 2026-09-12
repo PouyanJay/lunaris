@@ -1799,6 +1799,7 @@ name = "lunaris-live"
 version = "0.0.0"
 source = { editable = "packages/live" }
 dependencies = [
+    { name = "langgraph" },
     { name = "lunaris-runtime" },
     { name = "pydantic" },
     { name = "structlog" },
@@ -1806,6 +1807,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "langgraph", specifier = ">=1.2.2,<2" },
     { name = "lunaris-runtime", editable = "packages/runtime" },
     { name = "pydantic", specifier = ">=2.9" },
     { name = "structlog", specifier = ">=24.4" },
