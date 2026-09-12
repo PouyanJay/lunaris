@@ -433,7 +433,7 @@ async def test_an_answer_arriving_while_the_last_is_still_being_written_pays_for
     # Assert, the retry was refused as busy and paid for nothing.
     assert first_response.status_code == 200, first_response.text
     assert second.status_code == 409, second.text
-    assert "still being marked" in second.json()["detail"]
+    assert "still finishing" in second.json()["detail"]
     assert calls - opening_calls == 1
 
 

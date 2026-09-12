@@ -23,6 +23,7 @@ class TurnContext:
     draws between ``models/`` and ``schemas/``.
     """
 
+    operation: str
     session: Session
     #: The map the session walks. ``None`` only while the session is placing or warming (P2c) and
     #: the compile has not landed it yet; an active session always has one.

@@ -17,9 +17,13 @@ from lunaris_live.session import (
     close_session,
     on_the_wall,
 )
+from lunaris_live.session.transactions.local_backend import LocalGraphTransactions
+from lunaris_live.session.transactions.models.mutation import SessionMutation
 from lunaris_runtime.logging import bind_request_id
 
 from ..work_refused import LiveWorkRefusedError
+from .coordination.coordinator import SessionCoordinator
+from .coordination.decorator import coordinated
 from .throttle import LiveSessionStillOpenError, LiveSessionThrottle
 
 logger = structlog.get_logger()
@@ -72,10 +76,14 @@ class SessionLifecycle:
         knowledge: IKnowledgeStore,
         session_budget_s: float,
         throttle: LiveSessionThrottle | None = None,
+        coordinator: SessionCoordinator | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
         self._knowledge = knowledge
+        self._transactions = coordinator or SessionCoordinator(
+            sessions, LocalGraphTransactions(sessions, knowledge)
+        )
         self._session_budget_s = session_budget_s
         self._throttle = throttle
 
@@ -83,6 +91,7 @@ class SessionLifecycle:
         """This session's single in-flight turn, or a no-op when nothing is rationing turns."""
         return self._throttle.taking_turn(session_id) if self._throttle else nullcontext()
 
+    @coordinated("session")
     async def discard(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Leave a session, without a ceremony (T3).
 
@@ -111,15 +120,21 @@ class SessionLifecycle:
         self, session: Session, *, owner_id: str | None, run_id: str | None
     ) -> Session:
         """Mark a session abandoned and write it. No turn, no model call, no schedule."""
-        left = session.model_copy(update={"status": SessionStatus.ABANDONED})
-        await asyncio.to_thread(self._sessions.save, left, owner_id=owner_id)
-        logger.info(
-            "live.session.abandoned",
-            run_id=run_id,
-            session_id=session.session_id,
-            turn_count=len(session.turns),
-        )
-        return left
+        async with self._transactions.session(session.session_id, owner_id):
+            session = await asyncio.to_thread(
+                self._sessions.load, session.session_id, owner_id=owner_id
+            )
+            left = session.model_copy(update={"status": SessionStatus.ABANDONED})
+            await self._transactions.commit(
+                SessionMutation(session=left, expected_turns=len(session.turns))
+            )
+            logger.info(
+                "live.session.abandoned",
+                run_id=run_id,
+                session_id=session.session_id,
+                turn_count=len(session.turns),
+            )
+            return left
 
     async def close_if_spent(self, session: Session, *, owner_id: str | None) -> Session:
         """End this session if its clock ran out while nobody was looking, and write it (T6).
@@ -156,8 +171,14 @@ class SessionLifecycle:
             # somebody IS in this session, so it is not abandoned at all and the next look can
             # close it: a read must never fail because a tidy-up could not get a lock.
             with self._turn_slot(session.session_id):
-                return await self._close_now(session, owner_id=owner_id, run_id=run_id)
-        except LiveWorkRefusedError:
+                async with self._transactions.session(session.session_id, owner_id):
+                    fresh = await asyncio.to_thread(
+                        self._sessions.load, session.session_id, owner_id=owner_id
+                    )
+                    if fresh.status in _TERMINAL or _elapsed_s(fresh) < self._session_budget_s:
+                        return fresh
+                    return await self._close_now(fresh, owner_id=owner_id, run_id=run_id)
+        except (LiveWorkRefusedError, FileNotFoundError):
             return session
 
     async def _close_now(self, session: Session, *, owner_id: str | None, run_id: str) -> Session:
@@ -189,8 +210,13 @@ class SessionLifecycle:
                 tutor=None,
                 run_id=run_id,
             )
-            await asyncio.to_thread(self._sessions.save, outcome.session, owner_id=owner_id)
-            await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
+            await self._transactions.commit(
+                SessionMutation(
+                    session=outcome.session,
+                    knowledge=outcome.model,
+                    expected_turns=len(session.turns),
+                )
+            )
         except Exception:
             # A map that has been purged, or a store having a bad minute. The session keeps its
             # stale status and the next look tries again; refusing the read instead would make a
@@ -210,6 +236,7 @@ class SessionLifecycle:
         )
         return outcome.session
 
+    @coordinated("graph", wait_s=2)
     async def forget(self, graph_id: str, *, owner_id: str | None = None) -> None:
         """Clear what this learner has demonstrated about one map (T5).
 
@@ -236,32 +263,20 @@ class SessionLifecycle:
             raise LiveSessionStillOpenError(graph_id)
         if await self._turning_on(graph_id, owner_id=owner_id):
             raise LiveSessionStillOpenError(graph_id)
-        await asyncio.to_thread(self._knowledge.forget, graph_id, owner_id=owner_id)
+        await self._transactions.commit(SessionMutation(forget=True))
         logger.info("live.knowledge.forgotten", graph_id=graph_id)
 
     async def _turning_on(self, graph_id: str, *, owner_id: str | None) -> bool:
-        """Whether a turn is in flight on any of this map's sessions (review finding).
+        """Retain the local admission check for callers holding the legacy session slot.
 
-        The status check above is not enough on its own, and the window it misses is narrow and
-        real. A turn writes twice: the session row first, then the learner model. The session row is
-        what flips to a terminal status, so between those two writes ``has_open_on`` already answers
-        False while the model write is still to come — and a reset landing there is overwritten by
-        it moments later. The learner's clearing undone by the very turn that ended their session,
-        which is the exact failure AD18 exists to prevent, one turn later than AD18 looked.
-
-        A turn holds its slot across **both** writes, so asking the throttle closes that window. It
-        is asked per session because the slot is keyed by session and a reset is keyed by map.
-
-        ⚠ In-process only: the throttle is per replica, so two replicas can still interleave. That
-        is the same bound the turn slot itself has had since P2b, not a new weakness — but it means
-        the honest fix, if Live ever runs multi-replica, is writing both rows in one transaction
-        rather than a wider guard here.
+        The enclosing durable graph lease and atomic commit protect all database replicas.
         """
         if self._throttle is None:
             return False
         ids = await asyncio.to_thread(self._sessions.session_ids_on, graph_id, owner_id=owner_id)
         return any(self._throttle.is_taking_turn(session_id) for session_id in ids)
 
+    @coordinated("session")
     async def delete(self, session_id: str, *, owner_id: str | None = None) -> None:
         """Remove a session, transcript and all (T4).
 
@@ -282,7 +297,7 @@ class SessionLifecycle:
         """
         bind_request_id(session_id, session_id=session_id)
         with self._turn_slot(session_id):
-            await asyncio.to_thread(self._sessions.delete, session_id, owner_id=owner_id)
+            await self._transactions.commit(SessionMutation(delete_session=session_id))
         logger.info("live.session.deleted", session_id=session_id)
 
     async def recent(self, *, owner_id: str | None = None) -> list[SessionSummary]:

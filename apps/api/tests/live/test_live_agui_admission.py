@@ -187,7 +187,7 @@ async def test_two_runs_at_once_pay_for_one_turn_and_the_loser_is_a_status(
     statuses = sorted([first.status_code, second.status_code])
     assert statuses == [200, 409], (first.text, second.text)
     refused = first if first.status_code == 409 else second
-    assert "still being marked" in refused.json()["detail"]
+    assert "still finishing" in refused.json()["detail"]
     assert tutor.calls - opening_calls == 1
 
 

@@ -309,9 +309,10 @@ async def client_with_a_failing_compile(
 async def _failed(launched: LaunchedCompiles, graph_id: str) -> None:
     """Meet the failing compile at its end (a rendezvous on the task, not a guess at ticks)."""
     compiling = launched.compiling(graph_id)
-    assert compiling is not None, "the compile was launched here and is still running"
-    with pytest.raises(GraphCompilationError):
-        await compiling
+    if compiling is not None:
+        with pytest.raises(GraphCompilationError):
+            await compiling
+    assert launched.failure_of(graph_id) is not None
 
 
 async def test_a_compile_that_fails_closes_the_session_at_the_next_answer(

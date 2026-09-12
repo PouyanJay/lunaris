@@ -1,6 +1,8 @@
 import asyncio
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
 from contextlib import AbstractContextManager, ExitStack, nullcontext
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -36,6 +38,9 @@ from lunaris_live.session import (
     take_placement_turn,
     take_turn,
 )
+from lunaris_live.session.transactions.local_backend import LocalGraphTransactions
+from lunaris_live.session.transactions.models.mutation import SessionMutation
+from lunaris_live.session.transactions.protocols.backend import IGraphTransactionBackend
 from lunaris_live.sims.interact import interact
 from lunaris_live.sims.protocols.coach import ISimCoach
 from lunaris_live.sims.schema.event import SimEvent
@@ -52,8 +57,13 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
 from ..service import LiveGraphService
+from .coordination.coordinator import SessionCoordinator
+from .coordination.decorator import coordinated
+from .coordination.lease import GraphLease
+from .coordination.sim_coach import AdmittedSimCoach
 from .lifecycle import SessionLifecycle
 from .material_prefetcher import MaterialPrefetcher
+from .models.answer_request import AnswerRequest
 from .prefetch_registry import prefetch_registry
 from .spent_past_ceiling import spent_past_ceiling
 from .throttle import (
@@ -159,10 +169,14 @@ class LiveSessionService:
         materials: IMaterialStore | None = None,
         prefetcher: MaterialPrefetcher | None = None,
         sim_coach: ISimCoach | None = None,
+        transactions: IGraphTransactionBackend | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
         self._knowledge = knowledge
+        self._transactions = SessionCoordinator(
+            sessions, transactions or LocalGraphTransactions(sessions, knowledge)
+        )
         self._tutor = tutor
         self._grader = grader
         self._session_budget_s = session_budget_s
@@ -180,6 +194,7 @@ class LiveSessionService:
             knowledge=knowledge,
             session_budget_s=session_budget_s,
             throttle=throttle,
+            coordinator=self._transactions,
         )
         # None means this deployment mounts no simulators (T6), which is the default and which
         # leaves a sim-only concept exactly where P2a left it: taught here, not checkable here.
@@ -207,6 +222,7 @@ class LiveSessionService:
         self._materials = materials
         self._prefetcher = prefetcher
 
+    @coordinated("graph")
     async def start(
         self, graph_id: str, *, session_id: str, owner_id: str | None = None
     ) -> Session:
@@ -290,54 +306,53 @@ class LiveSessionService:
         interviewer = self._interviewer
         run_id = uuid4().hex
         graph_id = uuid4().hex
-        bind_run_id(run_id, graph_id=graph_id, session_id=session_id)
-        logger.info("live.session.placing_started", topic=topic)
+        async with self._transactions.graph(graph_id, owner_id):
+            bind_run_id(run_id, graph_id=graph_id, session_id=session_id)
+            logger.info("live.session.placing_started", topic=topic)
 
-        # Before any work, and before the compile: a refused opening should cost a lookup, not a
-        # three-minute compile. Checked here and COUNTED after the compile is admitted (T8): a
-        # topic-open consumes a compile slot and an opening, and it consumes both or neither — a
-        # learner whose compile was refused (one already building) must not also have spent an
-        # opening on nothing. Both gates are synchronous, so nothing slips between them.
-        if self._throttle is not None:
-            self._throttle.check_open(owner_id)
-        # Detached on purpose. Its context is a copy of this one, so ``session_id`` rides every
-        # line the compile logs; ``_compile_and_save`` rebinds ``run_id`` to the compile's own.
-        # When the map lands, the root's material is asked for at once (P2c T4): "teaching begins
-        # the moment the first node's materials exist" (plan §6), and the first lesson is full.
-        self._compiles.launch(
-            topic,
-            graph_id=graph_id,
-            run_id=uuid4().hex,
-            owner_id=owner_id,
-            on_landed=lambda graph: self._on_map_landed(session_id, graph, owner_id=owner_id),
-        )
-        if self._throttle is not None:
-            # Counts (and re-checks: ``admit_open`` is the whole gate for ``start``, and a second
-            # look at a synchronous counter is free), now that the compile has been admitted.
-            self._throttle.admit_open(owner_id)
-
-        async def placing() -> TurnOutcome:
-            # An opening is a turn's outcome like any other; a placement's moves no belief and
-            # consumes no material, so the outcome carries an empty model and nothing consumed.
-            placed = await open_placement(
+            # Before any work, and before the compile: a refused opening should cost a lookup, not a
+            # three-minute compile. Checked here and COUNTED after the compile is admitted (T8): a
+            # topic-open consumes a compile slot and an opening, and it consumes both or neither — a
+            # learner whose compile was refused (one already building) must not also have spent an
+            # opening on nothing. Both gates are synchronous, so nothing slips between them.
+            if self._throttle is not None:
+                self._throttle.check_open(owner_id)
+            # Detached on purpose. Its context is a copy of this one, so ``session_id`` rides every
+            # line the compile logs; ``_compile_and_save`` rebinds ``run_id`` to the compile's own.
+            # Ask for root material when the map lands so the first lesson is full (P2c T4).
+            self._compiles.launch(
                 topic,
                 graph_id=graph_id,
-                session_id=session_id,
-                run_id=run_id,
-                interviewer=interviewer,
+                run_id=uuid4().hex,
+                owner_id=owner_id,
+                on_landed=lambda graph: self._on_map_landed(session_id, graph, owner_id=owner_id),
             )
-            return TurnOutcome(session=placed, model=LearnerModel(graph_id=graph_id))
+            if self._throttle is not None:
+                # Re-check the open-session limit after admitting the compile.
+                self._throttle.admit_open(owner_id)
 
-        session = (
-            await self._open_and_save(
-                placing, run_id=run_id, session_id=session_id, owner_id=owner_id
-            )
-        ).session
+            async def placing() -> TurnOutcome:
+                # An opening is a turn's outcome like any other; a placement's moves no belief and
+                # consumes no material, so the outcome carries an empty model and nothing consumed.
+                placed = await open_placement(
+                    topic,
+                    graph_id=graph_id,
+                    session_id=session_id,
+                    run_id=run_id,
+                    interviewer=interviewer,
+                )
+                return TurnOutcome(session=placed, model=LearnerModel(graph_id=graph_id))
 
-        # No explicit ids: this line rides the contextvars binding above (the correlation test
-        # proves propagation, not hand-threading).
-        logger.info("live.session.placing", turn_count=len(session.turns))
-        return session
+            session = (
+                await self._open_and_save(
+                    placing, run_id=run_id, session_id=session_id, owner_id=owner_id
+                )
+            ).session
+
+            # No explicit ids: this line rides the contextvars binding above (the correlation test
+            # proves propagation, not hand-threading).
+            logger.info("live.session.placing", turn_count=len(session.turns))
+            return session
 
     def _materials_after(
         self,
@@ -460,12 +475,14 @@ class LiveSessionService:
         try:
             scope = await credentials_for(self._credential_resolver, owner_id)
             with scope, enter_cost_scope(cost):
+                await self._transactions.paid(session_id, "start")
                 opened = await opener()
         finally:
             await self._drain(cost, run_id=run_id, session_id=session_id)
-        await asyncio.to_thread(self._sessions.save, opened.session, owner_id=owner_id)
+        await self._transactions.commit(SessionMutation(session=opened.session, create=True))
         return opened
 
+    @coordinated("session")
     async def sim_interact(
         self, session_id: str, event: SimEvent, *, owner_id: str | None = None
     ) -> SimExchange:
@@ -483,33 +500,29 @@ class LiveSessionService:
                 scope = await credentials_for(self._credential_resolver, owner_id)
                 with scope, enter_cost_scope(cost):
                     updated, exchange = await interact(
-                        context.session, event, self._sim_coach, run_id=run_id
+                        context.session,
+                        event,
+                        AdmittedSimCoach(self._sim_coach, self._transactions, context.session),
+                        run_id=run_id,
                     )
             finally:
                 await self._drain(cost, run_id=run_id, session_id=session_id)
             if updated is not context.session:
-                await asyncio.to_thread(
-                    self._sessions.save,
-                    updated,
-                    owner_id=owner_id,
-                    expect_turns=len(context.session.turns),
+                await self._transactions.commit(
+                    SessionMutation(session=updated, expected_turns=len(context.session.turns))
                 )
             logger.info("live.sim.interacted", app_id=event.app_id, sequence=event.sequence)
             return exchange
 
+    @coordinated("session")
     async def answer(
         self, session_id: str, answer: str, *, answering_seq: int, owner_id: str | None = None
     ) -> Session:
         """Score what the learner said, move what the system believes, and take the next turn.
 
-        Two writes, not one transaction, and the order is chosen for how each half fails. The
-        transcript goes first and the belief second, so a crash between them under-counts evidence
-        rather than over-counting it: the learner sees a graded turn whose belief did not move, and
-        the concept simply comes round again. The other order looks safer and is not — the response
-        is a "try again" (503), a retry re-grades the same answer against a transcript that never
-        recorded it, and ``apply_evidence`` runs twice on one answer. That is the one thing the
-        ``_PULL`` / ``_MASTERED`` relationship exists to prevent: two pulls clear the mastery bar,
-        so a single lucky guess plus a storage blip would unlock a dependent concept.
+        A graph-scoped lease admits one writer across sessions and API replicas. The transcript
+        and learner evidence commit in one database transaction. A durable paid-operation receipt
+        refuses automatic re-billing if a process dies before confirming that commit.
 
         The session's age is measured from the row rather than from anything held in this process:
         a session outlives the request that opened it and every process that has served it since,
@@ -518,12 +531,15 @@ class LiveSessionService:
 
         Raises ``FileNotFoundError`` (no such session for this learner), ``SessionClosedError``
         (the director already ended it), and ``GraderUnavailableError`` / ``TutorUnavailableError``
-        when the turn could not be taken at all — nothing has moved in that case, so a retry means
-        exactly what the learner expects it to.
+        when the turn could not be completed. Uncertain paid attempts require recovery rather than
+        automatically calling the models again.
         """
         run_id = uuid4().hex
         bind_run_id(run_id, session_id=session_id)
-        context = await self._ready(session_id, owner_id)
+        context = await self._ready(
+            session_id, owner_id, operation=json.dumps(["answer", answer, answering_seq])
+        )
+        self._resolve_answering_seq(context, answering_seq)
         session = await self._take_and_save(
             context,
             lambda: self._take(context, answer, answering_seq, run_id),
@@ -564,34 +580,68 @@ class LiveSessionService:
         while the status line is still available; ``take_turn`` re-checks the loop's own invariants
         (closed, stale) so that this layer's checks can be about *how the refusal is said*.
         """
-        bind_run_id(run_id, session_id=session_id)
-        context = await self._ready(session_id, owner_id)
-        if context.session.status is SessionStatus.CLOSED:
-            # The loop checks this too, and that check stays: it is the loop's own invariant.
-            # This one exists so the refusal is a 409 rather than an error frame on a 200 — the same
-            # sentence the REST surface gives, which is what ``failure_mapping`` exists to hold.
-            raise SessionClosedError(f"session {session_id} has already closed")
-        if context.session.status is SessionStatus.WARMING:
-            # Same reasoning, same words as REST: nothing is open on a warming session (P2c T2).
-            raise StaleAnswerError(f"nothing is open on session {session_id}; it is warming")
-        answering_seq = self._resolve_answering_seq(context, answering_seq)
-        # ``put_nowait`` on an unbounded queue never blocks and never awaits, which is exactly what
-        # ``ITutorDeltaSink`` asks of a sink: the tutor must never wait on the surface reading it.
+        async with self._transactions.session(session_id, owner_id) as lease:
+            bind_run_id(run_id, session_id=session_id)
+            context = await self._ready(session_id, owner_id)
+            if context.session.status is SessionStatus.CLOSED:
+                # The loop checks this too, and that check stays: it is the loop's own invariant.
+                # Refuse with the same HTTP 409 as REST before sending streaming headers.
+                raise SessionClosedError(f"session {session_id} has already closed")
+            if context.session.status is SessionStatus.WARMING:
+                # Same reasoning, same words as REST: nothing is open on a warming session (P2c T2).
+                raise StaleAnswerError(f"nothing is open on session {session_id}; it is warming")
+            answering_seq = self._resolve_answering_seq(context, answering_seq)
+            context = replace(context, operation=json.dumps(["answer", answer, answering_seq]))
+            return await self._detach_answer(
+                context, lease, AnswerRequest(answer, answering_seq, run_id, owner_id)
+            )
+
+    async def _detach_answer(
+        self,
+        context: TurnContext,
+        lease: GraphLease,
+        request: AnswerRequest,
+    ) -> AsyncIterator[tuple[TurnBeat, str | Session]]:
+        session_id = context.session.session_id
+        # The tutor never waits on its reader: put_nowait uses an unbounded queue.
         queue: asyncio.Queue[str] = asyncio.Queue()
+        admitted = asyncio.Event()
         taking = self._claim_slot_task(
             session_id,
-            self._take_and_save(
-                context,
-                lambda: self._take(
-                    context, answer, answering_seq, run_id, on_delta=queue.put_nowait
+            self._transactions.run_detached(
+                lease,
+                lambda: self._take_and_save(
+                    context,
+                    lambda: self._take(
+                        context,
+                        request.answer,
+                        request.answering_seq,
+                        request.run_id,
+                        on_delta=queue.put_nowait,
+                    ),
+                    run_id=request.run_id,
+                    owner_id=request.owner_id,
+                    # The slot is already ours (below), so the turn is told not to claim one.
+                    slot=nullcontext(),
+                    on_admitted=admitted.set,
                 ),
-                run_id=run_id,
-                owner_id=owner_id,
-                # The slot is already ours (below), so the turn is told not to claim one.
-                slot=nullcontext(),
             ),
         )
-        return self._beats(taking, queue, run_id=run_id, session_id=session_id)
+        lease.owner_task = taking
+        lease.detached = True
+        await self._await_admission(taking, admitted)
+        return self._beats(taking, queue, run_id=request.run_id, session_id=session_id)
+
+    @staticmethod
+    async def _await_admission(taking: asyncio.Task[Session], admitted: asyncio.Event) -> None:
+        admission = asyncio.create_task(admitted.wait())
+        try:
+            await asyncio.wait((taking, admission), return_when=asyncio.FIRST_COMPLETED)
+            if not admitted.is_set():
+                taking.result()  # Refuse uncertain retries before sending the HTTP status.
+        finally:
+            admission.cancel()
+            await asyncio.gather(admission, return_exceptions=True)
 
     @staticmethod
     def _resolve_answering_seq(context: TurnContext, answering_seq: int | None) -> int:
@@ -701,7 +751,9 @@ class LiveSessionService:
                     lambda task: _absorb_detached_turn(task, run_id=run_id, session_id=session_id)
                 )
 
-    async def _ready(self, session_id: str, owner_id: str | None) -> TurnContext:
+    async def _ready(
+        self, session_id: str, owner_id: str | None, *, operation: str = "turn"
+    ) -> TurnContext:
         """Everything a turn needs before it can be taken, in the order it should be paid for.
 
         Admission first: a session already over its ceiling should cost a rollup read rather than
@@ -723,6 +775,7 @@ class LiveSessionService:
         known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
         prefetched = await self._load_materials(session.graph_id, owner_id)
         return TurnContext(
+            operation=operation,
             session=session,
             graph=graph,
             known=known,
@@ -766,12 +819,11 @@ class LiveSessionService:
         run_id: str,
         owner_id: str | None,
         slot: AbstractContextManager[None],
+        on_admitted: Callable[[], None] | None = None,
     ) -> Session | None:
-        """One turn, metered, and both of its writes. The whole of what the two entry points share.
+        """Meter an admitted turn and atomically persist its transcript and learner evidence.
 
-        Kept as one function rather than duplicated per transport for the reason the whole session
-        plane is built on: the order of these two writes is a correctness decision (see ``answer``),
-        and a second copy is a second place for that order to be got wrong.
+        REST and streaming share the same durable admission receipt and commit path.
 
         The four things read at the top of a turn arrive as one ``TurnContext`` rather than as four
         arguments: they are read together, they are used together, and passing them apart meant both
@@ -780,7 +832,7 @@ class LiveSessionService:
         ``slot`` is how the caller says who claims the session's turn slot: the REST path hands in
         the slot itself, so it is claimed here (the whole call is awaited inline, so a refusal is a
         status either way); the stream has already claimed it, because a busy refusal there must be
-        a status too and the status line is gone by the time this task runs, and hands in a no-op.
+        a status too, and hands in a no-op. Streaming waits for durable admission before returning.
         Required rather than defaulted, so a new entry point has to say which it is.
 
         The slot covers the **whole** turn, writes included, not only the billed calls. Released
@@ -799,6 +851,9 @@ class LiveSessionService:
         with slot:
             try:
                 with self._credential_scope(context.credentials), enter_cost_scope(cost):
+                    await self._transactions.paid(session, context.operation)
+                    if on_admitted is not None:
+                        on_admitted()
                     outcome = await take()
             finally:
                 await self._drain(cost, run_id=run_id, session_id=session.session_id)
@@ -810,13 +865,13 @@ class LiveSessionService:
             # flight at once both pass ``take_turn``'s check (they loaded the same head) and only
             # the store can settle which one lands. The loser is a stale answer, which is what the
             # learner is told (409), rather than a graded turn that quietly disappeared.
-            await asyncio.to_thread(
-                self._sessions.save,
-                outcome.session,
-                owner_id=owner_id,
-                expect_turns=len(session.turns),
+            await self._transactions.commit(
+                SessionMutation(
+                    session=outcome.session,
+                    knowledge=outcome.model,
+                    expected_turns=len(session.turns),
+                )
             )
-            await asyncio.to_thread(self._knowledge.save, outcome.model, owner_id=owner_id)
             if context.map_failure is not None and outcome.session.status is SessionStatus.CLOSED:
                 # The close is on the row; the compile plane need not remember the failure for us.
                 assert self._compiles is not None
@@ -891,6 +946,7 @@ class LiveSessionService:
             prefetched=context.prefetched,
         )
 
+    @coordinated("session")
     async def advance(self, session_id: str, *, owner_id: str | None = None) -> Session | None:
         """Move a warming session on if its map has landed (or its compile has failed) — P2c T2.
 
@@ -905,9 +961,15 @@ class LiveSessionService:
         """
         run_id = uuid4().hex
         bind_run_id(run_id, session_id=session_id)
-        context = await self._ready(session_id, owner_id)
+        context = await self._ready(session_id, owner_id, operation="advance")
         if context.session.status is not SessionStatus.WARMING:
             return context.session
+        if (
+            context.graph is None
+            and context.map_failure is None
+            and _elapsed_s(context.session) < self._session_budget_s
+        ):
+            return None
         session = context.session
         assert self._mapper is not None, "a warming session needs a prior mapper"
         return await self._take_and_save(
@@ -1006,6 +1068,7 @@ class LiveSessionService:
         session plane read ``if credentials`` and let an empty vault fall through, found in T4)."""
         return nullcontext() if credentials is None else run_credentials(credentials)
 
+    @coordinated("session")
     async def end(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Close a session because the learner asked to, with the ceremony intact (T3).
 
@@ -1025,7 +1088,7 @@ class LiveSessionService:
         """
         run_id = uuid4().hex
         bind_run_id(run_id, session_id=session_id)
-        context = await self._ready(session_id, owner_id)
+        context = await self._ready(session_id, owner_id, operation="end")
         if context.session.status in _TERMINAL:
             return context.session
         if context.session.status in (SessionStatus.PLACING, SessionStatus.WARMING):

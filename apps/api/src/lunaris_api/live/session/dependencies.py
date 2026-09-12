@@ -27,6 +27,7 @@ from lunaris_live.session import (
     SupabaseMaterialStore,
     SupabaseSessionStore,
 )
+from lunaris_live.session.transactions.supabase_backend import SupabaseGraphTransactions
 from lunaris_live.sims.reference_coach import ReferenceSimCoach
 
 from ...config import Settings, get_settings
@@ -56,6 +57,7 @@ _supabase_material_store = SupabaseMaterialStore()
 _memory_session_store = MemorySessionStore()
 _memory_knowledge_store = MemoryKnowledgeStore()
 _memory_material_store = MemoryMaterialStore()
+_supabase_transactions = SupabaseGraphTransactions()
 
 
 def _resolve_session_store(settings: Settings) -> ISessionStore:
@@ -184,6 +186,7 @@ def get_live_session_service(
         tutor=tutor,
         grader=grader,
         session_budget_s=settings.live_session_budget_s,
+        transactions=_supabase_transactions if settings.has_supabase else None,
         # The ledger and the tenant's keys come from Studio's composition root: Live is a second
         # product, not a second platform, so a tenant's spend and a tenant's key are the same ones
         # either way. What differs is only the subject a cost is filed under (``LIVE_SESSION``).
