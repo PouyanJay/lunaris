@@ -407,18 +407,19 @@ async def test_a_cancelled_reader_leaves_no_task_parked_on_the_queue() -> None:
     with suppress(asyncio.CancelledError):
         await consumer
 
-    # Assert — exactly one thing still running, and it is the turn.
+    # Only the admitted turn and its lease heartbeat may outlive the reader.
     left = {
         task
         for task in asyncio.all_tasks()
         if not task.done() and task is not asyncio.current_task()
     }
-    assert len(left) == 1, (
-        f"the relay left something parked: {sorted(t.get_coro().__qualname__ for t in left)}"
-    )
-    assert "_take_and_save" in next(iter(left)).get_coro().__qualname__, (
-        "the turn is the one thing that should outlive its reader"
-    )
+    assert {task.get_coro().__qualname__ for task in left} == {
+        "SessionCoordinator.run_detached",
+        "GraphLease._renew",
+    }, "the relay left an unrelated task parked"
+    taking = next(task for task in left if "run_detached" in task.get_coro().__qualname__)
+    await asyncio.wait_for(asyncio.shield(taking), timeout=2)
+    assert all(task.done() for task in left), "the completed turn retained its lease heartbeat"
 
 
 async def test_an_answer_from_a_card_moves_the_estimate_for_that_concept_and_no_other() -> None:

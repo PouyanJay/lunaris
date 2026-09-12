@@ -53,6 +53,12 @@ class PrefetchRegistry:
             await asyncio.gather(
                 *list(self._leading), *list(self._in_flight.values()), return_exceptions=True
             )
+            # gather may complete without yielding for already-finished tasks. Do not rely on
+            # deferred done callbacks to remove them, or this loop can starve those callbacks.
+            self._leading.difference_update(task for task in tuple(self._leading) if task.done())
+            for key, task in tuple(self._in_flight.items()):
+                if task.done():
+                    self._settle(key, task)
 
     def _settle(self, key: tuple[str | None, str, str], task: "asyncio.Task[None]") -> None:
         if self._in_flight.get(key) is task:
