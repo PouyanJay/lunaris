@@ -1,0 +1,54 @@
+[
+  {
+    "id": "algorithms",
+    "node": {
+      "id": "bubble-sort-cost",
+      "name": "Bubble sort worst-case comparisons",
+      "definition": "For an input of n elements, bubble sort's worst-case comparison count is n*(n-1)/2: successive passes compare n-1, n-2, down to 1 pairs. The numeric control is named n, integer 2 through 10, default 5. The readout named comparisons shows the integer count without units. Show why the sum grows quadratically, using a useful visual of passes or comparison growth."
+    },
+    "criterion": {"kind": "manipulate", "statement": "Explore how bubble sort's worst-case comparisons grow as n increases.", "needsSim": true},
+    "cases": [
+      {"state": {"n": 2}, "outputs": {"comparisons": "1"}},
+      {"state": {"n": 5}, "outputs": {"comparisons": "10"}},
+      {"state": {"n": 10}, "outputs": {"comparisons": "45"}}
+    ]
+  },
+  {
+    "id": "physics",
+    "node": {
+      "id": "ohms-law",
+      "name": "Voltage, resistance and current",
+      "definition": "For an ideal resistor at fixed temperature, Ohm's law gives current = voltage/resistance. Numeric controls are named voltage (0 through 12 volts, integer steps, default 6) and resistance (1 through 6 ohms, integer steps, default 3). The readout named current shows amperes with exactly two decimal places and no units inside the readout itself. Visualize a simple resistor circuit and how the current responds to voltage and resistance."
+    },
+    "criterion": {"kind": "manipulate", "statement": "Compare the effects of voltage and resistance on current through an ideal resistor.", "needsSim": true},
+    "cases": [
+      {"state": {"voltage": 0, "resistance": 1}, "outputs": {"current": "0.00"}},
+      {"state": {"voltage": 6, "resistance": 3}, "outputs": {"current": "2.00"}},
+      {"state": {"voltage": 12, "resistance": 2}, "outputs": {"current": "6.00"}}
+    ]
+  },
+  {
+    "id": "economics",
+    "node": {
+      "id": "contribution-profit",
+      "name": "Contribution margin and break-even",
+      "definition": "A hypothetical business has fixed cost 100 and variable cost 10 per unit. Profit = (price - 10)*quantity - 100. Numeric controls are named price (10 through 30, integer steps, default 20) and quantity (0 through 20, integer steps, default 10). The readout named profit shows the integer result without currency symbols. Visualize revenue versus total costs or the profit relationship so the learner sees loss, break-even, and profit. This is an educational hypothetical, not business advice."
+    },
+    "criterion": {"kind": "manipulate", "statement": "Explore how unit price and quantity move a hypothetical business from loss through break-even to profit.", "needsSim": true},
+    "cases": [
+      {"state": {"price": 10, "quantity": 0}, "outputs": {"profit": "-100"}},
+      {"state": {"price": 20, "quantity": 10}, "outputs": {"profit": "0"}},
+      {"state": {"price": 30, "quantity": 20}, "outputs": {"profit": "300"}}
+    ]
+  },
+  {
+    "id": "unsuitable",
+    "node": {
+      "id": "ambiguous-poem",
+      "name": "Ambiguity in a poem's speaker",
+      "definition": "Weigh competing textual interpretations of whether an ambiguous poetic speaker is sincere. This task has no specified numeric relationship, fixed mechanical law, or objective numeric output. An invented sincerity slider would misrepresent the learning objective."
+    },
+    "criterion": {"kind": "explain", "statement": "Compare competing interpretations of a poetic speaker's sincerity using textual evidence.", "needsSim": true},
+    "cases": []
+  }
+]

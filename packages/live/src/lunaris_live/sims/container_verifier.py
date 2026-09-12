@@ -11,6 +11,7 @@ from .sandbox_policy import SIM_CSP
 from .schema.candidate import SimCandidate
 from .schema.teaching_spec import TeachingSpec
 from .schema.verification_report import VerificationReport
+from .series_circuit_renderer import SeriesCircuitRenderer
 
 
 class ContainerSimVerifier:
@@ -24,7 +25,19 @@ class ContainerSimVerifier:
     async def verify(self, candidate: SimCandidate, spec: TeachingSpec) -> VerificationReport:
         started = monotonic()
         payload = {"html": candidate.html, "spec": spec.model_dump(by_alias=True), "csp": SIM_CSP}
-        result = await self._run(json.dumps(payload, ensure_ascii=False).encode())
+        assembled = SeriesCircuitRenderer().detect(candidate.html)
+        if assembled:
+            SeriesCircuitRenderer().validate(spec)
+            payload["renderer"] = SeriesCircuitRenderer.version
+            payload["renderer_template"] = SeriesCircuitRenderer().template()
+        if set(spec.contract.parameters) == {"voltage", "resistance"} and not assembled:
+            result = {
+                "approved": False,
+                "checks_passed": 0,
+                "reasons": ["Voltage/resistance instruments require the assembled circuit."],
+            }
+        else:
+            result = await self._run(json.dumps(payload, ensure_ascii=False).encode())
         report = VerificationReport(
             content_hash=content_hash(candidate.html),
             spec_hash=content_hash(spec.model_dump_json(by_alias=True)),

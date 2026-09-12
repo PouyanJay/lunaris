@@ -26,7 +26,7 @@ class VerifiedBundle(LiveModel):
         if (
             not self.report.approved
             or self.report.reasons
-            or self.report.verifier_version != "chromium-contract-v1"
+            or self.report.verifier_version not in {"chromium-contract-v1", "chromium-contract-v2"}
             or self.report.checks_passed < minimum_checks
             or self.report.content_hash != content_hash(self.candidate.html)
             or self.report.spec_hash != content_hash(self.spec.model_dump_json(by_alias=True))

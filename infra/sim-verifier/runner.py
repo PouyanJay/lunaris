@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import sys
+from collections import Counter, defaultdict
 
 from playwright.async_api import Page, Route, async_playwright, expect
 
@@ -18,6 +19,47 @@ addEventListener('message', e => {
     window.events.push(e.data);
 });
 </script>"""
+
+
+def _circuit_terminals(geometry: dict) -> tuple[list, list]:
+    positive, negative = geometry["positive"], geometry["negative"]
+    assert positive[1] == positive[3] < negative[1] == negative[3], "Invalid source electrodes"
+    assert positive[2] - positive[0] > negative[2] - negative[0] > 0, "Source polarity is unclear"
+    source = [((p[0] + p[2]) / 2, p[1]) for p in (positive, negative)]
+    assert source[0][0] == source[1][0], "Source terminals are misaligned"
+    x, y, width, height = geometry["resistor"]
+    assert width > 0 and height > 0, "Missing resistor body"
+    resistor = [(x, y + height / 2), (x + width, y + height / 2)]
+    return source, resistor
+
+
+def _check_circuit_geometry(geometry: dict) -> None:
+    source, resistor = _circuit_terminals(geometry)
+    edges = [(tuple(wire[:2]), tuple(wire[2:])) for wire in geometry["wires"]]
+    edges.extend((tuple(source), tuple(resistor)))
+    degree = Counter(vertex for edge in edges for vertex in edge)
+    assert degree and all(count == 2 for count in degree.values()), "Open or bypassed component"
+    neighbors = defaultdict(set)
+    for left, right in edges:
+        assert left != right, "Zero-length wire"
+        neighbors[left].add(right)
+        neighbors[right].add(left)
+    reached, pending = set(), [source[0]]
+    while pending:
+        vertex = pending.pop()
+        if vertex not in reached:
+            reached.add(vertex)
+            pending.extend(neighbors[vertex] - reached)
+    assert reached == set(degree), "Disconnected circuit components"
+    _check_direction(geometry["arrow"], max(vertex[0] for vertex in degree))
+
+
+def _check_direction(points: str, return_wire_x: float) -> None:
+    arrow = [tuple(map(float, point.split(","))) for point in points.split()]
+    assert len(arrow) == 3, "Invalid direction marker"
+    tip, left, right = arrow
+    assert tip[0] == return_wire_x, "Direction marker is off the return wire"
+    assert left[1] == right[1] < tip[1], "Current direction contradicts source polarity"
 
 
 class _Verification:
@@ -52,6 +94,7 @@ class _Verification:
             await control.fill(str(int(value)) if float(value).is_integer() else str(value))
             await control.press("Tab")
         await self.outputs(page, case["outputs"])
+        await self.circuit(page, case["state"])
         await frame.locator('[data-sim-action="discuss"]').click()
         await page.wait_for_function(
             "state => window.events.some(e => e.type === 'lunaris.sim.event' && "
@@ -69,6 +112,52 @@ class _Verification:
             await expect(output).to_be_visible()
             await expect(output).to_have_text(expected)
             self.passed += 1
+
+    async def circuit(self, page: Page, state: dict) -> None:
+        if self.payload.get("renderer") != "series-resistor-v1":
+            return
+        host = page.frame_locator("iframe").locator('[data-lunaris-renderer="series-resistor-v1"]')
+        await expect(host).to_be_visible()
+        await expect(host.locator("svg")).to_be_visible()
+        intact = await host.evaluate(
+            """(host, expected) => {
+            const reference=document.createElement('div');
+            reference.innerHTML=expected.template;
+            const state=expected.state;
+            reference.querySelector('[data-circuit-voltage]').textContent=`${state.voltage} V`;
+            reference.querySelector('[data-circuit-resistance]').textContent=
+                `${state.resistance} Ω`;
+            const current=state.voltage/state.resistance;
+            reference.querySelector('[data-circuit-current]').textContent=
+                `I = ${current.toFixed(2)} A`;
+            reference.querySelector('[data-circuit-arrow]').style.visibility=current===0?'hidden':'visible';
+            return host.shadowRoot.innerHTML===reference.innerHTML;
+        }""",
+            {"template": self.payload["renderer_template"], "state": state},
+        )
+        assert intact, "Assembled circuit subtree was modified"
+        geometry = await host.evaluate("""host => {
+            const root=host.shadowRoot;
+            const line=e=>['x1','y1','x2','y2'].map(k=>Number(e.getAttribute(k)));
+            const resistor=root.querySelector('[data-circuit-resistor]');
+            return {wires:[...root.querySelectorAll('[data-circuit-wire]')].slice(0,20).map(line),
+              positive:line(root.querySelector('[data-circuit-electrode="positive"]')),
+              negative:line(root.querySelector('[data-circuit-electrode="negative"]')),
+              resistor:['x','y','width','height'].map(k=>Number(resistor.getAttribute(k))),
+              arrow:root.querySelector('[data-circuit-arrow]').getAttribute('points')};
+        }""")
+        _check_circuit_geometry(geometry)
+        current = state["voltage"] / state["resistance"]
+        await expect(host.locator("[data-circuit-current]")).to_have_text(f"I = {current:.2f} A")
+        for field, unit in (("voltage", "V"), ("resistance", "Ω")):
+            await expect(host.locator(f"[data-circuit-{field}]")).to_have_text(
+                f"{state[field]:g} {unit}"
+            )
+        if current:
+            await expect(host.locator("[data-circuit-arrow]")).to_be_visible()
+        else:
+            await expect(host.locator("[data-circuit-arrow]")).to_be_hidden()
+        self.passed += 1
 
     async def command(
         self, page: Page, state: dict, *, message_type: str = "lunaris.sim.command"
@@ -116,6 +205,7 @@ class _Verification:
         demonstration = self.payload["spec"]["cases"][0]
         await self.command(page, demonstration["state"])
         await self.outputs(page, demonstration["outputs"])
+        await self.circuit(page, demonstration["state"])
         await self.capture(page)
         self.passed += 1
 

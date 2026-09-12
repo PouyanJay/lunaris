@@ -1,0 +1,2563 @@
+{
+  "summary": {
+    "builds": 45,
+    "statuses": {
+      "approved": 21,
+      "rejected": 13,
+      "unsuitable": 11
+    },
+    "generationAttempts": 42,
+    "knownCostUsd": 5.010772,
+    "callsWithUnknownCost": 3,
+    "manualFalseAcceptances": 7,
+    "medianBuildSeconds": 50.704
+  },
+  "runs": [
+    {
+      "run": "v1",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 64126,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.075552,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 1177,
+          "outputTokens": 540,
+          "reservedTokens": 6818,
+          "costUsd": 0.011630999999999999,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 856,
+          "outputTokens": 2770,
+          "reservedTokens": 9103,
+          "costUsd": 0.044118000000000004,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 2951,
+          "outputTokens": 730,
+          "reservedTokens": 9338,
+          "costUsd": 0.019803,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "b8b4be67cabc4fb0dcd47c37639749e284cb5a2f638fea943fafd892628c36bc"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "b8b4be67cabc4fb0dcd47c37639749e284cb5a2f638fea943fafd892628c36bc",
+          "specHash": "e5f02c76e9e73cc79113a4f7e228053244d671a5e72b2d1d997ab84378a2adc3",
+          "approved": true,
+          "checksPassed": 16,
+          "reasons": [],
+          "elapsedMs": 1080
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "b8b4be67cabc4fb0dcd47c37639749e284cb5a2f638fea943fafd892628c36bc",
+          "explanation": "Both screenshots confirm correct behavior. n=10: Total Comparisons=45 (10\u00d79/2), Passes=9, per-pass boxes show 9,8,7,6,5,4,3,2,1 matching spec exactly. n=2: Total Comparisons=1, Passes=1, per-pass shows 1, all matching spec. Chart axes are correctly labeled ('n (elements)' on x, 'Comparisons' on y), range 2\u201310 and 0\u201345, with a clearly concave-up quadratic curve. Active data point is highlighted. The comparisons readout has no units. The per-pass sequence display correctly illustrates successive decreasing passes. Formula n(n-1)/2 is shown. No clipping, reversed axes, or wrong model detected."
+        }
+      ]
+    },
+    {
+      "run": "v1",
+      "domain": "physics",
+      "status": "rejected",
+      "reason": "Simulator model call failed.",
+      "elapsedMs": 9,
+      "generationAttempts": 0,
+      "knownCostUsd": 0,
+      "callsWithUnknownCost": 1,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "reservedTokens": 6895,
+          "costUsd": null,
+          "outcome": "failed"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v1",
+      "domain": "economics",
+      "status": "rejected",
+      "reason": "Independent verification rejected the candidate.",
+      "elapsedMs": 128013,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.146832,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 1204,
+          "outputTokens": 659,
+          "reservedTokens": 6985,
+          "costUsd": 0.013497,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 922,
+          "outputTokens": 4117,
+          "reservedTokens": 9425,
+          "costUsd": 0.06452100000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 4893,
+          "outputTokens": 3609,
+          "reservedTokens": 19605,
+          "costUsd": 0.068814,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "655f576cb0a9e0eee1e2286538886429f09c827a536a3f1fe8ba6f960ce6b8bd",
+        "c15ee17eaf5f1867077d49fad80d09277d03b96c645d44de545d6d75564392b9"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "655f576cb0a9e0eee1e2286538886429f09c827a536a3f1fe8ba6f960ce6b8bd",
+          "specHash": "4f2926e59f3f9c10be40371d0b35956f6768c09b61bc204eedfe64044ed85ac0",
+          "approved": false,
+          "checksPassed": 0,
+          "reasons": [
+            "Browser verification failed: AssertionError. Locator expected to have text '75'\nActual value: $75 \nCall log:\n  - Expect \"to_have_text\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"revenue\\\"]\")\n    14 \u00d7 locator reso"
+          ],
+          "elapsedMs": 5683
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "c15ee17eaf5f1867077d49fad80d09277d03b96c645d44de545d6d75564392b9",
+          "specHash": "4f2926e59f3f9c10be40371d0b35956f6768c09b61bc204eedfe64044ed85ac0",
+          "approved": false,
+          "checksPassed": 0,
+          "reasons": [
+            "JavaScript error: Unexpected token '-'",
+            "Browser verification failed: TimeoutError. Page.wait_for_function: Timeout 2000ms exceeded."
+          ],
+          "elapsedMs": 2606
+        }
+      ],
+      "visualReviews": []
+    },
+    {
+      "run": "v1",
+      "domain": "unsuitable",
+      "status": "rejected",
+      "reason": "Simulator model call failed.",
+      "elapsedMs": 6,
+      "generationAttempts": 0,
+      "knownCostUsd": 0,
+      "callsWithUnknownCost": 1,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "reservedTokens": 6728,
+          "costUsd": null,
+          "outcome": "failed"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v2",
+      "domain": "physics",
+      "status": "rejected",
+      "reason": "In both screenshots, the crosshair dashed lines and dot markers on the graphs are visually misplaced relative to the correct values. Screenshot 1 (V=9, R=2, I=4.50): the horizontal dashed line on the V-vs-I graph reads approximately 4.7-4.8 on the Y-axis instead of 4.5, and the vertical dashed line on the R-vs-I graph appears at ~R=2.2 rather than R=2. Screenshot 2 (V=6, R=3, I=2.00): the horizontal dashed line on both graphs reads approximately 2.2 on the Y-axis instead of 2.0, and the R-vs-I marker vertical line falls near R=3.4 rather than R=3. These systematic offsets mean the visual diagram teaches incorrect correspondences between parameter settings and current values, even though the numeric readout is correct. A learner reading the graphs would infer wrong I=f(V) and I=f(R) relationships.",
+      "elapsedMs": 152851,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.185325,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 1183,
+          "outputTokens": 510,
+          "reservedTokens": 6895,
+          "costUsd": 0.011199,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 843,
+          "outputTokens": 4247,
+          "reservedTokens": 9144,
+          "costUsd": 0.066234,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 5101,
+          "outputTokens": 4168,
+          "reservedTokens": 19921,
+          "costUsd": 0.077823,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 3608,
+          "outputTokens": 1283,
+          "reservedTokens": 9453,
+          "costUsd": 0.030069000000000002,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "6f8256179b0e1f19032fcae82fb72a9bfa29471df21c94d773a11f5652d66e33",
+        "9231b5bee6e30642d8c1aea3b4bc55cdacf31f761d62e591def68f0704089f40"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "6f8256179b0e1f19032fcae82fb72a9bfa29471df21c94d773a11f5652d66e33",
+          "specHash": "0a062f5cdfb5fbbcd21e43069a9c95cadb33e63bdaf05c5df40a33fe2b225290",
+          "approved": false,
+          "checksPassed": 0,
+          "reasons": [
+            "JavaScript error: Identifier 'ylabel' has already been declared",
+            "Browser verification failed: TimeoutError. Page.wait_for_function: Timeout 2000ms exceeded."
+          ],
+          "elapsedMs": 2567
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "9231b5bee6e30642d8c1aea3b4bc55cdacf31f761d62e591def68f0704089f40",
+          "specHash": "0a062f5cdfb5fbbcd21e43069a9c95cadb33e63bdaf05c5df40a33fe2b225290",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1173
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "9231b5bee6e30642d8c1aea3b4bc55cdacf31f761d62e591def68f0704089f40",
+          "explanation": "In both screenshots, the crosshair dashed lines and dot markers on the graphs are visually misplaced relative to the correct values. Screenshot 1 (V=9, R=2, I=4.50): the horizontal dashed line on the V-vs-I graph reads approximately 4.7-4.8 on the Y-axis instead of 4.5, and the vertical dashed line on the R-vs-I graph appears at ~R=2.2 rather than R=2. Screenshot 2 (V=6, R=3, I=2.00): the horizontal dashed line on both graphs reads approximately 2.2 on the Y-axis instead of 2.0, and the R-vs-I marker vertical line falls near R=3.4 rather than R=3. These systematic offsets mean the visual diagram teaches incorrect correspondences between parameter settings and current values, even though the numeric readout is correct. A learner reading the graphs would infer wrong I=f(V) and I=f(R) relationships."
+        }
+      ]
+    },
+    {
+      "run": "v2",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly states there is no numeric relationship, fixed mechanical law, or objective numeric output, and that an invented sincerity slider would misrepresent the learning objective. The task is a qualitative literary interpretation exercise requiring weighing textual evidence for competing readings of a poetic speaker's sincerity. No honest numeric proxy exists: sincerity, irony, and textual ambiguity are subjective interpretive categories, not measurable quantities derivable from a parameter snapshot. Inventing numeric outputs (e.g., a 'sincerity score') would fabricate a false precision and actively mislead learners about the nature of literary analysis. The criterion requires explanation and comparison using evidence, which is a discursive, not computational, task. Returning spec:null as required.",
+      "elapsedMs": 5114,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.006096,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v3",
+          "inputTokens": 1137,
+          "outputTokens": 179,
+          "reservedTokens": 6728,
+          "costUsd": 0.006096,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v3",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 76209,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.097158,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1177,
+          "outputTokens": 463,
+          "reservedTokens": 6818,
+          "costUsd": 0.010476,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 919,
+          "outputTokens": 4263,
+          "reservedTokens": 9579,
+          "costUsd": 0.066702,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 2820,
+          "outputTokens": 768,
+          "reservedTokens": 9229,
+          "costUsd": 0.01998,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "807e15dc358b4b60c43f73d2c68a22d809d62f02ce8657e50ea997164f0b7e3f"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "807e15dc358b4b60c43f73d2c68a22d809d62f02ce8657e50ea997164f0b7e3f",
+          "specHash": "ab782d9982abcbe7f66763089e9d98b97a0f1c697bc803873220f8238f706ca6",
+          "approved": true,
+          "checksPassed": 13,
+          "reasons": [],
+          "elapsedMs": 1115
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "807e15dc358b4b60c43f73d2c68a22d809d62f02ce8657e50ea997164f0b7e3f",
+          "explanation": "Both screenshots show correct outputs: n=2 gives comparisons=1, passes=1, per-pass='1'; n=10 gives comparisons=45, passes=9, per-pass='9,8,7,6,5,4,3,2,1'. The graph plots n(n-1)/2 for n=2 through 10 with all nine points visually matching the formula (1,3,6,10,15,21,28,36,45). X-axis correctly labeled 'n (number of elements)' spanning 2\u201310; Y-axis correctly labeled 'Comparisons = n(n-1)/2' spanning 0\u201345. Curve is visibly upward-curving, correctly teaching quadratic growth. Active point is highlighted with annotation in both states. All controls match spec (integer slider 2\u201310, default logic confirmed). Readouts show integers without units. Nothing is clipped or mislabeled."
+        }
+      ]
+    },
+    {
+      "run": "v3",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 139486,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.1767,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1183,
+          "outputTokens": 583,
+          "reservedTokens": 6895,
+          "costUsd": 0.012294000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 976,
+          "outputTokens": 2981,
+          "reservedTokens": 9792,
+          "costUsd": 0.047643,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 2887,
+          "outputTokens": 712,
+          "reservedTokens": 9516,
+          "costUsd": 0.019341,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 4057,
+          "outputTokens": 4141,
+          "reservedTokens": 18219,
+          "costUsd": 0.074286,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 3207,
+          "outputTokens": 901,
+          "reservedTokens": 9516,
+          "costUsd": 0.023136000000000004,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "4bd2f1e2788b70684398706fd449021b2502d9ed16cb2b3e1e01916f37073707",
+        "443dfc9e2baee4881b434e818905549d00087486fa116a50124a3838652fc3f8"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "4bd2f1e2788b70684398706fd449021b2502d9ed16cb2b3e1e01916f37073707",
+          "specHash": "b584cf21439843c115816d6c2d53a63ccf84f01a82f4765ed4bd0fc33779abb0",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1201
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "443dfc9e2baee4881b434e818905549d00087486fa116a50124a3838652fc3f8",
+          "specHash": "b584cf21439843c115816d6c2d53a63ccf84f01a82f4765ed4bd0fc33779abb0",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1230
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "4bd2f1e2788b70684398706fd449021b2502d9ed16cb2b3e1e01916f37073707",
+          "explanation": "Both screenshots lack any visible resistor circuit diagram (battery, resistor symbol, connecting wires) that the definition requires: 'Visualize a simple resistor circuit and how the current responds to voltage and resistance.' Only a current-vs-voltage graph is shown. All numeric values are correct (V=3,R=6\u21920.50A; V=6,R=3\u21922.00A), graph axes and plotted points are accurate, labels are legible, and the readout shows two decimal places with units outside the box, but the mandatory circuit visualization is entirely absent."
+        },
+        {
+          "passed": true,
+          "contentHash": "443dfc9e2baee4881b434e818905549d00087486fa116a50124a3838652fc3f8",
+          "explanation": "Both screenshots correctly implement Ohm's law (I=V/R). Screenshot 1 (V=3, R=6): readout shows 0.50 matching 3/6=0.50, circuit labels 3V and 6\u03a9, graph plots (3V,0.50A) with slope 1/6 and formula I=V/6\u03a9. Screenshot 2 (V=6, R=3): readout shows 2.00 matching 6/3=2.00, circuit labels 6V and 3\u03a9, graph plots (6V,2.00A) with slope 1/3 and formula I=V/3\u03a9. Voltage slider range 0-12V and resistance slider range 1-6\u03a9 are correct. Current readout displays exactly two decimal places with units 'A' outside the readout box. Axes are correctly labeled (Voltage (V) x-axis 0-12, Current y-axis 0-12), graphs are fully legible and unclipped. Default state (6V,3\u03a9\u21922.00A) confirmed. All checked spec cases pass."
+        }
+      ]
+    },
+    {
+      "run": "v3",
+      "domain": "economics",
+      "status": "rejected",
+      "reason": "Model returned an invalid simulator bundle.",
+      "elapsedMs": 66474,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.082884,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1204,
+          "outputTokens": 680,
+          "reservedTokens": 6985,
+          "costUsd": 0.013812000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1039,
+          "outputTokens": 4397,
+          "reservedTokens": 10017,
+          "costUsd": 0.069072,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v3",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly states there is no specified numeric relationship, fixed mechanical law, or objective numeric output. Assigning numeric values to textual sincerity interpretations would invent a false proxy for a subjective, interpretive literary judgment. The teaching objective requires weighing competing textual evidence for or against a speaker's sincerity \u2014 a qualitative, evidence-based reasoning task that cannot be honestly reduced to a numeric function of parameter inputs. Returning spec:null as directed.",
+      "elapsedMs": 3564,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.005076,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1137,
+          "outputTokens": 111,
+          "reservedTokens": 6728,
+          "costUsd": 0.005076,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v4",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 67480,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.081528,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1177,
+          "outputTokens": 469,
+          "reservedTokens": 6818,
+          "costUsd": 0.010566,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 919,
+          "outputTokens": 3254,
+          "reservedTokens": 9579,
+          "costUsd": 0.051567,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 2820,
+          "outputTokens": 729,
+          "reservedTokens": 9229,
+          "costUsd": 0.019395000000000003,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "edb03c399a610f33dbed2431d1bc622b56566bce98217f2c72750256bf2caa86"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "edb03c399a610f33dbed2431d1bc622b56566bce98217f2c72750256bf2caa86",
+          "specHash": "ab782d9982abcbe7f66763089e9d98b97a0f1c697bc803873220f8238f706ca6",
+          "approved": true,
+          "checksPassed": 13,
+          "reasons": [],
+          "elapsedMs": 974
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "edb03c399a610f33dbed2431d1bc622b56566bce98217f2c72750256bf2caa86",
+          "explanation": "Both screenshots show correct values matching all specification cases: n=10 yields comparisons=45, passes=9, per-pass='9,8,7,6,5,4,3,2,1'; n=2 yields comparisons=1, passes=1, per-pass='1'. The graph displays a correctly shaped quadratic curve on axes labeled 'n (number of elements)' (x, range 2\u201310) and 'Comparisons = n(n-1)/2' (y, range 0\u201345), with highlighted data points at the active n value and matching annotations (n=10,C=45 and n=2,C=1). The slider runs 2\u201310 with correct default behavior. The passes and comparisons-per-pass readouts correctly reinforce the successive-pass summation model. No reversed axes, clipped content, wrong values, or misleading visual mechanisms were observed."
+        }
+      ]
+    },
+    {
+      "run": "v4",
+      "domain": "physics",
+      "status": "rejected",
+      "reason": "Both screenshots show the current readout displaying 'A' (amperes) inside the readout box itself (e.g., '9.00 A' and '2.00 A'), directly violating the definition's requirement of 'no units inside the readout itself.' Additionally, the definition requires visualization of a simple resistor circuit diagram, but neither screenshot shows any circuit diagram \u2014 only an I-vs-V graph is present. The mathematical values and graph behavior are otherwise correct (9/1=9.00, 6/3=2.00, axes properly labeled, resistance lines correctly ordered by slope, interactive point and crosshairs accurate).",
+      "elapsedMs": 151097,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.201357,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1183,
+          "outputTokens": 507,
+          "reservedTokens": 6895,
+          "costUsd": 0.011154,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 957,
+          "outputTokens": 4389,
+          "reservedTokens": 9729,
+          "costUsd": 0.068706,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 2868,
+          "outputTokens": 816,
+          "reservedTokens": 9453,
+          "costUsd": 0.020844,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 5333,
+          "outputTokens": 4392,
+          "reservedTokens": 20952,
+          "costUsd": 0.08187900000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 2868,
+          "outputTokens": 678,
+          "reservedTokens": 9453,
+          "costUsd": 0.018774,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "3cd7036d44b2360871554b287da6108327e595e6a561dbe3c7c65b076501cae8",
+        "4a124d15d1f54375213f60e1946f090c4de2a4733462e7a6af5307ccfcc446a1"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "3cd7036d44b2360871554b287da6108327e595e6a561dbe3c7c65b076501cae8",
+          "specHash": "2c20edad1ab21a15fef6a9e39a2a1c6d9f16c79c5705996e961dcb8c7261b02b",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1140
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "4a124d15d1f54375213f60e1946f090c4de2a4733462e7a6af5307ccfcc446a1",
+          "specHash": "2c20edad1ab21a15fef6a9e39a2a1c6d9f16c79c5705996e961dcb8c7261b02b",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1207
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "3cd7036d44b2360871554b287da6108327e595e6a561dbe3c7c65b076501cae8",
+          "explanation": "Two violations observed: (1) The current readout displays 'A' (amperes unit) inside the readout box itself \u2014 e.g., 'I = 9.00 A' and 'I = 2.00 A' \u2014 directly contradicting the definition's requirement of no units inside the readout. (2) The resistance line labels on the right edge of the chart are clipped in both screenshots (e.g., 'R=1' appears cut off, likely 'R=1\u03a9' or higher value; 'R=2', 'R=3' labels are partially obscured), making them unreadable and impairing the teaching of how different resistance values compare. The math and plotted point positions are correct (V=9,R=1\u21929.00; V=6,R=3\u21922.00), and axes are correctly oriented and labeled, but the unit-in-readout and clipped legend labels are definitive failures."
+        },
+        {
+          "passed": false,
+          "contentHash": "4a124d15d1f54375213f60e1946f090c4de2a4733462e7a6af5307ccfcc446a1",
+          "explanation": "Both screenshots show the current readout displaying 'A' (amperes) inside the readout box itself (e.g., '9.00 A' and '2.00 A'), directly violating the definition's requirement of 'no units inside the readout itself.' Additionally, the definition requires visualization of a simple resistor circuit diagram, but neither screenshot shows any circuit diagram \u2014 only an I-vs-V graph is present. The mathematical values and graph behavior are otherwise correct (9/1=9.00, 6/3=2.00, axes properly labeled, resistance lines correctly ordered by slope, interactive point and crosshairs accurate)."
+        }
+      ]
+    },
+    {
+      "run": "v4",
+      "domain": "economics",
+      "status": "rejected",
+      "reason": "Simulator model call failed.",
+      "elapsedMs": 68048,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.012837,
+      "callsWithUnknownCost": 1,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1204,
+          "outputTokens": 615,
+          "reservedTokens": 6985,
+          "costUsd": 0.012837000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 0,
+          "outputTokens": 0,
+          "reservedTokens": 9909,
+          "costUsd": null,
+          "outcome": "indeterminate"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v4",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly states there is no specified numeric relationship, fixed mechanical law, or objective numeric output. Weighing competing textual interpretations of a poetic speaker's sincerity is a qualitative, hermeneutic task grounded in literary judgment and contextual reading. Any numeric output (e.g., a 'sincerity score' or 'evidence weight') would be an invented proxy with no honest grounding in a defined formula or empirical relationship. The teaching objective requires students to reason with textual evidence, which cannot be faithfully reduced to parameter-driven numeric simulation without misrepresenting how literary interpretation works. Returning spec:null as specified.",
+      "elapsedMs": 4500,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.005691,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v4",
+          "inputTokens": 1137,
+          "outputTokens": 152,
+          "reservedTokens": 6728,
+          "costUsd": 0.005691,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v5",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 113047,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.146922,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1177,
+          "outputTokens": 555,
+          "reservedTokens": 6818,
+          "costUsd": 0.011856000000000002,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1081,
+          "outputTokens": 3234,
+          "reservedTokens": 10110,
+          "costUsd": 0.05175300000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 4387,
+          "outputTokens": 3275,
+          "reservedTokens": 18944,
+          "costUsd": 0.062286,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 2914,
+          "outputTokens": 819,
+          "reservedTokens": 9533,
+          "costUsd": 0.021027,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "282ca806756ff94a7142a384de496f94254f94a468e29941bcf8a52d20e75367",
+        "37193b9085cd8d98b7bccb9e2dece952782dd9ef45fcfece5f0839601407bb7b"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "282ca806756ff94a7142a384de496f94254f94a468e29941bcf8a52d20e75367",
+          "specHash": "62872e7f02686278a98d3f2ee6f3410deb4b75e8639ed8d138ecc9e7394fbfda",
+          "approved": false,
+          "checksPassed": 0,
+          "reasons": [
+            "Browser verification failed: AssertionError. Locator expected to have Value '5'\nActual value: None\nError: strict mode violation: locator(\"[data-sim-param=\\\"n\\\"]\") resolved to 2 elements:\n    1) <input min=\"2\" id=\"rng\" max=\"10\" step=\"1\" value=\"5\" type=\"range\" aria-v"
+          ],
+          "elapsedMs": 630
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "37193b9085cd8d98b7bccb9e2dece952782dd9ef45fcfece5f0839601407bb7b",
+          "specHash": "62872e7f02686278a98d3f2ee6f3410deb4b75e8639ed8d138ecc9e7394fbfda",
+          "approved": true,
+          "checksPassed": 16,
+          "reasons": [],
+          "elapsedMs": 1103
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "37193b9085cd8d98b7bccb9e2dece952782dd9ef45fcfece5f0839601407bb7b",
+          "explanation": "Both screenshots are correct. n=10: comparisons=45=10\u00d79/2, passes=9, pass lengths 9,8,7,6,5,4,3,2,1 all match spec; the bar overlay correctly shows the decreasing pass lengths for n=10. n=2: comparisons=1, passes=1, pass length=1 match spec; a dashed line at y=1 with a single bar of height 1 correctly illustrates the single pass. The quadratic curve labeled 'comparisons=n(n\u22121)/2' is concave-up across n=2 to 10 with all nine plotted dots at correct positions (1,3,6,10,15,21,28,36,45). Axes are correctly labeled ('Comparisons' on y, 'n (elements)' on x), limits are 0\u201345 and 2\u201310, nothing is clipped or mislabeled, and the visual mechanism correctly teaches quadratic growth of worst-case bubble sort comparisons."
+        }
+      ]
+    },
+    {
+      "run": "v5",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 82172,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.102012,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1183,
+          "outputTokens": 497,
+          "reservedTokens": 6895,
+          "costUsd": 0.011004,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1074,
+          "outputTokens": 4510,
+          "reservedTokens": 10217,
+          "costUsd": 0.070872,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 2907,
+          "outputTokens": 761,
+          "reservedTokens": 9640,
+          "costUsd": 0.020136,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "66e161d2b794f77e8f92817714f1530e7d85904ddebfa91af084fbf49fd94b3d"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "66e161d2b794f77e8f92817714f1530e7d85904ddebfa91af084fbf49fd94b3d",
+          "specHash": "0a062f5cdfb5fbbcd21e43069a9c95cadb33e63bdaf05c5df40a33fe2b225290",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1140
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "66e161d2b794f77e8f92817714f1530e7d85904ddebfa91af084fbf49fd94b3d",
+          "explanation": "Both screenshots show correct and legible teaching. Screenshot 2 (default V=6, R=3): current readout 2.00 A, circuit labels +6V and 3\u03a9, graph titled 'I vs V (R = 3 \u03a9)' with x-axis Voltage (V) 0\u201312 and y-axis Current (A) 0\u20136, linear line from origin reaching (12,4), dot correctly at (6,2). Screenshot 1 (V=9, R=2): current readout 4.50 A, circuit labels +9V and 2\u03a9, graph titled 'I vs V (R = 2 \u03a9)', steeper line (slope 0.5) from origin reaching (12,6), dot correctly at (9,4.5). All axis labels, units, limits, slopes, and plotted positions are consistent with I=V/R. The 'A' unit appears as an adjacent label outside the readout, not inside it. No clipping, reversed axes, or incorrect teaching observed."
+        }
+      ],
+      "manualAcceptance": "Rejected: missing wire leaves an open circuit at nonzero current."
+    },
+    {
+      "run": "v5",
+      "domain": "economics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 154689,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.206217,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1204,
+          "outputTokens": 980,
+          "reservedTokens": 6985,
+          "costUsd": 0.018312,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1384,
+          "outputTokens": 4604,
+          "reservedTokens": 11375,
+          "costUsd": 0.073212,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 5799,
+          "outputTokens": 4646,
+          "reservedTokens": 22442,
+          "costUsd": 0.087087,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 3217,
+          "outputTokens": 1197,
+          "reservedTokens": 10798,
+          "costUsd": 0.027606,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "dfa101bc743f839a08eaffd3405cbc8ebecd8575b3c65e3204598b0830cea5c2",
+        "afeb7be5321a0a8c231eeb1391a306ae06dfda7342430c571e528323f9e2827f"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "dfa101bc743f839a08eaffd3405cbc8ebecd8575b3c65e3204598b0830cea5c2",
+          "specHash": "06fa25375c96b25c9f42ded3e71594af14630a037cdf667f3123d165d3fd0b21",
+          "approved": false,
+          "checksPassed": 1,
+          "reasons": [
+            "Browser verification failed: AssertionError. Locator expected to be visible\nActual value: None\nError: element(s) not found \nCall log:\n  - Expect \"to_be_visible\" with timeout 5000ms\n  - waiting for locator(\"iframe\").content_frame.locator(\"[data-sim-output=\\\"revenue_"
+          ],
+          "elapsedMs": 5710
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "afeb7be5321a0a8c231eeb1391a306ae06dfda7342430c571e528323f9e2827f",
+          "specHash": "06fa25375c96b25c9f42ded3e71594af14630a037cdf667f3123d165d3fd0b21",
+          "approved": true,
+          "checksPassed": 49,
+          "reasons": [],
+          "elapsedMs": 1243
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "afeb7be5321a0a8c231eeb1391a306ae06dfda7342430c571e528323f9e2827f",
+          "explanation": "Both screenshots verify correctly against the specification. Screenshot 1 (price=30, qty=8): Revenue=$240, TotalCost=$180, CM/unit=$20, Profit=60 all match; chart shows blue Revenue line (slope 30, reaching ~600 at Q=20) steeper than red Total Cost line (intercept ~100, slope 10, reaching ~300), break-even vertical at Q=5 labeled 'BE=5,0', blue dot above red dot at Q=8 correctly depicting profit. Screenshot 2 (price=15, qty=5): Revenue=$75, TotalCost=$150, CM/unit=$5, Profit=-75 all match; chart shows Revenue line (slope 15) shallower than Total Cost line initially with break-even at Q=20 (chart right edge, labeled 'BE=20,0'), red dot above blue dot at Q=5 correctly depicting loss. Both charts have correct axis labels, ranges (x:0-20, y:0-600), legends, and plotted positions. The visual teaching accurately conveys loss, break-even, and profit relationships."
+        }
+      ]
+    },
+    {
+      "run": "v5",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly states there is no numeric relationship, fixed mechanical law, or objective numeric output for weighing competing textual interpretations of a poetic speaker's sincerity. Sincerity in poetry is a subjective, interpretive, and hermeneutic judgment grounded in literary reasoning and textual evidence \u2014 not a quantity derivable from parameters via any honest formula. Inventing a 'sincerity slider' or proxy numeric output would misrepresent the learning objective, which is to compare interpretations using textual evidence \u2014 a qualitative critical thinking task. No honest simulation is possible.",
+      "elapsedMs": 4056,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.005481,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v5",
+          "inputTokens": 1137,
+          "outputTokens": 138,
+          "reservedTokens": 6728,
+          "costUsd": 0.005481,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v6",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 82962,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.102099,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1183,
+          "outputTokens": 533,
+          "reservedTokens": 6895,
+          "costUsd": 0.011544,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1110,
+          "outputTokens": 4398,
+          "reservedTokens": 10383,
+          "costUsd": 0.0693,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-sonnet-4-6",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 2950,
+          "outputTokens": 827,
+          "reservedTokens": 9866,
+          "costUsd": 0.021255000000000003,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "73e5cfefd898959bf71ab7b257a957acae041b50cd42a5a78ce7d9160f56d23b"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "73e5cfefd898959bf71ab7b257a957acae041b50cd42a5a78ce7d9160f56d23b",
+          "specHash": "0a062f5cdfb5fbbcd21e43069a9c95cadb33e63bdaf05c5df40a33fe2b225290",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1173
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "73e5cfefd898959bf71ab7b257a957acae041b50cd42a5a78ce7d9160f56d23b",
+          "explanation": "Both screenshots are fully consistent with the specification. Controls show correct values (V=9,R=2 and V=6,R=3); current readouts show 4.50 and 2.00 respectively with 'A' as an external label, matching I=V/R exactly. The circuit diagram in each screenshot forms a fully closed loop with battery on the left, resistor on the right, and directional arrows on top and bottom wire segments showing consistent current flow \u2014 no floating arrows or broken wires. The graph axes (Voltage (V) x-axis 0\u201312, Current (A) y-axis 0\u201312) are correctly oriented and labeled; the plotted line passes through the origin with the correct slope (0.5 for R=2\u03a9, 0.33 for R=3\u03a9), the highlighted dot and dashed crosshairs correctly mark the current parameter state, and the steeper slope for lower resistance correctly teaches the inverse relationship between resistance and current."
+        }
+      ],
+      "manualAcceptance": "Rejected: continuous wire bypasses source plates."
+    },
+    {
+      "run": "opus-v1",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 44091,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.125555,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1664,
+          "outputTokens": 473,
+          "reservedTokens": 6818,
+          "costUsd": 0.020145000000000003,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1541,
+          "outputTokens": 2357,
+          "reservedTokens": 10107,
+          "costUsd": 0.06663000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 3231,
+          "outputTokens": 905,
+          "reservedTokens": 9908,
+          "costUsd": 0.03878000000000001,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "d6bdd8fb287b1e5486929fc0d01b1bfc77b22f5b633865eb3a438a580fd8b0a5"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "d6bdd8fb287b1e5486929fc0d01b1bfc77b22f5b633865eb3a438a580fd8b0a5",
+          "specHash": "84cdaf0a3a3942b88d7e83282534be61c2b4bac433e0fec0be5e48b6e56f2a13",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1184
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "d6bdd8fb287b1e5486929fc0d01b1bfc77b22f5b633865eb3a438a580fd8b0a5",
+          "explanation": "Both screenshots are correct and legible. Screenshot 1 (n=7): readout 'Comparisons: 21' matches 7*6/2=21; the chart shows 6 passes (n-1) with block counts 6,5,4,3,2,1 summing to 21, correctly illustrating the decreasing per-pass comparisons (n-1 down to 1) that produce quadratic growth. Screenshot 2 (n=2): readout 'Comparisons: 1' matches 2*1/2=1, with one pass of one block. Axes are correctly labeled ('pass number' on y, 'comparisons in pass (count)' on x, 0-9), the formula text n(n-1)/2 and explanation are accurate, no units appear on the readout, and n values are within the 2-10 range. The triangular staircase visual correctly teaches why the sum grows quadratically."
+        }
+      ]
+    },
+    {
+      "run": "opus-v1",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 74243,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.24401,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1678,
+          "outputTokens": 827,
+          "reservedTokens": 6895,
+          "costUsd": 0.029065,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1705,
+          "outputTokens": 2655,
+          "reservedTokens": 10463,
+          "costUsd": 0.07490000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 3395,
+          "outputTokens": 355,
+          "reservedTokens": 10264,
+          "costUsd": 0.02585,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 4374,
+          "outputTokens": 2682,
+          "reservedTokens": 16670,
+          "costUsd": 0.08892,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 3395,
+          "outputTokens": 332,
+          "reservedTokens": 10264,
+          "costUsd": 0.025275,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "b38ce5efd4382acd9eeb7cfa43372f9cd09833c3cf5a980f08fb695fb492a9b9",
+        "b5522d07febed1e6467d282aa1771364e89419651383d9b98b61d35b54e9d26b"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "b38ce5efd4382acd9eeb7cfa43372f9cd09833c3cf5a980f08fb695fb492a9b9",
+          "specHash": "a221e0f74f6d7ac51193b1360b1dbdb25a424306c5eac13a467185e5f9f37076",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1208
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "b5522d07febed1e6467d282aa1771364e89419651383d9b98b61d35b54e9d26b",
+          "specHash": "a221e0f74f6d7ac51193b1360b1dbdb25a424306c5eac13a467185e5f9f37076",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1180
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "b38ce5efd4382acd9eeb7cfa43372f9cd09833c3cf5a980f08fb695fb492a9b9",
+          "explanation": "Both circuit diagrams show an open circuit at the battery. On the left side, the source symbol has a horizontal plate at the top (around y=270) and a separate plate at the bottom (around y=330) with the '5V'/'6V' label and a blue current arrow between them, but there is a visible GAP between the top wire endpoint coming down from the resistor and the top battery plate, and the two battery plates do not connect to each other as a closed conducting element\u2014the left vertical wire from the resistor terminates at the upper plate near y=270 while the lower plate near y=330 connects to the bottom wire. The blue arrow floating in that blank space between the plates is not a wire or component and does not close the circuit. The upper-left wire descending from the resistor stops at the isolated top plate, leaving a break in the conducting path. Because the path through source and resistor is not a continuous closed loop, the drawing must be rejected even though the numeric readouts (2.50 A for 5V/2\u03a9 and 2.00 A for 6V/3\u03a9) and labels are correct."
+        },
+        {
+          "passed": true,
+          "contentHash": "b5522d07febed1e6467d282aa1771364e89419651383d9b98b61d35b54e9d26b",
+          "explanation": "Screenshot 1: Voltage=5, Resistance=2, current readout '2.50 amperes' (units as adjacent label, correct two decimals). 5/2=2.50 matches. Circuit topology: left side battery (5V) with plates, top wire goes right through resistor (2\u03a9 box), continues to top-right corner, down the right side, along the bottom back to the battery bottom terminal \u2014 a complete closed conducting loop through source and resistor. No gaps observed on any side; the resistor occupies the top gap. Current arrows are consistent with flow direction. Screenshot 2: Voltage=6, Resistance=3, current '2.00 amperes', 6/3=2.00 matches. Same closed loop topology through 6V source and 3\u03a9 resistor, no open gaps. Labels legible (2\u03a9/3\u03a9, 5V/6V, I values). Both diagrams correctly teach Ohm's law with proper closed circuits and consistent numeric results."
+        }
+      ]
+    },
+    {
+      "run": "opus-v1",
+      "domain": "economics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 55491,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.165135,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1700,
+          "outputTokens": 889,
+          "reservedTokens": 6985,
+          "costUsd": 0.030725000000000002,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1741,
+          "outputTokens": 3398,
+          "reservedTokens": 10585,
+          "costUsd": 0.093655,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 3431,
+          "outputTokens": 944,
+          "reservedTokens": 10386,
+          "costUsd": 0.040755,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "ebdf8dbfd8f26545cd8276ce6789b4c89c2928e34ba0fc9e24f5d6addfd6633e"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "ebdf8dbfd8f26545cd8276ce6789b4c89c2928e34ba0fc9e24f5d6addfd6633e",
+          "specHash": "9d6cffd6819aaadb66359b2af08ea2c099a46ef5d2317965eff6a791ce2b05eb",
+          "approved": true,
+          "checksPassed": 9,
+          "reasons": [],
+          "elapsedMs": 1321
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "ebdf8dbfd8f26545cd8276ce6789b4c89c2928e34ba0fc9e24f5d6addfd6633e",
+          "explanation": "Both screenshots are correct and legible. Screenshot 1 (price 30, qty 5): profit=(30-10)*5-100=0, readout shows 'Profit: 0' with 'Break-even' status. Revenue line passes through origin and reaches 600 at q=20 (30*20), total-cost dashed line starts at 100 (fixed cost) and reaches 300 at q=20 (100+10*20); the two intersect at q=5, ~150 where the dot sits\u2014correct break-even. Screenshot 2 (price 20, qty 10): profit=(20-10)*10-100=0, 'Profit: 0' and 'Break-even'. Revenue line through origin to 400 at q=20 (20*20), total-cost from 100 to 300, intersecting at q=10, ~200 where the dot sits\u2014correct. Axes correctly labeled (x=Quantity 0-20, y=Dollars 0-600), units present, legends Revenue/Total cost correct, no clipping. Not a circuit, so topology checks are inapplicable. The visual mechanism accurately teaches the profit/break-even model."
+        }
+      ]
+    },
+    {
+      "run": "opus-v1",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly concerns weighing competing textual interpretations of whether a poetic speaker is sincere. The definition states there is no specified numeric relationship, fixed mechanical law, or objective numeric output, and that an invented sincerity slider would misrepresent the learning objective. Sincerity of a poetic speaker is a subjective, interpretive judgment grounded in textual evidence and reading, not a quantity that varies deterministically with numeric controls. Any numeric instrument here would fabricate a false proxy for interpretive understanding, violating the rule against inventing numeric proxies for subjective understanding. Therefore no honest numeric teaching instrument can be built.",
+      "elapsedMs": 3639,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.01387,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v6",
+          "inputTokens": 1624,
+          "outputTokens": 230,
+          "reservedTokens": 6728,
+          "costUsd": 0.01387,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "final",
+      "domain": "algorithms",
+      "status": "rejected",
+      "reason": "Independent verification rejected the candidate.",
+      "elapsedMs": 67225,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.19495,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1664,
+          "outputTokens": 513,
+          "reservedTokens": 6818,
+          "costUsd": 0.021145000000000004,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1541,
+          "outputTokens": 2921,
+          "reservedTokens": 10107,
+          "costUsd": 0.08073000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 4170,
+          "outputTokens": 2889,
+          "reservedTokens": 15309,
+          "costUsd": 0.09307499999999999,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "ea1c80647ada3f58cb5b59f138c5f2bc705985a4d98b738d25de73bc8f0a5ac9",
+        "42c2a8888cf022e778442c9a9e0de9b820ed31d602a65d7e474e44763ae71bfa"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "ea1c80647ada3f58cb5b59f138c5f2bc705985a4d98b738d25de73bc8f0a5ac9",
+          "specHash": "84cdaf0a3a3942b88d7e83282534be61c2b4bac433e0fec0be5e48b6e56f2a13",
+          "approved": false,
+          "checksPassed": 0,
+          "reasons": [
+            "JavaScript error: Cannot set properties of null (setting 'textContent')",
+            "Browser verification failed: TimeoutError. Page.wait_for_function: Timeout 2000ms exceeded."
+          ],
+          "elapsedMs": 2625
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "42c2a8888cf022e778442c9a9e0de9b820ed31d602a65d7e474e44763ae71bfa",
+          "specHash": "84cdaf0a3a3942b88d7e83282534be61c2b4bac433e0fec0be5e48b6e56f2a13",
+          "approved": false,
+          "checksPassed": 0,
+          "reasons": [
+            "JavaScript error: Cannot set properties of null (setting 'textContent')",
+            "Browser verification failed: TimeoutError. Page.wait_for_function: Timeout 2000ms exceeded."
+          ],
+          "elapsedMs": 2549
+        }
+      ],
+      "visualReviews": []
+    },
+    {
+      "run": "final",
+      "domain": "physics",
+      "status": "rejected",
+      "reason": "Factory token budget exhausted.",
+      "elapsedMs": 66720,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.218285,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1678,
+          "outputTokens": 863,
+          "reservedTokens": 6895,
+          "costUsd": 0.029965,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1744,
+          "outputTokens": 2415,
+          "reservedTokens": 10535,
+          "costUsd": 0.069095,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 5570,
+          "outputTokens": 474,
+          "reservedTokens": 15064,
+          "costUsd": 0.039700000000000006,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 4315,
+          "outputTokens": 2318,
+          "reservedTokens": 16549,
+          "costUsd": 0.079525,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "7ccb7f49de8f01b163495ffa0ea82348c46cdd2efa84c813826f88563b1cab00",
+        "500bb81e40b50473cd60f69d99644aa9f8f3b784363fab13760e721b85d27d0d"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "7ccb7f49de8f01b163495ffa0ea82348c46cdd2efa84c813826f88563b1cab00",
+          "specHash": "7dd5f7a3b7201e483ae8e8f1dd26c70f15a9644a0fdfe2c297deaa7802bc881f",
+          "approved": true,
+          "checksPassed": 9,
+          "reasons": [],
+          "elapsedMs": 1306
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "500bb81e40b50473cd60f69d99644aa9f8f3b784363fab13760e721b85d27d0d",
+          "specHash": "7dd5f7a3b7201e483ae8e8f1dd26c70f15a9644a0fdfe2c297deaa7802bc881f",
+          "approved": true,
+          "checksPassed": 9,
+          "reasons": [],
+          "elapsedMs": 1255
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "7ccb7f49de8f01b163495ffa0ea82348c46cdd2efa84c813826f88563b1cab00",
+          "explanation": "The circuit topology is broken at the battery/source location. The main loop rectangle spans x=60..300, y=40..240, but the left side of the loop at x=60 does not connect to the battery symbol. The battery (V) is drawn as two vertical plates at x=50 and x=70 near y=120-160, sitting OUTSIDE and to the left of the loop's left wire (x=60). The left wire of the rectangle at x=60 runs vertically as a continuous line and does NOT break to insert the battery in series; the battery plates float beside the wire rather than being wired into the conducting path. Tracing the loop: top wire, right wire, bottom wire, and left wire form a closed rectangle of plain wire with no source in the path, while the battery symbol is a detached element to the left with no connecting leads joining its two terminals to the rectangle. This leaves the source not in the circuit (open/disconnected source), which teaches a wrong model. Additionally, the current-direction arrows are inconsistent: a1 (top) points right, a2 (right side) points down, a3 (bottom) points left, a4/lower-left arrows point up, which is a consistent clockwise loop, but the extra floating arrow near the battery does not close anything. Because the source is not conductively inserted into the loop, the diagram must be rejected despite correct numeric readouts (7/4=1.75 and 6/3=2.00 are correct)."
+        }
+      ]
+    },
+    {
+      "run": "final",
+      "domain": "economics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 49398,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.16354,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1700,
+          "outputTokens": 814,
+          "reservedTokens": 6985,
+          "costUsd": 0.02885,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1705,
+          "outputTokens": 3375,
+          "reservedTokens": 10520,
+          "costUsd": 0.09290000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 6378,
+          "outputTokens": 396,
+          "reservedTokens": 16360,
+          "costUsd": 0.04179,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "9a72b0bd31337c8b7261fcbcc68bb7f2f0493169bb49a0ddaa7de92934ba516b"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "9a72b0bd31337c8b7261fcbcc68bb7f2f0493169bb49a0ddaa7de92934ba516b",
+          "specHash": "14dfc27635edd982868358bcef3ce3f77e192f9aefd7e7edadf67b6ebb926037",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1209
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "9a72b0bd31337c8b7261fcbcc68bb7f2f0493169bb49a0ddaa7de92934ba516b",
+          "explanation": "Screenshot 1: price=$20, quantity=20 units, profit=$100 (status 'Profit'), which matches (20-10)*20-100=100 and the spec case. Chart shows revenue line (blue) rising from (0,0) to (20,400)=20*20, and total cost line (red) from (0,100) to (20,300)=100+10*20. Marker dashes at q=20 with blue point at 400 and red point at 300; the gap (revenue above cost) correctly represents the $100 profit. Axes labeled 'Quantity (units)' 0-20 and 'Money ($)' 0-600, correctly oriented. Lines cross at q=10, revenue=cost=200, the break-even point. Screenshot 2: price=$20, quantity=10, profit=$0 (status 'Break-even'), matching spec. Marker at q=10 sits exactly where blue and red lines intersect at $200, correctly teaching break-even. Both readouts, units labels, axes, limits, plotted positions and revenue-vs-cost relationship are legible and correct. This is a plotted-relationship visualization, not a circuit, so topology checks are N/A."
+        }
+      ]
+    },
+    {
+      "run": "final",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly concerns weighing competing textual interpretations of whether a poetic speaker is sincere. This is a subjective, interpretive literary task with no specified numeric relationship, no fixed mechanical law, and no objective numeric output. The definition itself warns that an invented sincerity slider would misrepresent the learning objective. Any numeric control (e.g., a 'sincerity' or 'evidence strength' slider) would be a fabricated proxy for interpretive judgment, violating the rule against inventing numeric proxies for subjective understanding. No honest step-aligned numeric parameters can be derived from the provided context, so no simulatable relationship exists. Returning spec:null.",
+      "elapsedMs": 3771,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.013995,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v7",
+          "inputTokens": 1624,
+          "outputTokens": 235,
+          "reservedTokens": 6728,
+          "costUsd": 0.013995,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v8",
+      "domain": "algorithms",
+      "status": "rejected",
+      "reason": "Invalid independent teaching specification.",
+      "elapsedMs": 6390,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.01962,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1664,
+          "outputTokens": 452,
+          "reservedTokens": 6818,
+          "costUsd": 0.019620000000000002,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v8",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 51009,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.15406,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1678,
+          "outputTokens": 730,
+          "reservedTokens": 6895,
+          "costUsd": 0.026640000000000004,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1816,
+          "outputTokens": 2519,
+          "reservedTokens": 10767,
+          "costUsd": 0.07205500000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 5673,
+          "outputTokens": 1080,
+          "reservedTokens": 15374,
+          "costUsd": 0.055365,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "702515d67bc1f954880493c6892cb5c88e5eee0a9df2bccca8d1c5813b0873d9"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "702515d67bc1f954880493c6892cb5c88e5eee0a9df2bccca8d1c5813b0873d9",
+          "specHash": "879bd1850094d00f4e0f816de2d3c8cd4d5449ba06472986e84c0840c91f6e8e",
+          "approved": true,
+          "checksPassed": 9,
+          "reasons": [],
+          "elapsedMs": 1294
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "702515d67bc1f954880493c6892cb5c88e5eee0a9df2bccca8d1c5813b0873d9",
+          "explanation": "Both screenshots are consistent with Ohm's law and the spec. Screenshot 1: V=1, R=3 gives I=0.33A (1/3=0.333\u21920.33), tiny current bar near 0, label 'I = 0.33 A' matches. Screenshot 2: V=6, R=3 gives I=2.00A (6/3=2), taller bar (~2/12 of axis), label 'I = 2.00 A' matches. The bar chart axis is correctly labeled Current (A) from 0 to 12 with bar height proportional to current. Circuit topology: the outer rectangle (60,60\u2013400,260) forms a closed conducting loop with the Resistor (blue box) on the top edge and the Battery symbol on the left edge; the rectangle stroke provides a continuous conducting path through all four sides\u2014no open gap exists, so nonzero current is valid. Units (V, \u03a9, A) appear as labels outside the readouts. Nothing is clipped or unreadable. The two states correctly demonstrate voltage's effect on current at fixed resistance."
+        }
+      ],
+      "manualAcceptance": "Rejected: contradictory current arrows and bar scale mismatch."
+    },
+    {
+      "run": "v8",
+      "domain": "economics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 50704,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.17145,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1700,
+          "outputTokens": 574,
+          "reservedTokens": 6985,
+          "costUsd": 0.022850000000000002,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1777,
+          "outputTokens": 3754,
+          "reservedTokens": 10751,
+          "costUsd": 0.102735,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 6733,
+          "outputTokens": 488,
+          "reservedTokens": 17148,
+          "costUsd": 0.045865,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "291670b87212c8d530cbd65a7c5c6223084eb21c02649ffd5c38b9993cdcc137"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "291670b87212c8d530cbd65a7c5c6223084eb21c02649ffd5c38b9993cdcc137",
+          "specHash": "50e622f3cadde4824ccc234aa014ee4f15cec03ec09d051fc5217a7e22d67ecf",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1213
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "291670b87212c8d530cbd65a7c5c6223084eb21c02649ffd5c38b9993cdcc137",
+          "explanation": "Both screenshots render correctly against the definition and spec. Axes: x-axis labeled 'Quantity (units)' 0\u201320 with ticks at 0,5,10,15,20; y-axis labeled 'Amount (units of currency)' 0\u2013600 with ticks every 100. Revenue line (blue) starts at (0,0) and rises to (20,400) at price 20 \u2014 slope 20/unit, correct. Total cost line (gray) starts at (0,100)=fixed cost and rises to (20,300)=100+10*20, correct slope of 10/unit. Lines intersect at (10,200), the break-even point, consistent with the model. Screenshot 1: price 20, quantity 0 \u2192 Revenue 0, Total cost 100, Profit -100, status 'Loss'; the gray marker sits at (0,100) and blue at (0,0), matching. This equals spec case {price20,qty0}=-100. Screenshot 2: price 20, quantity 10 \u2192 Revenue 200, Total cost 200, Profit 0, status 'Break-even'; dashed line at q=10 with both markers coinciding at (10,200), matching spec case {price20,qty10}=0. No clipped or unreadable text, no reversed axes, limits consistent with relationships, labels legible. This is a chart, not a circuit, so no topology/open-circuit concerns apply. The visual mechanism correctly teaches loss, break-even, and profit."
+        }
+      ],
+      "manualAcceptance": "Rejected: axis labels are clipped in the second state."
+    },
+    {
+      "run": "v8",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept explicitly concerns weighing competing textual interpretations of a poetic speaker's sincerity, which is subjective, interpretive, and literary. The definition itself states there is no specified numeric relationship, fixed mechanical law, or objective numeric output, and warns that an invented sincerity slider would misrepresent the learning objective. Sincerity, textual interpretation, and comparative literary judgment cannot be honestly reduced to bounded numeric controls producing deterministic numeric outputs. Any parameterization would fabricate a numeric proxy for subjective understanding, which is disallowed. Therefore no honest numeric teaching instrument can be constructed.",
+      "elapsedMs": 3505,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.01397,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1624,
+          "outputTokens": 234,
+          "reservedTokens": 6728,
+          "costUsd": 0.01397,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v8-algorithms",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 41451,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.132955,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1664,
+          "outputTokens": 504,
+          "reservedTokens": 6818,
+          "costUsd": 0.02092,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 1613,
+          "outputTokens": 2705,
+          "reservedTokens": 10339,
+          "costUsd": 0.07569000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v8",
+          "inputTokens": 5709,
+          "outputTokens": 312,
+          "reservedTokens": 14937,
+          "costUsd": 0.036345,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "af66d8cd4bcf18b3f3e3011fdd17910662f70886d794c9c20d8f462001bc62c1"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "af66d8cd4bcf18b3f3e3011fdd17910662f70886d794c9c20d8f462001bc62c1",
+          "specHash": "84cdaf0a3a3942b88d7e83282534be61c2b4bac433e0fec0be5e48b6e56f2a13",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 1140
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "af66d8cd4bcf18b3f3e3011fdd17910662f70886d794c9c20d8f462001bc62c1",
+          "explanation": "Screenshot 1 (n=7): readout 'Worst-case comparisons 21' matches 7*6/2=21. Bar chart shows 6 bars at heights 6,5,4,3,2,1 (passes 1-6), summing to 21, with total=21 annotation. Axes correctly labeled: x='pass number', y='comparisons in pass', both starting at appropriate origins with legible ticks 0-9. The decreasing bar staircase visually teaches the sum (n-1)+(n-2)+...+1, correctly illustrating quadratic growth. Screenshot 2 (n=2): readout '1' matches 2*1/2=1, single bar of height 1 at pass 1, total=1. No units in readouts. n control labeled 'Number of elements (n)' range 2-10. All labels legible, no clipping, axes not reversed, and the visual mechanism correctly represents the model."
+        }
+      ]
+    },
+    {
+      "run": "v9",
+      "domain": "physics",
+      "status": "rejected",
+      "reason": "Numeric readouts and bar heights are correct and to scale (12A full-scale axis; 2.00A bar reaches the '2' tick, 1.17A just above zero). However the flow arrows contradict on one series path: top edge points right and bottom edge points left (clockwise), yet the left-side (battery) arrow points DOWNWARD instead of upward, breaking consistent circulation around the single loop. Contradictory current directions teach a wrong model. Fix the left branch arrow to point up (completing a consistent clockwise loop).",
+      "elapsedMs": 89078,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.298825,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v9",
+          "inputTokens": 1678,
+          "outputTokens": 936,
+          "reservedTokens": 6895,
+          "costUsd": 0.03179,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v9",
+          "inputTokens": 1865,
+          "outputTokens": 2758,
+          "reservedTokens": 10930,
+          "costUsd": 0.078275,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v9",
+          "inputTokens": 6016,
+          "outputTokens": 781,
+          "reservedTokens": 16036,
+          "costUsd": 0.049605,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v9",
+          "inputTokens": 4427,
+          "outputTokens": 2802,
+          "reservedTokens": 16546,
+          "costUsd": 0.092185,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v9",
+          "inputTokens": 6054,
+          "outputTokens": 668,
+          "reservedTokens": 16148,
+          "costUsd": 0.04697,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "010002b0d89483653fd196e3ecc98a6362626c496fe8e239583978416928a99c",
+        "d06e5b90562e582fef7e2a5c1aade7f6e060ca5eee94503771657cf0e80c4fc0"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "010002b0d89483653fd196e3ecc98a6362626c496fe8e239583978416928a99c",
+          "specHash": "d7268567ad151f6358500f969f6562b6fd9d47dec5097f377cdbb4102c76878b",
+          "approved": true,
+          "checksPassed": 9,
+          "reasons": [],
+          "elapsedMs": 1297
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "d06e5b90562e582fef7e2a5c1aade7f6e060ca5eee94503771657cf0e80c4fc0",
+          "specHash": "d7268567ad151f6358500f969f6562b6fd9d47dec5097f377cdbb4102c76878b",
+          "approved": true,
+          "checksPassed": 9,
+          "reasons": [],
+          "elapsedMs": 1275
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "010002b0d89483653fd196e3ecc98a6362626c496fe8e239583978416928a99c",
+          "explanation": "The circuit's flow arrows are contradictory around the series loop. Top arrow points right and bottom arrow points left (consistent clockwise), but the right-side arrow points up and the left-side arrow points down (counterclockwise). A single series current cannot flow both clockwise and counterclockwise; the vertical arrows contradict the horizontal ones, teaching an inconsistent current direction. Numeric readouts (2.00, 1.17) and bar scaling are correct, but contradictory arrow directions on one series path fail the diagram."
+        },
+        {
+          "passed": false,
+          "contentHash": "d06e5b90562e582fef7e2a5c1aade7f6e060ca5eee94503771657cf0e80c4fc0",
+          "explanation": "Numeric readouts and bar heights are correct and to scale (12A full-scale axis; 2.00A bar reaches the '2' tick, 1.17A just above zero). However the flow arrows contradict on one series path: top edge points right and bottom edge points left (clockwise), yet the left-side (battery) arrow points DOWNWARD instead of upward, breaking consistent circulation around the single loop. Contradictory current directions teach a wrong model. Fix the left branch arrow to point up (completing a consistent clockwise loop)."
+        }
+      ]
+    },
+    {
+      "run": "v10",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 47421,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.153915,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v10",
+          "inputTokens": 1678,
+          "outputTokens": 836,
+          "reservedTokens": 6895,
+          "costUsd": 0.029290000000000004,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v10",
+          "inputTokens": 1856,
+          "outputTokens": 3109,
+          "reservedTokens": 10924,
+          "costUsd": 0.087005,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v10",
+          "inputTokens": 6269,
+          "outputTokens": 251,
+          "reservedTokens": 16509,
+          "costUsd": 0.03762000000000001,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "fcf7c69300fbff81947cf163ec65aec1dd87f09371096c520a2135487344ac65"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v1",
+          "contentHash": "fcf7c69300fbff81947cf163ec65aec1dd87f09371096c520a2135487344ac65",
+          "specHash": "a221e0f74f6d7ac51193b1360b1dbdb25a424306c5eac13a467185e5f9f37076",
+          "approved": true,
+          "checksPassed": 8,
+          "reasons": [],
+          "elapsedMs": 1384
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "fcf7c69300fbff81947cf163ec65aec1dd87f09371096c520a2135487344ac65",
+          "explanation": "Screenshot 1: V=5, R=2, current 2.50 A matches Ohm's law; screenshot 2: V=6, R=3, current 2.00 A matches. Circuit forms a closed loop: battery left, top wire through resistor R, right and bottom wires complete the path with no gaps. Current arrow on bottom wire is consistent. Graph axes labeled Voltage (V) 0-12 and Current (A) 0-12; plotted point recomputes correctly (e.g., V=6,I=2 lands near 1/6 height ~4px scale). Slope steeper for R=2 than R=3, correctly showing higher current. Readouts two decimals, units outside. Teaching is correct and legible."
+        }
+      ],
+      "manualAcceptance": "Rejected: source symbol is not connected in series."
+    },
+    {
+      "run": "v11",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 49775,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.15919,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1823,
+          "outputTokens": 824,
+          "reservedTokens": 7277,
+          "costUsd": 0.029715000000000002,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1960,
+          "outputTokens": 2913,
+          "reservedTokens": 11226,
+          "costUsd": 0.082625,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 8075,
+          "outputTokens": 259,
+          "reservedTokens": 19863,
+          "costUsd": 0.04685,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "96d4af94193436e6dff3356e7bf7877802c344f62945aff47454f25f19e2eeef"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "96d4af94193436e6dff3356e7bf7877802c344f62945aff47454f25f19e2eeef",
+          "specHash": "56bd9ef04a896a77f38556d584e731e9f785eeb631fe3314574767c4bdda1927",
+          "approved": true,
+          "checksPassed": 15,
+          "reasons": [],
+          "elapsedMs": 4731
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "96d4af94193436e6dff3356e7bf7877802c344f62945aff47454f25f19e2eeef",
+          "explanation": "Circuit topology closed in both shots: source\u2192top wire\u2192resistor\u2192right/bottom wires back to negative electrode, no gaps. Screenshot1: V=7,R=2\u2192I=3.50A; battery 7V, resistor 2\u03a9, marker at (7,3.5) matches curve slope 1/2, dashed guides correct. Screenshot2: V=6,R=3\u2192I=2.00A; marker at (6,2) matches. Axes labeled Voltage 0\u201312 and Current 0\u201312 amperes, correct orientation and scale; recomputed marker x at 6\u2192 pixel ~843, matches tick 6. Current arrow points along path (downward on right). Labels legible, two-decimal readout, units outside. Teaching correct."
+        }
+      ],
+      "manualAcceptance": "Rejected: voltage label overlaps the source wire."
+    },
+    {
+      "run": "v11-final",
+      "domain": "physics",
+      "status": "rejected",
+      "reason": "Model returned an invalid simulator bundle.",
+      "elapsedMs": 90856,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.30116,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1823,
+          "outputTokens": 851,
+          "reservedTokens": 7277,
+          "costUsd": 0.030390000000000004,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1960,
+          "outputTokens": 2800,
+          "reservedTokens": 11225,
+          "costUsd": 0.07980000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 7962,
+          "outputTokens": 294,
+          "reservedTokens": 19551,
+          "costUsd": 0.04716000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 6222,
+          "outputTokens": 4508,
+          "reservedTokens": 20582,
+          "costUsd": 0.14381000000000002,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "99d7aa10d555b865758ba7f7c8522945c978b10b90d85f4f71aeb219db75ca54"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "99d7aa10d555b865758ba7f7c8522945c978b10b90d85f4f71aeb219db75ca54",
+          "specHash": "e4057b6b6823529ce564be0603e0825e322b2cd160dd8cabc973d07ca78d31c6",
+          "approved": true,
+          "checksPassed": 15,
+          "reasons": [],
+          "elapsedMs": 5955
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "99d7aa10d555b865758ba7f7c8522945c978b10b90d85f4f71aeb219db75ca54",
+          "explanation": "Screenshot 1 shows an inconsistent state: circuit labels read 12 V and 6 \u03a9, sliders read 12 V and 6 \u03a9, which gives I=2.00 A correctly, and the plot dot sits at (12,2). That case is fine. But Screenshot 2 shows 6 V, 3 \u03a9, dot at (6,2), I=2.00 A\u2014correct too. However the two circuit diagrams both display 'I = 2.00 A' while showing different V/R, which is coincidentally valid (12/6=2, 6/3=2). No topology gap: closed loop through source and resistor, single consistent arrow. Recheck reveals the plotted lines match slope 1/R. Actually all consistent\u2014no defect. Reversing: legible and correct. Overriding: PASS criteria met, but flag none. Correction: none needed."
+        }
+      ]
+    },
+    {
+      "run": "v11-other",
+      "domain": "algorithms",
+      "status": "unsuitable",
+      "reason": "The supplied concept is bubble sort's worst-case comparison count, n*(n-1)/2, which is not an ideal single-resistor I=V/R circuit. The only available renderer, series-resistor-v1, models Ohm's law with voltage and resistance controls producing current in amperes; it cannot honestly represent a sorting-algorithm cost function or its quadratic comparison growth. Since the concept does not match the supported circuit topology (and no algorithm-cost renderer is available), the correct action is to return spec:null rather than force an unrelated numeric mapping.",
+      "elapsedMs": 4677,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.014245,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1809,
+          "outputTokens": 208,
+          "reservedTokens": 7200,
+          "costUsd": 0.014245,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v11-other",
+      "domain": "economics",
+      "status": "unsuitable",
+      "reason": "The only supported renderer is series-resistor-v1, which models an ideal single-resistor circuit computing current I=V/R from voltage and resistance controls. The supplied concept is a business contribution-margin and break-even model (Profit = (price - 10)*quantity - 100), a different topology with different controls (price, quantity) and a profit output. This is not an I=V/R circuit, so it cannot be honestly rendered by series-resistor-v1, and no other renderer is available. Per instructions, unsupported topologies return spec:null.",
+      "elapsedMs": 4425,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.0141,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1845,
+          "outputTokens": 195,
+          "reservedTokens": 7367,
+          "costUsd": 0.014100000000000001,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v11-other",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The teaching context concerns weighing competing textual interpretations of whether a poetic speaker is sincere. This is a subjective, interpretive literary task with no numeric relationship, mechanical law, or objective numeric output, as the definition itself states. The series-resistor renderer models the ideal Ohm's law relationship I=V/R and is only appropriate for a single-resistor circuit topology; it has no bearing on poetic interpretation. Fabricating a 'sincerity slider' or any numeric proxy would misrepresent the learning objective and dishonestly quantify a matter that requires evidence-based literary argument. Per the constraint against inventing numeric proxies for subjective understanding, spec is null.",
+      "elapsedMs": 5131,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.015145,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1769,
+          "outputTokens": 252,
+          "reservedTokens": 7110,
+          "costUsd": 0.015145,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v12",
+      "domain": "algorithms",
+      "status": "rejected",
+      "reason": "Invalid independent teaching specification.",
+      "elapsedMs": 7518,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.02309,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1893,
+          "outputTokens": 545,
+          "reservedTokens": 7427,
+          "costUsd": 0.02309,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v12",
+      "domain": "physics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 48119,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.162875,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1907,
+          "outputTokens": 815,
+          "reservedTokens": 7504,
+          "costUsd": 0.02991,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1960,
+          "outputTokens": 3097,
+          "reservedTokens": 11226,
+          "costUsd": 0.08722500000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 7833,
+          "outputTokens": 263,
+          "reservedTokens": 19932,
+          "costUsd": 0.04574,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "e82f3f0d1b0aefe4d37680066b8c7ebe3ac155300ba62c07c63e8d3ae13def5e"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "e82f3f0d1b0aefe4d37680066b8c7ebe3ac155300ba62c07c63e8d3ae13def5e",
+          "specHash": "ec3ad8309028a1f5861cf34587073e96c6a9a68d3878506dd0b048c47ee2ab6b",
+          "approved": true,
+          "checksPassed": 15,
+          "reasons": [],
+          "elapsedMs": 4874
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "e82f3f0d1b0aefe4d37680066b8c7ebe3ac155300ba62c07c63e8d3ae13def5e",
+          "explanation": "Screenshot 1 (V=12,R=1): line reaches I=12 at V=12, dot at (12,12), readout 12.00 A, circuit shows 1\u03a9/12V, I=12.00 A. Screenshot 2 (V=6,R=3): line slope 1/3 reaching 4 at V=12, dot at (6,2), readout 2.00 A, circuit 3\u03a9/6V, I=2.00 A. Axes correctly labeled Voltage(V) 0\u201312 and Current(A) 0\u201312, matching scale. Circuit topology forms a closed loop: source, wires, resistor, back to source; current arrow present with nonzero current, no gaps. Units outside readout. All values match Ohm's law. Correct teaching."
+        }
+      ]
+    },
+    {
+      "run": "v12",
+      "domain": "economics",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 52975,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.169355,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1929,
+          "outputTokens": 736,
+          "reservedTokens": 7594,
+          "costUsd": 0.028045,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1821,
+          "outputTokens": 3602,
+          "reservedTokens": 10912,
+          "costUsd": 0.09915500000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 7221,
+          "outputTokens": 242,
+          "reservedTokens": 17307,
+          "costUsd": 0.042155000000000005,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "e03a1bce15b748115e553157d75a4205592edd60fb2b29f52516f201aff6149a"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "e03a1bce15b748115e553157d75a4205592edd60fb2b29f52516f201aff6149a",
+          "specHash": "43379dacc2439e5e9df79b6d3a1c6825176427dd080f9860ca6cf0107af3b109",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 4418
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "e03a1bce15b748115e553157d75a4205592edd60fb2b29f52516f201aff6149a",
+          "explanation": "Both screenshots correct. Screenshot 1 (price 25, qty 10): revenue line reaches 500 at q=20 (25\u00d720), passes through 250 at q=10; total cost from 100 to 300 (100+10q), point at 200 at q=10; profit 50 (profit), matching revenue>cost. Screenshot 2 (price 20, qty 10): revenue reaches 400 at q=20, crosses cost exactly at q=10 (200=200), profit 0 (break-even). Axes labeled Quantity 0-20 and Amount 0-600, scales consistent; lines, markers, and dashed guide align with values. No gaps, no reversed axes, legends legible."
+        }
+      ]
+    },
+    {
+      "run": "v12",
+      "domain": "unsuitable",
+      "status": "unsuitable",
+      "reason": "The concept concerns weighing competing textual interpretations of whether a poetic speaker is sincere. This is a subjective, interpretive literary task with no specified numeric relationship, mechanical law, or objective numeric output. Per the definition, an invented sincerity slider would misrepresent the learning objective. Comparing interpretations via textual evidence is inherently qualitative and cannot be honestly reduced to bounded numeric controls producing deterministic numeric outputs. Fabricating a numeric proxy for sincerity or interpretive strength is exactly the kind of invented measure that must be avoided. Therefore no honest simulation is possible and spec is null.",
+      "elapsedMs": 4445,
+      "generationAttempts": 0,
+      "knownCostUsd": 0.01519,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1853,
+          "outputTokens": 237,
+          "reservedTokens": 7337,
+          "costUsd": 0.015190000000000002,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [],
+      "reports": [],
+      "visualReviews": []
+    },
+    {
+      "run": "v12-algorithms",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 86583,
+      "generationAttempts": 2,
+      "knownCostUsd": 0.275125,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1893,
+          "outputTokens": 612,
+          "reservedTokens": 7427,
+          "costUsd": 0.024765000000000002,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1692,
+          "outputTokens": 2701,
+          "reservedTokens": 10568,
+          "costUsd": 0.075985,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 5921,
+          "outputTokens": 170,
+          "reservedTokens": 15487,
+          "costUsd": 0.033855,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 4324,
+          "outputTokens": 2920,
+          "reservedTokens": 15907,
+          "costUsd": 0.09462000000000001,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 6055,
+          "outputTokens": 625,
+          "reservedTokens": 15665,
+          "costUsd": 0.0459,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "0a5467ab956f215257df44d1438dc04c2391b99b2e27d9b52bb3a16780708667",
+        "c9c78b8d4408d3a544c2225cc7712e9e6bbb3cc3f8f488b6bd06e17b42b1b2a8"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "0a5467ab956f215257df44d1438dc04c2391b99b2e27d9b52bb3a16780708667",
+          "specHash": "84cdaf0a3a3942b88d7e83282534be61c2b4bac433e0fec0be5e48b6e56f2a13",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 4195
+        },
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "c9c78b8d4408d3a544c2225cc7712e9e6bbb3cc3f8f488b6bd06e17b42b1b2a8",
+          "specHash": "84cdaf0a3a3942b88d7e83282534be61c2b4bac433e0fec0be5e48b6e56f2a13",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 4255
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": false,
+          "contentHash": "0a5467ab956f215257df44d1438dc04c2391b99b2e27d9b52bb3a16780708667",
+          "explanation": "The SVG chart panel (right) renders empty in both screenshots\u2014no axes, bars, curve, or labels are visible, only a blank narrow panel. The specification requires a useful visual of passes or comparison growth to show quadratic scaling. Numeric readouts and formula text are correct (n=7\u219221, n=2\u21921), but the required diagram teaching quadratic growth is completely absent/clipped to an unreadable sliver. Fail because the visual mechanism is missing."
+        },
+        {
+          "passed": true,
+          "contentHash": "c9c78b8d4408d3a544c2225cc7712e9e6bbb3cc3f8f488b6bd06e17b42b1b2a8",
+          "explanation": "Axes correct: x=n(2\u201310), y=comparisons(0\u201345), no unit misuse. Readouts match cases (n=7\u219221, n=2\u21921). Recomputed bar tops from transform (B=380,T=44,ymax=45): n=6 bar top\u2248268px=y15 \u2713, n=7\u2248223px just above y20 (=21) \u2713, n=2 bar\u22487px=1 \u2713. Blue curve/point lie on n(n\u22121)/2, reaching 45 at n=10, showing quadratic growth. Formula and passes text legible. Correct teaching."
+        }
+      ],
+      "manualAcceptance": "Rejected: ellipsis duplicates or implies nonexistent pass terms at small n."
+    },
+    {
+      "run": "v13-algorithms",
+      "domain": "algorithms",
+      "status": "approved",
+      "reason": null,
+      "elapsedMs": 43767,
+      "generationAttempts": 1,
+      "knownCostUsd": 0.137395,
+      "callsWithUnknownCost": 0,
+      "calls": [
+        {
+          "stage": "plan",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1893,
+          "outputTokens": 511,
+          "reservedTokens": 7427,
+          "costUsd": 0.022240000000000003,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "generate",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 1745,
+          "outputTokens": 2837,
+          "reservedTokens": 10727,
+          "costUsd": 0.07965,
+          "outcome": "succeeded"
+        },
+        {
+          "stage": "review",
+          "model": "claude-opus-4-8",
+          "promptVersion": "sim-factory-v11",
+          "inputTokens": 5986,
+          "outputTokens": 223,
+          "reservedTokens": 15445,
+          "costUsd": 0.035505,
+          "outcome": "succeeded"
+        }
+      ],
+      "candidateHashes": [
+        "acdfe529d860063fd8bef7a50dfe5604a7277f2cfe566ad4d132dd2307bf25c0"
+      ],
+      "reports": [
+        {
+          "version": 1,
+          "verifierVersion": "chromium-contract-v2",
+          "contentHash": "acdfe529d860063fd8bef7a50dfe5604a7277f2cfe566ad4d132dd2307bf25c0",
+          "specHash": "273547d289cbc485e112035cbcbd0ad4d2403f5cb6908d9f8d4833b4f450922d",
+          "approved": true,
+          "checksPassed": 7,
+          "reasons": [],
+          "elapsedMs": 4183
+        }
+      ],
+      "visualReviews": [
+        {
+          "passed": true,
+          "contentHash": "acdfe529d860063fd8bef7a50dfe5604a7277f2cfe566ad4d132dd2307bf25c0",
+          "explanation": "Both screenshots match the definition. n=7 shows Comparisons: 21 with Passes: 6+5+4+3+2+1=21; n=2 shows Comparisons: 1 with Passes: 1=1. The quadratic growth curve is correctly plotted: points at n=2(1),4(6),5(10),6(15),7(21),10(45) align with the 0\u201345 axis. Axes labeled n(elements) horizontal, comparisons vertical. Highlighted point and dashed guides correctly locate n=7,y=21. No units on readout. Visual teaching of quadratic growth via pass sums is correct and legible."
+        }
+      ]
+    }
+  ]
+}

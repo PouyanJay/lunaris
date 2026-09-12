@@ -1,0 +1,356 @@
+{
+  "scope": "Completed standalone critic and tutor calls only. Connection failures with no response are not assigned zero cost. Factory calls are separately accounted in development-runs.json.",
+  "runs": [
+    {
+      "run": "lunaris-p3-visual-regressions-final",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": {
+        "passed": false,
+        "explanation": "Circuit topology is broken on the right side. The battery's top-right and bottom-right wires stop short (drawn only to cy\u00b150), leaving a large blank gap where the right vertical wire should connect top to bottom. A floating current arrow (\u25bc) sits in that gap but is not a conductor, so the loop is an accidental OPEN CIRCUIT while both screens still show nonzero current (4.50 A, 2.00 A). Also, the three current arrows are inconsistent: top\u2192right, right\u2192down, bottom\u2192left do not form a consistent single loop given the open segment. Numeric readouts and graph (correct point at 9V/4.50A, 6V/2.00A) are fine, but the wrong circuit teaches an incorrect model."
+      },
+      "costUsd": 0.050565000000000006,
+      "inputTokens": 8838,
+      "outputTokens": 255,
+      "elapsedMs": 7565
+    },
+    {
+      "run": "lunaris-p3-visual-regression-opus",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": {
+        "passed": true,
+        "explanation": "Both screenshots correctly teach Ohm's law. Screenshot 1: V=9, R=2 gives I=4.50 A (readout shows 4.50 with 'A' as adjacent unit label, not inside), matching case {9,2}=4.50. Circuit forms closed conducting path: battery (+9V) at left, resistor (2\u03a9) at top, wires connecting all four sides with current arrow I=4.50 A indicating flow direction. Graph titled 'I vs V (R=2\u03a9)' with correct axes (Voltage V horizontal 0-12, Current A vertical 0-6), line slope 1/2 passes through origin, plotted point at (9,4.5) with correct guide lines. Screenshot 2: V=6, R=3 gives I=2.00 A, matching case {6,3}=2.00. Circuit closed with 6V source and 3\u03a9 resistor, current arrow labeled I=2.00 A. Graph 'I vs V (R=3\u03a9)' has slope 1/3, point at (6,2) correct. Axes, limits, slopes, signs, topology and units all consistent and legible."
+      },
+      "costUsd": 0.025875000000000002,
+      "inputTokens": 3245,
+      "outputTokens": 386,
+      "elapsedMs": 6621
+    },
+    {
+      "run": "lunaris-p3-visual-regressions-final-v2",
+      "case": "test_visual_review_rejects_cor1",
+      "verdict": {
+        "passed": false,
+        "explanation": "Bar chart scale is wrong: the current axis spans 120px (y=250 '0' to y=130 '12'), but the bar transform uses h=i/12*100, giving only 100px for full-scale 12A. A 12A bar would reach y=150, 20px short of the '12' gridline, so every bar is compressed ~17% relative to its own axis, teaching incorrect readings. Circuit topology and numeric readouts (0.33A, 2.00A) are correct, but the mismatched bar/axis scale fails the require-exact-same-scale rule."
+      },
+      "rawResponse": "I'll analyze the circuit topology, bar chart scaling, and numeric consistency.\n\n**Topology check:** The circuit is a closed rectangle (60,60 to 400,260). Battery symbol sits on the left wire, resistor on top. The wire forms a continuous loop. Current arrows: resistor arrow points right (top), right-side arrow (a2) points up. Tracing: top goes right, right side goes up \u2014 these are consistent around the loop. No visible gaps in the rectangle path; battery and resistor sit on the wire. Closed conducting path exists.\n\n**Bar chart scaling:** Axis from y=250 (0) to y=130 (top, labeled 12). Axis pixel length = 120px for full-scale 12A. Bar transform: h = i/12*100, y=250-h. For i=2.00: h=16.67px. But full-scale (12A) would give h=100px on a 120px axis. **This is the flagged defect**: 120-pixel axis with 100-pixel full-scale bar. At 12A the bar reaches y=150, but the \"12\" label is at y=130. The bar maxes at 100px while the axis spans 120px \u2014 bar undershoots the axis top by 20px, teaching wrong values.\n\n**Verification:** Screenshot 1 (1V/3\u03a9=0.33A): h=0.33/12*100=2.75px, tiny sliver \u2014 visible. Screenshot 2 (6V/3\u03a9=2.00A): h=16.67px \u2014 matches. Numbers correct, but scale mismatch is decisive.\n\n{\"passed\":false,\"explanation\":\"Bar chart scale is wrong: the current axis spans 120px (y=250 '0' to y=130 '12'), but the bar transform uses h=i/12*100, giving only 100px for full-scale 12A. A 12A bar would reach y=150, 20px short of the '12' gridline, so every bar is compressed ~17% relative to its own axis, teaching incorrect readings. Circuit topology and numeric readouts (0.33A, 2.00A) are correct, but the mismatched bar/axis scale fails the require-exact-same-scale rule.\"}",
+      "costUsd": 0.046635,
+      "inputTokens": 5802,
+      "outputTokens": 705,
+      "elapsedMs": 10867
+    },
+    {
+      "run": "lunaris-p3-visual-regressions-final-v2",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": {
+        "passed": false,
+        "explanation": "Circuit topology is broken. The right vertical wire has gaps: it goes from top-right corner down to ~cy-50 and from bottom-right up to ~cy+50, leaving a blank ~100px gap in the middle occupied only by a floating current arrow (not a component). This is an open circuit, yet nonzero current (4.50 A, 2.00 A) is shown\u2014an accidental gap with nonzero current, which must be rejected. Numeric readouts, graph line I=V/R, plotted points (9V,4.5A; 6V,2A) and axes are correct, but the broken conducting path teaches a wrong model."
+      },
+      "rawResponse": "{\"passed\":false,\"explanation\":\"Circuit topology is broken. The right vertical wire has gaps: it goes from top-right corner down to ~cy-50 and from bottom-right up to ~cy+50, leaving a blank ~100px gap in the middle occupied only by a floating current arrow (not a component). This is an open circuit, yet nonzero current (4.50 A, 2.00 A) is shown\u2014an accidental gap with nonzero current, which must be rejected. Numeric readouts, graph line I=V/R, plotted points (9V,4.5A; 6V,2A) and axes are correct, but the broken conducting path teaches a wrong model.\"}",
+      "costUsd": 0.04966500000000001,
+      "inputTokens": 8838,
+      "outputTokens": 219,
+      "elapsedMs": 5738
+    },
+    {
+      "run": "lunaris-p3-visual-regression-source-v2",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": {
+        "passed": false,
+        "explanation": "Circuit topology is broken: the right side of the loop is an OPEN CIRCUIT. The right vertical wires run only from the top wire down to y=cy-50 and from the bottom wire up to y=cy+50, leaving a ~100px blank gap in the middle of the right side (visible in both screenshots as a break between the upper and lower right segments). The only thing occupying that gap is a floating current-direction triangle (\u25bc) at (bxr, cy-10), which is not a wire or drawn electrical component and does not close the circuit. There is no resistor or other component bridging that gap (the resistor is on the top wire; the battery is on the left). Thus there is no closed conducting path through source and resistor. Numeric readouts (9V/2\u03a9\u21924.50 A, 6V/3\u03a9\u21922.00 A) and the I-vs-V graph (correct slope, axes, limits, plotted point) are correct, but a correct numeric output cannot excuse a wrong/open circuit diagram. To fix: extend the two right-side vertical wires to meet (or place a component across the gap) so the loop is fully closed."
+      },
+      "costUsd": 0.067905,
+      "inputTokens": 8666,
+      "outputTokens": 983,
+      "elapsedMs": 14342
+    },
+    {
+      "run": "lunaris-p3-visual-regression",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": {
+        "passed": true,
+        "explanation": "Both screenshots show correct and consistent teaching. Screenshot 1 (V=9, R=2): current readout 4.50 with adjacent 'A' label, circuit forms a closed loop through battery (+9V) and resistor (2\u03a9) with directional arrows, graph titled 'I vs V (R=2\u03a9)' with correct axes (Voltage 0\u201312 on x, Current 0\u20136 on y), linear line through origin with slope 0.5, highlighted point correctly at (9, 4.50). Screenshot 2 (V=6, R=3 default): current readout 2.00, closed circuit with +6V battery and 3\u03a9 resistor, graph 'I vs V (R=3\u03a9)' with same correct axes, linear line slope 1/3, highlighted point at (6, 2.00). All specification cases visible here (9/2=4.50, 6/3=2.00) are correct. No reversed axes, no floating wire segments, no clipped labels, no unit text inside readout elements, and the circuit topology correctly models a series resistor-battery loop."
+      },
+      "costUsd": 0.022065,
+      "inputTokens": 2950,
+      "outputTokens": 881,
+      "elapsedMs": 18004
+    },
+    {
+      "run": "lunaris-p3-visual-regression-opus-v2",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": {
+        "passed": true,
+        "explanation": "Both screenshots are correct and legible. Screenshot 1 (V=9, R=2): current readout 4.50 A matches 9/2; graph titled 'I vs V (R=2\u03a9)' has correct axes (Voltage V 0-12 horizontal, Current A 0-6 vertical), slope reaching ~6 at V=12, and plotted point at (9,4.5). Screenshot 2 (V=6, R=3): current readout 2.00 A matches 6/3; graph titled 'I vs V (R=3\u03a9)' reaches 4 at V=12 with plotted point at (6,2). Both readouts show two decimals with the 'A' unit as an adjacent label (not inside readout). Circuit topology forms a closed conducting loop: battery (+V) up the left, across the top through the labeled resistor (2\u03a9/3\u03a9), down the right vertical wire, and back along the bottom to the battery; the blue \u25bc arrow and 'I=...' label are current-direction annotations beside continuous wires, not gap fillers. Slopes correctly show current increasing with voltage and lower resistance giving steeper slope, teaching the correct model."
+      },
+      "costUsd": 0.04542500000000001,
+      "inputTokens": 3355,
+      "outputTokens": 1146,
+      "elapsedMs": 16902
+    },
+    {
+      "run": "lunaris-p3-current-directions-red",
+      "case": "test_visual_review_rejects_cor0",
+      "verdict": null,
+      "costUsd": 0.05209,
+      "inputTokens": 5673,
+      "outputTokens": 949,
+      "elapsedMs": 14520
+    },
+    {
+      "run": "lunaris-p3-final-coach-and-negative",
+      "case": "test_real_tutor_reaction_comma2",
+      "domain": "economics",
+      "gesture": {
+        "price": 20.0,
+        "quantity": 10.0
+      },
+      "reaction": {
+        "text": "You set price to 20 and quantity to 10, which lands exactly at break-even: profit is 0. Compare that with quantity 0 at the same price, where profit is -100 (a pure fixed cost when nothing sells). Between those two, each unit sold at price 20 chips away at that 100 loss until you hit zero at 10 units. Try raising price or quantity above this point to move into profit.",
+        "state": {
+          "price": 20.0,
+          "quantity": 0.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.007420000000000001,
+      "elapsedMs": 3782
+    },
+    {
+      "run": "lunaris-p3-final-coach-and-negative",
+      "case": "test_real_tutor_reaction_comma0",
+      "domain": "algorithms",
+      "gesture": {
+        "n": 5.0
+      },
+      "reaction": {
+        "text": "You set n to 5, which needs 10 worst-case comparisons. Notice the pattern: each comparison count equals n(n-1)/2. Compare n=5 (10 comparisons) with n=3, which drops to just 3 comparisons. Doubling from a smaller n grows the cost faster than linearly, since going from n=5 to n=10 jumps from 10 up to 45.",
+        "state": {
+          "n": 5.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.006585000000000001,
+      "elapsedMs": 3772
+    },
+    {
+      "run": "lunaris-p3-final-coach-and-negative",
+      "case": "test_real_tutor_reaction_comma1",
+      "domain": "physics",
+      "gesture": {
+        "voltage": 6.0,
+        "resistance": 3.0
+      },
+      "reaction": {
+        "text": "You set voltage to 6 V with resistance at 3 ohms, giving a current of 2.00 A. To see the effect of doubling voltage, compare this with 12 V at the same 3 ohms: the current doubles to 4.00 A. This shows current rises in direct proportion to voltage when resistance is held constant.",
+        "state": {
+          "voltage": 12.0,
+          "resistance": 3.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.007195,
+      "elapsedMs": 2937
+    },
+    {
+      "run": "lunaris-p3-final-coach-and-negative",
+      "case": "test_visual_review_rejects_cor1",
+      "verdict": {
+        "passed": true,
+        "explanation": "Circuit is a closed rectangular loop through battery and resistor with no gaps; flow arrows (resistor rightward, right-side upward) are consistent. Bar chart axis runs 0-12 over 120px; full-scale is 100px so height=i/12*100. Screenshot1: 1/3=0.33A, readout 0.33, bar~2.8px sliver, label I=0.33A matches. Screenshot2: 6/3=2.00A, readout 2.00, bar~16.7px, label I=2.00A matches. Voltage/resistance labels, units outside readout, and computed currents all correct. Visible teaching is accurate and legible."
+      },
+      "rawResponse": "{\"passed\":true,\"explanation\":\"Circuit is a closed rectangular loop through battery and resistor with no gaps; flow arrows (resistor rightward, right-side upward) are consistent. Bar chart axis runs 0-12 over 120px; full-scale is 100px so height=i/12*100. Screenshot1: 1/3=0.33A, readout 0.33, bar~2.8px sliver, label I=0.33A matches. Screenshot2: 6/3=2.00A, readout 2.00, bar~16.7px, label I=2.00A matches. Voltage/resistance labels, units outside readout, and computed currents all correct. Visible teaching is accurate and legible.\"}",
+      "costUsd": 0.03488,
+      "inputTokens": 5826,
+      "outputTokens": 230,
+      "elapsedMs": 4775
+    },
+    {
+      "run": "lunaris-p3-final-publication-eval",
+      "case": "test_real_tutor_reaction_comma2",
+      "domain": "economics",
+      "gesture": {
+        "price": 20.0,
+        "quantity": 10.0
+      },
+      "reaction": {
+        "text": "You set price to 20 and quantity to 10, which lands exactly at break-even: profit is 0. This is the point where revenue just covers costs. From the cases, we can see structure: at price 20 with 0 units sold, profit is -100, suggesting a fixed cost around 100. Each unit at price 20 seems to add 10 toward covering that. Try nudging price up to 25 at the same quantity of 10 to see profit rise to 50, showing how a higher unit price lifts you above break-even.",
+        "state": {
+          "price": 25.0,
+          "quantity": 10.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.00829,
+      "elapsedMs": 3732
+    },
+    {
+      "run": "lunaris-p3-final-publication-eval",
+      "case": "test_publication_rejects_wrong1",
+      "verdict": {
+        "passed": false,
+        "explanation": "Bar chart scale is wrong. Axis spans y=250(0) to y=130(12), a 120-pixel full-scale span, but the code computes height as i/12*100, using only 100 pixels for 12 A full scale. At 2.00 A the bar is 16.7px tall against an axis where 2 A should be 20px. The bar undershoots the labeled axis endpoints, teaching incorrect values. Circuit topology and numeric readouts (0.33, 2.00) are correct, but the mismatched bar/axis scale fails the exact-same-scale requirement."
+      },
+      "structuralVerification": {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v2",
+        "contentHash": "702515d67bc1f954880493c6892cb5c88e5eee0a9df2bccca8d1c5813b0873d9",
+        "specHash": "879bd1850094d00f4e0f816de2d3c8cd4d5449ba06472986e84c0840c91f6e8e",
+        "approved": false,
+        "checksPassed": 0,
+        "reasons": [
+          "Voltage/resistance instruments require the assembled circuit."
+        ],
+        "elapsedMs": 0,
+        "screenshots": []
+      },
+      "rawResponse": "{\"passed\":false,\"explanation\":\"Bar chart scale is wrong. Axis spans y=250(0) to y=130(12), a 120-pixel full-scale span, but the code computes height as i/12*100, using only 100 pixels for 12 A full scale. At 2.00 A the bar is 16.7px tall against an axis where 2 A should be 20px. The bar undershoots the labeled axis endpoints, teaching incorrect values. Circuit topology and numeric readouts (0.33, 2.00) are correct, but the mismatched bar/axis scale fails the exact-same-scale requirement.\"}",
+      "costUsd": 0.034405000000000005,
+      "inputTokens": 5866,
+      "outputTokens": 203,
+      "elapsedMs": 4719
+    },
+    {
+      "run": "lunaris-p3-final-publication-eval",
+      "case": "test_real_tutor_reaction_comma0",
+      "domain": "algorithms",
+      "gesture": {
+        "n": 5.0
+      },
+      "reaction": {
+        "text": "You set n to 5 elements. Bubble sort's worst case makes 10 comparisons here. Compare that to n=4, which needs only 6 comparisons: adding one element jumped the count by 4, not by 1. That's because each new element adds a full extra pass of comparisons. Notice the pattern across the cases: n=2 gives 1, n=4 gives 6, n=5 gives 10, n=7 gives 21, n=10 gives 45. The growth accelerates as n rises.",
+        "state": {
+          "n": 5.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.007425000000000001,
+      "elapsedMs": 4585
+    },
+    {
+      "run": "lunaris-p3-final-publication-eval",
+      "case": "test_real_tutor_reaction_comma1",
+      "domain": "physics",
+      "gesture": {
+        "voltage": 6.0,
+        "resistance": 3.0
+      },
+      "reaction": {
+        "text": "You set voltage to 6 V and resistance to 3 ohms, which gives a current of 2.00 A. Notice the pattern in the verified cases: keeping resistance at 3 ohms but doubling voltage to 12 V raises the current to 4.00 A. So current scales up with voltage when resistance is held constant. You can try that comparison next to see the doubling effect directly.",
+        "state": {
+          "voltage": 12.0,
+          "resistance": 3.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.007670000000000001,
+      "elapsedMs": 3292
+    },
+    {
+      "run": "lunaris-p3-final-negative-publication",
+      "case": "test_publication_rejects_wrong1",
+      "verdict": {
+        "passed": false,
+        "explanation": "Circuit topology is closed and arrows consistent, readouts correct (0.33 A, 2.00 A). But the current bar chart is mis-scaled: the axis runs y=250\u2192130 (120 px) labeled 0\u219212, yet bar height uses i/12*100, giving only 100 px at full-scale 12 A. Thus 2 A renders ~16.7 px where the axis demands 20 px, and 12 A would fall short of the '12' gridline. The bar scale contradicts the axis endpoints, teaching wrong values."
+      },
+      "structuralVerification": {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v2",
+        "contentHash": "702515d67bc1f954880493c6892cb5c88e5eee0a9df2bccca8d1c5813b0873d9",
+        "specHash": "879bd1850094d00f4e0f816de2d3c8cd4d5449ba06472986e84c0840c91f6e8e",
+        "approved": false,
+        "checksPassed": 0,
+        "reasons": [
+          "Voltage/resistance instruments require the assembled circuit."
+        ],
+        "elapsedMs": 0,
+        "screenshots": []
+      },
+      "rawResponse": "I'll analyze the circuit topology, bar chart scale, and numeric outputs.\n\n**Circuit topology:** The main rectangle (60,60 to 400,260) forms the wire loop. Resistor spans x=170-290 on top. Battery symbol at left (x=48-72, y=140-180). Tracing the loop: top, right, bottom, left sides are all drawn as one rect stroke, forming a closed path. The battery gap lines at x=60 (y=150-170) sit on the left wire. This forms a closed conducting path through battery and resistor. No accidental open gap. Arrows (a1 on resistor, a2 on right side) both indicate flow \u2014 consistent direction around loop (clockwise: right on top, down on right). OK.\n\n**Bar chart scale check:** Axis vertical line from y=250 to y=130 = 120 pixels. Label \"0\" at y=250, \"12\" at y=130. Full scale = 12 A over 120 pixels = 10 px/A. Bar height formula: h = i/12*100. For i=12, h=100px, but full axis is 120px. So a 12 A bar would reach only 100px on a 120px axis \u2014 teaching wrong value. Verify screenshots: img1 (1V/3\u03a9=0.33A): h=0.33/12*100=2.75px, tiny bar \u2713 visible. img2 (6V/3\u03a9=2A): h=2/12*100=16.7px. On correct scale 2A should be 20px. \n\n**Decisive defect:** The bar uses 100px full-scale on a 120px axis (0\u219212). This is exactly the \"120-pixel axis with 100-pixel full-scale bar\" failure \u2014 the scale disagrees with axis endpoints, teaching wrong values.\n\nNumeric readouts (0.33, 2.00) are correct, but the diagram scale is wrong.\n\n{\"passed\":false,\"explanation\":\"Circuit topology is closed and arrows consistent, readouts correct (0.33 A, 2.00 A). But the current bar chart is mis-scaled: the axis runs y=250\u2192130 (120 px) labeled 0\u219212, yet bar height uses i/12*100, giving only 100 px at full-scale 12 A. Thus 2 A renders ~16.7 px where the axis demands 20 px, and 12 A would fall short of the '12' gridline. The bar scale contradicts the axis endpoints, teaching wrong values.\"}",
+      "costUsd": 0.04923,
+      "inputTokens": 5866,
+      "outputTokens": 796,
+      "elapsedMs": 13085
+    },
+    {
+      "run": "lunaris-p3-final-negative-publication",
+      "case": "test_publication_rejects_wrong0",
+      "verdict": {
+        "passed": false,
+        "explanation": "Circuit topology is broken: the right vertical side draws wires only from top-corner to cy-50 and from bottom-corner to cy+50, leaving a ~100px open gap. That gap contains only a floating current-arrow polygon (\u25bc) with no wire or component, so the loop is not a closed conducting path, yet nonzero current (4.50 A, 2.00 A) is claimed. Per the rules this is an accidental open circuit with nonzero current and must be rejected. Graphs and numeric readouts are correct, but the wrong circuit diagram teaches a false model."
+      },
+      "structuralVerification": {
+        "version": 1,
+        "verifierVersion": "chromium-contract-v2",
+        "contentHash": "66e161d2b794f77e8f92817714f1530e7d85904ddebfa91af084fbf49fd94b3d",
+        "specHash": "0a062f5cdfb5fbbcd21e43069a9c95cadb33e63bdaf05c5df40a33fe2b225290",
+        "approved": false,
+        "checksPassed": 0,
+        "reasons": [
+          "Voltage/resistance instruments require the assembled circuit."
+        ],
+        "elapsedMs": 0,
+        "screenshots": []
+      },
+      "rawResponse": "I'll analyze both screenshots against the definition and specification, focusing on circuit topology, current arrows, and graph accuracy.\n\n**Circuit topology (both screenshots):** Tracing the wires \u2014 top wire runs from battery top through resistor to right side. But the right side wire has gaps: `wire(bxr,ty,bxr,cy-50)` and `wire(bxr,by2,bxr,cy+50)` leave a gap between cy-50 and cy+50 (100px gap around the right-middle). The right side shows a floating current arrow (\u25bc) in that blank space with NO connecting wire. Similarly the battery left side: `wire(bx,ty,bx,cy-30)` and `wire(bx,by2,bx,cy+30)` \u2014 the battery symbol occupies the middle, which is a valid component. But the RIGHT side gap is empty \u2014 just a floating arrow, no component.\n\n**Confirming right-side gap:** Right side vertical wires stop at cy-50 (top) and cy+50 (bottom), leaving 100px open. The blue arrow at cy-10 is a polygon (floating arrow), not a wire. Per instructions, a floating current arrow in a blank space is NOT a component and does NOT close the circuit. This is an accidental open gap with nonzero current claimed (4.50 A, 2.00 A).\n\n**Current arrow directions:** top=right, right side=down, bottom=left \u2014 consistent clockwise. But the path is broken on the right regardless.\n\n**Graph check (screenshot 1, R=2):** Line I=V/R. At V=12, I=6 \u2192 reaches top-right corner. Point at V=9 \u2192 I=4.5, plotted at ~x(9)=gx0+9/12*310, y=4.5. Dot appears correctly at 4.5. Scale correct.\n\n**Graph check (screenshot 2, R=3):** At V=12, I=4 \u2192 line ends at right edge y=4. Point V=6,I=2 plotted correctly. Axes labeled correctly, limits match.\n\n**Decisive defect:** The right side of the circuit has a ~100px open gap occupied only by a floating current arrow, no wire or component \u2014 an open circuit that contradicts the nonzero current claim. This teaches a wrong model.\n\n{\"passed\":false,\"explanation\":\"Circuit topology is broken: the right vertical side draws wires only from top-corner to cy-50 and from bottom-corner to cy+50, leaving a ~100px open gap. That gap contains only a floating current-arrow polygon (\u25bc) with no wire or component, so the loop is not a closed conducting path, yet nonzero current (4.50 A, 2.00 A) is claimed. Per the rules this is an accidental open circuit with nonzero current and must be rejected. Graphs and numeric readouts are correct, but the wrong circuit diagram teaches a false model.\"}",
+      "costUsd": 0.06806000000000001,
+      "inputTokens": 8902,
+      "outputTokens": 942,
+      "elapsedMs": 15164
+    },
+    {
+      "run": "lunaris-p3-coach-eval",
+      "case": "test_real_tutor_reaction_comma2",
+      "domain": "economics",
+      "gesture": {
+        "price": 20.0,
+        "quantity": 10.0
+      },
+      "reaction": {
+        "text": "You're at price $20 and quantity 10, which lands exactly at break-even: profit is 0. That means revenue just covers costs here. Compare that with raising the price to $25 while keeping quantity at 10 \u2014 the extra $5 per unit across 10 units pushes profit to +50, moving from break-even into profit territory.",
+        "state": {
+          "price": 25.0,
+          "quantity": 10.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.00715,
+      "elapsedMs": 2832
+    },
+    {
+      "run": "lunaris-p3-coach-eval",
+      "case": "test_real_tutor_reaction_comma0",
+      "domain": "algorithms",
+      "gesture": {
+        "n": 5.0
+      },
+      "reaction": {
+        "text": "You set n to 5, which gives 10 worst-case comparisons. Notice the pattern in the verified cases: n=2 needs 1, n=3 needs 3, n=5 needs 10, n=7 needs 21, and n=10 needs 45. Each of these equals n(n-1)/2, the number of unique pairs. Compare n=5 (10 comparisons) with n=10 (45 comparisons): doubling n more than quadruples the work, which is why bubble sort's cost grows quadratically.",
+        "state": {
+          "n": 5.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.007590000000000001,
+      "elapsedMs": 3935
+    },
+    {
+      "run": "lunaris-p3-coach-eval",
+      "case": "test_real_tutor_reaction_comma1",
+      "domain": "physics",
+      "gesture": {
+        "voltage": 6.0,
+        "resistance": 3.0
+      },
+      "reaction": {
+        "text": "You're at 6 V and 3 ohms, which gives 2.00 A of current. To see how voltage matters, compare this with doubling the voltage to 12 V while keeping resistance at 3 ohms: the current doubles to 4.00 A. Since current equals voltage divided by resistance, raising the voltage raises the current in direct proportion.",
+        "state": {
+          "voltage": 12.0,
+          "resistance": 3.0
+        }
+      },
+      "model": "claude-opus-4-8",
+      "costUsd": 0.00741,
+      "elapsedMs": 2963
+    }
+  ]
+}

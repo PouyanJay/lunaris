@@ -1,0 +1,17 @@
+{
+  "domain": "physics",
+  "gesture": {
+    "voltage": 6.0,
+    "resistance": 3.0
+  },
+  "reaction": {
+    "text": "You set voltage to 6 V and resistance to 3 ohms, which gives a current of 2.00 A. Notice the pattern in the verified cases: keeping resistance at 3 ohms but doubling voltage to 12 V raises the current to 4.00 A. So current scales up with voltage when resistance is held constant. You can try that comparison next to see the doubling effect directly.",
+    "state": {
+      "voltage": 12.0,
+      "resistance": 3.0
+    }
+  },
+  "model": "claude-opus-4-8",
+  "costUsd": 0.007670000000000001,
+  "elapsedMs": 3292
+}
