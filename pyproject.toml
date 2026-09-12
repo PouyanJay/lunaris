@@ -26,6 +26,7 @@ dev = [
     # tests/test_deploy_wiring.py reads the GitHub workflows as data. Declared, not inherited: it was
     # already present transitively, which is exactly the coincidence test_dependency_closure guards.
     "pyyaml>=6.0",
+    "playwright>=1.62.0",
 ]
 
 [tool.ruff]
@@ -56,7 +57,8 @@ indent-style = "space"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["packages", "apps", "tests"]
-addopts = ["-m", "not eval"]
+addopts = ["-m", "not eval and not browser"]
 markers = [
+    "browser: real browser and HTTP server integration (run in the browser CI job)",
     "eval: live LLM eval against golden graphs (needs a real key; excluded by default)",
 ]

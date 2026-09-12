@@ -76,6 +76,25 @@ jobs:
       - run: npm run lint
       - run: npm test
 
+  browser:
+    name: Browser (Live simulator roundtrip)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.17"
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: uv sync --frozen --all-packages
+      - run: npm --prefix apps/web ci
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest tests/browser -m browser -q
+
   copilot:
     name: CopilotKit runtime (typecheck + lint + format + test)
     runs-on: ubuntu-latest

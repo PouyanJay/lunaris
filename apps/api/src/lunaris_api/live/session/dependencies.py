@@ -27,6 +27,7 @@ from lunaris_live.session import (
     SupabaseMaterialStore,
     SupabaseSessionStore,
 )
+from lunaris_live.sims.reference_coach import ReferenceSimCoach
 
 from ...config import Settings, get_settings
 from ...dependencies import CostEventStoreDep, SubjectCostStoreDep
@@ -192,6 +193,7 @@ def get_live_session_service(
         throttle=_get_live_session_throttle(settings),
         session_budget_usd=settings.live_session_budget_usd,
         sims=sims,
+        sim_coach=ReferenceSimCoach() if settings.pipeline == "stub" else None,
         compiles=compiles,
         interviewer=interviewer,
         mapper=mapper,

@@ -6,6 +6,9 @@ from lunaris_live.session import (
     Session,
     SessionSummary,
 )
+from lunaris_live.sims.invalid_state import InvalidSimStateError
+from lunaris_live.sims.schema.event import SimEvent
+from lunaris_live.sims.schema.exchange import SimExchange
 from lunaris_runtime.logging import bind_request_id
 
 from ...dependencies import OptionalUserIdDep
@@ -14,6 +17,29 @@ from .failure_mapping import raise_translated
 from .schemas import AnswerRequest, SessionStartRequest
 
 router = APIRouter(prefix="/api/live/sessions", tags=["live"])
+
+
+@router.post("/{session_id}/sim", response_model=SimExchange)
+async def simulator_action(
+    session_id: str,
+    payload: SimEvent,
+    service: LiveSessionServiceDep,
+    response: Response,
+    owner_id: OptionalUserIdDep,
+) -> SimExchange:
+    """React to simulator state without awarding mastery or advancing the lesson."""
+    request_id = uuid4().hex
+    bind_request_id(request_id)
+    correlated = {"X-Session-Id": session_id, "X-Request-Id": request_id}
+    try:
+        exchange = await service.sim_interact(session_id, payload, owner_id=owner_id)
+    except InvalidSimStateError as exc:
+        raise HTTPException(422, "Invalid simulator state.", headers=correlated) from exc
+    except Exception as exc:
+        _refuse(exc, correlated, "live.sim.failed", session_id=session_id, missing="Session")
+    response.headers["X-Session-Id"] = session_id
+    response.headers["X-Request-Id"] = request_id
+    return exchange
 
 
 @router.post("", response_model=Session, status_code=status.HTTP_201_CREATED)

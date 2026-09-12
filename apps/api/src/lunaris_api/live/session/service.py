@@ -36,6 +36,10 @@ from lunaris_live.session import (
     take_placement_turn,
     take_turn,
 )
+from lunaris_live.sims.interact import interact
+from lunaris_live.sims.protocols.coach import ISimCoach
+from lunaris_live.sims.schema.event import SimEvent
+from lunaris_live.sims.schema.exchange import SimExchange
 from lunaris_runtime.credentials import CredentialResolver, credentials_for, run_credentials
 from lunaris_runtime.logging import bind_request_id, bind_run_id
 from lunaris_runtime.metering import (
@@ -154,6 +158,7 @@ class LiveSessionService:
         interview_max_questions: int = DEFAULT_MAX_QUESTIONS,
         materials: IMaterialStore | None = None,
         prefetcher: MaterialPrefetcher | None = None,
+        sim_coach: ISimCoach | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
@@ -179,6 +184,7 @@ class LiveSessionService:
         # None means this deployment mounts no simulators (T6), which is the default and which
         # leaves a sim-only concept exactly where P2a left it: taught here, not checkable here.
         self._sims = sims
+        self._sim_coach = sim_coach
         # Ceiling on one session's whole spend, read from the ledger's rollup. 0 is uncapped; it is
         # a runaway guard, not a ration — the clock is what bounds an ordinary sitting.
         self._session_budget_usd = session_budget_usd
@@ -459,6 +465,37 @@ class LiveSessionService:
             await self._drain(cost, run_id=run_id, session_id=session_id)
         await asyncio.to_thread(self._sessions.save, opened.session, owner_id=owner_id)
         return opened
+
+    async def sim_interact(
+        self, session_id: str, event: SimEvent, *, owner_id: str | None = None
+    ) -> SimExchange:
+        """Persist an ungraded exchange under the turn admission and cost scope."""
+        run_id = uuid4().hex
+        bind_run_id(run_id, session_id=session_id)
+        with self._turn_slot(session_id):
+            context = await self._ready(session_id, owner_id)
+            if self._sim_coach is None:
+                raise StaleAnswerError("Simulator interaction is unavailable.")
+            if _elapsed_s(context.session) >= self._session_budget_s:
+                raise SessionClosedError("This session has reached its time limit.")
+            cost = self._cost_scope(run_id=run_id, session_id=session_id, owner_id=owner_id)
+            try:
+                scope = await credentials_for(self._credential_resolver, owner_id)
+                with scope, enter_cost_scope(cost):
+                    updated, exchange = await interact(
+                        context.session, event, self._sim_coach, run_id=run_id
+                    )
+            finally:
+                await self._drain(cost, run_id=run_id, session_id=session_id)
+            if updated is not context.session:
+                await asyncio.to_thread(
+                    self._sessions.save,
+                    updated,
+                    owner_id=owner_id,
+                    expect_turns=len(context.session.turns),
+                )
+            logger.info("live.sim.interacted", app_id=event.app_id, sequence=event.sequence)
+            return exchange
 
     async def answer(
         self, session_id: str, answer: str, *, answering_seq: int, owner_id: str | None = None

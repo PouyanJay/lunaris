@@ -93,6 +93,7 @@ export interface ConceptMapSpec {
  *  same separate grader against `statement`. So this is a new surface, not a new way to be
  *  assessed — which is why it carries the criterion's words like every other assessment card. */
 export interface SimAppSpec {
+  contract?: import("./simContract").SimContract | null;
   kind: "sim_app";
   nodeId: string;
   concept: string;
