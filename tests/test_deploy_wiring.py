@@ -225,3 +225,17 @@ def test_production_images_are_not_staged_through_another_environment() -> None:
     """
     imported = sorted(_imported_repositories(_workflow("cd-prod.yml")))
     assert imported == [], f"cd-prod imports images from another registry: {imported}"
+
+
+def test_ci_and_prod_refresh_runtime_os_security_updates():
+    for workflow_name in ("ci.yml", "cd-prod.yml"):
+        builds = _docker_builds(_steps(_workflow(workflow_name)))
+        for dockerfile in ROOT_IMAGES:
+            matching = [build for build in builds if build.get("file") == dockerfile]
+            assert matching, (workflow_name, dockerfile)
+            for build in matching:
+                assert "runtime" in str(build.get("no-cache-filters", "")).split(","), (
+                    workflow_name,
+                    dockerfile,
+                    "Cached apt upgrade layers cannot pick up new security fixes",
+                )
