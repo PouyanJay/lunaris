@@ -43,7 +43,7 @@ jobs:
       # A fresh local Postgres with every migration applied — a broken migration fails CI here
       # instead of in CD against the real database. `migration up` is the explicit apply (idempotent
       # when `db start` already ran them).
-      - run: supabase db start
+      - run: supabase start -x studio,postgres-meta,imgproxy,mailpit,storage-api,realtime,edge-runtime,logflare,vector,supavisor
       - run: supabase migration up
       - run: supabase db lint --fail-on warning
       - uses: astral-sh/setup-uv@v5
@@ -54,6 +54,16 @@ jobs:
       # Prove the RLS posture against the real schema: owner isolation behaves, the secrets/corpus
       # tables stay locked down, and function EXECUTE stays revoked. The suite is eval-gated, so the
       # default offline pytest run skips it; here the CLI's local stack provides the database.
+      - name: Expose local REST test credentials without logging them
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, subprocess
+          local = json.loads(subprocess.check_output(["supabase", "status", "-o", "json"]))
+          print("::add-mask::" + local["SERVICE_ROLE_KEY"])
+          with open(os.environ["GITHUB_ENV"], "a") as output:
+              output.write("SUPABASE_TEST_URL=" + local["API_URL"] + "\n")
+              output.write("SUPABASE_TEST_SERVICE_KEY=" + local["SERVICE_ROLE_KEY"] + "\n")
+          PYCODE
       - run: uv run pytest tests/db -m eval -q
         env:
           SUPABASE_DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
