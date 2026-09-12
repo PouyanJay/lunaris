@@ -20,6 +20,7 @@ from lunaris_runtime.logging import configure_logging
 from ..config import get_settings
 from ..dependencies import get_cost_event_store, get_subject_cost_store
 from .dependencies import get_live_credential_resolver, resolve_strong_model
+from .verify_sim_worker import verify_worker_environment
 
 
 async def _run() -> None:
@@ -27,15 +28,17 @@ async def _run() -> None:
     image = os.environ["LUNARIS_SIM_VERIFIER_IMAGE"]
     if "@sha256:" not in image:
         raise ValueError("Pin the verifier image by digest")
+    verifier = ContainerSimVerifier(
+        image=image, seccomp=Path(os.environ["LUNARIS_SIM_SECCOMP_PATH"])
+    )
+    await verify_worker_environment(verifier)
     worker = SimWorker(
         SimWorkerServices(
             SupabaseSimQueue(),
             SupabaseSimAssetStore(),
             SimFactory(
                 ClaudeSimModel(resolve_strong_model()),
-                ContainerSimVerifier(
-                    image=image, seccomp=Path(os.environ["LUNARIS_SIM_SECCOMP_PATH"])
-                ),
+                verifier,
             ),
         ),
         context=SimWorkerContext(
@@ -50,6 +53,7 @@ async def _run() -> None:
     stop = asyncio.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         asyncio.get_running_loop().add_signal_handler(sig, stop.set)
+    await asyncio.to_thread(Path("/tmp/lunaris-sim-ready").touch)
     while not stop.is_set():
         # Finish each bounded admitted build before shutdown.
         await worker.run_once()
