@@ -14,6 +14,8 @@ from lunaris_live.session import (
     predict_next,
     stage_criterion,
 )
+from lunaris_live.sims.runtime.models.preparation import SimPreparation
+from lunaris_live.sims.runtime.protocols.materials import ISimMaterials
 from lunaris_runtime.credentials import CredentialResolver, credentials_for
 from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.metering import drain_cost_scope, enter_cost_scope, make_cost_scope
@@ -56,6 +58,7 @@ class MaterialPrefetcher:
         subject_cost_store: ISubjectCostStore | None = None,
         credential_resolver: CredentialResolver | None = None,
         sims: ISimRegistry | None = None,
+        sim_materials: ISimMaterials | None = None,
         session_budget_usd: float = 0.0,
     ) -> None:
         self._tutor = tutor
@@ -65,6 +68,7 @@ class MaterialPrefetcher:
         self._subject_cost_store = subject_cost_store
         self._credential_resolver = credential_resolver
         self._sims = sims
+        self._sim_materials = sim_materials
         self._session_budget_usd = session_budget_usd
 
     def prefetch_ahead_of(
@@ -97,6 +101,10 @@ class MaterialPrefetcher:
         profile: str | None = None,
     ) -> None:
         """Prefetch one named concept's first-turn material, unless it is kept or in flight."""
+        if self._sim_materials is not None:
+            self._registry.lead(
+                self._sim_materials.prepare(SimPreparation(graph, node_id, session_id, owner_id))
+            )
         if node_id in kept or self._registry.is_running(owner_id, graph.graph_id, node_id):
             return
         node = node_of(graph, node_id)
@@ -150,6 +158,12 @@ class MaterialPrefetcher:
                 cap=self._session_budget_usd,
             )
             return
+        sims = self._sims
+        if self._sim_materials is not None:
+            try:
+                sims = await self._sim_materials.load(graph, owner_id=owner_id)
+            except Exception:
+                logger.warning("live.sim.prefetch_lookup_failed", node=node_id)
         move = DirectorMove(kind=MoveKind.INTRODUCE, node_id=node_id, reason=_AHEAD)
         cost = make_cost_scope(
             self._cost_event_store,
@@ -165,7 +179,7 @@ class MaterialPrefetcher:
                     move,
                     node,
                     topic=graph.topic,
-                    criterion=stage_criterion(node, sims=self._sims),
+                    criterion=stage_criterion(node, sims=sims),
                     already_said=(),
                     profile=profile,
                     run_id=run_id,

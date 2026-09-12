@@ -43,6 +43,9 @@ from lunaris_live.session.transactions.models.mutation import SessionMutation
 from lunaris_live.session.transactions.protocols.backend import IGraphTransactionBackend
 from lunaris_live.sims.interact import interact
 from lunaris_live.sims.protocols.coach import ISimCoach
+from lunaris_live.sims.runtime.models.preparation import SimPreparation
+from lunaris_live.sims.runtime.protocols.materials import ISimMaterials
+from lunaris_live.sims.runtime.schema.availability import SimAvailability
 from lunaris_live.sims.schema.event import SimEvent
 from lunaris_live.sims.schema.exchange import SimExchange
 from lunaris_runtime.credentials import CredentialResolver, credentials_for, run_credentials
@@ -170,6 +173,7 @@ class LiveSessionService:
         prefetcher: MaterialPrefetcher | None = None,
         sim_coach: ISimCoach | None = None,
         transactions: IGraphTransactionBackend | None = None,
+        sim_materials: ISimMaterials | None = None,
     ) -> None:
         self._graphs = graphs
         self._sessions = sessions
@@ -199,6 +203,7 @@ class LiveSessionService:
         # None means this deployment mounts no simulators (T6), which is the default and which
         # leaves a sim-only concept exactly where P2a left it: taught here, not checkable here.
         self._sims = sims
+        self._sim_materials = sim_materials
         self._sim_coach = sim_coach
         # Ceiling on one session's whole spend, read from the ledger's rollup. 0 is uncapped; it is
         # a runaway guard, not a ration — the clock is what bounds an ordinary sitting.
@@ -257,6 +262,7 @@ class LiveSessionService:
         known = await asyncio.to_thread(self._knowledge.load, graph_id, owner_id=owner_id)
 
         prefetched = await self._load_materials(graph_id, owner_id)
+        sims = await self._load_sims(graph, owner_id)
         opened = await self._open_and_save(
             lambda: open_session(
                 graph,
@@ -265,7 +271,7 @@ class LiveSessionService:
                 session_id=session_id,
                 run_id=run_id,
                 tutor=self._tutor,
-                sims=self._sims,
+                sims=sims,
                 prefetched=prefetched,
             ),
             run_id=run_id,
@@ -376,6 +382,14 @@ class LiveSessionService:
                 )
             if outcome.session.status is not SessionStatus.ACTIVE or graph is None:
                 return
+            if self._sim_materials is not None and outcome.session.turns:
+                current = outcome.session.turns[-1].move.node_id
+                if current is not None:
+                    prefetch_registry().lead(
+                        self._sim_materials.prepare(
+                            SimPreparation(graph, current, outcome.session.session_id, owner_id)
+                        )
+                    )
             still_kept = {k: v for k, v in kept.items() if k != outcome.consumed_material}
             self._material_ahead(
                 outcome.session, graph, outcome.model, still_kept, owner_id=owner_id
@@ -782,7 +796,19 @@ class LiveSessionService:
             credentials=await self._resolve_credentials(owner_id),
             map_failure=failure,
             prefetched=prefetched,
+            sims=await self._load_sims(graph, owner_id),
         )
+
+    async def _load_sims(
+        self, graph: ConceptGraph | None, owner_id: str | None
+    ) -> ISimRegistry | None:
+        if self._sim_materials is None or graph is None:
+            return self._sims
+        try:
+            return await self._sim_materials.load(graph, owner_id=owner_id)
+        except Exception:
+            logger.warning("live.sim.registry_unavailable", graph_id=graph.graph_id)
+            return None
 
     async def _graph_if_landed(self, session: Session, owner_id: str | None) -> ConceptGraph | None:
         """The placing session's map, or ``None`` while the compile has not landed it."""
@@ -925,7 +951,7 @@ class LiveSessionService:
                 elapsed_s=elapsed_s,
                 budget_s=self._session_budget_s,
                 on_delta=on_delta,
-                sims=self._sims,
+                sims=context.sims,
                 prefetched=context.prefetched,
                 max_questions=self._interview_max_questions,
             )
@@ -938,7 +964,7 @@ class LiveSessionService:
             answering_seq=answering_seq,
             grader=self._grader,
             tutor=self._tutor,
-            sims=self._sims,
+            sims=context.sims,
             run_id=run_id,
             elapsed_s=elapsed_s,
             budget_s=self._session_budget_s,
@@ -984,7 +1010,7 @@ class LiveSessionService:
                 run_id=run_id,
                 elapsed_s=_elapsed_s(session),
                 budget_s=self._session_budget_s,
-                sims=self._sims,
+                sims=context.sims,
                 prefetched=context.prefetched,
             ),
             run_id=run_id,
@@ -1146,6 +1172,23 @@ class LiveSessionService:
     async def recent(self, *, owner_id: str | None = None) -> list[SessionSummary]:
         """This learner's sessions, newest first (T2). See ``SessionLifecycle.recent``."""
         return await self._lifecycle.recent(owner_id=owner_id)
+
+    async def sim_availability(
+        self, session_id: str, *, owner_id: str | None = None
+    ) -> SimAvailability:
+        session = await self.load(session_id, owner_id=owner_id)
+        if (
+            self._sim_materials is None
+            or session.status is not SessionStatus.ACTIVE
+            or not session.turns
+        ):
+            return SimAvailability(status="off")
+        node_id = session.turns[-1].move.node_id
+        if node_id is None:
+            return SimAvailability(status="off")
+        graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
+        status = await self._sim_materials.status(graph, node_id, owner_id=owner_id)
+        return SimAvailability(status=status)
 
     async def load(self, session_id: str, *, owner_id: str | None = None) -> Session:
         """Re-read a session so a reloaded tab lands back in it (U2).
