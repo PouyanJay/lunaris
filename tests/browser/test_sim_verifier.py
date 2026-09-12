@@ -1,5 +1,7 @@
 """Untrusted bytes execute only inside the restricted verifier container."""
 
+import base64
+import struct
 from importlib.resources import files
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from lunaris_live.sims.reference_app import reference_app
 from lunaris_live.sims.schema.candidate import SimCandidate
 from lunaris_live.sims.schema.teaching_spec import TeachingCase, TeachingSpec
 from lunaris_live.sims.schema.verified_bundle import VerifiedBundle
+from lunaris_live.sims.schema.visual_verdict import SimVisualVerdict
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.browser
@@ -30,6 +33,8 @@ def _candidate():
     [
         ("good", True),
         ("unicode", True),
+        ("scroll", True),
+        ("oversized", False),
         ("wrong_mechanism", False),
         ("invalid_event", False),
         ("hidden_output", False),
@@ -42,6 +47,9 @@ def _candidate():
 )
 async def test_independent_relationship_and_safety_checks(mutation, approved):
     html = _candidate()
+    if mutation in {"scroll", "oversized"}:
+        space = 800 if mutation == "scroll" else 2000
+        html += f"<style>button{{margin-top:{space}px}}</style>"
     if mutation == "unicode":
         html += "<!--" + "学" * 80_000 + "-->"
     if mutation == "wrong_mechanism":
@@ -76,14 +84,34 @@ async def test_independent_relationship_and_safety_checks(mutation, approved):
     assert report.content_hash == content_hash(html)
     assert report.spec_hash == content_hash(spec.model_dump_json(by_alias=True))
     assert report.elapsed_ms < 35_000
+    if mutation == "scroll":
+        assert len(report.screenshots) == 2
+        for screenshot in report.screenshots:
+            width, height = struct.unpack(">II", base64.b64decode(screenshot)[16:24])
+            assert width == 1100
+            assert 1100 < height <= 1600
+    verdict = SimVisualVerdict(
+        passed=True, content_hash=content_hash(html), explanation="Fixture review"
+    )
     if approved:
         assert report.checks_passed >= 4
         assert report.reasons == []
-        verified = VerifiedBundle(candidate=SimCandidate(html=html), spec=spec, report=report)
+        with pytest.raises(ValidationError, match="visualVerdict"):
+            VerifiedBundle(candidate=SimCandidate(html=html), spec=spec, report=report)
+        verified = VerifiedBundle(
+            candidate=SimCandidate(html=html), spec=spec, report=report, visual_verdict=verdict
+        )
         assert verified.candidate.html == html
-        with pytest.raises(ValidationError, match="exact independently verified"):
-            VerifiedBundle(candidate=SimCandidate(html=html + "changed"), spec=spec, report=report)
+        with pytest.raises(ValidationError, match="Visual approval must match"):
+            VerifiedBundle(
+                candidate=SimCandidate(html=html + "changed"),
+                spec=spec,
+                report=report,
+                visual_verdict=verdict,
+            )
     else:
         assert report.reasons
         with pytest.raises(ValidationError, match="exact independently verified"):
-            VerifiedBundle(candidate=SimCandidate(html=html), spec=spec, report=report)
+            VerifiedBundle(
+                candidate=SimCandidate(html=html), spec=spec, report=report, visual_verdict=verdict
+            )

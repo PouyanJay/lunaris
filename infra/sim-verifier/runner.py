@@ -1,6 +1,7 @@
 """Trusted browser driver. Candidate code stays in an opaque iframe inside Chromium's sandbox."""
 
 import asyncio
+import base64
 import json
 import sys
 
@@ -8,7 +9,8 @@ from playwright.async_api import Page, Route, async_playwright, expect
 
 _HOST = "https://verifier.invalid/"
 _APP = "https://candidate.invalid/"
-_HOST_HTML = """<!doctype html><iframe sandbox="allow-scripts" src="https://candidate.invalid/"></iframe>
+_HOST_HTML = """<!doctype html><style>body{margin:0}iframe{width:100%;height:780px;border:0}</style>
+<iframe sandbox="allow-scripts" src="https://candidate.invalid/"></iframe>
 <script>
 window.events = [];
 addEventListener('message', e => {
@@ -23,6 +25,7 @@ class _Verification:
         self.payload = payload
         self.reasons: list[str] = []
         self.passed = 0
+        self.screenshots: list[str] = []
 
     def reject(self, reason: str) -> None:
         if len(self.reasons) < 20:
@@ -86,6 +89,18 @@ class _Verification:
                 page.frame_locator("iframe").locator(f'[data-sim-param="{key}"]')
             ).to_have_value(str(int(value)) if float(value).is_integer() else str(value))
 
+    async def capture(self, page: Page) -> None:
+        frame = page.frame_locator("iframe")
+        height = await frame.locator("html").evaluate("el => el.scrollHeight")
+        if height > 1560:
+            raise ValueError("Simulator exceeds the bounded 1560px visual review canvas.")
+        await page.locator("iframe").evaluate(
+            "(el, height) => el.style.height = height + 'px'", height
+        )
+        await frame.locator("html").evaluate("() => window.scrollTo(0, 0)")
+        await page.evaluate("window.scrollTo(0, 0)")
+        self.screenshots.append(base64.b64encode(await page.screenshot(full_page=True)).decode())
+
     async def exercise(self, page: Page) -> None:
         await page.goto(_HOST)
         await page.wait_for_function(
@@ -97,16 +112,20 @@ class _Verification:
         await self.command(page, defaults, message_type="lunaris.sim.init")
         for case in self.payload["spec"]["cases"]:
             await self.check_case(page, case)
+        await self.capture(page)
         demonstration = self.payload["spec"]["cases"][0]
         await self.command(page, demonstration["state"])
         await self.outputs(page, demonstration["outputs"])
+        await self.capture(page)
         self.passed += 1
 
     async def run(self) -> dict:
         try:
             async with async_playwright() as playwright:
                 browser = await playwright.chromium.launch(chromium_sandbox=True)
-                context = await browser.new_context(accept_downloads=False)
+                context = await browser.new_context(
+                    accept_downloads=False, viewport={"width": 1100, "height": 800}
+                )
                 await context.route("**/*", self.route)
                 page = await context.new_page()
                 page.set_default_timeout(2000)
@@ -124,8 +143,13 @@ class _Verification:
                     await self.exercise(page)
                 await browser.close()
         except Exception as exc:
-            self.reject(f"Browser verification failed: {type(exc).__name__}.")
-        return {"approved": not self.reasons, "checks_passed": self.passed, "reasons": self.reasons}
+            self.reject(f"Browser verification failed: {type(exc).__name__}. {str(exc)[:220]}")
+        return {
+            "approved": not self.reasons,
+            "checks_passed": self.passed,
+            "reasons": self.reasons,
+            "screenshots": self.screenshots,
+        }
 
 
 if __name__ == "__main__":
