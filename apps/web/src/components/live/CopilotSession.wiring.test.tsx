@@ -75,3 +75,5 @@ describe("what the panel hands CopilotChat", () => {
     expect(mountPanel().suggestions).toBe("manual");
   });
 });
+
+vi.mock("../../hooks/useAuth", () => ({ useAuth: () => ({ session: null }) }));

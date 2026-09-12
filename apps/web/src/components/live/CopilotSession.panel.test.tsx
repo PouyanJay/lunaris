@@ -228,3 +228,5 @@ describe("which card is the standing one", () => {
     expect(isStandingCard(null, {})).toBe(false);
   });
 });
+
+vi.mock("../../hooks/useAuth", () => ({ useAuth: () => ({ session: null }) }));
