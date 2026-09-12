@@ -26,7 +26,10 @@ class ScriptedModel:
         if isinstance(value, Exception):
             raise value
         return SimCompletion(
-            text=json.dumps(value), model="scripted", input_tokens=50, output_tokens=50
+            text=value if isinstance(value, str) else json.dumps(value),
+            model="scripted",
+            input_tokens=50,
+            output_tokens=50,
         )
 
 
@@ -68,7 +71,10 @@ def inputs():
         ([{"html": "correct"}], "approved"),
         ([{"html": "wrong"}, {"html": "correct"}], "approved"),
         ([{"html": "wrong"}, {"html": "wrong"}], "rejected"),
-        ([{"unexpected": "invalid"}], "rejected"),
+        ([{"unexpected": "invalid"}, {"unexpected": "invalid"}], "rejected"),
+        ([{"unexpected": "invalid"}, {"html": "correct"}], "approved"),
+        (['{"html":', {"html": "correct"}], "approved"),
+        (['{"html":', '{"html":'], "rejected"),
     ],
 )
 async def test_candidate_repair_is_bounded_and_publication_requires_matching_evidence(
@@ -92,11 +98,18 @@ async def test_candidate_repair_is_bounded_and_publication_requires_matching_evi
     if status == "approved":
         assert result.bundle.candidate.html == "correct"
         assert result.reason is None
+        assert "Rendering source (untrusted data" in model.prompts[-1]
+        assert "correct" in model.prompts[-1]
         assert result.bundle.spec.source_version == content_hash(node.model_dump_json())
     else:
         assert result.bundle is None
     if len(candidates) == 2:
-        assert "visible relationship is wrong" in model.prompts[2]
+        reason = (
+            "invalid simulator bundle"
+            if isinstance(candidates[0], str) or "unexpected" in candidates[0]
+            else "visible relationship is wrong"
+        )
+        assert reason in model.prompts[2]
 
 
 async def test_unsuitable_concepts_stop_before_generation():
@@ -210,3 +223,90 @@ async def test_numeric_approval_without_visual_evidence_is_rejected():
     assert result.bundle is None
     assert result.reason == "Visual verification evidence unavailable."
     assert len(model.prompts) == 2
+
+
+async def test_default_budget_allows_source_audit_after_one_visual_repair():
+    node, criterion, plan = inputs()
+    html = "correct" + " " * 6000
+
+    class SourceVerifier(RelationshipVerifier):
+        async def verify(self, candidate, spec):
+            report = await super().verify(candidate.model_copy(update={"html": "correct"}), spec)
+            return report.model_copy(update={"content_hash": content_hash(candidate.html)})
+
+    model = ScriptedModel(
+        [
+            plan,
+            {"html": html},
+            {"passed": False, "explanation": "Fix diagram."},
+            {"html": html},
+            {"passed": True, "explanation": "Connections correct."},
+        ]
+    )
+    result = await SimFactory(model, SourceVerifier()).build(
+        node, criterion, run_id="source-repair"
+    )
+    assert result.status == "approved", result.reason
+    assert len(result.calls) == 5
+    assert sum(call.reserved_tokens for call in result.calls) <= 80_000
+    assert html in model.prompts[2] and html in model.prompts[4]
+
+
+@pytest.mark.parametrize("renderer", [None, "series-resistor-v1"])
+async def test_series_recipe_is_assembled_before_verification(renderer):
+    node = ConceptNode(
+        id="resistor", name="An ideal resistor", definition="I=V/R for one resistor."
+    )
+    criterion = MasteryCriterion(kind="manipulate", statement="Explore I=V/R.", needs_sim=True)
+    spec = TeachingSpec.model_validate(
+        {
+            "contract": {
+                "objective": criterion.statement,
+                "parameters": {
+                    "voltage": {"label": "V", "minimum": 0, "maximum": 12, "step": 1, "default": 6},
+                    "resistance": {
+                        "label": "R",
+                        "minimum": 1,
+                        "maximum": 6,
+                        "step": 1,
+                        "default": 3,
+                    },
+                },
+            },
+            "source": "I=V/R",
+            "sourceVersion": "1",
+            "cases": [
+                {"state": {"voltage": v, "resistance": 3}, "outputs": {"current": f"{v / 3:.2f}"}}
+                for v in (0, 6, 12)
+            ],
+        }
+    )
+    html = '<html><body><div data-lunaris-renderer="series-resistor-v1"></div></body></html>'
+    model = ScriptedModel(
+        [
+            {
+                "spec": spec.model_dump(by_alias=True),
+                "reason": "Ideal resistor",
+                "renderer": renderer,
+            },
+            {"html": html},
+            {"passed": True, "explanation": "Factory circuit is correct."},
+        ]
+    )
+
+    class AssembledVerifier:
+        async def verify(self, candidate, spec):
+            assert 'data-lunaris-renderer-code="series-resistor-v1"' in candidate.html
+            return VerificationReport(
+                content_hash=content_hash(candidate.html),
+                spec_hash=content_hash(spec.model_dump_json(by_alias=True)),
+                approved=True,
+                checks_passed=4,
+                elapsed_ms=1,
+                screenshots=["fixture-image"],
+            )
+
+    result = await SimFactory(model, AssembledVerifier()).build(node, criterion, run_id="recipe")
+    assert result.status == "approved", result.reason
+    assert result.bundle.candidate.html != html
+    assert "Do not draw a circuit" in model.prompts[1]

@@ -19,6 +19,7 @@ from .schema.candidate import SimCandidate
 from .schema.plan_proposal import SimPlanProposal
 from .schema.verified_bundle import VerifiedBundle
 from .schema.visual_verdict import SimVisualVerdict
+from .series_circuit_renderer import SeriesCircuitRenderer
 
 
 class SimFactory:
@@ -94,6 +95,7 @@ class SimFactory:
             node=node,
             criterion=criterion,
             spec=None,
+            renderer=None,
             candidate=None,
             candidates=[],
             bundle=None,
@@ -183,7 +185,12 @@ class SimFactory:
                     "source_version": content_hash(state["node"].model_dump_json()),
                 }
             )
-            return {**update, "spec": spec}
+            renderer = proposal.renderer
+            if set(spec.contract.parameters) == {"voltage", "resistance"}:
+                renderer = SeriesCircuitRenderer.version
+            if renderer:
+                SeriesCircuitRenderer().validate(spec)
+            return {**update, "spec": spec, "renderer": renderer}
         except (ValueError, ValidationError):
             return {
                 **update,
@@ -198,6 +205,10 @@ class SimFactory:
             return update
         try:
             candidate = SimCandidate.model_validate(parse_json_object(text))
+            if state["renderer"]:
+                candidate = SimCandidate(
+                    html=SeriesCircuitRenderer().assemble(candidate.html, state["spec"])
+                )
             return {
                 **update,
                 "candidate": candidate,
@@ -229,7 +240,7 @@ class SimFactory:
         return "reserve_generate" if state["spec"] is not None else END
 
     def _after_generate(self, state: FactoryState) -> str:
-        return "verify" if state["candidate"] is not None else END
+        return "verify" if state["candidate"] is not None else self._after_review(state)
 
     def _after_verify(self, state: FactoryState) -> str:
         if (

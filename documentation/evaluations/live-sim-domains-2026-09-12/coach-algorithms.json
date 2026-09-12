@@ -1,0 +1,15 @@
+{
+  "domain": "algorithms",
+  "gesture": {
+    "n": 5.0
+  },
+  "reaction": {
+    "text": "You set n to 5 elements. Bubble sort's worst case makes 10 comparisons here. Compare that to n=4, which needs only 6 comparisons: adding one element jumped the count by 4, not by 1. That's because each new element adds a full extra pass of comparisons. Notice the pattern across the cases: n=2 gives 1, n=4 gives 6, n=5 gives 10, n=7 gives 21, n=10 gives 45. The growth accelerates as n rises.",
+    "state": {
+      "n": 5.0
+    }
+  },
+  "model": "claude-opus-4-8",
+  "costUsd": 0.007425000000000001,
+  "elapsedMs": 4585
+}

@@ -12,6 +12,7 @@ from .schema.visual_verdict import SimVisualVerdict
 class FactoryState(TypedDict):
     node: ConceptNode
     criterion: MasteryCriterion
+    renderer: str | None
     spec: TeachingSpec | None
     candidates: list[SimCandidate]
     candidate: SimCandidate | None

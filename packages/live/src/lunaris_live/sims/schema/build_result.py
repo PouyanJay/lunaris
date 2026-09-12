@@ -13,7 +13,7 @@ from .visual_verdict import SimVisualVerdict
 class SimBuildCall(LiveModel):
     stage: Literal["plan", "generate", "review"]
     model: str
-    prompt_version: str = "sim-factory-v3"
+    prompt_version: str = "sim-factory-v11"
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     reserved_tokens: int = Field(ge=0)

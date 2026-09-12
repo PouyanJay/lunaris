@@ -7,7 +7,7 @@ from ...graph.schema.base import LiveModel
 
 class VerificationReport(LiveModel):
     version: Literal[1] = 1
-    verifier_version: str = "chromium-contract-v1"
+    verifier_version: str = "chromium-contract-v2"
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     spec_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     approved: bool

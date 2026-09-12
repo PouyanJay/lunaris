@@ -1,0 +1,17 @@
+{
+  "domain": "economics",
+  "gesture": {
+    "price": 20.0,
+    "quantity": 10.0
+  },
+  "reaction": {
+    "text": "You set price to 20 and quantity to 10, which lands exactly at break-even: profit is 0. This is the point where revenue just covers costs. From the cases, we can see structure: at price 20 with 0 units sold, profit is -100, suggesting a fixed cost around 100. Each unit at price 20 seems to add 10 toward covering that. Try nudging price up to 25 at the same quantity of 10 to see profit rise to 50, showing how a higher unit price lifts you above break-even.",
+    "state": {
+      "price": 25.0,
+      "quantity": 10.0
+    }
+  },
+  "model": "claude-opus-4-8",
+  "costUsd": 0.00829,
+  "elapsedMs": 3732
+}
