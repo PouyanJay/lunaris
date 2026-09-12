@@ -1,6 +1,7 @@
 """Real Chromium → React host → HTTP session service → persisted exchange → iframe."""
 
 import os
+import re
 import selectors
 import socket
 import subprocess
@@ -81,7 +82,9 @@ def servers(tmp_path):
                         if not chunk:
                             pytest.fail("Server exited before readiness: " + str(buffers))
                         log.write(chunk.decode(errors="replace"))
-                        buffers[key.fileobj] += chunk
+                        buffers[key.fileobj] = re.sub(
+                            rb"\x1b\[[0-9;]*m", b"", buffers[key.fileobj] + chunk
+                        )
                         if (
                             b"Uvicorn running on" in buffers[key.fileobj]
                             or b"Local:" in buffers[key.fileobj]
