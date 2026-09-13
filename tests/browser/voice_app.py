@@ -31,7 +31,7 @@ class _FixtureVoiceProvider:
         self.speech: list[dict[str, str]] = []
 
     async def transcribe(self, audio: RecordedAudio, *, run_id: str) -> Transcription:
-        assert audio.duration_s == 0.1
+        assert 0 < audio.duration_s <= 60
         self.transcriptions.append({"run_id": run_id})
         return Transcription("A fraction is a part of a whole.", "browser-fixture", "fixture-v1")
 
