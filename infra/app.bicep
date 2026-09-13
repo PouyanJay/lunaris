@@ -56,6 +56,9 @@ param coverGenerationEnabled bool = false
 @description('Enable verified simulators only after the trusted supervisor is ready.')
 param liveSimsEnabled bool = false
 
+@description('Live voice transport operator switch. Default off; authenticated learners use their stored ElevenLabs key.')
+param liveVoiceEnabled bool = false
+
 @description('Comma-separated emails allowed to manage the signup invite-gate (LUNARIS_ADMIN_EMAILS). Empty (the default) means no admins, so the admin endpoints 403 everyone.')
 param adminEmails string = ''
 
@@ -126,6 +129,7 @@ var baseEnv = [
   { name: 'SUPABASE_SERVICE_ROLE_KEY', secretRef: supabaseServiceRoleSecret }
   { name: 'LUNARIS_PIPELINE', value: pipeline }
   { name: 'LUNARIS_LIVE_SIMS', value: liveSimsEnabled ? 'factory' : 'off' }
+  { name: 'LUNARIS_LIVE_VOICE_ENABLED', value: string(liveVoiceEnabled) }
   { name: 'LUNARIS_CORS_ORIGINS', value: corsOrigins }
   { name: 'LUNARIS_ENV', value: env }
   { name: 'LUNARIS_DRAFT_TIER_ENABLED', value: string(draftTierEnabled) }

@@ -35,20 +35,18 @@ it.each([
 ])("rejects a mismatched or invalid transcription response: %j", async (change) => {
   vi.stubGlobal(
     "fetch",
-    vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            text: "Hello",
-            source,
-            operationId: op,
-            provider: "fixture",
-            model: "v1",
-            ...change,
-          }),
-        ),
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          text: "Hello",
+          source,
+          operationId: op,
+          provider: "fixture",
+          model: "v1",
+          ...change,
+        }),
       ),
+    ),
   );
   await expect(
     transcribeVoice(

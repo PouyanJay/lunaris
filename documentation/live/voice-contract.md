@@ -23,9 +23,17 @@ Admission allows at most two concurrent voice operations and 120 operations per 
 
 Generated audio lives in a private bucket. A bounded API-lifetime sweep runs every minute, even with voice disabled, to scrub expired derived results and process deletion tombstones through the Storage API. Raw microphone recordings are never persisted. Client disconnect closes the provider in the same producer task and drains accepted usage; it never cancels the learning turn.
 
-## Ownership and integration
+## Using voice
 
-#255 owns new admission/storage implementation and migrations. #256 owns new provider/metering files. #257 owns capture/transcription client files. #258 owns playback files. #259 composes production APIs. #260 alone integrates SessionView/ComposerBridge/simulator reactions. These workers must not independently modify shared contracts. Root resolves contract changes before their consumers proceed.
+Choose **Speak**, finish recording, review or edit the transcript, then **Send**. Dictation enters the existing answer composer and preserves typed text; if the combined answer is too long, explicitly choose whether to replace it with the recording. Cards without a text composer show an editable recording preview. **Read aloud** plays the current tutor turn; **Read reaction** plays the latest simulator response. **Stop audio** stops local playback.
+
+Authenticated learners use their ElevenLabs credential saved in Settings → Voice. Missing credentials, denied microphone permission, and provider failures leave typed answers available. Microphone capture requires a secure browser context. Voice does not change simulator practice into mastery evidence.
+
+## Rollout
+
+The production environment variable `LIVE_VOICE_ENABLED` is passed to the API through the existing human-gated deployment; it defaults to false. Set it to true for the final approved Phase 4 rollout. Turning it off disables new voice requests while text and private-audio cleanup continue. No browser secret or platform-key fallback is introduced.
+
+Phase implementation tickets #254–#261 are integrated on the phase branch. #262 tracks real-provider evaluation, the final PR, rollout, and acceptance. Automated browser checks use generated microphone input and fixture speech; they do not establish physical-device or real-provider quality. Existing Live reload behavior starts a new session; voice checks assert that the old answer is not resubmitted and the microphone and audio do not restart automatically.
 
 ## Provider references
 

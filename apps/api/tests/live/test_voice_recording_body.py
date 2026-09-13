@@ -9,7 +9,7 @@ async def test_upload_timeout_refuses_a_stalled_request_before_paid_admission():
     class Body:
         async def stream(self):
             yield b"RIFF"
-            await asyncio.sleep(0.02)
+            await asyncio.Event().wait()
 
     with pytest.raises(VoiceError) as caught:
         await read_voice_recording(Body(), timeout_s=0.001)
