@@ -1,9 +1,12 @@
 """A generated external microphone boundary; capture, worklet and upload remain real."""
 
+from playwright.async_api import Page
 
-async def install_microphone(page):
+
+async def install_microphone(page: Page) -> None:
     await page.add_init_script("""(() => {
       window.micStreams = [];
+      window.micContexts = [];
       navigator.mediaDevices.getUserMedia = async () => {
         const context = new AudioContext();
         await context.resume();
@@ -19,6 +22,7 @@ async def install_microphone(page):
           stop(); oscillator.stop(); void context.close();
         };
         window.micStreams.push(stream);
+        window.micContexts.push(context);
         return stream;
       };
     })();""")

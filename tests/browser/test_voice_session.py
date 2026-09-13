@@ -60,7 +60,7 @@ async def test_voice_session_and_simulator_reaction(servers, tmp_path):  # noqa:
             assert before["turns"][0]["answer"] is None
             await voice.get_by_role("button", name="Speak", exact=True).click()
             await expect(voice.get_by_role("button", name="Finish recording")).to_be_visible()
-            await page.wait_for_timeout(300)
+            await page.wait_for_function("window.micContexts.at(-1).currentTime >= 0.25")
             await voice.get_by_role("button", name="Finish recording").click()
             draft = page.get_by_role("textbox", name="Your answer")
             await expect(draft).to_have_value("A fraction is a part of a whole.")
@@ -87,7 +87,7 @@ async def test_voice_session_and_simulator_reaction(servers, tmp_path):  # noqa:
                 await expect(voice.get_by_role("button", name="Speak", exact=True)).to_be_enabled()
                 await voice.get_by_role("button", name="Speak", exact=True).click()
                 await expect(voice.get_by_role("button", name="Finish recording")).to_be_visible()
-                await page.wait_for_timeout(300)
+                await page.wait_for_function("window.micContexts.at(-1).currentTime >= 0.25")
                 await voice.get_by_role("button", name="Finish recording").click()
                 await expect(draft).to_have_value("A fraction is a part of a whole.")
                 await draft.fill(
