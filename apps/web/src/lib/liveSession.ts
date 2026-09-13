@@ -40,6 +40,13 @@ export interface StagedCriterion {
 
 /** One beat of the loop: what the director chose, and what the tutor said about it. */
 export interface SessionTurn {
+  simEligible?: boolean;
+  practiceSim?: {
+    appId: string;
+    title: string;
+    url: string;
+    contract: import("./simContract").SimContract | null;
+  } | null;
   simExchanges?: import("./simContract").SimExchange[];
   /** 1-based, monotonic — the order the learner lived it. */
   seq: number;

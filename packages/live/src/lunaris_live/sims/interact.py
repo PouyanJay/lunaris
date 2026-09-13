@@ -14,12 +14,12 @@ async def interact(
     if session.status != SessionStatus.ACTIVE or not session.turns:
         raise StaleAnswerError("This session is not accepting simulator actions.")
     turn = session.turns[-1]
-    surface = turn.surface
+    surface = turn.surface if isinstance(turn.surface, SimAppCard) else turn.practice_sim
     if (
         turn.seq != event.turn_seq
         or turn.run_id != event.instance_id
         or turn.answer is not None
-        or not isinstance(surface, SimAppCard)
+        or surface is None
         or surface.app_id != event.app_id
         or surface.contract is None
     ):

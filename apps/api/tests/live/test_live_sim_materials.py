@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock
 from uuid import uuid4
 
+import pytest
 from lunaris_api.live.session.prefetch_registry import prefetch_registry
 from lunaris_api.live.session.service import LiveSessionService
 from lunaris_live.graph import ConceptGraph, ConceptNode, MasteryCriterion, MemoryGraphStore
@@ -17,7 +18,8 @@ from lunaris_live.sims.schema.verified_bundle import VerifiedBundle
 ROOT = Path(__file__).resolve().parents[4]
 
 
-async def test_cold_session_queues_then_next_session_mounts_the_published_instrument():
+@pytest.mark.parametrize("mixed", [False, True])
+async def test_cold_session_queues_then_next_session_mounts_the_published_instrument(mixed):
     result = json.loads(
         (
             ROOT / "documentation/evaluations/live-sim-builder-2026-09-11/approved-result.json"
@@ -27,7 +29,11 @@ async def test_cold_session_queues_then_next_session_mounts_the_published_instru
     criterion = MasteryCriterion(
         kind="manipulate", statement=bundle.spec.contract.objective, needs_sim=True
     )
-    node = ConceptNode(id="n", name="Doubling", definition="y=2x", mastery_criteria=[criterion])
+    spoken = MasteryCriterion(
+        kind="explain", statement="Explain proportional scaling.", needs_sim=False
+    )
+    criteria = [spoken, criterion] if mixed else [criterion]
+    node = ConceptNode(id="n", name="Doubling", definition="y=2x", mastery_criteria=criteria)
     graph = ConceptGraph(graph_id="g", topic="Functions", nodes=[node], topo_order=["n"])
     owner = str(uuid4())
     graphs, sessions, known = MemoryGraphStore(), MemorySessionStore(), MemoryKnowledgeStore()
@@ -46,7 +52,7 @@ async def test_cold_session_queues_then_next_session_mounts_the_published_instru
         session_budget_s=1800,
     )
     cold = await service.start("g", session_id="cold", owner_id=owner)
-    assert cold.turns[0].criterion is None
+    assert cold.turns[0].criterion == (spoken if mixed else None)
     await prefetch_registry().settled()
     queue.enqueue.assert_called_once()
     asset = SimAsset(
@@ -58,8 +64,9 @@ async def test_cold_session_queues_then_next_session_mounts_the_published_instru
     )
     assets.find.return_value = [asset]
     warm = await service.start("g", session_id="warm", owner_id=owner)
-    assert warm.turns[0].surface.app_id == str(asset.id)
-    assert warm.turns[0].surface.contract == bundle.spec.contract
+    instrument = warm.turns[0].practice_sim if mixed else warm.turns[0].surface
+    assert instrument.app_id == str(asset.id)
+    assert instrument.contract == bundle.spec.contract
     assert warm.turns[0].sim_exchanges == []
     await prefetch_registry().settled()
     queue.enqueue.assert_called_once()

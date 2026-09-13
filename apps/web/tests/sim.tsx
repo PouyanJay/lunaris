@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { SimSessionContext } from "../src/components/live/SimSessionContext";
+import { SimulatorPractice } from "../src/components/live/SimulatorPractice";
 import { SurfaceCard } from "../src/components/live/SurfaceCard";
 import "../src/index.css";
 import { authedFetch } from "../src/lib/apiClient";
@@ -14,11 +15,12 @@ const session = await authedFetch(id ? `${api}/api/live/sessions/${id}` : `${api
 query.set("session", session.sessionId);
 history.replaceState(null, "", `?${query}`);
 const turn = session.turns.at(-1);
+const descriptor = turn.practiceSim ?? turn.surface;
 const surface = {
-  ...turn.surface,
-  url: turn.surface.url.startsWith("/api/live/sims/assets/")
-    ? turn.surface.url
-    : `${api}${turn.surface.url}`,
+  ...descriptor,
+  url: descriptor.url.startsWith("/api/live/sims/assets/")
+    ? descriptor.url
+    : `${api}${descriptor.url}`,
 };
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -31,7 +33,14 @@ createRoot(document.getElementById("root")!).render(
         exchanges: turn.simExchanges,
       }}
     >
-      <SurfaceCard spec={surface} busy={false} answerable onAnswer={() => {}} />
+      {turn.practiceSim ? (
+        <>
+          <SimulatorPractice app={surface} active busy={false} />
+          <SurfaceCard spec={turn.surface} busy={false} answerable onAnswer={() => {}} />
+        </>
+      ) : (
+        <SurfaceCard spec={surface} busy={false} answerable onAnswer={() => {}} />
+      )}
     </SimSessionContext.Provider>
   </React.StrictMode>,
 );

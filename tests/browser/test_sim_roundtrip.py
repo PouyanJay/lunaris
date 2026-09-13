@@ -30,6 +30,7 @@ def servers(tmp_path, request):
         env.update(
             VITE_SUPABASE_URL="https://identity.test", VITE_SUPABASE_ANON_KEY="public-test-key"
         )
+    env["SIM_PRACTICE_FIXTURE"] = "true" if config.get("practice") else "false"
     commands = [
         (
             [

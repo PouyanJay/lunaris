@@ -37,9 +37,9 @@ class SimMaterials:
 
     def _request(self, graph: ConceptGraph, node_id: str) -> SimRequest | None:
         node = node_of(graph, node_id)
-        if node is None or any(not c.needs_sim for c in node.mastery_criteria):
+        if node is None:
             return None
-        criterion = next(iter(node.mastery_criteria), None)
+        criterion = next((c for c in node.mastery_criteria if c.needs_sim), None)
         return SimRequest(node=node, criterion=criterion, run_id=uuid4().hex) if criterion else None
 
     async def prepare(self, preparation: SimPreparation) -> None:

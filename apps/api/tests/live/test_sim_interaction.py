@@ -24,8 +24,8 @@ class ReferenceRegistry:
         return app if criterion.statement == app.contract.objective else None
 
 
-@pytest.fixture
-async def instrument(tmp_path):
+@pytest.fixture(params=[False, True], ids=["sim-only", "mixed-practice"])
+async def instrument(tmp_path, request):
     settings = settings_for(tmp_path)
     app = create_app()
     graphs = resolve_graph_store(settings)
@@ -61,13 +61,33 @@ async def instrument(tmp_path):
                 ]
             }
         )
+        if request.param:
+            first = first.model_copy(
+                update={
+                    "mastery_criteria": [
+                        *first.mastery_criteria,
+                        MasteryCriterion(
+                            kind="explain",
+                            statement="Explain the proportional relationship.",
+                            needs_sim=False,
+                        ),
+                    ]
+                }
+            )
         graphs.save(
             stored.model_copy(update={"nodes": [first, *stored.nodes[1:]]}), owner_id="learner-a"
         )
         response = await client.post("/api/live/sessions", json={"graphId": graph["graphId"]})
         assert response.status_code == 201, response.text
         session = response.json()
-        assert session["turns"][0]["surface"]["kind"] == "sim_app"
+        turn = session["turns"][0]
+        assert turn["simEligible"] is True
+        if request.param:
+            assert turn["surface"]["kind"] == "explain_back"
+            assert turn["criterion"]["statement"] == "Explain the proportional relationship."
+            assert turn["practiceSim"]["appId"] == "linear-reference"
+        else:
+            assert turn["surface"]["kind"] == "sim_app"
         yield client, session, knowledge, app
 
 
@@ -173,3 +193,54 @@ async def test_a_simulator_gesture_has_a_session_endpoint(tmp_path):
         # This ordinary text turn has no registered simulator; it must explicitly refuse the
         # gesture, rather than invent a sim, grade a drag, or leave the endpoint unwired.
         assert response.status_code == 409, response.text
+
+
+async def test_explicit_answer_grades_original_criterion_after_practice(instrument):
+    client, session, _, _ = instrument
+    url = f"/api/live/sessions/{session['sessionId']}"
+    assert (await client.post(f"{url}/sim", json=gesture(session))).status_code == 200
+    criterion = session["turns"][0]["criterion"]
+    response = await client.post(
+        f"{url}/turns", json={"answer": criterion["statement"], "answeringSeq": 1}
+    )
+    assert response.status_code == 200, response.text
+    turn = response.json()["turns"][0]
+    assert turn["criterion"] == criterion
+    assert turn["grade"]["kind"] == "met"
+    assert len(turn["simExchanges"]) == 1
+    assert (await client.post(f"{url}/sim", json=gesture(session, sequence=2))).status_code == 409
+
+
+async def test_due_retrieval_does_not_offer_practice_or_accept_gestures(instrument):
+    from datetime import UTC, datetime, timedelta
+
+    from lunaris_live.session import LearnerModel, NodeKnowledge
+
+    client, session, knowledge, _ = instrument
+    node_id = session["turns"][0]["move"]["nodeId"]
+    assert (
+        await client.post(f"/api/live/sessions/{session['sessionId']}/discard")
+    ).status_code == 200
+    due = LearnerModel(
+        graph_id=session["graphId"],
+        nodes={
+            node_id: NodeKnowledge(
+                node_id=node_id,
+                estimate=0.95,
+                evidence_count=3,
+                due_at=datetime.now(UTC) - timedelta(days=1),
+            )
+        },
+    )
+    knowledge.save(due, owner_id="learner-a")
+    opened = await client.post("/api/live/sessions", json={"graphId": session["graphId"]})
+    assert opened.status_code == 201, opened.text
+    retrieval = opened.json()
+    assert retrieval["turns"][0]["move"]["kind"] == "retrieve"
+    assert retrieval["turns"][0]["practiceSim"] is None
+    assert retrieval["turns"][0]["simEligible"] is False
+    refused = await client.post(
+        f"/api/live/sessions/{retrieval['sessionId']}/sim", json=gesture(retrieval)
+    )
+    assert refused.status_code == 409
+    assert knowledge.load(session["graphId"], owner_id="learner-a") == due

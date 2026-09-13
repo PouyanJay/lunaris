@@ -9,6 +9,7 @@ from .decide_move import decide_move
 from .node_of import node_of
 from .on_the_wall import on_the_wall
 from .protocols import ISimRegistry, ITutor, ITutorDeltaSink
+from .resolve_practice_sim import resolve_practice_sim
 from .resolve_sim_app import resolve_sim_app
 from .said_and_illustrated import said_and_illustrated
 from .schema import (
@@ -149,6 +150,14 @@ async def _teach(
         tutor=said,
         run_id=run_id,
         criterion=staged,
+        sim_eligible=(
+            move.kind != MoveKind.RETRIEVE and any(c.needs_sim for c in node.mastery_criteria)
+        ),
+        practice_sim=(
+            resolve_practice_sim(sims, node)
+            if staged is not None and not staged.needs_sim and move.kind != MoveKind.RETRIEVE
+            else None
+        ),
         # Chosen from the move, the concept and the belief — never from what the tutor happened to
         # say. Plan §8 makes that mandatory for this tier: these components feed the learner model.
         surface=select_surface(

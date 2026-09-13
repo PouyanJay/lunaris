@@ -851,3 +851,63 @@ describe("a session the learner left", () => {
     },
   );
 });
+
+it.each([undefined, "https://runtime.example.test"])(
+  "keeps practice separate from assessment with runtime %s",
+  async (copilotUrl) => {
+    const session = {
+      ...OPENED,
+      turns: [
+        {
+          ...OPENED.turns[0]!,
+          practiceSim: {
+            appId: "practice",
+            title: "Try proportional scaling",
+            url: "https://sim.example.test/app",
+            contract: {
+              version: 1,
+              objective: "Change x and observe y",
+              parameters: { x: { label: "x", minimum: 0, maximum: 10, step: 1, default: 2 } },
+            },
+          },
+        },
+      ],
+    };
+    vi.stubGlobal("fetch", jsonAlways(session, 201));
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Scaling" copilotUrl={copilotUrl} />);
+    expect(await screen.findByTitle("Try proportional scaling")).toHaveAttribute(
+      "sandbox",
+      "allow-scripts",
+    );
+    expect(screen.getByText(/Practice does not count toward mastery/)).toBeInTheDocument();
+    expect(
+      screen.getByText("In your own words: what is Gradient, and what would you use it for?"),
+    ).toBeInTheDocument();
+    expect(screen.queryAllByRole("textbox")).toHaveLength(copilotUrl ? 0 : 1);
+  },
+);
+
+it.each(["queued", "rejected", "approved"])(
+  "shows %s preparation feedback alongside a text assessment",
+  async (status) => {
+    const session = { ...OPENED, turns: [{ ...OPENED.turns[0]!, simEligible: true }] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) =>
+        Promise.resolve(
+          new Response(JSON.stringify(String(url).endsWith("/sim-status") ? { status } : session), {
+            status: 200,
+          }),
+        ),
+      ),
+    );
+    render(<SessionView apiBaseUrl="" graphId="g1" topic="Scaling" />);
+    const messages = {
+      queued: /Preparing a simulator/,
+      rejected: /could not prepare a suitable simulator/,
+      approved: /simulator is ready/,
+    };
+    expect(await screen.findByText(messages[status as keyof typeof messages])).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeEnabled();
+  },
+);
