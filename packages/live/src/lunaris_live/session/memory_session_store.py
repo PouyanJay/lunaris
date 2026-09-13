@@ -1,4 +1,6 @@
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from itertools import count
 
@@ -58,6 +60,12 @@ class MemorySessionStore:
         if self._owners.get(session_id) != owner_id:
             raise FileNotFoundError(session_id)
         return session
+
+    @contextmanager
+    def locked_session(self, session_id: str, *, owner_id: str | None = None) -> Iterator[Session]:
+        """Serialize an adjacent admission with session writes and deletion."""
+        with self._lock:
+            yield self.load(session_id, owner_id=owner_id)
 
     def has_open_on(self, graph_id: str, *, owner_id: str | None = None) -> bool:
         with self._lock:

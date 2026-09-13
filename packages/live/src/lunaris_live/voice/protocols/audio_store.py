@@ -1,0 +1,9 @@
+from typing import Protocol
+
+
+class IVoiceAudioStore(Protocol):
+    """Service-only generated PCM; never give these references directly to a browser."""
+
+    async def put(self, key: str, pcm: bytes) -> None: ...
+    async def get(self, key: str) -> bytes: ...
+    async def delete(self, key: str) -> None: ...
