@@ -44,6 +44,9 @@ export function copilotRuntimeUrl(base: string): string {
 
 /** The headers every run carries. The session id is not decoration — it is the only thing on the
  *  request that says whose lesson this is. */
-export function sessionHeaders(sessionId: string): Record<string, string> {
-  return { [SESSION_HEADER]: sessionId };
+export function sessionHeaders(sessionId: string, accessToken?: string): Record<string, string> {
+  return {
+    [SESSION_HEADER]: sessionId,
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  };
 }

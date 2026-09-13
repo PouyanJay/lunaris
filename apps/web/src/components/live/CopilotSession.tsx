@@ -11,6 +11,7 @@ import {
   type MutableRefObject,
 } from "react";
 
+import { useAuth } from "../../hooks/useAuth";
 import { answeringSeqOf } from "../../lib/answeringSeq";
 import {
   LAYOUT_TOOL,
@@ -171,7 +172,9 @@ export function CopilotSession({
   // Both memoised: the provider re-runs its connect effect whenever either changes identity. A
   // reconnect is a no-op once connected, but re-applying properties on every parent render is
   // still churn for nothing, and a properties change is what carries the named turn to the wire.
-  const headers = useMemo(() => sessionHeaders(sessionId), [sessionId]);
+  const { session: authSession } = useAuth();
+  const accessToken = authSession?.access_token;
+  const headers = useMemo(() => sessionHeaders(sessionId, accessToken), [sessionId, accessToken]);
   const properties = useMemo(
     () => (answeringSeq === null ? NO_PROPERTIES : { [ANSWERING_SEQ_PROP]: answeringSeq }),
     [answeringSeq],

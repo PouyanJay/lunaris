@@ -461,3 +461,5 @@ describe("the Tier 1 card inside the generative panel", () => {
     expect(within(drawn.container).getByText("The sign is the direction.")).toBeInTheDocument();
   });
 });
+
+vi.mock("../../hooks/useAuth", () => ({ useAuth: () => ({ session: null }) }));
