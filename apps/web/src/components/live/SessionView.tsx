@@ -14,6 +14,11 @@ import { SurfaceCard } from "./SurfaceCard";
 import { SimPreparationNotice } from "./SimPreparationNotice";
 import { SimulatorPractice } from "./SimulatorPractice";
 import { SimSessionContext } from "./SimSessionContext";
+import type { VoiceTranscript } from "../../lib/voice/types";
+import { IncomingAnswerContext } from "./IncomingAnswerContext";
+import { voiceDraftFor } from "./voice/voiceDraftFor";
+import { VoiceSessionControls } from "./voice/VoiceSessionControls";
+import { useSessionVoiceSources } from "./voice/useSessionVoiceSources";
 import styles from "./SessionView.module.css";
 
 /** CopilotKit's whole module graph, kept out of Live's chunk until a deployment actually has a
@@ -65,6 +70,23 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
   // its criterion, the generative panel opens on its words — and the Python side calls the same
   // thing `standing` (`SessionSnapshot.of`), so the concept keeps one name across the wire.
   const standing = session?.turns.at(-1) ?? null;
+  const voice = useSessionVoiceSources(session);
+  const [voiceDraft, setVoiceDraft] = useState<{
+    scope: string;
+    transcript: VoiceTranscript;
+  } | null>(null);
+  const answerScope = JSON.stringify([
+    apiBaseUrl,
+    session?.sessionId,
+    standing?.seq,
+    standing?.runId,
+  ]);
+  const incomingAnswer = voiceDraftFor(voiceDraft, voice.answerSource, answerScope);
+  const acceptsDraft =
+    !standing?.surface ||
+    standing.surface.kind === "criterion_card" ||
+    standing.surface.kind === "explain_back" ||
+    (standing.surface.kind === "sim_app" && !!standing.surface.contract);
   // What the close scheduled (P2c T7), read off the goodbye turn's meter: the ending says the day
   // on both surfaces, so it is derived once here and handed to each. The meter is only ever the
   // goodbye's card, so "there is a meter standing" is "the session closed".
@@ -88,6 +110,7 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
               turnSeq: standing.seq,
               instanceId: standing.runId,
               exchanges: standing.simExchanges ?? [],
+              onExchange: voice.onExchange,
             }
           : null
       }
@@ -135,16 +158,37 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
                 busy={state.status === "answering"}
               />
             ) : null}
-            <TurnFooter
-              standing={standing}
-              closed={isFinished(session.status)}
-              nextReview={nextReview}
-              warming={session.status === "warming"}
-              answerHere={answerHere}
-              busy={state.status === "answering"}
-              onAnswer={send}
-            />
+            <IncomingAnswerContext.Provider key={answerScope} value={incomingAnswer}>
+              <TurnFooter
+                standing={standing}
+                closed={isFinished(session.status)}
+                nextReview={nextReview}
+                warming={session.status === "warming"}
+                answerHere={answerHere}
+                busy={state.status === "answering"}
+                onAnswer={send}
+              />
+            </IncomingAnswerContext.Provider>
           </>
+        ) : null}
+
+        {session && answerHere ? (
+          <VoiceSessionControls
+            apiBaseUrl={apiBaseUrl}
+            sessionId={session.sessionId}
+            answerSource={voice.answerSource}
+            speechSource={voice.speechSource}
+            speechKind={voice.speechKind}
+            canAnswer={voice.answerSource !== null}
+            busy={state.status === "answering"}
+            onAnswer={send}
+            {...(acceptsDraft
+              ? {
+                  onTranscript: (transcript: VoiceTranscript) =>
+                    setVoiceDraft({ scope: answerScope, transcript }),
+                }
+              : {})}
+          />
         ) : null}
 
         {session && copilotUrl ? (
@@ -163,6 +207,13 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
               standingSeq={standing?.seq ?? null}
               nextReview={nextReview}
               onTurnTaken={refresh}
+              voice={{
+                apiBaseUrl,
+                answerSource: voice.answerSource,
+                speechSource: voice.speechSource,
+                speechKind: voice.speechKind,
+                canAnswer: voice.answerSource !== null,
+              }}
             />
           </Suspense>
         ) : null}

@@ -1,8 +1,9 @@
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useContext, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { MAX_ANSWER_CHARS } from "../../lib/liveSession";
 import { Button } from "../primitives/Button";
 import styles from "./AnswerForm.module.css";
+import { IncomingAnswerContext, type IncomingAnswer } from "./IncomingAnswerContext";
 
 interface AnswerFormProps {
   /** What the learner is being asked to demonstrate, or null when the turn stages nothing. */
@@ -37,6 +38,20 @@ export function AnswerForm({
   const boxId = useId();
   const errorId = useId();
   const box = useRef<HTMLTextAreaElement>(null);
+  const incoming = useContext(IncomingAnswerContext);
+  const received = useRef<string | null>(null);
+  const [overflow, setOverflow] = useState<IncomingAnswer | null>(null);
+  useLayoutEffect(() => {
+    if (!incoming || received.current === incoming.id) return;
+    received.current = incoming.id;
+    const combined = text.trim() ? `${text}\n${incoming.text}` : incoming.text;
+    if (combined.length > MAX_ANSWER_CHARS) setOverflow(incoming);
+    else {
+      setText(combined);
+      setOverflow(null);
+      box.current?.focus();
+    }
+  }, [incoming, text]);
 
   const submit = () => {
     if (busy) return;
@@ -82,6 +97,25 @@ export function AnswerForm({
         aria-describedby={error ? errorId : undefined}
         placeholder={criterion ? "In your own words…" : "Say what you're thinking…"}
       />
+      {overflow && overflow.id === incoming?.id ? (
+        <div>
+          <p className={styles.hint} role="alert">
+            The recording is too long to add to your typed answer. You can use the recording
+            instead.
+          </p>
+          <Button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setText(overflow.text);
+              setOverflow(null);
+              box.current?.focus();
+            }}
+          >
+            Use recording instead
+          </Button>
+        </div>
+      ) : null}
       <div className={styles.footer}>
         <p
           className={styles.hint}

@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   type MutableRefObject,
+  type ComponentProps,
 } from "react";
 
 import { useAuth } from "../../hooks/useAuth";
@@ -34,10 +35,18 @@ import { LessonLayout } from "./LessonLayout";
 import { SessionEnded } from "./SessionEnded";
 import { Warming } from "./SkeletonNotice";
 import { SurfaceCard } from "./SurfaceCard";
+import type { VoiceTranscript } from "../../lib/voice/types";
+import { IncomingAnswerContext, type IncomingAnswer } from "./IncomingAnswerContext";
+import { voiceDraftFor } from "./voice/voiceDraftFor";
+import { VoiceSessionControls } from "./voice/VoiceSessionControls";
 import styles from "./CopilotSession.module.css";
 import slotStyles from "./CopilotSlots.module.css";
 
 interface CopilotSessionProps {
+  voice?: Omit<
+    ComponentProps<typeof VoiceSessionControls>,
+    "sessionId" | "busy" | "onAnswer" | "onTranscript"
+  >;
   /** The runtime's host, or `undefined` when the deployment has no runtime configured. */
   runtimeUrl: string | undefined;
   sessionId: string;
@@ -92,6 +101,10 @@ const ComposerContext = createContext<ComposerBridge>(NOT_YET);
 const ReportComposerContext = createContext<(report: ComposerReport) => void>(() => {});
 /** The host's word on when to come back (P2c T7), for the ending the composer slot renders. */
 const NextReviewContext = createContext<NextReview | null>(null);
+const PanelAnswerContext = createContext<{ scope: string; draft: IncomingAnswer | null }>({
+  scope: "",
+  draft: null,
+});
 
 /** The composer's side of the bridge, held above the kit: the cards read `bridge`, the composer
  *  calls `report`. Its own hook so `CopilotSession` composes it beside the answered-turn state
@@ -149,10 +162,22 @@ export function CopilotSession({
   standingSeq,
   onTurnTaken,
   nextReview = null,
+  voice,
 }: CopilotSessionProps) {
   // Which turn the panel's next send is answering (T9): the turn the last state frame named for
   // *this* session, else the one the panel mounted with. Held per session id so a panel re-used
   // for another session cannot answer the new one with the old one's turn.
+  const [voiceDraft, setVoiceDraft] = useState<{
+    scope: string;
+    transcript: VoiceTranscript;
+  } | null>(null);
+  const answerScope = JSON.stringify([
+    voice?.apiBaseUrl,
+    sessionId,
+    standingSeq,
+    voice?.answerSource?.runId,
+  ]);
+  const incomingAnswer = voiceDraftFor(voiceDraft, voice?.answerSource ?? null, answerScope);
   const [answered, setAnswered] = useState<{ sessionId: string; seq: number } | null>(null);
   const answeringSeq = answered?.sessionId === sessionId ? answered.seq : standingSeq;
   const onTurn = useCallback(
@@ -236,15 +261,27 @@ export function CopilotSession({
 
               `suggestions="manual"` with none set: the kit would otherwise offer generated
               "suggested replies", which is the surface answering for the learner. */}
-                <CopilotChat
-                  {...(standingTurn ? { labels: { initial: standingTurn } } : {})}
-                  icons={ICONS}
-                  suggestions="manual"
-                  AssistantMessage={TutorMessage}
-                  UserMessage={LearnerMessage}
-                  Input={PanelComposer}
-                  ErrorMessage={TurnError}
-                />
+                <PanelAnswerContext.Provider value={{ scope: answerScope, draft: incomingAnswer }}>
+                  <CopilotChat
+                    {...(standingTurn ? { labels: { initial: standingTurn } } : {})}
+                    icons={ICONS}
+                    suggestions="manual"
+                    AssistantMessage={TutorMessage}
+                    UserMessage={LearnerMessage}
+                    Input={PanelComposer}
+                    ErrorMessage={TurnError}
+                  />
+                </PanelAnswerContext.Provider>
+                {voice ? (
+                  <VoiceSessionControls
+                    {...voice}
+                    sessionId={sessionId}
+                    canAnswer={voice.canAnswer && composer.ready && answeringSeq === standingSeq}
+                    busy={composer.busy}
+                    onAnswer={(text) => composer.send.current(text)}
+                    onTranscript={(transcript) => setVoiceDraft({ scope: answerScope, transcript })}
+                  />
+                ) : null}
               </div>
             </NextReviewContext.Provider>
           </ReportComposerContext.Provider>
@@ -307,6 +344,7 @@ export function PanelComposer(props: InputProps) {
   const { onSend, inProgress, chatReady = false } = props;
   const report = useContext(ReportComposerContext);
   const nextReview = useContext(NextReviewContext);
+  const incomingAnswer = useContext(PanelAnswerContext);
   const { state } = useCoAgent<PanelState>({ name: LIVE_AGENT });
   const closed = state.status === "closed";
   // The interview ran out before the map landed (P2c T7): the API refuses an answer here, so no
@@ -329,7 +367,11 @@ export function PanelComposer(props: InputProps) {
       </div>
     );
   }
-  return <TurnComposer {...props} />;
+  return (
+    <IncomingAnswerContext.Provider key={incomingAnswer.scope} value={incomingAnswer.draft}>
+      <TurnComposer {...props} />
+    </IncomingAnswerContext.Provider>
+  );
 }
 
 /** The director's Tier 1 card as the kit renders it in the message stream, answerable in place

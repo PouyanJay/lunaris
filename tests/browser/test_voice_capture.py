@@ -2,6 +2,7 @@
 
 import httpx
 import pytest
+from _voice_microphone import install_microphone
 from playwright.async_api import async_playwright, expect
 from test_sim_roundtrip import servers  # noqa: F401
 
@@ -14,23 +15,7 @@ async def test_microphone_draft_and_cleanup(servers):  # noqa: F811
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch()
         page = await browser.new_page()
-        await page.add_init_script("""(() => {
-          window.micStreams = [];
-          navigator.mediaDevices.getUserMedia = async () => {
-            const context = new AudioContext();
-            await context.resume();
-            const oscillator = context.createOscillator();
-            const destination = context.createMediaStreamDestination();
-            oscillator.connect(destination);
-            oscillator.start();
-            const stream = destination.stream;
-            const track = stream.getTracks()[0];
-            const stop = track.stop.bind(track);
-            track.stop = () => { stop(); oscillator.stop(); void context.close(); };
-            window.micStreams.push(stream);
-            return stream;
-          };
-        })();""")
+        await install_microphone(page)
         await page.goto(f"{web}/tests/voice-capture.html?api={api}")
         await expect(page.get_by_role("heading")).to_have_text("Microphone verification")
         assert await page.evaluate("window.micStreams.length") == 0
