@@ -6,6 +6,7 @@ from ...sims.schema.exchange import SimExchange
 from ..max_answer_chars import MAX_ANSWER_CHARS
 from .director_move import DirectorMove
 from .layout_spec import LayoutSpec
+from .sim_app import SimApp
 from .surface_spec import SurfaceSpec
 from .turn_grade import TurnGrade
 
@@ -61,4 +62,8 @@ class SessionTurn(LiveModel):
     #: Optional, like ``surface`` and for the same reason (R4): every row written before P2b has
     #: none, and a turn whose material could not be written has none either.
     layout: LayoutSpec | None = None
+    #: Optional practice alongside the assessment; gestures never award mastery.
+    practice_sim: SimApp | None = None
+    #: Whether this lesson has a simulator objective whose preparation can be observed.
+    sim_eligible: bool = False
     sim_exchanges: list[SimExchange] = Field(default_factory=list, max_length=20)

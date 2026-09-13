@@ -1,6 +1,7 @@
 """Authenticated browser fixture with one shared, actually verified simulator asset."""
 
 import json
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,7 +29,12 @@ raw = json.loads(
 criterion = MasteryCriterion(
     kind="manipulate", statement=raw["bundle"]["spec"]["contract"]["objective"], needs_sim=True
 )
-node = ConceptNode(id="n", name="Doubling", definition="y=2x", mastery_criteria=[criterion])
+criteria = [criterion]
+if os.environ.get("SIM_PRACTICE_FIXTURE") == "true":
+    criteria.append(
+        MasteryCriterion(kind="explain", statement="Explain proportional scaling.", needs_sim=False)
+    )
+node = ConceptNode(id="n", name="Doubling", definition="y=2x", mastery_criteria=criteria)
 asset = SimAsset(
     id=uuid4(),
     public_source="reviewed:browser-fixture",

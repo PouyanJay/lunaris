@@ -46,7 +46,15 @@ async def login(browser):
     return page
 
 
-@pytest.mark.parametrize("servers", [{"app": "approved_sim_app", "auth": True}], indirect=True)
+@pytest.mark.parametrize(
+    "servers",
+    [
+        {"app": "approved_sim_app", "auth": True},
+        {"app": "approved_sim_app", "auth": True, "practice": True},
+    ],
+    ids=["sim-only", "mixed-practice"],
+    indirect=True,
+)
 async def test_authenticated_mount_replay_fresh_learner_and_revocation(servers, tmp_path):  # noqa: F811
     api, web = servers
     async with async_playwright() as playwright:

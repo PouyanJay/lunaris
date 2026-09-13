@@ -12,6 +12,7 @@ import { SkeletonNotice, Warming } from "./SkeletonNotice";
 import { SessionTranscript } from "./SessionTranscript";
 import { SurfaceCard } from "./SurfaceCard";
 import { SimPreparationNotice } from "./SimPreparationNotice";
+import { SimulatorPractice } from "./SimulatorPractice";
 import { SimSessionContext } from "./SimSessionContext";
 import styles from "./SessionView.module.css";
 
@@ -115,11 +116,23 @@ export function SessionView({ apiBaseUrl, graphId, topic, copilotUrl }: SessionV
                 {state.message}
               </p>
             ) : null}
-            {session.status === "active" && standing && !standing.criterion ? (
+            {session.status === "active" &&
+            standing &&
+            (standing.simEligible || !standing.criterion) &&
+            !standing.practiceSim &&
+            standing.surface?.kind !== "sim_app" ? (
               <SimPreparationNotice
                 apiBaseUrl={apiBaseUrl}
                 sessionId={session.sessionId}
                 turnSeq={standing.seq}
+              />
+            ) : null}
+            {standing?.practiceSim?.contract ? (
+              <SimulatorPractice
+                key={`${standing.runId}:${standing.practiceSim.appId}`}
+                app={standing.practiceSim}
+                active={session.status === "active" && standing.answer === null}
+                busy={state.status === "answering"}
               />
             ) : null}
             <TurnFooter
