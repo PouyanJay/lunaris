@@ -90,6 +90,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.api
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           platforms: linux/amd64 # ACA runs amd64; the GitHub runner is amd64-native
           push: true
           tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-api:${{ steps.sha.outputs.value }}
@@ -104,6 +106,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.worker
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           platforms: linux/amd64
           push: true
           tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-video-worker:${{ steps.sha.outputs.value }}
@@ -116,6 +120,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.cover
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           platforms: linux/amd64
           push: true
           tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-cover-worker:${{ steps.sha.outputs.value }}
@@ -128,6 +134,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.copilot
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           platforms: linux/amd64
           push: true
           tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-copilot:${{ steps.sha.outputs.value }}
@@ -141,6 +149,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.sim-worker
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           platforms: linux/amd64
           push: true
           tags: ${{ vars.ACR_LOGIN_SERVER }}/lunaris-sim-worker:${{ steps.sha.outputs.value }}

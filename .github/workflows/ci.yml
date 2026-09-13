@@ -143,6 +143,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.api
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           push: false
           load: true
           tags: lunaris-api:ci
@@ -170,6 +172,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.worker
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           push: false
           load: true
           tags: lunaris-video-worker:ci
@@ -195,6 +199,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.cover
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           push: false
           load: true
           tags: lunaris-cover-worker:ci
@@ -217,6 +223,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.sim-worker
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           push: false
           load: true
           tags: lunaris-sim-worker:ci
@@ -243,6 +251,8 @@ jobs:
         with:
           context: .
           file: Dockerfile.copilot
+          # Re-run OS security updates; keep the dependency builder cache.
+          no-cache-filters: runtime
           push: false
           load: true
           tags: lunaris-copilot:ci
