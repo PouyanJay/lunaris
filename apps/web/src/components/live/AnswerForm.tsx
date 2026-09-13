@@ -7,6 +7,8 @@ import styles from "./AnswerForm.module.css";
 interface AnswerFormProps {
   /** What the learner is being asked to demonstrate, or null when the turn stages nothing. */
   criterion: string | null;
+  /** Seed an editable transcript; remount with a new source identity for another draft. */
+  initialAnswer?: string;
   /** True while an answer is being marked — the box locks so one answer cannot be sent twice. */
   busy: boolean;
   onAnswer: (text: string) => void;
@@ -23,8 +25,14 @@ interface AnswerFormProps {
  *  answer would be the surface answering for them. Submit is never pre-disabled — a form that
  *  greys out its own button hides the reason it is not ready — so an empty send explains itself
  *  instead. */
-export function AnswerForm({ criterion, busy, onAnswer, embedded = false }: AnswerFormProps) {
-  const [text, setText] = useState("");
+export function AnswerForm({
+  criterion,
+  busy,
+  onAnswer,
+  embedded = false,
+  initialAnswer = "",
+}: AnswerFormProps) {
+  const [text, setText] = useState(initialAnswer);
   const [error, setError] = useState<string | null>(null);
   const boxId = useId();
   const errorId = useId();

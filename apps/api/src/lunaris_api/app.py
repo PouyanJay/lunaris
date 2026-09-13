@@ -33,6 +33,7 @@ from .live.session import router as live_session_router
 from .live.session import sims_router as live_sims_router
 from .live.session.approved_sims_router import router as approved_sims_router
 from .live.session.prefetch_registry import prefetch_registry
+from .live.voice.router import router as live_voice_router
 from .routers import (
     activity,
     admin_users,
@@ -153,6 +154,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(live_agui_router)
     app.include_router(live_sims_router)
     app.include_router(approved_sims_router)
+    app.include_router(live_voice_router)
     app.include_router(briefs.router)
     app.include_router(runs.router)
     app.include_router(bridge.router)
