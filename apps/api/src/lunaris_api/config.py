@@ -97,6 +97,8 @@ class Settings:
     #: teaches nothing, so it is a dev and eval switch rather than something to leave on in front of
     #: learners. Phase 3 replaces the value with a registry of sims that have actually been built.
     live_sims: str = ""
+    # Voice transport is opt-in at final rollout; text sessions keep their existing path.
+    live_voice_enabled: bool = False
     device_bridge_liveness_s: float = _DEFAULT_BRIDGE_LIMITS.liveness_s
     device_bridge_completion_timeout_s: float = _DEFAULT_BRIDGE_LIMITS.completion_timeout_s
     # The explainer-video operator kill-switch (plan §3.0 item 5). Default OFF — fail-closed, so a
@@ -194,6 +196,7 @@ def get_settings() -> Settings:
         live_extend_daily_cap=_env_int("LUNARIS_LIVE_EXTEND_DAILY_CAP", default=50),
         live_graph_budget_usd=_env_float("LUNARIS_LIVE_GRAPH_BUDGET_USD", default=10.0),
         live_sims=os.getenv("LUNARIS_LIVE_SIMS", "").strip().lower(),
+        live_voice_enabled=_env_flag("LUNARIS_LIVE_VOICE_ENABLED", default=False),
         live_session_budget_s=_env_float("LUNARIS_LIVE_SESSION_BUDGET_S", default=1800.0),
         live_session_daily_cap=_env_int("LUNARIS_LIVE_SESSION_DAILY_CAP", default=20),
         live_session_budget_usd=_env_float("LUNARIS_LIVE_SESSION_BUDGET_USD", default=2.0),

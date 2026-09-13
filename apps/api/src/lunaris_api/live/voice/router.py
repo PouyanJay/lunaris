@@ -2,19 +2,20 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
-from fastapi.responses import StreamingResponse
 from lunaris_live.voice.error import VoiceError
 from lunaris_live.voice.models.operation import VoiceOperation
+from lunaris_live.voice.protocols.service import IVoiceService
 from lunaris_live.voice.schemas.speech_request import SpeechRequest
 from lunaris_live.voice.schemas.transcript import VoiceTranscript
-from lunaris_live.voice.service import VoiceService
 from lunaris_runtime.logging import bind_request_id, bind_run_id
 
 from ...dependencies import OptionalUserIdDep
 from .dependencies import get_live_voice_service
+from .recording_body import read_voice_recording
+from .stream_response import VoiceStreamingResponse
 
 router = APIRouter(prefix="/api/live/sessions/{session_id}/voice", tags=["live"])
-_Service = Annotated[VoiceService, Depends(get_live_voice_service)]
+_Service = Annotated[IVoiceService, Depends(get_live_voice_service)]
 
 
 @router.post("/transcriptions", response_model=VoiceTranscript)
@@ -35,12 +36,8 @@ async def transcribe(
     response.headers.update(headers)
     if request.headers.get("content-type", "").split(";")[0] != "audio/wav":
         raise HTTPException(415, "Use a WAV recording.", headers=headers)
-    data = bytearray()
-    async for chunk in request.stream():
-        data.extend(chunk)
-        if len(data) > 1920044:
-            raise HTTPException(413, "Recording exceeds the 60-second limit.", headers=headers)
     try:
+        data = await read_voice_recording(request)
         return await service.transcribe(
             VoiceOperation(
                 session_id=session_id,
@@ -50,7 +47,7 @@ async def transcribe(
                 turn_seq=turn_seq,
                 source_run_id=run_id,
             ),
-            bytes(data),
+            data,
         )
     except FileNotFoundError as exc:
         raise HTTPException(404, "Session not found.", headers=headers) from exc
@@ -61,7 +58,7 @@ async def transcribe(
 @router.post("/speech")
 async def speech(
     session_id: str, payload: SpeechRequest, service: _Service, owner_id: OptionalUserIdDep
-) -> StreamingResponse:
+) -> VoiceStreamingResponse:
     correlation = uuid4().hex
     bind_request_id(correlation)
     bind_run_id(correlation, session_id=session_id)
@@ -82,7 +79,7 @@ async def speech(
         raise HTTPException(404, "Session not found.", headers=headers) from exc
     except VoiceError as exc:
         raise HTTPException(exc.status_code, str(exc), headers=headers) from exc
-    return StreamingResponse(
+    return VoiceStreamingResponse(
         chunks,
         media_type="audio/pcm",
         headers={
