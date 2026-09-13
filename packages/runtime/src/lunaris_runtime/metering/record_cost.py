@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import structlog
 
 from lunaris_runtime.pricing import PriceBook, UnknownRateError
@@ -6,6 +8,7 @@ from lunaris_runtime.schema import CostPocket, CostProvider, CostUnit
 from .cost_entry import CostEntry
 from .cost_scope import current_cost_scope
 from .credential_pocket import credential_pocket
+from .rate_policy import RatePolicy
 
 logger = structlog.get_logger()
 
@@ -27,11 +30,15 @@ _PROVIDER_ENV: dict[CostProvider, str] = {
 _MAX_SCOPE_ENTRIES = 5000
 
 
+@dataclass(frozen=True)
+class _RateRequest:
+    provider: CostProvider
+    model: str | None
+    policy: RatePolicy
+
+
 def _price_usage(
-    price_book: PriceBook,
-    provider: CostProvider,
-    model: str | None,
-    usage: dict[CostUnit, float],
+    price_book: PriceBook, request: _RateRequest, usage: dict[CostUnit, float]
 ) -> tuple[float, dict[str, float]]:
     """Price a call's measured units into a total amount + the wire-shape usage dict.
 
@@ -43,10 +50,16 @@ def _price_usage(
     for unit, count in usage.items():
         wire_usage[unit.value] = count
         try:
-            amount += price_book.cost(provider=provider, model=model, unit=unit, count=count)
+            rate = price_book.rate(provider=request.provider, model=request.model, unit=unit)
+            if request.policy == RatePolicy.EXACT_MODEL and rate.model != request.model:
+                raise UnknownRateError("A model-specific rate is required")
+            amount += count * rate.amount_per_unit
         except UnknownRateError:
             logger.warning(
-                "cost_rate_missing", provider=provider.value, model=model, unit=unit.value
+                "cost_rate_missing",
+                provider=request.provider.value,
+                model=request.model,
+                unit=unit.value,
             )
     return amount, wire_usage
 
@@ -57,6 +70,7 @@ def record_cost(
     provider: CostProvider,
     model: str | None,
     usage: dict[CostUnit, float],
+    rate_policy: RatePolicy = RatePolicy.PROVIDER_FALLBACK,
 ) -> None:
     """Price one metered call and buffer it on the current run's cost scope.
 
@@ -64,6 +78,9 @@ def record_cost(
     resolves the ``pocket`` from the credential scope, and appends a ``CostEntry``. A **no-op when
     no scope is active** (admin/eval/CLI/tests) — deep code calls it unconditionally and metering
     turns itself off outside a build.
+
+    ``RatePolicy.EXACT_MODEL`` prevents a provider-wide placeholder from pricing a model whose
+    account-specific rate is unknown. Usage is still recorded and a missing-rate warning emitted.
 
     Must stay fully synchronous (no ``await``): the scope buffer is shared by a build task's
     contextvar copy and is lock-free precisely because nothing yields mid-append.
@@ -73,7 +90,9 @@ def record_cost(
         return  # metering is off — no run scope
     if len(scope.entries) >= _MAX_SCOPE_ENTRIES:
         return  # runaway guard: past the cap the drain wouldn't persist it anyway
-    amount, wire_usage = _price_usage(scope.price_book, provider, model, usage)
+    amount, wire_usage = _price_usage(
+        scope.price_book, _RateRequest(provider, model, rate_policy), usage
+    )
     env_var = _PROVIDER_ENV.get(provider)
     pocket = credential_pocket(env_var) if env_var is not None else CostPocket.PLATFORM
     scope.entries.append(
