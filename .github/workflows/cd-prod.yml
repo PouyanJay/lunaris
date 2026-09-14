@@ -258,6 +258,7 @@ jobs:
               corsOrigins="${{ vars.CORS_ORIGINS }}" \
               pipeline="${{ vars.PIPELINE_MODE }}" \
               liveSimsEnabled="${{ vars.LIVE_SIMS_ENABLED || 'false' }}" \
+              liveVoiceEnabled="${{ vars.LIVE_VOICE_ENABLED || 'false' }}" \
               withProviderKeys="${{ vars.WITH_PROVIDER_KEYS || 'false' }}" \
               withByok="${{ vars.WITH_BYOK || 'false' }}" \
               draftTierEnabled="${{ vars.DRAFT_TIER_ENABLED || 'false' }}" \

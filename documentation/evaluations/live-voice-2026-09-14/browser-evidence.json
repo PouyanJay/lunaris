@@ -1,0 +1,134 @@
+{
+  "status": "completed",
+  "prerecorded_synthetic_microphone": true,
+  "tutor_speech": {
+    "bytes": 225140,
+    "request_id": "390d2f23e47d4a75a49a0b2d02e0bcc2",
+    "source": {
+      "turnSeq": 1,
+      "runId": "10f3f6568b9f427d922db32ea10c98f7"
+    }
+  },
+  "reaction_speech": {
+    "bytes": 242974,
+    "request_id": "60eae30d7b60480485f871f10ea94178",
+    "source": {
+      "turnSeq": 1,
+      "runId": "10f3f6568b9f427d922db32ea10c98f7",
+      "exchangeSequence": 1
+    }
+  },
+  "transcription": {
+    "text": "HIPAA protects patient privacy. An EHR is an electronic health record",
+    "source": {
+      "turnSeq": 1,
+      "runId": "10f3f6568b9f427d922db32ea10c98f7",
+      "exchangeSequence": null
+    },
+    "operationId": "f33c57ad-1714-47b9-a33b-0e4056da6bc2",
+    "provider": "elevenlabs",
+    "model": "scribe_v2"
+  },
+  "goodbye_speech": {
+    "bytes": 766816,
+    "request_id": "8b9b58589d6c45bfb8c40b3dbab4c18d",
+    "source": {
+      "turnSeq": 3,
+      "runId": "21ea7af4-77df-410f-a7bb-bfeb571ebe72"
+    }
+  },
+  "turns": 3,
+  "provider": {
+    "offline": false,
+    "calls_started": {
+      "tts": 3,
+      "stt": 1
+    },
+    "metrics": [
+      {
+        "kind": "tts",
+        "run_id": "390d2f23e47d4a75a49a0b2d02e0bcc2",
+        "canonical_chars": 65,
+        "first_pcm_ms": 268.8105829874985,
+        "status": "completed",
+        "audio_seconds": 4.690416666666667,
+        "usage": [
+          {
+            "component": "live_voice_tts",
+            "provider": "elevenlabs",
+            "model": "eleven_flash_v2_5",
+            "usage": {
+              "chars": 65
+            },
+            "amount": 0.0,
+            "pocket": "user_key"
+          }
+        ]
+      },
+      {
+        "kind": "tts",
+        "run_id": "60eae30d7b60480485f871f10ea94178",
+        "canonical_chars": 55,
+        "first_pcm_ms": 240.97770798834972,
+        "status": "completed",
+        "audio_seconds": 5.061958333333333,
+        "usage": [
+          {
+            "component": "live_voice_tts",
+            "provider": "elevenlabs",
+            "model": "eleven_flash_v2_5",
+            "usage": {
+              "chars": 55
+            },
+            "amount": 0.0,
+            "pocket": "user_key"
+          }
+        ]
+      },
+      {
+        "kind": "stt",
+        "run_id": "364d3822d59f45a2a0802856f78e8a8a",
+        "audio_seconds": 5.706625,
+        "provider": "elevenlabs",
+        "model": "scribe_v2",
+        "status": "completed",
+        "latency_ms": 837.2134580276906,
+        "usage": [
+          {
+            "component": "live_voice_stt",
+            "provider": "elevenlabs",
+            "model": "scribe_v2",
+            "usage": {
+              "audio_seconds": 5.706625
+            },
+            "amount": 0.0,
+            "pocket": "user_key"
+          }
+        ]
+      },
+      {
+        "kind": "tts",
+        "run_id": "8b9b58589d6c45bfb8c40b3dbab4c18d",
+        "canonical_chars": 259,
+        "first_pcm_ms": 236.56716701225378,
+        "status": "completed",
+        "audio_seconds": 15.975333333333333,
+        "usage": [
+          {
+            "component": "live_voice_tts",
+            "provider": "elevenlabs",
+            "model": "eleven_flash_v2_5",
+            "usage": {
+              "chars": 259
+            },
+            "amount": 0.0,
+            "pocket": "user_key"
+          }
+        ]
+      }
+    ],
+    "billed_cost_usd": null,
+    "physical_microphone_tested": false,
+    "human_listening_rating": null
+  }
+}

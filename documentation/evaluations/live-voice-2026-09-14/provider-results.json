@@ -1,0 +1,43 @@
+{
+  "provider": "elevenlabs",
+  "voice": "George",
+  "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+  "tts_model": "eleven_flash_v2_5",
+  "stt_model": "scribe_v2",
+  "synthetic_input_only": true,
+  "speech": [
+    {
+      "canonical_text": "HIPAA protects patient privacy. An EHR is an electronic health record.",
+      "audio_file": "speech-1.wav",
+      "first_pcm_ms": 894.9334159988211,
+      "total_ms": 987.2069160046522,
+      "audio_seconds": 5.433458333333333,
+      "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+      "voice_name": "George",
+      "sample_rate": 24000
+    },
+    {
+      "canonical_text": "When voltage stays constant, doubling resistance halves the electric current.",
+      "audio_file": "speech-2.wav",
+      "first_pcm_ms": 216.60924999741837,
+      "total_ms": 358.4586669894634,
+      "audio_seconds": 4.690416666666667,
+      "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+      "voice_name": "George",
+      "sample_rate": 24000
+    }
+  ],
+  "transcription": {
+    "http_status": 200,
+    "text": "HIPAA protects patient privacy. An EHR is an electronic health record",
+    "provider": "elevenlabs",
+    "model": "scribe_v2",
+    "latency_ms": 1310.8498750079889
+  },
+  "word_error_rate_ignoring_case_and_punctuation": 0.0,
+  "speech_characters": 149,
+  "billed_cost_usd": null,
+  "human_listening_rating": null,
+  "physical_microphone_test": "pending user sign-in",
+  "permission_history": "Two STT requests were rejected with missing_permissions on September 13. After the user enabled Speech-to-Text, a single retry on September 14 succeeded using the saved WAV. No additional synthesis was required."
+}

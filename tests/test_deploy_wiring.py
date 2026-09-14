@@ -239,3 +239,36 @@ def test_ci_and_prod_refresh_runtime_os_security_updates():
                     dockerfile,
                     "Cached apt upgrade layers cannot pick up new security fixes",
                 )
+
+
+def test_live_voice_template_is_default_off_and_maps_the_api_flag() -> None:
+    template = (REPO_ROOT / "infra" / "app.bicep").read_text()
+
+    assert re.search(r"param\s+liveVoiceEnabled\s+bool\s*=\s*false\b", template)
+    assert re.search(
+        r"name:\s*'LUNARIS_LIVE_VOICE_ENABLED',\s*value:\s*string\(liveVoiceEnabled\)",
+        template,
+    )
+
+
+def test_live_voice_release_flag_stays_inside_the_prod_approval_job() -> None:
+    workflow = _workflow("cd-prod.yml")
+    promote = workflow["jobs"]["promote"]
+    deployment = next(
+        step
+        for step in promote["steps"]
+        if "--template-file infra/app.bicep" in step.get("run", "")
+    )
+
+    assert promote["environment"] == "prod"
+    assert "liveVoiceEnabled=\"${{ vars.LIVE_VOICE_ENABLED || 'false' }}\"" in deployment["run"]
+
+
+def test_browser_gate_installs_the_actual_copilot_runtime_before_running_tests() -> None:
+    steps = _workflow("ci.yml")["jobs"]["browser"]["steps"]
+    commands = [step.get("run", "") for step in steps]
+    install = commands.index("npm --prefix apps/copilot ci")
+    browser_tests = next(
+        i for i, command in enumerate(commands) if "pytest tests/browser" in command
+    )
+    assert install < browser_tests

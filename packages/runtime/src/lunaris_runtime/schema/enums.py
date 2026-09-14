@@ -80,6 +80,7 @@ class CostUnit(StrEnum):
     CACHE_READ_TOKENS = "cache_read_tokens"
     CACHE_WRITE_TOKENS = "cache_write_tokens"
     OUTPUT_TOKENS = "output_tokens"
+    AUDIO_SECONDS = "audio_seconds"
     CHARS = "chars"
     IMAGES = "images"
     SEARCH = "search"

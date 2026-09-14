@@ -8,4 +8,5 @@ export const SimSessionContext = createContext<{
   turnSeq: number;
   instanceId: string;
   exchanges: SimExchange[];
+  onExchange?: (exchange: SimExchange) => void;
 } | null>(null);

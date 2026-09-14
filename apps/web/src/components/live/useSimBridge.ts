@@ -70,6 +70,7 @@ export function useSimBridge(contract: SimContract, appId: string, active: boole
       latest.current = exchange;
       pending.current = null;
       setMessage(exchange.reaction.text);
+      context?.onExchange?.(exchange);
       frame.current?.contentWindow?.postMessage(
         {
           type: "lunaris.sim.command",
@@ -81,7 +82,7 @@ export function useSimBridge(contract: SimContract, appId: string, active: boole
         "*",
       );
     },
-    [context?.instanceId],
+    [context],
   );
 
   const send = useCallback(

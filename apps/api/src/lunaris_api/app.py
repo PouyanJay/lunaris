@@ -33,6 +33,8 @@ from .live.session import router as live_session_router
 from .live.session import sims_router as live_sims_router
 from .live.session.approved_sims_router import router as approved_sims_router
 from .live.session.prefetch_registry import prefetch_registry
+from .live.voice.retention import run_voice_retention
+from .live.voice.router import router as live_voice_router
 from .routers import (
     activity,
     admin_users,
@@ -124,6 +126,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             )
         )
+    if settings.has_supabase:
+        supervisors.append(asyncio.create_task(run_voice_retention(settings)))
     yield
     # Cancel each supervisor; it cancels + drains its workers in turn. A job mid-render at shutdown
     # stays claimed (not settled); the lease-expiry/requeue sweep re-queues it.
@@ -153,6 +157,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(live_agui_router)
     app.include_router(live_sims_router)
     app.include_router(approved_sims_router)
+    app.include_router(live_voice_router)
     app.include_router(briefs.router)
     app.include_router(runs.router)
     app.include_router(bridge.router)
@@ -187,7 +192,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         # The SPA reads these off responses; cross-origin (app vs api subdomain) they must be
         # exposed or the browser hides them. X-Course-Id lets a dropped build stream re-attach.
-        expose_headers=["X-Run-Id", "X-Course-Id", "X-Request-Id"],
+        expose_headers=[
+            "X-Run-Id",
+            "X-Course-Id",
+            "X-Request-Id",
+            "X-Session-Id",
+            "X-Audio-Sample-Rate",
+        ],
     )
     _register_routers(app)
     return app
