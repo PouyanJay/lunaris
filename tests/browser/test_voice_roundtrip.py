@@ -55,8 +55,10 @@ async def test_transcript_edit_one_answer_and_streamed_tutor_speech(servers, tmp
             assert speech.headers["x-session-id"] == session_id
             assert speech.headers["x-request-id"]
             assert speech.headers["x-audio-sample-rate"] == "24000"
-            assert len(await speech.body()) == 4800
+            # Assert the bytes consumed and played by the page. Chromium may discard its
+            # separate CDP response-body copy for streamed audio before a debugger reads it.
             await expect(page.get_by_role("status")).to_have_text("Played 2400 samples")
+            await expect(page.get_by_role("alert")).to_have_count(0)
             await expect(page.locator("main")).to_have_attribute("data-audio-running", "true")
             await expect(
                 page.get_by_text(persisted["turns"][-1]["tutor"], exact=True)
