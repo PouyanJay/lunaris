@@ -262,3 +262,13 @@ def test_live_voice_release_flag_stays_inside_the_prod_approval_job() -> None:
 
     assert promote["environment"] == "prod"
     assert "liveVoiceEnabled=\"${{ vars.LIVE_VOICE_ENABLED || 'false' }}\"" in deployment["run"]
+
+
+def test_browser_gate_installs_the_actual_copilot_runtime_before_running_tests() -> None:
+    steps = _workflow("ci.yml")["jobs"]["browser"]["steps"]
+    commands = [step.get("run", "") for step in steps]
+    install = commands.index("npm --prefix apps/copilot ci")
+    browser_tests = next(
+        i for i, command in enumerate(commands) if "pytest tests/browser" in command
+    )
+    assert install < browser_tests

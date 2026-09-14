@@ -102,6 +102,7 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - run: uv sync --frozen --all-packages
       - run: npm --prefix apps/web ci
+      - run: npm --prefix apps/copilot ci
       - run: uv run playwright install --with-deps chromium
       - run: docker build -f infra/sim-verifier/Dockerfile -t lunaris-sim-verifier:test .
       - name: Verifier image vulnerability gate
