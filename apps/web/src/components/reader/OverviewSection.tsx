@@ -32,6 +32,7 @@ export function OverviewSection({ videos, apiBaseUrl, courseId }: OverviewSectio
         artifact={videos.summary}
         eyebrow="Course trailer"
         title="What this course covers"
+        coverWord="What?"
         playLabel="Play the course trailer"
       />
       <CourseVideoSlot
@@ -40,6 +41,7 @@ export function OverviewSection({ videos, apiBaseUrl, courseId }: OverviewSectio
         artifact={videos.overview}
         eyebrow="Topic overview"
         title="What this topic is and why it matters"
+        coverWord="Why?"
         playLabel="Play the topic overview"
       />
     </section>
@@ -52,6 +54,9 @@ interface CourseVideoSlotProps {
   artifact: VideoArtifact | null | undefined;
   eyebrow: string;
   title: string;
+  /** The short word shown on the black cover — these two slots are always the course's "What?" and
+   *  "Why?" video, so the cover uses that as its title card. */
+  coverWord: string;
   playLabel: string;
 }
 
@@ -61,6 +66,7 @@ function CourseVideoSlot({
   artifact,
   eyebrow,
   title,
+  coverWord,
   playLabel,
 }: CourseVideoSlotProps) {
   const { state, regenerate, stop, refresh } = useCourseVideo(apiBaseUrl, courseId, artifact);
@@ -108,6 +114,7 @@ function CourseVideoSlot({
             captionsUrl={state.captionsUrl}
             label={playLabel}
             refreshPlayback={refresh}
+            overlayTitle={coverWord}
           />
           <div className={styles.regenerateRow}>
             {state.stale && <OutdatedBadge />}
