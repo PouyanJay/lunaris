@@ -14,6 +14,7 @@ from .models.media_request import CorpusMediaRequest
 from .schemas.media_url import MediaUrl
 
 router = APIRouter(prefix="/api/live/sessions", tags=["live"])
+_VERIFICATION_DEADLINE_S = 45.0
 
 
 @router.get("/{session_id}/materials/{asset_id}/media", response_model=MediaUrl)
@@ -31,7 +32,7 @@ async def material_media(
     headers = {"Cache-Control": "no-store", "X-Request-Id": run_id, "X-Session-Id": session_id}
     response.headers.update(headers)
     try:
-        async with asyncio.timeout(45):
+        async with asyncio.timeout(_VERIFICATION_DEADLINE_S):
             return await service.resolve(
                 CorpusMediaRequest(
                     session_id=session_id,

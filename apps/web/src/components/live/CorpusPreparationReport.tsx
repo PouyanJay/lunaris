@@ -1,50 +1,17 @@
 import { useId } from "react";
+import { isConceptGraph, type ConceptGraph, type ConceptNode } from "../../lib/liveGraph";
+import {
+  isCorpusGraphReady,
+  type CorpusProvenance,
+  type MappingReport,
+} from "../../lib/liveCorpusGraph";
 import { Button } from "../primitives/Button";
 import styles from "./CorpusPreparationReport.module.css";
 
-interface ReviewNode {
-  id: string;
-  name: string;
-  requires: string[];
-  assets?: { locator: string; title: string; kind: string }[];
-}
-interface NodeSupport {
-  nodeId: string;
-  classification: "source" | "prerequisite" | "unsupported";
-  locators: string[];
-  rationale: string;
-}
-interface Mapping {
-  nodeId: string;
-  locator: string;
-  status: "approved" | "rejected";
-  reason: string;
-  evidence: string[];
-}
-interface MappingReport {
-  status: "passed" | "failed";
-  sourceDigest: string;
-  runId: string;
-  mapperVersion: string;
-  verifierVersion: string;
-  mappings: Mapping[];
-  gaps: { nodeId?: string | null; locator?: string | null; reason: string }[];
-  issues: string[];
-}
-/** Read-only preparation evidence needed to review a course before starting a session. */
-export interface CorpusReviewGraph {
-  corpus: { title: string; digest: string; status: "pending" | "verified" | "failed" };
-  nodes: ReviewNode[];
-  groundingReport?: {
-    status: "passed" | "failed";
-    sourceDigest: string;
-    nodes: NodeSupport[];
-    uncoveredLocators: string[];
-    omittedLocators: string[];
-    issues: string[];
-  } | null;
-  mappingReport?: MappingReport | null;
-}
+type ReviewNode = ConceptNode;
+type Mapping = MappingReport["mappings"][number];
+/** Complete preparation evidence shared with the session admission check. */
+export type CorpusReviewGraph = ConceptGraph & { corpus: CorpusProvenance };
 interface ReportProps {
   graph: CorpusReviewGraph | null;
   previousGraph?: CorpusReviewGraph | null;
@@ -89,20 +56,9 @@ function reportStatus(graph: CorpusReviewGraph): string {
   )
     return "Needs review";
   if (!grounding || !mapping || graph.corpus.status === "pending") return "Awaiting verification";
-  const covered = new Set(grounding.nodes.map((node) => node.nodeId));
-  if (
-    !graph.nodes.length ||
-    covered.size !== graph.nodes.length ||
-    graph.nodes.some((node) => !covered.has(node.id)) ||
-    grounding.nodes.some((node) => node.classification === "unsupported") ||
-    grounding.issues.length ||
-    mapping.issues.length ||
-    grounding.uncoveredLocators.length ||
-    grounding.omittedLocators.length
-  )
-    return "Needs review";
-  return "Ready for review";
+  return isConceptGraph(graph) && isCorpusGraphReady(graph) ? "Ready for review" : "Needs review";
 }
+
 function materialSignature(graph: CorpusReviewGraph, nodeId: string): string {
   return JSON.stringify(
     (graph.mappingReport?.mappings ?? [])

@@ -3,6 +3,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from lunaris_live.corpus.schemas.asset import NodeAsset
+from lunaris_live.corpus.video.models.verification_request import ClipVerificationRequest
 from lunaris_live.graph import ConceptGraph
 from lunaris_live.session import Session
 from lunaris_live.session.schema import SessionStatus
@@ -62,7 +63,7 @@ class CorpusMediaResolver:
         self._sessions = services.sessions
         self._graphs = services.graphs
         self._access = services.source_access
-        self._inventory = services.inventory
+        self._clip_verifier = services.clip_verifier
         self._storage = services.storage
         self._budget = session_budget_s
         self._clock = clock or (lambda: datetime.now(UTC))
@@ -85,10 +86,11 @@ class CorpusMediaResolver:
         await self._access.check(graph, owner_id=request.owner_id, run_id=request.run_id)
         _verified_asset(graph, session, asset)
         assert graph.corpus is not None and asset.clip is not None
-        inventory = await self._inventory.load(
-            graph.corpus.course_id, owner_id=request.owner_id, run_id=request.run_id
-        )
-        if asset.clip not in inventory.clips:
+        if not await self._clip_verifier.verify(
+            ClipVerificationRequest(
+                graph.corpus.course_id, asset.clip, request.owner_id, request.run_id
+            )
+        ):
             raise MaterialUnavailableError
         current = await self._session(request.session_id, request.owner_id)
         if _standing_asset(current, request.asset_id, request.turn) != asset:

@@ -206,6 +206,9 @@ async def test_real_course_to_live_clip_and_fresh_source_guard(
                 await page.wait_for_function("document.querySelector('video').paused")
                 assert await video.evaluate("v => Math.abs(v.currentTime - 1.4) < 0.01")
                 assert _state(database, graph_id) == before
+                await page.get_by_role("region", name="Consent in context", exact=True).screenshot(
+                    path=str(tmp_path / "live-corpus-clip.png")
+                )
                 assert errors == []
                 await page.locator("main").evaluate("element => { element.scrollTop = 0; }")
                 await page.screenshot(path=str(tmp_path / "live-corpus-session.png"))

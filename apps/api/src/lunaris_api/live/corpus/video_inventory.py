@@ -6,6 +6,7 @@ import httpx
 import structlog
 from lunaris_live.corpus.video.bounded_inventory import bounded_inventory
 from lunaris_live.corpus.video.extract_candidates import extract_candidates
+from lunaris_live.corpus.video.models.verification_request import ClipVerificationRequest
 from lunaris_live.corpus.video.protocols.media import IVideoMedia
 from lunaris_live.corpus.video.schemas.inventory import VideoGap, VideoInventory
 from lunaris_runtime.persistence.course_store_protocol import ICourseStore
@@ -75,12 +76,51 @@ class StudioVideoInventory:
         )
         return bounded_inventory(clips, gaps)
 
-    async def _slot(self, course: Course, slot: VideoSlot) -> VideoInventory:
+    async def verify(self, request: ClipVerificationRequest) -> bool:
+        course_id, clip = request.course_id, request.clip
+        owner_id, run_id = request.owner_id, request.run_id
+        if not owner_id:
+            return False
+        try:
+            course = await asyncio.to_thread(self._courses.load, course_id, owner_id=owner_id)
+        except FileNotFoundError:
+            return False
+        if course.id != course_id or course.status != "published":
+            return False
+        job = await self._queue.get(job_id=clip.job_id, owner_id=owner_id)
+        if not _owned_ready_job(job, course_id, owner_id, clip.job_id):
+            return False
+        assert job is not None
+        slot = VideoSlot(owner_id, job.kind, job.lesson_id)
+        if await self._latest(course.id, slot) != job:
+            return False
+        inventory = await self._slot(course, slot, expected=job)
+        if clip not in inventory.clips:
+            return False
+        verified = await self._latest(course.id, slot) == job
+        logger.info(
+            "live.corpus.clip_revalidated",
+            run_id=run_id,
+            course_id=course_id,
+            job_id=clip.job_id,
+            verified=verified,
+        )
+        return verified
+
+    async def _latest(self, course_id: str, slot: VideoSlot) -> VideoJob | None:
+        return await self._queue.find_latest_ready(
+            course_id=course_id, lesson_id=slot.lesson_id, kind=slot.kind, owner_id=slot.owner_id
+        )
+
+    async def _slot(
+        self, course: Course, slot: VideoSlot, *, expected: VideoJob | None = None
+    ) -> VideoInventory:
         job = await self._queue.find_latest_ready(
             course_id=course.id, lesson_id=slot.lesson_id, kind=slot.kind, owner_id=slot.owner_id
         )
         if (
             job is None
+            or (expected is not None and job != expected)
             or job.user_id != slot.owner_id
             or job.course_id != course.id
             or job.status != VideoJobStatus.READY
@@ -166,6 +206,16 @@ class StudioVideoInventory:
 
 def _gap(job: VideoJob, reason: str) -> VideoInventory:
     return VideoInventory(gaps=(VideoGap(job_id=job.id, reason=reason),))
+
+
+def _owned_ready_job(job: VideoJob | None, course_id: str, owner_id: str, job_id: str) -> bool:
+    return (
+        job is not None
+        and job.id == job_id
+        and job.user_id == owner_id
+        and job.course_id == course_id
+        and job.status == VideoJobStatus.READY
+    )
 
 
 def _stale(course: Course, job: VideoJob) -> bool:

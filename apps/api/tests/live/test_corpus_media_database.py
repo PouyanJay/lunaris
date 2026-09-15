@@ -23,6 +23,7 @@ from lunaris_live.graph import ConceptGraph, ConceptNode, SupabaseGraphStore
 from lunaris_live.session import Session, SupabaseSessionStore
 from lunaris_runtime.persistence import SupabaseCourseStore
 from lunaris_runtime.schema import Course
+from test_corpus_access_guard import with_verified_reports
 from test_corpus_media_api import Inventory, Storage, clip_fixture
 from test_studio_corpus_resolver import course_payload
 
@@ -59,7 +60,7 @@ async def test_media_read_with_real_database_preserves_state_and_refuses_changed
         source_digest=source.digest,
         clip=clip,
         verification=AssetVerification(
-            run_id="mapping", verifier_version="fixture", source_digest=source.digest
+            run_id=source.run_id, verifier_version="fixture", source_digest=source.digest
         ),
     )
     graph = ConceptGraph(
@@ -68,6 +69,7 @@ async def test_media_read_with_real_database_preserves_state_and_refuses_changed
         corpus=source,
         nodes=[ConceptNode(id="node", name="Consent", definition="Purpose", assets=[asset])],
     )
+    graph = with_verified_reports(graph)
     session = Session.model_validate(
         {
             "sessionId": session_id,

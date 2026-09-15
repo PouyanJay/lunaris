@@ -3,13 +3,51 @@ import { expect, it, vi } from "vitest";
 import { CorpusPreparationReport, type CorpusReviewGraph } from "./CorpusPreparationReport";
 
 const digest = "a".repeat(64);
+const nodeDefaults = {
+  definition: "Course concept",
+  provenance: "compiled" as const,
+  aliases: [],
+  teachingSpec: { objective: "Explain the concept", misconceptions: [], depth: "applied" as const },
+  masteryCriteria: [{ kind: "explain" as const, statement: "Explain it", needsSim: false }],
+};
+const verifiedAsset = {
+  assetId: "lesson-privacy",
+  locator: "quiz:privacy",
+  title: "Patient privacy",
+  kind: "lesson" as const,
+  origin: "ingested" as const,
+  sourceDigest: digest,
+  sourceLabel: "Course source",
+  excerpt: "Patient privacy",
+  clip: null,
+  verification: { sourceDigest: digest, runId: "review-1", verifierVersion: "verify-v1" },
+};
 const graph: CorpusReviewGraph = {
-  corpus: { title: "Understanding patient data", digest, status: "verified" },
+  graphId: "review-graph",
+  topic: "Patient data",
+  version: 1,
+  isAcyclic: true,
+  topoOrder: ["records", "privacy"],
+  corpus: {
+    courseId: "course-1",
+    runId: "review-1",
+    adapterVersion: "studio-v1",
+    title: "Understanding patient data",
+    digest,
+    status: "verified",
+  },
   nodes: [
-    { id: "privacy", name: "Patient privacy", requires: ["records"] },
-    { id: "records", name: "Electronic records", requires: [] },
+    {
+      ...nodeDefaults,
+      id: "privacy",
+      name: "Patient privacy",
+      requires: ["records"],
+      assets: [verifiedAsset],
+    },
+    { ...nodeDefaults, id: "records", name: "Electronic records", requires: [] },
   ],
   groundingReport: {
+    runId: "review-1",
     status: "passed",
     sourceDigest: digest,
     nodes: [
@@ -118,8 +156,8 @@ it("shows meaningful reimport changes including renamed and removed concepts", (
     ...graph,
     corpus: { ...graph.corpus, digest: "b".repeat(64) },
     nodes: [
-      { id: "privacy", name: "Old title", requires: [] },
-      { id: "old", name: "Legacy topic", requires: [] },
+      { ...nodeDefaults, id: "privacy", name: "Old title", requires: [] },
+      { ...nodeDefaults, id: "old", name: "Legacy topic", requires: [] },
     ],
     mappingReport: { ...graph.mappingReport!, mappings: [] },
   };
@@ -181,9 +219,9 @@ it("identifies approved material by title and kind without exposing locator or c
           ...node,
           assets: [
             {
-              locator: "quiz:privacy",
+              ...verifiedAsset,
               title: "Who may access a patient record?",
-              kind: "assessment",
+              kind: "assessment" as const,
             },
           ],
         }
@@ -194,4 +232,24 @@ it("identifies approved material by title and kind without exposing locator or c
   expect(within(privacy).getByText("Who may access a patient record?")).toBeVisible();
   expect(within(privacy).getByText("Practice question")).toBeVisible();
   expect(screen.queryByText("quiz:privacy")).not.toBeInTheDocument();
+});
+
+it.each([
+  { ...graph, nodes: graph.nodes.map((node) => ({ ...node, assets: [] })) },
+  { ...graph, mappingReport: { ...graph.mappingReport!, runId: "another-run" } },
+  { ...graph, groundingReport: { ...graph.groundingReport!, runId: "another-run" } },
+  {
+    ...graph,
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      assets:
+        node.assets?.map((asset) => ({
+          ...asset,
+          verification: { ...verifiedAsset.verification, verifierVersion: "another-verifier" },
+        })) ?? [],
+    })),
+  },
+])("rejects incomplete or mismatched verification evidence %#", (incomplete) => {
+  render(<CorpusPreparationReport graph={incomplete} />);
+  expect(screen.getByRole("status")).toHaveTextContent("Needs review");
 });

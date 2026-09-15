@@ -18,13 +18,13 @@ from lunaris_api.live.corpus.media_resolver import CorpusMediaResolver
 from lunaris_api.live.corpus.models.media_services import CorpusMediaServices
 from lunaris_live.corpus.schemas.asset import NodeAsset
 from lunaris_live.corpus.schemas.asset_verification import AssetVerification
+from lunaris_live.corpus.video.models.verification_request import ClipVerificationRequest
 from lunaris_live.corpus.video.schemas.clip import VideoClip
 from lunaris_live.corpus.video.schemas.cue import Cue
-from lunaris_live.corpus.video.schemas.inventory import VideoInventory
 from lunaris_live.graph import ConceptNode, MemoryGraphStore
 from lunaris_live.session import MemorySessionStore, Session
 from lunaris_live.session.schema import SessionStatus
-from test_corpus_access_guard import Courses, source_graph
+from test_corpus_access_guard import Courses, source_graph, with_verified_reports
 
 _NOW = datetime.now(UTC)
 
@@ -34,9 +34,12 @@ class Inventory:
         self.clips = (clip,)
         self.calls: list[tuple[str, str, str]] = []
 
-    async def load(self, course_id: str, *, owner_id: str, run_id: str) -> VideoInventory:
-        self.calls.append((course_id, owner_id, run_id))
-        return VideoInventory(clips=self.clips)
+    async def load(self, course_id: str, *, owner_id: str, run_id: str) -> None:
+        raise AssertionError("Playback must never scan the full course inventory")
+
+    async def verify(self, request: ClipVerificationRequest) -> bool:
+        self.calls.append((request.course_id, request.owner_id, request.run_id))
+        return request.clip in self.clips
 
 
 class Storage:
@@ -75,10 +78,13 @@ async def stack(tmp_path: Path) -> AsyncIterator[tuple[Any, ...]]:
         title="Consent",
         clip=clip,
         verification=AssetVerification(
-            run_id="verified", verifier_version="fixture", source_digest=graph.corpus.digest
+            run_id=graph.corpus.run_id,
+            verifier_version="fixture",
+            source_digest=graph.corpus.digest,
         ),
     )
     graph.nodes = [ConceptNode(id="node", name="Consent", definition="Consent", assets=[asset])]
+    graph = with_verified_reports(graph)
     graphs.save(graph, owner_id="owner")
     session = Session.model_validate(
         {
@@ -143,7 +149,7 @@ async def test_signed_url_refresh_is_readonly_and_uses_server_derived_path(
         ("deleted_source", 404),
         ("changed_source", 409),
         ("changed_clip", 404),
-        ("missing_graph_asset", 404),
+        ("missing_graph_asset", 409),
         ("closed", 409),
     ],
 )
@@ -255,15 +261,15 @@ async def test_source_deleted_during_inventory_does_not_receive_media_url(
 ) -> None:
     client, courses, sessions, _graphs, inventory, storage, _app = stack
     entered, release = asyncio.Event(), asyncio.Event()
-    original_load = inventory.load
+    original_verify = inventory.verify
 
-    async def paused_load(course_id: str, *, owner_id: str, run_id: str) -> VideoInventory:
-        result = await original_load(course_id, owner_id=owner_id, run_id=run_id)
+    async def paused_verify(request: ClipVerificationRequest) -> bool:
+        result = await original_verify(request)
         entered.set()
         await release.wait()
         return result
 
-    monkeypatch.setattr(inventory, "load", paused_load)
+    monkeypatch.setattr(inventory, "verify", paused_verify)
     before = sessions.load("session", owner_id="owner").model_dump_json()
     pending = asyncio.create_task(
         client.get(
@@ -283,3 +289,49 @@ async def test_source_deleted_during_inventory_does_not_receive_media_url(
     assert response.status_code == 404
     assert storage.paths == []
     assert sessions.load("session", owner_id="owner").model_dump_json() == before
+
+
+@pytest.mark.parametrize("cancel_request", [False, True])
+async def test_pending_media_is_cancelled_without_signing_or_changing_state(
+    stack: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch, cancel_request: bool
+) -> None:
+    from lunaris_api.live.corpus import media_router
+
+    client, _courses, sessions, _graphs, inventory, storage, _app = stack
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def blocked_verify(request: ClipVerificationRequest) -> bool:
+        inventory.calls.append((request.course_id, request.owner_id, request.run_id))
+        entered.set()
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled.set()
+        return True
+
+    monkeypatch.setattr(inventory, "verify", blocked_verify)
+    monkeypatch.setattr(media_router, "_VERIFICATION_DEADLINE_S", 0.02, raising=False)
+    before = sessions.load("session", owner_id="owner").model_dump_json()
+    pending = asyncio.create_task(
+        client.get(
+            "/api/live/sessions/session/materials/asset/media?turn=1", headers=auth_headers("owner")
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=1)
+        if cancel_request:
+            pending.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+        else:
+            response = await asyncio.wait_for(pending, timeout=1)
+            assert response.status_code == 504
+            assert response.headers["cache-control"] == "no-store"
+        assert cancelled.is_set()
+        assert len(inventory.calls) == 1
+        assert storage.paths == []
+        assert sessions.load("session", owner_id="owner").model_dump_json() == before
+    finally:
+        if not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)

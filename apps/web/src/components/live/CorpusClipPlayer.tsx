@@ -76,8 +76,19 @@ function ClipPlayback({
   disabled = false,
 }: CorpusClipPlayerProps) {
   const id = useId();
-  const { videoRef, url, state, playing, waiting, time, load, play, seek, mediaEvents } =
-    useCorpusClipPlayback({ clip, getSource, onPlaybackStart, interruptionKey, registerStop });
+  const {
+    videoRef,
+    url,
+    state,
+    playing,
+    waiting,
+    time,
+    load,
+    cancelLoading,
+    play,
+    seek,
+    mediaEvents,
+  } = useCorpusClipPlayback({ clip, getSource, onPlaybackStart, interruptionKey, registerStop });
   return (
     <section className={styles.root} aria-labelledby={`${id}-title`}>
       <header className={styles.header}>
@@ -119,6 +130,7 @@ function ClipPlayback({
                       : "Play clip"}
           </Button>
         )}
+        {state === "loading" && <Button onClick={cancelLoading}>Cancel loading</Button>}
         {state === "ready" && (
           <>
             <label className={styles.seek}>

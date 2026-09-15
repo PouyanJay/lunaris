@@ -6,6 +6,7 @@ from lunaris_runtime.persistence import ICourseStore
 from lunaris_runtime.schema.enums import CourseStatus
 
 from .changed import CorpusChangedError
+from .mapping_is_ready import mapping_is_ready
 from .models.access_policy import CorpusAccessPolicy
 from .normalize_course import normalize_course
 from .not_ready import GraphNotReadyError
@@ -48,8 +49,10 @@ class StudioCorpusAccessGuard:
             or current.source.adapter_version != source.adapter_version
         ):
             raise CorpusChangedError
-        if policy is not CorpusAccessPolicy.INSPECT and source.status != "verified":
-            raise GraphNotReadyError
+        if policy is not CorpusAccessPolicy.INSPECT:
+            original = current.model_copy(update={"source": source})
+            if source.status != "verified" or not mapping_is_ready(graph, original):
+                raise GraphNotReadyError
         structlog.get_logger().info(
             "live.corpus.access_checked", run_id=run_id, graph_id=graph.graph_id
         )

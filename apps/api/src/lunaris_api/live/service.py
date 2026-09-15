@@ -369,7 +369,9 @@ class LiveGraphService:
         in its own task: a context bound outside would not be the context these lines log in.
         """
         bind_run_id(run_id, graph_id=graph_id)
-        logger.info("live.graph.compile_started", topic=topic, graph_id=graph_id, run_id=run_id)
+        logger.info(
+            "live.graph.compile_started", topic_length=len(topic), graph_id=graph_id, run_id=run_id
+        )
 
         source = await self._resolve_corpus(corpus, owner_id=owner_id, run_id=run_id)
         cost = self._make_cost_scope(run_id=run_id, graph_id=graph_id, owner_id=owner_id)
@@ -552,7 +554,7 @@ class LiveGraphService:
         # Bound and correlated before any I/O: the graph id is known from the path, so deferring
         # either only means a hung load leaves no trace that the request ever arrived.
         bind_run_id(run_id, graph_id=graph_id)
-        logger.info("live.graph.extend_started", request=request[:200], run_id=run_id)
+        logger.info("live.graph.extend_started", request_length=len(request), run_id=run_id)
 
         # Admission first, and in this order: what the map has already cost is the cap that means
         # something, and the volume counter should only count extensions that were let through.
@@ -576,6 +578,7 @@ class LiveGraphService:
                     extended = await self._compiler.extend(
                         graph, request=request, anchors=anchors, run_id=run_id
                     )
+                    await check_graph_source(extended, self._source_access, owner_id)
                     await asyncio.to_thread(
                         self._store.save,
                         extended,

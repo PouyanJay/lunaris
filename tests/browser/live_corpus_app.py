@@ -8,9 +8,15 @@ from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage
+from lunaris_agent import build_stub_orchestrator
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
-from lunaris_api.dependencies import get_course_store
+from lunaris_api.dependencies import (
+    get_course_service,
+    get_course_store,
+    get_progress_store,
+    get_run_store,
+)
 from lunaris_api.live.corpus.access_guard import StudioCorpusAccessGuard
 from lunaris_api.live.corpus.dependencies import get_corpus_media_resolver
 from lunaris_api.live.corpus.media_resolver import CorpusMediaResolver
@@ -21,14 +27,22 @@ from lunaris_api.live.dependencies import get_live_graph_service
 from lunaris_api.live.service import LiveGraphService
 from lunaris_api.live.session.dependencies import get_live_session_service
 from lunaris_api.live.session.service import LiveSessionService
+from lunaris_api.progress import SupabaseProgressStore
+from lunaris_api.service import CourseService
 from lunaris_live.corpus.mapping.asset_mapper import AssetMapper
 from lunaris_live.corpus.stores.supabase_snapshot_store import SupabaseCorpusSnapshotStore
+from lunaris_live.corpus.video.models.verification_request import ClipVerificationRequest
 from lunaris_live.corpus.video.schemas.clip import VideoClip
 from lunaris_live.corpus.video.schemas.inventory import VideoInventory
 from lunaris_live.graph import ClaudeGraphCompiler, SupabaseGraphStore
 from lunaris_live.session import StubGrader, StubTutor, SupabaseKnowledgeStore, SupabaseSessionStore
 from lunaris_live.session.transactions.supabase_backend import SupabaseGraphTransactions
-from lunaris_runtime.persistence import SupabaseCourseStore, SupabaseVideoStorage
+from lunaris_runtime.persistence import (
+    SupabaseCourseStore,
+    SupabaseRunStore,
+    SupabaseVideoStorage,
+    supabase_client,
+)
 
 JWT_SECRET = "browser-fixture-signing-key-with-at-least-sixty-four-bytes-for-tests-only"
 ROOT = Path(__file__).resolve().parents[2]
@@ -114,6 +128,10 @@ class FixtureInventory:
         assert course.id == course_id and run_id
         return VideoInventory(clips=(CLIP,))
 
+    async def verify(self, request: ClipVerificationRequest) -> bool:
+        course = await asyncio.to_thread(courses.load, request.course_id, owner_id=request.owner_id)
+        return course.id == request.course_id and bool(request.run_id) and request.clip == CLIP
+
 
 class HttpsLocalVideoStorage(SupabaseVideoStorage):
     """Browser bridges HTTPS to local HTTP storage, retaining the genuine signed capability."""
@@ -125,6 +143,8 @@ class HttpsLocalVideoStorage(SupabaseVideoStorage):
 
 stores = {"url_env": "LOCAL_SUPABASE_URL", "service_key_env": "LOCAL_SUPABASE_SERVICE_KEY"}
 courses = SupabaseCourseStore(**stores)
+runs = SupabaseRunStore(**stores)
+progress = SupabaseProgressStore(**stores)
 graphs = SupabaseGraphStore(**stores)
 snapshots = SupabaseCorpusSnapshotStore(**stores)
 sessions = SupabaseSessionStore(**stores)
@@ -149,7 +169,9 @@ loop = LiveSessionService(
     grader=StubGrader(),
     session_budget_s=1800,
     source_access=access,
-    transactions=SupabaseGraphTransactions(),
+    transactions=SupabaseGraphTransactions(
+        client=supabase_client(**stores, purpose="browser Live transaction fixture")
+    ),
 )
 media = CorpusMediaResolver(
     CorpusMediaServices(sessions, graphs, access, inventory, storage), session_budget_s=1800
@@ -171,7 +193,12 @@ app.dependency_overrides[get_settings] = lambda: Settings(
     supabase_jwt_secret=JWT_SECRET,
     cors_origins=("*",),
 )
+app.dependency_overrides[get_course_service] = lambda: CourseService(
+    courses, build_stub_orchestrator, runs, progress_store=progress
+)
 app.dependency_overrides[get_course_store] = lambda: courses
+app.dependency_overrides[get_run_store] = lambda: runs
+app.dependency_overrides[get_progress_store] = lambda: progress
 app.dependency_overrides[get_live_graph_service] = lambda: compiler
 app.dependency_overrides[get_live_session_service] = lambda: loop
 app.dependency_overrides[get_corpus_media_resolver] = lambda: media

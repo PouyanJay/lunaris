@@ -30,7 +30,7 @@ async def test_preparation_report_responsive_output_and_source_details(
             details = page.locator("summary", has_text="Source details")
             await details.focus()
             await page.keyboard.press("Enter")
-            await expect(page.get_by_text("mapping-verifier-v1", exact=True)).to_be_visible()
+            await expect(page.get_by_text("verify-v1", exact=True)).to_be_visible()
             for width, theme in [(1280, "light"), (390, "dark")]:
                 await page.set_viewport_size({"width": width, "height": 900})
                 await page.evaluate(

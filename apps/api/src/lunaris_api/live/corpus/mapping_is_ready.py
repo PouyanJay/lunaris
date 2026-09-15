@@ -8,6 +8,7 @@ def mapping_is_ready(graph: ConceptGraph, snapshot: CorpusSnapshot) -> bool:
     if not graph.is_acyclic or any(
         report is None
         or report.status != "passed"
+        or report.issues
         or report.source_digest != snapshot.source.digest
         or report.run_id != snapshot.source.run_id
         for report in reports
@@ -19,9 +20,20 @@ def mapping_is_ready(graph: ConceptGraph, snapshot: CorpusSnapshot) -> bool:
 def _coverage_matches(graph: ConceptGraph) -> bool:
     assert graph.grounding_report is not None
     decisions = graph.grounding_report.nodes
-    if {n.node_id for n in decisions} != {n.id for n in graph.nodes}:
+    if (
+        len(decisions) != len(graph.nodes)
+        or len({n.id for n in graph.nodes}) != len(graph.nodes)
+        or {n.node_id for n in decisions} != {n.id for n in graph.nodes}
+        or graph.grounding_report.uncovered_locators
+        or graph.grounding_report.omitted_locators
+    ):
         return False
-    if any(n.classification == "unsupported" for n in decisions):
+    if any(
+        n.classification == "unsupported"
+        or (n.classification == "source" and not n.locators)
+        or (n.classification == "prerequisite" and not n.rationale.strip())
+        for n in decisions
+    ):
         return False
     source_nodes = {n.node_id for n in decisions if n.classification == "source"}
     supported = {

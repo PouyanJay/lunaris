@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from lunaris_live.corpus.video.protocols.inventory import IVideoInventory
+from lunaris_live.corpus.video.protocols.clip_verifier import IVideoClipVerifier
 from lunaris_live.graph import IGraphStore
 from lunaris_live.session import ISessionStore
 from lunaris_runtime.persistence import IVideoStorage
@@ -13,5 +13,5 @@ class CorpusMediaServices:
     sessions: ISessionStore
     graphs: IGraphStore
     source_access: ICorpusAccessGuard
-    inventory: IVideoInventory
+    clip_verifier: IVideoClipVerifier
     storage: IVideoStorage

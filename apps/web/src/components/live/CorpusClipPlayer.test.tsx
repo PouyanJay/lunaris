@@ -164,7 +164,7 @@ it("times out source loading with explicit recovery and cancels late results", a
     render(<CorpusClipPlayer clip={clip} playbackScope="turn1" getSource={source} />);
     fireEvent.click(screen.getByRole("button", { name: "Load clip" }));
     await act(async () => {
-      vi.advanceTimersByTime(15000);
+      vi.advanceTimersByTime(50000);
     });
     expect(screen.getByRole("alert")).toHaveTextContent("Refresh");
     expect(source.mock.calls[0]![1].aborted).toBe(true);
@@ -229,4 +229,63 @@ it("announces mid-playback buffering and allows immediate cancellation", async (
   fireEvent.click(screen.getByRole("button", { name: "Cancel playback" }));
   expect(video.pause).toHaveBeenCalled();
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+it("allows source verification past 15 seconds without retrying or autoplay", async () => {
+  vi.useFakeTimers();
+  let resolve!: (source: string) => void;
+  const source = vi.fn(
+    (_id: string, _signal: AbortSignal) =>
+      new Promise<string>((done) => {
+        resolve = done;
+      }),
+  );
+  try {
+    render(<CorpusClipPlayer clip={clip} playbackScope="turn1" getSource={source} />);
+    fireEvent.click(screen.getByRole("button", { name: "Load clip" }));
+    await act(async () => {
+      vi.advanceTimersByTime(20000);
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => resolve("https://media.example.test/verified.mp4"));
+    expect(document.querySelector("video")).toHaveAttribute("src");
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(source).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("allows explicit cancellation of source verification and discards its late URL", async () => {
+  let resolve!: (source: string) => void;
+  const source = vi.fn(
+    (_id: string, _signal: AbortSignal) =>
+      new Promise<string>((done) => {
+        resolve = done;
+      }),
+  );
+  render(<CorpusClipPlayer clip={clip} playbackScope="turn1" getSource={source} />);
+  fireEvent.click(screen.getByRole("button", { name: "Load clip" }));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel loading" }));
+  expect(source.mock.calls[0]![1].aborted).toBe(true);
+  await act(async () => resolve("https://media.example.test/late.mp4"));
+  expect(document.querySelector("video")).not.toHaveAttribute("src");
+  expect(source).toHaveBeenCalledOnce();
+});
+
+it("cancels metadata loading, releases media and ignores late metadata without autoplay", async () => {
+  render(<CorpusClipPlayer clip={clip} getSource={getSource} playbackScope="turn1" />);
+  fireEvent.click(screen.getByRole("button", { name: "Load clip" }));
+  const video = document.querySelector("video")!;
+  await waitFor(() => expect(video).toHaveAttribute("src"));
+  const loadsBeforeCancel = vi.mocked(video.load).mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: "Cancel loading" }));
+  expect(video).not.toHaveAttribute("src");
+  expect(vi.mocked(video.load).mock.calls.length).toBe(loadsBeforeCancel + 1);
+  Object.defineProperty(video, "duration", { configurable: true, value: 8 });
+  fireEvent.loadedMetadata(video);
+  expect(screen.getByRole("button", { name: "Load clip" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Play clip" })).not.toBeInTheDocument();
+  expect(video.play).not.toHaveBeenCalled();
+  expect(getSource).toHaveBeenCalledOnce();
 });

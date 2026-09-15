@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-const MEDIA_LOAD_TIMEOUT_MS = 15_000;
+const SOURCE_RESOLUTION_TIMEOUT_MS = 50_000;
+const MEDIA_BUFFERING_TIMEOUT_MS = 15_000;
 interface PlaybackOptions {
   clip: { assetId: string; startS: number; endS: number };
   getSource: (assetId: string, signal: AbortSignal) => Promise<string>;
@@ -52,17 +53,20 @@ export function useCorpusClipPlayback({
 
   useEffect(() => {
     if (state !== "loading" && !waiting) return;
-    const timeout = window.setTimeout(() => {
-      generation.current.value++;
-      request.current?.abort();
-      setUrl(undefined);
-      videoRef.current?.pause();
-      setWaiting(false);
-      setPlaying(false);
-      setState("error");
-    }, MEDIA_LOAD_TIMEOUT_MS);
+    const timeout = window.setTimeout(
+      () => {
+        generation.current.value++;
+        request.current?.abort();
+        setUrl(undefined);
+        videoRef.current?.pause();
+        setWaiting(false);
+        setPlaying(false);
+        setState("error");
+      },
+      state === "loading" && !url ? SOURCE_RESOLUTION_TIMEOUT_MS : MEDIA_BUFFERING_TIMEOUT_MS,
+    );
     return () => window.clearTimeout(timeout);
-  }, [state, waiting]);
+  }, [state, waiting, url]);
 
   function enforceBounds() {
     const video = videoRef.current;
@@ -120,6 +124,13 @@ export function useCorpusClipPlayback({
       if (!controller.signal.aborted && version === generation.current.value) setState("error");
     }
   }
+  function cancelLoading() {
+    stop();
+    setUrl(undefined);
+    const video = videoRef.current;
+    video?.removeAttribute("src");
+    video?.load();
+  }
   async function play() {
     const video = videoRef.current;
     if (!video || state !== "ready") return;
@@ -148,7 +159,7 @@ export function useCorpusClipPlayback({
   }
   function metadataLoaded() {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || state !== "loading" || !url || request.current?.signal.aborted) return;
     if (!Number.isFinite(video.duration) || video.duration < clip.endS) {
       video.pause();
       setState("unavailable");
@@ -171,6 +182,7 @@ export function useCorpusClipPlayback({
     waiting,
     time,
     load,
+    cancelLoading,
     play,
     seek,
     mediaEvents: {

@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends
 from lunaris_live.corpus.protocols.resolver import ICorpusResolver
 from lunaris_live.corpus.stores.supabase_snapshot_store import SupabaseCorpusSnapshotStore
+from lunaris_live.corpus.video.protocols.clip_verifier import IVideoClipVerifier
 from lunaris_live.corpus.video.protocols.inventory import IVideoInventory
 
 from ...config import Settings, get_settings
@@ -36,6 +37,12 @@ def get_corpus_inventory(
     return StudioVideoInventory(courses, queue, storage, SignedVideoMedia(storage))
 
 
+def get_corpus_clip_verifier(
+    courses: CourseStoreDep, queue: VideoJobQueueDep, storage: VideoStorageDep
+) -> IVideoClipVerifier:
+    return StudioVideoInventory(courses, queue, storage, SignedVideoMedia(storage))
+
+
 def get_corpus_preparer(
     inventory: Annotated[IVideoInventory, Depends(get_corpus_inventory)],
 ) -> ICorpusGraphPreparer:
@@ -49,7 +56,7 @@ def get_corpus_preparer(
 def get_corpus_media_resolver(
     settings: Annotated[Settings, Depends(get_settings)],
     access: Annotated[ICorpusAccessGuard, Depends(get_corpus_access_guard)],
-    inventory: Annotated[IVideoInventory, Depends(get_corpus_inventory)],
+    clip_verifier: Annotated[IVideoClipVerifier, Depends(get_corpus_clip_verifier)],
     storage: VideoStorageDep,
 ) -> CorpusMediaResolver:
     from ..dependencies import resolve_graph_store
@@ -60,7 +67,7 @@ def get_corpus_media_resolver(
             _resolve_session_store(settings),
             resolve_graph_store(settings),
             access,
-            inventory,
+            clip_verifier,
             storage,
         ),
         session_budget_s=settings.live_session_budget_s,
