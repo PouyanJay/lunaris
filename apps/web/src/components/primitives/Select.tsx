@@ -16,8 +16,8 @@ interface SelectProps<T extends string> {
   disabled?: boolean;
   /** Points at the visible label element (the row's `<label>` / eyebrow). */
   "aria-labelledby"?: string;
-  "aria-describedby"?: string;
-  "aria-invalid"?: boolean;
+  "aria-describedby"?: string | undefined;
+  "aria-invalid"?: boolean | undefined;
   /** `full` stretches to its row (model / preset); `compact` sizes to content (the length rows). */
   size?: "full" | "compact";
 }
