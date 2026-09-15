@@ -16,6 +16,8 @@ interface SelectProps<T extends string> {
   disabled?: boolean;
   /** Points at the visible label element (the row's `<label>` / eyebrow). */
   "aria-labelledby"?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
   /** `full` stretches to its row (model / preset); `compact` sizes to content (the length rows). */
   size?: "full" | "compact";
 }
@@ -34,6 +36,8 @@ export function Select<T extends string>({
   id,
   disabled = false,
   "aria-labelledby": labelledBy,
+  "aria-describedby": describedBy,
+  "aria-invalid": invalid,
   size = "full",
 }: SelectProps<T>) {
   const baseId = useId();
@@ -134,6 +138,8 @@ export function Select<T extends string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-labelledby={labelledBy ? `${labelledBy} ${baseId}-value` : undefined}
+        aria-describedby={describedBy}
+        aria-invalid={invalid}
         onClick={() => setOpen((v) => !v)}
         onKeyDown={onButtonKeyDown}
       >
@@ -150,6 +156,8 @@ export function Select<T extends string>({
           tabIndex={-1}
           className={styles.list}
           aria-labelledby={labelledBy}
+          aria-describedby={describedBy}
+          aria-invalid={invalid}
           aria-activedescendant={optionId(activeIndex)}
           onKeyDown={onListKeyDown}
         >

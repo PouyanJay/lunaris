@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from ...corpus.schemas.asset import NodeAsset
 from .base import LiveModel
 from .mastery_criterion import MasteryCriterion
 from .node_provenance import NodeProvenance
@@ -31,3 +32,4 @@ class ConceptNode(LiveModel):
     teaching_spec: TeachingSpec | None = None
     #: What the learner must be able to do to have understood this — the basis of every later check.
     mastery_criteria: list[MasteryCriterion] = Field(default_factory=list)
+    assets: list[NodeAsset] = Field(default_factory=list, max_length=100)

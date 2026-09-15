@@ -3,6 +3,9 @@ from collections.abc import AsyncIterator, Callable
 from uuid import uuid4
 
 import structlog
+from lunaris_live.corpus.protocols.resolver import ICorpusResolver
+from lunaris_live.corpus.schemas.provenance import CorpusProvenance
+from lunaris_live.corpus.schemas.reference import CorpusReference
 from lunaris_live.graph import (
     CompileProgress,
     ConceptGraph,
@@ -22,6 +25,7 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, Pers
 from lunaris_runtime.schema import CostSubjectType
 
 from ..local_owner_key import LOCAL_OWNER_KEY
+from .corpus.unavailable import CorpusUnavailableError
 from .graph_throttle import CompileSlot, LiveGraphBudgetExhaustedError, LiveGraphThrottle
 from .launched_compiles import LaunchedCompiles
 
@@ -125,7 +129,9 @@ class LiveGraphService:
         throttle: LiveGraphThrottle | None = None,
         graph_budget_usd: float = 0.0,
         launched: LaunchedCompiles | None = None,
+        corpus_resolver: ICorpusResolver | None = None,
     ) -> None:
+        self._corpus_resolver = corpus_resolver
         self._compiler = compiler
         self._store = store
         # Both optional: metering is observability, and it is simply off when either store is
@@ -302,12 +308,17 @@ class LiveGraphService:
                 _absorb_when_done(compiling, run_id=run_id, graph_id=graph_id)
 
     async def compile(
-        self, topic: str, *, run_id: str, owner_id: str | None = None
+        self,
+        topic: str,
+        *,
+        run_id: str,
+        owner_id: str | None = None,
+        corpus: CorpusReference | None = None,
     ) -> ConceptGraph:
         slot = self._reserve_compile(owner_id)
         try:
             return await self._compile_and_save(
-                topic, graph_id=uuid4().hex, run_id=run_id, owner_id=owner_id
+                topic, graph_id=uuid4().hex, run_id=run_id, owner_id=owner_id, corpus=corpus
             )
         finally:
             # Released on failure too: a compile that fell over is not still occupying the runtime,
@@ -338,6 +349,7 @@ class LiveGraphService:
         run_id: str,
         owner_id: str | None,
         on_progress: ICompileProgressSink | None = None,
+        corpus: CorpusReference | None = None,
     ) -> ConceptGraph:
         """The compile itself, shared by both entry points so they cannot drift.
 
@@ -347,6 +359,7 @@ class LiveGraphService:
         bind_run_id(run_id, graph_id=graph_id)
         logger.info("live.graph.compile_started", topic=topic, graph_id=graph_id, run_id=run_id)
 
+        source = await self._resolve_corpus(corpus, owner_id=owner_id, run_id=run_id)
         cost = self._make_cost_scope(run_id=run_id, graph_id=graph_id, owner_id=owner_id)
         try:
             # The credential scope has to wrap the compiler, not just be resolved before it: the
@@ -358,6 +371,7 @@ class LiveGraphService:
                 graph = await self._compiler.compile(
                     topic, graph_id=graph_id, run_id=run_id, on_progress=on_progress
                 )
+                graph.corpus = source
                 # The store is synchronous (supabase-py is), so keep the loop free while it writes.
                 await asyncio.to_thread(self._store.save, graph, owner_id=owner_id)
         finally:
@@ -375,6 +389,25 @@ class LiveGraphService:
             is_acyclic=graph.is_acyclic,
         )
         return graph
+
+    async def _resolve_corpus(
+        self, reference: CorpusReference | None, *, owner_id: str | None, run_id: str
+    ) -> CorpusProvenance | None:
+        if reference is None:
+            return None
+        if owner_id is None or self._corpus_resolver is None:
+            raise CorpusUnavailableError()
+        try:
+            snapshot = await self._corpus_resolver.resolve(
+                reference, owner_id=owner_id, run_id=run_id
+            )
+        except FileNotFoundError as exc:
+            raise CorpusUnavailableError() from exc
+        if snapshot.source.course_id != reference.course_id or snapshot.source.run_id != run_id:
+            raise CorpusUnavailableError()
+        logger.info("live.corpus.resolved", run_id=run_id, source_digest=snapshot.source.digest)
+        # Attachment proves identity only. Only the later verifier may approve grounding.
+        return snapshot.source.model_copy(update={"status": "pending"})
 
     def _make_cost_scope(
         self, *, run_id: str, graph_id: str, owner_id: str | None

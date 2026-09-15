@@ -59,6 +59,7 @@ from lunaris_runtime.metering import (
 from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
+from ..corpus.not_ready import GraphNotReadyError
 from ..service import LiveGraphService
 from .coordination.coordinator import SessionCoordinator
 from .coordination.decorator import coordinated
@@ -256,6 +257,8 @@ class LiveSessionService:
 
         # The stores are synchronous (supabase-py is), so keep the loop free while they work.
         graph = await asyncio.to_thread(self._graphs.load, graph_id, owner_id=owner_id)
+        if graph.corpus is not None and graph.corpus.status != "verified":
+            raise GraphNotReadyError()
         # What this learner already knows of this map (T2). Without it every session would open on
         # the map's first concept and re-teach a returning learner what they came back having
         # learned — the director cannot adapt to a model nobody read.

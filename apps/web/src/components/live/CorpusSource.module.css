@@ -1,0 +1,20 @@
+.root {
+  display: grid;
+  gap: var(--space-4);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.form {
+  display: grid;
+  gap: var(--space-3);
+}
+.receipt {
+  border-top: var(--border-width) solid var(--border);
+  padding-top: var(--space-4);
+  overflow-wrap: anywhere;
+}
+.status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+}

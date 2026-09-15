@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from ...corpus.schemas.provenance import CorpusProvenance
 from .base import LiveModel
 from .concept_node import ConceptNode
 from .graph_edit import GraphEdit
@@ -20,6 +21,7 @@ class ConceptGraph(LiveModel):
 
     graph_id: str = Field(min_length=1, max_length=100)
     topic: str = Field(min_length=1, max_length=200)
+    corpus: CorpusProvenance | None = None
     #: Bumped on every runtime extension; 1 for a freshly compiled graph.
     version: int = Field(default=1, ge=1)
     nodes: list[ConceptNode] = Field(default_factory=list)

@@ -1,3 +1,4 @@
+from lunaris_live.corpus.schemas.reference import CorpusReference
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
@@ -24,6 +25,7 @@ class LiveGraphRequest(BaseModel):
     """
 
     topic: str = Field(min_length=1, max_length=200)
+    corpus: CorpusReference | None = None
 
     @field_validator("topic")
     @classmethod

@@ -43,6 +43,10 @@ async def compile_graph(
     run_id = uuid4().hex
     response.headers["X-Run-Id"] = run_id
     try:
+        if payload.corpus is not None:
+            return await service.compile(
+                payload.topic, run_id=run_id, owner_id=owner_id, corpus=payload.corpus
+            )
         return await service.compile(payload.topic, run_id=run_id, owner_id=owner_id)
     except LiveWorkRefusedError as exc:
         raise _refusal(exc, run_id=run_id) from exc
