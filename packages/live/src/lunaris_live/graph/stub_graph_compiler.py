@@ -2,6 +2,10 @@ import re
 
 import structlog
 
+from ..corpus.grounding.extend_report import extend_report
+from ..corpus.grounding.prepare_context import prepare_context
+from ..corpus.schemas.grounding_report import GroundingReport
+from ..corpus.schemas.snapshot import CorpusSnapshot
 from .assembly import assemble
 from .protocols import ICompileProgressSink
 from .report_progress import report_progress
@@ -49,6 +53,7 @@ class StubGraphCompiler:
         graph_id: str,
         run_id: str,
         on_progress: ICompileProgressSink | None = None,
+        grounding: CorpusSnapshot | None = None,
     ) -> ConceptGraph:
         # Reported even though this compiler finishes instantly: the keyless path runs it, and a
         # surface that only ever sees progress from the keyed compiler would be a screen nobody
@@ -109,6 +114,21 @@ class StubGraphCompiler:
             compiler="stub",
             node_count=len(graph.nodes),
         )
+        if grounding is not None:
+            context = prepare_context(grounding, run_id=run_id)
+            graph = graph.model_copy(
+                update={
+                    "corpus": grounding.source.model_copy(update={"status": "pending"}),
+                    "grounding_report": GroundingReport(
+                        source_digest=context.source_digest,
+                        run_id=run_id,
+                        status="failed",
+                        uncovered_locators=tuple(locator for locator, _ in context.passages),
+                        omitted_locators=context.omitted,
+                        issues=("stub_not_verified",),
+                    ),
+                }
+            )
         return graph
 
     async def extend(
@@ -148,6 +168,9 @@ class StubGraphCompiler:
                     "nodes": [*graph.nodes, added],
                     "version": version,
                     "edits": [*graph.edits, edit],
+                    "grounding_report": extend_report(
+                        graph.grounding_report, edit.added, run_id=run_id
+                    ),
                 }
             )
         )

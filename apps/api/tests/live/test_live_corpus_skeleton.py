@@ -32,9 +32,11 @@ ANSWER_KEY = "private-assessment-answer"
 class RecordingCompiler(StubGraphCompiler):
     def __init__(self) -> None:
         self.runs: list[str] = []
+        self.sources: list[CorpusSnapshot | None] = []
 
     async def compile(self, topic: str, **kwargs: Any) -> ConceptGraph:
         self.runs.append(kwargs["run_id"])
+        self.sources.append(kwargs.get("grounding"))
         return await super().compile(topic, **kwargs)
 
 
@@ -111,6 +113,8 @@ async def test_source_provenance_survives_graph_read_without_assessment_keys(
         "status": "pending",
     }
     assert compiler.runs == [response.headers["X-Run-Id"]]
+    assert compiler.sources[0] is not None
+    assert compiler.sources[0].sections[0].text == "Records hold patient data."
     lines = [
         json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")
     ]

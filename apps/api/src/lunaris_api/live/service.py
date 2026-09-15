@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import structlog
 from lunaris_live.corpus.protocols.resolver import ICorpusResolver
-from lunaris_live.corpus.schemas.provenance import CorpusProvenance
 from lunaris_live.corpus.schemas.reference import CorpusReference
+from lunaris_live.corpus.schemas.snapshot import CorpusSnapshot
 from lunaris_live.graph import (
     CompileProgress,
     ConceptGraph,
@@ -368,10 +368,19 @@ class LiveGraphService:
             # key — money spent on their behalf that they never authorized and cannot see.
             scope = await credentials_for(self._credential_resolver, owner_id)
             with scope, enter_cost_scope(cost):
-                graph = await self._compiler.compile(
-                    topic, graph_id=graph_id, run_id=run_id, on_progress=on_progress
-                )
-                graph.corpus = source
+                if source is None:
+                    graph = await self._compiler.compile(
+                        topic, graph_id=graph_id, run_id=run_id, on_progress=on_progress
+                    )
+                else:
+                    graph = await self._compiler.compile(
+                        topic,
+                        graph_id=graph_id,
+                        run_id=run_id,
+                        on_progress=on_progress,
+                        grounding=source,
+                    )
+                graph.corpus = source.source if source is not None else None
                 # The store is synchronous (supabase-py is), so keep the loop free while it writes.
                 await asyncio.to_thread(self._store.save, graph, owner_id=owner_id)
         finally:
@@ -392,7 +401,7 @@ class LiveGraphService:
 
     async def _resolve_corpus(
         self, reference: CorpusReference | None, *, owner_id: str | None, run_id: str
-    ) -> CorpusProvenance | None:
+    ) -> CorpusSnapshot | None:
         if reference is None:
             return None
         if owner_id is None or self._corpus_resolver is None:
@@ -407,7 +416,9 @@ class LiveGraphService:
             raise CorpusUnavailableError()
         logger.info("live.corpus.resolved", run_id=run_id, source_digest=snapshot.source.digest)
         # Attachment proves identity only. Only the later verifier may approve grounding.
-        return snapshot.source.model_copy(update={"status": "pending"})
+        return snapshot.model_copy(
+            update={"source": snapshot.source.model_copy(update={"status": "pending"})}
+        )
 
     def _make_cost_scope(
         self, *, run_id: str, graph_id: str, owner_id: str | None

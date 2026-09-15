@@ -7,6 +7,10 @@ import structlog
 from lunaris_runtime.resilience import build_chat_model, retry_on_transient
 from pydantic import ValidationError
 
+from ..corpus.grounding.extend_report import extend_report
+from ..corpus.grounding.prepare_context import prepare_context
+from ..corpus.grounding.verify_grounding import verify_grounding
+from ..corpus.schemas.snapshot import CorpusSnapshot
 from ..model_json import parse_json_object
 from .assembly import assemble
 from .graph_compilation_error import GraphCompilationError
@@ -141,20 +145,38 @@ class ClaudeGraphCompiler:
         graph_id: str,
         run_id: str,
         on_progress: ICompileProgressSink | None = None,
+        grounding: CorpusSnapshot | None = None,
     ) -> ConceptGraph:
         clock = time.monotonic()
+        context = prepare_context(grounding, run_id=run_id) if grounding is not None else None
+        source_prompt = context.prompt if context is not None else ""
         # A request that hangs is worse than one that fails: the learner waits with no way to know
         # it is never coming, and the abandoned work keeps spending tokens behind them. The timeout
         # cancels the whole tree — the in-flight authoring calls included.
         try:
             async with asyncio.timeout(self._deadline_s):
                 report_progress(on_progress, CompilePhase.DECOMPOSING)
-                concepts = await self._decompose(topic, run_id=run_id)
+                concepts = await self._decompose(topic, run_id=run_id, source_prompt=source_prompt)
+                if context is not None:
+                    concepts = concepts[:20]
                 decomposed_at = time.monotonic()
                 nodes = await self._author_all(
-                    concepts, topic=topic, run_id=run_id, on_progress=on_progress
+                    concepts,
+                    topic=topic,
+                    run_id=run_id,
+                    on_progress=on_progress,
+                    source_prompt=source_prompt,
                 )
                 authored_at = time.monotonic()
+                graph = assemble(ConceptGraph(graph_id=graph_id, topic=topic, nodes=nodes))
+                if context is not None and grounding is not None:
+                    report = await verify_grounding(graph, context, ask=self._ask)
+                    graph = graph.model_copy(
+                        update={
+                            "grounding_report": report,
+                            "corpus": grounding.source.model_copy(update={"status": "pending"}),
+                        }
+                    )
         except TimeoutError:
             # Without this the run goes silent exactly when someone needs to read it:
             # compile_started and then nothing, with no way to tell a stalled decomposition from
@@ -169,8 +191,6 @@ class ClaudeGraphCompiler:
             raise
 
         report_progress(on_progress, CompilePhase.ASSEMBLING, done=len(nodes), total=len(nodes))
-        graph = assemble(ConceptGraph(graph_id=graph_id, topic=topic, nodes=nodes))
-
         logger.info(
             "live.graph.compiled",
             run_id=run_id,
@@ -217,6 +237,9 @@ class ClaudeGraphCompiler:
                     "nodes": [*graph.nodes, *added],
                     "version": version,
                     "edits": [*graph.edits, edit],
+                    "grounding_report": extend_report(
+                        graph.grounding_report, edit.added, run_id=run_id
+                    ),
                 }
             )
         )
@@ -253,11 +276,13 @@ class ClaudeGraphCompiler:
         if not fresh:
             logger.warning("live.graph.extend_found_nothing", run_id=run_id, request=request[:200])
             raise GraphCompilationError(f"nothing new to add for {request!r}")
-        return fresh
+        return fresh[:5] if graph.corpus is not None else fresh
 
-    async def _decompose(self, topic: str, *, run_id: str) -> list[dict[str, Any]]:
+    async def _decompose(
+        self, topic: str, *, run_id: str, source_prompt: str = ""
+    ) -> list[dict[str, Any]]:
         response = await self._ask(
-            _DECOMPOSE_PROMPT.format(topic=topic), max_tokens=_DECOMPOSE_TOKENS
+            _DECOMPOSE_PROMPT.format(topic=topic) + source_prompt, max_tokens=_DECOMPOSE_TOKENS
         )
         payload = parse_json_object(response)
         raw = payload.get("concepts") if payload else None
@@ -283,6 +308,7 @@ class ClaudeGraphCompiler:
         topic: str,
         run_id: str,
         on_progress: ICompileProgressSink | None = None,
+        source_prompt: str = "",
     ) -> list[ConceptNode]:
         """Author every concept's teaching notes concurrently, capped so a large graph doesn't
         burst past the provider's rate limit."""
@@ -297,7 +323,9 @@ class ClaudeGraphCompiler:
         async def author(concept: dict[str, Any]) -> ConceptNode | None:
             nonlocal done
             async with semaphore:
-                node = await self._author(concept, topic=topic, run_id=run_id)
+                node = await self._author(
+                    concept, topic=topic, run_id=run_id, source_prompt=source_prompt
+                )
             done += 1
             report_progress(on_progress, CompilePhase.AUTHORING, done=done, total=total)
             return node
@@ -306,7 +334,7 @@ class ClaudeGraphCompiler:
         return [node for node in authored if node is not None]
 
     async def _author(
-        self, concept: dict[str, Any], *, topic: str, run_id: str
+        self, concept: dict[str, Any], *, topic: str, run_id: str, source_prompt: str = ""
     ) -> ConceptNode | None:
         """One concept's node, or ``None`` if it could not be built at all.
 
@@ -323,6 +351,7 @@ class ClaudeGraphCompiler:
         try:
             response = await self._ask(
                 _SPEC_PROMPT.format(topic=topic, name=known.name, definition=known.definition)
+                + source_prompt
             )
         except Exception:
             logger.warning(

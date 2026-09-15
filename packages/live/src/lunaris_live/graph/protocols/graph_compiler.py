@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from ...corpus.schemas.snapshot import CorpusSnapshot
 from ..schema import ConceptGraph
 from .compile_progress_sink import ICompileProgressSink
 
@@ -24,6 +25,7 @@ class IGraphCompiler(Protocol):
         graph_id: str,
         run_id: str,
         on_progress: ICompileProgressSink | None = None,
+        grounding: CorpusSnapshot | None = None,
     ) -> ConceptGraph:
         """Compile ``topic`` cold, reporting to ``on_progress`` as the work lands.
 
