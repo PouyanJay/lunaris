@@ -1,0 +1,13 @@
+.root {
+  width: 100%;
+  display: grid;
+  gap: var(--space-4);
+  color: var(--text);
+}
+.root h1,
+.root p {
+  margin: 0;
+}
+.root h1 {
+  font-size: var(--text-xl);
+}

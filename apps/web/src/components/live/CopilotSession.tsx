@@ -1,3 +1,4 @@
+import { SessionMediaContext } from "./SessionMediaContext";
 import { CopilotKit, useCoAgent, useRenderToolCall } from "@copilotkit/react-core";
 import { CopilotChat, type InputProps } from "@copilotkit/react-ui";
 import {
@@ -5,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -194,6 +196,10 @@ export function CopilotSession({
   );
   // The composer reports its send path and its state; the cards read them (T10).
   const { bridge: composer, report: reportComposer } = useComposerBridge();
+  const media = useContext(SessionMediaContext);
+  useLayoutEffect(() => {
+    if (composer.busy) return media?.block("copilot");
+  }, [composer.busy, media]);
   // Both memoised: the provider re-runs its connect effect whenever either changes identity. A
   // reconnect is a no-op once connected, but re-applying properties on every parent render is
   // still churn for nothing, and a properties change is what carries the named turn to the wire.

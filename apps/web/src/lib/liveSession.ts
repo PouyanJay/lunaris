@@ -1,3 +1,4 @@
+import { isNodeAsset, type NodeAsset } from "./liveMaterials";
 import { authedFetch } from "./apiClient";
 import { detailOf } from "./apiErrors";
 import type { LayoutSpec } from "./layoutSpec";
@@ -40,6 +41,7 @@ export interface StagedCriterion {
 
 /** One beat of the loop: what the director chose, and what the tutor said about it. */
 export interface SessionTurn {
+  materials?: NodeAsset[];
   simEligible?: boolean;
   practiceSim?: {
     appId: string;
@@ -275,7 +277,11 @@ function isSession(payload: unknown): payload is LiveSession {
         typeof turn?.seq === "number" &&
         typeof turn?.tutor === "string" &&
         typeof turn?.move?.kind === "string" &&
-        typeof turn?.move?.reason === "string",
+        typeof turn?.move?.reason === "string" &&
+        (turn.materials === undefined ||
+          (Array.isArray(turn.materials) &&
+            turn.materials.length <= 20 &&
+            turn.materials.every(isNodeAsset))),
     )
   );
 }

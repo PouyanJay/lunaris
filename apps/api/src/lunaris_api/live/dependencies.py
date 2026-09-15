@@ -2,6 +2,7 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends
+from lunaris_live.corpus.protocols.resolver import ICorpusResolver
 from lunaris_live.graph import (
     ClaudeGraphCompiler,
     IGraphCompiler,
@@ -19,6 +20,9 @@ from ..dependencies import (
     SubjectCostStoreDep,
     get_video_credential_resolver,
 )
+from .corpus.dependencies import get_corpus_access_guard, get_corpus_preparer, get_corpus_resolver
+from .corpus.protocols.access_guard import ICorpusAccessGuard
+from .corpus.protocols.preparer import ICorpusGraphPreparer
 from .graph_throttle import LiveGraphThrottle
 from .launched_compiles import LaunchedCompiles
 from .service import LiveGraphService
@@ -124,6 +128,9 @@ def get_live_graph_service(
     settings: Annotated[Settings, Depends(get_settings)],
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
+    corpus_resolver: Annotated[ICorpusResolver | None, Depends(get_corpus_resolver)] = None,
+    corpus_preparer: Annotated[ICorpusGraphPreparer | None, Depends(get_corpus_preparer)] = None,
+    source_access: Annotated[ICorpusAccessGuard | None, Depends(get_corpus_access_guard)] = None,
 ) -> LiveGraphService:
     """Live's compile plane as a request dependency.
 
@@ -142,6 +149,10 @@ def get_live_graph_service(
         throttle=_get_live_graph_throttle(settings),
         graph_budget_usd=settings.live_graph_budget_usd,
         launched=_launched_compiles,
+        corpus_resolver=corpus_resolver,
+        corpus_preparer=corpus_preparer,
+        source_access=source_access,
+        corpus_deadline_s=settings.live_compile_deadline_s,
     )
 
 

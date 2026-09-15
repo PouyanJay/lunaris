@@ -37,6 +37,8 @@ from lunaris_live.sims.runtime.supabase_queue import SupabaseSimQueue
 
 from ...config import Settings, get_settings
 from ...dependencies import CostEventStoreDep, OptionalUserIdDep, SubjectCostStoreDep
+from ..corpus.dependencies import get_corpus_access_guard
+from ..corpus.protocols.access_guard import ICorpusAccessGuard
 from ..dependencies import (
     get_live_credential_resolver,
     get_live_graph_service,
@@ -166,6 +168,7 @@ def get_live_session_service(
     cost_event_store: CostEventStoreDep,
     subject_cost_store: SubjectCostStoreDep,
     owner_id: OptionalUserIdDep = None,
+    source_access: Annotated[ICorpusAccessGuard | None, Depends(get_corpus_access_guard)] = None,
 ) -> LiveSessionService:
     """Live's session plane as a request dependency.
 
@@ -190,6 +193,7 @@ def get_live_session_service(
         resolve_graph_store(settings),
         _resolve_session_store(settings),
         knowledge=_resolve_knowledge_store(settings),
+        source_access=source_access,
         tutor=tutor,
         grader=grader,
         session_budget_s=settings.live_session_budget_s,

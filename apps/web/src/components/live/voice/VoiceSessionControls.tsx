@@ -52,10 +52,7 @@ export function VoiceSessionControls(props: VoiceSessionControlsProps) {
         {activePlayback ? (
           <Button onClick={playback.stop}>Stop audio</Button>
         ) : (
-          <Button
-            disabled={!speechSource || busy || activeCapture}
-            onClick={() => void playback.play()}
-          >
+          <Button disabled={!speechSource || busy || activeCapture} onClick={voice.play}>
             {speechKind === "simulator" ? "Read reaction" : "Read aloud"}
           </Button>
         )}

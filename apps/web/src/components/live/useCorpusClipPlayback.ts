@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const MEDIA_LOAD_TIMEOUT_MS = 15_000;
 interface PlaybackOptions {
   clip: { assetId: string; startS: number; endS: number };
   getSource: (assetId: string, signal: AbortSignal) => Promise<string>;
-  onPlaybackStart?: (() => void) | undefined;
+  onPlaybackStart?: (() => boolean | void) | undefined;
   interruptionKey?: string | number | undefined;
+  registerStop?: ((stop: () => void) => () => void) | undefined;
 }
 
 /** Owns temporary media access, bounded playback and interruption for one mounted scope. */
@@ -14,6 +15,7 @@ export function useCorpusClipPlayback({
   getSource,
   onPlaybackStart,
   interruptionKey,
+  registerStop,
 }: PlaybackOptions) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const request = useRef<AbortController | null>(null);
@@ -37,14 +39,16 @@ export function useCorpusClipPlayback({
       video?.load();
     };
   }, []);
-  useEffect(() => {
+  const stop = useCallback(() => {
     generation.current.value++;
     request.current?.abort();
     videoRef.current?.pause();
     setPlaying(false);
     setWaiting(false);
     setState((previous) => (previous === "loading" ? "idle" : previous));
-  }, [interruptionKey]);
+  }, []);
+  useLayoutEffect(() => registerStop?.(stop), [registerStop, stop]);
+  useEffect(stop, [interruptionKey, stop]);
 
   useEffect(() => {
     if (state !== "loading" && !waiting) return;
@@ -130,7 +134,7 @@ export function useCorpusClipPlayback({
     if (video.currentTime >= clip.endS || video.currentTime < clip.startS)
       video.currentTime = clip.startS;
     try {
-      onPlaybackStart?.();
+      if (onPlaybackStart?.() === false) return;
       setWaiting(true);
       await video.play();
       if (version !== generation.current.value) video.pause();

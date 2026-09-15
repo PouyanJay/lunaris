@@ -10,6 +10,7 @@ import type { BriefLoadState } from "../../types/clarifier";
 import type { Product } from "../../lib/product";
 import type { CourseRun, DiscoveryDepth } from "../../types/course";
 import { TopicForm } from "../TopicForm";
+import { Button } from "../primitives/Button";
 import { LiveToggle } from "../gateway/LiveToggle";
 import { PersonalizeMenu } from "./PersonalizeMenu";
 import { ComposerFeatures } from "./ComposerFeatures";
@@ -24,6 +25,7 @@ interface IdleCourseSetupProps {
   /** Start a Lunaris Live session for the topic instead of compiling a course. Absent when Lunaris
    *  is a single product — the composer then only ever generates. */
   onStartLive?: ((topic: string) => void) | undefined;
+  onStartCourseLive?: (() => void) | undefined;
   /** Open the operator/admin Settings panel (the rail only points there). */
   onOpenSettings: () => void;
   /** The run history (from the shell's useRuns). Read only to tell a first-time visitor from a
@@ -55,6 +57,7 @@ export function IdleCourseSetup({
   apiBaseUrl,
   onGenerate,
   onStartLive,
+  onStartCourseLive,
   onOpenSettings,
   runs = [],
   runsLoaded = false,
@@ -172,6 +175,9 @@ export function IdleCourseSetup({
           />
         }
       />
+      {mode === "live" && onStartCourseLive && (
+        <Button onClick={onStartCourseLive}>Use a Studio course</Button>
+      )}
       {/* What a build does is first-run material: someone with completed courses does not need to
           be told, and the space is better spent on what they came back for. */}
       {runsLoaded && runs.length === 0 && <ComposerFeatures mode={mode} />}

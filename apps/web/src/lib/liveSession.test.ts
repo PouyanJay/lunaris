@@ -192,3 +192,13 @@ describe("liveSession — opening and resuming a session", () => {
     }
   });
 });
+
+it.each([null, {}, [{ assetId: "forged" }]])(
+  "rejects malformed supporting materials without weakening legacy session reads",
+  async (materials) => {
+    const payload = { ...SESSION, turns: [{ ...SESSION.turns[0], materials }] };
+    await withFetch(json(payload), async () => {
+      await expect(loadSession("", "s1")).rejects.toBeInstanceOf(LiveSessionError);
+    });
+  },
+);

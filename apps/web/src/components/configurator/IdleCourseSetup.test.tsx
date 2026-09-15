@@ -396,3 +396,14 @@ describe("IdleCourseSetup — variant coverage across goal types", () => {
     },
   );
 });
+
+it("offers a published-course Live entry without submitting a topic or starting a build", () => {
+  const onStartCourseLive = vi.fn();
+  const onGenerate = vi.fn();
+  const onStartLive = vi.fn();
+  renderSetup({ initialMode: "live", onStartLive, onGenerate, onStartCourseLive });
+  fireEvent.click(screen.getByRole("button", { name: "Use a Studio course" }));
+  expect(onStartCourseLive).toHaveBeenCalledTimes(1);
+  expect(onGenerate).not.toHaveBeenCalled();
+  expect(onStartLive).not.toHaveBeenCalled();
+});

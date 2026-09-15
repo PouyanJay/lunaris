@@ -11,6 +11,7 @@ from _auth import JWT_SECRET, USER_A, USER_B, auth_headers
 from _live_stack import settings_for
 from lunaris_api.app import create_app
 from lunaris_api.config import get_settings
+from lunaris_api.live.corpus.models.access_policy import CorpusAccessPolicy
 from lunaris_api.live.dependencies import get_live_graph_service
 from lunaris_api.live.service import LiveGraphService
 from lunaris_api.live.session.dependencies import get_live_session_service
@@ -68,15 +69,42 @@ class FixtureResolver:
         )
 
 
+class FixtureAccess:
+    async def check(
+        self,
+        graph: ConceptGraph,
+        *,
+        owner_id: str | None,
+        run_id: str,
+        policy: CorpusAccessPolicy = CorpusAccessPolicy.TEACH,
+    ) -> None:
+        from lunaris_api.live.corpus.not_ready import GraphNotReadyError
+        from lunaris_api.live.corpus.unavailable import CorpusUnavailableError
+        from lunaris_live.corpus.schemas.reference import CorpusReference
+
+        if graph.corpus is None:
+            return
+        if owner_id is None:
+            raise CorpusUnavailableError()
+        await FixtureResolver().resolve(
+            CorpusReference(course_id=graph.corpus.course_id), owner_id=owner_id, run_id=run_id
+        )
+        if policy is not CorpusAccessPolicy.INSPECT and graph.corpus.status != "verified":
+            raise GraphNotReadyError()
+
+
 @pytest.fixture
 async def stack(tmp_path: Path) -> AsyncIterator[tuple[httpx.AsyncClient, RecordingCompiler]]:
     graphs = MemoryGraphStore()
     compiler = RecordingCompiler()
-    service = LiveGraphService(compiler, graphs, corpus_resolver=FixtureResolver())
+    service = LiveGraphService(
+        compiler, graphs, corpus_resolver=FixtureResolver(), source_access=FixtureAccess()
+    )
     sessions = LiveSessionService(
         graphs,
         MemorySessionStore(),
         knowledge=MemoryKnowledgeStore(),
+        source_access=FixtureAccess(),
         tutor=StubTutor(),
         grader=StubGrader(),
         session_budget_s=1800,

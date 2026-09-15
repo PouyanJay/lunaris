@@ -25,7 +25,10 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, Pers
 from lunaris_runtime.schema import CostSubjectType
 
 from ..local_owner_key import LOCAL_OWNER_KEY
+from .corpus.check_graph_source import check_graph_source
 from .corpus.invalid import CorpusInvalidError
+from .corpus.models.access_policy import CorpusAccessPolicy
+from .corpus.protocols.access_guard import ICorpusAccessGuard
 from .corpus.protocols.preparer import ICorpusGraphPreparer
 from .corpus.unavailable import CorpusUnavailableError
 from .graph_throttle import CompileSlot, LiveGraphBudgetExhaustedError, LiveGraphThrottle
@@ -134,7 +137,9 @@ class LiveGraphService:
         corpus_resolver: ICorpusResolver | None = None,
         corpus_preparer: ICorpusGraphPreparer | None = None,
         corpus_deadline_s: float = 200.0,
+        source_access: ICorpusAccessGuard | None = None,
     ) -> None:
+        self._source_access = source_access
         self._corpus_resolver = corpus_resolver
         self._corpus_preparer = corpus_preparer
         self._corpus_deadline_s = corpus_deadline_s
@@ -567,6 +572,7 @@ class LiveGraphService:
                 scope = await credentials_for(self._credential_resolver, owner_id)
                 with scope, enter_cost_scope(cost):
                     graph = await asyncio.to_thread(self._store.load, graph_id, owner_id=owner_id)
+                    await check_graph_source(graph, self._source_access, owner_id)
                     extended = await self._compiler.extend(
                         graph, request=request, anchors=anchors, run_id=run_id
                     )
@@ -589,4 +595,8 @@ class LiveGraphService:
     async def load(self, graph_id: str, *, owner_id: str | None = None) -> ConceptGraph:
         """Re-read a compiled graph. Raises ``FileNotFoundError`` when the caller has no such graph
         — including when it belongs to somebody else, which is not-found rather than forbidden."""
-        return await asyncio.to_thread(self._store.load, graph_id, owner_id=owner_id)
+        graph = await asyncio.to_thread(self._store.load, graph_id, owner_id=owner_id)
+        await check_graph_source(
+            graph, self._source_access, owner_id, policy=CorpusAccessPolicy.INSPECT
+        )
+        return graph

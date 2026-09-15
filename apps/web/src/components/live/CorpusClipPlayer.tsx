@@ -18,9 +18,11 @@ interface CorpusClipPlayerProps {
   /** Changes discard media and pending requests when the standing turn changes. */
   playbackScope: string;
   /** Stop other audio before this clip begins; never starts a microphone. */
-  onPlaybackStart?: () => void;
+  onPlaybackStart?: () => boolean | void;
+  disabled?: boolean;
   /** Changing this value interrupts playback and outstanding source resolution. */
   interruptionKey?: string | number;
+  registerStop?: ((stop: () => void) => () => void) | undefined;
 }
 
 function validClip(clip: Clip): boolean {
@@ -70,10 +72,12 @@ function ClipPlayback({
   getSource,
   onPlaybackStart,
   interruptionKey,
+  registerStop,
+  disabled = false,
 }: CorpusClipPlayerProps) {
   const id = useId();
   const { videoRef, url, state, playing, waiting, time, load, play, seek, mediaEvents } =
-    useCorpusClipPlayback({ clip, getSource, onPlaybackStart, interruptionKey });
+    useCorpusClipPlayback({ clip, getSource, onPlaybackStart, interruptionKey, registerStop });
   return (
     <section className={styles.root} aria-labelledby={`${id}-title`}>
       <header className={styles.header}>
@@ -94,9 +98,10 @@ function ClipPlayback({
       <div className={styles.controls}>
         {state !== "unavailable" && (
           <Button
-            aria-disabled={state === "loading"}
+            disabled={disabled}
+            aria-disabled={disabled || state === "loading"}
             onClick={() => {
-              if (state === "loading") return;
+              if (disabled || state === "loading") return;
               if (state === "ready") void play();
               else void load();
             }}
@@ -120,6 +125,7 @@ function ClipPlayback({
               Seek clip
               <input
                 type="range"
+                disabled={disabled}
                 min={clip.startS}
                 max={clip.endS}
                 step="0.1"

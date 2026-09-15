@@ -1,8 +1,11 @@
+import { SessionMediaContext } from "./SessionMediaContext";
+import { SessionMediaCoordinator } from "./SessionMediaCoordinator";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode, ComponentType } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { VoiceTranscript } from "../../lib/voice/types";
 import { CopilotSession } from "./CopilotSession";
+const activity = vi.hoisted(() => ({ busy: false }));
 const send = vi.hoisted(() => vi.fn());
 vi.mock("../../hooks/useAuth", () => ({ useAuth: () => ({ session: null }) }));
 vi.mock("@copilotkit/react-core", () => ({
@@ -19,7 +22,7 @@ vi.mock("@copilotkit/react-ui", () => ({
       inProgress: boolean;
       chatReady: boolean;
     }>;
-  }) => <Input onSend={send} inProgress={false} chatReady />,
+  }) => <Input onSend={send} inProgress={activity.busy} chatReady />,
 }));
 vi.mock("./voice/VoiceSessionControls", () => ({
   VoiceSessionControls: ({
@@ -73,7 +76,10 @@ it("edits the existing Copilot composer and submits through its original send pa
   expect(send).toHaveBeenCalledWith("Reviewed speech");
 });
 
-beforeEach(() => send.mockClear());
+beforeEach(() => {
+  send.mockClear();
+  activity.busy = false;
+});
 it.each(["session", "turn", "api"])("discards delivered speech on %s changes", async (change) => {
   const panel = (changed: boolean) => (
     <CopilotSession
@@ -97,5 +103,34 @@ it.each(["session", "turn", "api"])("discards delivered speech on %s changes", a
   expect(screen.getByRole("textbox")).toHaveValue("Reviewed speech");
   view.rerender(panel(true));
   expect(screen.getByRole("textbox")).toHaveValue("");
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("interrupts material playback when a Copilot answer run starts", async () => {
+  const coordinator = new SessionMediaCoordinator();
+  const stop = vi.fn();
+  coordinator.register("clip", stop);
+  const panel = () => (
+    <SessionMediaContext.Provider value={coordinator}>
+      <CopilotSession
+        runtimeUrl="http://runtime.test"
+        sessionId="s"
+        topic="Records"
+        standingTurn="Explain records"
+        standingSeq={1}
+      />
+    </SessionMediaContext.Provider>
+  );
+  const view = render(panel());
+  await waitFor(() => expect(screen.getByRole("textbox")).toBeEnabled());
+  expect(stop).not.toHaveBeenCalled();
+  activity.busy = true;
+  view.rerender(panel());
+  await waitFor(() => expect(stop).toHaveBeenCalledOnce());
+  expect(coordinator.activate("clip")).toBe(false);
+  activity.busy = false;
+  view.rerender(panel());
+  await waitFor(() => expect(coordinator.isBlocked()).toBe(false));
+  expect(coordinator.activate("clip")).toBe(true);
   expect(send).not.toHaveBeenCalled();
 });

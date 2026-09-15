@@ -1,3 +1,5 @@
+import { SessionMediaContext } from "../SessionMediaContext";
+import { SessionMediaCoordinator } from "../SessionMediaCoordinator";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { VoiceTranscript } from "../../../lib/voice/types";
@@ -193,4 +195,28 @@ it("does not announce an empty idle status", () => {
   render(<VoiceSessionControls {...props} />);
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Speak" })).toBeVisible();
+});
+
+it("interrupts clips before speech or microphone and registers voice cancellation", () => {
+  const coordinator = new SessionMediaCoordinator();
+  const stopClip = vi.fn();
+  coordinator.register("clip:one", stopClip);
+  render(
+    <SessionMediaContext.Provider value={coordinator}>
+      <VoiceSessionControls {...props} />
+    </SessionMediaContext.Provider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Read aloud" }));
+  expect(stopClip).toHaveBeenCalledOnce();
+  expect(stopClip.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.playback.play.mock.invocationCallOrder[0]!,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Speak" }));
+  expect(stopClip.mock.invocationCallOrder.at(-1)).toBeLessThan(
+    mocks.capture.start.mock.invocationCallOrder[0]!,
+  );
+  const before = mocks.capture.cancel.mock.calls.length;
+  act(() => coordinator.activate("clip:one"));
+  expect(mocks.capture.cancel.mock.calls.length).toBeGreaterThan(before);
+  expect(props.onAnswer).not.toHaveBeenCalled();
 });

@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { SessionMediaContext } from "../SessionMediaContext";
+import { useContext, useLayoutEffect, useRef, useState } from "react";
 import type { VoiceSource, VoiceTranscript } from "../../../lib/voice/types";
 import { useVoiceCapture } from "./useVoiceCapture";
 import { useVoicePlayback } from "./useVoicePlayback";
@@ -30,6 +31,7 @@ export function useSessionVoiceControls({
   onAnswer,
   onTranscript,
 }: VoiceSessionControlsProps) {
+  const media = useContext(SessionMediaContext);
   const scope = JSON.stringify([apiBaseUrl, sessionId, sourceKey(answerSource), canAnswer, busy]);
   const currentScope = useRef(scope);
   const handledOperations = useRef(new Set<string>());
@@ -64,6 +66,16 @@ export function useSessionVoiceControls({
   const playback = useVoicePlayback({ apiBaseUrl, sessionId, source: speechSource });
   const cancelCapture = capture.cancel;
   const stopPlayback = playback.stop;
+  useLayoutEffect(
+    () =>
+      media?.register("voice", () => {
+        cancelCapture();
+        stopPlayback();
+        setDraft(null);
+        setDeliveredScope(null);
+      }),
+    [media, cancelCapture, stopPlayback],
+  );
   useLayoutEffect(() => {
     setDraft(null);
     setDeliveredScope(null);
@@ -97,7 +109,12 @@ export function useSessionVoiceControls({
     visibleDraft,
     delivered: deliveredScope === scope && canAnswer && !busy,
     clearDraft,
+    play: () => {
+      if (media?.activate("voice") === false) return;
+      void playback.play();
+    },
     start: () => {
+      if (media?.activate("voice") === false) return;
       stopPlayback();
       clearDraft();
       void capture.start();

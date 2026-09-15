@@ -1,5 +1,13 @@
 import { authedFetch } from "./apiClient";
 import { detailOf } from "./apiErrors";
+import {
+  hasValidCorpusFields,
+  hasValidCourseTeaching,
+  type CorpusProvenance,
+  type GroundingReport,
+  type MappingReport,
+} from "./liveCorpusGraph";
+import { isNodeAsset, type NodeAsset } from "./liveMaterials";
 
 /** Where a concept came from — a cold compile, or a learner's mid-session request (C1). */
 export type NodeProvenance = "compiled" | "extended";
@@ -42,6 +50,7 @@ export interface ConceptNode {
   teachingSpec: TeachingSpec | null;
   /** Always an array — empty when this concept has none yet, never absent. */
   masteryCriteria: MasteryCriterion[];
+  assets?: NodeAsset[];
 }
 
 /** A topic's concept map. `topoOrder` and `isAcyclic` are derived server-side by assembly — the
@@ -53,6 +62,9 @@ export interface ConceptGraph {
   nodes: ConceptNode[];
   topoOrder: string[];
   isAcyclic: boolean;
+  corpus?: CorpusProvenance | null;
+  groundingReport?: GroundingReport | null;
+  mappingReport?: MappingReport | null;
 }
 
 /** Every way a compile can fail, as one error type — so the surface has one failure state to
@@ -109,6 +121,8 @@ export function isConceptGraph(payload: unknown): payload is ConceptGraph {
   const body = payload as ConceptGraph | null;
   return (
     !!body &&
+    typeof body === "object" &&
+    hasValidCorpusFields(body as unknown as Record<string, unknown>) &&
     typeof body.graphId === "string" &&
     typeof body.topic === "string" &&
     typeof body.version === "number" &&
@@ -118,10 +132,44 @@ export function isConceptGraph(payload: unknown): payload is ConceptGraph {
     Array.isArray(body.nodes) &&
     body.nodes.every(
       (node) =>
+        (!body.corpus || hasValidCourseTeaching(node)) &&
         typeof node?.id === "string" &&
         typeof node?.name === "string" &&
         typeof node?.definition === "string" &&
-        Array.isArray(node?.requires),
+        Array.isArray(node?.requires) &&
+        node.requires.every((id) => typeof id === "string") &&
+        (node.assets === undefined ||
+          (Array.isArray(node.assets) && node.assets.every(isNodeAsset))),
     )
   );
+}
+
+/** Explicit source preparation; never called by a render effect or automatically retried. */
+export async function prepareCourseGraph(
+  apiBaseUrl: string,
+  courseId: string,
+  topic: string,
+  signal?: AbortSignal,
+): Promise<ConceptGraph> {
+  let response: Response;
+  try {
+    response = await authedFetch(`${apiBaseUrl}/api/live/graphs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, corpus: { courseId } }),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (cause) {
+    throw new LiveGraphError("Could not prepare the course. Try again.", { cause });
+  }
+  if (!response.ok)
+    throw new LiveGraphError(
+      "Could not prepare the course. Check that it is published and try again.",
+    );
+  const body: unknown = await response.json();
+  if (!isConceptGraph(body))
+    throw new LiveGraphError("Could not read the preparation report. Try again.");
+  if (body.corpus?.courseId !== courseId)
+    throw new LiveGraphError("The preparation did not match the chosen course. Try again.");
+  return body;
 }

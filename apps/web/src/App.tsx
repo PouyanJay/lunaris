@@ -764,6 +764,9 @@ function StudioApp({
           <IdleCourseSetup
             apiBaseUrl={apiBaseUrl}
             initialMode={composerMode}
+            onStartCourseLive={
+              forked ? () => navigate(`${PRODUCT_ROUTES.live}?source=course`) : undefined
+            }
             onStartLive={
               forked
                 ? (topic) => navigate(`${PRODUCT_ROUTES.live}?topic=${encodeURIComponent(topic)}`)

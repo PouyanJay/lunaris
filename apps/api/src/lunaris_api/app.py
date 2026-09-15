@@ -27,6 +27,7 @@ from .dependencies import (
     get_video_storage,
 )
 from .live import router as live_router
+from .live.corpus.media_router import router as corpus_media_router
 from .live.session import agui_router as live_agui_router
 from .live.session import knowledge_router as live_knowledge_router
 from .live.session import router as live_session_router
@@ -158,6 +159,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(live_sims_router)
     app.include_router(approved_sims_router)
     app.include_router(live_voice_router)
+    app.include_router(corpus_media_router)
     app.include_router(briefs.router)
     app.include_router(runs.router)
     app.include_router(bridge.router)

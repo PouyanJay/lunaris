@@ -10,6 +10,7 @@ from lunaris_live.graph import (
     GraphCompilationError,
     GraphVersionConflictError,
 )
+from lunaris_runtime.logging import bind_run_id
 from lunaris_runtime.persistence import PersistenceError
 
 from ..dependencies import OptionalUserIdDep
@@ -175,13 +176,21 @@ def _failure_of(exc: Exception) -> tuple[int, str]:
 @router.get("/{graph_id}", response_model=ConceptGraph)
 async def get_graph(
     graph_id: str,
+    response: Response,
     service: LiveGraphServiceDep,
     owner_id: OptionalUserIdDep,
 ) -> ConceptGraph:
     """Re-read a compiled graph. Another owner's graph is 404, not 403 — a graph's existence is
     itself owner-scoped information."""
+    run_id = uuid4().hex
+    response.headers["X-Run-Id"] = run_id
+    bind_run_id(run_id, graph_id=graph_id)
     try:
         return await service.load(graph_id, owner_id=owner_id)
+    except LiveWorkRefusedError as exc:
+        raise _refusal(exc, run_id=run_id) from exc
+    except PersistenceError as exc:
+        raise HTTPException(503, _UNAVAILABLE, headers={"X-Run-Id": run_id}) from exc
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Graph not found"

@@ -1,6 +1,10 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 
+import { CourseLiveEntry } from "./CourseLiveEntry";
+import { CorpusPreparationReport } from "./CorpusPreparationReport";
+import { isCorpusGraphReady } from "../../lib/liveCorpusGraph";
+import { isConceptGraph } from "../../lib/liveGraph";
 import { ConceptMap } from "./ConceptMap";
 import { ConceptSpecPanel } from "./ConceptSpecPanel";
 import { LiveRail } from "./LiveRail";
@@ -33,6 +37,8 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
   const { pathname } = useLocation();
   const topic = params.get("topic")?.trim();
   const graphId = params.get("graph")?.trim();
+  const courseEntry = params.get("source") === "course";
+  const initialCourseId = params.get("course")?.trim() ?? "";
   // Live's first sub-route. Read here rather than through a nested router because the shell has
   // exactly two destinations and a router for two is more machinery than either of them needs.
   const listing = pathname === LIVE_SESSIONS_PATH || pathname === `${LIVE_SESSIONS_PATH}/`;
@@ -70,6 +76,14 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
           <main className={styles.canvas} data-state="sessions">
             <SessionList apiBaseUrl={apiBaseUrl} />
           </main>
+        ) : courseEntry ? (
+          <main className={styles.canvas} data-state="ready">
+            <CourseLiveEntry
+              key={`${apiBaseUrl}:${initialCourseId}`}
+              apiBaseUrl={apiBaseUrl}
+              initialCourseId={initialCourseId}
+            />
+          </main>
         ) : topic ? (
           <main className={styles.canvas} data-state="session">
             <div className={styles.teaching}>
@@ -81,7 +95,7 @@ export default function LiveShell({ apiBaseUrl }: LiveShellProps) {
             </div>
           </main>
         ) : graphId ? (
-          <MapEntry apiBaseUrl={apiBaseUrl} graphId={graphId} />
+          <MapEntry key={`${apiBaseUrl}:${graphId}`} apiBaseUrl={apiBaseUrl} graphId={graphId} />
         ) : (
           <main className={styles.canvas} data-state="idle">
             <IdleState />
@@ -100,7 +114,11 @@ function MapEntry({ apiBaseUrl, graphId }: { apiBaseUrl: string; graphId: string
       {state.status === "loading" ? <LoadingMap /> : null}
       {state.status === "failed" ? <FailedState message={state.message} onRetry={retry} /> : null}
       {state.status === "ready" ? (
-        <MapWorkspace graph={state.graph} apiBaseUrl={apiBaseUrl} />
+        <MapWorkspace
+          key={`${apiBaseUrl}:${state.graph.graphId}`}
+          graph={state.graph}
+          apiBaseUrl={apiBaseUrl}
+        />
       ) : null}
     </main>
   );
@@ -110,11 +128,20 @@ function MapEntry({ apiBaseUrl, graphId }: { apiBaseUrl: string; graphId: string
  *  map is a map of the subject, never a route through the session: it is what a learner reads
  *  *before* being taught, and what keeps score once they are. */
 function MapWorkspace({ graph, apiBaseUrl }: { graph: ConceptGraph; apiBaseUrl: string }) {
+  const location = useLocation();
+  const previous =
+    location.state &&
+    typeof location.state === "object" &&
+    "previousGraph" in location.state &&
+    isConceptGraph(location.state.previousGraph)
+      ? location.state.previousGraph
+      : null;
+  const canStart = !graph.corpus || isCorpusGraphReady(graph);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [teaching, setTeaching] = useState(false);
   const selected = graph.nodes.find((node) => node.id === selectedId) ?? null;
 
-  if (teaching) {
+  if (teaching && canStart) {
     return (
       <div className={styles.teaching}>
         <button type="button" className={styles.back} onClick={() => setTeaching(false)}>
@@ -132,11 +159,37 @@ function MapWorkspace({ graph, apiBaseUrl }: { graph: ConceptGraph; apiBaseUrl: 
 
   return (
     <div className={styles.mapArea}>
+      {graph.corpus && (
+        <>
+          <CorpusPreparationReport
+            graph={{ ...graph, corpus: graph.corpus }}
+            previousGraph={
+              previous?.corpus && previous.corpus.courseId === graph.corpus.courseId
+                ? { ...previous, corpus: previous.corpus }
+                : null
+            }
+          />
+          <Link
+            className={styles.back}
+            to={`/live?source=course&course=${encodeURIComponent(graph.corpus.courseId)}`}
+            state={{ previousGraph: graph }}
+          >
+            Prepare this course again
+          </Link>
+        </>
+      )}
       <div className={styles.startBar}>
         <p className={styles.startLead}>
           {graph.nodes.length} concepts, ordered so nothing arrives before what it needs.
         </p>
-        <button type="button" className={styles.start} onClick={() => setTeaching(true)}>
+        <button
+          type="button"
+          className={styles.start}
+          disabled={!canStart}
+          onClick={() => {
+            if (canStart) setTeaching(true);
+          }}
+        >
           Start a session
         </button>
       </div>

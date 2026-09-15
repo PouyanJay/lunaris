@@ -6,12 +6,13 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
+from lunaris_api.live.corpus.models.access_policy import CorpusAccessPolicy
 from lunaris_api.live.dependencies import get_live_graph_service
 from lunaris_api.live.service import LiveGraphService
 from lunaris_live.corpus.schemas.provenance import CorpusProvenance
 from lunaris_live.corpus.schemas.reference import CorpusReference
 from lunaris_live.corpus.schemas.snapshot import CorpusSnapshot
-from lunaris_live.graph import StubGraphCompiler, SupabaseGraphStore
+from lunaris_live.graph import ConceptGraph, StubGraphCompiler, SupabaseGraphStore
 from lunaris_runtime.persistence import SupabaseCourseStore
 
 JWT_SECRET = "browser-fixture-signing-key-with-at-least-sixty-four-bytes-for-tests-only"
@@ -39,6 +40,25 @@ class _FixtureCorpusResolver:
         )
 
 
+class _FixtureAccess:
+    async def check(
+        self,
+        graph: ConceptGraph,
+        *,
+        owner_id: str | None,
+        run_id: str,
+        policy: CorpusAccessPolicy = CorpusAccessPolicy.TEACH,
+    ) -> None:
+        from lunaris_api.live.corpus.not_ready import GraphNotReadyError
+
+        assert owner_id and graph.corpus
+        await _FixtureCorpusResolver().resolve(
+            CorpusReference(course_id=graph.corpus.course_id), owner_id=owner_id, run_id=run_id
+        )
+        if policy is not CorpusAccessPolicy.INSPECT and graph.corpus.status != "verified":
+            raise GraphNotReadyError()
+
+
 app = create_app()
 app.add_middleware(
     CORSMiddleware,
@@ -53,7 +73,12 @@ courses = SupabaseCourseStore(
 store = SupabaseGraphStore(
     url_env="LOCAL_SUPABASE_URL", service_key_env="LOCAL_SUPABASE_SERVICE_KEY"
 )
-service = LiveGraphService(StubGraphCompiler(), store, corpus_resolver=_FixtureCorpusResolver())
+service = LiveGraphService(
+    StubGraphCompiler(),
+    store,
+    corpus_resolver=_FixtureCorpusResolver(),
+    source_access=_FixtureAccess(),
+)
 app.dependency_overrides[get_settings] = lambda: Settings(
     pipeline="stub",
     course_dir=Path("/tmp/lunaris-corpus-browser-test"),

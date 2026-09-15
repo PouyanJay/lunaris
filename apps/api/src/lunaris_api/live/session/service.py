@@ -59,7 +59,8 @@ from lunaris_runtime.metering import (
 from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore
 from lunaris_runtime.schema import CostSubjectType
 
-from ..corpus.not_ready import GraphNotReadyError
+from ..corpus.check_graph_source import check_graph_source
+from ..corpus.protocols.access_guard import ICorpusAccessGuard
 from ..service import LiveGraphService
 from .coordination.coordinator import SessionCoordinator
 from .coordination.decorator import coordinated
@@ -175,7 +176,9 @@ class LiveSessionService:
         sim_coach: ISimCoach | None = None,
         transactions: IGraphTransactionBackend | None = None,
         sim_materials: ISimMaterials | None = None,
+        source_access: ICorpusAccessGuard | None = None,
     ) -> None:
+        self._source_access = source_access
         self._graphs = graphs
         self._sessions = sessions
         self._knowledge = knowledge
@@ -257,8 +260,7 @@ class LiveSessionService:
 
         # The stores are synchronous (supabase-py is), so keep the loop free while they work.
         graph = await asyncio.to_thread(self._graphs.load, graph_id, owner_id=owner_id)
-        if graph.corpus is not None and graph.corpus.status != "verified":
-            raise GraphNotReadyError()
+        await check_graph_source(graph, self._source_access, owner_id)
         # What this learner already knows of this map (T2). Without it every session would open on
         # the map's first concept and re-teach a returning learner what they came back having
         # learned — the director cannot adapt to a model nobody read.
@@ -789,6 +791,8 @@ class LiveSessionService:
         else:
             graph = await asyncio.to_thread(self._graphs.load, session.graph_id, owner_id=owner_id)
             failure = None
+        if graph is not None:
+            await check_graph_source(graph, self._source_access, owner_id)
         known = await asyncio.to_thread(self._knowledge.load, session.graph_id, owner_id=owner_id)
         prefetched = await self._load_materials(session.graph_id, owner_id)
         return TurnContext(
@@ -1203,6 +1207,15 @@ class LiveSessionService:
         """
         bind_request_id(session_id, session_id=session_id)
         session = await asyncio.to_thread(self._sessions.load, session_id, owner_id=owner_id)
+        graph = await self._graph_if_landed(session, owner_id)
+        if (
+            graph is None
+            and self._source_access is not None
+            and session.status not in (SessionStatus.PLACING, SessionStatus.WARMING)
+        ):
+            raise FileNotFoundError(session.graph_id)
+        if graph is not None:
+            await check_graph_source(graph, self._source_access, owner_id)
         # A look is what ends a session whose clock ran out while nobody was watching (T6).
         session = await self._lifecycle.close_if_spent(session, owner_id=owner_id)
         logger.info("live.session.resumed", turn_count=len(session.turns))
