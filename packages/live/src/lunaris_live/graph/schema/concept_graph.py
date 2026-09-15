@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from ...corpus.mapping.schemas.report import MappingReport
 from ...corpus.schemas.grounding_report import GroundingReport
 from ...corpus.schemas.provenance import CorpusProvenance
 from .base import LiveModel
@@ -24,6 +25,7 @@ class ConceptGraph(LiveModel):
     topic: str = Field(min_length=1, max_length=200)
     corpus: CorpusProvenance | None = None
     grounding_report: GroundingReport | None = None
+    mapping_report: MappingReport | None = None
     #: Bumped on every runtime extension; 1 for a freshly compiled graph.
     version: int = Field(default=1, ge=1)
     nodes: list[ConceptNode] = Field(default_factory=list)

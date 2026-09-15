@@ -258,3 +258,19 @@ def test_fallback_model_repairs_tool_calls(monkeypatch) -> None:
     model = build_chat_model("claude-haiku-4-5-20251001")
 
     assert isinstance(model, RepairingChatOpenAI)
+
+
+@pytest.mark.parametrize("keyed", [True, False])
+def test_explicit_zero_retries_reaches_provider_and_keeps_metering(
+    monkeypatch: pytest.MonkeyPatch, keyed: bool
+) -> None:
+    monkeypatch.setattr(langchain_anthropic, "ChatAnthropic", _SpyChatAnthropic)
+    monkeypatch.setattr(repaired_chat_model, "RepairingChatOpenAI", _SpyChatOpenAI)
+    if keyed:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "fixture-key")
+    else:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    model = build_chat_model("fixture", max_retries=0, component="live_asset_mapping")
+    kwargs = _SpyChatAnthropic.last_kwargs if keyed else _SpyChatOpenAI.last_kwargs
+    assert kwargs["max_retries"] == 0
+    assert _metering_handler(model)._component == "live_asset_mapping"

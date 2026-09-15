@@ -25,6 +25,8 @@ from lunaris_runtime.persistence import ICostEventStore, ISubjectCostStore, Pers
 from lunaris_runtime.schema import CostSubjectType
 
 from ..local_owner_key import LOCAL_OWNER_KEY
+from .corpus.invalid import CorpusInvalidError
+from .corpus.protocols.preparer import ICorpusGraphPreparer
 from .corpus.unavailable import CorpusUnavailableError
 from .graph_throttle import CompileSlot, LiveGraphBudgetExhaustedError, LiveGraphThrottle
 from .launched_compiles import LaunchedCompiles
@@ -130,8 +132,12 @@ class LiveGraphService:
         graph_budget_usd: float = 0.0,
         launched: LaunchedCompiles | None = None,
         corpus_resolver: ICorpusResolver | None = None,
+        corpus_preparer: ICorpusGraphPreparer | None = None,
+        corpus_deadline_s: float = 200.0,
     ) -> None:
         self._corpus_resolver = corpus_resolver
+        self._corpus_preparer = corpus_preparer
+        self._corpus_deadline_s = corpus_deadline_s
         self._compiler = compiler
         self._store = store
         # Both optional: metering is observability, and it is simply off when either store is
@@ -317,9 +323,10 @@ class LiveGraphService:
     ) -> ConceptGraph:
         slot = self._reserve_compile(owner_id)
         try:
-            return await self._compile_and_save(
-                topic, graph_id=uuid4().hex, run_id=run_id, owner_id=owner_id, corpus=corpus
-            )
+            async with asyncio.timeout(self._corpus_deadline_s if corpus is not None else None):
+                return await self._compile_and_save(
+                    topic, graph_id=uuid4().hex, run_id=run_id, owner_id=owner_id, corpus=corpus
+                )
         finally:
             # Released on failure too: a compile that fell over is not still occupying the runtime,
             # and leaving the slot held would lock a learner out of Live over one bad topic.
@@ -381,6 +388,14 @@ class LiveGraphService:
                         grounding=source,
                     )
                 graph.corpus = source.source if source is not None else None
+                if source is not None and self._corpus_preparer is not None:
+                    assert owner_id is not None
+                    graph = await self._corpus_preparer.prepare(
+                        graph, snapshot=source, owner_id=owner_id
+                    )
+                    confirmed = await self._resolve_corpus(corpus, owner_id=owner_id, run_id=run_id)
+                    if confirmed is None or confirmed.source.digest != source.source.digest:
+                        raise CorpusInvalidError()
                 # The store is synchronous (supabase-py is), so keep the loop free while it writes.
                 await asyncio.to_thread(self._store.save, graph, owner_id=owner_id)
         finally:

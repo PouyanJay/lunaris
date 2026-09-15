@@ -1,0 +1,60 @@
+.root {
+  color: var(--text);
+  background: var(--surface);
+  border-block: var(--border-width) solid var(--border);
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  overflow-wrap: anywhere;
+}
+.section {
+  padding: var(--space-4);
+}
+.section + .section {
+  border-top: var(--border-width) solid var(--border);
+}
+.section h2,
+.section h3,
+.concept h4 {
+  margin: 0 0 var(--space-2);
+}
+.section h2 {
+  font-size: var(--text-lg);
+}
+.section h3,
+.concept h4 {
+  font-size: var(--text-base);
+}
+.concept {
+  padding-block: var(--space-3);
+}
+.concept + .concept {
+  border-top: var(--border-width) solid var(--border);
+}
+.status,
+.details dd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.status {
+  text-transform: uppercase;
+}
+.details dd {
+  margin: var(--space-1) 0 var(--space-3);
+}
+.section summary {
+  cursor: pointer;
+  padding-block: var(--space-3);
+}
+.section summary:hover,
+.section summary:active {
+  background: var(--bg-muted);
+}
+.section summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--space-1) var(--focus-ring);
+}
+.placeholder {
+  min-height: var(--space-16);
+  margin: var(--space-4);
+  background: var(--bg-muted);
+}

@@ -156,7 +156,11 @@ def _metered(
 
 
 def build_chat_model(
-    model_id: str, *, max_tokens: int | None = None, component: str = "llm"
+    model_id: str,
+    *,
+    max_tokens: int | None = None,
+    component: str = "llm",
+    max_retries: int = LLM_MAX_RETRIES,
 ) -> "BaseChatModel":
     """The hardened chat model for a run — the one place the LLM provider is chosen.
 
@@ -191,7 +195,7 @@ def build_chat_model(
 
             model: BaseChatModel = BridgeChatModel(bridge=bridge)
         else:
-            model = build_keyless_chat_model()
+            model = build_keyless_chat_model(max_retries=max_retries)
         return _metered(model, provider=CostProvider.LOCAL, model_id=None, component=component)
 
     from langchain_anthropic import ChatAnthropic
@@ -200,7 +204,7 @@ def build_chat_model(
         "model": model_id,
         "api_key": anthropic_key,
         "default_request_timeout": LLM_REQUEST_TIMEOUT_S,
-        "max_retries": LLM_MAX_RETRIES,
+        "max_retries": max_retries,
         "rate_limiter": get_llm_rate_limiter(),
     }
     if max_tokens is not None:
@@ -213,7 +217,7 @@ def build_chat_model(
     )
 
 
-def build_keyless_chat_model() -> "BaseChatModel":
+def build_keyless_chat_model(*, max_retries: int = LLM_MAX_RETRIES) -> "BaseChatModel":
     """The keyless local fallback model over an OpenAI-compatible endpoint (Qwen2.5-3B by default).
 
     Public so the keyless path can be requested directly (e.g. the tool-calling smoke check), as
@@ -241,7 +245,7 @@ def build_keyless_chat_model() -> "BaseChatModel":
             "LUNARIS_FALLBACK_LLM_STREAM_CHUNK_TIMEOUT_S",
             _DEFAULT_FALLBACK_STREAM_CHUNK_TIMEOUT_S,
         ),
-        max_retries=LLM_MAX_RETRIES,
+        max_retries=max_retries,
         rate_limiter=get_llm_rate_limiter(),
         # Advertise the small context window so the deep-agent harness summarizes a fraction before
         # the limit instead of overflowing it (deepagents falls back to a 170k trigger otherwise).
