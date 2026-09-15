@@ -7,6 +7,7 @@ from lunaris_runtime.resilience import build_chat_model
 from ..graph.schema import ConceptNode, MasteryCriterion
 from ..model_json import parse_json_object
 from .ask_model import ModelCallFailedError, ModelCallTimedOutError, ask_model
+from .material_notes import material_notes
 from .reject_unteachable_move import reject_unteachable_move
 from .review_day import review_day
 from .schema import Covered, DirectorMove, LessonParts, MoveKind, WorkedExample
@@ -275,7 +276,7 @@ class ClaudeTutor:
             topic=topic,
             name=node.name,
             definition=node.definition,
-            notes=_notes_on(node),
+            notes=_notes_on(node) + material_notes(node, move.kind),
             history=_history_of(already_said),
             closing=_PRACTICE_ON.format(statement=criterion.statement)
             if criterion is not None
@@ -524,7 +525,7 @@ def _prompt_for(
         topic=topic,
         name=node.name,
         definition=node.definition,
-        notes=_notes_on(node),
+        notes=_notes_on(node) + material_notes(node, move.kind),
         history=_history_of(already_said),
         learner=_about(profile),
         instruction=instruction,

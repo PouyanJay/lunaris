@@ -1,0 +1,78 @@
+.root {
+  border-block: var(--border-width) solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  min-width: 0;
+}
+.header,
+.controls,
+.transcript {
+  padding: var(--space-4);
+}
+.header h3,
+.header p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.header h3 {
+  font-size: var(--text-base);
+}
+.header p {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+.video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-subtle);
+}
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  border-block: var(--border-width) solid var(--border);
+}
+.seek {
+  display: grid;
+  flex: 1;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+.seek input {
+  width: 100%;
+  min-height: var(--space-12);
+  accent-color: var(--primary);
+}
+.time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.transcript {
+  overflow-wrap: anywhere;
+}
+.transcript summary {
+  cursor: pointer;
+  padding-block: var(--space-3);
+}
+.transcript summary:hover,
+.transcript summary:active {
+  background: var(--bg-muted);
+}
+.seek input:focus-visible,
+.transcript summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--space-1) var(--focus-ring);
+}
+
+.controls button {
+  min-height: var(--space-12);
+}
+
+.controls button[aria-disabled="true"] {
+  cursor: wait;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}

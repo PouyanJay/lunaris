@@ -1,5 +1,6 @@
 from pydantic import Field
 
+from ...corpus.schemas.asset import NodeAsset
 from ...graph.schema.base import LiveModel
 from ...graph.schema.mastery_criterion import MasteryCriterion
 from ...sims.schema.exchange import SimExchange
@@ -67,3 +68,4 @@ class SessionTurn(LiveModel):
     #: Whether this lesson has a simulator objective whose preparation can be observed.
     sim_eligible: bool = False
     sim_exchanges: list[SimExchange] = Field(default_factory=list, max_length=20)
+    materials: list[NodeAsset] = Field(default_factory=list, max_length=4)

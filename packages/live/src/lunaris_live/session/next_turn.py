@@ -24,6 +24,7 @@ from .schema import (
 )
 from .select_surface import select_surface
 from .stage_criterion import stage_criterion
+from .supporting_assets import supporting_assets
 from .turn_outcome import TurnOutcome
 
 logger = structlog.get_logger()
@@ -130,12 +131,16 @@ async def _teach(
     already_said = [turn.tutor for turn in turns if turn.move.node_id == node.id]
     # First-turn material only (P2c T4): a second pass over a concept generates fresh, because
     # coming at a stuck concept a different way each time is what the P2a eval showed works.
-    material = prefetched.get(node.id) if not already_said else None
+    material = (
+        prefetched.get(node.id) if not already_said and move.kind is not MoveKind.RETRIEVE else None
+    )
 
+    materials = supporting_assets(node, move.kind)
+    teaching_node = node.model_copy(update={"assets": materials})
     said, parts = await said_and_illustrated(
         tutor,
         move,
-        node,
+        teaching_node,
         topic=graph.topic,
         criterion=staged,
         already_said=already_said,
@@ -150,6 +155,7 @@ async def _teach(
         tutor=said,
         run_id=run_id,
         criterion=staged,
+        materials=materials,
         sim_eligible=(
             move.kind != MoveKind.RETRIEVE and any(c.needs_sim for c in node.mastery_criteria)
         ),
