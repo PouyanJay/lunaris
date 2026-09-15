@@ -106,3 +106,27 @@ def test_configured_pipeline_redacts_secrets_before_the_sink(
     assert entry["api_key"] == _REDACTED
     assert entry["model"] == "claude-opus-4-8"
     assert entry["run_id"] == "run-redact"
+
+
+@pytest.mark.parametrize("level", ["INFO", "DEBUG"])
+def test_http_transport_does_not_log_signed_urls(
+    level: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    import httpx
+
+    configure_logging(level=level)
+    with caplog.at_level(logging.DEBUG):
+        with httpx.Client(
+            transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"media"))
+        ) as client:
+            response = client.get("https://storage.test/final.mp4?token=private-test-token")
+        logging.getLogger("httpcore.http11").debug(
+            "send_request_headers.started request=GET /final.mp4?token=private-test-token"
+        )
+        logging.getLogger("httpx").warning("transport_failed")
+
+    assert response.content == b"media"
+    assert "private-test-token" not in caplog.text
+    assert "transport_failed" in caplog.text

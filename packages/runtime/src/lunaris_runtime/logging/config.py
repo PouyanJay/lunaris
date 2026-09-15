@@ -35,3 +35,7 @@ def configure_logging(*, level: str = "INFO", json_output: bool = True) -> None:
     logging.basicConfig(
         format="%(message)s", stream=sys.stdout, level=getattr(logging, level.upper())
     )
+    # Transport diagnostics include signed URLs and headers outside structlog's redactor.
+    # Keep warnings available, but never enable request traces with application DEBUG.
+    for transport_logger in ("httpx", "httpcore"):
+        logging.getLogger(transport_logger).setLevel(logging.WARNING)
