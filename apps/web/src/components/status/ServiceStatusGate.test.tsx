@@ -43,9 +43,13 @@ describe("ServiceStatusGate", () => {
     expect(screen.getByText("the app")).toBeInTheDocument();
     await flushProbe();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText("the app")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /offline/i })).not.toBeInTheDocument();
+    // A healthy app is probed once at load, never polled.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -72,7 +76,11 @@ describe("ServiceStatusGate", () => {
     expect(screen.getByRole("heading", { name: "Lunaris is offline" })).toBeInTheDocument();
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(screen.getByRole("heading", { name: "Lunaris is offline" })).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
     });
 
     expect(screen.getByText("the app")).toBeInTheDocument();
@@ -106,5 +114,21 @@ describe("ServiceStatusGate", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("abandons a probe still in flight when it unmounts", async () => {
+    let probeSignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        probeSignal = init?.signal ?? undefined;
+        return new Promise<Response>(() => {});
+      }),
+    );
+    const { unmount } = renderGate();
+
+    unmount();
+
+    expect(probeSignal?.aborted).toBe(true);
   });
 });

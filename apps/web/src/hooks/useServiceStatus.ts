@@ -21,7 +21,10 @@ interface ServiceStatus {
 export function useServiceStatus(apiBaseUrl: string): ServiceStatus {
   const [offline, setOffline] = useState(false);
   const [checking, setChecking] = useState(false);
+  // Probes can overlap (the re-check timer and a manual Try again), so each gets its own controller
+  // and all of them are aborted on unmount.
   const inFlight = useRef(new Set<AbortController>());
+  const mounted = useRef(true);
 
   const probe = useCallback(async () => {
     const controller = new AbortController();
@@ -36,8 +39,12 @@ export function useServiceStatus(apiBaseUrl: string): ServiceStatus {
 
   useEffect(() => {
     const pending = inFlight.current;
+    mounted.current = true;
     void probe();
-    return () => pending.forEach((controller) => controller.abort());
+    return () => {
+      mounted.current = false;
+      pending.forEach((controller) => controller.abort());
+    };
   }, [probe]);
 
   useEffect(() => {
@@ -48,7 +55,9 @@ export function useServiceStatus(apiBaseUrl: string): ServiceStatus {
 
   const recheck = useCallback(() => {
     setChecking(true);
-    void probe().finally(() => setChecking(false));
+    void probe().finally(() => {
+      if (mounted.current) setChecking(false);
+    });
   }, [probe]);
 
   return { offline, checking, recheck };

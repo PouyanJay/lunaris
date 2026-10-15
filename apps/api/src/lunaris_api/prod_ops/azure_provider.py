@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import httpx
 import structlog
@@ -11,6 +11,7 @@ from .cost import CostPoint, CostSeries
 from .governed_resources import GovernedResources
 from .power import PowerState, ResourcePower
 from .power_action_error import ProdPowerActionError
+from .power_state_unavailable_error import ProdPowerStateUnavailableError
 from .power_status import PowerStatus
 from .resource_kind import ResourceKind
 from .summary import ProdOpsSummary
@@ -32,16 +33,19 @@ _APP_STATUS = {
     "progressing": PowerStatus.TRANSITIONING,
 }
 
-# A virtual machine's ``PowerState/*`` instance-view code. ``stopped`` (powered off but still
-# allocated) only arises outside the switch, which always deallocates.
+# A virtual machine's ``PowerState/*`` instance-view code. ``stopped`` is powered off but still
+# allocated, so it keeps billing for compute: not a settled OFF (the switch's OFF deallocates it).
 _VM_STATUS = {
     "PowerState/running": PowerStatus.RUNNING,
     "PowerState/deallocated": PowerStatus.STOPPED,
-    "PowerState/stopped": PowerStatus.STOPPED,
+    "PowerState/stopped": PowerStatus.TRANSITIONING,
     "PowerState/starting": PowerStatus.TRANSITIONING,
     "PowerState/stopping": PowerStatus.TRANSITIONING,
     "PowerState/deallocating": PowerStatus.TRANSITIONING,
 }
+
+# What a failed ARM exchange can raise: an HTTP or transport error, or a malformed body/token.
+_ARM_FAILURES = (httpx.HTTPError, ValueError, KeyError)
 
 
 def _parse_usage_date(raw: object) -> date:
@@ -53,6 +57,15 @@ def _parse_usage_date(raw: object) -> date:
 def _iso_z(value: datetime) -> str:
     """A UTC datetime as ``...Z`` (never ``+00:00`` — the ``+`` becomes a space in a URL query)."""
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class _PowerAction(NamedTuple):
+    """One start/stop call: which resource, which ARM action, and where to send it."""
+
+    resource: str
+    verb: str
+    url: str
+    api_version: str
 
 
 class AzureProdOpsProvider:
@@ -76,6 +89,8 @@ class AzureProdOpsProvider:
         self._arm = arm
         self._sub = subscription_id
         self._rg = resource_group
+        if api_app not in governed.container_apps:
+            raise ValueError(f"The API app {api_app!r} must be one of the governed container apps.")
         self._api_app = api_app
         self._apps = governed.container_apps
         self._vms = governed.virtual_machines
@@ -197,17 +212,20 @@ class AzureProdOpsProvider:
         reads = [self._app_power(app) for app in self._apps] + [
             self._vm_power(vm) for vm in self._vms
         ]
-        # A governed resource that is not deployed (e.g. no simulator VM) is simply absent.
-        resources = tuple(r for r in await asyncio.gather(*reads) if r is not None)
+        try:
+            found = await asyncio.gather(*reads)
+        except _ARM_FAILURES as exc:
+            raise ProdPowerStateUnavailableError from exc
+        # A governed VM that is not deployed (no simulators in this environment) is simply absent.
+        resources = tuple(r for r in found if r is not None)
         api_running = any(r.name == self._api_app and r.running for r in resources)
         return PowerState(is_on=api_running, resources=resources)
 
-    async def _app_power(self, app: str) -> ResourcePower | None:
-        payload = await self._arm.request_if_exists(
+    async def _app_power(self, app: str) -> ResourcePower:
+        # Container apps are required: a missing one is a misconfiguration, so it raises.
+        payload = await self._arm.request(
             "GET", self._app_id(app), params={"api-version": _APP_API}
         )
-        if payload is None:
-            return None
         running_status = str(payload.get("properties", {}).get("runningStatus", "")).lower()
         return ResourcePower(
             name=app,
@@ -233,45 +251,48 @@ class AzureProdOpsProvider:
         )
 
     async def set_power(self, *, on: bool) -> PowerState:
-        failed = [
-            name
-            for name, url, api_version in self._power_actions(on=on)
-            if not await self._act(name, url, api_version)
-        ]
+        # Sequential on purpose: the actions are issued in the order _power_actions defines.
+        failed: list[str] = []
+        for action in self._power_actions(on=on):
+            if not await self._act(action):
+                failed.append(action.resource)
         if failed:
             raise ProdPowerActionError(on=on, failed=tuple(failed))
         return await self.get_power_state()
 
-    def _power_actions(self, *, on: bool) -> list[tuple[str, str, str]]:
-        """(resource, action URL, api-version) in a safe order. Going down, the API stops first so
-        no new work is accepted while the workers wind down, and the VM is deallocated last.
-        Coming up, the VM starts first (it is the slowest) and the API last, so it only serves once
-        what it depends on is back."""
+    def _power_actions(self, *, on: bool) -> list[_PowerAction]:
+        """The start/stop calls in issue order. ARM accepts each one at once (202) and completes it
+        in the background, so this orders when work is requested, not when it finishes: going down,
+        the API is asked to stop first so it stops accepting new work before the workers go, and the
+        VM last; coming up, the VM (the slowest to boot) is asked first and the API last."""
         api = [app for app in self._apps if app == self._api_app]
         workers = [app for app in self._apps if app != self._api_app]
         if on:
-            return [(vm, f"{self._vm_id(vm)}/start", _VM_API) for vm in self._vms] + [
-                (app, f"{self._app_id(app)}/start", _APP_API) for app in workers + api
+            return [_PowerAction(vm, "start", self._vm_id(vm), _VM_API) for vm in self._vms] + [
+                _PowerAction(app, "start", self._app_id(app), _APP_API) for app in workers + api
             ]
         # Deallocate, never power off: a powered-off VM keeps billing for its compute.
-        return [(app, f"{self._app_id(app)}/stop", _APP_API) for app in api + workers] + [
-            (vm, f"{self._vm_id(vm)}/deallocate", _VM_API) for vm in self._vms
+        return [_PowerAction(app, "stop", self._app_id(app), _APP_API) for app in api + workers] + [
+            _PowerAction(vm, "deallocate", self._vm_id(vm), _VM_API) for vm in self._vms
         ]
 
-    async def _act(self, name: str, url: str, api_version: str) -> bool:
-        """Issue one start/stop action; False (logged) when Azure refuses it, so the remaining
-        resources are still attempted. A resource that is not deployed counts as done."""
+    async def _act(self, action: _PowerAction) -> bool:
+        """Send one start/stop call; False (logged) when it fails, so the remaining resources are
+        still attempted. A governed VM that is not deployed counts as done."""
+        url = f"{action.url}/{action.verb}"
+        params = {"api-version": action.api_version}
         try:
-            await self._arm.request_if_exists("POST", url, params={"api-version": api_version})
-        except httpx.HTTPError as exc:
-            status_code = (
-                exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None
-            )
+            if action.api_version == _VM_API:
+                await self._arm.request_if_exists("POST", url, params=params)
+            else:
+                await self._arm.request("POST", url, params=params)
+        except _ARM_FAILURES as exc:
+            response = getattr(exc, "response", None)
             logger.warning(
                 "prod_power_action_failed",
-                resource=name,
-                action=url.rsplit("/", 1)[1],
-                status_code=status_code,
+                resource=action.resource,
+                action=action.verb,
+                status_code=getattr(response, "status_code", None),
                 error_type=type(exc).__name__,
             )
             return False

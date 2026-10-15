@@ -59,6 +59,23 @@ class ArmClient:
         self._expires_at = now + float(payload.get("expires_in", 3600))
         return self._token
 
+    async def _send(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        token = await self._token_value()
+        return await self._client.request(
+            method,
+            url,
+            params=params,
+            json=json,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
     async def request(
         self,
         method: str,
@@ -69,14 +86,7 @@ class ArmClient:
     ) -> dict[str, Any]:
         """Call ARM with the managed-identity bearer token. Raises on a non-2xx response; returns
         the parsed JSON body (or ``{}`` for an empty body, e.g. a start/stop action)."""
-        token = await self._token_value()
-        response = await self._client.request(
-            method,
-            url,
-            params=params,
-            json=json,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        response = await self._send(method, url, params=params, json=json)
         response.raise_for_status()
         return response.json() if response.content else {}
 
@@ -87,11 +97,22 @@ class ArmClient:
         *,
         params: dict[str, str] | None = None,
     ) -> dict[str, Any] | None:
-        """Like ``request``, but a 404 (the resource is not deployed) returns ``None`` instead of
-        raising. Any other error still raises."""
-        try:
-            return await self.request(method, url, params=params)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == httpx.codes.NOT_FOUND:
-                return None
-            raise
+        """Like ``request``, but ``None`` when ARM says the resource itself does not exist
+        (``ResourceNotFound``). Every other failure still raises: a missing resource group, a
+        token error, or any other 404 means a misconfiguration, not an absent resource."""
+        response = await self._send(method, url, params=params)
+        if response.status_code == httpx.codes.NOT_FOUND and _arm_error_code(response) == (
+            "ResourceNotFound"
+        ):
+            return None
+        response.raise_for_status()
+        return response.json() if response.content else {}
+
+
+def _arm_error_code(response: httpx.Response) -> str | None:
+    """The ``error.code`` of an ARM error body, if it has one."""
+    try:
+        error = response.json().get("error", {})
+    except ValueError:
+        return None
+    return error.get("code") if isinstance(error, dict) else None

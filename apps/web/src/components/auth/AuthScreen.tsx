@@ -14,17 +14,19 @@ function messageFor(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
-function headingFor(isSignup: boolean, isAdmin: boolean): string {
-  if (isAdmin) return "Administrator sign in";
-  return isSignup ? "Create your account" : "Sign in";
-}
+type Variant = "signin" | "signup" | "admin";
 
-function subheadingFor(isSignup: boolean, isAdmin: boolean): string {
-  if (isAdmin) return "Sign in with an administrator account to manage production.";
-  return isSignup
-    ? "You'll bring your own provider keys after signing in."
-    : "Welcome back. Sign in to your courses.";
-}
+const HEADING: Record<Variant, string> = {
+  signin: "Sign in",
+  signup: "Create your account",
+  admin: "Administrator sign in",
+};
+
+const SUBHEADING: Record<Variant, string> = {
+  signin: "Welcome back. Sign in to your courses.",
+  signup: "You'll bring your own provider keys after signing in.",
+  admin: "Sign in with an administrator account to manage production.",
+};
 
 function submitLabel(submitting: boolean, isSignup: boolean): string {
   if (submitting) return isSignup ? "Creating account…" : "Signing in…";
@@ -62,6 +64,7 @@ export function AuthScreen({
 
   const statusId = useId();
   const isSignup = mode === "signup";
+  const variant: Variant = adminSignIn ? "admin" : mode;
   const showInvite = isSignup && gateEnforced;
 
   useEffect(() => {
@@ -113,8 +116,8 @@ export function AuthScreen({
           <BrandMark size={28} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
-        <h1 className={styles.heading}>{headingFor(isSignup, adminSignIn !== undefined)}</h1>
-        <p className={styles.subheading}>{subheadingFor(isSignup, adminSignIn !== undefined)}</p>
+        <h1 className={styles.heading}>{HEADING[variant]}</h1>
+        <p className={styles.subheading}>{SUBHEADING[variant]}</p>
 
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
           <Input

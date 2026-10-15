@@ -56,21 +56,34 @@ export function ServiceOffline({ controlBaseUrl, checking, onRetry }: ServiceOff
           </Button>
         </div>
 
-        {enabled &&
-          (session ? (
-            <OfflineAdminConsole controlBaseUrl={controlBaseUrl} />
-          ) : (
-            <p className={styles.footer}>
-              <button
-                type="button"
-                className={styles.footerButton}
-                onClick={() => setSigningIn(true)}
-              >
-                Administrator sign in
-              </button>
-            </p>
-          ))}
+        {enabled && (
+          <AdminEntry
+            signedIn={session !== null}
+            controlBaseUrl={controlBaseUrl}
+            onSignIn={() => setSigningIn(true)}
+          />
+        )}
       </div>
     </main>
+  );
+}
+
+/** The way in for an administrator: production controls once signed in, else a quiet sign-in. */
+function AdminEntry({
+  signedIn,
+  controlBaseUrl,
+  onSignIn,
+}: {
+  signedIn: boolean;
+  controlBaseUrl: string;
+  onSignIn: () => void;
+}) {
+  if (signedIn) return <OfflineAdminConsole controlBaseUrl={controlBaseUrl} />;
+  return (
+    <p className={styles.footer}>
+      <button type="button" className={styles.footerButton} onClick={onSignIn}>
+        Administrator sign in
+      </button>
+    </p>
   );
 }

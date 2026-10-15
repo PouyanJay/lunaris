@@ -86,6 +86,20 @@ describe("ServiceOffline", () => {
     expect(screen.getByRole("heading", { name: "Lunaris is offline" })).toBeVisible();
   });
 
+  it("keeps the administrator on the sign-in form when the sign-in fails", async () => {
+    const signIn = vi.fn().mockRejectedValue(new Error("Invalid login credentials"));
+    useAuthMock.mockReturnValue(auth({ signIn }));
+    renderOffline();
+
+    fireEvent.click(screen.getByRole("button", { name: "Administrator sign in" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@x.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong-pw" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Invalid login credentials");
+    expect(screen.getByRole("heading", { name: "Administrator sign in" })).toBeVisible();
+  });
+
   it("gives a signed-in administrator the power switch, verified by the control plane", async () => {
     useAuthMock.mockReturnValue(auth({ session: SESSION }));
     fetchMeMock.mockResolvedValue({ userId: "u1", isAdmin: true });

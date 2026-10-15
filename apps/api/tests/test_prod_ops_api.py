@@ -17,10 +17,12 @@ from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_prod_ops_provider
 from lunaris_api.prod_ops import (
+    ArmClient,
+    AzureProdOpsProvider,
     FakeProdOpsProvider,
-    PowerState,
+    GovernedResources,
+    IProdOpsProvider,
     ProdOpsSummary,
-    ProdPowerActionError,
 )
 
 ADMIN_EMAIL = "owner@lunaris.test"
@@ -30,7 +32,7 @@ MEMBER_USER = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 _SUMMARY = ProdOpsSummary(resource_group="rg-lunaris-prod", currency="CAD")
 
 
-def _build_client(tmp_path: Path, provider: FakeProdOpsProvider) -> httpx.AsyncClient:
+def _build_client(tmp_path: Path, provider: IProdOpsProvider) -> httpx.AsyncClient:
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: Settings(
         pipeline="stub",
@@ -242,19 +244,69 @@ async def test_power_toggle_rejects_a_malformed_body(client: httpx.AsyncClient) 
     assert response.status_code == 422
 
 
-class _RejectingProvider(FakeProdOpsProvider):
-    """A provider whose power change Azure partly refuses (e.g. a role missing a VM action)."""
+_VM = "lunaris-prod-sim-worker"
 
-    async def set_power(self, *, on: bool) -> PowerState:
-        raise ProdPowerActionError(on=on, failed=("lunaris-prod-sim-worker",))
+
+def _azure_provider(*, refuse: str = "", reads_fail: bool = False) -> AzureProdOpsProvider:
+    """The real Azure adapter behind the router, with only Azure itself stood in for: ``refuse``
+    names a resource whose start/stop ARM answers 403; ``reads_fail`` makes every read a 503."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "identity.local":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+        if request.method == "POST":
+            return httpx.Response(403 if f"/{refuse}/" in request.url.path else 202)
+        if reads_fail:
+            return httpx.Response(503, json={"error": {"code": "ServiceUnavailable"}})
+        if "/virtualMachines/" in request.url.path:
+            view = {"statuses": [{"code": "PowerState/running"}]}
+            return httpx.Response(200, json={"properties": {"instanceView": view}})
+        return httpx.Response(200, json={"properties": {"runningStatus": "Running"}})
+
+    arm = ArmClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        identity_endpoint="https://identity.local/token",
+        identity_header="hdr",
+        client_id="cid",
+    )
+    return AzureProdOpsProvider(
+        arm,
+        subscription_id="sub-1",
+        resource_group="rg-lunaris-prod",
+        api_app="lunaris-prod-api",
+        governed=GovernedResources(container_apps=("lunaris-prod-api",), virtual_machines=(_VM,)),
+    )
 
 
 async def test_a_partly_refused_power_change_is_a_502_naming_the_resource(tmp_path: Path) -> None:
-    async with _build_client(tmp_path, _RejectingProvider(summary=_SUMMARY)) as client:
+    # e.g. the control plane's role is missing the VM deallocate action.
+    async with _build_client(tmp_path, _azure_provider(refuse=_VM)) as client:
         response = await client.post(
             "/api/admin/prod-ops/power", json={"on": False, "confirm": True}, headers=_admin()
         )
 
     assert response.status_code == 502
-    assert "lunaris-prod-sim-worker" in response.json()["detail"]
+    assert _VM in response.json()["detail"]
+    assert "lunaris-prod-api" not in response.json()["detail"]
     assert response.headers["x-request-id"]
+
+
+async def test_an_unreadable_power_state_is_a_502(tmp_path: Path) -> None:
+    async with _build_client(tmp_path, _azure_provider(reads_fail=True)) as client:
+        response = await client.get("/api/admin/prod-ops/power", headers=_admin())
+
+    assert response.status_code == 502
+    assert "power state" in response.json()["detail"]
+    assert response.headers["x-request-id"]
+
+
+async def test_a_sent_change_whose_result_cannot_be_read_is_a_502_saying_so(
+    tmp_path: Path,
+) -> None:
+    async with _build_client(tmp_path, _azure_provider(reads_fail=True)) as client:
+        response = await client.post(
+            "/api/admin/prod-ops/power", json={"on": False, "confirm": True}, headers=_admin()
+        )
+
+    assert response.status_code == 502
+    assert "was sent" in response.json()["detail"]

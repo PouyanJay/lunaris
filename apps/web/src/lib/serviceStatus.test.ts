@@ -76,4 +76,20 @@ describe("probeServiceHealth", () => {
 
     await expect(result).resolves.toBe(false);
   });
+
+  it("reports unhealthy at once for a signal that is already aborted", async () => {
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          if (init?.signal?.aborted) reject(new DOMException("aborted", "AbortError"));
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      probeServiceHealth("http://api.test", { signal: controller.signal }),
+    ).resolves.toBe(false);
+  });
 });
