@@ -4,9 +4,8 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..dependencies import AdminUserDep, ProdOpsProviderDep
-from ..prod_ops import PowerState
+from ..prod_ops import PowerState, ProdPowerActionError, ProdPowerStateUnavailableError
 from ..schemas.prod_ops import (
-    AppPowerView,
     ComputePointView,
     ComputeSeriesView,
     CostPointView,
@@ -14,6 +13,7 @@ from ..schemas.prod_ops import (
     PowerStateView,
     PowerToggleRequest,
     ProdOpsSummaryView,
+    ResourcePowerView,
 )
 from ._correlation import bind_correlation
 
@@ -93,10 +93,29 @@ async def get_compute(
     )
 
 
+def _bad_gateway(detail: str, request_id: str) -> HTTPException:
+    """A 502 for an Azure-side failure. The error replaces the bound response, so it carries the
+    correlation id explicitly."""
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=detail,
+        headers={"X-Request-Id": request_id},
+    )
+
+
 def _power_view(state: PowerState) -> PowerStateView:
     return PowerStateView(
         is_on=state.is_on,
-        apps=[AppPowerView(name=app.name, running=app.running) for app in state.apps],
+        settled=state.settled,
+        resources=[
+            ResourcePowerView(
+                name=resource.name,
+                kind=resource.kind,
+                status=resource.status,
+                running=resource.running,
+            )
+            for resource in state.resources
+        ],
     )
 
 
@@ -106,9 +125,15 @@ async def get_power(
     provider: ProdOpsProviderDep,
     response: Response,
 ) -> PowerStateView:
-    """Admin-only: whether production is on, plus each governed app's run state."""
+    """Admin-only: whether production is on, plus each governed resource's run state."""
     request_id = bind_correlation(response)
-    state = await provider.get_power_state()
+    try:
+        state = await provider.get_power_state()
+    except ProdPowerStateUnavailableError as exc:
+        logger.warning("prod_ops_power_unreadable", admin_id=admin_id, request_id=request_id)
+        raise _bad_gateway(
+            "Could not read production's power state from Azure.", request_id
+        ) from exc
     logger.info(
         "prod_ops_power_fetched", admin_id=admin_id, is_on=state.is_on, request_id=request_id
     )
@@ -136,6 +161,25 @@ async def set_power(
         target_on=body.on,
         request_id=request_id,
     )
-    state = await provider.set_power(on=body.on)
+    try:
+        state = await provider.set_power(on=body.on)
+    except ProdPowerActionError as exc:
+        logger.warning(
+            "prod_power_set_partial",
+            admin_id=admin_id,
+            target_on=body.on,
+            failed=list(exc.failed),
+            request_id=request_id,
+        )
+        raise _bad_gateway(
+            f"{exc}. The other resources were sent the change; check the power state and retry.",
+            request_id,
+        ) from exc
+    except ProdPowerStateUnavailableError as exc:
+        logger.warning("prod_power_set_unconfirmed", admin_id=admin_id, request_id=request_id)
+        raise _bad_gateway(
+            "The change was sent, but its result could not be read yet. Refresh to check.",
+            request_id,
+        ) from exc
     logger.info("prod_power_set_done", admin_id=admin_id, is_on=state.is_on, request_id=request_id)
     return _power_view(state)

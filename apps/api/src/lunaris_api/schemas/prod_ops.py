@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+from ..prod_ops import PowerStatus, ResourceKind
 from .base import CamelModel
 
 
@@ -45,18 +46,23 @@ class ComputeSeriesView(CamelModel):
     points: list[ComputePointView]
 
 
-class AppPowerView(CamelModel):
-    """One prod app's run state: its name and whether it is currently running (vs stopped)."""
+class ResourcePowerView(CamelModel):
+    """One governed prod resource's run state. ``status`` is ``transitioning`` while Azure is still
+    starting or stopping it; ``running`` is the plain on/off reading of the same state."""
 
     name: str
+    kind: ResourceKind
+    status: PowerStatus
     running: bool
 
 
 class PowerStateView(CamelModel):
-    """Whether production is on, plus the run state of each app the on/off switch governs."""
+    """Whether production is on, plus the run state of each resource the on/off switch governs.
+    ``settled`` is false while any resource is mid-transition (poll until it turns true)."""
 
     is_on: bool
-    apps: list[AppPowerView]
+    settled: bool
+    resources: list[ResourcePowerView]
 
 
 class PowerToggleRequest(CamelModel):

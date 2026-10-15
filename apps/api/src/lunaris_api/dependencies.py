@@ -113,7 +113,7 @@ from .device_bridge_registry import DeviceBridgeRegistry
 from .draft_throttle import KeylessBuildThrottle
 from .explain import ClaudeExplainer, ExplainBinding
 from .explain_throttle import KeylessExplainThrottle
-from .prod_ops import FakeProdOpsProvider, IProdOpsProvider
+from .prod_ops import FakeProdOpsProvider, GovernedResources, IProdOpsProvider
 from .progress import InMemoryProgressStore, IProgressStore, SupabaseProgressStore
 from .run_registry import RunRegistry
 from .secrets import (
@@ -633,14 +633,6 @@ UserDirectoryDep = Annotated[IUserDirectory, Depends(get_user_directory)]
 # path; the real ARM adapter (authed via the API's managed identity) is selected in cloud.
 _fake_prod_ops_provider = FakeProdOpsProvider()
 
-# Default set of prod apps the on/off switch governs (the API + the scale-to-zero workers).
-_DEFAULT_GOVERNED_APPS = (
-    "lunaris-prod-api",
-    "lunaris-prod-video-worker",
-    "lunaris-prod-inference",
-    "lunaris-prod-embeddings",
-)
-
 
 @lru_cache
 def _build_prod_ops_provider() -> IProdOpsProvider:
@@ -663,14 +655,12 @@ def _build_prod_ops_provider() -> IProdOpsProvider:
         identity_header=identity_header,
         client_id=client_id,
     )
-    governed = os.environ.get("PROD_OPS_GOVERNED_APPS")
-    apps = tuple(governed.split(",")) if governed else _DEFAULT_GOVERNED_APPS
     return AzureProdOpsProvider(
         arm,
         subscription_id=subscription_id,
         resource_group=os.environ.get("PROD_OPS_RESOURCE_GROUP", "rg-lunaris-prod"),
         api_app=os.environ.get("PROD_OPS_API_APP", "lunaris-prod-api"),
-        governed_apps=apps,
+        governed=GovernedResources.prod_default(),
         currency=os.environ.get("PROD_OPS_CURRENCY", "CAD"),
     )
 

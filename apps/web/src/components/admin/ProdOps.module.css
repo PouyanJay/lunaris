@@ -222,12 +222,33 @@
   border-top: 1px solid var(--border);
 }
 
-.appRunning {
-  color: var(--accent-600);
-  font-family: var(--font-mono);
+.resourceName {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
 }
 
-.appStopped {
-  color: var(--text-muted);
+/* A resource name is an identifier: keep it whole; on a narrow screen the VM tag wraps below it. */
+.resourceLabel {
+  composes: meta;
+  white-space: nowrap;
+}
+
+/* Marks the one resource that is a virtual machine (deallocated, not stopped). */
+.kindTag {
   font-family: var(--font-mono);
+  font-size: var(--eyebrow-size);
+  letter-spacing: var(--eyebrow-tracking);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+}
+
+.watchNote {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  margin-block: var(--space-2);
 }

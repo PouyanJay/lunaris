@@ -12,6 +12,7 @@ import { useSearchShortcut } from "./hooks/useSearchShortcut";
 import type { SearchEntry } from "./lib/searchIndex";
 import { AuthGate } from "./components/auth/AuthGate";
 import { ProductRouter } from "./components/gateway/ProductRouter";
+import { ServiceStatusGate } from "./components/status/ServiceStatusGate";
 import { useIsProductForked } from "./hooks/useIsProductForked";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { CorpusPanel } from "./components/corpus/CorpusPanel";
@@ -864,22 +865,24 @@ export default function App() {
         // state churn (e.g. a build stream's updates) can be dropped — window.history moves
         // while useLocation never follows, stranding the canvas on the old route.
         <BrowserRouter useTransitions={false}>
-          <AuthGate apiBaseUrl={apiBaseUrl}>
-            {/* The product fork sits strictly inside the auth gate: you sign into Lunaris, then
+          <ServiceStatusGate apiBaseUrl={apiBaseUrl}>
+            <AuthGate apiBaseUrl={apiBaseUrl}>
+              {/* The product fork sits strictly inside the auth gate: you sign into Lunaris, then
                 choose a product. Transparent while Live is flagged off. */}
-            <ProductRouter
-              apiBaseUrl={apiBaseUrl}
-              studio={
-                <StudioApp
-                  apiBaseUrl={apiBaseUrl}
-                  theme={theme}
-                  onToggleTheme={toggle}
-                  preference={preference}
-                  onPreferenceChange={setPreference}
-                />
-              }
-            />
-          </AuthGate>
+              <ProductRouter
+                apiBaseUrl={apiBaseUrl}
+                studio={
+                  <StudioApp
+                    apiBaseUrl={apiBaseUrl}
+                    theme={theme}
+                    onToggleTheme={toggle}
+                    preference={preference}
+                    onPreferenceChange={setPreference}
+                  />
+                }
+              />
+            </AuthGate>
+          </ServiceStatusGate>
         </BrowserRouter>
       ) : (
         <SeedApp theme={theme} onToggleTheme={toggle} />

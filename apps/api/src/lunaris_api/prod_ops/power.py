@@ -1,25 +1,37 @@
 from dataclasses import dataclass
 
+from .power_status import PowerStatus
+from .resource_kind import ResourceKind
+
 
 @dataclass(frozen=True)
-class AppPower:
-    """One prod container app's run state: its name and whether it is running (vs stopped).
+class ResourcePower:
+    """One governed prod resource's run state.
 
     Tightly coupled to ``PowerState`` (its container), so they share a module.
     """
 
     name: str
-    running: bool
+    kind: ResourceKind
+    status: PowerStatus
+
+    @property
+    def running(self) -> bool:
+        return self.status is PowerStatus.RUNNING
 
 
 @dataclass(frozen=True)
 class PowerState:
-    """Whether production is on, and the run state of each prod app behind that.
+    """Whether production is on, and the run state of each prod resource behind that.
 
-    ``is_on`` is the headline the switch reflects — true when the environment is serving (the API
-    app is running); ``apps`` lists every app the on/off action governs, so the admin sees exactly
-    what is up or stopped.
+    ``is_on`` is the headline the switch reflects: true when the environment is serving (the API app
+    is running). ``resources`` lists everything the on/off action governs, so the admin sees exactly
+    what is up, down, or still changing; ``settled`` is false while any of them is mid-transition.
     """
 
     is_on: bool
-    apps: tuple[AppPower, ...]
+    resources: tuple[ResourcePower, ...]
+
+    @property
+    def settled(self) -> bool:
+        return all(r.status is not PowerStatus.TRANSITIONING for r in self.resources)

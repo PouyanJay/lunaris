@@ -2,17 +2,10 @@ from datetime import date, datetime, time, timedelta
 
 from .compute import ComputePoint, ComputeSeries
 from .cost import CostPoint, CostSeries
-from .power import AppPower, PowerState
+from .governed_resources import GovernedResources
+from .power import PowerState, ResourcePower
+from .power_status import PowerStatus
 from .summary import ProdOpsSummary
-
-# The prod apps the on/off switch governs (the API plus the scale-to-zero workers). The fake reports
-# them all following the toggle; the real adapter reads/sets each app's run state on Azure.
-_GOVERNED_APPS = (
-    "lunaris-prod-api",
-    "lunaris-prod-video-worker",
-    "lunaris-prod-inference",
-    "lunaris-prod-embeddings",
-)
 
 # A fixed anchor so the fake's series is deterministic (tests assert on it; the no-Azure path shows
 # clearly synthetic data). The real adapter keys off the actual calendar.
@@ -28,9 +21,16 @@ class FakeProdOpsProvider:
     fixed anchor day (the most recent day flagged partial, as the real data lags).
     """
 
-    def __init__(self, summary: ProdOpsSummary | None = None, *, on: bool = True) -> None:
+    def __init__(
+        self,
+        summary: ProdOpsSummary | None = None,
+        *,
+        on: bool = True,
+        governed: GovernedResources | None = None,
+    ) -> None:
         self._summary = summary or ProdOpsSummary(resource_group="rg-lunaris-prod", currency="CAD")
         self._on = on
+        self._governed = governed or GovernedResources.prod_default()
 
     async def get_summary(self) -> ProdOpsSummary:
         return self._summary
@@ -73,5 +73,11 @@ class FakeProdOpsProvider:
         return self._state()
 
     def _state(self) -> PowerState:
-        apps = tuple(AppPower(name=name, running=self._on) for name in _GOVERNED_APPS)
-        return PowerState(is_on=self._on, apps=apps)
+        # Every governed prod resource follows the toggle at once (the real adapter reports Azure's
+        # asynchronous transitions in between).
+        status = PowerStatus.RUNNING if self._on else PowerStatus.STOPPED
+        resources = tuple(
+            ResourcePower(name=name, kind=kind, status=status)
+            for name, kind in self._governed.members()
+        )
+        return PowerState(is_on=self._on, resources=resources)

@@ -13,6 +13,8 @@ import {
   makeRun,
   makeRunEvent,
   progressFrame,
+  healthyProbeResponse,
+  isHealthProbe,
   routedFetch,
   sseStreamResponse,
   waitForRunsFetch,
@@ -138,6 +140,24 @@ describe("App — live studio (VITE_API_URL set)", () => {
     expect(screen.getByRole("heading", { name: /what do you want to learn/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /generate course/i })).toBeInTheDocument();
     await waitForRunsFetch(fetchMock);
+  });
+
+  it("shows the offline page instead of the studio when the API is switched off", async () => {
+    const studioFetch = routedFetch({ runs: [] });
+    // A stopped API answers without CORS headers, so the browser reports a failed fetch.
+    const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (isHealthProbe(url)) return Promise.reject(new TypeError("Failed to fetch"));
+      return studioFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Lunaris is offline" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: /what do you want to learn/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /email contact@pouyan\.ai/i })).toBeInTheDocument();
   });
 
   it("personalizes the build through the rail: read the brief, confirm, then stream to ready", async () => {
@@ -276,6 +296,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
@@ -404,6 +425,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
@@ -600,6 +622,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
@@ -737,6 +760,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
