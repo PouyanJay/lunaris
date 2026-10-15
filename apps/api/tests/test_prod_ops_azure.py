@@ -15,6 +15,8 @@ from lunaris_api.prod_ops import (
     AzureProdOpsProvider,
     GovernedResources,
     PowerStatus,
+    ProdPowerActionError,
+    ResourceKind,
 )
 
 # A fixed anchor day (mid-month, no boundary); the adapter's clock is frozen to it below so the
@@ -84,10 +86,15 @@ def _arm_handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"properties": {"runningStatus": running}})
 
 
-def _provider(apps: tuple[str, ...] = ("lunaris-prod-api",)) -> AzureProdOpsProvider:
-    client = httpx.AsyncClient(transport=httpx.MockTransport(_arm_handler))
+def _provider(
+    handler=_arm_handler,
+    *,
+    apps: tuple[str, ...] = ("lunaris-prod-api",),
+    vms: tuple[str, ...] = (),
+) -> AzureProdOpsProvider:
+    """The real adapter over the real ``ArmClient``, with ``handler`` standing in for Azure."""
     arm = ArmClient(
-        client,
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         identity_endpoint="https://identity.local/token",
         identity_header="hdr",
         client_id="cid",
@@ -97,7 +104,7 @@ def _provider(apps: tuple[str, ...] = ("lunaris-prod-api",)) -> AzureProdOpsProv
         subscription_id="sub-1",
         resource_group="rg-lunaris-prod",
         api_app="lunaris-prod-api",
-        governed=GovernedResources(container_apps=apps, virtual_machines=()),
+        governed=GovernedResources(container_apps=apps, virtual_machines=vms),
     )
 
 
@@ -109,17 +116,7 @@ async def test_cost_query_sends_an_actual_cost_daily_body() -> None:
             captured.append(json.loads(request.content))
         return _arm_handler(request)
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    arm = ArmClient(
-        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
-    )
-    provider = AzureProdOpsProvider(
-        arm,
-        subscription_id="s",
-        resource_group="rg",
-        api_app="a",
-        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
-    )
+    provider = _provider(handler)
 
     await provider.get_cost_daily(2)
 
@@ -137,17 +134,7 @@ async def test_metrics_request_asks_for_the_usage_metrics_hourly() -> None:
             captured.append(request.url)
         return _arm_handler(request)
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    arm = ArmClient(
-        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
-    )
-    provider = AzureProdOpsProvider(
-        arm,
-        subscription_id="s",
-        resource_group="rg",
-        api_app="a",
-        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
-    )
+    provider = _provider(handler)
 
     await provider.get_compute_series(1)
 
@@ -186,7 +173,9 @@ async def test_compute_series_parses_metrics_into_usage_and_cost() -> None:
 
 
 async def test_power_state_is_on_when_the_api_app_runs() -> None:
-    state = await _provider(("lunaris-prod-api", "lunaris-prod-video-worker")).get_power_state()
+    state = await _provider(
+        apps=("lunaris-prod-api", "lunaris-prod-video-worker")
+    ).get_power_state()
 
     assert state.is_on is True
     assert {r.name for r in state.resources} == {"lunaris-prod-api", "lunaris-prod-video-worker"}
@@ -201,20 +190,7 @@ async def test_set_power_off_issues_stop_and_reports_state() -> None:
             calls.append(request.url.path.rsplit("/", 1)[1])
         return _arm_handler(request)
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    arm = ArmClient(
-        client, identity_endpoint="https://identity.local/token", identity_header="h", client_id="c"
-    )
-    provider = AzureProdOpsProvider(
-        arm,
-        subscription_id="sub-1",
-        resource_group="rg-lunaris-prod",
-        api_app="lunaris-prod-api",
-        governed=GovernedResources(
-            container_apps=("lunaris-prod-api", "lunaris-prod-video-worker"),
-            virtual_machines=(),
-        ),
-    )
+    provider = _provider(handler, apps=("lunaris-prod-api", "lunaris-prod-video-worker"))
 
     await provider.set_power(on=False)
 
@@ -230,17 +206,7 @@ async def test_set_power_uses_the_right_action(on: bool) -> None:
             actions.append(request.url.path.rsplit("/", 1)[1])
         return _arm_handler(request)
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    arm = ArmClient(
-        client, identity_endpoint="https://identity.local/token", identity_header="h", client_id="c"
-    )
-    provider = AzureProdOpsProvider(
-        arm,
-        subscription_id="sub-1",
-        resource_group="rg-lunaris-prod",
-        api_app="lunaris-prod-api",
-        governed=GovernedResources(container_apps=("lunaris-prod-api",), virtual_machines=()),
-    )
+    provider = _provider(handler)
 
     await provider.set_power(on=on)
 
@@ -255,17 +221,7 @@ async def test_cost_daily_handles_an_empty_cost_response() -> None:
             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
         return httpx.Response(200, json={"properties": {"columns": [], "rows": []}})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    arm = ArmClient(
-        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
-    )
-    provider = AzureProdOpsProvider(
-        arm,
-        subscription_id="s",
-        resource_group="rg",
-        api_app="a",
-        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
-    )
+    provider = _provider(handler)
 
     series = await provider.get_cost_daily(3)
 
@@ -280,79 +236,53 @@ async def test_arm_request_raises_on_an_error_response() -> None:
             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
         return httpx.Response(500, json={"error": "boom"})
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    arm = ArmClient(
-        client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
-    )
-    provider = AzureProdOpsProvider(
-        arm,
-        subscription_id="s",
-        resource_group="rg",
-        api_app="a",
-        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
-    )
+    provider = _provider(handler)
 
     with pytest.raises(httpx.HTTPStatusError):
         await provider.get_cost_daily(7)
 
 
-def _app_status_handler(statuses: dict[str, str]):
-    """ARM double whose container-app GETs report ``statuses[name]`` as ``runningStatus``."""
+def _app_status_handler(statuses: dict[str, str | None]):
+    """ARM double whose container-app GETs report ``statuses[name]`` as ``runningStatus`` (``None``
+    omits the field)."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "identity.local":
             return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
-        name = request.url.path.rsplit("/", 1)[1]
-        return httpx.Response(200, json={"properties": {"runningStatus": statuses[name]}})
+        running_status = statuses[request.url.path.rsplit("/", 1)[1]]
+        properties = {} if running_status is None else {"runningStatus": running_status}
+        return httpx.Response(200, json={"properties": properties})
 
     return handler
 
 
-def _provider_over(handler, governed: GovernedResources) -> AzureProdOpsProvider:
-    arm = ArmClient(
-        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-        identity_endpoint="https://identity.local/token",
-        identity_header="h",
-        client_id="c",
-    )
-    return AzureProdOpsProvider(
-        arm,
-        subscription_id="sub-1",
-        resource_group="rg-lunaris-prod",
-        api_app="lunaris-prod-api",
-        governed=governed,
-    )
-
-
 @pytest.mark.parametrize(
-    ("running_status", "expected"),
+    ("running_status", "expected", "settled"),
     [
-        ("Running", PowerStatus.RUNNING),
-        ("Stopped", PowerStatus.STOPPED),
-        # Anything mid-flight (an in-progress start/stop) is neither up nor down yet.
-        ("Progressing", PowerStatus.TRANSITIONING),
+        ("Running", PowerStatus.RUNNING, True),
+        ("Stopped", PowerStatus.STOPPED, True),
+        # An in-progress start/stop is neither up nor down yet.
+        ("Progressing", PowerStatus.TRANSITIONING, False),
+        # A state Azure reports that is neither must not keep a watcher polling forever.
+        ("Failed", PowerStatus.UNKNOWN, True),
+        (None, PowerStatus.UNKNOWN, True),
     ],
 )
 async def test_container_app_running_status_maps_to_a_power_status(
-    running_status: str, expected: PowerStatus
+    running_status: str | None, expected: PowerStatus, settled: bool
 ) -> None:
-    provider = _provider_over(
-        _app_status_handler({"lunaris-prod-api": running_status}),
-        GovernedResources(container_apps=("lunaris-prod-api",), virtual_machines=()),
-    )
+    provider = _provider(_app_status_handler({"lunaris-prod-api": running_status}))
 
     state = await provider.get_power_state()
 
     assert [r.status for r in state.resources] == [expected]
-    assert state.settled is (expected is not PowerStatus.TRANSITIONING)
+    assert state.settled is settled
 
 
 async def test_power_is_unsettled_while_any_resource_is_transitioning() -> None:
-    provider = _provider_over(
+    provider = _provider(
         _app_status_handler({"lunaris-prod-api": "Running", "lunaris-prod-copilot": "Progressing"}),
-        GovernedResources(
-            container_apps=("lunaris-prod-api", "lunaris-prod-copilot"), virtual_machines=()
-        ),
+        apps=("lunaris-prod-api", "lunaris-prod-copilot"),
     )
 
     state = await provider.get_power_state()
@@ -373,3 +303,141 @@ def test_the_prod_default_governs_every_workload_but_never_the_control_plane() -
         "lunaris-prod-copilot",
     }
     assert "lunaris-prod-control" not in governed.container_apps
+
+
+_VM = "lunaris-prod-sim-worker"
+
+
+def _vm_handler(power_code: str, *, record: list[tuple[str, str]] | None = None, fail: str = ""):
+    """ARM double: container apps report Running, the VM reports ``power_code`` from its instance
+    view. POST actions are recorded as (resource, action); the one on ``fail`` answers 403."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "identity.local":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+        segments = request.url.path.split("/")
+        if request.method == "POST":
+            resource, action = segments[-2], segments[-1]
+            if record is not None:
+                record.append((resource, action))
+            return httpx.Response(403 if resource == fail else 202)
+        if "/virtualMachines/" in request.url.path:
+            statuses = [{"code": "ProvisioningState/succeeded"}, {"code": power_code}]
+            return httpx.Response(
+                200, json={"properties": {"instanceView": {"statuses": statuses}}}
+            )
+        return httpx.Response(200, json={"properties": {"runningStatus": "Running"}})
+
+    return handler
+
+
+@pytest.mark.parametrize(
+    ("power_code", "expected"),
+    [
+        ("PowerState/running", PowerStatus.RUNNING),
+        ("PowerState/deallocated", PowerStatus.STOPPED),
+        ("PowerState/deallocating", PowerStatus.TRANSITIONING),
+        ("PowerState/starting", PowerStatus.TRANSITIONING),
+    ],
+)
+async def test_vm_power_is_read_from_its_instance_view(
+    power_code: str, expected: PowerStatus
+) -> None:
+    seen: list[httpx.Request] = []
+    inner = _vm_handler(power_code)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return inner(request)
+
+    provider = _provider(handler, apps=(), vms=(_VM,))
+
+    state = await provider.get_power_state()
+
+    assert [(r.name, r.kind, r.status) for r in state.resources] == [
+        (_VM, ResourceKind.VIRTUAL_MACHINE, expected)
+    ]
+    vm_read = next(r for r in seen if "/virtualMachines/" in r.url.path)
+    assert vm_read.url.path.endswith(f"/Microsoft.Compute/virtualMachines/{_VM}")
+    assert vm_read.url.params["$expand"] == "instanceView"
+
+
+async def test_power_off_stops_the_api_first_and_deallocates_the_vm_last() -> None:
+    actions: list[tuple[str, str]] = []
+    # The API is listed last on purpose: the stop order must come from the adapter, not the config.
+    provider = _provider(
+        _vm_handler("PowerState/running", record=actions),
+        apps=("lunaris-prod-copilot", "lunaris-prod-api"),
+        vms=(_VM,),
+    )
+
+    await provider.set_power(on=False)
+
+    # Deallocate, never power off: a powered-off VM keeps billing for its compute.
+    assert actions == [
+        ("lunaris-prod-api", "stop"),
+        ("lunaris-prod-copilot", "stop"),
+        (_VM, "deallocate"),
+    ]
+
+
+async def test_power_on_starts_the_vm_first_and_the_api_last() -> None:
+    actions: list[tuple[str, str]] = []
+    provider = _provider(
+        _vm_handler("PowerState/deallocated", record=actions),
+        apps=("lunaris-prod-api", "lunaris-prod-copilot"),
+        vms=(_VM,),
+    )
+
+    await provider.set_power(on=True)
+
+    assert actions == [
+        (_VM, "start"),
+        ("lunaris-prod-copilot", "start"),
+        ("lunaris-prod-api", "start"),
+    ]
+
+
+async def test_a_governed_resource_that_does_not_exist_is_skipped() -> None:
+    # An environment deployed without the simulators has no VM; the switch must still work.
+    actions: list[tuple[str, str]] = []
+    inner = _vm_handler("PowerState/running", record=actions)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/virtualMachines/" in request.url.path:
+            if request.method == "POST":
+                actions.append((_VM, request.url.path.rsplit("/", 1)[1]))
+            return httpx.Response(404, json={"error": {"code": "ResourceNotFound"}})
+        return inner(request)
+
+    provider = _provider(handler, vms=(_VM,))
+
+    state = await provider.get_power_state()
+    await provider.set_power(on=False)
+
+    assert [r.name for r in state.resources] == ["lunaris-prod-api"]
+    assert actions == [("lunaris-prod-api", "stop"), (_VM, "deallocate")]
+
+
+async def test_a_rejected_action_does_not_stop_the_rest_and_is_reported() -> None:
+    actions: list[tuple[str, str]] = []
+    # The API's stop is refused (e.g. a missing role); everything after it is still attempted.
+    provider = _provider(
+        _vm_handler("PowerState/running", record=actions, fail="lunaris-prod-api"),
+        apps=("lunaris-prod-api", "lunaris-prod-copilot"),
+        vms=(_VM,),
+    )
+
+    with pytest.raises(ProdPowerActionError) as raised:
+        await provider.set_power(on=False)
+
+    assert raised.value.failed == ("lunaris-prod-api",)
+    assert actions == [
+        ("lunaris-prod-api", "stop"),
+        ("lunaris-prod-copilot", "stop"),
+        (_VM, "deallocate"),
+    ]
+
+
+def test_the_prod_default_governs_the_simulator_vm() -> None:
+    assert GovernedResources.prod_default().virtual_machines == (_VM,)

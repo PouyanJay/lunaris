@@ -79,3 +79,19 @@ class ArmClient:
         )
         response.raise_for_status()
         return response.json() if response.content else {}
+
+    async def request_if_exists(
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, str] | None = None,
+    ) -> dict[str, Any] | None:
+        """Like ``request``, but a 404 (the resource is not deployed) returns ``None`` instead of
+        raising. Any other error still raises."""
+        try:
+            return await self.request(method, url, params=params)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == httpx.codes.NOT_FOUND:
+                return None
+            raise

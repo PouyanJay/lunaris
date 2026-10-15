@@ -16,7 +16,12 @@ from _auth import JWT_SECRET, auth_headers
 from lunaris_api.app import create_app
 from lunaris_api.config import Settings, get_settings
 from lunaris_api.dependencies import get_prod_ops_provider
-from lunaris_api.prod_ops import FakeProdOpsProvider, ProdOpsSummary
+from lunaris_api.prod_ops import (
+    FakeProdOpsProvider,
+    PowerState,
+    ProdOpsSummary,
+    ProdPowerActionError,
+)
 
 ADMIN_EMAIL = "owner@lunaris.test"
 ADMIN_USER = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -152,17 +157,11 @@ async def test_power_state_reports_on_and_each_governed_resource(
     assert body["isOn"] is True
     assert body["settled"] is True
     by_name = {resource["name"]: resource for resource in body["resources"]}
-    # Every prod workload is governed, including the Live runtime and the cover worker that were
-    # added after the switch was first built.
-    assert {
-        "lunaris-prod-api",
-        "lunaris-prod-video-worker",
-        "lunaris-prod-inference",
-        "lunaris-prod-embeddings",
-        "lunaris-prod-cover-worker",
-        "lunaris-prod-copilot",
-    } <= set(by_name)
+    # The full governed set is pinned by the GovernedResources tests; here, the wire shape of each
+    # kind, including the Live runtime that was added after the switch was first built.
     assert by_name["lunaris-prod-copilot"]["kind"] == "container_app"
+    # The simulator host VM is the single largest prod cost, so the switch governs it too.
+    assert by_name["lunaris-prod-sim-worker"]["kind"] == "virtual_machine"
     assert all(r["status"] == "running" and r["running"] for r in body["resources"])
     # The control plane serves the switch, so it must never govern (and stop) itself.
     assert "lunaris-prod-control" not in by_name
@@ -241,3 +240,21 @@ async def test_power_toggle_rejects_a_malformed_body(client: httpx.AsyncClient) 
     response = await client.post("/api/admin/prod-ops/power", json={}, headers=_admin())
 
     assert response.status_code == 422
+
+
+class _RejectingProvider(FakeProdOpsProvider):
+    """A provider whose power change Azure partly refuses (e.g. a role missing a VM action)."""
+
+    async def set_power(self, *, on: bool) -> PowerState:
+        raise ProdPowerActionError(on=on, failed=("lunaris-prod-sim-worker",))
+
+
+async def test_a_partly_refused_power_change_is_a_502_naming_the_resource(tmp_path: Path) -> None:
+    async with _build_client(tmp_path, _RejectingProvider(summary=_SUMMARY)) as client:
+        response = await client.post(
+            "/api/admin/prod-ops/power", json={"on": False, "confirm": True}, headers=_admin()
+        )
+
+    assert response.status_code == 502
+    assert "lunaris-prod-sim-worker" in response.json()["detail"]
+    assert response.headers["x-request-id"]

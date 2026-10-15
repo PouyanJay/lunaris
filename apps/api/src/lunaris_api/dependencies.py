@@ -634,17 +634,6 @@ UserDirectoryDep = Annotated[IUserDirectory, Depends(get_user_directory)]
 _fake_prod_ops_provider = FakeProdOpsProvider()
 
 
-def _governed_resources() -> GovernedResources:
-    """The prod default, with either list overridable by a comma-separated env var."""
-    default = GovernedResources.prod_default()
-    apps = os.environ.get("PROD_OPS_GOVERNED_APPS")
-    vms = os.environ.get("PROD_OPS_GOVERNED_VMS")
-    return GovernedResources(
-        container_apps=tuple(apps.split(",")) if apps else default.container_apps,
-        virtual_machines=tuple(vms.split(",")) if vms else default.virtual_machines,
-    )
-
-
 @lru_cache
 def _build_prod_ops_provider() -> IProdOpsProvider:
     """Select the prod-operations provider once. The Azure ARM adapter when the subscription and
@@ -671,7 +660,7 @@ def _build_prod_ops_provider() -> IProdOpsProvider:
         subscription_id=subscription_id,
         resource_group=os.environ.get("PROD_OPS_RESOURCE_GROUP", "rg-lunaris-prod"),
         api_app=os.environ.get("PROD_OPS_API_APP", "lunaris-prod-api"),
-        governed=_governed_resources(),
+        governed=GovernedResources.prod_default(),
         currency=os.environ.get("PROD_OPS_CURRENCY", "CAD"),
     )
 

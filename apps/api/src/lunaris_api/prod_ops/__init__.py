@@ -5,6 +5,7 @@ from .cost import CostPoint, CostSeries
 from .fake_provider import FakeProdOpsProvider
 from .governed_resources import GovernedResources
 from .power import PowerState, ResourcePower
+from .power_action_error import ProdPowerActionError
 from .power_status import PowerStatus
 from .provider_protocol import IProdOpsProvider
 from .resource_kind import ResourceKind
@@ -23,6 +24,7 @@ __all__ = [
     "PowerState",
     "PowerStatus",
     "ProdOpsSummary",
+    "ProdPowerActionError",
     "ResourceKind",
     "ResourcePower",
 ]

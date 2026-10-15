@@ -4,7 +4,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query, Response, status
 
 from ..dependencies import AdminUserDep, ProdOpsProviderDep
-from ..prod_ops import PowerState
+from ..prod_ops import PowerState, ProdPowerActionError
 from ..schemas.prod_ops import (
     ComputePointView,
     ComputeSeriesView,
@@ -145,6 +145,21 @@ async def set_power(
         target_on=body.on,
         request_id=request_id,
     )
-    state = await provider.set_power(on=body.on)
+    try:
+        state = await provider.set_power(on=body.on)
+    except ProdPowerActionError as exc:
+        logger.warning(
+            "prod_power_set_partial",
+            admin_id=admin_id,
+            target_on=body.on,
+            failed=list(exc.failed),
+            request_id=request_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"{exc}. The other resources were updated; check the power state and retry.",
+            # The error replaces the bound response, so carry the correlation id on it explicitly.
+            headers={"X-Request-Id": request_id},
+        ) from exc
     logger.info("prod_power_set_done", admin_id=admin_id, is_on=state.is_on, request_id=request_id)
     return _power_view(state)
