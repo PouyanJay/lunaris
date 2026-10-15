@@ -36,16 +36,27 @@ export interface ProdComputeSeries {
   points: ProdComputePoint[];
 }
 
-/** One prod app's run state (mirrors AppPowerView). */
-export interface ProdAppPower {
+/** What kind of Azure resource the switch governs (mirrors the API's ResourceKind). */
+export type ProdResourceKind = "container_app" | "virtual_machine";
+
+/** One resource's power status (mirrors PowerStatus). `transitioning` while Azure is still starting
+ *  or stopping it; `unknown` for a state Azure reported that is neither (it is not waited on). */
+export type ProdPowerStatus = "running" | "stopped" | "transitioning" | "unknown";
+
+/** One governed prod resource's run state (mirrors ResourcePowerView). */
+export interface ProdResourcePower {
   name: string;
+  kind: ProdResourceKind;
+  status: ProdPowerStatus;
   running: boolean;
 }
 
-/** Whether production is on + each governed app's run state (mirrors PowerStateView). */
+/** Whether production is on, plus each governed resource's run state (mirrors PowerStateView).
+ *  `settled` is false while any resource is mid-transition. */
 export interface ProdPowerState {
   isOn: boolean;
-  apps: ProdAppPower[];
+  settled: boolean;
+  resources: ProdResourcePower[];
 }
 
 /** Where the power switch talks to. Production stops the main API itself (AD-3), so the start/stop

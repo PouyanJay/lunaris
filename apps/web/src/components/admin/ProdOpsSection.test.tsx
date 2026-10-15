@@ -58,7 +58,10 @@ describe("ProdOpsSection", () => {
     fetchProdComputeMock.mockResolvedValue(computeSeries(24));
     fetchProdPowerMock.mockResolvedValue({
       isOn: true,
-      apps: [{ name: "lunaris-prod-api", running: true }],
+      settled: true,
+      resources: [
+        { name: "lunaris-prod-api", kind: "container_app", status: "running", running: true },
+      ],
     });
   });
 
