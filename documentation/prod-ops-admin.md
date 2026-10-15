@@ -10,10 +10,32 @@ usage + cost dual-axis chart, and a full production on/off switch. Admin-gated b
   The most recent day is flagged *partial* — Azure Cost Management lags ~8–24h.
 - **Compute per hour** — hourly replicas / CPU / memory usage (selectable) as bars, with the
   amortized hourly cost overlaid as a line.
-- **Production power** — **off** stops the prod container apps (`az containerapp stop`), zeroing the
-  always-on cost; only the ~$0.25/day container-registry floor remains. **on** starts them again.
-  Stopping is a self-inflicted outage, so the toggle requires an explicit confirmation and is
-  audit-logged. **Out of scope:** Supabase (billed separately, not Azure) is untouched.
+- **Production power**: **off** stops every prod container app (API, video, cover, inference,
+  embeddings workers and the Live copilot runtime) and **deallocates** the simulator supervisor VM
+  (`lunaris-prod-sim-worker`). Deallocated, not powered off: a powered-off VM keeps billing for its
+  compute. **on** starts them again (VM first, API last). Stopping is a self-inflicted outage, so the
+  toggle requires an explicit confirmation and is audit-logged. Azure applies each start/stop in the
+  background, so the switch lists every resource's status and follows the change until all of them
+  have finished (a VM takes a few minutes). The control plane (`lunaris-prod-control`) is never
+  governed: it is what serves the switch. **Out of scope:** Supabase (billed separately, not Azure).
+
+### What still bills while production is off
+
+Only storage: the container registry (~0.33 CAD/day), the VM's OS disk (~0.27 CAD/day) and its
+Standard public IP (~0.17 CAD/day), plus a few cents of Key Vault and log retention. Roughly
+**0.80 CAD/day**, against ~4.60 CAD/day with everything on (Sep to Oct 2026 actuals). Removing that
+floor means deleting resources, which the switch deliberately does not do.
+
+### When production is off
+
+Every visitor to the site sees a **Lunaris is offline** page (the SPA is a Static Web App, so it
+stays up) with an *Email contact@pouyan.ai* action to request access. The page re-checks the API
+every 15s and returns to the app by itself once production is back on.
+
+An administrator turns production back on from the same page: **Administrator sign in** (sign-in
+only), after which the page confirms admin access with the control plane (`GET /api/me` there, since
+the API is stopped) and shows the power switch. The first answer can take up to a minute while the
+scale-to-zero control plane wakes.
 
 ## How the data is sourced
 
@@ -41,13 +63,17 @@ GitHub-var setup after the first deploy (step 3).
    done
    # After the control app first deploys, grant its identity a least-privilege start/stop role:
    CTRL_MI=<lunaris-prod-control-mi principalId>      # az identity show -g rg-lunaris-prod -n lunaris-prod-control-mi --query principalId
-   az role definition create --role-definition '{"Name":"Lunaris Prod-Ops Start/Stop","Description":"Read container-apps run state and start/stop them — nothing else.","Actions":["Microsoft.App/containerApps/read","Microsoft.App/containerApps/start/action","Microsoft.App/containerApps/stop/action"],"AssignableScopes":["'"$RG"'"]}'
+   az role definition create --role-definition "$(jq -n --arg rg "$RG" '{Name:"Lunaris Prod-Ops Start/Stop",Description:"Read the run state of prod container apps and VMs and start/stop (deallocate) them; nothing else.",Actions:["Microsoft.App/containerApps/read","Microsoft.App/containerApps/start/action","Microsoft.App/containerApps/stop/action","Microsoft.Compute/virtualMachines/read","Microsoft.Compute/virtualMachines/instanceView/read","Microsoft.Compute/virtualMachines/start/action","Microsoft.Compute/virtualMachines/deallocate/action"],AssignableScopes:[$rg]}')"
    az role assignment create --assignee-object-id "$CTRL_MI" --assignee-principal-type ServicePrincipal --role "Lunaris Prod-Ops Start/Stop" --scope "$RG"
+   # Upgrading a role created before the VM was governed (adds the four VM actions in place):
+   az role definition update --role-definition "$(az role definition list --custom-role-only true --query "[?roleName=='Lunaris Prod-Ops Start/Stop'] | [0]" -o json | jq '.permissions[0].actions += ["Microsoft.Compute/virtualMachines/read","Microsoft.Compute/virtualMachines/instanceView/read","Microsoft.Compute/virtualMachines/start/action","Microsoft.Compute/virtualMachines/deallocate/action"] | .permissions[0].actions |= unique')"
    ```
 
 1. **RBAC roles** — the API identity needs **Cost Management Reader** (the cost *query* action),
    **Monitoring Reader** (metrics), **Reader** (container-apps run-state for the power read); the
-   control identity needs the least-privilege start/stop role above. Applied via step 0.
+   control identity needs the least-privilege start/stop role above (container apps plus the VM's
+   read/start/deallocate). Applied via step 0. Without the VM actions, OFF stops every app but reports
+   the VM as refused (a 502 naming it), and the VM keeps running and billing.
 
 2. **API env (`app.bicep`, passed by `cd-prod`)** — `cd-prod` passes `prodOpsSubscriptionId` (=
    `secrets.AZURE_SUBSCRIPTION_ID`) and `prodOpsResourceGroup` (= `vars.RESOURCE_GROUP`); app.bicep
