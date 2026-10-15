@@ -10,6 +10,8 @@
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-weight: 500;
+  /* The same skin also dresses links (ButtonLink, a mailto action); an action is never underlined. */
+  text-decoration: none;
   cursor: pointer;
   transition:
     background-color var(--dur) var(--ease),

@@ -1,0 +1,72 @@
+/* The offline page shares the sign-in screen's chrome (same screen, panel, brand, type), so the two
+   gates read as one surface; only what is specific to the offline notice is defined here. */
+.screen {
+  composes: screen from "../auth/AuthScreen.module.css";
+}
+
+.panel {
+  composes: panel from "../auth/AuthScreen.module.css";
+  /* Wider than sign-in: the administrator console lists every governed resource. */
+  max-width: 440px;
+}
+
+.brand {
+  composes: brand from "../auth/AuthScreen.module.css";
+}
+
+.wordmark {
+  composes: wordmark from "../auth/AuthScreen.module.css";
+}
+
+.heading {
+  composes: heading from "../auth/AuthScreen.module.css";
+}
+
+.status {
+  margin-bottom: var(--space-2);
+}
+
+.body {
+  font-size: var(--text-sm);
+  line-height: var(--lh-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-6);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.footer {
+  composes: toggle from "../auth/AuthScreen.module.css";
+}
+
+.footerButton {
+  composes: toggleButton from "../auth/AuthScreen.module.css";
+}
+
+/* The administrator console: welded below the notice by a hairline, not a nested card. */
+.console {
+  margin-top: var(--space-6);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.consoleHeading {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin: var(--space-1) 0 var(--space-3);
+}
+
+.consoleNote {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-3);
+}
+
+.signOut {
+  margin-top: var(--space-4);
+}

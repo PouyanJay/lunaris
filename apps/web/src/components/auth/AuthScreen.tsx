@@ -14,6 +14,18 @@ function messageFor(error: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
+function headingFor(isSignup: boolean, isAdmin: boolean): string {
+  if (isAdmin) return "Administrator sign in";
+  return isSignup ? "Create your account" : "Sign in";
+}
+
+function subheadingFor(isSignup: boolean, isAdmin: boolean): string {
+  if (isAdmin) return "Sign in with an administrator account to manage production.";
+  return isSignup
+    ? "You'll bring your own provider keys after signing in."
+    : "Welcome back. Sign in to your courses.";
+}
+
 function submitLabel(submitting: boolean, isSignup: boolean): string {
   if (submitting) return isSignup ? "Creating account…" : "Signing in…";
   return isSignup ? "Create account" : "Sign in";
@@ -26,7 +38,15 @@ function submitLabel(submitting: boolean, isSignup: boolean): string {
  *  metadata for the server-side Before-User-Created hook to validate. Signing up may require an email
  *  confirmation (cloud default), in which case a notice is shown instead of entering the app. Full
  *  keyboard + screen-reader support: labelled fields, an aria-live error/notice region, a focus ring. */
-export function AuthScreen({ apiBaseUrl }: { apiBaseUrl?: string | undefined }) {
+export function AuthScreen({
+  apiBaseUrl,
+  adminSignIn,
+}: {
+  apiBaseUrl?: string | undefined;
+  /** Sign-in only, for an administrator reaching production controls while the service is
+   *  offline: no account creation, and a way back to the offline page. */
+  adminSignIn?: { onBack: () => void } | undefined;
+}) {
   const { signIn, signUp } = useAuth();
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -93,12 +113,8 @@ export function AuthScreen({ apiBaseUrl }: { apiBaseUrl?: string | undefined }) 
           <BrandMark size={28} />
           <span className={styles.wordmark}>Lunaris</span>
         </div>
-        <h1 className={styles.heading}>{isSignup ? "Create your account" : "Sign in"}</h1>
-        <p className={styles.subheading}>
-          {isSignup
-            ? "You'll bring your own provider keys after signing in."
-            : "Welcome back. Sign in to your courses."}
-        </p>
+        <h1 className={styles.heading}>{headingFor(isSignup, adminSignIn !== undefined)}</h1>
+        <p className={styles.subheading}>{subheadingFor(isSignup, adminSignIn !== undefined)}</p>
 
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
           <Input
@@ -159,12 +175,20 @@ export function AuthScreen({ apiBaseUrl }: { apiBaseUrl?: string | undefined }) 
           </Button>
         </form>
 
-        <p className={styles.toggle}>
-          {isSignup ? "Already have an account?" : "New to Lunaris?"}{" "}
-          <button type="button" className={styles.toggleButton} onClick={switchMode}>
-            {isSignup ? "Sign in" : "Create one"}
-          </button>
-        </p>
+        {adminSignIn ? (
+          <p className={styles.toggle}>
+            <button type="button" className={styles.toggleButton} onClick={adminSignIn.onBack}>
+              Back to status
+            </button>
+          </p>
+        ) : (
+          <p className={styles.toggle}>
+            {isSignup ? "Already have an account?" : "New to Lunaris?"}{" "}
+            <button type="button" className={styles.toggleButton} onClick={switchMode}>
+              {isSignup ? "Sign in" : "Create one"}
+            </button>
+          </p>
+        )}
       </div>
     </main>
   );
