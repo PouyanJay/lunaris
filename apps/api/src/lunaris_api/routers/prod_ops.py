@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from ..dependencies import AdminUserDep, ProdOpsProviderDep
 from ..prod_ops import PowerState
 from ..schemas.prod_ops import (
-    AppPowerView,
     ComputePointView,
     ComputeSeriesView,
     CostPointView,
@@ -14,6 +13,7 @@ from ..schemas.prod_ops import (
     PowerStateView,
     PowerToggleRequest,
     ProdOpsSummaryView,
+    ResourcePowerView,
 )
 from ._correlation import bind_correlation
 
@@ -96,7 +96,16 @@ async def get_compute(
 def _power_view(state: PowerState) -> PowerStateView:
     return PowerStateView(
         is_on=state.is_on,
-        apps=[AppPowerView(name=app.name, running=app.running) for app in state.apps],
+        settled=state.settled,
+        resources=[
+            ResourcePowerView(
+                name=resource.name,
+                kind=resource.kind,
+                status=resource.status,
+                running=resource.running,
+            )
+            for resource in state.resources
+        ],
     )
 
 
@@ -106,7 +115,7 @@ async def get_power(
     provider: ProdOpsProviderDep,
     response: Response,
 ) -> PowerStateView:
-    """Admin-only: whether production is on, plus each governed app's run state."""
+    """Admin-only: whether production is on, plus each governed resource's run state."""
     request_id = bind_correlation(response)
     state = await provider.get_power_state()
     logger.info(

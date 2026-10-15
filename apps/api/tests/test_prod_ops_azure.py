@@ -10,7 +10,12 @@ from datetime import UTC, date, datetime, timedelta, tzinfo
 
 import httpx
 import pytest
-from lunaris_api.prod_ops import ArmClient, AzureProdOpsProvider
+from lunaris_api.prod_ops import (
+    ArmClient,
+    AzureProdOpsProvider,
+    GovernedResources,
+    PowerStatus,
+)
 
 # A fixed anchor day (mid-month, no boundary); the adapter's clock is frozen to it below so the
 # cost/metrics date windows match the fake responses regardless of when the suite runs. Previously
@@ -79,7 +84,7 @@ def _arm_handler(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, json={"properties": {"runningStatus": running}})
 
 
-def _provider(governed: tuple[str, ...] = ("lunaris-prod-api",)) -> AzureProdOpsProvider:
+def _provider(apps: tuple[str, ...] = ("lunaris-prod-api",)) -> AzureProdOpsProvider:
     client = httpx.AsyncClient(transport=httpx.MockTransport(_arm_handler))
     arm = ArmClient(
         client,
@@ -92,7 +97,7 @@ def _provider(governed: tuple[str, ...] = ("lunaris-prod-api",)) -> AzureProdOps
         subscription_id="sub-1",
         resource_group="rg-lunaris-prod",
         api_app="lunaris-prod-api",
-        governed_apps=governed,
+        governed=GovernedResources(container_apps=apps, virtual_machines=()),
     )
 
 
@@ -109,7 +114,11 @@ async def test_cost_query_sends_an_actual_cost_daily_body() -> None:
         client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
     )
     provider = AzureProdOpsProvider(
-        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+        arm,
+        subscription_id="s",
+        resource_group="rg",
+        api_app="a",
+        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
     )
 
     await provider.get_cost_daily(2)
@@ -133,7 +142,11 @@ async def test_metrics_request_asks_for_the_usage_metrics_hourly() -> None:
         client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
     )
     provider = AzureProdOpsProvider(
-        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+        arm,
+        subscription_id="s",
+        resource_group="rg",
+        api_app="a",
+        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
     )
 
     await provider.get_compute_series(1)
@@ -176,8 +189,8 @@ async def test_power_state_is_on_when_the_api_app_runs() -> None:
     state = await _provider(("lunaris-prod-api", "lunaris-prod-video-worker")).get_power_state()
 
     assert state.is_on is True
-    assert {a.name for a in state.apps} == {"lunaris-prod-api", "lunaris-prod-video-worker"}
-    assert all(a.running for a in state.apps)
+    assert {r.name for r in state.resources} == {"lunaris-prod-api", "lunaris-prod-video-worker"}
+    assert all(r.status is PowerStatus.RUNNING for r in state.resources)
 
 
 async def test_set_power_off_issues_stop_and_reports_state() -> None:
@@ -197,7 +210,10 @@ async def test_set_power_off_issues_stop_and_reports_state() -> None:
         subscription_id="sub-1",
         resource_group="rg-lunaris-prod",
         api_app="lunaris-prod-api",
-        governed_apps=("lunaris-prod-api", "lunaris-prod-video-worker"),
+        governed=GovernedResources(
+            container_apps=("lunaris-prod-api", "lunaris-prod-video-worker"),
+            virtual_machines=(),
+        ),
     )
 
     await provider.set_power(on=False)
@@ -223,7 +239,7 @@ async def test_set_power_uses_the_right_action(on: bool) -> None:
         subscription_id="sub-1",
         resource_group="rg-lunaris-prod",
         api_app="lunaris-prod-api",
-        governed_apps=("lunaris-prod-api",),
+        governed=GovernedResources(container_apps=("lunaris-prod-api",), virtual_machines=()),
     )
 
     await provider.set_power(on=on)
@@ -244,7 +260,11 @@ async def test_cost_daily_handles_an_empty_cost_response() -> None:
         client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
     )
     provider = AzureProdOpsProvider(
-        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+        arm,
+        subscription_id="s",
+        resource_group="rg",
+        api_app="a",
+        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
     )
 
     series = await provider.get_cost_daily(3)
@@ -265,8 +285,91 @@ async def test_arm_request_raises_on_an_error_response() -> None:
         client, identity_endpoint="https://identity.local/t", identity_header="h", client_id="c"
     )
     provider = AzureProdOpsProvider(
-        arm, subscription_id="s", resource_group="rg", api_app="a", governed_apps=("a",)
+        arm,
+        subscription_id="s",
+        resource_group="rg",
+        api_app="a",
+        governed=GovernedResources(container_apps=("a",), virtual_machines=()),
     )
 
     with pytest.raises(httpx.HTTPStatusError):
         await provider.get_cost_daily(7)
+
+
+def _app_status_handler(statuses: dict[str, str]):
+    """ARM double whose container-app GETs report ``statuses[name]`` as ``runningStatus``."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "identity.local":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 3600})
+        name = request.url.path.rsplit("/", 1)[1]
+        return httpx.Response(200, json={"properties": {"runningStatus": statuses[name]}})
+
+    return handler
+
+
+def _provider_over(handler, governed: GovernedResources) -> AzureProdOpsProvider:
+    arm = ArmClient(
+        httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        identity_endpoint="https://identity.local/token",
+        identity_header="h",
+        client_id="c",
+    )
+    return AzureProdOpsProvider(
+        arm,
+        subscription_id="sub-1",
+        resource_group="rg-lunaris-prod",
+        api_app="lunaris-prod-api",
+        governed=governed,
+    )
+
+
+@pytest.mark.parametrize(
+    ("running_status", "expected"),
+    [
+        ("Running", PowerStatus.RUNNING),
+        ("Stopped", PowerStatus.STOPPED),
+        # Anything mid-flight (an in-progress start/stop) is neither up nor down yet.
+        ("Progressing", PowerStatus.TRANSITIONING),
+    ],
+)
+async def test_container_app_running_status_maps_to_a_power_status(
+    running_status: str, expected: PowerStatus
+) -> None:
+    provider = _provider_over(
+        _app_status_handler({"lunaris-prod-api": running_status}),
+        GovernedResources(container_apps=("lunaris-prod-api",), virtual_machines=()),
+    )
+
+    state = await provider.get_power_state()
+
+    assert [r.status for r in state.resources] == [expected]
+    assert state.settled is (expected is not PowerStatus.TRANSITIONING)
+
+
+async def test_power_is_unsettled_while_any_resource_is_transitioning() -> None:
+    provider = _provider_over(
+        _app_status_handler({"lunaris-prod-api": "Running", "lunaris-prod-copilot": "Progressing"}),
+        GovernedResources(
+            container_apps=("lunaris-prod-api", "lunaris-prod-copilot"), virtual_machines=()
+        ),
+    )
+
+    state = await provider.get_power_state()
+
+    assert state.is_on is True
+    assert state.settled is False
+
+
+def test_the_prod_default_governs_every_workload_but_never_the_control_plane() -> None:
+    governed = GovernedResources.prod_default()
+
+    assert set(governed.container_apps) == {
+        "lunaris-prod-api",
+        "lunaris-prod-video-worker",
+        "lunaris-prod-inference",
+        "lunaris-prod-embeddings",
+        "lunaris-prod-cover-worker",
+        "lunaris-prod-copilot",
+    }
+    assert "lunaris-prod-control" not in governed.container_apps

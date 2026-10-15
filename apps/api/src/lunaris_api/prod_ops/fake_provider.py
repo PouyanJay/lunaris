@@ -2,17 +2,11 @@ from datetime import date, datetime, time, timedelta
 
 from .compute import ComputePoint, ComputeSeries
 from .cost import CostPoint, CostSeries
-from .power import AppPower, PowerState
+from .governed_resources import GovernedResources
+from .power import PowerState, ResourcePower
+from .power_status import PowerStatus
+from .resource_kind import ResourceKind
 from .summary import ProdOpsSummary
-
-# The prod apps the on/off switch governs (the API plus the scale-to-zero workers). The fake reports
-# them all following the toggle; the real adapter reads/sets each app's run state on Azure.
-_GOVERNED_APPS = (
-    "lunaris-prod-api",
-    "lunaris-prod-video-worker",
-    "lunaris-prod-inference",
-    "lunaris-prod-embeddings",
-)
 
 # A fixed anchor so the fake's series is deterministic (tests assert on it; the no-Azure path shows
 # clearly synthetic data). The real adapter keys off the actual calendar.
@@ -73,5 +67,15 @@ class FakeProdOpsProvider:
         return self._state()
 
     def _state(self) -> PowerState:
-        apps = tuple(AppPower(name=name, running=self._on) for name in _GOVERNED_APPS)
-        return PowerState(is_on=self._on, apps=apps)
+        # Every governed prod resource follows the toggle at once (the real adapter reports Azure's
+        # asynchronous transitions in between).
+        status = PowerStatus.RUNNING if self._on else PowerStatus.STOPPED
+        governed = GovernedResources.prod_default()
+        resources = tuple(
+            ResourcePower(name=name, kind=ResourceKind.CONTAINER_APP, status=status)
+            for name in governed.container_apps
+        ) + tuple(
+            ResourcePower(name=name, kind=ResourceKind.VIRTUAL_MACHINE, status=status)
+            for name in governed.virtual_machines
+        )
+        return PowerState(is_on=self._on, resources=resources)

@@ -1,12 +1,14 @@
 import asyncio
-from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from .arm_client import ArmClient
 from .compute import ComputePoint, ComputeSeries
 from .cost import CostPoint, CostSeries
-from .power import AppPower, PowerState
+from .governed_resources import GovernedResources
+from .power import PowerState, ResourcePower
+from .power_status import PowerStatus
+from .resource_kind import ResourceKind
 from .summary import ProdOpsSummary
 
 _ARM = "https://management.azure.com"
@@ -14,6 +16,10 @@ _COST_API = "2023-11-01"
 _METRICS_API = "2024-02-01"
 _APP_API = "2024-03-01"
 _GB = 1024**3
+
+# A container app's ARM ``runningStatus`` for the two settled states; anything else (an in-flight
+# start/stop) reads as transitioning.
+_APP_STATUS = {"running": PowerStatus.RUNNING, "stopped": PowerStatus.STOPPED}
 
 
 def _parse_usage_date(raw: object) -> date:
@@ -42,14 +48,14 @@ class AzureProdOpsProvider:
         subscription_id: str,
         resource_group: str,
         api_app: str,
-        governed_apps: Sequence[str],
+        governed: GovernedResources,
         currency: str = "CAD",
     ) -> None:
         self._arm = arm
         self._sub = subscription_id
         self._rg = resource_group
         self._api_app = api_app
-        self._apps = tuple(governed_apps)
+        self._apps = governed.container_apps
         self._currency = currency
 
     @property
@@ -162,15 +168,20 @@ class AzureProdOpsProvider:
         return spread
 
     async def get_power_state(self) -> PowerState:
-        apps = []
-        for app in self._apps:
-            payload = await self._arm.request(
-                "GET", self._app_id(app), params={"api-version": _APP_API}
-            )
-            running_status = payload.get("properties", {}).get("runningStatus", "")
-            apps.append(AppPower(name=app, running=running_status.lower() == "running"))
-        api_running = next((a.running for a in apps if a.name == self._api_app), False)
-        return PowerState(is_on=api_running, apps=tuple(apps))
+        resources = await asyncio.gather(*(self._app_power(app) for app in self._apps))
+        api_running = any(r.name == self._api_app and r.running for r in resources)
+        return PowerState(is_on=api_running, resources=tuple(resources))
+
+    async def _app_power(self, app: str) -> ResourcePower:
+        payload = await self._arm.request(
+            "GET", self._app_id(app), params={"api-version": _APP_API}
+        )
+        running_status = str(payload.get("properties", {}).get("runningStatus", "")).lower()
+        return ResourcePower(
+            name=app,
+            kind=ResourceKind.CONTAINER_APP,
+            status=_APP_STATUS.get(running_status, PowerStatus.TRANSITIONING),
+        )
 
     async def set_power(self, *, on: bool) -> PowerState:
         action = "start" if on else "stop"

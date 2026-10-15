@@ -142,14 +142,30 @@ async def test_compute_for_a_non_admin_is_403(client: httpx.AsyncClient) -> None
     assert (await client.get("/api/admin/prod-ops/compute", headers=_member())).status_code == 403
 
 
-async def test_power_state_reports_on_and_each_governed_app(client: httpx.AsyncClient) -> None:
+async def test_power_state_reports_on_and_each_governed_resource(
+    client: httpx.AsyncClient,
+) -> None:
     response = await client.get("/api/admin/prod-ops/power", headers=_admin())
 
     assert response.status_code == 200
     body = response.json()
     assert body["isOn"] is True
-    assert {app["name"] for app in body["apps"]} >= {"lunaris-prod-api"}
-    assert all(app["running"] for app in body["apps"])
+    assert body["settled"] is True
+    by_name = {resource["name"]: resource for resource in body["resources"]}
+    # Every prod workload is governed, including the Live runtime and the cover worker that were
+    # added after the switch was first built.
+    assert {
+        "lunaris-prod-api",
+        "lunaris-prod-video-worker",
+        "lunaris-prod-inference",
+        "lunaris-prod-embeddings",
+        "lunaris-prod-cover-worker",
+        "lunaris-prod-copilot",
+    } <= set(by_name)
+    assert by_name["lunaris-prod-copilot"]["kind"] == "container_app"
+    assert all(r["status"] == "running" and r["running"] for r in body["resources"])
+    # The control plane serves the switch, so it must never govern (and stop) itself.
+    assert "lunaris-prod-control" not in by_name
 
 
 async def test_power_off_requires_confirmation(client: httpx.AsyncClient) -> None:
@@ -168,7 +184,7 @@ async def test_power_off_then_on_flips_the_state(client: httpx.AsyncClient) -> N
     )
     assert off.status_code == 200
     assert off.json()["isOn"] is False
-    assert all(not app["running"] for app in off.json()["apps"])
+    assert all(r["status"] == "stopped" for r in off.json()["resources"])
     # The state persists for the next read, then comes back on.
     assert (await client.get("/api/admin/prod-ops/power", headers=_admin())).json()["isOn"] is False
     on = await client.post(
