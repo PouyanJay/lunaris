@@ -217,4 +217,24 @@ describe("PowerSwitch", () => {
     await waitFor(() => expect(within(rowFor(API)).getByText("STOPPED")).toBeInTheDocument());
     expect(within(rowFor(VM)).getByText("RUNNING")).toBeInTheDocument();
   });
+
+  it.each([
+    ["running", "RUNNING"],
+    ["stopped", "STOPPED"],
+    ["transitioning", "CHANGING"],
+    ["unknown", "UNKNOWN"],
+  ] as const)("labels a %s resource %s", async (status, label) => {
+    fetchProdPowerMock.mockResolvedValue({
+      isOn: true,
+      settled: status !== "transitioning",
+      resources: [
+        { name: API, kind: "container_app", status: "running", running: true },
+        { name: VM, kind: "virtual_machine", status, running: status === "running" },
+      ],
+    });
+    render(<PowerSwitch controlBaseUrl="http://ctl.test" />);
+
+    await screen.findByText(VM);
+    expect(within(rowFor(VM)).getByText(label)).toBeInTheDocument();
+  });
 });

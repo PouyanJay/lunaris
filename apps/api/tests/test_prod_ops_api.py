@@ -247,9 +247,16 @@ async def test_power_toggle_rejects_a_malformed_body(client: httpx.AsyncClient) 
 _VM = "lunaris-prod-sim-worker"
 
 
-def _azure_provider(*, refuse: str = "", reads_fail: bool = False) -> AzureProdOpsProvider:
+def _azure_provider(
+    *,
+    refuse: str = "",
+    reads_fail: bool = False,
+    app_status: str = "Running",
+    vm_code: str = "PowerState/running",
+) -> AzureProdOpsProvider:
     """The real Azure adapter behind the router, with only Azure itself stood in for: ``refuse``
-    names a resource whose start/stop ARM answers 403; ``reads_fail`` makes every read a 503."""
+    names a resource whose start/stop ARM answers 403; ``reads_fail`` makes every read a 503;
+    ``app_status`` / ``vm_code`` are what the API app and the VM report."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "identity.local":
@@ -259,9 +266,9 @@ def _azure_provider(*, refuse: str = "", reads_fail: bool = False) -> AzureProdO
         if reads_fail:
             return httpx.Response(503, json={"error": {"code": "ServiceUnavailable"}})
         if "/virtualMachines/" in request.url.path:
-            view = {"statuses": [{"code": "PowerState/running"}]}
+            view = {"statuses": [{"code": vm_code}]}
             return httpx.Response(200, json={"properties": {"instanceView": view}})
-        return httpx.Response(200, json={"properties": {"runningStatus": "Running"}})
+        return httpx.Response(200, json={"properties": {"runningStatus": app_status}})
 
     arm = ArmClient(
         httpx.AsyncClient(transport=httpx.MockTransport(handler)),
@@ -310,3 +317,39 @@ async def test_a_sent_change_whose_result_cannot_be_read_is_a_502_saying_so(
 
     assert response.status_code == 502
     assert "was sent" in response.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("app_status", "vm_code", "wire_app", "wire_vm", "is_on", "settled"),
+    [
+        ("Running", "PowerState/running", "running", "running", True, True),
+        ("Stopped", "PowerState/deallocated", "stopped", "stopped", False, True),
+        ("Stopped", "PowerState/deallocating", "stopped", "transitioning", False, False),
+        ("Progressing", "PowerState/starting", "transitioning", "transitioning", False, False),
+        ("Failed", "PowerState/running", "unknown", "running", False, True),
+    ],
+)
+async def test_power_state_reaches_the_wire_for_every_status(
+    tmp_path: Path,
+    app_status: str,
+    vm_code: str,
+    wire_app: str,
+    wire_vm: str,
+    is_on: bool,
+    settled: bool,
+) -> None:
+    provider = _azure_provider(app_status=app_status, vm_code=vm_code)
+    async with _build_client(tmp_path, provider) as client:
+        response = await client.get("/api/admin/prod-ops/power", headers=_admin())
+
+    body = response.json()
+    by_name = {r["name"]: r for r in body["resources"]}
+    assert (body["isOn"], body["settled"]) == (is_on, settled)
+    assert by_name["lunaris-prod-api"] == {
+        "name": "lunaris-prod-api",
+        "kind": "container_app",
+        "status": wire_app,
+        "running": wire_app == "running",
+    }
+    assert by_name[_VM]["kind"] == "virtual_machine"
+    assert by_name[_VM]["status"] == wire_vm
