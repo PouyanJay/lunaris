@@ -13,6 +13,8 @@ import {
   makeRun,
   makeRunEvent,
   progressFrame,
+  healthyProbeResponse,
+  isHealthProbe,
   routedFetch,
   sseStreamResponse,
   waitForRunsFetch,
@@ -276,6 +278,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
@@ -404,6 +407,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
@@ -600,6 +604,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,
@@ -737,6 +742,7 @@ describe("App — live studio (VITE_API_URL set)", () => {
     const fetchMock = vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
+      if (isHealthProbe(url)) return healthyProbeResponse();
       if (url.includes("/api/settings")) {
         return Promise.resolve({
           ok: true,

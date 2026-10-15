@@ -402,6 +402,16 @@ export function makeRunEvent(
   return { runId: "run-test", courseId: "course-test", seq, kind, payload, ...extra };
 }
 
+/** Whether a request is the shell's liveness probe (ServiceStatusGate's `GET /api/healthz`). */
+export function isHealthProbe(url: string): boolean {
+  return url.endsWith("/api/healthz");
+}
+
+/** A healthy answer to the liveness probe, so the gate keeps the app mounted. */
+export function healthyProbeResponse(): Promise<Response> {
+  return Promise.resolve(new Response('{"status":"ok"}', { status: 200 }));
+}
+
 /** URL-routed fetch stub for App-level integration tests. StudioApp fetches GET /api/runs
  *  (sidebar) + GET /api/settings (capability probes) on mount AND streams builds, so the mock
  *  routes by URL: history/settings/briefs/me are JSON, the build is an SSE stream, course-by-id
@@ -427,6 +437,7 @@ export function routedFetch(
   return vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const url = input instanceof Request ? input.url : String(input);
     const method = (init?.method ?? "GET").toUpperCase();
+    if (isHealthProbe(url)) return healthyProbeResponse();
     if (/\/api\/runs\/[^/]+\/cancel$/.test(url) && method === "POST") {
       return Promise.resolve({ ok: true, status: 202 });
     }
