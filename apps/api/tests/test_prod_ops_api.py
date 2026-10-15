@@ -327,9 +327,10 @@ async def test_a_sent_change_whose_result_cannot_be_read_is_a_502_saying_so(
         ("Stopped", "PowerState/deallocating", "stopped", "transitioning", False, False),
         ("Progressing", "PowerState/starting", "transitioning", "transitioning", False, False),
         ("Failed", "PowerState/running", "unknown", "running", False, True),
+        ("Running", "PowerState/unknown", "running", "unknown", True, True),
     ],
 )
-async def test_power_state_reaches_the_wire_for_every_status(
+async def test_power_state_reaches_the_wire_for_each_status(
     tmp_path: Path,
     app_status: str,
     vm_code: str,
@@ -351,5 +352,9 @@ async def test_power_state_reaches_the_wire_for_every_status(
         "status": wire_app,
         "running": wire_app == "running",
     }
-    assert by_name[_VM]["kind"] == "virtual_machine"
-    assert by_name[_VM]["status"] == wire_vm
+    assert by_name[_VM] == {
+        "name": _VM,
+        "kind": "virtual_machine",
+        "status": wire_vm,
+        "running": wire_vm == "running",
+    }

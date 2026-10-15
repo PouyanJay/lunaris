@@ -68,10 +68,21 @@ export function prodControlBaseUrl(apiBaseUrl: string): string {
 }
 
 export class ProdOpsError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  /** The HTTP status the service answered with; absent when it could not be reached at all. */
+  readonly status: number | undefined;
+
+  constructor(message: string, options?: ErrorOptions & { status?: number }) {
     super(message, options);
     this.name = "ProdOpsError";
+    this.status = options?.status;
   }
+}
+
+/** Whether a failed power change still reached Azure: the control plane answers 502 when some
+ *  resources refused the change (the rest were sent) or when the change was sent but its outcome
+ *  could not be read back. Any other failure means nothing was sent. */
+export function powerChangeWasSent(error: unknown): boolean {
+  return error instanceof ProdOpsError && error.status === 502;
 }
 
 /** Admin: the prod-operations overview. 403 unless the caller is an admin. */
@@ -180,6 +191,7 @@ export async function setProdPower(controlBaseUrl: string, on: boolean): Promise
   if (!response.ok) {
     throw new ProdOpsError(
       (await detailOf(response)) ?? `Could not change production power (HTTP ${response.status}).`,
+      { status: response.status },
     );
   }
   return (await response.json()) as ProdPowerState;
